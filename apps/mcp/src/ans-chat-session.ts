@@ -187,34 +187,6 @@ export async function resolveAnsChatSession(
   }
 }
 
-/**
- * Prepare one session for a consolidation run: make sure its row exists (the
- * ledger's FK needs it), then apply the Active Domain's [budget] caps.
- *
- * Design: the chat path does this inside resolveAnsChatSession, but a run that
- * only ever consolidates never goes through that resolver. Without this step the
- * session would have no budget row, and the ledger's reserve passes for every
- * row-less session — a cap that silently does nothing. Returns false when setup
- * failed, so the caller can report the run as unmetered instead of implying a
- * cap was enforced.
- */
-export async function prepareConsolidateSessionBudget(
-  store: SessionStorePort,
-  sessionId: string,
-  budget?: BudgetConfig,
-): Promise<boolean> {
-  try {
-    await store.ensureSession(sessionId, "consolidate");
-  } catch (e) {
-    warnOnce(
-      "consolidate-register:" + (e instanceof Error ? e.message : String(e)),
-      "consolidate session row registration failed (" + (e instanceof Error ? e.message : String(e)) + ") — continuing unmetered",
-    );
-    return false;
-  }
-  return registerSessionBudget(store, sessionId, budget);
-}
-
 export interface AnsChatToolResult {
   // MCP's callback result is an open object ([x: string]: unknown). The index
   // signature keeps this named type assignable without importing the SDK into
@@ -270,7 +242,7 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
 export function buildAnsChatConsolidateResult(
   report: ConsolidateReport,
   usage: ConsolidationUsage,
-  extra: { budgetUnmetered?: boolean },
+  extra: { budgetUnmetered?: boolean; budgetUnmeteredReason?: string },
 ): AnsChatToolResult {
   const s = report.scope;
   const line =
@@ -283,6 +255,9 @@ export function buildAnsChatConsolidateResult(
     (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
+      : "") +
+    (extra.budgetUnmetered
+      ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
     (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
   return {
@@ -300,7 +275,12 @@ export function buildAnsChatConsolidateResult(
         budgetRejected: report.budgetRejected,
       },
       usage,
-      ...(extra.budgetUnmetered ? { budgetUnmetered: true } : {}),
+      ...(extra.budgetUnmetered
+        ? {
+          budgetUnmetered: true,
+          ...(extra.budgetUnmeteredReason ? { budgetUnmeteredReason: extra.budgetUnmeteredReason } : {}),
+        }
+        : {}),
     },
   };
 }

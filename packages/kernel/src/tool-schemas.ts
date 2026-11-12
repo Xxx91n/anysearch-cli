@@ -112,14 +112,13 @@ export const AnsChatInput = Type.Object({
   ),
   memoryIds: Type.Optional(
     Type.Array(Type.Integer({ minimum: 1 }), {
-      description: "consolidate only: read exactly these stored material ids (from recall_memory / search results). Unrelated materials are not read, and a sessionId given alongside does not widen the list. Required together with sessionId to form a scope; with neither, the call is rejected.",
+      description: "consolidate only: read exactly these stored material ids (from recall_memory / search results). This list is a complete scope on its own, and it may name materials from different sessions. A sessionId given alongside does not widen it. With neither this nor sessionId, the call is rejected.",
     }),
   ),
-  allowSingleEvidence: Type.Optional(
-    Type.Boolean({
-      description: "consolidate only: reserved for the single-evidence correction. Not wired yet — the batch threshold still applies, and the flag is ignored. Do not rely on it.",
-    }),
-  ),
+  // The single-evidence correction flag belongs to the follow-up ticket. It is
+  // deliberately absent here: advertising a knob this build ignores would claim
+  // a capability it does not have (the spec's "do not present the old unsafe
+  // path as a new capability" rule).
   dryRun: Type.Optional(
     Type.Boolean({
       description: "consolidate only: run the same path inside a transaction that is rolled back. Nothing is saved. Model calls can still happen and cost money, and the preview describes the state read at that moment.",
@@ -131,7 +130,6 @@ export type AnsChatInput = {
   sessionId?: string;
   operation?: "chat" | "consolidate";
   memoryIds?: number[];
-  allowSingleEvidence?: boolean;
   dryRun?: boolean;
 };
 

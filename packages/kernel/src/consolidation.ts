@@ -44,15 +44,22 @@ export interface ConsolidationUsage {
   totalTokens: number;
   costUsd: number;
   costBasis: ConsolidationCostBasis;
-  // Named gaps: "consolidation usage", "consolidation cache usage",
-  // "consolidation cost (price unknown)". Never a silent zero.
+  // Named gaps, one spelling for every surface: MISSING_USAGE,
+  // MISSING_CACHE, MISSING_COST. Never a silent zero.
   missing: string[];
 }
+
+// The gap labels live here so the CLI, the MCP result and the tests name the
+// same dimension the same way. Three spellings of "cost" made two surfaces
+// disagree about whether a gap was reported.
+export const MISSING_CONSOLIDATION_USAGE = "consolidation usage";
+export const MISSING_CONSOLIDATION_CACHE = "consolidation cache usage";
+export const MISSING_CONSOLIDATION_COST = "consolidation cost (price unknown)";
 
 /**
  * Budget wiring for the seam's own model calls.
  *
- * Design: consolidation spends real money outside the agent loop, so it uses
+ * Design: consolidation spends real money outside the agent loop — so it uses
  * the same reserve-then-settle ledger as the run (D4: extra model work is
  * budgeted and accounted, never hidden outside the main call). One rule for
  * both entry points: a run is metered when it names a session that owns a
@@ -63,6 +70,38 @@ export interface ConsolidationBudget {
   sessionId: string;
   ledger: BudgetLedgerPort;
 }
+
+/**
+ * Decide whether one consolidation run is metered, and on which session.
+ *
+ * Design: one function both entry points call — writing this rule twice already
+ * produced two different answers to "was this run charged?".
+ * A run is metered only when all three hold: it scoped to exactly one session
+ * (several owners cannot share one run's spend, and charging the first would
+ * misattribute it), a [budget] section is declared for the Active Domain
+ * (without caps there is nothing to charge against), and the store can
+ * register those caps (the ledger's reserve passes for a session with no row,
+ * so a store that cannot register cannot enforce).
+ *
+ * `reason` is the caller-facing explanation when the run is unmetered; both
+ * surfaces print it instead of implying a cap was enforced.
+ */
+export type ConsolidationMetering =
+  | { metered: true; budget: ConsolidationBudget }
+  | { metered: false; reason: ConsolidationUnmeteredReason };
+
+export type ConsolidationUnmeteredReason =
+  | "no-scope-session"
+  | "several-scope-sessions"
+  | "no-declared-caps"
+  | "budget-setup-failed";
+
+export const CONSOLIDATION_UNMETERED_TEXT: Record<ConsolidationUnmeteredReason, string> = {
+  "no-scope-session": "a memory-list scope has no owning session to charge",
+  "several-scope-sessions": "several session owners cannot share one run's spend, and charging the first would misattribute it",
+  "no-declared-caps": "this session declared no [budget] caps, so these calls were not charged to a cap",
+  "budget-setup-failed": "the session's budget row or caps could not be registered",
+};
 
 /** A rejected reserve. The store counts it and stops spending; it is not a summary fault. */
 export class ConsolidationBudgetError extends Error {
@@ -146,7 +185,7 @@ function textOfMessage(message: unknown): string {
  * ran, so an aborted or failed stream cannot leave a hold behind.
  *
  * Design: when the provider sends no usage figure, the reservation is booked as
- * spend at its estimated amount instead of being settled as 0. Settling 0 would
+ * spend at its estimated amount — settling 0 would
  * let a silent provider evade the token cap entirely and read as a free call;
  * the reserved estimate is the only number this code has. The usage report still
  * names "consolidation usage" as missing.
@@ -263,7 +302,7 @@ export function createConsolidationSeams(
     usage.calls += 1;
     if (!raw) {
       // Text came back but the provider sent no usage block: say so, never 0.
-      if (!usage.missing.includes("consolidation usage")) usage.missing.push("consolidation usage");
+      if (!usage.missing.includes(MISSING_CONSOLIDATION_USAGE)) usage.missing.push(MISSING_CONSOLIDATION_USAGE);
       return;
     }
     usage.inputTokens += Number(raw.input) || 0;
@@ -284,8 +323,8 @@ export function createConsolidationSeams(
     } else {
       // No price table (custom endpoint) or no cost object at all: the dollar
       // figure is unknown. Never present it as free.
-      if (!usage.missing.includes("consolidation cost (price unknown)")) {
-        usage.missing.push("consolidation cost (price unknown)");
+      if (!usage.missing.includes(MISSING_CONSOLIDATION_COST)) {
+        usage.missing.push(MISSING_CONSOLIDATION_COST);
       }
     }
   };
@@ -304,8 +343,8 @@ export function createConsolidationSeams(
     }
     // pi-ai materialises cacheRead/cacheWrite as numbers, so an all-zero run is
     // "not reported", not "reported zero".
-    if (usage.calls > 0 && !cacheReported && !usage.missing.includes("consolidation cache usage")) {
-      usage.missing.push("consolidation cache usage");
+    if (usage.calls > 0 && !cacheReported && !usage.missing.includes(MISSING_CONSOLIDATION_CACHE)) {
+      usage.missing.push(MISSING_CONSOLIDATION_CACHE);
     }
   };
 
@@ -328,4 +367,73 @@ export function createConsolidationSeams(
   };
 
   return { summarize, classify, usage };
+}
+
+/** The store capabilities metering needs. Structural so kernel keeps no store import. */
+export interface ConsolidationMeteringStore {
+  ensureSession(sessionId: string, domain: string): Promise<void>;
+  // `any` for the caps argument: the concrete store takes its own BudgetCaps
+  // type, and a structural port has to accept that without kernel importing it.
+  initBudget?: (sessionId: string, caps: any) => void;
+  clearBudgetCaps?: (sessionId: string) => void;
+  createBudgetLedger(): BudgetLedgerPort;
+}
+
+/**
+ * Prepare metering for one run: register the session row and its caps, then
+ * report whether the run will actually be charged.
+ *
+ * Both entry points call this, so they cannot answer "was this metered?"
+ * differently. Never throws: a setup fault is reported as unmetered with the
+ * reason, because a broken budget must not turn a usable run into a failure.
+ */
+export async function resolveConsolidationMetering(opts: {
+  store: ConsolidationMeteringStore;
+  scope: { by: string; sessionIds: string[] };
+  domain?: { budget?: unknown };
+  // The wire caps for a declared [budget]. Takes `unknown` because kernel does
+  // not own the store's BudgetConfig type; the caller's mapper narrows it.
+  toCaps: (budget: any) => any;
+  domainLabel: string;
+  // An existing ledger over the same connection (the MCP engine already built
+  // one). Using it keeps one budget row and one set of statements per session.
+  ledger?: BudgetLedgerPort;
+  warn?: (message: string) => void;
+}): Promise<ConsolidationMetering> {
+  const warn = opts.warn ?? (() => {});
+  if (opts.scope.by !== "session" || opts.scope.sessionIds.length === 0) {
+    return { metered: false, reason: "no-scope-session" };
+  }
+  if (opts.scope.sessionIds.length > 1) {
+    return { metered: false, reason: "several-scope-sessions" };
+  }
+  const sessionId = opts.scope.sessionIds[0]!;
+  let ledger: BudgetLedgerPort;
+  try {
+    ledger = opts.ledger ?? opts.store.createBudgetLedger();
+  } catch (e) {
+    warn("budget ledger unavailable (" + (e instanceof Error ? e.message : String(e)) + ")");
+    return { metered: false, reason: "budget-setup-failed" };
+  }
+  try {
+    // The ledger row has an FK to sessions; a session reached only by
+    // consolidation may not have a row yet.
+    await opts.store.ensureSession(sessionId, opts.domainLabel);
+    if (!opts.domain?.budget) {
+      // No declared caps: release a stale row so spend history stays queryable
+      // but the session is not presented as capped.
+      try { opts.store.clearBudgetCaps?.(sessionId); } catch { /* fail-open */ }
+      return { metered: false, reason: "no-declared-caps" };
+    }
+    if (!opts.store.initBudget) {
+      // A store that cannot register caps cannot enforce them; claiming metered
+      // would report a cap that does not exist.
+      return { metered: false, reason: "budget-setup-failed" };
+    }
+    opts.store.initBudget(sessionId, opts.toCaps(opts.domain.budget));
+    return { metered: true, budget: { sessionId, ledger } };
+  } catch (e) {
+    warn("budget setup failed (" + (e instanceof Error ? e.message : String(e)) + ")");
+    return { metered: false, reason: "budget-setup-failed" };
+  }
 }

@@ -17,16 +17,26 @@ import {
   emptyRunUsage,
   createConsolidationSeams,
   isConsolidationBudgetError,
+  resolveConsolidationMetering,
+  CONSOLIDATION_UNMETERED_TEXT,
+  MISSING_CONSOLIDATION_USAGE,
+  MISSING_CONSOLIDATION_CACHE,
+  MISSING_CONSOLIDATION_COST,
   KernelJsonSchemas,
   KernelToolDescriptions,
   type LlmSession,
 } from "@anysearch-cli/kernel";
-import { domainTomlPath, resolveConsolidateScope, ConsolidateScopeError } from "@anysearch-cli/store";
+import {
+  domainTomlPath,
+  resolveConsolidateScope,
+  ConsolidateScopeError,
+  toBudgetCaps,
+  type BudgetConfig,
+} from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import {
   buildAnsChatConsolidateResult,
   buildAnsChatResult,
-  prepareConsolidateSessionBudget,
   resolveAnsChatSession,
 } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
@@ -163,11 +173,6 @@ export function registerAnsChat(
           sessionId?: string;
           operation?: "chat" | "consolidate";
           memoryIds?: number[];
-          // Reserved for the single-evidence correction (follow-up ticket). The
-          // wire schema still lists it so a caller can already pass it, but it
-          // is not read here: silently accepting a flag that does nothing would
-          // claim a behavior this run does not have.
-          allowSingleEvidence?: boolean;
           dryRun?: boolean;
         };
         if (operation === "consolidate") {
@@ -193,30 +198,22 @@ export function registerAnsChat(
             throw e;
           }
           if (signal?.aborted) return buildAnsChatResult("");
-          // Budget (D4). The same rule the CLI applies: charge the session the
-          // run was scoped to, and only that one.
+          // Budget (D4). The rule lives in the kernel, so this tool and the CLI
+          // cannot answer "was this run charged?" differently.
           //
-          // Design: a memory-list scope has no owning session, so its calls are
-          // reported unmetered rather than charged to a session the caller
-          // never named (a `sessionId` given alongside the list is echoed, not
-          // applied). Billing it anyway would make the two entry points meter
-          // the same request differently.
-          //
-          // Design: this tool takes one `sessionId` per call, so a multi-owner
-          // run cannot happen here. The CLI accepts several `--session` flags
-          // and goes unmetered for the same reason (one run's spend cannot be
-          // split honestly across owners).
-          const singleSessionScope = scope.by === "session" && scope.sessionIds.length === 1;
-          const budgetSessionId = singleSessionScope ? scope.sessionIds[0] : undefined;
-          const ledger = eng.ledger;
-          // Registering the row and its caps is what makes a cap real: the
-          // ledger's reserve passes for every session without a row.
-          const budgetReady = budgetSessionId && ledger
-            ? await prepareConsolidateSessionBudget(store, budgetSessionId, eng.config?.budget)
-            : false;
-          const budget = budgetReady && budgetSessionId && ledger
-            ? { sessionId: budgetSessionId, ledger }
-            : undefined;
+          // Design: the engine's own ledger is reused rather than a second one —
+          // over the same connection, so the session's [budget] row, the
+          // reserves and the settles all see one set of statements.
+          const metering = await resolveConsolidationMetering({
+            store: store as never,
+            scope,
+            domain: eng.config,
+            toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+            domainLabel: "consolidate",
+            ...(eng.ledger ? { ledger: eng.ledger } : {}),
+            warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+          });
+          const budget = metering.metered ? metering.budget : undefined;
 
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
           if (providerName && modelName) {
@@ -257,9 +254,11 @@ export function registerAnsChat(
             totalTokens: 0,
             costUsd: 0,
             costBasis: "not-called" as const,
-            missing: ["consolidation usage", "consolidation cache usage", "consolidation cost"],
+            missing: [MISSING_CONSOLIDATION_USAGE, MISSING_CONSOLIDATION_CACHE, MISSING_CONSOLIDATION_COST],
           };
-          return buildAnsChatConsolidateResult(report, usage, budget ? {} : { budgetUnmetered: true });
+          return buildAnsChatConsolidateResult(report, usage, metering.metered
+            ? {}
+            : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
         }
         // The message is optional on the wire because consolidate does not use
         // it; chat still needs one. Checked before the configuration gate: a

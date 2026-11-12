@@ -11,7 +11,11 @@
 // "price-estimate" case. A server-sent price is the "provider-reported" case.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { createConsolidationSeams, isConsolidationBudgetError } from "../src/consolidation";
+import {
+  createConsolidationSeams,
+  isConsolidationBudgetError,
+  resolveConsolidationMetering,
+} from "../src/consolidation";
 import type { BudgetLedgerPort } from "../src/ports";
 
 let passed = 0;
@@ -227,6 +231,77 @@ async function main() {
     ]);
     assert(verdict.label === "supported" || verdict.label === "uncertain", "classify returns a real verdict label");
     assert(seams.usage.calls === 0, "classify makes no model call, so it adds no usage");
+  }
+
+  // --- 9. the metering rule is one decision, not two ---
+  {
+    const makeStore = (opts: { caps?: boolean; fail?: boolean }) => {
+      const calls: string[] = [];
+      return {
+        calls,
+        store: {
+          ensureSession: async (id: string) => { calls.push("ensure:" + id); if (opts.fail) throw new Error("boom"); },
+          initBudget: (id: string) => { calls.push("init:" + id); },
+          clearBudgetCaps: (id: string) => { calls.push("clear:" + id); },
+          createBudgetLedger: () => recordingLedger(),
+        },
+      };
+    };
+
+    // A memory-list scope has no owning session: unmetered, and no row is touched.
+    {
+      const s = makeStore({ caps: true });
+      const m = await resolveConsolidationMetering({
+        store: s.store, scope: { by: "memory", sessionIds: [] },
+        domain: { budget: {} }, toCaps: () => ({}), domainLabel: "c",
+      });
+      assert(!m.metered && m.reason === "no-scope-session", "a memory scope is unmetered (got " + JSON.stringify(m) + ")");
+      assert(s.calls.length === 0, "an unmetered scope registers nothing");
+    }
+
+    // Several owners cannot share one run's spend.
+    {
+      const s = makeStore({ caps: true });
+      const m = await resolveConsolidationMetering({
+        store: s.store, scope: { by: "session", sessionIds: ["a", "b"] },
+        domain: { budget: {} }, toCaps: () => ({}), domainLabel: "c",
+      });
+      assert(!m.metered && m.reason === "several-scope-sessions", "several owners are unmetered");
+    }
+
+    // No declared [budget]: nothing to charge against.
+    {
+      const s = makeStore({ caps: false });
+      const m = await resolveConsolidationMetering({
+        store: s.store, scope: { by: "session", sessionIds: ["a"] },
+        domain: {}, toCaps: () => ({}), domainLabel: "c",
+      });
+      assert(!m.metered && m.reason === "no-declared-caps", "a domain without [budget] is unmetered");
+      assert(s.calls.includes("clear:a"), "the stale row is released so no cap is implied");
+    }
+
+    // Declared caps + one session: metered, and the caps are registered.
+    {
+      const s = makeStore({ caps: true });
+      const m = await resolveConsolidationMetering({
+        store: s.store, scope: { by: "session", sessionIds: ["a"] },
+        domain: { budget: {} }, toCaps: () => ({ tokenCap: 10 }), domainLabel: "c",
+      });
+      assert(m.metered === true, "one session with declared caps is metered");
+      assert(s.calls.includes("ensure:a") && s.calls.includes("init:a"), "the row is registered before the caps");
+    }
+
+    // Setup failure: unmetered with a reason, never a thrown error.
+    {
+      const s = makeStore({ caps: true, fail: true });
+      const warned: string[] = [];
+      const m = await resolveConsolidationMetering({
+        store: s.store, scope: { by: "session", sessionIds: ["a"] },
+        domain: { budget: {} }, toCaps: () => ({}), domainLabel: "c", warn: (w) => warned.push(w),
+      });
+      assert(!m.metered && m.reason === "budget-setup-failed", "a setup fault reports unmetered, not a failure");
+      assert(warned.length === 1, "the fault is named once (got " + JSON.stringify(warned) + ")");
+    }
   }
 
   console.log("consolidation-usage: " + passed + " passed, " + failed + " failed");

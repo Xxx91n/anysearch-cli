@@ -114,7 +114,7 @@ test("several --session owners: unmetered, because one run's spend cannot be spl
   const r = await run(["--session", "cli-session-a", "--session", "cli-session-b", "--dry-run"]);
   assert.equal(r.code, 0, "stderr: " + r.err);
   assert.match(r.out, /scope: session cli-session-a, cli-session-b/);
-  assert.match(r.out, /budget: unmetered — several --session owners/);
+  assert.match(r.out, /budget: unmetered — several session owners cannot share one run's spend/);
 });
 
 test("help documents the scope requirement and the cost basis", async () => {

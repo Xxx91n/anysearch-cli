@@ -53,8 +53,8 @@ export type ConsolidateClassifyFn = (claim: string, evidence: ConsolidateEvidenc
 /**
  * Which materials a run was allowed to read.
  *
- * Design: `by` names the rule that actually selected them, and the selector
- * that wins is always the narrower one — `memoryIds` beats `sessionId`, so a
+ * Design: `by` names the rule that actually selected them — the selector that
+ * wins is always the narrower one, so `memoryIds` beats `sessionId` and a
  * caller cannot accidentally widen an explicit list by repeating a session
  * handle. `archive` exists only for the eval runner and the existing
  * regression tests; the caller-facing resolver never produces it.
@@ -214,8 +214,8 @@ export function isValidConsolidateSessionId(value: unknown): value is string {
 /**
  * One readable line describing the scope a run actually used.
  *
- * Design: both entry points print this, so it lives here. Two copies drifted
- * before (one said "of N requested" for a session scope, the other did not);
+ * Design: both entry points print this, so it lives here — two copies drifted
+ * before (one said "of N requested" for a session scope, the other did not),
  * one function makes the CLI and the MCP result describe the same run the same
  * way.
  */

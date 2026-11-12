@@ -14,6 +14,11 @@ import {
   createLlmSession,
   createConsolidationSeams,
   isConsolidationBudgetError,
+  resolveConsolidationMetering,
+  CONSOLIDATION_UNMETERED_TEXT,
+  MISSING_CONSOLIDATION_USAGE,
+  MISSING_CONSOLIDATION_CACHE,
+  MISSING_CONSOLIDATION_COST,
   resolveDbPath,
 } from "@anysearch-cli/kernel";
 import {
@@ -23,6 +28,7 @@ import {
   formatConsolidateScope,
   loadDomainByNameIn,
   toBudgetCaps,
+  type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
@@ -140,59 +146,32 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteSessionStore(dbPath);
 
-  // Budget wiring (D4). One rule, the same one the MCP tool applies: a run is
-  // metered only when it names a session it can charge, and the Active Domain's
-  // [budget] caps are registered on that row before any call.
+  // Budget wiring (D4). The rule lives in the kernel so this path and the MCP
+  // tool cannot answer "was this run charged?" differently.
   //
-  // Design: a memory-list scope has no owning session, so there is nothing to
-  // register caps on and nothing to charge. The run then reports itself
-  // unmetered instead of picking a session the caller never named.
-  //
-  // Design: registering caps here (not only at `ans chat`) is what makes the
-  // cap real on this path — the ledger's reserve passes for every session that
-  // has no row, so without this the help's "budget caps apply" would be a lie.
-  //
-  // Design: several `--session` flags name several owners, and one run's model
-  // spend cannot be split across them honestly. The run then goes unmetered and
-  // says why; charging the first session would attribute another session's work
-  // to it. One session is the only shape this path meters.
-  const multiSession = scope.by === "session" && scope.sessionIds.length > 1;
-  const budgetSessionId = scope.by === "session" && !multiSession ? scope.sessionIds[0] : undefined;
-  let budget: { sessionId: string; ledger: ReturnType<typeof store.createBudgetLedger> } | undefined;
-  if (budgetSessionId) {
-    const ledger = store.createBudgetLedger();
-    try {
-      // The ledger row has an FK to sessions, and a session reached only by
-      // consolidation may not have a row yet. Register it first (idempotent),
-      // then apply the caps.
-      await store.ensureSession(budgetSessionId, "consolidate");
-      // Same resolved domain `ans chat` uses, so a [budget] section declared
-      // for this domain applies to consolidation too. A domain that fails to
-      // load leaves the caps unregistered (unmetered) rather than failing here.
-      const domainName = process.env.ANS_DOMAIN || "default";
-      const domain = loadDomainByNameIn(domainName, domainSearchDirs());
-      if (domain.budget) {
-        if (!store.initBudget) {
-          // A store that cannot register caps cannot enforce them; treating
-          // that as metered would report a cap that does not exist.
-          process.stderr.write("[warn] session store lacks initBudget; consolidation runs unmetered\n");
-        } else {
-          store.initBudget(budgetSessionId, toBudgetCaps(domain.budget));
-          budget = { sessionId: budgetSessionId, ledger };
-        }
-      } else {
-        store.clearBudgetCaps?.(budgetSessionId);
-        // No declared [budget] means no cap exists, so there is nothing to
-        // charge against; the run still reports itself unmetered.
-      }
-    } catch (e) {
-      // Fail-open: a broken budget setup must not make consolidation unusable,
-      // but it must not pretend to meter either.
-      process.stderr.write(
-        "[warn] budget setup failed (" + (e instanceof Error ? e.message : String(e)) + "); consolidation runs unmetered\n",
-      );
-    }
+  // Design: registering the Active Domain's caps here (not only at `ans chat`)
+  // is what makes the cap real — the ledger's reserve passes for every session
+  // that has no row, so a run that never registers one would claim a cap it
+  // does not have.
+  let domainForBudget: ReturnType<typeof loadDomainByNameIn> | undefined;
+  try {
+    domainForBudget = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs());
+  } catch (e) {
+    // Same fail-open contract `ans chat` uses: a missing/broken domain leaves
+    // the run unmetered, not broken. The metering result says so.
+    process.stderr.write(
+      "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); consolidation runs unmetered\n",
+    );
   }
+  const metering = await resolveConsolidationMetering({
+    store,
+    scope,
+    domain: domainForBudget,
+    toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+    domainLabel: "consolidate",
+    warn: (m) => process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n"),
+  });
+  const budget = metering.metered ? metering.budget : undefined;
 
   let seams: ReturnType<typeof createConsolidationSeams> | undefined;
   if (providerName && modelName) {
@@ -259,18 +238,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
   } else {
     process.stdout.write(
-      "usage: consolidation calls 0, cost unknown (not called), MISSING consolidation usage + " +
-        "consolidation cache usage + consolidation cost\n",
+      "usage: consolidation calls 0, cost unknown (not called), MISSING " +
+        [MISSING_CONSOLIDATION_USAGE, MISSING_CONSOLIDATION_CACHE, MISSING_CONSOLIDATION_COST].join(" + ") + "\n",
     );
   }
-  if (!budget) {
-    process.stdout.write(
-      scope.by === "memory"
-        ? "budget: unmetered — a memory-list scope has no owning session to charge.\n"
-        : multiSession
-          ? "budget: unmetered — several --session owners cannot share one run's spend, and charging the first would misattribute it.\n"
-          : "budget: unmetered — this session declared no [budget] caps, so these calls were not charged to a cap.\n",
-    );
+  if (!metering.metered) {
+    process.stdout.write("budget: unmetered — " + CONSOLIDATION_UNMETERED_TEXT[metering.reason] + ".\n");
   }
 
   return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;

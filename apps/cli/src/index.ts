@@ -53,7 +53,7 @@ const help = [
   " switch-state Read switch governance state (S0-S4)",
   " entity Entity merge / unmerge / review list",
   " relation Entity relation edges: list + backfill-relations",
-  " consolidate Turn episode records into semantic memories (fidelity gate)",
+  " consolidate Turn selected materials into long-term knowledge (needs --session or --memory)",
   " hitl HITL review queue for blocked retrieved-derived URLs",
   "",
   "Options:",
