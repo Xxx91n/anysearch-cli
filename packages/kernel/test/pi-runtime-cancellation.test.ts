@@ -72,6 +72,25 @@ async function waitFor(predicate: () => boolean, label: string, timeoutMs = STRE
   throw new Error("timed out waiting for " + label);
 }
 
+/**
+ * Wait for the run to end, bounded by the liveness budget.
+ *
+ * The timer is cleared when the race settles: an uncleared 15s timer would keep
+ * the test process alive after a passing assertion (the old 2s value made that
+ * harmless, the new one would not).
+ */
+async function settleWithTimeout(done: Promise<unknown>, timeoutMs = STREAM_START_TIMEOUT_MS): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([done, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Collect events until the generator ends; returns the events and a settled flag. */
 function consume(runtime: PiAgentRuntime, input: string) {
   const events: AgentEvent[] = [];
@@ -101,12 +120,7 @@ async function main() {
     await waitFor(() => streamCalls === 1, "the stub stream to start");
     const abortedAt = Date.now();
     caller.abort("client cancelled");
-    await Promise.race([
-      consumed.done,
-      // Bounded by the same liveness budget: this wait must end, but how fast
-      // the event loop gets to it under CI load is not what is under test.
-      new Promise((resolve) => setTimeout(resolve, STREAM_START_TIMEOUT_MS)),
-    ]);
+    await settleWithTimeout(consumed.done);
 
     assert(consumed.settled(), "1: run ended after the caller signal aborted a never-resolving stream");
     // The point is that cancellation does not wait for the stalled stream; the
@@ -196,10 +210,7 @@ async function main() {
 
     await waitFor(() => streamCalls === 1, "the stub stream to start");
     caller.abort("client cancelled");
-    await Promise.race([
-      consumed.done,
-      new Promise((resolve) => setTimeout(resolve, STREAM_START_TIMEOUT_MS)),
-    ]);
+    await settleWithTimeout(consumed.done);
     // Give a late completion write a chance to (wrongly) land.
     await new Promise((r) => setTimeout(r, 30));
 
@@ -290,10 +301,7 @@ async function main() {
     await waitFor(() => streamCalls === 1, "the gated stream to start");
     caller.abort("cancel before the turn finished");
     release();
-    await Promise.race([
-      consumed.done,
-      new Promise((resolve) => setTimeout(resolve, STREAM_START_TIMEOUT_MS)),
-    ]);
+    await settleWithTimeout(consumed.done);
     // The agent loop continues in the background after the generator returns;
     // wait for the late turn to reach shouldStopAfterTurn, then give the cold
     // path time to (wrongly) write.
