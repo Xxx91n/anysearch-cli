@@ -263,14 +263,16 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stdout.write("budget: unmetered — " + CONSOLIDATION_UNMETERED_TEXT[metering.reason] + ".\n");
   }
 
-  // Design: a budget refusal is an incomplete run, so it must not exit 0 — an
-  // automated caller would read "nothing written, no error" as success. A run
-  // that wrote nothing at all is a failure whether the reason was a missing
-  // summary or a refused cap.
-  if (r.budgetRejected > 0 && r.add === 0 && r.update === 0) {
+  // Design: any budget refusal makes the run incomplete, so it must not exit 0.
+  // The partial-work case matters too — an earlier cluster may have written
+  // knowledge before a later one was refused, and exiting 0 there would tell an
+  // automated caller the whole scope was handled. The report above already
+  // shows what landed; the exit code carries "not finished".
+  if (r.budgetRejected > 0) {
     process.stderr.write(
       "ans consolidate: stopped by the session budget (" + r.budgetRejected +
-        " call(s) refused); nothing was written.\n",
+        " call(s) refused); " +
+        (r.add + r.update === 0 ? "nothing was written." : "the rest of the scope was not processed.") + "\n",
     );
     return 1;
   }

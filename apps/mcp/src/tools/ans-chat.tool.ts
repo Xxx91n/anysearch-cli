@@ -251,16 +251,6 @@ export function registerAnsChat(
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
             return toolError("ans_chat", e instanceof Error ? e.message : String(e));
           }
-          // Design: a run the session cap stopped wrote nothing, so it is an
-          // error result, not a successful report. A caller reading
-          // "add 0, update 0" as success would retry forever against the same
-          // cap; the failure channel makes the stop explicit.
-          if (report.budgetRejected > 0 && report.add === 0 && report.update === 0) {
-            return toolFailure(
-              "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
-                " model call(s) refused); nothing was written.",
-            );
-          }
           const usage = seams?.usage ?? {
             calls: 0,
             inputTokens: 0,
@@ -272,6 +262,31 @@ export function registerAnsChat(
             costBasis: "not-called" as const,
             missing: [MISSING_CONSOLIDATION_USAGE, MISSING_CONSOLIDATION_CACHE, MISSING_CONSOLIDATION_COST],
           };
+          // Design: any budget refusal makes the run incomplete, so it is an
+          // error result — but the work that DID happen is still reported. A
+          // caller must see the spend already incurred, the scope read, and the
+          // rows already written; hiding them would make a partial run look
+          // like it never started.
+          if (report.budgetRejected > 0) {
+            const result = buildAnsChatConsolidateResult(report, usage, metering.metered
+              ? {}
+              : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
+            return {
+              ...result,
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
+                    " model call(s) refused); " +
+                    (report.add + report.update === 0
+                      ? "nothing was written."
+                      : "the rest of the scope was not processed.") +
+                    "\n" + result.content.map((c) => c.text).join("\n"),
+                },
+              ],
+            };
+          }
           return buildAnsChatConsolidateResult(report, usage, metering.metered
             ? {}
             : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });

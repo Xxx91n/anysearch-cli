@@ -245,6 +245,16 @@ assert(rep.add === 0 && rep.update === 0 && rep.noop === 1, "unchanged state re-
       "the outside list agrees with the withinScope flag",
     );
   }
+
+  // The scope is "every material this run read", not "this cluster's entity".
+  // A run over BOTH sessions read Theta's materials too, so an update to the
+  // Kappa row must not call Theta's materials "outside".
+  oRep = await builder.consolidateMemory({ scope: scopeOf({ sessionIds: [sA.id, sB.id] }) });
+  for (const u of oRep.updates) {
+    assert(u.withinScope === true, "an update over both sessions is entirely in scope");
+    assert(u.outsideScopeMaterialIds.length === 0, "and lists no outside materials");
+  }
+
   builder.close();
 }
 

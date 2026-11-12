@@ -408,6 +408,12 @@ export async function consolidateMemoryRun(
       )
       .all(...params) as EpisodeRow[];
     report.scope.materialsRead = rows.length;
+    // "In scope" means "this run read it", not "it belongs to the cluster being
+    // processed": dedup compares against every live knowledge row, so a matched
+    // row may have been built from materials of another entity that this run
+    // also read. Using the whole read set is what makes the scope verdict
+    // honest in both directions.
+    const readIds = new Set(rows.map((r) => r.id));
 
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
@@ -531,7 +537,7 @@ export async function consolidateMemoryRun(
           let prev: number[] = [];
           try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
           const newId = insert(prev);
-          const outside = prev.filter((id) => !epsIds.includes(id));
+          const outside = prev.filter((id) => !readIds.has(id));
           report.updates.push({ oldId: row.id, newId, withinScope: outside.length === 0, outsideScopeMaterialIds: outside });
           report.update++;
         });

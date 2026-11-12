@@ -251,8 +251,17 @@ export function buildAnsChatConsolidateResult(
   const outside = (report.updates ?? []).filter((u) => !u.withinScope);
   const outsideText = outside.length === 0
     ? ""
-    : "\noutside scope: " + outside.map((u) => u.oldId + " -> " + u.newId).join(", ") +
-      " (knowledge built from materials this scope did not read; the correction still replaced it)";
+    : "\noutside scope: " + outside
+      .map((u) => {
+        // The knowledge ids alone are not enough for a text-only client: it
+        // needs to see which materials it did not select were carried by the
+        // replaced row.
+        const materials = u.outsideScopeMaterialIds.length > 0
+          ? u.outsideScopeMaterialIds.join(", ")
+          : "none listed";
+        return "knowledge " + u.oldId + " -> " + u.newId + " (materials outside this scope: " + materials + ")";
+      })
+      .join("; ");
   const line =
     "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
     ": add " + report.add + ", update " + report.update +
