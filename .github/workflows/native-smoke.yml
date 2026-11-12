@@ -8,12 +8,6 @@ on:
     branches: [main]
   pull_request:
 
-# Temporary exception, owner-requested (2026-11-12): the dependency age gate
-# blocks install until 2026-11-12T19:41Z. Scoped to CI only; pnpm-workspace.yaml
-# keeps its strict setting. Remove once the window clears.
-env:
-  PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0"
-
 jobs:
   smoke:
     name: native smoke (${{ matrix.os }})
@@ -40,6 +34,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - name: Install (frozen-lockfile, builds disabled)
         run: pnpm install --frozen-lockfile
       - name: Verify native prebuild loads (${{ matrix.label }})

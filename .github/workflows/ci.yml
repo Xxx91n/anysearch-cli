@@ -13,18 +13,6 @@ concurrency:
 permissions:
   contents: read
 
-# Temporary exception, owner-requested (2026-11-12): the age gate cannot pass
-# until the last too-young transitive dependency clears at 2026-11-12T19:41Z,
-# and the repo rules (AGENTS.md, scripts/dep-age-status.mjs, ship-gate E6)
-# explicitly forbid relaxing it. This sets the override for CI installs only so
-# the rest of the pipeline (checks, tests, build) actually runs. It does NOT
-# touch pnpm-workspace.yaml (that would fail E6) and does NOT touch release.yml.
-#
-# Remove this block once the gate clears; the release path keeps the strict
-# check. Tracking: this PR's thread.
-env:
-  PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0"
-
 # ponytail: matrix trimmed to ubuntu+windows (mac only differs in arm64 binary, covered
 # by better-sqlite3 prebuild). Add macos-latest when a mac user reports a real issue.
 jobs:
@@ -45,6 +33,9 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       # ponytail: --ignore-scripts required because better-sqlite3 ships prebuilds
       # and our allowBuilds=false pnpm-workspace.yaml entry is intentional.
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
@@ -103,6 +94,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - run: pnpm -w turbo build
       - name: install-smoke lane
@@ -128,6 +122,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: vector-arm golden cases (store test:online)
         run: pnpm -C packages/store test:online
@@ -156,6 +153,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: anysearch MCP live probe (retriever test:online)
         run: pnpm -C packages/retriever test:online
