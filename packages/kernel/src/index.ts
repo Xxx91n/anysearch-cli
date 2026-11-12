@@ -23,6 +23,10 @@ export * from "@anysearch-cli/retriever";
 export * from "./composition";
 export * from "./llm-init";
 
+// Explicit consolidation seams (D4/D5): one summarize + fidelity gate + usage
+// ledger shared by `ans consolidate` and `ans_chat operation=consolidate`.
+export * from "./consolidation";
+
 // S1 query rewrite (pure + LLM seam, fail-open).
 export * from "./query-rewrite";
 export * from "./t0-projection";

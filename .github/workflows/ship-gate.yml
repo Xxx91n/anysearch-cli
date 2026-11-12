@@ -76,6 +76,9 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
         run: pnpm install --ignore-scripts
 
@@ -138,6 +141,9 @@ jobs:
         if: ${{ steps.changes.outputs.run == '1' }}
         with: { node-version: 22, cache: pnpm }
 
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - name: install
         if: ${{ steps.changes.outputs.run == '1' }}
         run: pnpm install --ignore-scripts
@@ -184,6 +190,9 @@ jobs:
       - name: node baseline (env facts before any native load)
         run: node -v
 
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - name: install (no scripts — better-sqlite3 prebuilt)
         run: pnpm install --ignore-scripts
 

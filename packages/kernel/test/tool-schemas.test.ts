@@ -46,7 +46,13 @@ assert.ok(KS.search_web.required?.includes("query"));
 assert.ok(KS.research_web.required?.includes("question"));
 assert.ok(KS.recall_memory.required?.includes("query"));
 assert.ok(KS.query_knowledge.required?.includes("query"));
-assert.ok(KS.ans_chat.required?.includes("message"));
+// #260: ans_chat's message is no longer unconditionally required. The
+// operation=consolidate branch reads stored materials and takes no message, so
+// AJV cannot require it; the handler still rejects a chat call without one.
+assert.ok(
+  !KS.ans_chat.required?.includes("message"),
+  "ans_chat: message is not an unconditional wire requirement (consolidate takes none)",
+);
 
 // 4. Keyword signatures — minLength on required strings.
 assert.equal(KS.search_web.properties?.query?.minLength, 1);

@@ -343,8 +343,13 @@ test('native tools: parameters projected verbatim from the kernel schema source'
   const rc = (ctx.tools.get('ans_recall_memory') as { parameters: { properties: Record<string, unknown>; required: string[] } }).parameters;
   assert.deepEqual(rc.required, ['query']);
   assert.ok('limit' in rc.properties);
-  const ac = (ctx.tools.get('ans_ans_chat') as { parameters: { required: string[] } }).parameters;
-  assert.deepEqual(ac.required, ['message']);
+  const ac = (ctx.tools.get('ans_ans_chat') as { parameters: { properties: Record<string, unknown>; required?: string[] } }).parameters;
+  // #260: ans_chat has no unconditional required field any more — the
+  // operation=consolidate branch takes no message, so the host schema must not
+  // force one. The projection still has to carry the message property itself.
+  assert.ok('message' in ac.properties, 'ans_chat parameters lack message');
+  assert.ok(!(ac.required ?? []).includes('message'), 'ans_chat must not require message unconditionally');
+  assert.ok('operation' in ac.properties && 'memoryIds' in ac.properties, 'ans_chat parameters lack the consolidation fields');
 });
 
 test('native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio', async () => {

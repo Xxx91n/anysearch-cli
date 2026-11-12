@@ -10,10 +10,35 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, piSessionOptions, emptyRunUsage, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
-import { domainTomlPath } from "@anysearch-cli/store";
+import {
+  PiAgentRuntime,
+  parseContextWindow,
+  piSessionOptions,
+  emptyRunUsage,
+  createConsolidationSeams,
+  isConsolidationBudgetError,
+  resolveConsolidationMetering,
+  CONSOLIDATION_UNMETERED_TEXT,
+  MISSING_CONSOLIDATION_USAGE,
+  MISSING_CONSOLIDATION_CACHE,
+  MISSING_CONSOLIDATION_COST,
+  KernelJsonSchemas,
+  KernelToolDescriptions,
+  type LlmSession,
+} from "@anysearch-cli/kernel";
+import {
+  domainTomlPath,
+  resolveConsolidateScope,
+  ConsolidateScopeError,
+  toBudgetCaps,
+  type BudgetConfig,
+} from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
-import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
+import {
+  buildAnsChatConsolidateResult,
+  buildAnsChatResult,
+  resolveAnsChatSession,
+} from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -137,7 +162,143 @@ export function registerAnsChat(
       // signal (response stream closed). The runtime aborts the agent loop.
       const signal = requestSignal(ctx);
       return observeTool(eng, "ans_chat", ctx, async (span) => {
-        const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
+        const {
+          message,
+          sessionId: requestedSessionId,
+          operation = "chat",
+          memoryIds,
+          dryRun,
+        } = (args ?? {}) as {
+          message?: string;
+          sessionId?: string;
+          operation?: "chat" | "consolidate";
+          memoryIds?: number[];
+          dryRun?: boolean;
+        };
+        if (operation === "consolidate") {
+          // D5/Q18: consolidation over an explicitly selected scope, sharing
+          // the CLI's rules and seams so the two entries cannot disagree.
+          // A missing or malformed scope is a rejected call, never a
+          // full-archive run.
+          const store = eng.store;
+          if (!store || typeof store.consolidateMemory !== "function") {
+            return toolFailure("ans_chat: consolidation requires the session store, which this server did not wire.");
+          }
+          if (signal?.aborted) return buildAnsChatResult("");
+          let scope: ReturnType<typeof resolveConsolidateScope>;
+          try {
+            scope = resolveConsolidateScope({
+              sessionId: requestedSessionId,
+              memoryIds,
+            });
+          } catch (e) {
+            if (e instanceof ConsolidateScopeError) {
+              return toolFailure("ans_chat consolidate: " + e.message);
+            }
+            throw e;
+          }
+          if (signal?.aborted) return buildAnsChatResult("");
+          // Budget (D4). The rule lives in the kernel, so this tool and the CLI
+          // cannot answer "was this run charged?" differently.
+          //
+          // Design: the engine's own ledger is reused rather than a second one —
+          // over the same connection, so the session's [budget] row, the
+          // reserves and the settles all see one set of statements.
+          const metering = await resolveConsolidationMetering({
+            store: store as never,
+            scope,
+            domain: eng.config,
+            toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+            domainLabel: "consolidate",
+            ...(eng.ledger ? { ledger: eng.ledger } : {}),
+            warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+          });
+          // Design: the awaits above open a window the earlier check cannot see.
+          // A request cancelled while waiting for the meter or the LLM session
+          // must not go on to spend money and commit memory, so every wait is
+          // followed by the same check.
+          if (signal?.aborted) return buildAnsChatResult("");
+          const budget = metering.metered ? metering.budget : undefined;
+
+          let seams: ReturnType<typeof createConsolidationSeams> | undefined;
+          if (providerName && modelName) {
+            try {
+              const llm = await getLlmSession();
+              if (signal?.aborted) return buildAnsChatResult("");
+              // The seams carry this request's own usage counter and budget
+              // binding. They are handed to the run as a per-call dependency
+              // instead of being written onto the shared store: two concurrent
+              // requests would otherwise read each other's spend, and a
+              // memory-scoped run would inherit whatever the last session run
+              // installed.
+              seams = createConsolidationSeams(llm, budget ? { budget } : {});
+            } catch (e) {
+              // Fail-open: the store reports llmUnavailable per cluster, and the
+              // usage block names the missing accounting instead of faking it.
+              process.stderr.write(
+                "[anysearch] ans_chat consolidate LLM init failed (" +
+                  (e instanceof Error ? e.message : String(e)) + ")\n",
+              );
+            }
+          }
+          let report: Awaited<ReturnType<typeof store.consolidateMemory>>;
+          try {
+            report = await store.consolidateMemory({
+              dryRun: dryRun === true,
+              scope,
+            }, seams ? { summarize: seams.summarize, classify: seams.classify } : undefined);
+          } catch (e) {
+            if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
+            return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          }
+          const usage = seams?.usage ?? {
+            calls: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+            costBasis: "not-called" as const,
+            missing: [MISSING_CONSOLIDATION_USAGE, MISSING_CONSOLIDATION_CACHE, MISSING_CONSOLIDATION_COST],
+          };
+          // Design: any budget refusal makes the run incomplete, so it is an
+          // error result — but the work that DID happen is still reported. A
+          // caller must see the spend already incurred, the scope read, and the
+          // rows already written; hiding them would make a partial run look
+          // like it never started.
+          if (report.budgetRejected > 0) {
+            const result = buildAnsChatConsolidateResult(report, usage, metering.metered
+              ? {}
+              : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
+            return {
+              ...result,
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
+                    " model call(s) refused); " +
+                    (report.add + report.update === 0
+                      ? "nothing was written."
+                      : "the rest of the scope was not processed.") +
+                    "\n" + result.content.map((c) => c.text).join("\n"),
+                },
+              ],
+            };
+          }
+          return buildAnsChatConsolidateResult(report, usage, metering.metered
+            ? {}
+            : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
+        }
+        // The message is optional on the wire because consolidate does not use
+        // it; chat still needs one. Checked before the configuration gate: a
+        // missing argument is the caller's usage error regardless of whether a
+        // model happens to be configured.
+        const chatMessage = message?.trim();
+        if (!chatMessage) {
+          return toolFailure("ans_chat: message is required unless operation is \"consolidate\".");
+        }
         if (!providerName || !modelName) {
           // Missing configuration is an execution failure, not a successful
           // chat whose text happens to say "not configured".
@@ -210,7 +371,7 @@ export function registerAnsChat(
           // Retrieval/tool work is counted separately from LLM usage: a search
           // spends provider quota, not model tokens.
           const toolCalls: Record<string, number> = {};
-          for await (const event of runtime.run(message)) {
+          for await (const event of runtime.run(chatMessage)) {
             if (event.type === "text") output += event.content;
             else if (event.type === "tool_call") {
               toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;

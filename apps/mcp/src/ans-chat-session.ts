@@ -22,8 +22,18 @@
 // history, so a threaded handle is a new recovery each call. The recovery
 // digest (#189) is injected once per call; that is the resume unit here, not
 // the handle's lifetime.
-import type { BudgetLedgerPort, CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
-import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
+import type {
+  BudgetLedgerPort,
+  CompositionResult,
+  ConsolidationUsage,
+  SessionStorePort,
+} from "@anysearch-cli/kernel";
+import {
+  formatConsolidateScope,
+  toBudgetCaps,
+  type BudgetConfig,
+  type ConsolidateReport,
+} from "@anysearch-cli/store";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -208,5 +218,87 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
         : []),
     ],
     ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
+  };
+}
+
+// ---- consolidation result (D5 / Q18 / Q19) ----
+
+// The report and usage shapes are imported, not re-declared: a second copy of
+// the store's report would drift the moment a field is added on one side, and
+// the MCP tool already depends on @anysearch-cli/store.
+
+/**
+ * Consolidation result.
+ *
+ * The report lands in `structuredContent` (the host reads categories there)
+ * and one readable line stays in `content` for content-only proxies. The scope
+ * is always echoed: a caller must be able to see which materials were read
+ * instead of inferring it from the flags it thinks it sent.
+ *
+ * Design: `skip` and `conflict` are the categories the caller acts on, and
+ * `gateRejected` feeds exactly one of them (conflict). Counting it in both
+ * would report one event twice and make the tallies not add up.
+ */
+export function buildAnsChatConsolidateResult(
+  report: ConsolidateReport,
+  usage: ConsolidationUsage,
+  extra: { budgetUnmetered?: boolean; budgetUnmeteredReason?: string },
+): AnsChatToolResult {
+  const s = report.scope;
+  // Knowledge built from materials outside the selected scope can still be
+  // replaced by a reliable correction (shared knowledge, D5/D6). The result
+  // names those rows so "only the selected materials moved" is never assumed.
+  const outside = (report.updates ?? []).filter((u) => !u.withinScope);
+  const outsideText = outside.length === 0
+    ? ""
+    : "\noutside scope: " + outside
+      .map((u) => {
+        // The knowledge ids alone are not enough for a text-only client: it
+        // needs to see which materials it did not select were carried by the
+        // replaced row.
+        const materials = u.outsideScopeMaterialIds.length > 0
+          ? u.outsideScopeMaterialIds.join(", ")
+          : "none listed";
+        return "knowledge " + u.oldId + " -> " + u.newId + " (materials outside this scope: " + materials + ")";
+      })
+      .join("; ");
+  const line =
+    "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
+    ": add " + report.add + ", update " + report.update +
+    ", skip " + report.noop + ", conflict " + report.gateRejected +
+    ", failure " + report.llmUnavailable +
+    " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")" +
+    "\nscope: " + formatConsolidateScope(s) +
+    outsideText +
+    (report.dryRun
+      ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
+        "before an apply can make the apply differ."
+      : "") +
+    (extra.budgetUnmetered
+      ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
+      : "") +
+    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
+  return {
+    content: [{ type: "text", text: line }],
+    structuredContent: {
+      operation: "consolidate",
+      scope: s,
+      report,
+      counts: {
+        add: report.add,
+        update: report.update,
+        skip: report.noop,
+        conflict: report.gateRejected,
+        failure: report.llmUnavailable,
+        budgetRejected: report.budgetRejected,
+      },
+      usage,
+      ...(extra.budgetUnmetered
+        ? {
+          budgetUnmetered: true,
+          ...(extra.budgetUnmeteredReason ? { budgetUnmeteredReason: extra.budgetUnmeteredReason } : {}),
+        }
+        : {}),
+    },
   };
 }

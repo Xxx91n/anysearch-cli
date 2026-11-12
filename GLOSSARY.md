@@ -68,6 +68,18 @@
 - **调研资料库**:本地 FTS5 库里存的历史调研结果，包括网页内容、结论和私有数据（代码里叫 retrieval_results）。
   _Avoid_: Research Memory、调研记忆层
 
+- **整理**:把选定的调研材料归纳成长期知识，加进去、合并重复、或更新旧结论；只读你选的范围里的材料（代码里叫 consolidate，MCP 入口是 `operation=consolidate`）。
+  _Avoid_: Consolidation、知识固化
+
+- **跨范围更新**:整理时可能撞上别的会话留下的旧结论并把它替换掉。这是允许的——新材料够可靠就该纠正共享知识——但报告里会列出被替换的知识和范围外的材料，不偷偷改。
+  _Avoid_: Cross-scope Update、越界更新
+
+- **整理范围**:整理时明确选定要读哪些材料，要么给一串材料 id，要么给一个会话 id；不给就报错，不会整理全库（代码里叫 consolidate scope）。
+  _Avoid_: Consolidate Scope、整理域
+
+- **费用口径**:一次模型调用花的钱是哪来的——没调用、不知道、按价目表估算、服务端返回，或者几种混在一起，分开说清楚，不知道就不写 0（代码里叫 costBasis）。
+  _Avoid_: Cost Basis、计费来源
+
 - **项目索引**:钩子把 MCP 工具的输出存进本地库，按项目共享，跨会话可查（代码里叫 ProjectIndexStore）。
   _Avoid_: Project Index、项目级索引
 

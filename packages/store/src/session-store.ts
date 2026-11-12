@@ -28,7 +28,14 @@ import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
-import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
+import type {
+  ConsolidateSummarizeFn,
+  ConsolidateClassifyFn,
+  ConsolidateReport,
+  ConsolidateRunOptions,
+  ArchiveCandidate,
+  ArchiveApplyReport,
+} from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
@@ -211,6 +218,18 @@ export interface SessionStore {
   relationTelemetry(): RelationTelemetry;
   // alert-on-silence telemetry — event write failures are counted, never silent.
   accessEventTelemetry(): AccessEventTelemetry;
+  // D5/Q18: explicit consolidation over a caller-selected scope. Omitted
+  // `scope` is the internal full-archive mode (eval runner and the existing
+  // regression tests); product entry points always pass one, and resolve it
+  // through resolveConsolidateScope first. Optional on the port so hand-built
+  // store mocks stay source-compatible; the MCP tool refuses to guess.
+  // `deps` carries one run's own seams: the MCP server builds its LLM session
+  // after the engine exists, and a per-call dependency keeps two concurrent
+  // requests from reading each other's usage.
+  consolidateMemory?(opts?: ConsolidateRunOptions, deps?: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+  }): Promise<ConsolidateReport>;
 }
 
 // +: secret guard lives in ./secret.ts (shared containsSecret) —
@@ -346,7 +365,9 @@ export class SqliteSessionStore implements SessionStore {
   // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
   // consolidation seams (summarize = bounded LLM per cluster; classify = kernel
-  // classifyClaim-shaped fidelity gate). Both optional and fail-open.
+  // classifyClaim-shaped fidelity gate). Both optional and fail-open. These are
+  // the constructor-time defaults (the eval runner and tests); a per-call
+  // `deps` argument overrides them without mutating this instance.
   private readonly consolidateSummarize?: ConsolidateSummarizeFn;
   private readonly consolidateClassify?: ConsolidateClassifyFn;
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
@@ -1067,8 +1088,27 @@ export class SqliteSessionStore implements SessionStore {
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
-  async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
-    return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
+  /**
+   * One consolidation run over an explicit scope (D5/Q18).
+   *
+   * `opts.scope` is the caller's validated selection. Omitting it keeps the
+   * internal full-archive mode that the eval runner and the existing
+   * regression tests use; the two product entry points (`ans consolidate`,
+   * `ans_chat operation=consolidate`) always pass one.
+   *
+   * `deps` carries this run's own seams. The MCP server builds its LLM session
+   * per request (after the engine exists), so they cannot ride the constructor;
+   * passing them per call keeps the store instance immutable and keeps two
+   * concurrent requests from reading each other's usage counter.
+   */
+  async consolidateMemory(
+    opts: ConsolidateRunOptions = {},
+    deps?: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn },
+  ): Promise<ConsolidateReport> {
+    return consolidateMemoryRun(this.db, {
+      summarize: deps?.summarize ?? this.consolidateSummarize,
+      classify: deps?.classify ?? this.consolidateClassify,
+    }, opts);
   }
 
   scanArchive(opts?: { ageFactor?: number; now?: number; limit?: number }): ArchiveCandidate[] {

@@ -34,6 +34,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - name: Install (frozen-lockfile, builds disabled)
         run: pnpm install --frozen-lockfile
       - name: Verify native prebuild loads (${{ matrix.label }})

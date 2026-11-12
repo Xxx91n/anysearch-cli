@@ -87,7 +87,11 @@ export type QueryKnowledgeInput = {
 };
 
 export const AnsChatInput = Type.Object({
-  message: Type.String({ minLength: 1, description: "The user message to send to the agent" }),
+  // Required for operation "chat" (the default); omitted for "consolidate",
+  // which reads stored research materials rather than the conversation.
+  message: Type.Optional(
+    Type.String({ minLength: 1, description: "The user message to send to the agent. Required unless operation is \"consolidate\"." }),
+  ),
   // #132: explicit, server-minted state handle (MCP 2026-07-28 / SEP-2567).
   // The first call omits it and gets one back in structuredContent.sessionId;
   // later calls thread it here so L1/L2 anchors resume in the same session.
@@ -97,13 +101,36 @@ export const AnsChatInput = Type.Object({
   // visible-ASCII rule at the DB-key boundary instead.
   sessionId: Type.Optional(
     Type.String({
-      description: "Opaque session handle returned as structuredContent.sessionId (and a trailing text block) by a previous ans_chat call; pass it back to continue L1/L2 memory across calls. Must be 1..128 visible ASCII characters; a malformed value is ignored (single-shot) rather than rejected. Omit for a single-shot call (fresh session, no cross-call continuity).",
+      description: "Opaque session handle returned as structuredContent.sessionId (and a trailing text block) by a previous ans_chat call; pass it back to continue L1/L2 memory across calls. Must be 1..128 visible ASCII characters; a malformed value is ignored (single-shot) rather than rejected. Omit for a single-shot call (fresh session, no cross-call continuity). For operation=\"consolidate\" the same field names the scope instead, and a malformed value is an error (there is no safe fallback that is not \"consolidate everything\").",
+    }),
+  ),
+  // D5: one explicit consolidation entry shared with `ans consolidate`.
+  operation: Type.Optional(
+    Type.Union([Type.Literal("chat"), Type.Literal("consolidate")], {
+      description: "\"chat\" (default) runs the agent loop. \"consolidate\" turns the materials selected by sessionId/memoryIds into long-term knowledge and returns a per-category report; it does not run the agent loop.",
+    }),
+  ),
+  memoryIds: Type.Optional(
+    Type.Array(Type.Integer({ minimum: 1 }), {
+      description: "consolidate only: read exactly these stored material ids (from recall_memory / search results). This list is a complete scope on its own, and it may name materials from different sessions. A sessionId given alongside does not widen it. With neither this nor sessionId, the call is rejected.",
+    }),
+  ),
+  // The single-evidence correction flag belongs to the follow-up ticket. It is
+  // deliberately absent here: advertising a knob this build ignores would claim
+  // a capability it does not have (the spec's "do not present the old unsafe
+  // path as a new capability" rule).
+  dryRun: Type.Optional(
+    Type.Boolean({
+      description: "consolidate only: run the same path inside a transaction that is rolled back. Nothing is saved. Model calls can still happen and cost money, and the preview describes the state read at that moment.",
     }),
   ),
 }, { additionalProperties: false });
 export type AnsChatInput = {
-  message: string;
+  message?: string;
   sessionId?: string;
+  operation?: "chat" | "consolidate";
+  memoryIds?: number[];
+  dryRun?: boolean;
 };
 
 // KernelToolSchemas: registry consulted by apps/mcp per-tool module assembly.
@@ -127,5 +154,5 @@ export const KernelToolDescriptions = {
   research_web: "Run a deep research query over several rounds; each round merges results with RRF and URLs are deduplicated across rounds. Returns an evidence-sufficiency signal and the top citations.",
   recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look.",
   query_knowledge: "Query the knowledge base through the retrieval adapter chosen by the domain config. With `fts` it reads the store-wide research archive, not just the current domain's rows.",
-  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls.",
+  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls. With operation=\"consolidate\" it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge and returns what it added, updated, skipped or could not do. That scope is required; the call is rejected rather than falling back to the whole archive.",
 } as const satisfies Record<KernelToolName, string>;

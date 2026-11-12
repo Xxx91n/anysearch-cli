@@ -55,13 +55,40 @@ function neverResolvingStream(onCall: (signal?: AbortSignal) => void) {
   };
 }
 
-async function waitFor(predicate: () => boolean, label: string, timeoutMs = 2000): Promise<void> {
+// Timeout for "the runtime got as far as calling the provider". This is a
+// liveness wait, not a timing assertion: under `turbo run test --concurrency=2`
+// the machine runs several packages at once and a cold tsx transform can take
+// well over the old 2s. A 2s cap made this file fail on CI for reasons that had
+// nothing to do with cancellation, so it is 15s — far above any real startup,
+// still bounded if the runtime truly never starts.
+const STREAM_START_TIMEOUT_MS = 15_000;
+
+async function waitFor(predicate: () => boolean, label: string, timeoutMs = STREAM_START_TIMEOUT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error("timed out waiting for " + label);
+}
+
+/**
+ * Wait for the run to end, bounded by the liveness budget.
+ *
+ * The timer is cleared when the race settles: an uncleared 15s timer would keep
+ * the test process alive after a passing assertion (the old 2s value made that
+ * harmless, the new one would not).
+ */
+async function settleWithTimeout(done: Promise<unknown>, timeoutMs = STREAM_START_TIMEOUT_MS): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([done, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /** Collect events until the generator ends; returns the events and a settled flag. */
@@ -93,13 +120,14 @@ async function main() {
     await waitFor(() => streamCalls === 1, "the stub stream to start");
     const abortedAt = Date.now();
     caller.abort("client cancelled");
-    await Promise.race([
-      consumed.done,
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
+    await settleWithTimeout(consumed.done);
 
     assert(consumed.settled(), "1: run ended after the caller signal aborted a never-resolving stream");
-    assert(Date.now() - abortedAt < 1000, "1: cancellation does not wait for the stalled stream");
+    // The point is that cancellation does not wait for the stalled stream; the
+    // bar is "well under the liveness timeout", not a wall-clock budget that a
+    // loaded CI box can miss while behaving correctly.
+    assert(Date.now() - abortedAt < STREAM_START_TIMEOUT_MS / 2,
+      "1: cancellation does not wait for the stalled stream");
     assert(streamCalls === 1, "1: no extra provider call after cancellation");
     assert(streamSignal?.aborted === true,
       "1: the stream function's active signal is already aborted after cancellation");
@@ -182,10 +210,7 @@ async function main() {
 
     await waitFor(() => streamCalls === 1, "the stub stream to start");
     caller.abort("client cancelled");
-    await Promise.race([
-      consumed.done,
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
+    await settleWithTimeout(consumed.done);
     // Give a late completion write a chance to (wrongly) land.
     await new Promise((r) => setTimeout(r, 30));
 
@@ -276,10 +301,7 @@ async function main() {
     await waitFor(() => streamCalls === 1, "the gated stream to start");
     caller.abort("cancel before the turn finished");
     release();
-    await Promise.race([
-      consumed.done,
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
+    await settleWithTimeout(consumed.done);
     // The agent loop continues in the background after the generator returns;
     // wait for the late turn to reach shouldStopAfterTurn, then give the cold
     // path time to (wrongly) write.

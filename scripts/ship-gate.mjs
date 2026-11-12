@@ -402,8 +402,14 @@ function stepStaticAssertions() {
       // 1o. Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
       {
         const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
-        for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
+        // #260: the fidelity gate now travels inside the shared consolidation
+        // seam (kernel/consolidation.ts), so the CLI's own static markers are
+        // the seam builder and the shared scope rule.
+        for (const tok of ["createLlmSession", "createConsolidationSeams", "resolveDbPath", "consolidateMemory", "resolveConsolidateScope", "--dry-run"])
           if (!conCli.includes(tok)) fail("1o: apps/cli consolidate.ts missing" + tok);
+        const conSeam = fs.readFileSync(path.join(ROOT, "packages/kernel/src/consolidation.ts"), "utf8");
+        for (const tok of ["createConsolidationSeams", "classifyClaim", "costBasis"])
+          if (!conSeam.includes(tok)) fail("1o: kernel consolidation.ts missing" + tok);
         const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
         if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("1o: db.ts helper missing");
         const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");
@@ -790,6 +796,38 @@ function stepStaticAssertions() {
       if (bad) fail("E6: non-empty minimumReleaseAgeExclude launders gated versions into the lockfile — remove entries or record a visible exception");
     }
     report("pass", "E6 gate invariants: trustLockfile default(false), strict on, missing-time strict, zero age-excludes — upstream verify leg enforced");
+
+    // #260: CI may bypass the age gate only through the self-expiring script.
+    // A bare `PNPM_CONFIG_MINIMUM_RELEASE_AGE` in a workflow would be a permanent
+    // bypass that outlives its reason, so it is refused here.
+    {
+      const wfDir = path.join(ROOT, ".github/workflows");
+      const offenders = [];
+      for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/i.test(n))) {
+        const body = fs.readFileSync(path.join(wfDir, f), "utf8");
+        // The script name itself is fine; a literal assignment anywhere else is not.
+        for (const line of body.split("\n")) {
+          if (/(^|\s)#/.test(line)) continue; // comment lines explain, they do not set
+          if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*"?0"?/.test(line)
+            && !/ci-dep-age-override\.mjs/.test(line)) {
+            offenders.push(f + ": " + line.trim());
+          }
+        }
+      }
+      if (offenders.length > 0) {
+        fail("E6: a workflow sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
+      }
+      const override = path.join(ROOT, "scripts/ci-dep-age-override.mjs");
+      if (!fs.existsSync(override)) fail("E6: scripts/ci-dep-age-override.mjs missing but workflows reference it");
+      else {
+        const src = fs.readFileSync(override, "utf8");
+        for (const tok of ["ANS_DEP_AGE_OVERRIDE_UNTIL", "Date.now()", "GITHUB_ENV"])
+          if (!src.includes(tok)) fail("E6: ci-dep-age-override.mjs missing " + tok + " (the expiry is the whole safeguard)");
+        const m = src.match(/ANS_DEP_AGE_OVERRIDE_UNTIL\s*\?\?\s*"([^"]+)"/);
+        if (!m || !Number.isFinite(Date.parse(m[1]))) fail("E6: ci-dep-age-override.mjs default deadline is not a parseable timestamp");
+      }
+      report("pass", "E6 age-override discipline: no workflow sets the variable directly; the CI bypass self-expires");
+    }
   }
 
 }

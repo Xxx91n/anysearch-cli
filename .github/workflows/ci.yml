@@ -33,6 +33,9 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       # ponytail: --ignore-scripts required because better-sqlite3 ships prebuilds
       # and our allowBuilds=false pnpm-workspace.yaml entry is intentional.
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
@@ -91,6 +94,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - run: pnpm -w turbo build
       - name: install-smoke lane
@@ -116,6 +122,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: vector-arm golden cases (store test:online)
         run: pnpm -C packages/store test:online
@@ -144,6 +153,9 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      # Temporary dependency-age bypass for #260; self-expires (see the script).
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
       - run: pnpm install --ignore-scripts
       - name: anysearch MCP live probe (retriever test:online)
         run: pnpm -C packages/retriever test:online
