@@ -317,7 +317,7 @@ async function main() {
       const deadOwner = { pid: 999_999, host: hostname() };
       const killedLedger = new BudgetLedger((store as any).db, {
         owner: deadOwner,
-        isOwnerAlive: () => false,
+        isOwnerAlive: (pid) => pid !== deadOwner.pid,
       });
       killedLedger.initBudget(s12.id, { tokenCap: 20000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
       const killedReserve = killedLedger.reserveTokens(s12.id, 12304);
@@ -390,11 +390,11 @@ async function main() {
       const s14 = await store.createSession("foreign-owner");
       const foreign = new BudgetLedger((store as any).db, {
         owner: { pid: 4321, host: "some-other-machine" },
-        isOwnerAlive: () => false,
+        isOwnerAlive: (pid) => pid !== 4321,
       });
       foreign.initBudget(s14.id, { tokenCap: 4000, timeLimitMs: 60_000 });
       assert(foreign.reserveTokens(s14.id, 3000), "#275 fixture: a foreign owner reserves 3000");
-      const local = new BudgetLedger((store as any).db, { isOwnerAlive: () => false });
+      const local = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 4321 });
       assert(local.reclaimDeadReservations(s14.id) === 0,
         "#275: a foreign-host owner is kept even when its pid looks dead here");
       assert(local.getBalance(s14.id)!.reservedTokens === 3000,
@@ -438,7 +438,7 @@ async function main() {
       const dimOwner = { pid: 999_998, host: hostname() };
       const killedDims = new BudgetLedger((store as any).db, {
         owner: dimOwner,
-        isOwnerAlive: () => false,
+        isOwnerAlive: (pid) => pid !== dimOwner.pid,
       });
       killedDims.initBudget(s17.id, { tokenCap: 30_000, usdCap: 5, timeLimitMs: 60_000, callCap: 8 });
       assert(killedDims.reserveTokens(s17.id, 12_304), "#275 fixture: killed run reserved tokens");
@@ -463,29 +463,51 @@ async function main() {
       assert(afterAll.billableCalls === 3 && afterAll.reservedCalls === 0,
         "#275: call settle books spend and releases the reservation");
 
-      // 23. #275: two sweepers that both see the same dead owner must release it
-      //     once, not twice. Before the fix each one read the amount and each
-      //     subtracted it; the clamped decrement hid the overrun and could eat
-      //     a live owner's share. This drives both sweeps back to back on the
-      //     same row — the second must find nothing to release.
+      // 23. #275: the release is idempotent per owner row — a swept row is gone
+      //     and its amount released once, while a live owner keeps its share.
+      //
+      // Scope note: these sweeps run one after another on one thread. What that
+      // pins is the observable outcome, not the race: the race is two processes
+      // reading the same row before either deletes, and this repo's
+      // single-connection fixture cannot create that moment. Removing the
+      // `changes === 0` guard does NOT make this file fail — verified with a
+      // mutation — so do not read these assertions as proof of the race fix.
+      // The immediate transaction in `reclaimDeadReservations` is what closes it.
       const s18 = await store.createSession("double-sweep");
       const doomed = new BudgetLedger((store as any).db, {
         owner: { pid: 999_997, host: hostname() },
-        isOwnerAlive: () => false,
+        isOwnerAlive: (pid) => pid !== 999_997,
       });
       doomed.initBudget(s18.id, { tokenCap: 100_000, timeLimitMs: 60_000 });
       assert(doomed.reserveTokens(s18.id, 12_304), "#275 fixture: dead owner holds 12304");
       // A live owner holding a real reservation on the same session.
       const bystander = new BudgetLedger((store as any).db, { owner: { pid: 4242, host: hostname() } });
       assert(bystander.reserveTokens(s18.id, 5_000), "#275 fixture: live owner holds 5000");
-      const sweepA = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_997 });
-      const sweepB = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_997 });
+      // Live only for the real owner pids this case puts on the session; every
+      // 999_99x fixture pid is dead. A blanket probe would claim every process
+      // on this machine is dead, including the live bystander, and prove
+      // nothing about the rule.
+      const deadPids = new Set([999_997, 999_996, 999_995]);
+      const sweepA = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => !deadPids.has(pid) });
+      const sweepB = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => !deadPids.has(pid) });
       assert(sweepA.reclaimDeadReservations(s18.id) === 1, "#275: the first sweep releases the dead owner");
       assert(sweepB.reclaimDeadReservations(s18.id) === 0,
         "#275: a second sweep releases nothing (the owner row was already claimed)");
+      // A second, distinct dead owner on the same session: the sweep must still
+      // release it while leaving the live owner alone. This is what separates
+      // "released what it claimed" from "cleared the session's counters".
+      const doomed2 = new BudgetLedger((store as any).db, {
+        owner: { pid: 999_996, host: hostname() },
+        isOwnerAlive: (pid) => pid !== 999_996,
+      });
+      doomed2.initBudget(s18.id, { tokenCap: 100_000, timeLimitMs: 60_000 });
+      assert(doomed2.reserveTokens(s18.id, 2_000), "#275 fixture: a second dead owner holds 2000");
+      assert(sweepA.reclaimDeadReservations(s18.id) === 1, "#275: the extra dead owner is released");
       const afterDouble = sweepA.getBalance(s18.id)!;
       assert(afterDouble.reservedTokens === 5_000,
-        "#275: the live owner's 5000 survives two sweeps (got " + afterDouble.reservedTokens + ")");
+        "#275: the live owner's 5000 survives every sweep (got " + afterDouble.reservedTokens + ")");
+      assert(afterDouble.spentTokens === 0,
+        "#275: releasing a dead reservation never books spend (got " + afterDouble.spentTokens + ")");
       // The unowned sweep must report and release the right amount in every
       // dimension, not only tokens.
       (store as any).db.prepare(
