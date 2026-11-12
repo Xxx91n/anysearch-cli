@@ -47,22 +47,6 @@ import type { NormalizedResult } from "@anysearch-cli/retriever";
 // keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).
 export type AdjudicationAction = "accept" | "supersede" | "quarantine" | "reject";
 
-// #275: the reservation-owner table, kept here as well as in schema.sql so a
-// database opened by a build with an older bundled schema still gets it. The
-// CREATE is idempotent, so both copies running is harmless.
-const BUDGET_RESERVATIONS_DDL = [
-  "CREATE TABLE IF NOT EXISTS budget_reservations (",
-  "  id INTEGER PRIMARY KEY AUTOINCREMENT,",
-  "  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,",
-  "  dim TEXT NOT NULL CHECK (dim IN ('tokens', 'usd', 'calls')),",
-  "  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),",
-  "  owner_host TEXT NOT NULL,",
-  "  amount REAL NOT NULL DEFAULT 0 CHECK (amount >= 0),",
-  "  created_at TEXT NOT NULL DEFAULT (datetime('now')),",
-  "  UNIQUE (session_id, dim, owner_pid, owner_host)",
-  ");",
-].join("\n");
-
 export interface KeyMemoryInput {
   url: string;
   title: string;
@@ -191,12 +175,6 @@ export interface SessionStore {
   // (configured=0) so getBalance()/reserve treat the session as unmetered,
   // without deleting its spend history. No row is a no-op.
   clearBudgetCaps?(sessionId: string): void;
-  // #275: release reservations whose owner this machine can prove is gone, so a
-  // process re-registering a session after a SIGKILL starts from its real
-  // remaining budget. Optional like the cap seams: a store without it keeps the
-  // pre-#275 behaviour, and a fault is fail-open at every call site. Returns the
-  // number of owner entries released.
-  reclaimDeadReservations?(sessionId: string): number;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -459,11 +437,6 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     withInitBusyRetry("schema", () => execDdlAtomically(this.db, schema), initDeadline);
-    // #275: a database opened by a build whose bundled schema predates this
-    // table would otherwise have no budget_reservations at all, and the ledger's
-    // owner bookkeeping would throw on every reserve. The CREATE is idempotent,
-    // so it runs after the schema step regardless of which copy was loaded.
-    withInitBusyRetry("budget reservations table", () => this.db.exec(BUDGET_RESERVATIONS_DDL), initDeadline);
     // #187: existing databases predate the `configured` column. New databases
     // already have it from the CREATE TABLE above; this ALTER is the migration
     // and duplicates are absorbed like the other column migrations.
@@ -618,14 +591,6 @@ export class SqliteSessionStore implements SessionStore {
    */
   createBudgetLedger(): BudgetLedger {
     return (this.budgetLedgerInstance ??= new BudgetLedger(this.db));
-  }
-
-  // #275: same dead-owner release the ledger runs before every reserve. The
-  // store exposes it because the CLI/MCP registration helpers share the type
-  // `SessionStore`, and a sweep at that point lets a fresh process start from
-  // the session's real remaining budget instead of a phantom exhausted one.
-  reclaimDeadReservations(sessionId: string): number {
-    return this.createBudgetLedger().reclaimDeadReservations(sessionId);
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).

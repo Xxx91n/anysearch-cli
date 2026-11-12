@@ -42,6 +42,15 @@
 - **预算记账**:记录一次运行的调用数、token 和美元用量，调用或 token 额度不够就拦住运行，美元只在跑完后结算（代码里叫 BudgetLedgerPort）。
   _Avoid_: Budget Ledger、预算账本
 
+- **预留**:调用前先占住一块额度，跑完再按真实用量结掉；占住的那块在结之前也算进「已经用了」，所以额度不够时下手就被拒（代码里表现在 reserved_tokens / reserved_usd / reserved_calls）。
+  _Avoid_: Reservation、占额
+
+- **预留属主**:这条预留是哪个进程占的，记成机器名加进程号；只有本机确认那个进程已经没了，别人才能把它占的那块放回去（代码里叫 budget_reservations 表）。
+  _Avoid_: Owner、持有者
+
+- **无主余量**:账上算着占了额度，但找不到是哪条预留占的，只剩一个数。只有确认自己是这个会话唯一写者时才能清掉它（代码里叫 reclaimUnownedReservations）。
+  _Avoid_: Unowned residue、孤儿预留
+
 - **恢复存档点**:检索算完后可能写一条状态记录，重开时读它给模型一份检索摘要，不会自动重跑检索（代码里叫 ResumeAnchorsPort）。
   _Avoid_: Anchor、锚点、恢复锚
 

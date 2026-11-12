@@ -430,6 +430,39 @@ async function main() {
       assert(ownedLedger.getBalance(s16.id)!.reservedTokens === 1304,
         "#275: the live owner's reservation survives the unowned sweep");
 
+      // 22. #275: the leak exists in all three counters, so the release must too
+      //     (CodeRabbit on #274 explicitly asked for usd and calls, not only
+      //     tokens). A killed run reserving in each dimension is released in
+      //     each dimension, and a settle moves the same amount to spend.
+      const s17 = await store.createSession("sigkill-all-dims");
+      const dimOwner = { pid: 999_998, host: hostname() };
+      const killedDims = new BudgetLedger((store as any).db, {
+        owner: dimOwner,
+        isOwnerAlive: () => false,
+      });
+      killedDims.initBudget(s17.id, { tokenCap: 30_000, usdCap: 5, timeLimitMs: 60_000, callCap: 8 });
+      assert(killedDims.reserveTokens(s17.id, 12_304), "#275 fixture: killed run reserved tokens");
+      assert(killedDims.reserveUsd(s17.id, 2.5), "#275 fixture: killed run reserved usd");
+      assert(killedDims.reserveCalls(s17.id, 3), "#275 fixture: killed run reserved calls");
+      const survivorAll = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_998 });
+      const killedAll = survivorAll.reclaimDeadReservations(s17.id);
+      assert(killedAll === 3, "#275: one owner entry released per dimension (got " + killedAll + ")");
+      const releasedAll = survivorAll.getBalance(s17.id)!;
+      assert(releasedAll.reservedTokens === 0 && releasedAll.reservedUsd === 0 && releasedAll.reservedCalls === 0,
+        "#275: all three counters are back to zero after the dead-owner release (got "
+        + JSON.stringify([releasedAll.reservedTokens, releasedAll.reservedUsd, releasedAll.reservedCalls]) + ")");
+      // The live run can then use the whole cap again, and settling books the
+      // spend in each dimension instead of leaving a reservation behind.
+      assert(survivorAll.reserveUsd(s17.id, 2.5), "#275: usd headroom is usable after the release");
+      assert(survivorAll.reserveCalls(s17.id, 3), "#275: call headroom is usable after the release");
+      survivorAll.settleUsd(s17.id, 2.5, 2.5);
+      survivorAll.settleCalls(s17.id, 3, 3);
+      const afterAll = survivorAll.getBalance(s17.id)!;
+      assert(afterAll.spentUsd === 2.5 && afterAll.reservedUsd === 0,
+        "#275: usd settle books spend and releases the reservation");
+      assert(afterAll.billableCalls === 3 && afterAll.reservedCalls === 0,
+        "#275: call settle books spend and releases the reservation");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");

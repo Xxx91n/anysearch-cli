@@ -1002,6 +1002,13 @@ export class PiAgentRuntime {
     // also why the unowned sweep needs `holdsSessionLock`. A fault here is the
     // usual fail-open budget fault — the reserve below then reports any real
     // exhaustion.
+    //
+    // Design: the sweep runs at the run boundary rather than only at
+    // registration — a long-lived host reuses one ledger, so a leftover
+    // inherited at startup would otherwise stay until the process restarted.
+    // Design: the unowned sweep is gated on `holdsSessionLock` because only that
+    // lock proves no second writer is reserving right now; a consolidation does
+    // not take it.
     if (billingWired) {
       try {
         ledger!.reclaimDeadReservations?.(sessionId!);
