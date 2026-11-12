@@ -1,4 +1,5 @@
-// PI session-record location and compaction thresholds (#258).
+// PI session-record location, compaction thresholds, and the cross-process
+// session lock windows (#258, #266).
 //
 // The kernel reads no env, so each host (CLI, MCP) passes its own env in. The
 // contract lives here once instead of being copied into both roots.
@@ -34,6 +35,28 @@ export function piCompactionFromEnv(env: NodeJS.ProcessEnv = process.env): { res
 }
 
 /**
+ * Cross-process session lock windows (#266). `ANS_PI_LOCK_STALE_MS` bounds how
+ * long a lock whose owner this machine cannot confirm is kept (default
+ * 10 min); `ANS_PI_LOCK_TIMEOUT_MS` is the same-session wait cap before the
+ * run fails with "session busy" (default 120 s). Both exist so tests can
+ * observe expiry and recovery in seconds; an unparsable or non-positive value
+ * keeps the default rather than silently becoming 0.
+ */
+export function sessionLockWindowsFromEnv(env: NodeJS.ProcessEnv = process.env): { staleMs?: number; waitMs?: number } {
+  const parse = (raw: string | undefined): number | undefined => {
+    if (raw === undefined || raw.trim() === "") return undefined;
+    const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+    return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+  };
+  const staleMs = parse(env.ANS_PI_LOCK_STALE_MS);
+  const waitMs = parse(env.ANS_PI_LOCK_TIMEOUT_MS);
+  const windows: { staleMs?: number; waitMs?: number } = {};
+  if (staleMs !== undefined) windows.staleMs = staleMs;
+  if (waitMs !== undefined) windows.waitMs = waitMs;
+  return windows;
+}
+
+/**
  * The PI wiring every host owes the runtime, resolved from one env snapshot:
  * where the session records live, how PI compacts, the credential the provider
  * registration needs, and the working directory the session and resource loader
@@ -45,11 +68,12 @@ export function piSessionOptions(
   apiKey: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
-): { piSessionDir?: string; piCompaction: { reserveTokens?: number; keepRecentTokens?: number }; apiKey?: string; cwd: string } {
+): { piSessionDir?: string; piCompaction: { reserveTokens?: number; keepRecentTokens?: number }; sessionLock: { staleMs?: number; waitMs?: number }; apiKey?: string; cwd: string } {
   return {
     // No handle means no record to key on, so the session stays in memory.
     piSessionDir: sessionId ? resolvePiSessionDir(env) : undefined,
     piCompaction: piCompactionFromEnv(env),
+    sessionLock: sessionLockWindowsFromEnv(env),
     apiKey,
     cwd,
   };
