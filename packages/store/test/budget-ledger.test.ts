@@ -463,6 +463,34 @@ async function main() {
       assert(afterAll.billableCalls === 3 && afterAll.reservedCalls === 0,
         "#275: call settle books spend and releases the reservation");
 
+      // 24. #275: a settle that forgets to release the owner row leaves a stale,
+      //     LARGER row behind; the next sweep would subtract that stale amount
+      //     from the shared counter and could wipe a live owner's reservation on
+      //     the same session. So after a settle the owner table must be empty.
+      //     This is the case that fails when `settle` skips its release call —
+      //     verified by mutation, unlike the sweep cases above.
+      const s20 = await store.createSession("settle-leaves-no-owner-row");
+      const settling = new BudgetLedger((store as any).db, { owner: { pid: 6161, host: hostname() } });
+      settling.initBudget(s20.id, { tokenCap: 50_000, timeLimitMs: 60_000 });
+      assert(settling.reserveTokens(s20.id, 9_000), "#275 fixture: this run reserves 9000");
+      settling.settleTokens(s20.id, 9_000, 7_000);
+      const ownerRowsAfterSettle = (store as any).db
+        .prepare("SELECT owner_pid, dim, amount FROM budget_reservations WHERE session_id = ?")
+        .all(s20.id) as Array<{ owner_pid: number; dim: string; amount: number }>;
+      assert(ownerRowsAfterSettle.length === 0,
+        "#275: a completed settle leaves no owner row behind (got "
+        + JSON.stringify(ownerRowsAfterSettle) + ")");
+      // Concrete form of the harm: with no stale row, another live owner's
+      // reservation on this session survives the next sweep untouched.
+      const liveNow = new BudgetLedger((store as any).db, { owner: { pid: 7171, host: hostname() } });
+      assert(liveNow.reserveTokens(s20.id, 5_000), "#275 fixture: another live owner holds 5000");
+      const sweepAfterSettle = new BudgetLedger((store as any).db, { isOwnerAlive: () => true });
+      assert(sweepAfterSettle.reclaimDeadReservations(s20.id) === 0,
+        "#275: nothing is left to claim after a clean settle");
+      assert(sweepAfterSettle.getBalance(s20.id)!.reservedTokens === 5_000,
+        "#275: the later live owner's 5000 is intact (got "
+        + sweepAfterSettle.getBalance(s20.id)!.reservedTokens + ")");
+
       // 23. #275: the release is idempotent per owner row — a swept row is gone
       //     and its amount released once, while a live owner keeps its share.
       //
