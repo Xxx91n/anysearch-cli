@@ -463,6 +463,44 @@ async function main() {
       assert(afterAll.billableCalls === 3 && afterAll.reservedCalls === 0,
         "#275: call settle books spend and releases the reservation");
 
+      // 23. #275: two sweepers that both see the same dead owner must release it
+      //     once, not twice. Before the fix each one read the amount and each
+      //     subtracted it; the clamped decrement hid the overrun and could eat
+      //     a live owner's share. This drives both sweeps back to back on the
+      //     same row — the second must find nothing to release.
+      const s18 = await store.createSession("double-sweep");
+      const doomed = new BudgetLedger((store as any).db, {
+        owner: { pid: 999_997, host: hostname() },
+        isOwnerAlive: () => false,
+      });
+      doomed.initBudget(s18.id, { tokenCap: 100_000, timeLimitMs: 60_000 });
+      assert(doomed.reserveTokens(s18.id, 12_304), "#275 fixture: dead owner holds 12304");
+      // A live owner holding a real reservation on the same session.
+      const bystander = new BudgetLedger((store as any).db, { owner: { pid: 4242, host: hostname() } });
+      assert(bystander.reserveTokens(s18.id, 5_000), "#275 fixture: live owner holds 5000");
+      const sweepA = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_997 });
+      const sweepB = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_997 });
+      assert(sweepA.reclaimDeadReservations(s18.id) === 1, "#275: the first sweep releases the dead owner");
+      assert(sweepB.reclaimDeadReservations(s18.id) === 0,
+        "#275: a second sweep releases nothing (the owner row was already claimed)");
+      const afterDouble = sweepA.getBalance(s18.id)!;
+      assert(afterDouble.reservedTokens === 5_000,
+        "#275: the live owner's 5000 survives two sweeps (got " + afterDouble.reservedTokens + ")");
+      // The unowned sweep must report and release the right amount in every
+      // dimension, not only tokens.
+      (store as any).db.prepare(
+        "UPDATE budget_ledger SET reserved_usd = 3.5, reserved_calls = 4 WHERE session_id = ?"
+      ).run(s18.id);
+      const unownedAll = sweepA.reclaimUnownedReservations(s18.id);
+      assert(unownedAll.usd === 3.5 && unownedAll.calls === 4 && unownedAll.tokens === 0,
+        "#275: the unowned sweep handles usd and calls, and leaves owned tokens alone (got "
+        + JSON.stringify(unownedAll) + ")");
+      const afterUnowned = sweepA.getBalance(s18.id)!;
+      assert(afterUnowned.reservedUsd === 0 && afterUnowned.reservedCalls === 0
+        && afterUnowned.reservedTokens === 5_000,
+        "#275: unowned usd/calls cleared while the owned token reservation stays (got "
+        + JSON.stringify([afterUnowned.reservedTokens, afterUnowned.reservedUsd, afterUnowned.reservedCalls]) + ")");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");
