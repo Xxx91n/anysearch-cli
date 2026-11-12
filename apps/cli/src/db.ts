@@ -12,8 +12,8 @@ import { defaultDomainsDirs, ensureOwnerOnlyDb } from "@anysearch-cli/store";
 // (build-time sync from the repo-root domains/)
 // 4. repo-root domains — dev fallback when running from source (tsx)
 export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[] {
-  // dist/index.js is a CJS bundle (tsup) — import.meta.url is undefined there;
-  // dev runs under tsx as ESM. Cover both.
+  // dev runs under tsx and the published bundle is ESM, so import.meta.url is
+  // the only source; keep the __dirname branch for a CJS-inline build.
   const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
   // Shared chain head (ANS_DOMAINS_DIR → cwd/domains) + CLI-specific tails.
   const dirs = defaultDomainsDirs(env);
@@ -24,6 +24,7 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
 
 // Teardown registry lives in ./teardown (pure leaf).
 import { registerTeardown } from "./teardown";
+
 export function createPersistentEngine(domain?: string): CompositionResult {
   const dbPath = resolveDbPath();
   // Owner-only permissions (dir 0700, file 0600) — CWE-732 mitigation.

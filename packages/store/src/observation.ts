@@ -9,18 +9,25 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
   SpanAttributes,
+  SpanLink,
   SpanOptions,
   SpanStatus,
   TelemetryContext,
   TelemetrySpan,
+  TelemetryPropagation,
+  TelemetryCarrier,
 } from "@earendil-works/pi-telemetry";
 
 export const OBSERVATION_SCHEMA_URL = "anysearch://schemas/observation/1.0.0";
 export const OBSERVATION_SCHEMA_VERSION = 2;
-// PRAGMA user_version is the schema version for the observation
-// trace store. Fresh-create and incremental-migration paths MUST produce the
-// same column + index set when this matches OBSERVATION_SCHEMA_VERSION.
-export const OBSERVATION_USER_VERSION = 2;
+// PRAGMA user_version is the version of the observation SQLite store, which is
+// a separate counter from OBSERVATION_SCHEMA_VERSION (the exported trace
+// payload's shape). The store gained observability_spans.links_json in v3 so
+// the adapter can satisfy pi-telemetry 1.5.1's span-link contract; the payload
+// shape did not change, which is why the two numbers differ. Fresh-create and
+// incremental-migration paths MUST still converge on the same column + index
+// set for a given user_version.
+export const OBSERVATION_USER_VERSION = 3;
 export const SEMCONV_GENAI_COMMIT = "b5d8440f6f126738fd50f927752cd669772c517b";
 export const SEMCONV_LEGACY_TAG = "v1.42.0";
 export const SEMCONV_LEGACY_COMMIT = "ae3a98640194ed405c4c797281502e4d3bd258b3";
@@ -67,6 +74,14 @@ export interface ObservationEvent {
   attributes: ObservationAttributes;
 }
 
+// A link crosses trace boundaries. TelemetryContext is opaque, so the only
+// portable identity is its propagation carrier (traceparent, ...); attributes
+// stay alongside it.
+export interface ObservationLink {
+  carrier?: Record<string, string>;
+  attributes: ObservationAttributes;
+}
+
 export interface ObservationSpan {
   traceId: string;
   spanId: string;
@@ -78,6 +93,7 @@ export interface ObservationSpan {
   status: "ok" | "error";
   attributes: ObservationAttributes;
   events: ObservationEvent[];
+  links?: ObservationLink[];
   error?: { name: string; message: string };
 }
 
@@ -133,6 +149,14 @@ const ObservationEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ObservationLinkSchema = Type.Object(
+  {
+    carrier: Type.Optional(Type.Record(Type.String(), Type.String())),
+    attributes: AttributesSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const ObservationSpanSchema = Type.Object(
   {
     traceId: Type.String({ minLength: 32, maxLength: 32 }),
@@ -145,6 +169,7 @@ export const ObservationSpanSchema = Type.Object(
     status: Type.Union([Type.Literal("ok"), Type.Literal("error")]),
     attributes: AttributesSchema,
     events: Type.Array(ObservationEventSchema),
+    links: Type.Optional(Type.Array(ObservationLinkSchema)),
     error: Type.Optional(
       Type.Object(
         { name: Type.String(), message: Type.String() },
@@ -227,7 +252,8 @@ CREATE TABLE IF NOT EXISTS observability_spans (
   operation TEXT NOT NULL,
   status TEXT NOT NULL,
   attributes_json TEXT NOT NULL,
-  events_json TEXT NOT NULL
+  events_json TEXT NOT NULL,
+  links_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS observability_evaluations (
@@ -279,16 +305,18 @@ function extractString(attrs: ObservationAttributes | undefined, key: string): s
 // versioned schema migration for the observation trace store.
 // PRAGMA user_version is the source of truth. Two paths converge on the same
 // column + index set:
-// v0 (brand-new DB) -> the v2 CREATE TABLE + indexes above; user_version = 2.
-// v1 (legacy DB) -> BEGIN; ALTER TABLE ADD COLUMN x 3; CREATE INDEX x 3;
-// user_version = 2; COMMIT;
+// v0 (brand-new DB) -> the v3 CREATE TABLEs + indexes above; user_version = 3.
+// v1/v2 (legacy DB) -> BEGIN; the missing attribution columns; the v3 span
+// link column; CREATE INDEX IF NOT EXISTS x 3; user_version = 3; COMMIT.
 // Fresh-create and migration MUST produce identical column/index sets; the
-// integration test (observation.test.ts) locks this with PRAGMA table_info /
-// PRAGMA index_list snapshots.
+// integration test (session-id-propagation.test.ts) locks the trace table with
+// PRAGMA table_info / PRAGMA index_list snapshots.
 function migrateObservationSchema(db: Database.Database): void {
   const current = (db.pragma("user_version", { simple: true }) as number) | 0;
   if (current >= OBSERVATION_USER_VERSION) return;
-  // v0 -> v2 (no incremental v1 -> v2 path; v1 had no attribution columns).
+  // One pass from any older version to the current one: each step checks
+  // PRAGMA table_info first, so re-running on a partly-migrated DB is a no-op
+  // and the outcome always matches the fresh-create schema.
   const tx = db.transaction((): void => {
     // ADD COLUMN is idempotent-safe: ALTER TABLE errors if column exists; we use
     // PRAGMA table_info to skip duplicates instead of relying on try/catch.
@@ -302,6 +330,12 @@ function migrateObservationSchema(db: Database.Database): void {
     }
     if (!have.has("client_id")) {
       db.exec("ALTER TABLE observability_traces ADD COLUMN client_id TEXT");
+    }
+    // v3: span links (cross-trace references) get their own column alongside
+    // the trace payload, matching the fresh-create schema.
+    const spanCols = db.prepare("PRAGMA table_info(observability_spans)").all() as Array<{ name: string }>;
+    if (!spanCols.some((c) => c.name === "links_json")) {
+      db.exec("ALTER TABLE observability_spans ADD COLUMN links_json TEXT NOT NULL DEFAULT '[]'");
     }
     // CREATE INDEX IF NOT EXISTS is idempotent and safe to re-run.
     db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_injected_trace ON observability_traces(injected_trace_id)");
@@ -352,6 +386,13 @@ function cleanAttributes(
   for (const [key, value] of Object.entries(attributes ?? {})) {
     // Custom fields never claim the volatile external namespace.
     if (key.startsWith("gen_ai.")) continue;
+    // A linked span keeps the attributes it had when the link was added, so
+    // array values are copied — a later mutation by the caller must not reach
+    // the stored record.
+    if (Array.isArray(value)) {
+      out[key] = [...value] as ObservationAttributeValue;
+      continue;
+    }
     if (value !== undefined) out[key] = value as ObservationAttributeValue;
   }
   return out;
@@ -377,6 +418,21 @@ class ObservationSpanNode implements TelemetrySpan {
   readonly startUnixNano: number;
   readonly attributes: ObservationAttributes;
   readonly events: ObservationEvent[] = [];
+  readonly links: ObservationLink[] = [];
+  /**
+   * A finished span stays linkable: only a custom session dir makes spans
+   * reachable, so an adapter that injects nothing forces every link to fall
+   * back to attributes. Carrying own W3C ids here means addLink can read a
+   * target's identity even after the target ended, without a global registry.
+   */
+  readonly propagation: TelemetryPropagation = {
+    inject: (context: TelemetryContext): TelemetryCarrier | undefined => {
+      const node = context as unknown as { traceId?: string; spanId?: string };
+      if (typeof node.traceId !== "string" || typeof node.spanId !== "string") return undefined;
+      return { traceparent: "00-" + node.traceId + "-" + node.spanId + "-01" };
+    },
+    extract: () => this,
+  };
   private settled = false;
   private endUnixNano: number;
   private status: SpanStatus = { status: "ok" };
@@ -414,6 +470,21 @@ class ObservationSpanNode implements TelemetrySpan {
     this.status = status;
   }
 
+  // pi-telemetry 1.5.1 added SpanLink to the adapter contract. The context is
+  // opaque, so the persisted form keeps the propagation carrier when one can be
+  // injected (e.g. traceparent) plus the link attributes.
+  addLink(link: SpanLink): void {
+    if (this.settled) return;
+    let carrier: Record<string, string> | undefined;
+    try {
+      carrier = link.context?.propagation?.inject(link.context) ?? undefined;
+    } catch { /* fail-open: keep the attributes */ }
+    this.links.push({
+      ...(carrier && Object.keys(carrier).length > 0 ? { carrier } : {}),
+      attributes: cleanAttributes(link.attributes ?? {}),
+    });
+  }
+
   startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
     const child = new ObservationSpanNode(
       this.traceId,
@@ -424,6 +495,7 @@ class ObservationSpanNode implements TelemetrySpan {
       options.attributes ?? {},
     );
     this.childSpans.push(child);
+    for (const link of options.links ?? []) child.addLink(link);
     try {
       const result = callback(child);
       if (result && typeof (result as Promise<unknown>).then === "function") {
@@ -485,6 +557,10 @@ class ObservationSpanNode implements TelemetrySpan {
         name: event.name,
         attributes: { ...event.attributes },
       })),
+      links: this.links.map((link) => ({
+        ...(link.carrier ? { carrier: { ...link.carrier } } : {}),
+        attributes: { ...link.attributes },
+      })),
       ...(toErrorRecord(this.status) ? { error: toErrorRecord(this.status) } : {}),
     };
   }
@@ -541,6 +617,29 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
     endTimeUnixNano: span.endUnixNano,
     attributes,
     events,
+    ...(span.links && span.links.length > 0
+      ? {
+          // An OTLP link without valid trace/span ids is invalid, so only links
+          // whose carrier yields a W3C 32-hex trace id and 16-hex span id are
+          // exported; the rest stay in the local record with their attributes.
+          links: span.links.flatMap((link) => {
+            const parts = link.carrier?.traceparent?.split("-") ?? [];
+            const traceId = parts[1];
+            const spanId = parts[2];
+            if (!traceId || !spanId) return [];
+            // W3C: both ids are lowercase hex of fixed width, and neither may
+            // be all zeros. A zero id is not a link target, it is a "no id"
+            // marker, so exporting it would emit an invalid OTLP link.
+            if (!/^[0-9a-f]{32}$/.test(traceId) || !/^[0-9a-f]{16}$/.test(spanId)) return [];
+            if (/^0{32}$/.test(traceId) || /^0{16}$/.test(spanId)) return [];
+            return [{
+              traceId,
+              spanId,
+              attributes: Object.entries(link.attributes).map(([key, value]) => ({ key, value: mapAttributeValue(value!) })),
+            }];
+          }),
+        }
+      : {}),
     status: { code: span.status === "ok" ? 1 : 2 },
   };
 }
@@ -764,10 +863,10 @@ export class SqliteObservationStore {
       "INSERT OR IGNORE INTO observability_traces (trace_id, run_id, kind, operation, status, payload_json, injected_trace_id, session_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(trace.traceId, trace.runId, trace.kind, trace.operation, trace.status, payload, injected, sessionId, clientId);
     const insertSpan = this.db.prepare(
-      "INSERT OR IGNORE INTO observability_spans (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO observability_spans (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json, links_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     for (const span of trace.spans) {
-      insertSpan.run(span.spanId, span.traceId, span.parentSpanId, span.kind, span.operation, span.status, JSON.stringify(span.attributes), JSON.stringify(span.events));
+      insertSpan.run(span.spanId, span.traceId, span.parentSpanId, span.kind, span.operation, span.status, JSON.stringify(span.attributes), JSON.stringify(span.events), JSON.stringify(span.links ?? []));
     }
     const insertEvaluation = this.db.prepare(
       "INSERT OR IGNORE INTO observability_evaluations (evaluation_id, trace_id, span_id, name, score_value, score_label, explanation, response_id, evaluated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

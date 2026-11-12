@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Make sure `apps/mcp/dist/index.cjs` exists before `apps/cli` tests run.
+// Make sure `apps/mcp/dist/index.js` exists before `apps/cli` tests run.
 //
 // Why (issue #256): `ans mcp` forwards to that file
 // (`apps/cli/src/commands/mcp.ts`) and `e2e.test.ts` drives `ans mcp --help`.
@@ -23,13 +23,13 @@ import { fileURLToPath } from "node:url";
 
 const CLI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = path.resolve(CLI_DIR, "..", "..");
-const TARGET = path.join(REPO_ROOT, "apps", "mcp", "dist", "index.cjs");
+const TARGET = path.join(REPO_ROOT, "apps", "mcp", "dist", "index.js");
 
 if (fs.existsSync(TARGET)) {
   process.exit(0);
 }
 
-process.stdout.write("ensure-mcp-dist: apps/mcp/dist/index.cjs missing, building it (ans mcp forwards to it)\n");
+process.stdout.write("ensure-mcp-dist: apps/mcp/dist/index.js missing, building it (ans mcp forwards to it)\n");
 const r = spawnSync("pnpm", ["-C", "apps/mcp", "run", "build"], {
   cwd: REPO_ROOT,
   stdio: "inherit",

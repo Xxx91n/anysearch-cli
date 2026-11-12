@@ -8,10 +8,11 @@
 // than a test-local copy of buildCacheKey.
 //
 // How a rebuild is observed without mocking the call chain:
-//   - Catalog models (openai/gpt-5-mini) warn once per createLlmSession call
-//     when ANS_LLM_CONTEXT_WINDOW is set (#113): "[anysearch]
-//     ANS_LLM_CONTEXT_WINDOW ignored for catalog model ...". Counting that
-//     line is a direct count of session construction - tiny probe, no network.
+//   - Catalog models (openai/gpt-5-mini) write one override line per
+//     createLlmSession call when ANS_LLM_CONTEXT_WINDOW is set (#113, #258):
+//     "[anysearch] ANS_LLM_CONTEXT_WINDOW overrides catalog model ...".
+//     Counting that line is a direct count of session construction - tiny
+//     probe, no network.
 //   - For custom endpoints (baseUrl set) a local HTTP listener stands in for
 //     the upstream: a rebuild repoints the request at the new endpoint, while a
 //     cache hit keeps using the old one. The response is never asserted on -
@@ -91,7 +92,7 @@ async function callOne(handler: ChatHandler): Promise<string> {
 }
 
 /**
- * Count every catalog session construction via its #113 warning line, without
+ * Count every catalog session construction via its override line, without
  * swallowing ordinary stderr output.
  */
 let rebuilt = 0;
@@ -101,7 +102,7 @@ function installRebuildProbe(): void {
     chunk: unknown,
     ...rest: unknown[]
   ) {
-    if (String(chunk).includes("ANS_LLM_CONTEXT_WINDOW ignored")) rebuilt++;
+    if (String(chunk).includes("ANS_LLM_CONTEXT_WINDOW overrides catalog model")) rebuilt++;
     return (originalStderrWrite as (...args: unknown[]) => boolean).call(process.stderr, chunk, ...rest);
   } as typeof process.stderr.write;
 }

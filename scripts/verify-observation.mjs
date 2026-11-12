@@ -16,7 +16,7 @@ const Database = requireFromStore("better-sqlite3");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-observation-smoke-"));
 const dbPath = path.join(dir, "trace.db");
 const cliPath = path.join(ROOT, "apps", "cli", "dist", "index.js");
-const mcpPath = path.join(ROOT, "apps", "mcp", "dist", "index.cjs");
+const mcpPath = path.join(ROOT, "apps", "mcp", "dist", "index.js");
 const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: "", ANYSEARCH_API_KEY: "" };
 
 function fail(message) {

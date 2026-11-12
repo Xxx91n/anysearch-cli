@@ -35,12 +35,24 @@ ok(s.models && typeof s.models.getModel === "function", "models registry returne
 ok(s.apiKey === undefined, "kernel never mirrors provider env into the session (step 7; pi-ai owns provider auth)");
 
 // #113: contextWindow passthrough — the L0 watermark resolves {fraction}
-// against the REAL window. Catalog models expose their catalog value; the
-// option is custom-endpoint-only (no catalog override in this ticket).
+// against the REAL window. A catalog model with no declaration exposes its own
+// catalog value; #258 then makes a declaration authoritative instead of
+// ignoring it.
 const catalog = await createLlmSession({ provider: "openai", model: "gpt-5" });
 const catalogWindow = catalog.model.contextWindow;
 ok(typeof catalogWindow === "number" && catalogWindow > 0, "#113: catalog model carries a context window");
 ok(catalog.contextWindow === catalogWindow, "#113: catalog LlmSession exposes the real window");
+
+// #258: a declared window wins over the catalog value. A user who says
+// their endpoint is 1M must not be quietly held to the catalog's number.
+{
+  const declared = catalogWindow + 500_000;
+  const overridden = await createLlmSession({ provider: "openai", model: "gpt-5", contextWindow: declared });
+  ok(overridden.model.contextWindow === declared,
+    "#258: a declared window overrides the catalog window on the model");
+  ok(overridden.contextWindow === declared,
+    "#258: LlmSession reports the declared window, not the catalog default");
+}
 
 // Composition-root parser: kernel never reads env; roots pass the raw value.
 ok(parseContextWindow(undefined) === undefined, "#113: unset context window -> undefined");
@@ -141,7 +153,10 @@ ok(threwFractional, "#113: fractional contextWindow floors to 0 and fails fast")
 
 for (const kind of ["chat", "messages", "responses"] as LlmEndpointKind[]) {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    ok(req.url === endpointConfig[kind].expectedPath, kind + " protocol hits " + endpointConfig[kind].expectedPath + " (got " + req.url + ")");
+    // pi-ai 1.5.1's anthropic transport appends a query string (?beta=true).
+    // Route matching is path-only; the protocol is decided by the path.
+    const gotPath = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    ok(gotPath === endpointConfig[kind].expectedPath, kind + " protocol hits " + endpointConfig[kind].expectedPath + " (got " + req.url + ")");
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end(sseBody(kind));
   });

@@ -53,7 +53,7 @@ jobs:
       - name: Smoke — apps/mcp --help + 5-tool stdio & Streamable HTTP (#100)
         shell: bash
         run: |
-          node apps/mcp/dist/index.cjs --help
+          node apps/mcp/dist/index.js --help
           # #100: full 5-tool smoke on BOTH transports (stdio + stateless Streamable
           # HTTP) against the built dist — type descriptions intact (#46), two-generation
           # protocol negotiation unchanged (legacy echo + 2026-07-28 -> 2025-11-25). tools/list

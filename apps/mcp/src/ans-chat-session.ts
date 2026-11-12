@@ -183,7 +183,7 @@ export interface AnsChatToolResult {
   // this module (the tool layer already owns that dependency).
   [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
-  structuredContent?: { sessionId: string };
+  structuredContent?: Record<string, unknown>;
 }
 
 /**
@@ -194,7 +194,12 @@ export interface AnsChatToolResult {
  * tool argument, and content-only proxies (e.g. the dsh native tool plane) never
  * see structuredContent. The answer text itself stays untouched.
  */
-export function buildAnsChatResult(output: string, sessionId?: string): AnsChatToolResult {
+export function buildAnsChatResult(output: string, sessionId?: string, extra?: Record<string, unknown>): AnsChatToolResult {
+  // Usage and context are facts about this call, not properties of the handle.
+  // A store-less run has no handle but still spent a model call, so the
+  // metadata must survive without one. The handle is authoritative: spread
+  // `extra` first so a caller-supplied key can never overwrite it.
+  const metadata = { ...(extra ?? {}), ...(sessionId ? { sessionId } : {}) };
   return {
     content: [
       { type: "text", text: output || "ans_chat: no response" },
@@ -202,6 +207,6 @@ export function buildAnsChatResult(output: string, sessionId?: string): AnsChatT
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
     ],
-    ...(sessionId ? { structuredContent: { sessionId } } : {}),
+    ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
   };
 }

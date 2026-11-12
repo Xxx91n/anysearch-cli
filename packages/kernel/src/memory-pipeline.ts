@@ -6,7 +6,28 @@
 // consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 // signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
-import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
+import { loadPiCodingAgent } from "./pi-sdk";
+
+// PI's summarizer calls `stream.result()`; a host stream function only has to be
+// an async iterable. Filling in the missing method keeps the official summarizer
+// usable, instead of maintaining a second implementation of it.
+function ensureResult(streamFn: any): any {
+  if (typeof streamFn !== "function") return streamFn;
+  return (model: any, context: any, options?: any) => {
+    const stream = streamFn(model, context, options);
+    if (stream && typeof stream.result !== "function") {
+      stream.result = async () => {
+        let last: any;
+        for await (const event of stream) {
+          if (event?.type === "done" && event.message) last = event.message;
+        }
+        if (!last) throw new Error("summarization stream produced no final message");
+        return last;
+      };
+    }
+    return stream;
+  };
+}
 // reuse summary engine only, NOT compact window management.
 // Own constant so upstream window-management namespace changes cannot break L0.
 const COMPACTION_RESERVE_TOKENS = 16_384;
@@ -18,6 +39,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 // simply tries again.
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
+import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
@@ -90,7 +112,10 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const results: TaggedGap["results"] = [];
   let label: SourceTraceLabel = { source: "retrieved", traceId: "gap" };
   for (const msg of gap) {
-    if (msg.role !== "tool") continue;
+    // pi-agent-core 1.5.1 appends a separate toolResult message; older shapes
+    // used a role:"tool" message. Accept both so gap distillation survives the
+    // SDK upgrade.
+    if (msg.role !== "tool" && msg.role !== "toolResult") continue;
     const toolName = msg.toolName || msg.name || "";
     if (typeof toolName !== "string" || !toolName.includes("search")) continue;
     const raw = typeof msg.content === "string"
@@ -166,7 +191,10 @@ export async function adjudicateReuseCompress(
   try {
     const stream = streamFn(model, context, signal ? { signal } : {});
     for await (const event of stream) {
-      if (event?.type === "text" && event.text) text += event.text;
+      // 1.5.1 streams text as text_delta.delta; the monolithic "text" event was
+      // the pre-upgrade shape.
+      if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
+      else if (event?.type === "text" && event.text) text += event.text;
     }
   } catch {
     return "compress"; // D10: fail-open.
@@ -370,9 +398,19 @@ export class MemoryPipeline {
   // drain them first.
   private readonly pendingWrites = new Set<Promise<unknown>>();
 
+  // Usage of the pipeline's own summary requests, kept apart from the main run
+  // so the caller can report both without double counting. Same ledger type as
+  // the run, so cost provenance follows the same rule.
+  private summaryUsage = emptyUsageTotals();
+
   constructor(deps: MemoryPipelineDeps) {
-    this.deps = deps;
+    this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
     this.rag = new RagAdapterRegistry({ store: deps.store });
+  }
+
+  /** Summary-call accounting for this runtime (never zero-filled). */
+  getSummaryUsage(): SummaryUsage {
+    return toSummaryUsage(this.summaryUsage);
   }
 
   /**
@@ -618,17 +656,33 @@ export class MemoryPipeline {
           };
           // Tracked: flush() must see this write before the store is closed.
           this.track(
-            generateSummaryWithUsage(
-              messages, modelsObj, actualModel,
-              COMPACTION_RESERVE_TOKENS,
-              deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
-              IR_CUSTOM_INSTRUCTIONS,
-              previousSummary,
-              "off",
-            ).then((summaryResult: any) => {
-              if (summaryResult?.ok && summaryResult.value?.text) {
+            (async () => {
+              const apiKey = await getApiKey?.();
+              const sdk = await loadPiCodingAgent();
+              // 1.5.1 signature: (messages, model, reserveTokens, apiKey,
+              // headers, signal, customInstructions, previousSummary,
+              // thinkingLevel, streamFn, env, retry, callbacks, sessionId).
+              // The old 0.84.2 shape took a Models object and returned a
+              // Result, so the whole call is restructured here.
+              const result = await sdk.generateSummaryWithUsage(
+                messages,
+                actualModel,
+                COMPACTION_RESERVE_TOKENS,
+                apiKey,
+                undefined,
+                deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+                IR_CUSTOM_INSTRUCTIONS,
+                previousSummary,
+                undefined,
+                streamFn,
+              );
+              const u = result.usage;
+              if (u) accumulateUsage(this.summaryUsage, { role: "assistant", usage: u });
+              return { text: result.text };
+            })().then((summaryResult: any) => {
+              if (summaryResult?.text) {
                 return store!.saveAnchor(sessionId!, "rolling_summary", {
-                  summary: summaryResult.value.text,
+                  summary: summaryResult.text,
                   tokenWatermark: totalTokens,
                   timestamp: Date.now(),
                 }).catch(() => {});
@@ -690,11 +744,17 @@ export class MemoryPipeline {
       } catch {}
 
       // L2 cold path — FTS5 recall.
+      // 1.5.1 stores assistant tool calls as type:"toolCall" with `arguments`;
+      // the legacy tool_use/input shape is kept as a fallback for adapted
+      // transcripts and older tests.
+      const isSearchCall = (c: any) =>
+        (c?.type === "toolCall" || c?.type === "tool_use") &&
+        typeof c.name === "string" && c.name.includes("search");
       const lastToolCall = [...messages].reverse().find((m: any) =>
-        m.role === "assistant" && Array.isArray(m.content) &&
-        m.content.some((c: any) => c.type === "tool_use" && typeof c.name === "string" && c.name.includes("search"))
+        m.role === "assistant" && Array.isArray(m.content) && m.content.some(isSearchCall)
       );
-      const searchToolInput = lastToolCall?.content?.find((c: any) => c.type === "tool_use" && c.name?.includes("search"))?.input;
+      const searchBlock = lastToolCall?.content?.find(isSearchCall);
+      const searchToolInput = searchBlock?.arguments ?? searchBlock?.input;
       const l2Query = searchToolInput?.query || "";
       if (typeof l2Query === "string" && l2Query.length > 3) {
         // (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.

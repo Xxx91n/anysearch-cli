@@ -10,7 +10,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, piSessionOptions, emptyRunUsage, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
@@ -189,6 +189,9 @@ export function registerAnsChat(
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
+            // PI's own session record resumes the conversation; the same handle
+            // keys both the record and the SQLite anchors (#258).
+            ...piSessionOptions(memory.sessionId, session.apiKey),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -197,20 +200,57 @@ export function registerAnsChat(
           });
           let output = "";
           let runtimeError: string | undefined;
+          let runUsage: unknown;
+          let runContext: unknown;
+          // A `done` event is the runtime's own signal that the loop finished.
+          // Its absence after an otherwise clean stream means the run was cut
+          // short (cancellation, a closed generator), and partial text must not
+          // be presented as a completed answer.
+          let completed = false;
+          // Retrieval/tool work is counted separately from LLM usage: a search
+          // spends provider quota, not model tokens.
+          const toolCalls: Record<string, number> = {};
           for await (const event of runtime.run(message)) {
             if (event.type === "text") output += event.content;
-            else if (event.type === "done") {
+            else if (event.type === "tool_call") {
+              toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
+            } else if (event.type === "done") {
+              completed = true;
               output += "\n" + event.summary;
+              runUsage = event.usage ?? null;
+              runContext = event.context ?? null;
               // #189: the one-shot recovery summary stays visible to the caller.
               if (event.recovery) output += "\n" + event.recovery;
             } else if (event.type === "error") {
               runtimeError = event.message;
             }
           }
+          // Background summary calls already ran on this session's behalf, so
+          // their spend belongs on the ledger whatever ended the turn. Drain
+          // before every exit path — an error or a cancellation must not leave
+          // real spend unrecorded and later read as free. Fail-open: a drain
+          // fault is reported by the runtime, never turned into a tool failure.
+          await runtime.flushMemory().catch(() => {});
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
-          return buildAnsChatResult(output, memory.sessionId);
+          // Cancellation is a transport outcome, not a finished run (#211). The
+          // partial text is dropped so a cut-off stream never reads as an
+          // answer, and no usage or context is reported for a run that has no
+          // accounting. The handle is not part of the answer, so it survives:
+          // the caller can resume the same session later.
+          if (!completed) return buildAnsChatResult("", memory.sessionId);
+          // Every call reports what it spent. A run that produced no accounting
+          // still returns the full shape with every dimension named missing,
+          // never a partial object that renders as a free run.
+          return buildAnsChatResult(output, memory.sessionId, {
+            usage: {
+              run: runUsage ?? emptyRunUsage(["run usage"]),
+              memorySummary: runtime.getMemoryUsage(),
+            },
+            context: runContext,
+            toolCalls,
+          });
         } catch (e) {
           return toolError("ans_chat", e instanceof Error ? e.message : String(e));
         }

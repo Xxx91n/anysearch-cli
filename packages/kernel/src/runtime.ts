@@ -5,6 +5,7 @@
 // domain-aware tool filtering across every command.
 
 import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort } from "./ports";
+import type { CostSource } from "./usage";
 
 export type AgentEvent =
   | { type: "text"; content: string }
@@ -12,8 +13,45 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }
   | { type: "search_result"; envelope: unknown }
-  | { type: "done"; summary: string; recovery?: string }
+  | { type: "done"; summary: string; recovery?: string; usage?: RunUsage; context?: RunContextUsage }
   | { type: "error"; message: string };
+
+/** One run's complete accounting; `missing` names the dimensions the provider did not report. */
+export interface RunUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Whole-run total: main calls plus PI's compaction. Same scope as costUsd. */
+  totalTokens: number;
+  /** Whole-run price: main calls plus PI's compaction. Same scope as totalTokens. */
+  costUsd: number;
+  /**
+   * Where costUsd came from. `provider` means the server sent the price;
+   * `estimated` means the local rate card computed it; `unknown` means there is
+   * no figure; `mixed` means part of the total is provider-sent and part
+   * estimated (the run and PI's compaction carried it differently). An estimate
+   * must never be presented as a server-reported price.
+   */
+  costSource: CostSource;
+  /** Assistant calls that actually returned usage. 0 means no call landed. */
+  assistantCalls: number;
+  /** PI context-compaction calls, kept apart from the main run. */
+  compactionCalls: number;
+  compactionTokens: number;
+  compactionCostUsd: number;
+  /** Where the compaction part of costUsd came from. */
+  compactionCostSource: CostSource;
+  /** Dimensions that stay unknown. Empty only when every dimension was reported. */
+  missing: string[];
+}
+
+/** PI's own view of the context window, read back from the live session. */
+export interface RunContextUsage {
+  tokens: number | null;
+  window: number;
+  percent: number | null;
+}
 
 export interface AgentRuntime {
   // Run the agent loop. Yields events as they occur.

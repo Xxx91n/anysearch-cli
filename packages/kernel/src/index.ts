@@ -3,6 +3,10 @@ export * from "./ports";
 export * from "./runtime";
 export * from "./engine";
 export * from "./pi-runtime";
+// Token/cache/cost accounting shared by the agent run and the memory pipeline.
+export * from "./usage";
+// PI session-record location + compaction thresholds, shared by both hosts (#258).
+export * from "./pi-session";
 export * from "./memory-pipeline";
 // rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
 export * from "./rag-adapter";

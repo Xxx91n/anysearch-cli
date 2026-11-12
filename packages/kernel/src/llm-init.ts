@@ -182,16 +182,34 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   // Provider env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY) lives inside pi-ai's ProviderAuth.
   const apiKey = opts.apiKey;
 
-  // #113: catalog models already carry a real window; LlmSession exposes it for
-  // the L0 watermark. `contextWindow` is a custom-endpoint-only option — a
-  // catalog override would be new scope beyond this ticket. Warn instead of
-  // silently ignoring an explicitly-set value (the startup paths pass the
-  // parsed env unconditionally).
-  if (opts.contextWindow !== undefined && typeof process !== "undefined" && process.stderr) {
-    process.stderr.write(
-      "[anysearch] ANS_LLM_CONTEXT_WINDOW ignored for catalog model " +
-      opts.provider + "/" + opts.model + "; the pi-ai catalog window is authoritative\n",
-    );
+  // #258: a declared window is what the operator says their endpoint
+  // really has, and it must drive the run, the budget estimate and PI's own
+  // compaction trigger alike. The catalog value is a default, not a verdict —
+  // silently keeping it while ignoring the declaration would turn a declared
+  // 1M endpoint back into whatever the catalog says. The override is announced
+  // so nobody has to guess which number won.
+  if (opts.contextWindow !== undefined) {
+    const declared = normalizeContextWindow(opts.contextWindow);
+    const catalogModel = model as Model<string>;
+    if (declared !== undefined && declared !== catalogModel.contextWindow) {
+      if (typeof process !== "undefined" && process.stderr) {
+        process.stderr.write(
+          "[anysearch] ANS_LLM_CONTEXT_WINDOW overrides catalog model " +
+          opts.provider + "/" + opts.model + ": declared " + declared +
+          " tokens, catalog " + catalogModel.contextWindow + "\n",
+        );
+      }
+      const overridden = { ...catalogModel, contextWindow: declared } as Model<string>;
+      return {
+        model: overridden,
+        streamFn,
+        models,
+        providerName: opts.provider,
+        modelName: opts.model,
+        apiKey,
+        contextWindow: declared,
+      };
+    }
   }
   const catalogModel = model as Model<string>;
 

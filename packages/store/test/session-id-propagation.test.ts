@@ -81,7 +81,51 @@ async function main() {
     rmSync(dirB, { recursive: true, force: true });
   }
   check("OBSERVATION_SCHEMA_VERSION = 2", OBSERVATION_SCHEMA_VERSION === 2);
-  check("OBSERVATION_USER_VERSION = 2", OBSERVATION_USER_VERSION === 2);
+  // v3 added observability_spans.links_json (span links required by
+  // pi-telemetry 1.5.1's adapter contract). The trace payload shape did not
+  // change, so OBSERVATION_SCHEMA_VERSION stays 2 while the DB user_version
+  // moves.
+  check("OBSERVATION_USER_VERSION = 3", OBSERVATION_USER_VERSION === 3);
+
+  // v2 -> v3 on a database that already holds span rows: the ALTER must add
+  // links_json without touching the existing spans, and every old row must
+  // default to an empty link list.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "obs-v3-"));
+    const db = join(dir, "trace.db");
+    const raw = new Database(db);
+    raw.exec("PRAGMA user_version = 2");
+    raw.exec(`CREATE TABLE observability_traces (
+      trace_id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL, operation TEXT NOT NULL, status TEXT NOT NULL,
+      payload_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      injected_trace_id TEXT, session_id TEXT, client_id TEXT
+    );`);
+    raw.exec(`CREATE TABLE observability_spans (
+      span_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL, parent_span_id TEXT,
+      kind TEXT NOT NULL, operation TEXT NOT NULL, status TEXT NOT NULL,
+      attributes_json TEXT NOT NULL, events_json TEXT NOT NULL
+    );`);
+    raw.exec(`INSERT INTO observability_traces
+      (trace_id, run_id, kind, operation, status, payload_json)
+      VALUES ('${"a".repeat(32)}', 'legacy-run', 'cli', 'legacy-op', 'ok', '{}')`);
+    raw.exec(`INSERT INTO observability_spans
+      (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json)
+      VALUES ('${"b".repeat(16)}', '${"a".repeat(32)}', NULL, 'cli', 'legacy-span', 'ok', '{}', '[]')`);
+    raw.close();
+
+    const store = new SqliteObservationStore(db);
+    store.close();
+
+    const checkDb = new Database(db, { readonly: true });
+    const cols = (checkDb.prepare("PRAGMA table_info(observability_spans)").all() as Array<{ name: string }>).map((c) => c.name);
+    const rows = checkDb.prepare("SELECT span_id, operation, links_json FROM observability_spans").all() as Array<{ span_id: string; operation: string; links_json: string }>;
+    checkDb.close();
+    check("v2->v3 migration adds links_json to observability_spans", cols.includes("links_json"));
+    check("v2->v3 migration preserves the legacy span row", rows.length === 1 && rows[0]!.operation === "legacy-span");
+    check("v2->v3 migration defaults legacy links to an empty list", rows.length === 1 && rows[0]!.links_json === "[]");
+    rmSync(dir, { recursive: true, force: true });
+  }
 
   // --- 2) Attribution round-trip (OPA #6905 closure) ---
   {
