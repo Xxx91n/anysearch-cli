@@ -118,13 +118,36 @@ interface LockOwner {
 const OWNER_FILE = "owner.json";
 const HEARTBEAT_FILE = "heartbeat";
 
+/**
+ * The holder's identity, or undefined when there is none to read.
+ *
+ * A missing file and an unreadable one are different facts and must not
+ * collapse into the same answer: missing means the lock predates its identity
+ * (or the directory was just swept), which the age rules may still judge;
+ * unreadable means this machine cannot confirm who holds it, and treating that
+ * as "no identity" would let a live holder's heartbeat stop forever and then
+ * let a waiter reclaim a run that is still going (#266: identity unknown is
+ * handled conservatively, never as "dead").
+ */
+class UnreadableOwnerError extends Error {}
+
 function readLockOwner(lockPath: string): LockOwner | undefined {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(join(lockPath, OWNER_FILE), "utf8")) as Partial<LockOwner>;
-    if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") return undefined;
+    text = readFileSync(join(lockPath, OWNER_FILE), "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+    throw new UnreadableOwnerError("owner.json exists but cannot be read");
+  }
+  try {
+    const raw = JSON.parse(text) as Partial<LockOwner>;
+    if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
+      throw new UnreadableOwnerError("owner.json has no usable identity");
+    }
     return { pid: raw.pid as number, host: raw.host };
-  } catch {
-    return undefined;
+  } catch (e) {
+    if (e instanceof UnreadableOwnerError) throw e;
+    throw new UnreadableOwnerError("owner.json is not valid JSON");
   }
 }
 
@@ -153,9 +176,21 @@ function lockAgeMs(lockPath: string, now: number): number {
  * comment for the rule table. The one-line version: a live local owner is
  * never reclaimed, a confirmed-dead local owner is reclaimed at once, and
  * everyone else has to outlive the stale window.
+ *
+ * An owner.json that exists but cannot be read counts as "cannot confirm":
+ * this waiter falls back to the age rule, and while the file stays unreadable
+ * the holder's own heartbeat stops refreshing it, so the window does expire.
+ * The alternative — treating the read failure as "no identity" — is the same
+ * fallback minus the guarantee that something eventually moves, which is what
+ * this branch keeps.
  */
 function reclaimableNow(lockPath: string, staleMs: number): boolean {
-  const owner = readLockOwner(lockPath);
+  let owner: LockOwner | undefined;
+  try {
+    owner = readLockOwner(lockPath);
+  } catch {
+    return lockAgeMs(lockPath, Date.now()) > staleMs;
+  }
   if (owner && owner.host === hostname()) {
     return !pidIsAlive(owner.pid);
   }
@@ -245,20 +280,40 @@ export async function acquireSessionLock(
         host: hostname(),
         startedAt: Date.now(),
       }));
-    } catch {
-      try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept */ }
+    } catch (e) {
+      // ENOENT here means the directory we created is already gone — another
+      // waiter swept it (its stale window elapsed while we were between mkdir
+      // and this write) and may already have put its own lock in its place.
+      // Deleting `lockPath` then would delete that new holder's lock, so leave
+      // it alone and just fail this attempt: the caller retries and races on
+      // mkdir like anyone else.
+      const gone = (e as NodeJS.ErrnoException)?.code === "ENOENT";
+      if (!gone) {
+        try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept */ }
+      }
       throw new Error("Session lock could not record its owner; refusing to run without a verifiable lock.");
     }
     let beating = true;
     const beat = () => {
       if (!beating) return;
+      let stillOurs: boolean;
       try {
-        // Stop touching files that may belong to a new holder: once the
-        // recorded identity is not ours, this directory is no longer ours.
-        if (!ownsLockDir(lockPath)) {
-          beating = false;
-          return;
-        }
+        stillOurs = ownsLockDir(lockPath);
+      } catch {
+        // A transient read failure (a competing process rewriting the file,
+        // a filesystem hiccup) says nothing about ownership. Stopping the
+        // heartbeat here would be the worst possible reaction: the lock would
+        // age out while its holder is still running, and the next waiter would
+        // reclaim a live run. Skip this beat and try again on the next tick.
+        return;
+      }
+      // Stop touching files that belong to a new holder: a directory that no
+      // longer names us was reclaimed while we ran.
+      if (!stillOurs) {
+        beating = false;
+        return;
+      }
+      try {
         writeFileSync(join(lockPath, HEARTBEAT_FILE), String(Date.now()));
       } catch {
         beating = false;
@@ -271,8 +326,17 @@ export async function acquireSessionLock(
       beating = false;
       clearInterval(timer);
       // Delete only a lock we still own: a directory that now names someone
-      // else was reclaimed while we ran and must survive.
-      if (!ownsLockDir(lockPath)) return;
+      // else was reclaimed while we ran and must survive. A read failure means
+      // we cannot prove ownership, so the safe action is to leave it alone —
+      // an unreleased lock ages out, a wrongly deleted one hands the session
+      // to two writers.
+      let stillOurs: boolean;
+      try {
+        stillOurs = ownsLockDir(lockPath);
+      } catch {
+        return;
+      }
+      if (!stillOurs) return;
       try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* already swept */ }
     };
   }
@@ -282,6 +346,11 @@ export async function acquireSessionLock(
 // aborts the acquisition, so by the time this runs a readable owner.json is
 // the only legitimate state: a directory that does not name us was reclaimed
 // by someone else and must not be touched.
+//
+// Throws UnreadableOwnerError when the file exists but cannot be read. Callers
+// decide what that means for them — the heartbeat skips a beat, release leaves
+// the lock alone — because neither can prove ownership and guessing either way
+// is unsafe.
 function ownsLockDir(lockPath: string): boolean {
   const owner = readLockOwner(lockPath);
   return owner !== undefined && owner.pid === process.pid && owner.host === hostname();

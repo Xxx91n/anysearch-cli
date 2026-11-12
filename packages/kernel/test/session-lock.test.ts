@@ -246,60 +246,76 @@ async function main() {
 
     // ---------- L7: the reclaim path still honours the wait cap ----------
     {
-      // A lock that keeps looking reclaimable but never actually gets swept:
-      // the directory's owner is unreadable, so age decides, and the age is
-      // fresh — no wait, the point is the deadline still fires. Simulate the
-      // harder case: a stale lock whose sweep cannot complete because the
-      // directory is not removable.
-      const lockDir = join(workDir, "l7", "s.lock");
+      // A stale lock whose sweep cannot succeed, every poll, until the cap.
+      // A read-only lock DIRECTORY does not stop the rename (the parent stays
+      // writable on Linux and Windows), so the failure has to come from the
+      // rename itself: remove the parent's write permission. That is the
+      // portable lever for this platform pair — on a filesystem that ignores
+      // mode bits the test still passes because the sweep then succeeds and
+      // the acquisition is simply finite either way. Either outcome is
+      // checked; what must never happen is waiting past the cap.
+      const parent = join(workDir, "l7");
+      const lockDir = join(parent, "s.lock");
       mkdirSync(lockDir, { recursive: true });
       backdate(lockDir, 10_000); // past any short stale window
-      // Make the reclaim rename fail every time by pointing at an unrenameable
-      // target: a pre-existing file where the graveyard would go is not needed —
-      // instead, drop the parent's write permission is not portable on Windows.
-      // Read-only-ness is the portable lever: chmod the directory read-only.
-      let release: (() => void) | undefined;
       const waitMs = 400;
+      let busy: string | undefined;
+      let elapsed = 0;
       const started = Date.now();
+      try { chmodSync(parent, 0o555); } catch { /* not enforced here */ }
       try {
-        chmodSync(lockDir, 0o555);
-      } catch { /* not enforced on some platforms */ }
-      const busy = await expectBusy(lockDir, 50, waitMs).then((m) => m);
-      try { chmodSync(lockDir, 0o755); } catch { /* best effort */ }
-      const elapsed = Date.now() - started;
-      // Either the sweep failed and the cap fired, or the sweep succeeded and
-      // the lock was taken — both are finite. The failure this test guards
-      // against is an unbounded loop, which shows up as elapsed >> waitMs.
+        busy = await expectBusy(lockDir, 50, waitMs);
+      } finally {
+        try { chmodSync(parent, 0o755); } catch { /* best effort */ }
+        elapsed = Date.now() - started;
+      }
+      // The cap is the contract: a failing sweep must return "session busy",
+      // not retry forever (#266: the wait has an upper bound).
       assert(elapsed < waitMs + 2_000,
         "L7: the reclaim path never spins past the wait cap (waited " + elapsed + " ms, cap " + waitMs + " ms)");
-      if (busy === SESSION_BUSY_MESSAGE) {
+      if (!existsSync(lockDir)) {
+        // The sweep won: the lock was taken, which is also finite. Nothing
+        // further to assert — the important case is the one below.
+        assert(true, "L7: the sweep succeeded and the acquisition was bounded");
+      } else {
+        assert(busy === SESSION_BUSY_MESSAGE,
+          "L7: when the sweep cannot remove the lock, the wait ends as session busy (got "
+          + JSON.stringify(busy) + ")");
         assert(existsSync(lockDir), "L7: a lock the sweep could not remove still exists for the next waiter");
       }
       try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* best effort */ }
     }
 
-    // ---------- L8: reclaim never deletes a lock a competitor just took ----------
+    // ---------- L8: a sweep that loses the race leaves the winner's lock intact ----------
     {
-      // Two waiters judge the same dead lock reclaimable. The first sweeps it
-      // and creates its own; the second's delete must not remove that one.
-      // The rename-based sweep makes the loser see ENOENT instead.
+      // The interleaving this guards: waiter W reads the dead holder and
+      // decides to sweep; before its rename lands, another waiter sweeps and
+      // installs its own lock. W's rename must then fail with ENOENT and touch
+      // nothing — the replacement keeps the session. Driving two real
+      // processes into that gap needs a barrier between "decided" and "renamed"
+      // (the MCP multi-process suite owns the honest version); here the same
+      // end state is built directly: the lock that exists is not the one the
+      // stale judgement was about.
       const lockDir = join(workDir, "l8", "s.lock");
-      const deadPid = await recentlyDeadPid();
-      if (deadPid !== null) {
-        writeFakeOwner(lockDir, deadPid, hostname());
-        const first = await expectAcquired(lockDir, SESSION_LOCK_STALE_MS, 3_000);
-        // The first waiter is now the holder; a second contender must not
-        // sweep it even though the previous owner is still dead on paper.
-        const busy = await expectBusy(lockDir, SESSION_LOCK_STALE_MS, 300);
-        assert(busy === SESSION_BUSY_MESSAGE,
-          "L8: a contender does not steal a lock a live competitor just acquired (got " + JSON.stringify(busy) + ")");
-        const ownerNow = JSON.parse(readFileSync(ownerFile(lockDir), "utf8"));
-        assert(ownerNow.pid === process.pid,
-          "L8: the competitor's acquired lock still names its holder (got " + JSON.stringify(ownerNow) + ")");
-        first();
-      } else {
-        assert(false, "L8: could not obtain a recently dead pid to test with");
-      }
+      // A stale lock a waiter would sweep on age alone.
+      mkdirSync(lockDir, { recursive: true });
+      backdate(lockDir, 10_000);
+      // The replacement: a foreign holder, so pid is unreadable here and only
+      // age decides. Its heartbeat is fresh, so a correct waiter must not
+      // sweep it — that is the state a lost rename race would otherwise
+      // destroy.
+      writeFakeOwner(lockDir, 888888, "another-machine");
+      writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+
+      // stale 1 s vs wait 300 ms: the fresh heartbeat cannot age past the
+      // window before this waiter gives up, so a sweep would be a bug.
+      const busy = await expectBusy(lockDir, 1_000, 300);
+      assert(busy === SESSION_BUSY_MESSAGE,
+        "L8: a fresh replacement lock is not swept by age (got " + JSON.stringify(busy) + ")");
+      const ownerNow = JSON.parse(readFileSync(ownerFile(lockDir), "utf8"));
+      assert(ownerNow.pid === 888888,
+        "L8: the replacement holder's identity survives (got " + JSON.stringify(ownerNow) + ")");
+      rmSync(lockDir, { recursive: true, force: true });
     }
 
     // ---------- W1: the runtime holds the lock for the whole run ----------
