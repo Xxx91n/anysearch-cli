@@ -831,6 +831,113 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
     "S11: the later submitter's material stays live");
 }
 
+// --- S12. a plan-phase budget stop carries into the resolution ------------
+// The cap already refused a call during planning; the resolution must not
+// spend again on the pending collision (CodeRabbit #282). It is named
+// incomplete immediately, and the run reports exactly ONE budget refusal.
+{
+  const db = "plan-budget.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-12");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-12");
+  // Two clusters in entity order (email first, hours second): the first one
+  // plans fully, the second is the one the budget refuses.
+  const betaEmail = await seedEpisode(beta, sessB.id, "https://a.example/notice-email",
+    "邮箱通知", EMAIL_NOTICE, "beta-email-claim");
+  const betaHours = await seedEpisode(beta, sessB.id, "https://a.example/notice-hours",
+    "时间通知", HOURS_NOTICE, "beta-hours-claim");
+
+  const budgetRejection = Object.assign(
+    new Error("consolidation stopped: the session budget rejected this call"),
+    { code: "consolidate-budget-rejected" },
+  );
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], {
+    hold: alphaCorrection(alpha, alphaNotice),
+    onCall: (n) => { if (n === 1) throw budgetRejection; },
+  });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaEmail, betaHours], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, { reMerge: M1_FINAL }).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+
+  assert(repB.budgetRejected === 1,
+    "S12: exactly ONE budget refusal is counted — the stopped plan also stops the resolution (got " + repB.budgetRejected + ")");
+  assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails[0]!.stage === "rejudge-budget",
+    "S12: the pending collision is named incomplete with the budget stage");
+  assert(String(repB.incompleteDetails[0]!.reason).includes("already exhausted"),
+    "S12: the reason says the cap was already exhausted, not that a new call was refused");
+  assert(betaVerify.calls() === 2,
+    "S12: no resolution judgment is attempted after the plan stop (got " + betaVerify.calls() + ")");
+  assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0,
+    "S12: neither a conflict nor a resolution is claimed");
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
+    "S12: the landed version is untouched");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaEmail).superseded_by === null,
+    "S12: the losing material stays live");
+}
+
+// --- S13. the refusal branch reports the version live at REPORT time -------
+// The re-judge refuses, but a third session replaced the judged version
+// during that wait (CodeRabbit #282): the conflict names the NEWEST live
+// version and says the version moved, instead of presenting a closed row as
+// "current".
+{
+  const db = "refusal-moved.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-13");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-13");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://b.example/notice-2",
+    "A 公司客服时间通知（另一份）", "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。", "a-support-hours");
+  const gamma = openStore(db);
+  const sessG = await gamma.createSession("gamma-13");
+  const gammaNotice = await seedEpisode(gamma, sessG.id, "https://a.example/notice-2026-11-08",
+    "A 公司公告：公共假期人工客服照常服务（官方）", HOLIDAY_NOTICE, "a-support-hours");
+
+  const gammaRun = () => gamma.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [gammaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(HOLIDAY_NOTICE, GAMMA_FINAL).fn, classify: SUPPORTED, verify: async () => CORRECTION, verifyFinal: PASS_FINAL },
+  );
+  const betaVerify = stagedVerify([CORRECTION, B2_REJUDGE], {
+    hold: alphaCorrection(alpha, alphaNotice),
+    // Call #1 is the re-judge: the third session replaces the judged version
+    // while it runs, and the verdict then refuses.
+    onCall: (n) => { if (n === 1) return gammaRun().then(() => undefined); },
+  });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(B2_CANDIDATE, A4_MERGED).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === GAMMA_FINAL,
+    "S13: the third session's version is the live one");
+  assert(repB.conflicts === 1, "S13: the refusal is reported as a conflict");
+  const d = repB.conflictDetails[0]!;
+  assert(d.currentTargetId === lives[0]!.id && d.currentContent === GAMMA_FINAL,
+    "S13: the conflict carries the version live at REPORT time, not the judged one");
+  assert(d.reason.includes("replaced again while the re-judge ran"),
+    "S13: the reason states that the version moved during the re-judge");
+  assert(d.retries === 1, "S13: still exactly one re-judge — no third judgment");
+  assert(betaVerify.calls() === 2, "S13: exactly two judgments");
+}
+
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
 __setEmbeddingModuleForTest("auto");
 rmSync(dir, { recursive: true, force: true });

@@ -662,6 +662,10 @@ export async function consolidateMemoryRun(
   // model calls, and those must not run inside BEGIN IMMEDIATE: the budget
   // ledger reserves through the same connection and would deadlock on it.
   const collisions: PendingCollision[] = [];
+  // Design: #262 — the plan loop's budget stop is a RUN-level state: the
+  // resolution phase must not spend again after the cap already refused a
+  // call (CodeRabbit #282). Declared here so both phases read one flag.
+  let planBudgetStopped = false;
 
   // The live row's current source set, read inside the write transaction.
   // Returns null when the row is no longer live — the caller reports the
@@ -881,7 +885,6 @@ export async function consolidateMemoryRun(
 
     const nowMs = Date.now();
     let processed = 0;
-    let budgetStopped = false;
 
     // D6: one place builds the refusal the caller gets back, so the
     // single-evidence and batch paths cannot drift in shape. What is missing is
@@ -914,7 +917,7 @@ export async function consolidateMemoryRun(
     };
 
     for (const [, eps] of byEntity) {
-      if (budgetStopped) break;
+      if (planBudgetStopped) break;
       if (opts.limit && processed >= opts.limit) break;
       report.clustersScanned++;
       // #261: a cluster made only of already-superseded materials describes the
@@ -965,7 +968,7 @@ export async function consolidateMemoryRun(
       } catch (e) {
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
-          budgetStopped = true;
+          planBudgetStopped = true;
           break;
         }
         throw e;
@@ -1113,7 +1116,7 @@ export async function consolidateMemoryRun(
           try {
             checked = await runCorrectionCheck(best);
           } catch (e) {
-            if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+            if (isBudgetRejection(e)) { report.budgetRejected++; planBudgetStopped = true; break; }
             throw e;
           }
           if (checked.kind === "refused") continue;
@@ -1151,7 +1154,7 @@ export async function consolidateMemoryRun(
         try {
           checked = await runCorrectionCheck(best);
         } catch (e) {
-          if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+          if (isBudgetRejection(e)) { report.budgetRejected++; planBudgetStopped = true; break; }
           throw e;
         }
         if (checked.kind === "refused") continue;
@@ -1232,7 +1235,7 @@ export async function consolidateMemoryRun(
         try {
           merged = await deps.summarize(mergeEvidence);
         } catch (e) {
-          if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+          if (isBudgetRejection(e)) { report.budgetRejected++; planBudgetStopped = true; break; }
           mergeFailed = true;
           mergeError = e;
         }
@@ -1262,7 +1265,7 @@ export async function consolidateMemoryRun(
               correctedContent: summary,
             });
           } catch (e) {
-            if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+            if (isBudgetRejection(e)) { report.budgetRejected++; planBudgetStopped = true; break; }
             throw e;
           }
           // All four criteria gate the write. `corrected` closes the hole where
@@ -1385,7 +1388,9 @@ export async function consolidateMemoryRun(
     const verify = deps.verify;
     const summarize = deps.summarize;
     const verifyFinal = deps.verifyFinal;
-    let resolutionStopped = false;
+    // Design: #262 — the plan phase's budget stop carries over: once the cap
+    // refused a call, the resolution must not spend again (CodeRabbit #282).
+    let resolutionStopped = planBudgetStopped;
     // Design: #262 — one incomplete shape for every way the resolution can
     // stop short: a budget refusal (stage rejudge-budget), a model fault
     // (rejudge-failed), or a withheld final check (final-check). The landed
@@ -1493,14 +1498,24 @@ export async function consolidateMemoryRun(
       if (verdict.relation !== "correction" || !verdict.sameFact || !verdict.reliable) {
         // B2 (Q21): the re-judge refused against the CURRENT version. The
         // first accepted plan is now a collision the caller must see in full.
+        //
+        // CodeRabbit #282: `head` was read BEFORE the re-judge call, and a
+        // concurrent writer can replace it during that wait. The conflict
+        // names the version that is live when the report is built; when it
+        // moved, the reason says so instead of presenting a closed row as
+        // "current".
         const relation = verdict.relation;
+        const reportedHead = liveHeadOf(pending.planned.id) ?? head;
+        const movedNote = reportedHead.id === head.id
+          ? ""
+          : " (the live version was replaced again while the re-judge ran; the current content shown is the newest version)";
         pushConflict(pending, {
-          current: head, verdict, retries: 1,
-          reason: relation === "different"
+          current: reportedHead, verdict, retries: 1,
+          reason: (relation === "different"
             ? "the re-judge found the new material is not about the same object, matter, scope or time as the current version"
             : relation === "unclear"
               ? "the re-judge could not reconcile this correction with the current version: conflicting claims, no basis to prefer either side"
-              : "the re-judge did not accept this correction against the current version",
+              : "the re-judge did not accept this correction against the current version") + movedNote,
           followUp: relation === "different"
             ? "并发冲突：本次更正与当前生效结论可能不是同一对象/事项/范围/时间；两边材料都在上面，请补查对应关系后再试。"
             : relation === "unclear"
