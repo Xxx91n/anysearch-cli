@@ -779,6 +779,48 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     store.close();
   }
 
+  // 9a2. The relation verifier may accept an update despite a generic
+  // high-overlap/negation false positive; new knowledge still needs fidelity.
+  {
+    const db = "b-classifier-negated.db";
+    const store = openStore(db);
+    const seed = await store.createSession("eval");
+    await buildKnowledge(store, db, seed.id, "zeta-api",
+      "Zeta service supports the REST API. Deploys run weekly.", "https://ex.com/classifier-old");
+    const corr = await store.createSession("eval");
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, corr.id,
+      "https://ex.com/classifier-new-" + i, "Zeta correction",
+      "Zeta service no longer supports the REST API.", "zeta-api"));
+    const rep = await store.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+      { summarize: twoStageSummarize("Zeta service no longer supports the REST API.",
+          "Zeta service no longer supports the REST API. Deploys run weekly."),
+        classify: () => ({ label: "unsupported", confidence: 0 }),
+        verify: async () => CORRECTION,
+        verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }) },
+    );
+    assert(rep.update === 1 && rep.gateRejected === 0,
+      "batch: an accepted correction is not vetoed by the generic negation heuristic");
+    store.close();
+  }
+  {
+    const db = "b-classifier-add.db";
+    const store = openStore(db);
+    const session = await store.createSession("eval");
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, session.id,
+      "https://ex.com/unsafe-" + i, "Unknown note", "Unsupported new fact", "unrelated"));
+    const rep = await store.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+      { summarize: async () => "Unsupported new fact",
+        classify: () => ({ label: "unsupported", confidence: 0 }) },
+    );
+    assert(rep.gateRejected === 1 && rep.add === 0,
+      "batch: unsupported ADD remains gated");
+    store.close();
+  }
+
   // 9b. refused batch update: the polarity disagreement is not enough.
   {
     const db = "b-no.db";
@@ -1282,6 +1324,22 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "kw relevance: the row that answers the question is returned");
   assert(!semContents.some((c) => c.includes("ticket volume")),
     "kw relevance: a row sharing only one common word is not returned");
+  store.close();
+}
+
+// --- 11c2. non-ASCII, non-Han recall works with embeddings unavailable ------
+{
+  const db = "kw-cyrillic.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("Почта поддержки: help@sample.example");
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const hits = await store.searchMemory("Почта", 10);
+  __setEmbeddingModuleForTest("auto");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
+    "Unicode fallback: Cyrillic knowledge is recalled without embeddings");
   store.close();
 }
 
