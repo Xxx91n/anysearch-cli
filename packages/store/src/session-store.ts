@@ -1474,9 +1474,9 @@ export class SqliteSessionStore implements SessionStore {
       // from a useful query fragment; avoid the scan if FTS already filled.
       if (otherScript.length < limit) {
         const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
-      const rows = this.db.prepare(
-        "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
-      ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+        const rows = this.db.prepare(
+          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
+        ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
         for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
       }
     }
