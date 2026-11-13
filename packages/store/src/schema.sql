@@ -317,6 +317,54 @@ CREATE TRIGGER IF NOT EXISTS semantic_au AFTER UPDATE ON semantic_memories BEGIN
   INSERT INTO semantic_memories_fts(rowid, content) VALUES (new.id, new.content);
 END;
 
+-- #263 (D9): what a derived summary actually read, so a later correction can
+-- tell WHICH summaries depend on the fact it replaced. Two things this table
+-- deliberately is not: a session filter (a summary may use material recalled
+-- from another session, so the dependency is recorded by id, not by owner),
+-- and a text-match table (shared wording is not a dependency; only ids the
+-- summary was built from count).
+--
+-- `anchor_id` names the append-only resume_anchors row this dependency
+-- belongs to, so old summary versions keep their own dependency list after a
+-- newer one is written.
+CREATE TABLE IF NOT EXISTS summary_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  anchor_type TEXT NOT NULL CHECK (anchor_type IN ('rolling_summary', 'l2_recall')),
+  anchor_id INTEGER NOT NULL REFERENCES resume_anchors(id) ON DELETE CASCADE,
+  -- 'material' -> retrieval_results.id, 'knowledge' -> semantic_memories.id.
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('material', 'knowledge')),
+  source_id INTEGER NOT NULL CHECK (source_id > 0),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (session_id, anchor_id, source_kind, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_summary_sources_anchor ON summary_sources(anchor_id);
+-- Reverse lookup used by a correction: "which summaries read this material?"
+CREATE INDEX IF NOT EXISTS idx_summary_sources_lookup ON summary_sources(source_kind, source_id);
+
+-- #263 (D8/D9): a summary that must stop being injected because the fact it
+-- carried was replaced. The summary text itself is never deleted or rewritten
+-- here — it stays readable in resume_anchors with its dependencies intact — it
+-- only leaves the "current conclusion" slot until the rebuild ticket puts a
+-- version built from current sources back.
+--
+-- `cleared_at` is written only by a successful rebuild; a row with
+-- cleared_at NULL means "still suspended". One row per anchor: the first
+-- correction that touches it names the trigger, later ones do not rewrite the
+-- reason.
+CREATE TABLE IF NOT EXISTS summary_suspensions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  anchor_id INTEGER NOT NULL REFERENCES resume_anchors(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('material', 'knowledge')),
+  trigger_id INTEGER NOT NULL CHECK (trigger_id > 0),
+  suspended_at TEXT NOT NULL DEFAULT (datetime('now')),
+  cleared_at TEXT,
+  UNIQUE (session_id, anchor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_summary_suspensions_anchor ON summary_suspensions(anchor_id);
+
 -- reversible archive ledger (entity_merge_log-style full snapshot). One row per
 -- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.
 CREATE TABLE IF NOT EXISTS archive_log (
