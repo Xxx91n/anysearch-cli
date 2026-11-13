@@ -158,12 +158,16 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
 }
 
 // NOOP adjudication — LLM decides REUSE vs COMPRESS.
+// `onUsage` receives the final assistant message so the caller can book this
+// helper call's tokens and cost into the same summary ledger as the compression
+// calls (D4: helper work is a real provider call, not free).
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
   gapDistillation: string,
   existingSummary: string | undefined,
   signal?: AbortSignal,
+  onUsage?: (message: unknown) => void,
 ): Promise<"reuse" | "compress"> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
@@ -190,12 +194,18 @@ export async function adjudicateReuseCompress(
   let text = "";
   try {
     const stream = streamFn(model, context, signal ? { signal } : {});
+    let finalMessage: unknown;
     for await (const event of stream) {
       // 1.5.1 streams text as text_delta.delta; the monolithic "text" event was
       // the pre-upgrade shape.
       if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
       else if (event?.type === "text" && event.text) text += event.text;
+      if (event?.type === "done" && event.message) finalMessage = event.message;
     }
+    // D4: report this adjudication call's usage. A stream that never names a
+    // final message contributes nothing here; the caller's `missing` list then
+    // says the figure was not reported instead of counting it as free.
+    if (onUsage && finalMessage) onUsage(finalMessage);
   } catch {
     return "compress"; // D10: fail-open.
   }
@@ -719,7 +729,17 @@ export class MemoryPipeline {
           // under an already-expired budget.
           const deadline = AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS);
           this.track(
-            adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, deadline)
+            adjudicateReuseCompress(
+              streamFn,
+              actualModel,
+              gapDistillation,
+              previousSummary,
+              deadline,
+              // D4: this adjudication is a real provider call made on the
+              // session's behalf, so its usage is booked rather than left
+              // outside the ledger.
+              (usageMessage) => accumulateUsage(this.summaryUsage, usageMessage),
+            )
               .then((adjDecision: "reuse" | "compress") => {
                 if (adjDecision === "compress" && !deadline.aborted) {
                   fireCompress(deadline);

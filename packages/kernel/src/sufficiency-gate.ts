@@ -17,6 +17,27 @@ export interface SufficiencyEvaluatorDeps {
   streamFn: any;
   model: any;
   getApiKey?: () => Promise<string | undefined>;
+  // #259: the same archive writer the search tool uses. The gate's reround is a
+  // real internal search whose results reach the next provider request, so they
+  // must be indexed too — otherwise material the model just used is missing from
+  // the shared archive the next session recalls from. Absent = no indexing.
+  //
+  // Takes the NEW results only: `evaluate` runs once per turn and the outer
+  // tool result was already archived by the search tool itself. Re-archiving the
+  // whole merged set would write a replacement row for every URL and close its
+  // live predecessor, churning the history the ticket says to leave alone.
+  //
+  // `signal` is the scope the CALLER captured for this evaluation, passed through
+  // so the guard cannot re-read a mutable runtime field: reading `activeRunSignal`
+  // at write time would see `undefined` after an abort cleared it, and the write
+  // would go through.
+  archive?: (results: unknown[], signal?: AbortSignal) => Promise<void>;
+  // #259: this run's cancellation scope (caller abort PLUS the runtime's own
+  // stop, e.g. a consumer closing the stream). The reround uses it twice: to stop
+  // searching, and as the archive write's guard. Without it a closed consumer
+  // leaves a reround running, and its results could then supersede live rows in
+  // a database other sessions read.
+  signal?: AbortSignal;
 }
 
 // GateEnvelope — pure data returned by evaluate, consumed by applyTo.
@@ -60,8 +81,12 @@ export class SufficiencyEvaluator {
   // evaluate: check sufficiency of last search result, generate named gap, re-search if needed.
   // PURE — returns GateEnvelope, does NOT modify messages.
   // Best-effort, fail-open. Returns empty envelope if no work needed.
-  async evaluate(messages: any[]): Promise<GateEnvelope> {
+  async evaluate(messages: any[], signal?: AbortSignal): Promise<GateEnvelope> {
     const { domain, retriever, streamFn, model, getApiKey } = this.deps;
+    // #259: one cancellation scope for the whole evaluation — the run's own, or
+    // the one handed in. A stop means this turn is over, so the reround must not
+    // keep searching and must not archive.
+    const scope = signal ?? this.deps.signal;
 
     const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1, gapRequests: [] };
 
@@ -128,11 +153,29 @@ export class SufficiencyEvaluator {
       if (gapRequests[0]?.gapQuery) gapQuery = gapRequests[0].gapQuery;
       // D5: bounded re-search loop.
       for (let round = 0; round < maxRerounds; round++) {
-        const reroundEnvelope = await retriever.search({ query: gapQuery, mode: "fast" });
+        // #259: a stopped run searches no further and archives nothing.
+        if (scope?.aborted) return empty;
+        const reroundEnvelope = await retriever.search({
+          query: gapQuery,
+          mode: "fast",
+          ...(scope ? { signal: scope } : {}),
+        });
+        // #259: check AGAIN after the search returns. A stop that landed while
+        // the search was in flight must not be followed by a write — this is the
+        // check that covers it, not the one above.
+        if (scope?.aborted) return empty;
         // Merge results: append new unique URLs.
         const seenUrls = new Set((envelope.results || []).map((r: any) => r.url));
         const newResults = (reroundEnvelope.results || []).filter((r: any) => !seenUrls.has(r.url));
         if (newResults.length === 0) break; // no new info, stop.
+        // #259: archive the reround's FRESH results only. They are about to
+        // reach the next provider request, so a later session must be able to
+        // recall the same material. The writer is fail-open itself, so no
+        // second guard is spelled here — one fail-open rule per helper keeps the
+        // two internal search paths from drifting apart. The scope is passed
+        // through explicitly: re-reading a mutable runtime field at write time
+        // would come back `undefined` once an abort cleared it.
+        if (this.deps.archive) await this.deps.archive(newResults, scope);
         envelope.results = [...(envelope.results || []), ...newResults];
         // Re-check sufficiency on merged results.
         const reroundSuff = computeSufficiency(

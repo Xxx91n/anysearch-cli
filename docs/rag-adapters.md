@@ -100,8 +100,10 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 - **按会话过滤**：得给 `RagAdapterPort` 加一个 sessionId 参数，这违反 #90 定好的
   `retrieve(query, limit)` 约定。`searchResults` 虽然是现成的按会话查的语句，但
   semantic 那一路不返回会话归属，合并结果时也不按会话筛；更要紧的是 MCP `search_web`
-  每调一次就新建一个 session，`session_id` 是一次调用一个，不是一段对话的边界，CLI `ans chat`
-  也不往 `retrieval_results` 里写。要接上这套代价不小，而且得先有真正靠谱的会话归属。
+  每调一次就新建一个 session，`session_id` 是一次调用一个，不是一段对话的边界。
+  （CLI `ans chat` / 内核内部搜索从 #259 起会把结果写进 `retrieval_results`，记在当次
+  会话 id 下；那仍然是一次运行一个归属，不是「这段对话只读自己的」，所以会话过滤
+  的理由没变。）要接上这套代价不小，而且得先有真正靠谱的会话归属。
 - **按域过滤**：`retrieval_results` 里没有 domain 这一列；`sessions.domain` 只是会话的
   附加信息，任何检索都不拿它筛，而且 MCP 自动索引固定写 `"mcp"`。想按域筛，手上根本
   没有能用的归属字段，得改写入路径、给旧记录补字段，还要在每一条查询路径上都加过滤。
@@ -218,5 +220,8 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
   `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），sessionId 从
   `~/.anysearch-cli/session` 这个存档点读（`ANS_SESSION_ID` 可以覆盖），并且先
   `store.ensureSession(id, domain)` 建好会话行，满足 `sessions(id)` 外键。
-  要注意 `fts` 只读 `retrieval_results`，而 CLI 现在不往这张表写入——所以 `ans chat` 能查回来的是
-  本机数据库里**已经有的**记忆（比如 MCP `search_web` 自动索引进去的），不是这一轮聊的内容。
+- **`ans chat` / `ans_chat` 的内部搜索会入库（#259）** —— 会话接上以后，内核那条 `search` 工具和
+  补搜（sufficiency reround）拿到的结果都会写进 `retrieval_results`，记在当次会话 id 下，
+  写失败只报警告、不影响这一轮回答。所以 `ans chat` 之前那轮搜到的东西，下一次（包括另一个会话）
+  开 `rag.adapter = "fts"` 时能直接召回，不用再搜一遍。取消的搜索不写库（没搜完不算结果）。
+  入库前会过和 `search_web` 同一个内容信任边界，命中后仍需自己核对来源。
