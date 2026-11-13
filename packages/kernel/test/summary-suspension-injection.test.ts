@@ -274,12 +274,20 @@ async function main() {
   await store.ensureSession(p9Session, "acme");
   const shortText = "OLD-HOURS-263 weekdays 9-17";
   const longText = shortText + BLANK_LINE + "OLD-HOURS-263 second line";
+  // BOTH versions use the SAME anchor type, so both injected blocks start with
+  // `[Session Memory] ` and differ only by their body. An earlier version of this
+  // case put them under different tags, which made the strings differ at the
+  // first character — a short prefix could never cut a longer block, so the case
+  // passed even without the longest-first ordering and proved nothing.
   await store.saveAnchor(p9Session, "rolling_summary", {
     summary: shortText,
     sources: [{ kind: "material", id: 999999 }],
   });
-  await store.saveAnchor(p9Session, "l2_recall", {
-    hits: longText,
+  // A second anchor of the same type: `saveAnchor` is append-only, so both rows
+  // exist and both are known blocks. The older one is the superseded version, the
+  // newer one extends it.
+  await store.saveAnchor(p9Session, "rolling_summary", {
+    summary: longText,
     sources: [{ kind: "material", id: 999999 }],
   });
   const prefixHistory = [{
@@ -287,7 +295,7 @@ async function main() {
     content: [{
       type: "text",
       text: "my question" + BLANK_LINE + "[Session Memory] " + shortText
-        + BLANK_LINE + "[Research Recall] " + longText,
+        + BLANK_LINE + "[Session Memory] " + longText,
     }],
   }];
   const prefixRuntime = pipelineFor(store, p9Session);
