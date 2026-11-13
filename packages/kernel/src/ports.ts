@@ -3,7 +3,7 @@
 // Kernel only imports these interfaces; CLI wiring injects implementations.
 
 import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
-import type { SessionStore, Message, BudgetConfig, BudgetCaps, ReservationDim } from "@anysearch-cli/store";
+import type { SessionStore, Message, BudgetConfig, BudgetCaps } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
 export type Budget = {
@@ -106,12 +106,6 @@ export interface BudgetLedgerPort {
   // Optional like the cap seams above; a ledger without it simply keeps the
   // pre-#275 behaviour. Returns the number of owner entries released.
   reclaimDeadReservations?(sessionId: string): number;
-  // #275: release counter amounts that no owner claims — the residue a database
-  // written by a pre-#275 build still carries. Only safe for a caller that has
-  // proven it is the session's exclusive writer (the runtime calls it after
-  // taking the session lock), which is why it is a separate, explicit call
-  // rather than part of the dead-owner sweep.
-  reclaimUnownedReservations?(sessionId: string): Record<ReservationDim, number>;
 }
 
 // ResumeAnchorsPort: engine-side resume-anchor writer (#48).

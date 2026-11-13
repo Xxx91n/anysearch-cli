@@ -54,8 +54,6 @@ export interface BudgetBalance {
 /** One budget_ledger counter, as recorded in budget_reservations (#275). */
 export type ReservationDim = "tokens" | "usd" | "calls";
 
-const DIMS: readonly ReservationDim[] = ["tokens", "usd", "calls"];
-
 /** Who held a reservation: the two facts a live owner can be checked against. */
 export interface ReservationOwner {
   pid: number;
@@ -121,7 +119,6 @@ export class BudgetLedger {
     deleteEmptyReservation: Database.Statement;
     deleteReservation: Database.Statement;
     sessionReservations: Database.Statement;
-    rawCounters: Database.Statement;
     releaseReservedTokens: Database.Statement;
     releaseReservedUsd: Database.Statement;
     releaseReservedCalls: Database.Statement;
@@ -181,10 +178,6 @@ export class BudgetLedger {
       // that row belongs to the dead holder, not to a live settle's leftover.
       deleteReservation: db.prepare("DELETE FROM budget_reservations WHERE session_id = ? AND dim = ? AND owner_pid = ? AND owner_host = ?"),
       sessionReservations: db.prepare("SELECT dim as dim, owner_pid as pid, owner_host as host, amount as amount FROM budget_reservations WHERE session_id = ?"),
-      // The raw counters, without getBalance's configured = 1 filter: the
-      // unowned sweep has to see the numbers a deactivated row still carries,
-      // or the residue would survive a later re-activation.
-      rawCounters: db.prepare("SELECT reserved_tokens as tokens, reserved_usd as usd, reserved_calls as calls FROM budget_ledger WHERE session_id = ?"),
       // #275: release a dead owner's share from the ledger counter. The amount
       // is the one recorded for that owner, and the decrement is clamped, so an
       // already-settled counter cannot go negative.
@@ -387,63 +380,6 @@ export class BudgetLedger {
         if (this.stmts.deleteReservation.run(sessionId, r.dim, r.pid, r.host).changes === 0) continue;
         this.releaseStmts[r.dim].run(r.amount, sessionId);
         released += 1;
-      }
-      return released;
-    });
-    return run.immediate();
-  }
-
-  /**
-   * #275: clear reservation counters that no owner claims.
-   *
-   * A database written before this table existed has counters but no owner
-   * rows — exactly the residue the ticket measured (reserved_tokens = 12304,
-   * spent_tokens = 0, left by a killed run). Nothing can attribute that amount,
-   * so the dead-owner rule above can never release it on its own.
-   *
-   * This is only safe when the caller has proven it is the session's exclusive
-   * writer, so the runtime calls it after taking the session lock and nowhere
-   * else. Consolidation reserves without that lock, so it must not call this:
-   * its reservations are recorded under an owner and stay untouched.
-   *
-   * A run of an older build that recorded no owner is the one live thing this
-   * can clear, and an older build did not take the session lock either. The
-   * window is one upgrade and it can only loosen the cap for that run, never
-   * tighten it.
-   *
-   * Returns the amount released per dimension, so a caller can report it.
-   *
-   * Design: a separate call, gated on the caller holding the session lock,
-   * instead of folding it into the dead-owner sweep — only that lock proves no
-   * other writer can be reserving right now, and an unconditional clear would
-   * wipe a live consolidation's reservation.
-   * Design: the two reads and the write share one immediate transaction — split
-   * across statements, a live owner's settle could land between them, the
-   * subtraction would overstate the unclaimed part, and this method would
-   * release a reservation that is still in use.
-   */
-  reclaimUnownedReservations(sessionId: string): Record<ReservationDim, number> {
-    const run = this.db.transaction((): Record<ReservationDim, number> => {
-      const balance = this.stmts.rawCounters.get(sessionId) as
-        | { tokens: number; usd: number; calls: number }
-        | undefined;
-      const released: Record<ReservationDim, number> = { tokens: 0, usd: 0, calls: 0 };
-      if (!balance) return released;
-      const owned = { tokens: 0, usd: 0, calls: 0 };
-      for (const r of this.stmts.sessionReservations.all(sessionId) as Array<{ dim: ReservationDim; amount: number }>) {
-        if (r.dim in owned) owned[r.dim] += Number(r.amount) || 0;
-      }
-      const unowned: Record<ReservationDim, number> = {
-        tokens: Number(balance.tokens) - owned.tokens,
-        usd: Number(balance.usd) - owned.usd,
-        calls: Number(balance.calls) - owned.calls,
-      };
-      for (const dim of DIMS) {
-        // A rounding tail on the usd dimension is not worth a write.
-        const amount = unowned[dim];
-        if (!(amount > (dim === "usd" ? 1e-9 : 0))) continue;
-        released[dim] = amount;
-        this.releaseStmts[dim].run(amount, sessionId);
       }
       return released;
     });

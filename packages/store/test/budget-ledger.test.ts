@@ -351,12 +351,13 @@ async function main() {
         "#275: only the dead owner's 12304 was released, the live run's 9000 remains");
       assert(survivor.reserveTokens(s12.id, 11001) === false,
         "#275: real exhaustion still rejects — reclaim never invents headroom");
-      // The release cannot leave anything ownerless behind: the next reserve
-      // takes its counter and its owner row in one transaction, so a sweep
-      // between the two calls cannot see a "unowned" amount that is really a
-      // live reservation.
-      assert(survivor.reclaimUnownedReservations(s12.id).tokens === 0,
-        "#275: a live run's reservation is never mistaken for unowned residue");
+      // The dead owner's rows must be gone, and nothing else may have been
+      // released: the live run's own reservation is still counted below.
+      const liveRowsNow = (store as any).db
+        .prepare("SELECT owner_pid, amount FROM budget_reservations WHERE session_id = ?")
+        .all(s12.id) as Array<{ owner_pid: number; amount: number }>;
+      assert(liveRowsNow.every((r) => r.amount === 9_000),
+        "#275: only the dead owner's row was released (got " + JSON.stringify(liveRowsNow) + ")");
       survivor.settleTokens(s12.id, 9000, 8000);
       const settled = survivor.getBalance(s12.id)!;
       assert(settled.reservedTokens === 0 && settled.spentTokens === 8000,
@@ -400,10 +401,13 @@ async function main() {
       assert(local.getBalance(s14.id)!.reservedTokens === 3000,
         "#275: the foreign owner's reservation is still reserved");
 
-      // 21. #275: the unowned residue a pre-#275 database carries has no owner
-      //     row, so the dead-owner rule can never release it. It is only cleared
-      //     by the explicit exclusive-writer call, and only for the amount that
-      //     nothing claims.
+      // 21. #275 boundary: an amount with no owner row cannot be released by
+      //     the dead-owner rule, and this build deliberately does not clear it.
+      //     Such an amount is left by a pre-#275 build, which does not take the
+      //     session lock either; clearing it would let that still-running old
+      //     process and this run both spend against the cap. The upgrade window
+      //     is tracked in #279, so here the residue is asserted to STAY — a
+      //     build that started clearing it silently would fail this case.
       const s15 = await store.createSession("unowned-residue");
       const residueLedger = new BudgetLedger((store as any).db);
       residueLedger.initBudget(s15.id, { tokenCap: 20000, timeLimitMs: 60_000 });
@@ -412,23 +416,26 @@ async function main() {
         "UPDATE budget_ledger SET reserved_tokens = 12304 WHERE session_id = ?"
       ).run(s15.id);
       assert(residueLedger.reclaimDeadReservations(s15.id) === 0,
-        "#275: the dead-owner rule alone cannot release an unowned amount");
+        "#275: the dead-owner rule cannot release an amount with no owner row");
       assert(residueLedger.getBalance(s15.id)!.reservedTokens === 12304,
-        "#275: the unowned residue is still there before the explicit sweep");
-      const unowned = residueLedger.reclaimUnownedReservations(s15.id);
-      assert(unowned.tokens === 12304, "#275: the exclusive-writer sweep reports the released residue");
-      assert(residueLedger.getBalance(s15.id)!.reservedTokens === 0,
-        "#275: the generated leftover is gone after the exclusive-writer sweep");
-      // The sweep must not touch an amount that a live owner still holds.
+        "#275/#279: the unowned amount is kept, not silently cleared");
+      // A live owner's recorded share is untouched by that rule too. The
+      // liveness answer is pinned: a fixed pid number is not "alive" on every
+      // host, and this case is about the rule, not about this machine's
+      // process table.
       const s16 = await store.createSession("unowned-vs-owned");
-      const ownedLedger = new BudgetLedger((store as any).db, { owner: { pid: 5678, host: hostname() } });
+      const livePid = 5678;
+      const ownedLedger = new BudgetLedger((store as any).db, {
+        owner: { pid: livePid, host: hostname() },
+        isOwnerAlive: (pid) => pid === livePid,
+      });
       ownedLedger.initBudget(s16.id, { tokenCap: 20000, timeLimitMs: 60_000 });
       (store as any).db.prepare("UPDATE budget_ledger SET reserved_tokens = 1000 WHERE session_id = ?").run(s16.id);
       assert(ownedLedger.reserveTokens(s16.id, 1304), "#275 fixture: a live owner records 1304");
-      const mixed = ownedLedger.reclaimUnownedReservations(s16.id);
-      assert(mixed.tokens === 1000, "#275: only the unclaimed 1000 is released, the owned 1304 stays");
-      assert(ownedLedger.getBalance(s16.id)!.reservedTokens === 1304,
-        "#275: the live owner's reservation survives the unowned sweep");
+      assert(ownedLedger.reclaimDeadReservations(s16.id) === 0,
+        "#275: a live owner's recorded share is never released");
+      assert(ownedLedger.getBalance(s16.id)!.reservedTokens === 2304,
+        "#275: the unowned 1000 and the owned 1304 are both still counted");
 
       // 22. #275: the leak exists in all three counters, so the release must too
       //     (CodeRabbit on #274 explicitly asked for usd and calls, not only
@@ -536,19 +543,17 @@ async function main() {
         "#275: the live owner's 5000 survives every sweep (got " + afterDouble.reservedTokens + ")");
       assert(afterDouble.spentTokens === 0,
         "#275: releasing a dead reservation never books spend (got " + afterDouble.spentTokens + ")");
-      // The unowned sweep must report and release the right amount in every
-      // dimension, not only tokens.
+      // #279 boundary: usd / calls amounts with no owner row are kept too, on
+      // every dimension — not only tokens.
       (store as any).db.prepare(
         "UPDATE budget_ledger SET reserved_usd = 3.5, reserved_calls = 4 WHERE session_id = ?"
       ).run(s18.id);
-      const unownedAll = sweepA.reclaimUnownedReservations(s18.id);
-      assert(unownedAll.usd === 3.5 && unownedAll.calls === 4 && unownedAll.tokens === 0,
-        "#275: the unowned sweep handles usd and calls, and leaves owned tokens alone (got "
-        + JSON.stringify(unownedAll) + ")");
+      assert(sweepA.reclaimDeadReservations(s18.id) === 0,
+        "#275: the dead-owner rule releases nothing when every owner row is live");
       const afterUnowned = sweepA.getBalance(s18.id)!;
-      assert(afterUnowned.reservedUsd === 0 && afterUnowned.reservedCalls === 0
+      assert(afterUnowned.reservedUsd === 3.5 && afterUnowned.reservedCalls === 4
         && afterUnowned.reservedTokens === 5_000,
-        "#275: unowned usd/calls cleared while the owned token reservation stays (got "
+        "#275/#279: unowned usd/calls are kept alongside the owned token share (got "
         + JSON.stringify([afterUnowned.reservedTokens, afterUnowned.reservedUsd, afterUnowned.reservedCalls]) + ")");
 
       // 25. #275/CodeRabbit: only ESRCH counts as death — the liveness probe's

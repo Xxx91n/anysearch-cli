@@ -2239,11 +2239,13 @@ console.log("---");
   }
 }
 
-// #275: the unowned sweep needs the session lock. Without a durable session
-// record there is no lock, so the runtime must not clear amounts another writer
-// could be holding — consolidation reserves exactly that way.
+// #275: the runtime runs the dead-owner sweep at every run boundary, whether or
+// not a session lock was taken. Clearing counter amounts that no owner row
+// claims is deliberately NOT done anywhere — a pre-#275 build leaves such
+// amounts and does not take the lock either, so the upgrade window where a
+// running old process would share the cap is tracked in #279 instead.
 {
-  const released: string[] = [];
+  const calls: string[] = [];
   class RecordingLedger implements BudgetLedgerPort {
     reserveCalls(): boolean { return true; }
     settleCalls(): void { }
@@ -2251,11 +2253,7 @@ console.log("---");
     settleTokens(): void { }
     reserveUsd(): boolean { return true; }
     settleUsd(): void { }
-    reclaimDeadReservations(): number { released.push("dead"); return 0; }
-    reclaimUnownedReservations(): Record<"tokens" | "usd" | "calls", number> {
-      released.push("unowned");
-      return { tokens: 0, usd: 0, calls: 0 };
-    }
+    reclaimDeadReservations(): number { calls.push("dead"); return 0; }
   }
   const runtime = new PiAgentRuntime({
     retriever: new MockRetriever(),
@@ -2263,15 +2261,13 @@ console.log("---");
     model: { id: "test-model", provider: "test" } as any,
     streamFn: usageStream(10, 5, 15, 0.001),
     store: noopStore(),
-    sessionId: "s-275-unowned",
+    sessionId: "s-275-boundary",
     ledger: new RecordingLedger(),
     // No piSessionDir: no durable record, so no session lock is taken.
   });
   for await (const _ev of runtime.run("hello")) { /* drain */ }
-  assert(released.includes("dead"),
-    "#275: the dead-owner sweep runs even without the session lock (a kill leaves no other trace)");
-  assert(!released.includes("unowned"),
-    "#275: the unowned sweep never runs without the session lock (it could wipe a live consolidation)");
+  assert(calls.filter((c) => c === "dead").length >= 1,
+    "#275: the dead-owner sweep runs at the run boundary (got " + JSON.stringify(calls) + ")");
 }
 
 console.log("---");

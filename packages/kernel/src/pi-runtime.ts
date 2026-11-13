@@ -590,7 +590,7 @@ export class PiAgentRuntime {
           waitMs: Math.max(1, deadlineAt - Date.now()),
         });
       }
-      yield* this.runInternal(input, Boolean(releaseLock && key));
+      yield* this.runInternal(input);
     } catch (e) {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
@@ -599,7 +599,7 @@ export class PiAgentRuntime {
     }
   }
 
-  private async *runInternal(input: string, holdsSessionLock = false): AsyncIterable<AgentEvent> {
+  private async *runInternal(input: string): AsyncIterable<AgentEvent> {
     // #211: a signal that is already aborted means the caller gave up before
     // this run began. Do not start a provider call, reserve budget, or touch
     // session state for a request nobody is waiting for.
@@ -998,25 +998,22 @@ export class PiAgentRuntime {
     //
     // The rule is per owner (same host + dead pid), not "clear the session": a
     // consolidation running in another process holds reservations without the
-    // session lock, and clearing those would loosen its cap mid-run. That is
-    // also why the unowned sweep needs `holdsSessionLock`. A fault here is the
-    // usual fail-open budget fault — the reserve below then reports any real
-    // exhaustion.
+    // session lock, and clearing those would loosen its cap mid-run. A fault
+    // here is the usual fail-open budget fault — the reserve below then reports
+    // any real exhaustion.
     //
     // Design: the sweep runs at the run boundary rather than only at
     // registration — a long-lived host reuses one ledger, so a leftover
     // inherited at startup would otherwise stay until the process restarted.
-    // Design: the unowned sweep is gated on `holdsSessionLock` because only that
-    // lock proves no second writer is reserving right now; a consolidation does
-    // not take it.
+    //
+    // Not done here: clearing counter amounts that no owner row claims. Those
+    // are left by a pre-#275 build, and a build that old does not take the
+    // session lock either, so holding the lock cannot prove the writer is gone
+    // — clearing it would let a still-running old process and this run both
+    // spend against the cap. That upgrade window is tracked separately (#279).
     if (billingWired) {
       try {
         ledger!.reclaimDeadReservations?.(sessionId!);
-        // The amount no owner claims can only be judged when this run is the
-        // session's only writer: consolidation reserves without the session
-        // lock, so clearing it earlier could wipe a live reservation. Holding
-        // the lock is that proof, so the sweep runs only here.
-        if (holdsSessionLock) ledger!.reclaimUnownedReservations?.(sessionId!);
       } catch (e) {
         reportBudgetFault("reservation reclaim", e);
       }
