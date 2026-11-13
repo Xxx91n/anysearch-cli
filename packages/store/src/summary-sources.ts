@@ -12,7 +12,7 @@
 // 2. When a correction replaces a fact, the summaries built on it must stop
 //    being injected. Their text is never rewritten or deleted (provenance and
 //    the old version stay readable); they only leave the current-conclusion
-//    slot. `suspendSummariesDependingOn` runs INSIDE the correction's write
+//    slot. `suspendSummariesForCorrection` runs INSIDE the correction's write
 //    transaction, so there is no window where the new version is live and the
 //    old summary is still injected as current fact.
 //
@@ -111,8 +111,10 @@ export function isSourceCurrent(db: Database.Database, ref: SummarySourceRef): b
 /**
  * Attach the sources a summary was actually built from to its anchor.
  *
- * Runs in its own IMMEDIATE transaction with the anchor insert done by the
- * caller, so a summary never exists without its dependency list.
+ * Callers run this INSIDE the transaction that inserts the anchor, so a summary
+ * never exists without its dependency list. This function does not open a
+ * transaction itself: nesting one inside `saveSummaryAnchor`'s would either be
+ * a savepoint or an error, and the caller already owns the boundary.
  *
  * Idempotent: re-recording the same (anchor, kind, id) is ignored, so a retried
  * write does not multiply rows. Ids are validated here rather than trusted:
@@ -212,19 +214,24 @@ export function suspendSummaries(
   db: Database.Database,
   summaries: DependentSummary[],
   trigger: { kind: "material" | "knowledge"; id: number; reason: string },
-): number {
+): { newlySuspended: DependentSummary[]; count: number } {
   const insert = db.prepare(
     "INSERT OR IGNORE INTO summary_suspensions (session_id, anchor_id, reason, trigger_kind, trigger_id) VALUES (?, ?, ?, ?, ?)",
   );
-  let suspended = 0;
+  const newlySuspended: DependentSummary[] = [];
   const seen = new Set<number>();
   for (const s of summaries ?? []) {
     if (!s || !Number.isInteger(s.anchorId) || s.anchorId <= 0) continue;
     if (seen.has(s.anchorId)) continue;
     seen.add(s.anchorId);
-    suspended += Number(insert.run(s.sessionId, s.anchorId, trigger.reason, trigger.kind, trigger.id).changes);
+    // Only a row this call actually INSERTED counts. A summary suspended by an
+    // earlier correction is already out of the injection slot, so reporting it
+    // again would tell the caller work happened that did not.
+    if (Number(insert.run(s.sessionId, s.anchorId, trigger.reason, trigger.kind, trigger.id).changes) > 0) {
+      newlySuspended.push(s);
+    }
   }
-  return suspended;
+  return { newlySuspended, count: newlySuspended.length };
 }
 
 /**
@@ -238,16 +245,17 @@ export function suspendSummaries(
  *
  * @param refs - The rows this correction replaced: the closed knowledge row and
  *   the materials it retired.
- * @returns The suspended (session, anchor) pairs, plus the count.
+ * @returns The summaries this correction NEWLY suspended (a summary an earlier
+ *   correction already suspended is not reported a second time).
  */
 export function suspendSummariesForCorrection(
   db: Database.Database,
   refs: SummarySourceRef[],
   trigger: { kind: "material" | "knowledge"; id: number; reason: string },
-): { suspended: DependentSummary[] } {
+): { suspended: DependentSummary[]; count: number } {
   const dependents = findSummariesDependingOn(db, refs);
-  suspendSummaries(db, dependents, trigger);
-  return { suspended: dependents };
+  const { newlySuspended, count } = suspendSummaries(db, dependents, trigger);
+  return { suspended: newlySuspended, count };
 }
 
 /**

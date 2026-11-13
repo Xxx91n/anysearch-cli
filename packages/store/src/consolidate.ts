@@ -1111,7 +1111,7 @@ export async function consolidateMemoryRun(
           // materials this statement actually retired. A summary that read
           // neither is left alone — "same session" and "similar wording" are
           // explicitly not dependencies (D9).
-          const suspendedNow = suspendSummariesForCorrection(
+          const { suspended: suspendedNow } = suspendSummariesForCorrection(
             db,
             [
               { kind: "knowledge" as const, id: row.id },
@@ -1122,7 +1122,7 @@ export async function consolidateMemoryRun(
               id: row.id,
               reason: "knowledge " + row.id + " was replaced by knowledge " + newId,
             },
-          ).suspended;
+          );
           for (const s of suspendedNow) {
             report.summariesSuspended++;
             report.suspendedSummaries.push({ sessionId: s.sessionId, anchorId: s.anchorId, triggerKnowledgeId: row.id });

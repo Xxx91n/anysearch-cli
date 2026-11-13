@@ -258,6 +258,25 @@ async function buildKnowledge(
     "S2: an unrelated summary in another session is NOT suspended");
   assert(suspended.size === 0, "S2: the unrelated session has no suspensions at all");
 
+  // A summary an earlier correction already suspended is NOT reported a second
+  // time: a second correction to the same knowledge must not claim it did new
+  // work, or a caller reading the count would think two summaries went stale.
+  const secondCorrection = await seedEpisode(store, bystander, "https://acme.example/notice-2026-b", "notice", NEW_FACT, "acme");
+  const rep2 = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [secondCorrection], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) =>
+        eps.some((e) => e.title === "CURRENT KNOWLEDGE") ? MERGED_FACT : NEW_FACT,
+      classify: SUPPORTED,
+      verify: async () => CORRECTION_VERDICT,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep2.summariesSuspended === 0,
+    "S2: a summary already suspended by an earlier correction is not counted again (got " + rep2.summariesSuspended + ")");
+  assert(q(db, "SELECT COUNT(*) AS n FROM summary_suspensions WHERE anchor_id = ?", dependentAnchorId)!.n === 1,
+    "S2: still exactly one suspension row for that anchor (no duplicate audit rows)");
+
   // A summary written AFTER the correction, from a material that is still
   // current, is not retroactively suspended: the suspension is about the rows
   // a summary actually read, not about "a correction happened in this session".
