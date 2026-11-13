@@ -1468,16 +1468,29 @@ export class SqliteSessionStore implements SessionStore {
     if (otherWords.length > 0) {
       const asciiTerms = relaxedTerms(query);
       if (asciiTerms.length > 0) {
-        // Independent intersection: even at LIMIT 1, the partial-script
-        // lanes cannot hide a row that matches both halves of the query.
+        // The intersection itself admits rows that match just ONE ASCII word.
+        // Scan bounded indexed candidates BEFORE trimming to 'limit', then use
+        // the same strict-majority filter as the relaxed Latin rung. Favor
+        // higher ASCII coverage before BM25, so a short two-word distractor
+        // cannot displace a row matching the entire mixed-script question.
         const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
         const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+        const scanBound = Math.max(limit * 20, 200);
         const paired = this.db.prepare(
           "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
           "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
           "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
-        ).all("(" + asciiMatch + ") AND (" + unicodeMatch + ")", limit) as Array<{ id: number; content: string; rank: number }>;
-        crossScript.push(...paired);
+        );
+        const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
+        for (const row of paired.iterate("(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound)
+          as Iterable<{ id: number; content: string; rank: number }>) {
+          if (!coversMajority(asciiTerms, row.content)) continue;
+          const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+          const coverage = asciiTerms.filter((term) => tokens.some((token) => token.startsWith(term))).length;
+          qualified.push({ row, coverage });
+        }
+        qualified.sort((a, b) => b.coverage - a.coverage || a.row.rank - b.row.rank);
+        crossScript.push(...qualified.slice(0, limit).map((candidate) => candidate.row));
       }
       const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
       const indexed = this.db.prepare(

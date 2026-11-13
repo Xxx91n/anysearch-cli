@@ -1398,6 +1398,32 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   store.close();
 }
 
+// --- 11c2c. mixed query applies ASCII coverage before LIMIT ------------
+{
+  const db = "kw-cyrillic-coverage.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  const put = rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)");
+  // Make "acme"/"address" frequent in the corpus: BM25 now ranks the
+  // short Unicode distractors ahead of the long fully matching fact.
+  for (let i = 0; i < 30; i++) put.run("Acme billing address invoice " + i);
+  for (let i = 0; i < 9; i++) put.run("billing почта");
+  put.run("Acme billing почта"); // 2/3 ASCII terms: eligible, but not best.
+  put.run("Acme billing address почта: receipts@acme.example " + "misc ".repeat(150));
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const lane = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme billing address почта", 1);
+  const hits = await store.searchMemory("Acme billing address почта", 1);
+  __setEmbeddingModuleForTest("auto");
+  assert(lane.length === 1 && lane[0]!.content.includes("receipts@acme.example"),
+    "mixed coverage: the full ASCII+Unicode hit wins despite BM25 preferring partial matches");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("receipts@acme.example")),
+    "mixed coverage: keyword fallback returns the fully matching fact at limit=1 without embeddings");
+  store.close();
+}
+
 // --- 11c3. the CJK rung is not gated on the ASCII rung's fill level ------
 // The gate used to read "out.length < limit", i.e. "the other rung already
 // answered enough". For a mixed query that is wrong: FTS can only serve the
