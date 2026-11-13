@@ -1337,9 +1337,12 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   rw.close();
   __setEmbeddingModuleForTest(null);
   const hits = await store.searchMemory("Почта", 10);
+  const lowerCaseHits = await store.searchMemory("почта", 10);
   __setEmbeddingModuleForTest("auto");
   assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
     "Unicode fallback: Cyrillic knowledge is recalled without embeddings");
+  assert(lowerCaseHits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
+    "Unicode FTS: a lowercase Cyrillic query recalls the uppercase source text");
   store.close();
 }
 
