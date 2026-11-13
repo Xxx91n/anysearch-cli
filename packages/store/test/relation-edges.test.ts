@@ -187,7 +187,8 @@ const edgeCounts = (p: string) => {
   { const w = new Database(p3b); w.prepare("UPDATE retrieval_results SET superseded_by = ? WHERE id = ?").run(firstId + 1, firstId); w.close(); }
   // A second episode brings the same relation again. It must land, because the
   // live edge is no longer backed by a live material.
-  await e.adjudicateMemory(s3b.id, [mem(2)]);
+  const second = await e.adjudicateMemory(s3b.id, [mem(2)]);
+  const secondId = second[0]!.insertedId!;
   const tel = e.relationTelemetry();
   assert(tel.supersededSupportClosed >= 1,
     "superseded support: the dead edge was closed so the relation could be re-established (" + tel.supersededSupportClosed + ")");
@@ -197,6 +198,16 @@ const edgeCounts = (p: string) => {
   const liveRt2 = rd.prepare("SELECT COUNT(*) as n FROM edges WHERE relation = 'related_to' AND valid_until IS NULL").get() as { n: number };
   rd.close();
   assert(liveRt2.n === 1, "superseded support: one live related_to edge is backed by the current material (" + liveRt2.n + ")");
+  // Backfill must not re-extract retired episode 1 and take the live edge away
+  // from episode 2. The normal full scan sees both rows.
+  await e.backfillRelations({ apply: true });
+  const checkBackfill = new Database(p3b, { readonly: true });
+  const support = checkBackfill.prepare(
+    "SELECT episode_memory_id FROM edges WHERE relation = 'related_to' AND valid_until IS NULL",
+  ).get() as { episode_memory_id: number } | undefined;
+  checkBackfill.close();
+  assert(support?.episode_memory_id === secondId,
+    "backfill: the live relation remains supported by the current episode, not the retired one");
   e.close();
 }
 // --- fullRefresh + partial window (--from-id/--limit) is rejected at the store layer ---
