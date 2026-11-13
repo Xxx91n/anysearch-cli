@@ -679,10 +679,10 @@ export async function consolidateMemoryRun(
       if (liveEps.length < CLUSTER_MIN && !singleEvidence) continue;
       // D2 deterministic trigger: oldest episode past its tier half-life OR low access signal.
       // No LLM scoring at trigger time.
-      const oldest = eps[0];
+      const oldest = liveEps[0]!;
       const tau = TAU_TIER[classifyTier(oldest.title ?? "", oldest.url ?? "")];
       const ageDays = (nowMs - parseSqliteUtc(oldest.created_at)) / DAY_MS;
-      const avgAccess = eps.reduce((a, e) => a + (e.access_count ?? 0), 0) / eps.length;
+      const avgAccess = liveEps.reduce((a, e) => a + (e.access_count ?? 0), 0) / liveEps.length;
       if (!(ageDays > tau || avgAccess <= 1)) continue;
       report.clustersTriggered++;
       processed++;
@@ -692,7 +692,7 @@ export async function consolidateMemoryRun(
       // reached, so the run stops spending and reports it instead of looping
       // through the remaining clusters only to be refused again.
       if (!deps.summarize) { report.llmUnavailable++; continue; }
-      const evidence: ConsolidateEvidence[] = eps.map((e) => ({
+      const evidence: ConsolidateEvidence[] = liveEps.map((e) => ({
         title: e.title ?? "", snippet: e.snippet ?? "", url: e.url ?? "",
       }));
       let summary: string | null;
@@ -720,6 +720,7 @@ export async function consolidateMemoryRun(
       // the check's verdict + reason are recorded in verifiedCorrections.
       const verifierBackedSingle = singleEvidence && deps.verify !== undefined;
       let confidence = LOW_CONFIDENCE;
+      let claimGateRejected = false;
       if (deps.classify && !verifierBackedSingle) {
         let rejected = false;
         let uncertain = false;
@@ -730,8 +731,8 @@ export async function consolidateMemoryRun(
           if (v.label === "uncertain") uncertain = true;
           minConf = Math.min(minConf, v.confidence);
         }
-        if (rejected) { report.gateRejected++; continue; }
-        confidence = uncertain ? LOW_CONFIDENCE : minConf;
+        if (rejected) claimGateRejected = true;
+        if (!rejected) confidence = uncertain ? LOW_CONFIDENCE : minConf;
       }
 
       // Embedding seam (fail-open): NULL embedding still inserts; dedup falls back to jaccard
@@ -779,7 +780,7 @@ export async function consolidateMemoryRun(
       // Hoisted above the exact-restatement short-circuit: that branch also
       // merges this cluster's materials into the row's source set, so it needs
       // the ids before `insert()` is defined. See the note there.
-      const epsIds = eps.map((e) => e.id);
+      const epsIds = liveEps.map((e) => e.id);
       const exactRestatement = best ? summary.trim() === best.content.trim() : false;
       if (exactRestatement) {
         const row = best!;
@@ -849,7 +850,7 @@ export async function consolidateMemoryRun(
           if (checked.kind === "refused") continue;
           op = checked.kind;
           if (checked.kind === "update") acceptedVerdict = checked.verdict;
-        } else if (op !== "update") {
+        } else {
           // No checker: a lone material may only touch an existing row. Without
           // the correction check there is no same-fact/reliability verdict, so a
           // correction or new knowledge must not be written at all — the
@@ -890,7 +891,16 @@ export async function consolidateMemoryRun(
         if (checked.kind === "update") acceptedVerdict = checked.verdict;
       }
 
-      const salience = Math.min(1, 0.4 + 0.1 * eps.length);
+            // An accepted correction may bypass the generic negation heuristic.
+      // Unsupported additions must still fail the original fidelity gate.
+      if (claimGateRejected && op === "add") { report.gateRejected++; continue; }
+      // Similarity alone is never an authorization to replace live knowledge.
+      if (op === "update" && !acceptedVerdict) {
+        if (best) refuseCorrection(best, summary, evidence, undefined);
+        else report.gateRejected++;
+        continue;
+      }
+      const salience = Math.min(1, 0.4 + 0.1 * liveEps.length);
       const insert = (extraSources: number[] = [], content: string | null = summary, buffer: Buffer | null = embBuf): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
