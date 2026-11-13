@@ -12,8 +12,9 @@
 // Run: pnpm --filter @anysearch-cli/cli test
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore, BudgetLedger, loadDomainFromString } from "@anysearch-cli/store";
 import { wireChatMemory, type ChatMemoryWiring } from "../src/commands/chat-memory";
@@ -21,6 +22,19 @@ import { wireChatMemory, type ChatMemoryWiring } from "../src/commands/chat-memo
 let passed = 0, failed = 0;
 function check(cond: boolean, msg: string): void {
   if (cond) { passed++; } else { failed++; console.error("FAIL: " + msg); }
+}
+
+/**
+ * A pid this host can confirm is gone: a child that has already exited. The
+ * default liveness probe is what the store's own ledger uses, so the fixture
+ * has to give it a pid it will really read as dead.
+ */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("could not start a child to obtain a dead pid");
+  await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return pid;
 }
 
 async function main() {
@@ -189,6 +203,49 @@ async function main() {
     } finally {
       chainStore.close();
       try { rmSync(chainDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
+    }
+
+    // 7. #275: wiring releases a reservation a killed run left behind, so the
+    //    session is not re-registered into a phantom exhausted budget. The
+    //    leftover is written by a dead owner (the state a SIGKILL leaves) and
+    //    the CLI registration is the seam that must clear it.
+    const killDir = mkdtempSync(join(tmpdir(), "ans-275-cli-"));
+    const killStore = new SqliteSessionStore(join(killDir, "anysearch.db"));
+    try {
+      process.env.ANS_SESSION_ID = "cli-sigkill-275";
+      // budget_ledger and budget_reservations both have an FK to sessions,
+      // so the killed run's own registration row has to exist first.
+      await killStore.ensureSession("cli-sigkill-275", "default");
+      // #275/CodeRabbit: the fixture's owner pid has to be one this host can
+      // really confirm dead. A hardcoded 999_999 can be a live process on
+      // another machine, which would keep the fixture's reservation and fail the
+      // zero assertion below — a test depending on what else the host runs.
+      // A child that has just exited is confirmed dead by `process.kill`, and no
+      // other process can take its pid in the same instant. That matters here
+      // because the sweep runs from `store.initBudget`'s own ledger, which uses
+      // the production probe — pinning an injected probe on this test's ledger
+      // would not reach it.
+      const deadPid = await exitedPid();
+      const killLedger = killStore.createBudgetLedger();
+      const killed = new BudgetLedger((killStore as any).db, {
+        owner: { pid: deadPid, host: hostname() },
+        isOwnerAlive: (pid) => pid !== deadPid,
+      });
+      killed.initBudget("cli-sigkill-275", { tokenCap: 20_000, timeLimitMs: 60_000 });
+      check(killed.reserveTokens("cli-sigkill-275", 12_304),
+        "#275: fixture killed run holds 12304 before the CLI re-registers");
+      check(killLedger.getBalance("cli-sigkill-275")!.reservedTokens === 12_304,
+        "#275: the leftover is really on the row before the wiring runs");
+      const killedWiring = await wireChatMemory(killStore, "default", { tokenCap: 20_000, timeLimitMs: 60_000 }, killLedger);
+      check(killedWiring.sessionId === "cli-sigkill-275", "#275: the re-registration still wires the session");
+      check(killLedger.getBalance("cli-sigkill-275")!.reservedTokens === 0,
+        "#275: CLI registration released the killed run's reservation");
+      // The freed headroom must be usable, not just reported.
+      check(killLedger.reserveTokens("cli-sigkill-275", 12_304),
+        "#275: the session takes a full-size reserve again after the release");
+    } finally {
+      killStore.close();
+      try { rmSync(killDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
     }
   } finally {
     if (prevSessionEnv === undefined) delete process.env.ANS_SESSION_ID;

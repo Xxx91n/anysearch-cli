@@ -19,6 +19,13 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import {
+  acquireSessionLock,
+  resolveSessionLockWindows,
+  SESSION_BUSY_MESSAGE,
+  SESSION_LOCKS_DIRNAME,
+  type SessionLockWindows,
+} from "./session-lock";
 import { estimateTranscriptTokens } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
@@ -155,9 +162,46 @@ function reportBudgetFault(stage: string, e: unknown): void {
   } catch { /* stderr unavailable */ }
 }
 
+// #259: index one internal search into the shared research archive.
+//
+// One writer for both internal retrieval paths (the search tool and the
+// sufficiency reround), so the abort rule, the fail-open rule and the warning
+// text cannot drift apart. Before this, only the standalone `search_web` tool
+// wrote to `retrieval_results`, so a search made inside ans_chat was invisible
+// to later turns, other sessions, and `recall_memory`.
+//
+// Design: a cancelled search is not a completed one (#209), so nothing is
+// archived once the caller's signal has aborted. Design: a failed write never
+// fails the turn — the archive is an enhancement, not a precondition for
+// answering.
+async function indexSearchResults(
+  writer: { store: SessionStorePort; sessionId: string } | undefined,
+  results: unknown[] | null | undefined,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!writer || signal?.aborted || !results || results.length === 0) return;
+  try {
+    await writer.store.saveResults(writer.sessionId, results as any);
+  } catch (e) {
+    try {
+      process.stderr.write(
+        "[anysearch] search result indexing failed: " +
+        (e instanceof Error ? e.message : String(e)) + "\n",
+      );
+    } catch { /* stderr unavailable */ }
+  }
+}
+
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
-export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
+export function createSearchTool(
+  retriever: RetrieverPort,
+  span?: RetrievalObservationSink,
+  onResults?: (urls: string[]) => void,
+  // #259: the archive writer for this session, or absent when the runtime has
+  // no wired session (nothing is indexed then).
+  archive?: { store: SessionStorePort; sessionId: string },
+): AgentTool {
   return {
     name: BUILTIN_SEARCH_TOOL,
     label: "Search",
@@ -189,6 +233,9 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
       };
       const envelope = await retriever.search(q);
       onResults?.((envelope.results ?? []).map((r) => r.url));
+      // #259: archive this search so a later call — same session or another one —
+      // can recall the material instead of searching again.
+      await indexSearchResults(archive, envelope.results, signal);
       // every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
@@ -279,6 +326,14 @@ export interface PiAgentRuntimeOptions {
    * absent the PI session stays in memory (#258).
    */
   piSessionDir?: string;
+  /**
+   * Cross-process session lock windows (#266). `staleMs` is how long a lock
+   * whose owner cannot be confirmed stays protected (default 10 min);
+   * `waitMs` is the same-session wait cap before the run fails with
+   * "session busy" (default 120 s). Parsed from ANS_PI_LOCK_STALE_MS /
+   * ANS_PI_LOCK_TIMEOUT_MS by piSessionOptions.
+   */
+  sessionLock?: SessionLockWindows;
   /** Working directory for the PI session and resource loader. Defaults to cwd. */
   cwd?: string;
   /** PI auto-compaction thresholds (enabled unless explicitly disabled). */
@@ -398,17 +453,43 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
 
 // Design: same session -> one run at a time, different sessions in parallel —
 // one PI record has one writer, and two runs appending to it at once would
-// interleave entries. Cross-process locking is ticket #266's subject, so this
-// queue is deliberately process-local.
+// interleave entries. This queue is the in-process half; the cross-process
+// half is the file lock in ./session-lock (#266). Both waits share one
+// deadline, so a same-session caller hits the same wait cap either way.
 const sessionQueues = new Map<string, Promise<void>>();
 
-async function acquireSessionQueue(key: string): Promise<() => void> {
+async function acquireSessionQueue(key: string, deadlineAt: number, signal?: AbortSignal): Promise<() => void> {
   const previous = sessionQueues.get(key) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   const tail = previous.then(() => current);
   sessionQueues.set(key, tail);
-  await previous;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(SESSION_BUSY_MESSAGE)), Math.max(0, deadlineAt - Date.now()));
+    timer.unref?.();
+    // #259: a caller who gave up while queued must not be held for the whole
+    // cap. The wait ends here; run()'s finally releases what was already
+    // acquired, and the catch below hands this slot on.
+    if (signal) {
+      onAbort = () => reject(new Error(SESSION_BUSY_MESSAGE));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+  try {
+    await Promise.race([previous, expired]);
+  } catch (e) {
+    // Resolve our slot so later waiters chain onto a settled promise instead
+    // of hanging on one nobody will ever release; the abandoned request runs
+    // nothing, so there is nothing to interleave.
+    release();
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
   return () => {
     release();
     if (sessionQueues.get(key) === tail) sessionQueues.delete(key);
@@ -474,6 +555,17 @@ export class PiAgentRuntime {
   // no-memory/no-billing runtime instead of hitting budget_ledger's FK on an
   // unregistered session id.
   private readonly scopedRetriever: RetrieverPort;
+  // #259: the cancellation scope of the run currently in progress. Set for the
+  // duration of a run; the sufficiency gate reads it so a reround stops when the
+  // run does (not only when the caller aborts).
+  private activeRunSignal?: AbortSignal;
+  // The controller behind `activeRunSignal`, so the outer `run()` exit path can
+  // abort it (`.return()` on the consumer generator lands there first).
+  private runScopeController?: AbortController;
+  // #259: the one archive writer this runtime has — `store && sessionId`, the
+  // same gate the pipeline uses. Absent for a half-wired runtime, which then
+  // indexes nothing.
+  private readonly archive?: { store: SessionStorePort; sessionId: string };
   // How much of the memory pipeline's own spend has already been settled, so a
   // repeated flushMemory adds only the new delta instead of billing twice.
   private settledMemoryTokens = 0;
@@ -492,6 +584,7 @@ export class PiAgentRuntime {
     // resume_anchors FK would reject the anchor write. `opts` is not mutated
     // after construction, so this captured id is the runtime's only session id.
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
+    this.archive = wiredSessionId ? { store: opts.store!, sessionId: wiredSessionId } : undefined;
     this.scopedRetriever = wiredSessionId
       ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId }) }
       : opts.retriever;
@@ -527,21 +620,62 @@ export class PiAgentRuntime {
       streamFn: opts.streamFn as any,
       model: opts.model as any,
       getApiKey: opts.getApiKey,
+      // #259: the reround indexes into the same archive as the search tool.
+      // Same gate as the pipeline above (store + sessionId); a half-wired
+      // runtime writes nothing, so it cannot seed rows the recall path would
+      // then treat as shared material.
+      //
+      // The write checks the scope the gate hands in, captured for that
+      // evaluation. It must NOT re-read `activeRunSignal` here: an abort clears
+      // that field, so the re-read would come back `undefined` and the write
+      // would go through — the hole this guard exists to close.
+      ...(this.archive
+        ? { archive: (results: unknown[], signal?: AbortSignal) => indexSearchResults(this.archive, results, signal) }
+        : {}),
     });
   }
 
   // run returns AsyncIterable<AgentEvent>, mapping PI session events.
-  // Serialization: same session -> one run at a time in this process; different
-  // sessions run in parallel. Cross-process locking is ticket #266.
+  // Serialization: same session -> one run at a time (the process-local queue
+  // above plus the cross-process file lock); different sessions run in
+  // parallel. The file lock only exists when the PI record is durable (#258):
+  // an in-memory session cannot be shared with another process in the first
+  // place (#266).
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
-    const releaseQueue = key ? await acquireSessionQueue(key) : () => {};
+    // Design: the queue and the file lock share one deadline — a same-session
+    // caller must hit the same 120 s cap whether the current run is in this
+    // process or another one, and splitting the budget would let a caller wait
+    // twice as long for the same "session busy" answer. Both waits surface as
+    // an error event, like every other run failure.
+    const windows = resolveSessionLockWindows(this.opts.sessionLock);
+    const deadlineAt = Date.now() + windows.waitMs;
+    let releaseQueue: () => void = () => {};
+    let releaseLock: (() => void) | undefined;
     try {
+      if (key) releaseQueue = await acquireSessionQueue(key, deadlineAt, this.opts.signal);
+      if (this.opts.piSessionDir && key) {
+        const lockPath = join(this.opts.piSessionDir, SESSION_LOCKS_DIRNAME, piSessionKey(key) + ".lock");
+        // The lock gets whatever is left of the shared budget, so the two
+        // waits never add up past the cap.
+        releaseLock = await acquireSessionLock(lockPath, {
+          staleMs: windows.staleMs,
+          waitMs: Math.max(1, deadlineAt - Date.now()),
+        });
+      }
       yield* this.runInternal(input);
     } catch (e) {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
+      // #259: a consumer that stops reading (`.return()`) lands HERE first —
+      // before runInternal's own finally runs. Closing the run's cancellation
+      // scope now is what stops an in-flight reround from archiving after
+      // nobody is waiting for the answer.
+      try { this.runScopeController?.abort("consumer stopped reading"); } catch { /* already aborted */ }
+      this.activeRunSignal = undefined;
+      this.runScopeController = undefined;
+      releaseLock?.();
       releaseQueue();
     }
   }
@@ -552,6 +686,28 @@ export class PiAgentRuntime {
     // session state for a request nobody is waiting for.
     const callerSignal = this.opts.signal;
     if (callerSignal?.aborted) return;
+
+    // #259: one cancellation scope for this run. It covers the caller's abort
+    // AND the runtime's own stop (the consumer closing the stream, the wall-clock
+    // timeout, an early return). Anything that keeps working after a stop — the
+    // sufficiency reround in particular — checks this instead of the caller
+    // signal, which is absent on those paths and would let a late reround write
+    // rows into a database other sessions read.
+    const runAbort = new AbortController();
+    this.activeRunSignal = runAbort.signal;
+    this.runScopeController = runAbort;
+    const runScope = (): AbortSignal => runAbort.signal;
+    const stopRunScope = (reason: string): void => {
+      try { runAbort.abort(reason); } catch { /* already aborted */ }
+      if (this.activeRunSignal === runAbort.signal) this.activeRunSignal = undefined;
+      if (this.runScopeController === runAbort) this.runScopeController = undefined;
+    };
+    // A caller-signal abort has to reach the scope as well, and it may arrive
+    // before `cancelRun` is installed below; wire it here so the window is
+    // closed from the very start of the run. Named so the exit path can remove
+    // it: an unremoved listener would pile up on a long-lived signal.
+    const onCallerAbort = (): void => { runAbort.abort("caller cancelled"); };
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
 
     // SECURITY: timeout to prevent agent loop hang (CWE-400, CWE-840).
     // ponytail: 5-minute default, override via opts.timeoutMs.
@@ -570,7 +726,7 @@ export class PiAgentRuntime {
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls), this.archive);
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
@@ -836,7 +992,13 @@ export class PiAgentRuntime {
       // 3-line sequential call — evaluate -> applyTo -> consolidate.
       if (this.gate && this.pipeline) {
         try {
-          const env = await this.gate.evaluate(messages);
+          // #259: hand the gate this run's cancellation scope, so a stop arriving
+          // mid-evaluation (consumer closed the stream, timeout) stops the reround
+          // and its archive write instead of letting it run on unattended.
+          // Both signals count: PI's turn signal and the run scope. Honouring
+          // only one means a stop arriving on the other is ignored and the
+          // reround keeps running.
+          const env = await this.gate.evaluate(messages, AbortSignal.any([signal ?? runScope(), runScope()]));
           const enriched = this.gate.applyTo(messages, env);
           if (env.enrichedEnvelope !== null && enriched !== messages) {
             // Keep just the rewritten tool-result text. The rest of the array is
@@ -928,7 +1090,9 @@ export class PiAgentRuntime {
     // and the session here instead of relying on it.
     if (callerCancelled) {
       callerSignal?.removeEventListener("abort", cancelRun);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
       try { session.dispose(); } catch { /* already disposed */ }
+      stopRunScope("run cancelled before start");
       return;
     }
 
@@ -937,6 +1101,34 @@ export class PiAgentRuntime {
     // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
+
+    // #275: release reservations whose owner this machine can prove is gone
+    // before this run reserves anything. A run killed by SIGKILL never reaches
+    // its finally, so its leftover would keep eating this session's cap and
+    // later runs would be refused as "budget exhausted" over nothing.
+    //
+    // The rule is per owner (same host + dead pid), not "clear the session": a
+    // consolidation running in another process holds reservations without the
+    // session lock, and clearing those would loosen its cap mid-run. A fault
+    // here is the usual fail-open budget fault — the reserve below then reports
+    // any real exhaustion.
+    //
+    // Design: the sweep runs at the run boundary rather than only at
+    // registration — a long-lived host reuses one ledger, so a leftover
+    // inherited at startup would otherwise stay until the process restarted.
+    //
+    // Not done here: clearing counter amounts that no owner row claims. Those
+    // are left by a pre-#275 build, and a build that old does not take the
+    // session lock either, so holding the lock cannot prove the writer is gone
+    // — clearing it would let a still-running old process and this run both
+    // spend against the cap. That upgrade window is tracked separately (#279).
+    if (billingWired) {
+      try {
+        ledger!.reclaimDeadReservations?.(sessionId!);
+      } catch (e) {
+        reportBudgetFault("reservation reclaim", e);
+      }
+    }
 
     // #188: if the domain TOML changed since the last run, refresh the ledger
     // caps before reserving. The registration sites (#187) sample the domain
@@ -1000,6 +1192,7 @@ export class PiAgentRuntime {
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML).",
           };
           try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget rejected");
           return;
         }
         tokenReserved = reserveAmount;
@@ -1217,6 +1410,7 @@ export class PiAgentRuntime {
       }
     } finally {
       callerSignal?.removeEventListener("abort", cancelRun);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
       // #188 (CodeRabbit): stop the run before its reservation is released, so
       // a consumer that closed the stream early cannot leave the agent making
       // provider/tool calls after the budget was freed. The signal exists only
@@ -1226,6 +1420,11 @@ export class PiAgentRuntime {
         try { void session.abort(); } catch { /* already idle */ }
         abortedEarly = true;
       }
+      // #259: a run that stopped before its loop finished is not a completed run,
+      // so the cancellation scope closes here. The reround reads it, so work
+      // still in flight (a slow gap search) can neither search on nor archive.
+      // A normal end leaves the scope open: that turn's work did complete.
+      if (callerCancelled || abortedEarly || timedOut()) stopRunScope("run stopped early");
       // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
       // usage is recorded. If the provider is stalled, do not block the close:
       // settle once the prompt actually stops instead. A late write can fail if
@@ -1280,6 +1479,11 @@ export class PiAgentRuntime {
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
+      // #259: drop the run's scope LAST, after every shutdown step above. A
+      // kept scope would make a later run inherit this run's cancellation; a
+      // scope dropped early is the opposite hole — an in-flight reround would
+      // fall back to the caller signal, which is absent on a consumer-close.
+      if (this.runScopeController === runAbort) this.runScopeController = undefined;
     }
   }
 

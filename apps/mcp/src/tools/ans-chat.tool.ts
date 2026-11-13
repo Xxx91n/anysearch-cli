@@ -44,6 +44,12 @@ import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
 
+// A cut-off run's accounting dimensions: the provider never sent a final
+// usage figure, so the run's tokens, cache and cost are all unknown. Named
+// together so the interruption path and any future one report the same story
+// (#266: an interrupted run must not read as free).
+const INTERRUPTED_RUN_MISSING = ["run usage: interrupted before the provider reported it"];
+
 export function registerAnsChat(
   server: McpServer,
   eng: CompositionResult,
@@ -424,10 +430,21 @@ export function registerAnsChat(
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
           // Cancellation is a transport outcome, not a finished run (#211). The
           // partial text is dropped so a cut-off stream never reads as an
-          // answer, and no usage or context is reported for a run that has no
-          // accounting. The handle is not part of the answer, so it survives:
-          // the caller can resume the same session later.
-          if (!completed) return buildAnsChatResult("", memory.sessionId);
+          // answer. The run still spent real money before it was cut off, and
+          // the provider never returned a final usage figure for it — so the
+          // usage block says exactly that (costSource "unknown", every
+          // dimension named missing) instead of omitting usage, which a caller
+          // can only read as "free" (#266). The handle is not part of the
+          // answer, so it survives: the caller can resume the same session.
+          if (!completed) {
+            return buildAnsChatResult("", memory.sessionId, {
+              usage: {
+                run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
+                memorySummary: runtime.getMemoryUsage(),
+              },
+              interrupted: true,
+            });
+          }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.

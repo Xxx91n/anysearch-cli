@@ -9,9 +9,10 @@ import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WAT
 import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
-import { SqliteSessionStore } from "@anysearch-cli/store";
+import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, utimesSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
@@ -19,6 +20,20 @@ let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return false; }
   passed++; return true;
+}
+
+/**
+ * A pid this host can confirm is gone: a child that has already exited. A fixed
+ * number such as 999_999 can be a live process on another machine, and the
+ * store's own ledger uses the production probe, so the fixture must hand it a
+ * pid it will really read as dead.
+ */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("could not start a child to obtain a dead pid");
+  await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return pid;
 }
 
 // Mock retriever.
@@ -2167,6 +2182,92 @@ console.log("---");
     assert(!storeUnknown.calls.some((c) => c.type === "consolidation_state"),
       "#184 shell unknown: 15K does NOT cross 128K fallback (placeholder not scaled to 12.8K)");
   }
+}
+
+// #275: the runtime runs the reservation sweep at the run boundary, so a
+// leftover from a SIGKILL'd run is gone before this run reserves. The real row
+// is checked as well as the run outcome: a sweep that never reached the
+// statement would leave the leftover eating the cap.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-275-runtime-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    // A killed run's leftover, recorded by a dead owner exactly as #275 measured
+    // it. The cap leaves no room for the next run until this is released: the
+    // runtime's default reserve is input occupancy + 12288.
+    //
+    // The dead pid is a child that really exited, because the sweep that must
+    // release it runs inside `store.initBudget`'s own ledger — the production
+    // probe, not an stub this test could pin.
+    const ledger = store.createBudgetLedger();
+    const deadPid = await exitedPid();
+    const killed = new BudgetLedger((store as any).db, {
+      owner: { pid: deadPid, host: hostname() },
+      isOwnerAlive: (pid) => pid !== deadPid,
+    });
+    killed.initBudget(session.id, { tokenCap: 20_000, timeLimitMs: 60_000, callCap: 10 });
+    assert(killed.reserveTokens(session.id, 12_304), "#275 runtime fixture: killed run reserved 12304");
+    const before = ledger.getBalance(session.id)!;
+    assert(before.reservedTokens === 12_304 && before.spentTokens === 0,
+      "#275 runtime fixture: the leftover is on the real row before the next run");
+
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(120, 30, 157, 0.003),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    const error = events.find((e) => e.type === "error");
+    assert(error === undefined,
+      "#275: the run is not refused as exhaustive over a dead run's leftover (got "
+      + JSON.stringify(error) + ")");
+    const done = events.find((e) => e.type === "done");
+    assert(done !== undefined, "#275: the recovering run completes normally");
+
+    const after = ledger.getBalance(session.id)!;
+    assert(after.spentTokens === 157 && after.reservedTokens === 0,
+      "#275: the recovering run settled its own usage and left no reservation behind");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #275: the runtime runs the dead-owner sweep at every run boundary, whether or
+// not a session lock was taken. Clearing counter amounts that no owner row
+// claims is deliberately NOT done anywhere — a pre-#275 build leaves such
+// amounts and does not take the lock either, so the upgrade window where a
+// running old process would share the cap is tracked in #279 instead.
+{
+  const calls: string[] = [];
+  class RecordingLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+    reclaimDeadReservations(): number { calls.push("dead"); return 0; }
+  }
+  const runtime = new PiAgentRuntime({
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: usageStream(10, 5, 15, 0.001),
+    store: noopStore(),
+    sessionId: "s-275-boundary",
+    ledger: new RecordingLedger(),
+    // No piSessionDir: no durable record, so no session lock is taken.
+  });
+  for await (const _ev of runtime.run("hello")) { /* drain */ }
+  assert(calls.filter((c) => c === "dead").length >= 1,
+    "#275: the dead-owner sweep runs at the run boundary (got " + JSON.stringify(calls) + ")");
 }
 
 console.log("---");

@@ -105,6 +105,17 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
+      # #259: cross-session recall at the product entry, against the dist this
+      # job just built. Lane 1 needs no model credentials (it writes the archive
+      # and recalls it through the real query_knowledge tool); lane 2 exercises
+      # the real ans_chat path only when LLM env is present, and prints SKIPPED
+      # otherwise rather than pretending it passed.
+      - name: recall acceptance lane (#259)
+        run: node scripts/recall-acceptance.mjs
+        env:
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+
   # round-59 audit R-2 / + r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage
   # with network access, so the anti-downgrade clause has automated support.

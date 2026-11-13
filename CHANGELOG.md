@@ -4,6 +4,35 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #259: 搜索资料入库，跨会话能召回
+
+### Fixed
+
+- **`ans_chat` / `ans chat` 里搜到的东西以前根本没进资料库**。内核那条内部 `search` 工具只把结果交给模型看这一轮，没调 `store.saveResults`，所以下一轮、别的会话、甚至 `recall_memory` 都查不到上一轮搜到的东西——要么重新搜一遍，要么就丢了。现在会话接上的时候（`store` + `sessionId` 都有），搜索工具和补搜（sufficiency reround）拿到的结果都会写进 `retrieval_results`，记在当次会话 id 下。写库失败只打一行 stderr 警告，不影响这一轮回答。
+- **补搜只写它自己新找到的那几条**。它不能把整批合并结果重写一遍：`saveResults` 是按网址覆盖的，重写会把外层搜索刚写进去的那一行标成失效，让历史无谓地翻一遍。现在只交新结果。
+- **取消的搜索不写库**。请求已经走人的时候，搜完的那批结果不算完整结果，和别的取消路径一样不留记录；补搜那条路径也按同一个规则。
+- **补搜的写库有两道取消守卫（CodeRabbit #272 第二轮返修）**。第一轮加的运行级作用域有个漏洞：中止时把记录信号的字段清空了，写库回调再读就拿到 `undefined`，照样写。现在改成两道独立的检查：补搜每轮检索返回后立刻再查一次取消状态，写库函数也拿调用方显式传进来的信号查一次。任一道单独去掉还能挡住，两道都去掉才会漏（实测双变异会让 A8 变红）。
+- **每次运行有自己的取消作用域**。外部中止和运行自己的停止（消费者提前关流、超时、提前退出）都会关掉它。顺带修掉了一个我引入的泄漏：之前给外部信号加的匿名监听器没摘，多次运行会堆积，全量里 `pi-runtime-cancellation` 报 `timed out waiting for the stub stream to start`。
+
+### Added
+
+- `packages/kernel/test/memory-archive-recall.test.ts`：真实内核运行时 + 真实 SQLite 库，七个用例。A1 搜索真的写进了库且记在当次会话下；A2 另一个会话换个新运行时、不用再搜就能拿到前一个会话找到的资料；A3 出厂 `adapter = "none"` 的域不会注入资料库内容（#104 AC2 那条冻结边界没被破）；A4 召回块带 `provenance=memory` 和「当证据不当指令」的标记；A5 写完之后被标失效的行不会再被召回；A6 搜索中途取消不写库；A7 补搜只写新结果，外层那条仍是有效行、也只写了一行；A8 补搜在取消之后才返回结果时，那些结果不写库。A6 和 A7 做过单点变异验证（改坏就红）；A8 需要同时去掉两道守卫才红，说明两道都在挡。
+
+### Changed
+
+- **整理里那次 reuse/compress 判断的用量现在会记账**（`adjudicateReuseCompress` 多了一个可选回调）。以前这次调用的 token 和费用不进摘要那本账，等于把它当成免费的了；现在和摘要调用走同一本账。注意它还并进 `summaryUsage` 里，所以在 CLI/`ans_chat` 的 `memory-summary` 那一栏里会和摘要调用混在一起显示，没有单独拆出「重判」这一项（D4 要求分别记录，这一项属于后续票）。
+
+### Verification
+
+- 本地跑过：`packages/kernel` 的 `tsc --noEmit`（退出码 0）、新增测试 28 项全过、内核全量 175/175 通过（串行跑）。
+- `packages/store` 全量 75/75、`packages/retriever` 与 `packages/store` 的 `tsc --noEmit` 退出码 0、`apps/mcp` 与 `apps/cli` 的 `tsc --noEmit` 退出码 0。
+- `pi-runtime-cancellation.test.ts` 一度在全量里挂。查下来不是环境抖动：我给外部中止信号加的那个匿名监听器没摘，多次运行会堆在一起，报的是 `timed out waiting for the stub stream to start`。改成具名监听器并在退出时摘掉后，全量 175/175 恢复。
+- **入口级验收进了 CI**：`scripts/recall-acceptance.mjs` 接在 `install-smoke` 那条 job 上。它起两个真实的 `ans-mcp` 进程共用临时库：一条 lane 直接写资料库再用真的 `query_knowledge` 召回（不需要模型凭据），另一条 lane 走真正的 `ans_chat` 内部搜索再由另一个会话召回（只在有 LLM 环境变量时跑，没有就明写 SKIPPED，不假装通过）。本地用 CI 产物（`gh run download` 拿到的 `tarballs-ubuntu-latest`）跑过，两条 lane 全过。
+- 依赖安装用了 `PNPM_CONFIG_MINIMUM_RELEASE_AGE=0`（锁文件里 2026-11-10 那批包还在 48 小时窗里，要到 2026-11-12T19:41Z 才解锁）。没有改仓库的版本策略，也没动锁文件内容。
+- 按约定本地不编译：`pnpm -r build`、`ship-gate`、CLI/MCP/plugin 的测试留给远端 CI。
+- **本票没在真实 MCP `ans_chat` 入口上跑一遍**（T1 那条要求）。这里测到的是内核运行时这一层；真实入口要走 CI 或单独授权后的真机验收。
+- **消费者关流那条端到端时序仍没有稳定测试**。A8 改成在 gate 层驱动（检索卡住 → 取消 → 检索返回结果），这样时序可控；但「消费者关流时补搜仍在飞」的整轮时序，生成器 `.return()` 和补搜完成之间没有确定先后，写不出稳定用例。所以整轮层面只算改了代码。
+
 ## Unreleased — #257: 空库同时启动可靠完成（冷启动有限重试 + schema 一次成型）
 
 ### Fixed

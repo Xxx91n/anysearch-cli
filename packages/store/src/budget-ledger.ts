@@ -4,6 +4,7 @@
 // atomcode research: Mole DB schema non-negative constraint, 0% overshoot.
 
 import type Database from "better-sqlite3";
+import { hostname } from "node:os";
 import type { BudgetConfig } from "./domain-schema";
 
 // #187: sentinel persisted for a dimension that has no configured cap. A row
@@ -50,6 +51,51 @@ export interface BudgetBalance {
   remainingCalls: number;
 }
 
+/** One budget_ledger counter, as recorded in budget_reservations (#275). */
+export type ReservationDim = "tokens" | "usd" | "calls";
+
+/** Who held a reservation: the two facts a live owner can be checked against. */
+export interface ReservationOwner {
+  pid: number;
+  host: string;
+}
+
+/**
+ * Whether a pid is still running.
+ *
+ * Design: only ESRCH is proof of death — every other outcome counts as
+ * "cannot confirm", so the reservation is kept. The earlier rule was "any
+ * error except EPERM means dead", and that released a reservation on errors
+ * that say nothing about liveness: a malformed pid raises
+ * ERR_INVALID_ARG_TYPE, and Windows has other probe failures of its own.
+ * Releasing an unconfirmed reservation loosens a session's cap under a run
+ * that may still be going, which is the harm this file exists to prevent.
+ * Keeping one only costs headroom until a later run can confirm the owner is
+ * gone.
+ */
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // ESRCH: no such process. Anything else (EPERM, a malformed pid, an
+    // unexpected probe failure) is unconfirmed and treated as still holding.
+    return (e as NodeJS.ErrnoException)?.code !== "ESRCH";
+  }
+}
+
+// #275: the owner of every reservation this process makes. Defaults to this
+// process; a test (or a probe) can stand in for another one.
+// Design: identity is pid + host, the same pair the session lock uses — the
+// ledger needs only "can this machine prove the holder is gone", and a
+// machine-wide identity would make two processes on one machine
+// indistinguishable, which is exactly the case being released.
+export interface BudgetLedgerOptions {
+  owner?: ReservationOwner;
+  /** Liveness probe for a same-host owner; injected so tests need no real kill. */
+  isOwnerAlive?: (pid: number) => boolean;
+}
+
 // ponytail: thinnest ledger - reserve/settle/getBalance, plus #187's
 // initBudget/clearBudgetCaps registration seam.
 // No interface/port separation (unlike SessionStore) - this is a concrete store-layer utility.
@@ -67,9 +113,28 @@ export class BudgetLedger {
     reserveCalls: Database.Statement;
     settleCalls: Database.Statement;
     getBalance: Database.Statement;
+    // #275: per-owner reservation bookkeeping.
+    addReservation: Database.Statement;
+    reduceReservation: Database.Statement;
+    deleteEmptyReservation: Database.Statement;
+    deleteReservation: Database.Statement;
+    sessionReservations: Database.Statement;
+    releaseReservedTokens: Database.Statement;
+    releaseReservedUsd: Database.Statement;
+    releaseReservedCalls: Database.Statement;
   };
 
-  constructor(private db: Database.Database) {
+  private readonly owner: ReservationOwner;
+  private readonly isOwnerAlive: (pid: number) => boolean;
+  // One table per dimension instead of a switch at every call site: the three
+  // reserve paths are one algorithm and the three settle paths are another.
+  private reserveStmts!: Record<ReservationDim, Database.Statement>;
+  private settleStmts!: Record<ReservationDim, Database.Statement>;
+  private releaseStmts!: Record<ReservationDim, Database.Statement>;
+
+  constructor(private db: Database.Database, opts: BudgetLedgerOptions = {}) {
+    this.owner = opts.owner ?? { pid: process.pid, host: hostname() };
+    this.isOwnerAlive = opts.isOwnerAlive ?? pidIsAlive;
     this.stmts = {
       // #187: SELECT-then-UPDATE/INSERT instead of ON CONFLICT. A legacy database
       // can lack the unique constraint (duplicate rows block the migration), and
@@ -102,6 +167,38 @@ export class BudgetLedger {
       reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND (configured = 0 OR (call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap))"),
       settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = MAX(0, reserved_calls - ?), billable_calls = billable_calls + ? WHERE session_id = ? AND (configured = 1 OR reserved_calls > 0)"),
       getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ? AND configured = 1"),
+      // #275: the owner of a reservation. One aggregate row per
+      // (session, dim, owner) — a run reserves and settles many times and the
+      // settle call only carries an amount, so the owner's total is what a
+      // takeover can judge and release.
+      addReservation: db.prepare("INSERT INTO budget_reservations (session_id, dim, owner_pid, owner_host, amount) VALUES (?, ?, ?, ?, ?) ON CONFLICT (session_id, dim, owner_pid, owner_host) DO UPDATE SET amount = amount + excluded.amount"),
+      reduceReservation: db.prepare("UPDATE budget_reservations SET amount = MAX(0, amount - ?) WHERE session_id = ? AND dim = ? AND owner_pid = ? AND owner_host = ?"),
+      deleteEmptyReservation: db.prepare("DELETE FROM budget_reservations WHERE session_id = ? AND dim = ? AND owner_pid = ? AND owner_host = ? AND amount = 0"),
+      // #275: a reclaimed owner's row goes whatever its recorded amount was —
+      // that row belongs to the dead holder, not to a live settle's leftover.
+      deleteReservation: db.prepare("DELETE FROM budget_reservations WHERE session_id = ? AND dim = ? AND owner_pid = ? AND owner_host = ?"),
+      sessionReservations: db.prepare("SELECT dim as dim, owner_pid as pid, owner_host as host, amount as amount FROM budget_reservations WHERE session_id = ?"),
+      // #275: release a dead owner's share from the ledger counter. The amount
+      // is the one recorded for that owner, and the decrement is clamped, so an
+      // already-settled counter cannot go negative.
+      releaseReservedTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = MAX(0, reserved_tokens - ?) WHERE session_id = ?"),
+      releaseReservedUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = MAX(0, reserved_usd - ?) WHERE session_id = ?"),
+      releaseReservedCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = MAX(0, reserved_calls - ?) WHERE session_id = ?"),
+    };
+    this.reserveStmts = {
+      tokens: this.stmts.reserveTokens,
+      usd: this.stmts.reserveUsd,
+      calls: this.stmts.reserveCalls,
+    };
+    this.settleStmts = {
+      tokens: this.stmts.settleTokens,
+      usd: this.stmts.settleUsd,
+      calls: this.stmts.settleCalls,
+    };
+    this.releaseStmts = {
+      tokens: this.stmts.releaseReservedTokens,
+      usd: this.stmts.releaseReservedUsd,
+      calls: this.stmts.releaseReservedCalls,
     };
   }
 
@@ -117,6 +214,10 @@ export class BudgetLedger {
     const callCap = caps.callCap ?? UNLIMITED_BUDGET_CAP;
     if (this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined) {
       this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+      // #275: registration is the point every host passes on start, so a
+      // reservation left behind by a killed run is released here rather than
+      // surfacing later as a phantom "budget exhausted".
+      this.reclaimDeadReservations(sessionId);
       return;
     }
     try {
@@ -136,10 +237,14 @@ export class BudgetLedger {
         const result = this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
         // The row can be deleted in the race window; do not report a silent init.
         if (result.changes === 0) throw e;
+        this.reclaimDeadReservations(sessionId);
         return;
       }
       throw e;
     }
+    // A fresh row has no reservations; a legacy row can (the reservation table
+    // may be newer than the ledger rows), so the reclaim runs on this path too.
+    this.reclaimDeadReservations(sessionId);
   }
 
   // #187: an existing row whose Active Domain dropped [budget] (or switched to
@@ -158,44 +263,161 @@ export class BudgetLedger {
     return this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined;
   }
 
+  // #275: record this process as the holder of the amount it just reserved.
+  // Only called after the counter really moved, so the owner table never
+  // claims a reservation the ledger did not take.
+  private recordOwner(sessionId: string, dim: ReservationDim, amount: number): void {
+    if (!(amount > 0)) return;
+    this.stmts.addReservation.run(sessionId, dim, this.owner.pid, this.owner.host, amount);
+  }
+
+  /**
+   * #275: take a reservation as one unit — the counter moves and the owner row
+   * appears together.
+   *
+   * Two separate writes would leave a gap in which the counter is up but
+   * nothing claims the amount, and the exclusive-writer sweep would then read
+   * that as unowned residue and release it under this very run. Both writes
+   * inside one transaction removes the gap.
+   *
+   * Returns whether the counter moved (the cap said yes). "No row" is decided
+   * by the caller before this.
+   *
+   * Design: the counter and the owner row are written in one transaction — two
+   * separate writes leave a gap where the counter is up but nothing claims the
+   * amount, and the exclusive-writer sweep would then release it under this run.
+   */
+  private takeReservation(sessionId: string, dim: ReservationDim, amount: number): boolean {
+    const stmt = this.reserveStmts[dim];
+    const apply = this.db.transaction((): boolean => {
+      if (stmt.run(amount, sessionId, amount).changes === 0) return false;
+      this.recordOwner(sessionId, dim, amount);
+      return true;
+    });
+    return apply();
+  }
+
+  // The one reserve algorithm all three dimensions share: no row passes;
+  // otherwise try the cap, and on refusal release dead owners once and retry.
+  // When nothing was released the same refusal stands — reclaiming never turns
+  // real exhaustion into a pass.
+  //
+  // Design: retry once, not loop — one sweep is enough to clear every provably
+  // dead owner, so a second failure really is the cap and retrying would only
+  // hide it.
+  private reserve(sessionId: string, dim: ReservationDim, amount: number): boolean {
+    if (!this.hasBudgetRow(sessionId)) return true;
+    if (this.takeReservation(sessionId, dim, amount)) return true;
+    if (this.reclaimDeadReservations(sessionId) === 0) return false;
+    return this.takeReservation(sessionId, dim, amount);
+  }
+
+  // Settle: the counter's clamped decrement is the authority, and the owner
+  // table is kept in step so a later reclaim reads a true amount. Both writes
+  // share one transaction for the same reason takeReservation does — a gap
+  // where the counter dropped but the owner row still claims the amount would
+  // make the unowned sweep release something that no longer exists.
+  private settle(sessionId: string, dim: ReservationDim, reservedAmount: number, actualAmount: number): void {
+    const apply = this.db.transaction(() => {
+      this.settleStmts[dim].run(reservedAmount, actualAmount, sessionId);
+      this.releaseOwnerReservation(sessionId, dim, reservedAmount);
+    });
+    apply();
+  }
+
+  // #275: refund the owner's share of a released reservation. The ledger
+  // counter is the authority for the amount (its own clamped decrement already
+  // ran); this only keeps the owner table in step so a later reclaim reads a
+  // true number.
+  private releaseOwnerReservation(sessionId: string, dim: ReservationDim, amount: number): void {
+    if (!(amount > 0)) return;
+    this.stmts.reduceReservation.run(amount, sessionId, dim, this.owner.pid, this.owner.host);
+    this.stmts.deleteEmptyReservation.run(sessionId, dim, this.owner.pid, this.owner.host);
+  }
+
+  /**
+   * #275: release the reservations whose owner this machine can prove is gone,
+   * and return how many owner entries were released. A SIGKILL'd run never
+   * reaches its `finally`, so its reservation would otherwise sit in the
+   * counters for the life of the session and make later runs look exhausted.
+   *
+   * Only a same-host owner with a dead pid is released. A live local owner is
+   * never touched — a concurrently running consolidation holds reservations
+   * without the session lock, and clearing them would loosen that session's cap
+   * for the rest of its run. An owner on another host cannot be confirmed from
+   * here, so it is kept (the same conservative rule the session lock uses).
+   *
+   * The release amount is what that owner recorded, and every counter
+   * decrement is clamped, so a counter that was already settled cannot go
+   * negative.
+   *
+   * Design: release per owner instead of clearing the session's counters — a
+   * consolidation reserves budget without taking the session lock, so two
+   * processes can hold reservations on one session at the same time; clearing
+   * the whole session would loosen the cap under a run that is still going.
+   * Design: a foreign-host owner is kept even when its pid looks dead here —
+   * this machine cannot prove a foreign process is gone, the same conservative
+   * rule the session lock applies to owners it cannot confirm.
+   * Design: the counter is decremented only when this call really deleted the
+   * owner row, and both happen in one immediate transaction — two processes
+   * sweeping at once (registration runs before the lock is taken) would
+   * otherwise each read the same amount and each subtract it, and the clamped
+   * decrement would silently eat a live owner's share.
+   */
+  reclaimDeadReservations(sessionId: string): number {
+    const run = this.db.transaction((): number => {
+      const rows = this.stmts.sessionReservations.all(sessionId) as Array<{
+        dim: ReservationDim; pid: number; host: string; amount: number;
+      }>;
+      const releasable = rows.filter(
+        (r) => r.host === this.owner.host && !this.isOwnerAlive(r.pid),
+      );
+      if (releasable.length === 0) return 0;
+      let released = 0;
+      for (const r of releasable) {
+        // Claim the row first: the loser of a concurrent sweep deletes nothing
+        // here and therefore releases nothing below.
+        if (this.stmts.deleteReservation.run(sessionId, r.dim, r.pid, r.host).changes === 0) continue;
+        this.releaseStmts[r.dim].run(r.amount, sessionId);
+        released += 1;
+      }
+      return released;
+    });
+    return run.immediate();
+  }
+
   // Reserve tokens before a call. No row passes; a configured row enforces its
   // cap; an unconfigured row records the reservation without enforcement.
   reserveTokens(sessionId: string, amount: number): boolean {
-    if (!this.hasBudgetRow(sessionId)) return true;
-    const result = this.stmts.reserveTokens.run(amount, sessionId, amount);
-    return result.changes > 0;
+    return this.reserve(sessionId, "tokens", amount);
   }
 
   // Reserve USD before a call. Same contract as tokens.
   reserveUsd(sessionId: string, amount: number): boolean {
-    if (!this.hasBudgetRow(sessionId)) return true;
-    const result = this.stmts.reserveUsd.run(amount, sessionId, amount);
-    return result.changes > 0;
+    return this.reserve(sessionId, "usd", amount);
+  }
+
+  // decision 2C: reserve per-call budget by provider count. No row passes; an
+  // unconfigured row records; a configured row enforces call_cap.
+  reserveCalls(sessionId: string, count: number): boolean {
+    return this.reserve(sessionId, "calls", count);
   }
 
   // Settle tokens after a call: move from reserved to spent (adjust if actual != reserved).
   // The decrement is clamped so a lost/never-recorded reservation cannot trip
   // the non-negative CHECK.
   settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleTokens.run(reservedAmount, actualAmount, sessionId);
+    this.settle(sessionId, "tokens", reservedAmount, actualAmount);
   }
 
   // Settle USD after a call.
   settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
-  }
-
-  // decision 2C: reserve per-call budget by provider count. No row passes; an
-  // unconfigured row records; a configured row enforces call_cap.
-  reserveCalls(sessionId: string, count: number): boolean {
-    if (!this.hasBudgetRow(sessionId)) return true;
-    const result = this.stmts.reserveCalls.run(count, sessionId, count);
-    return result.changes > 0;
+    this.settle(sessionId, "usd", reservedAmount, actualAmount);
   }
 
   // decision 2C: settle calls — actual successful providers.
   settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
-    this.stmts.settleCalls.run(reservedCount, actualCount, sessionId);
+    this.settle(sessionId, "calls", reservedCount, actualCount);
   }
 
   // Get current balance for a session.

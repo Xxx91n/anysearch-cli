@@ -101,6 +101,11 @@ export interface BudgetLedgerPort {
   // satisfy the port, and the runtime guards on presence.
   initBudget?(sessionId: string, caps: BudgetCaps): void;
   clearBudgetCaps?(sessionId: string): void;
+  // #275: release reservations whose owner this machine can prove is gone, so
+  // a run killed by SIGKILL cannot leave a phantom "budget exhausted" behind.
+  // Optional like the cap seams above; a ledger without it simply keeps the
+  // pre-#275 behaviour. Returns the number of owner entries released.
+  reclaimDeadReservations?(sessionId: string): number;
 }
 
 // ResumeAnchorsPort: engine-side resume-anchor writer (#48).

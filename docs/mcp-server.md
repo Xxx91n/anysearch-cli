@@ -268,6 +268,24 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   hash of the handle, so a follow-up request carries the earlier turns — and
   still does after a process restart. The record is the source of truth for
   history; the store holds the research archive and the memory anchors.
+- One session record has one writer, so same-session requests serialize —
+  within a process and across processes (#266). The cross-process lock lives
+  in a `locks/` folder inside `ANS_PI_SESSION_DIR`: the holder records its
+  pid/host and refreshes a heartbeat, a live local holder is never
+  preempted, and once the holder's process is confirmed dead the next
+  waiter takes over at once instead of waiting the 10-minute stale window
+  (which only governs owners this machine cannot confirm, e.g. on another
+  host). A same-session caller that waits longer than the 120-second cap
+  gets an explicit "session busy" error result and is expected to retry;
+  different sessions still run in parallel. No evidence exists for
+  network-filesystem session directories; same machine only.
+- A run that is cut off before the provider reports its final usage returns
+  no answer text, and its `structuredContent` says `interrupted: true` with
+  a `usage.run` block whose `costSource` is `"unknown"` and whose `missing`
+  names the accounting that never arrived. The block is present on purpose:
+  omitting usage would read as "this run was free", and the spent tokens of
+  a cut-off run are simply unknown. The same handle still resumes the
+  session later.
 - Omitting the handle is the explicit single-shot mode: a fresh session per
   call, no cross-call continuity, and one session row minted per call. With
   the domain retrieval adapter set to `fts`, that fresh session can still
@@ -315,6 +333,7 @@ written to config files. Hosts that inherit their environment (the usual
 | `ANS_LLM_BASE_URL` + `ANS_LLM_API` | `ans_chat` | Custom upstream. `ANS_LLM_API` must be `chat`, `messages`, or `responses` whenever `ANS_LLM_BASE_URL` is set. |
 | `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | The real model window. It drives request budgeting, the L0 low-water mark, PI's compaction trigger, and the window reported back in `structuredContent.context`. It overrides a catalog model's own window; a malformed value fails the call rather than silently defaulting to 128K. |
 | `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` beside the durable DB. Threading the same `sessionId` back resumes the conversation, including after a restart. |
+| `ANS_PI_LOCK_STALE_MS` / `ANS_PI_LOCK_TIMEOUT_MS` | `ans_chat` | Override the cross-process session lock windows: how long a lock whose owner this machine cannot confirm is kept (default 600000), and the same-session wait cap before "session busy" (default 120000). Meant for observing expiry and recovery in seconds during a test run; an unparsable value keeps the default. |
 | `ANS_PI_COMPACTION_RESERVE_TOKENS` / `ANS_PI_COMPACTION_KEEP_RECENT_TOKENS` | `ans_chat` | Override PI's compaction thresholds (defaults 16384 / 20000). Meant for forcing compaction on a small context during a test run; an unparsable value keeps PI's default. |
 
 Auth layers are separate. Provider keys authenticate upstream calls.

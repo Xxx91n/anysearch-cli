@@ -160,6 +160,12 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
 // NOOP adjudication — LLM decides REUSE vs COMPRESS.
 // The call's own spend comes back with the decision: it is a separate book
 // from the summary calls (D4 重判), so neither ledger inflates the other.
+//
+// Merge note (#272 -> #261): main briefly booked this call into the SUMMARY
+// ledger through an `onUsage` callback, and said in its own commit message that
+// the real home was #261. This is that home, so the callback form is dropped
+// rather than carried alongside the returned usage — two ways to book the same
+// call would double count it.
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
@@ -198,10 +204,11 @@ export async function adjudicateReuseCompress(
       // the pre-upgrade shape.
       if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
       else if (event?.type === "text" && event.text) text += event.text;
+      // Both terminal shapes carry spend: `done` holds the successful turn's
+      // usage, and pi-ai 1.5.x reports a FAILED turn on an `error` event
+      // instead of throwing — reading only `done` would drop that spend from
+      // the adjudication book (D4: nothing hidden).
       else if (event?.type === "done" && event.message) usage = event.message.usage;
-      // A stream that ends with an `error` event still spent tokens: pi-ai 1.5.x
-      // reports the failed turn there instead of throwing, so ignoring it would
-      // drop real spend from the adjudication book (D4: nothing hidden).
       else if (event?.type === "error" && event.error?.usage) usage = event.error.usage;
     }
   } catch {
