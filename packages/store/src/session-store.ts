@@ -1482,8 +1482,9 @@ export class SqliteSessionStore implements SessionStore {
           "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
         );
         const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
-        const candidates = paired.iterate("(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound)
-          as Iterable<{ id: number; content: string; rank: number }>;
+        const candidates = paired.iterate(
+          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound,
+        ) as Iterable<{ id: number; content: string; rank: number }>;
         for (const row of candidates) {
           if (!coversMajority(asciiTerms, row.content)) continue;
           const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
