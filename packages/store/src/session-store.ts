@@ -1298,6 +1298,7 @@ export class SqliteSessionStore implements SessionStore {
   private semanticKeywordRows(query: string, limit: number): MemoryHit[] {
     const latin: Array<{ id: number; content: string; rank: number }> = [];
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
+    const otherScript: Array<{ id: number; content: string; rank: number }> = [];
     const seen = new Set<number>();
     const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
       (r: { id: number; content: string; rank: number }): void => {
@@ -1307,6 +1308,7 @@ export class SqliteSessionStore implements SessionStore {
       };
     const pushLatin = mark(latin);
     const pushCjk = mark(cjk);
+    const pushOtherScript = mark(otherScript);
 
     // 1) Strict FTS rung (latin words). Its rows are already known to match the
     //    whole query, so no extra relevance filter applies.
@@ -1451,11 +1453,26 @@ export class SqliteSessionStore implements SessionStore {
         runGran(objectGrams);
       }
     }
+    // Exact-substring fallback for writing systems excluded by the ASCII FTS
+    // sanitizer (Cyrillic, Greek, Arabic, kana, Hangul, ...). The token regex
+    // permits only letters and numbers, excluding SQL LIKE wildcard input.
+    const otherWords = [...new Set(
+      (query.match(/[\p{L}\p{N}]+/gu) ?? [])
+        .filter((w) => /[^\x00-\x7F]/u.test(w) &&
+          !/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(w)),
+    )].slice(0, 8);
+    if (otherWords.length > 0) {
+      const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
+      const rows = this.db.prepare(
+        "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
+      ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+      for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+    }
     // A query carrying Chinese is answered by the Chinese rows first: the
     // ASCII rung only saw half the question, so letting its rows keep every
     // slot would starve the half the caller actually typed (#273 round 5).
     // Latin rows fill whatever is left.
-    return [...cjk, ...latin].slice(0, limit).map((r) =>
+    return [...cjk, ...otherScript, ...latin].slice(0, limit).map((r) =>
       ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
   }
 
@@ -1961,7 +1978,7 @@ export class SqliteSessionStore implements SessionStore {
         .prepare(
           "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
           " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-          " WHERE r.id > ? AND r.archived = 0 GROUP BY r.id ORDER BY r.id LIMIT ?"
+          " WHERE r.id > ? AND r.archived = 0 AND r.superseded_by IS NULL GROUP BY r.id ORDER BY r.id LIMIT ?"
         )
         .all(fromId, Math.min(batch, maxRows - res.scanned)) as ScanRow[];
     const processRow = (row: ScanRow): void => {
