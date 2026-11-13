@@ -432,9 +432,22 @@ async function main() {
       const ledgerBefore = dbBefore.prepare(
         "SELECT session_id, reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
       ).all(shared) as Array<{ session_id: string; reserved_tokens: number; spent_tokens: number }>;
+      // #275: the killed run reserved real tokens, which is what makes "the
+      // recovery released them" a statement about a non-zero number instead of
+      // about a counter that was never moved. The owner row is read too, so the
+      // post-kill assertion below can tell "this run's reservation was
+      // released" apart from "the unowned sweep happened to clear a counter".
+      const reservationsBefore = dbBefore.prepare(
+        "SELECT owner_pid, dim, amount FROM budget_reservations WHERE session_id = ?"
+      ).all(shared) as Array<{ owner_pid: number; dim: string; amount: number }>;
       dbBefore.close();
       assert(ledgerBefore.length === 1,
         "C2: the session has a real budget_ledger row before the kill (got " + JSON.stringify(ledgerBefore) + ")");
+      assert(Number(ledgerBefore[0]?.reserved_tokens) > 0,
+        "C2: the killed run holds a real reservation before the kill (got " + JSON.stringify(ledgerBefore) + ")");
+      assert(reservationsBefore.some((r) => r.owner_pid === a.child.pid && r.dim === "tokens"),
+        "C2/#275: the killed run recorded its reservation under its own pid (got "
+        + JSON.stringify(reservationsBefore) + ")");
 
       a.child.kill("SIGKILL");
       for (const res of openResponses) { try { res.destroy(); } catch { /* already gone */ } }
@@ -485,6 +498,29 @@ async function main() {
       assert(lines.every((l) => !l.unparsable), "C2: every JSONL line parses after recovery");
       assert(lockEntries(join(root, "pi")).length === 0,
         "C2: the reclaimed lock is cleaned up (exit " + JSON.stringify(killedExit) + ")");
+
+      // #275: the takeover released the killed run's reservation, so the session
+      // is not left looking exhausted. This is the defect the ticket measured
+      // (reserved_tokens = 12304 with spent_tokens = 0 after the takeover) and
+      // the recovery path is where it has to stop being true.
+      const dbAfter = new Database(join(root, "anysearch.db"), { readonly: true });
+      const ledgerAfter = dbAfter.prepare(
+        "SELECT reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
+      ).all(shared) as Array<{ reserved_tokens: number; spent_tokens: number }>;
+      const leftoverOwners = dbAfter.prepare(
+        "SELECT owner_pid, dim, amount FROM budget_reservations WHERE session_id = ?"
+      ).all(shared) as Array<{ owner_pid: number; dim: string; amount: number }>;
+      dbAfter.close();
+      // The recovering run reserved and then settled its own work, so zero is
+      // the only correct leftover. A surviving killed-owner row is the bug.
+      assert(ledgerAfter.length === 1 && Number(ledgerAfter[0].reserved_tokens) === 0,
+        "C2/#275: no reservation is left behind after the takeover (ledger "
+        + JSON.stringify(ledgerAfter) + ")");
+      assert(!leftoverOwners.some((r) => r.owner_pid === a.child.pid),
+        "C2/#275: the killed process owns no reservation after the takeover (got "
+        + JSON.stringify(leftoverOwners) + ")");
+      assert(Number(ledgerAfter[0]?.spent_tokens) > 0,
+        "C2: the recovering run's spend is booked on the same row");
 
       b.child.kill("SIGKILL");
       await b.exited;

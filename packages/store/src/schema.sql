@@ -138,6 +138,28 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- IF NOT EXISTS; session-store.ts creates the unique index in a protected
 -- migration for them (a no-op for new databases).
 
+-- #275: who holds each reservation. A run killed by SIGKILL never reaches its
+-- finally block, so its reservation would sit in the budget_ledger counters
+-- forever and later runs would be rejected as "budget exhausted". The ledger
+-- alone cannot answer "is this reservation still alive", because it only keeps
+-- sums; this table keeps the owner (pid + host) of each sum so a waiter can
+-- release exactly the ones whose owner it can prove is gone.
+-- One aggregate row per (session, dimension, owner): a run reserves and settles
+-- many times, and the settlement API carries an amount, not a reservation id.
+CREATE TABLE IF NOT EXISTS budget_reservations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  -- Which budget_ledger counter this amount is part of.
+  dim TEXT NOT NULL CHECK (dim IN ('tokens', 'usd', 'calls')),
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  -- REAL, not INTEGER: the usd dimension is fractional and one table serves all
+  -- three. Integers stay exact in a double well past any real token count.
+  amount REAL NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (session_id, dim, owner_pid, owner_host)
+);
+
 -- G019 migration: add time-decay columns to existing retrieval_results table.
 -- ALTER TABLE ADD COLUMN is idempotent-safe: "duplicate column name" means the column is
 -- already there and SessionStore absorbs exactly that; every other error fails the start (#257).

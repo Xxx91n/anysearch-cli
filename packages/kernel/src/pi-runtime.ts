@@ -1102,6 +1102,34 @@ export class PiAgentRuntime {
     // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
 
+    // #275: release reservations whose owner this machine can prove is gone
+    // before this run reserves anything. A run killed by SIGKILL never reaches
+    // its finally, so its leftover would keep eating this session's cap and
+    // later runs would be refused as "budget exhausted" over nothing.
+    //
+    // The rule is per owner (same host + dead pid), not "clear the session": a
+    // consolidation running in another process holds reservations without the
+    // session lock, and clearing those would loosen its cap mid-run. A fault
+    // here is the usual fail-open budget fault — the reserve below then reports
+    // any real exhaustion.
+    //
+    // Design: the sweep runs at the run boundary rather than only at
+    // registration — a long-lived host reuses one ledger, so a leftover
+    // inherited at startup would otherwise stay until the process restarted.
+    //
+    // Not done here: clearing counter amounts that no owner row claims. Those
+    // are left by a pre-#275 build, and a build that old does not take the
+    // session lock either, so holding the lock cannot prove the writer is gone
+    // — clearing it would let a still-running old process and this run both
+    // spend against the cap. That upgrade window is tracked separately (#279).
+    if (billingWired) {
+      try {
+        ledger!.reclaimDeadReservations?.(sessionId!);
+      } catch (e) {
+        reportBudgetFault("reservation reclaim", e);
+      }
+    }
+
     // #188: if the domain TOML changed since the last run, refresh the ledger
     // caps before reserving. The registration sites (#187) sample the domain
     // once; a long-lived MCP process reuses its startup engine snapshot, so
