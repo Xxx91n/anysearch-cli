@@ -363,8 +363,16 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
   if (known.size === 0) return message;
   let text = target.text;
   let changed = false;
-  for (const block of known) {
-    if (block.length === 0) continue;
+  // Longest first. Two summaries can share a prefix — an older short version and
+  // a newer one that extends it ("para one" vs "para one\n\nold hours 9-17"). A
+  // shorter block removed first would cut that prefix out of the longer block,
+  // and the longer one could then never match, leaving exactly the stale line the
+  // removal exists to delete. Removing the longer string first keeps both cases
+  // correct: it disappears whole, and the shorter one is no longer present.
+  const ordered = [...known]
+    .filter((block) => block.length > 0)
+    .sort((a, b) => b.length - a.length);
+  for (const block of ordered) {
     // The block was appended after a blank line (see inject()). Removing the
     // separator with it keeps the field from leaving a growing run of blank
     // lines behind, while never touching a block that is not ours.

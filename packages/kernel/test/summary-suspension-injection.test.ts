@@ -262,6 +262,42 @@ async function main() {
   assert(assistantTurn.some((t) => t.includes("The [Session Memory] block holds a summary.")),
     "P8: an assistant reply that mentions the tag is NOT deleted");
 
+  // P9: two summary versions where one is a PREFIX of the other. Stripping the
+  // short one first would cut that prefix out of the long one, so the long one
+  // could never match and the stale line would survive. Longest-first removal
+  // is what makes this case work.
+  //
+  // A separate session on purpose: the anchors above were rewritten by the
+  // earlier blocks, so this needs its own two anchors whose texts really are
+  // short and "short + more".
+  const p9Session = "session-p9";
+  await store.ensureSession(p9Session, "acme");
+  const shortText = "OLD-HOURS-263 weekdays 9-17";
+  const longText = shortText + BLANK_LINE + "OLD-HOURS-263 second line";
+  await store.saveAnchor(p9Session, "rolling_summary", {
+    summary: shortText,
+    sources: [{ kind: "material", id: 999999 }],
+  });
+  await store.saveAnchor(p9Session, "l2_recall", {
+    hits: longText,
+    sources: [{ kind: "material", id: 999999 }],
+  });
+  const prefixHistory = [{
+    role: "user",
+    content: [{
+      type: "text",
+      text: "my question" + BLANK_LINE + "[Session Memory] " + shortText
+        + BLANK_LINE + "[Research Recall] " + longText,
+    }],
+  }];
+  const prefixRuntime = pipelineFor(store, p9Session);
+  const prefixTurn = promptText(await prefixRuntime.inject(prefixHistory));
+  assert(!prefixTurn.includes("OLD-HOURS-263 weekdays 9-17"),
+    "P9: neither the short block nor the long block that extends it survives");
+  assert(!prefixTurn.includes("OLD-HOURS-263 second line"),
+    "P9: the longer block's tail is removed with it, not left behind");
+  assert(prefixTurn.includes("my question"), "P9: the user's own text survives");
+
   store.close();
 }
 
