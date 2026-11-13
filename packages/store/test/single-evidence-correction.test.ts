@@ -431,6 +431,35 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "noop-links: the original sources stay in the set");
   store.close();
 }
+// --- 7d2. rejected exact text must not attach unrelated evidence ----------
+{
+  const db = "noop-rejected-links.db";
+  const store = openStore(db);
+  const seed = await store.createSession("eval");
+  const oldIds = await buildKnowledge(store, db, seed.id, "zeta-api",
+    "Zeta service supports REST.", "https://ex.com/noop-old");
+  const unrelated = await store.createSession("eval");
+  const newIds: number[] = [];
+  for (let i = 0; i < 3; i++) newIds.push(await seedEpisode(store, unrelated.id,
+    "https://ex.com/other-" + i, "Unrelated report " + i,
+    "An independent topic was discussed.", "zeta-api"));
+  // The summarizer echoed old knowledge that the new evidence cannot support.
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: newIds, sessionIdNotApplied: false } },
+    { summarize: async () => "Zeta service supports REST.",
+      classify: () => ({ label: "unsupported", confidence: 0 }) },
+  );
+  assert(rep.gateRejected === 1 && rep.noop === 0,
+    "rejected exact restatement: no noop touch or source merge");
+  const live = q(db, "SELECT source_episode_ids FROM semantic_memories WHERE valid_until IS NULL");
+  const sources = JSON.parse(live.source_episode_ids) as number[];
+  assert(oldIds.every((id) => sources.includes(id)) && newIds.every((id) => !sources.includes(id)),
+    "rejected exact restatement: original sources preserved, unrelated ones excluded");
+  assert(newIds.every((id) => q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", id).superseded_by === null),
+    "rejected exact restatement: unrelated materials remain available");
+  store.close();
+}
+
 // --- 7b. no correction checker: a lone material may not write at all --------
 // The negation-keyword quadruple is not a substitute for the same-fact /
 // reliability verdict, so with `verify` absent neither a correction nor a new
@@ -461,6 +490,58 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "no checker: the old knowledge is untouched");
   assert(oldIds.every((id) => q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", id).superseded_by === null),
     "no checker: no episode was superseded");
+  store.close();
+}
+
+// --- 7b2. a heuristic UPDATE cannot bypass a missing verifier -------------
+{
+  const db = "no-verifier-update.db";
+  const store = openStore(db);
+  const session = await store.createSession("eval");
+  await buildKnowledge(store, db, session.id, "zeta-api",
+    "Zeta service supports the REST API. Deploys run weekly.", "https://ex.com/old-zeta");
+  const next = await store.createSession("eval");
+  const id = await seedEpisode(store, next.id, "https://ex.com/new-zeta",
+    "Zeta correction", "Zeta service no longer supports the REST API.", "zeta-api");
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [id], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: twoStageSummarize("Zeta service no longer supports the REST API.",
+        "Zeta service no longer supports the REST API. Deploys run weekly."),
+      classify: SUPPORTED,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }) },
+  );
+  assert(rep.singleEvidenceSkipped === 1 && rep.update === 0,
+    "missing relation checker: heuristic UPDATE must be withheld");
+  assert(String(q(db, "SELECT content FROM semantic_memories WHERE valid_until IS NULL").content).includes("supports the REST"),
+    "missing relation checker: old knowledge stays current");
+  store.close();
+}
+
+// --- 7b3. mixed clusters must not feed retired episodes to summarization ---
+{
+  const db = "mixed-retired.db";
+  const store = openStore(db);
+  const seed = await store.createSession("eval");
+  const oldIds = await buildKnowledge(store, db, seed.id, "zeta-api",
+    "Zeta service supports REST. Deploys run weekly.", "https://ex.com/retired");
+  const currentId = Number(q(db, "SELECT id FROM semantic_memories WHERE valid_until IS NULL").id);
+  const rw = new Database(join(dir, db), { readonly: false });
+  rw.prepare("UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" +
+    oldIds.map(() => "?").join(",") + ")").run(currentId, ...oldIds);
+  rw.close();
+  const next = await store.createSession("eval");
+  const fresh: number[] = [];
+  for (let i = 0; i < 3; i++) fresh.push(await seedEpisode(store, next.id,
+    "https://ex.com/fresh-" + i, "New note " + i,
+    "An unrelated new fact is stated here.", "zeta-api"));
+  let seen: ConsolidateEvidence[] = [];
+  await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [...oldIds, ...fresh], sessionIdNotApplied: false } },
+    { summarize: async (evidence) => { seen = evidence; return "An unrelated new fact is stated here."; },
+      classify: SUPPORTED },
+  );
+  assert(seen.length === 3 && seen.every((e) => e.url.includes("/fresh-")),
+    "mixed cluster: superseded materials cannot become current evidence");
   store.close();
 }
 
@@ -724,6 +805,48 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
       "batch: the merge kept the uncorrected deploy fact");
     const mergedRow = q(db, "SELECT superseded_by FROM semantic_memories WHERE id = ?", up.oldId);
     assert(mergedRow.superseded_by === up.newId, "batch: the old row names its successor");
+    store.close();
+  }
+
+  // 9a2. The relation verifier may accept an update despite a generic
+  // high-overlap/negation false positive; new knowledge still needs fidelity.
+  {
+    const db = "b-classifier-negated.db";
+    const store = openStore(db);
+    const seed = await store.createSession("eval");
+    await buildKnowledge(store, db, seed.id, "zeta-api",
+      "Zeta service supports the REST API. Deploys run weekly.", "https://ex.com/classifier-old");
+    const corr = await store.createSession("eval");
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, corr.id,
+      "https://ex.com/classifier-new-" + i, "Zeta correction",
+      "Zeta service no longer supports the REST API.", "zeta-api"));
+    const rep = await store.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+      { summarize: twoStageSummarize("Zeta service no longer supports the REST API.",
+          "Zeta service no longer supports the REST API. Deploys run weekly."),
+        classify: () => ({ label: "unsupported", confidence: 0 }),
+        verify: async () => CORRECTION,
+        verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }) },
+    );
+    assert(rep.update === 1 && rep.gateRejected === 0,
+      "batch: an accepted correction is not vetoed by the generic negation heuristic");
+    store.close();
+  }
+  {
+    const db = "b-classifier-add.db";
+    const store = openStore(db);
+    const session = await store.createSession("eval");
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, session.id,
+      "https://ex.com/unsafe-" + i, "Unknown note", "Unsupported new fact", "unrelated"));
+    const rep = await store.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+      { summarize: async () => "Unsupported new fact",
+        classify: () => ({ label: "unsupported", confidence: 0 }) },
+    );
+    assert(rep.gateRejected === 1 && rep.add === 0,
+      "batch: unsupported ADD remains gated");
     store.close();
   }
 
@@ -1230,6 +1353,74 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "kw relevance: the row that answers the question is returned");
   assert(!semContents.some((c) => c.includes("ticket volume")),
     "kw relevance: a row sharing only one common word is not returned");
+  store.close();
+}
+
+// --- 11c2. non-ASCII, non-Han recall works with embeddings unavailable ------
+{
+  const db = "kw-cyrillic.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("Почта поддержки: help@sample.example");
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const hits = await store.searchMemory("Почта", 10);
+  const lowerCaseHits = await store.searchMemory("почта", 10);
+  __setEmbeddingModuleForTest("auto");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
+    "Unicode fallback: Cyrillic knowledge is recalled without embeddings");
+  assert(lowerCaseHits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
+    "Unicode FTS: a lowercase Cyrillic query recalls the uppercase source text");
+  store.close();
+}
+
+// --- 11c2b. matching both scripts outranks one-script rows at limit=1 -----
+{
+  const db = "kw-cyrillic-mixed.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  const put = rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)");
+  put.run("почта"); // Shorter Unicode-only row is preferred by standalone BM25.
+  put.run("Acme почта: help@acme.example"); // The only row covering BOTH.
+  put.run("Acme account details without the requested email.");
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const lane = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme почта", 1);
+  const hits = await store.searchMemory("Acme почта", 1);
+  __setEmbeddingModuleForTest("auto");
+  assert(lane.length === 1 && lane[0]!.content.includes("help@acme.example"),
+    "mixed script: the indexed both-term hit survives independent lane LIMIT cuts");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("help@acme.example")),
+    "mixed script: single-result recall does not select a Unicode-only distractor");
+  store.close();
+}
+
+// --- 11c2c. mixed query applies ASCII coverage before LIMIT ------------
+{
+  const db = "kw-cyrillic-coverage.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  const put = rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)");
+  // Make "acme"/"address" frequent in the corpus: BM25 now ranks the
+  // short Unicode distractors ahead of the long fully matching fact.
+  for (let i = 0; i < 30; i++) put.run("Acme billing address invoice " + i);
+  for (let i = 0; i < 9; i++) put.run("billing почта");
+  put.run("Acme billing почта"); // 2/3 ASCII terms: eligible, but not best.
+  put.run("Acme billing address почта: receipts@acme.example " + "misc ".repeat(150));
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const lane = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme billing address почта", 1);
+  const hits = await store.searchMemory("Acme billing address почта", 1);
+  __setEmbeddingModuleForTest("auto");
+  assert(lane.length === 1 && lane[0]!.content.includes("receipts@acme.example"),
+    "mixed coverage: the full ASCII+Unicode hit wins despite BM25 preferring partial matches");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("receipts@acme.example")),
+    "mixed coverage: keyword fallback returns the fully matching fact at limit=1 without embeddings");
   store.close();
 }
 

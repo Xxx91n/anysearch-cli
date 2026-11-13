@@ -312,6 +312,7 @@ export function buildAnsChatConsolidateResult(
     : "\n" + report.incompleteDetails.map((d) =>
         "correction incomplete (" + d.stage + ", knowledge " + d.oldId + " NOT replaced" +
         (d.reason ? "; " + d.reason : "") + ")" +
+        "\n  old: " + d.oldContent +
         "\n  candidate: " + d.candidate +
         "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
       ).join("\n");

@@ -1298,6 +1298,10 @@ export class SqliteSessionStore implements SessionStore {
   private semanticKeywordRows(query: string, limit: number): MemoryHit[] {
     const latin: Array<{ id: number; content: string; rank: number }> = [];
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
+    const otherScript: Array<{ id: number; content: string; rank: number }> = [];
+    // Independent indexed lane for rows matching both query scripts.
+    // Do not share 'seen' with the weaker one-script lanes.
+    const crossScript: Array<{ id: number; content: string; rank: number }> = [];
     const seen = new Set<number>();
     const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
       (r: { id: number; content: string; rank: number }): void => {
@@ -1307,6 +1311,7 @@ export class SqliteSessionStore implements SessionStore {
       };
     const pushLatin = mark(latin);
     const pushCjk = mark(cjk);
+    const pushOtherScript = mark(otherScript);
 
     // 1) Strict FTS rung (latin words). Its rows are already known to match the
     //    whole query, so no extra relevance filter applies.
@@ -1451,11 +1456,73 @@ export class SqliteSessionStore implements SessionStore {
         runGran(objectGrams);
       }
     }
+    // Keyword fallback for scripts excluded by the ASCII query sanitizer.
+    // FTS5's unicode61 tokenizer handles case folding (e.g. почта / Почта)
+    // without scanning the whole table. LIKE is a bounded substring fallback
+    // for scripts or fragments that unicode61 does not tokenize usefully.
+    const otherWords = [...new Set(
+      (query.match(/[\p{L}\p{N}]+/gu) ?? [])
+        .filter((w) => /[^\x00-\x7F]/u.test(w) &&
+          !/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(w)),
+    )].slice(0, 8);
+    if (otherWords.length > 0) {
+      const asciiTerms = relaxedTerms(query);
+      if (asciiTerms.length > 0) {
+        // The intersection itself admits rows that match just ONE ASCII word.
+        // Scan bounded indexed candidates BEFORE trimming to 'limit', then use
+        // the same strict-majority filter as the relaxed Latin rung. Favor
+        // higher ASCII coverage before BM25, so a short two-word distractor
+        // cannot displace a row matching the entire mixed-script question.
+        const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
+        const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+        const scanBound = Math.max(limit * 20, 200);
+        const paired = this.db.prepare(
+          "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+          "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+        );
+        const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
+        const candidates = paired.iterate(
+          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound,
+        ) as Iterable<{ id: number; content: string; rank: number }>;
+        for (const row of candidates) {
+          if (!coversMajority(asciiTerms, row.content)) continue;
+          const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+          const coverage = asciiTerms.filter((term) => tokens.some((token) => token.startsWith(term))).length;
+          qualified.push({ row, coverage });
+        }
+        qualified.sort((a, b) => b.coverage - a.coverage || a.row.rank - b.row.rank);
+        crossScript.push(...qualified.slice(0, limit).map((candidate) => candidate.row));
+      }
+      const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+      const indexed = this.db.prepare(
+        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+      ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
+      for (const r of indexed) pushOtherScript(r);
+      // Keep a substring rung for languages where an indexed word differs
+      // from a useful query fragment; avoid the scan if FTS already filled.
+      if (otherScript.length < limit) {
+        const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
+        const rows = this.db.prepare(
+          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
+        ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+        for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+      }
+    }
     // A query carrying Chinese is answered by the Chinese rows first: the
     // ASCII rung only saw half the question, so letting its rows keep every
     // slot would starve the half the caller actually typed (#273 round 5).
-    // Latin rows fill whatever is left.
-    return [...cjk, ...latin].slice(0, limit).map((r) =>
+    // Prefer evidence covering both ASCII and non-Han Unicode terms over
+    // partial matches. The existing Han-first rule is unchanged (#277).
+    const ordered = [...cjk, ...crossScript, ...otherScript, ...latin];
+    const resultSeen = new Set<number>();
+    return ordered.filter((r) => {
+      if (resultSeen.has(r.id)) return false;
+      resultSeen.add(r.id);
+      return true;
+    }).slice(0, limit).map((r) =>
       ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
   }
 
@@ -1961,7 +2028,7 @@ export class SqliteSessionStore implements SessionStore {
         .prepare(
           "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
           " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-          " WHERE r.id > ? AND r.archived = 0 GROUP BY r.id ORDER BY r.id LIMIT ?"
+          " WHERE r.id > ? AND r.archived = 0 AND r.superseded_by IS NULL GROUP BY r.id ORDER BY r.id LIMIT ?"
         )
         .all(fromId, Math.min(batch, maxRows - res.scanned)) as ScanRow[];
     const processRow = (row: ScanRow): void => {
