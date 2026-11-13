@@ -92,6 +92,27 @@ function withDb<T>(db: string, fn: (d: Database.Database) => T): T {
   try { return fn(d); } finally { d.close(); }
 }
 
+/**
+ * Remove a table (and the indexes naming it) from a schema script.
+ *
+ * S6b needs a database shaped like the PREVIOUS version's, and the honest way
+ * to get one is to take the real schema and drop the parts this ticket added.
+ * Splitting on `;` keeps it statement-level: no regex over the whole file, which
+ * is where a quote or a newline would silently break the match.
+ */
+function dropTables(schema: string, tables: string[]): string {
+  const kept: string[] = [];
+  for (const stmt of schema.split(";")) {
+    // A plain substring test: the table names here are unique enough that
+    // escaping a word-boundary regex (which this repo's Python-side tooling
+    // has already mangled twice) buys nothing.
+    const mentions = tables.some((t) => stmt.includes(t));
+    if (mentions) continue;
+    kept.push(stmt);
+  }
+  return kept.join(";");
+}
+
 // --- fixtures -------------------------------------------------------------
 
 const OLD_FACT = "Acme online support runs weekdays 9:00-17:00. Support email is help@acme.com.";
@@ -399,6 +420,79 @@ async function buildKnowledge(
   const row = q(db, "SELECT source_kind, source_id, anchor_id FROM summary_sources WHERE anchor_id = ?", anchorId);
   assert(row && row.source_id === material && row.source_kind === "material",
     "S6: the pre-existing dependency survived the migration");
+}
+
+// --- S6b: an OLD database (built before this ticket) upgrades in place ------
+
+{
+  // The migration case that matters is not "reopen a new database" — it is a
+  // database created by the PREVIOUS version, which holds research data and
+  // summaries but neither new table. Those tables must appear on the next open
+  // with every existing row and anchor untouched.
+  //
+  // The file is built from the REAL schema minus the #263 tables, so it is
+  // exactly the shape an older install left behind.
+  const db = "s6b-legacy.db";
+  const schemaPath = join(import.meta.dirname ?? ".", "..", "src", "schema.sql");
+  const { readFileSync } = await import("node:fs");
+  const fullSchema = readFileSync(schemaPath, "utf8");
+  // Dropped by name rather than by regex: the schema text carries quotes,
+  // newlines and semicolons, and a regex over it is a fragile way to prove
+  // "this old database lacks the new tables".
+  const legacySchema = dropTables(fullSchema, ["summary_sources", "summary_suspensions"]);
+  assert(!/summary_sources/.test(legacySchema) && !/summary_suspensions/.test(legacySchema),
+    "S6b prep: the legacy schema really has neither new table");
+  {
+    const raw = new Database(join(dir, db));
+    try {
+      raw.exec("PRAGMA journal_mode = WAL");
+      raw.exec(legacySchema);
+      // Legacy data: a session, one material row, and a summary anchor that,
+      // being older than this ticket, records no sources at all.
+      raw.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?)").run("legacy-session", "acme");
+      raw.prepare(
+        "INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run("legacy-session", "https://legacy.example/old", "old", "legacy material text", "tavily", "legacy");
+      raw.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)").run(
+        "legacy-session", "rolling_summary", JSON.stringify({ summary: "LEGACY-SUMMARY-263: written before the upgrade" }),
+      );
+    } finally {
+      raw.close();
+    }
+  }
+
+  const legacyRowsBefore = q(db, "SELECT COUNT(*) AS n FROM retrieval_results")!.n;
+  const legacyAnchorsBefore = q(db, "SELECT COUNT(*) AS n FROM resume_anchors")!.n;
+  assert(legacyRowsBefore === 1 && legacyAnchorsBefore === 1, "S6b prep: the legacy database holds real data");
+
+  // Opening it with the CURRENT store runs the real startup path — the
+  // migration under test.
+  const upgraded = openStore(db);
+  const anchors = await upgraded.getAnchors("legacy-session");
+  assert(anchors.length === 1 && String((anchors[0]!.payload as any).summary).includes("LEGACY-SUMMARY-263"),
+    "S6b: the old summary is still readable after the upgrade");
+  assert(anchors[0]!.id !== undefined, "S6b: the old anchor still has its id (its columns are intact)");
+  // An old summary has no recorded dependency, so it is neither suspended nor
+  // claimed to depend on anything: "no record" is not "depends on everything".
+  assert(!upgraded.suspendedSummaryAnchorIds("legacy-session").has(anchors[0]!.id),
+    "S6b: an old summary with no recorded sources is not suspended by the upgrade");
+  const depCount = q(db, "SELECT COUNT(*) AS n FROM summary_sources WHERE session_id = ?", "legacy-session")!.n;
+  assert(depCount === 0, "S6b: the upgrade invents no dependency for the old summary (got " + depCount + ")");
+  assert(q(db, "SELECT COUNT(*) AS n FROM retrieval_results")!.n === legacyRowsBefore,
+    "S6b: existing research rows are preserved by the upgrade");
+  const tables = qAll(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('summary_sources', 'summary_suspensions')");
+  assert(tables.length === 2, "S6b: the upgrade added both new tables");
+  // And the upgraded database records dependencies from now on.
+  const legacyMaterialId = q(db, "SELECT id FROM retrieval_results WHERE session_id = 'legacy-session'")!.id as number;
+  await upgraded.saveAnchor("legacy-session", "l2_recall", {
+    hits: "NEW-RECALL-263",
+    sources: [{ kind: "material", id: legacyMaterialId }],
+  });
+  assert(q(db, "SELECT COUNT(*) AS n FROM summary_sources WHERE session_id = ?", "legacy-session")!.n === 1,
+    "S6b: the upgraded database records new dependencies");
+  const at = stores.indexOf(upgraded);
+  if (at >= 0) stores.splice(at, 1);
+  upgraded.close();
 }
 
 // --- helper contracts -----------------------------------------------------
