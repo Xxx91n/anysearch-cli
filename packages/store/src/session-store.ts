@@ -1453,20 +1453,32 @@ export class SqliteSessionStore implements SessionStore {
         runGran(objectGrams);
       }
     }
-    // Exact-substring fallback for writing systems excluded by the ASCII FTS
-    // sanitizer (Cyrillic, Greek, Arabic, kana, Hangul, ...). The token regex
-    // permits only letters and numbers, excluding SQL LIKE wildcard input.
+    // Keyword fallback for scripts excluded by the ASCII query sanitizer.
+    // FTS5's unicode61 tokenizer handles case folding (e.g. почта / Почта)
+    // without scanning the whole table. LIKE is a bounded substring fallback
+    // for scripts or fragments that unicode61 does not tokenize usefully.
     const otherWords = [...new Set(
       (query.match(/[\p{L}\p{N}]+/gu) ?? [])
         .filter((w) => /[^\x00-\x7F]/u.test(w) &&
           !/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(w)),
     )].slice(0, 8);
     if (otherWords.length > 0) {
-      const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
+      const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+      const indexed = this.db.prepare(
+        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+      ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
+      for (const r of indexed) pushOtherScript(r);
+      // Keep a substring rung for languages where an indexed word differs
+      // from a useful query fragment; avoid the scan if FTS already filled.
+      if (otherScript.length < limit) {
+        const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
       const rows = this.db.prepare(
         "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
       ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
-      for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+        for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+      }
     }
     // A query carrying Chinese is answered by the Chinese rows first: the
     // ASCII rung only saw half the question, so letting its rows keep every
