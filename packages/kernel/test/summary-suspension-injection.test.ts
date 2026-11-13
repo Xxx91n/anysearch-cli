@@ -32,6 +32,9 @@ import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
+
+// The separator injected blocks are appended after (see MemoryPipeline.inject).
+const BLANK_LINE = String.fromCharCode(10, 10);
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return false; }
   passed++; return true;
@@ -136,6 +139,17 @@ async function main() {
     "P1: the unrelated recall block is injected as before");
   assert(livePrompt.includes("what are the support hours?"), "P1: the user's own question survives");
 
+  // P4 fixture: ONE runtime is built here, before the correction, and used
+  // again afterwards. A runtime created after the correction would pass even if
+  // the suspension set were cached at construction, so it cannot prove "read per
+  // turn" on its own.
+  const longLived = pipelineFor(store, sessionId);
+  const beforeCorrection = promptText(await longLived.inject([userTurn("before correction")]));
+  assert(beforeCorrection.includes("[Session Memory]") && beforeCorrection.includes("STALE-CONCLUSION-263"),
+    "P4 fixture: the long-lived runtime injects the summary before the correction");
+  // Keep the array this call returned: a caller may hand it straight back.
+  const reusedHistory = await longLived.inject([userTurn("before correction")]);
+
   // The real correction: one reliable material replaces the live knowledge row.
   const correctionMaterial = await seedMaterial(store, sessionId, "https://acme.example/notice-2026", CORRECTED_FACT, "acme");
   const rep = await store.consolidateMemory(
@@ -172,18 +186,40 @@ async function main() {
     "P2: the suspended summary's original text is still stored (readable, just not injected)");
 
   // P4: one runtime sees the change on its next turn. No rebuild, no restart.
-  const pipeline = pipelineFor(store, sessionId);
-  const turnOne = promptText(await pipeline.inject([userTurn("turn one")]));
-  assert(!turnOne.includes("STALE-CONCLUSION-263"), "P4: turn one omits the suspended summary");
-  // The first turn ran while the summary was already suspended; build a NEW
-  // runtime to prove the state is read per call rather than cached at
-  // construction, then inject twice more on the same instance.
-  const freshRuntime = pipelineFor(store, sessionId);
-  const freshOne = promptText(await freshRuntime.inject([userTurn("fresh one")]));
-  const freshTwo = promptText(await freshRuntime.inject([userTurn("fresh two")]));
-  assert(!freshOne.includes("STALE-CONCLUSION-263") && !freshTwo.includes("STALE-CONCLUSION-263"),
-    "P4: a runtime built after the correction injects nothing stale on any turn");
-  assert(freshTwo.includes("fresh two"), "P4: the user's own text is preserved on every turn");
+  // P4: the SAME runtime that injected the summary before the correction must
+  // stop injecting it on its next turn. This is what proves the suspension set
+  // is read per turn instead of being cached when the pipeline was built.
+  const turnOne = promptText(await longLived.inject([userTurn("turn one")]));
+  assert(!turnOne.includes("STALE-CONCLUSION-263"),
+    "P4: the same runtime that injected it before now omits the suspended summary");
+  assert(!turnOne.includes("[Session Memory]"), "P4: no summary block is appended on that turn");
+  assert(turnOne.includes("turn one"), "P4: the user's own text is preserved");
+
+  // P5: a caller that hands back the array a previous inject() returned still
+  // carries the old block in its text. Appending nothing is not enough — the
+  // stale text has to leave the prompt, or the replaced fact reaches the model.
+  const reusedTurn = promptText(await longLived.inject(reusedHistory));
+  assert(!reusedTurn.includes("STALE-CONCLUSION-263"),
+    "P5: a REUSED history loses the stale summary block instead of keeping it");
+  assert(!reusedTurn.includes("[Session Memory]"), "P5: no [Session Memory] block survives in the reused history");
+  assert(reusedTurn.includes("before correction"),
+    "P5: the user's own words survive the strip");
+  // The unrelated block is still live, so the reused history must still carry it.
+  assert(reusedTurn.includes("[Research Recall]") && reusedTurn.includes("UNRELATED-RECALL-263"),
+    "P5: only the suspended block is stripped; the still-valid recall block remains");
+
+  // P6: stripping is limited to the summary slots. A message whose text is the
+  // user's own words plus an injected RAG block keeps both.
+  const mixedHistory = [{
+    role: "user",
+    content: [
+      { type: "text", text: "my own question" },
+      { type: "text", text: BLANK_LINE + "[RAG Context] operator note" },
+    ],
+  }];
+  const mixed = promptText(await longLived.inject(mixedHistory));
+  assert(mixed.includes("my own question"), "P6: the user's text is untouched");
+  assert(mixed.includes("[RAG Context] operator note"), "P6: a foreign injected block is NOT stripped");
 
   store.close();
 }

@@ -288,8 +288,7 @@ export function buildAnsChatConsolidateResult(
         " (built from a fact this run replaced, so they are no longer injected as current research;" +
         " their text and sources are kept until a rebuild replaces them" +
         (report.dryRun ? "; the dry-run rolled that back" : "") + ")"
-      : "") +
-    (report.dryRun
+      : "") +    (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
       : "") +
@@ -322,8 +321,21 @@ export function buildAnsChatConsolidateResult(
         "\n  candidate: " + d.candidate +
         "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
       ).join("\n");
+  // #263 (D9): one line per suspended summary, naming the session and the anchor
+  // it lives in. A text-only client reads this block and nothing else, and the
+  // count alone leaves it unable to find the summary it should rebuild. The
+  // wording tracks the dry-run: in a preview the suspension was rolled back, so
+  // "would be suspended" is the honest phrasing — the same rule the correction
+  // lines above follow.
+  const suspendedText = (report.suspendedSummaries ?? []).length === 0
+    ? ""
+    : "\n" + report.suspendedSummaries.map((s) =>
+        (report.dryRun ? "summary that would be suspended: " : "summary suspended: ") +
+        "session " + s.sessionId + " anchor " + s.anchorId +
+        " (built from replaced knowledge " + s.triggerKnowledgeId + ")",
+      ).join("\n");
   return {
-    content: [{ type: "text", text: line + refusedText + incompleteText }],
+    content: [{ type: "text", text: line + refusedText + incompleteText + suspendedText }],
     structuredContent: {
       operation: "consolidate",
       scope: s,

@@ -557,9 +557,72 @@ async function buildKnowledge(
   const viaKnowledge = store.resolveSummarySources(["knowledge://semantic/" + built.knowledgeId]);
   assert(viaKnowledge.length === 1 && viaKnowledge[0]!.kind === "knowledge" && viaKnowledge[0]!.id === built.knowledgeId,
     "bridge: a knowledge:// citation resolves to the knowledge row");
-  // A closed knowledge row is not a current source.
+  // A missing knowledge row contributes nothing; an EXISTING but CLOSED one is
+  // still recorded (see the S7 section) because currency is decided at write
+  // time, where the summary gets suspended instead of stored as valid.
   const stale = withDb(db, (d) => resolveSummarySourcesFromUrls(d, ["knowledge://semantic/99999"]));
   assert(stale.length === 0, "bridge: a citation to a missing knowledge row contributes nothing");
+}
+
+// --- S7: a citation closed BEFORE the write still suspends the summary ------
+
+{
+  // The window this closes: a tool result cites knowledge://semantic/<id>, that
+  // row is corrected, and only then is the summary written. If the resolver
+  // dropped the citation for being closed, the anchor would carry no dependency
+  // at all, saveSummaryAnchor would find nothing to check, and the summary
+  // would be stored VALID — still stating the replaced fact.
+  const db = "s7.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "session-s7";
+  await store.ensureSession(sid, "acme");
+
+  const built = await buildKnowledge(store, sid, "acme", OLD_FACT, "https://acme.example/s7");
+  const citation = "knowledge://semantic/" + built.knowledgeId;
+
+  // The correction lands BEFORE the summary is written.
+  const correctionMaterial = await seedEpisode(store, sid, "https://acme.example/s7-notice", "notice", NEW_FACT, "acme");
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [correctionMaterial], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) =>
+        eps.some((e) => e.title === "CURRENT KNOWLEDGE") ? MERGED_FACT : NEW_FACT,
+      classify: SUPPORTED,
+      verify: async () => CORRECTION_VERDICT,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep.update === 1, "S7 fixture: the correction landed");
+  // Through the product path: resolve the citation, THEN write the summary.
+  const resolved = store.resolveSummarySources([citation]);
+  assert(resolved.length === 1 && resolved[0]!.id === built.knowledgeId,
+    "S7: a citation to an ALREADY-CLOSED knowledge row is still resolved, so the write can check it");
+
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "S7-STALE: written after the fact was replaced",
+    sources: resolved,
+  });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId),
+    "S7: the summary is written SUSPENDED, not stored as a valid current conclusion");
+  const text = (await store.getAnchors(sid)).find((a) => a.id === anchorId)!.payload as any;
+  assert(String(text.summary).includes("S7-STALE"), "S7: its text is still recorded");
+
+  // And the ordinary write path still stores a CURRENT citation as valid.
+  await store.saveAnchor(sid, "l2_recall", {
+    hits: "S7-FRESH",
+    sources: store.resolveSummarySources([citation]),
+  });
+  // The l2_recall is built from a closed row too, so it is suspended as well;
+  // that is the same rule, applied without special-casing the anchor type.
+  const recallId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "l2_recall").pop()!.id;
+  assert(store.suspendedSummaryAnchorIds(sid).has(recallId),
+    "S7: the same version check applies to l2_recall");
+
+  const cur = stores.indexOf(store);
+  if (cur >= 0) stores.splice(cur, 1);
+  store.close();
 }
 
 // --- reverse lookup -------------------------------------------------------

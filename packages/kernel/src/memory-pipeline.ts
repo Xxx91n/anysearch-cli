@@ -335,6 +335,83 @@ const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
 
 /**
+ * Remove previously injected summary blocks from one message.
+ *
+ * #263: the runtime cannot assume the caller starts from a clean history. A
+ * caller that hands back the array a previous `inject()` returned gets its old
+ * `[Session Memory]` / `[Research Recall]` blocks back, and those blocks may
+ * state a fact a correction has since replaced. Skipping the new append is not
+ * enough then; the stale text has to leave the prompt.
+ *
+ * Scope is exactly those two blocks: everything before the first of them stays
+ * byte-identical (the user's own words, `[RAG Context]`, `[Recovery Digest]`,
+ * T0 preferences). A message that carries neither block is returned as-is, so a
+ * normal turn pays nothing. Both message shapes are handled (string content and
+ * content-block arrays), and the shape is preserved: a block array keeps every
+ * non-text block.
+ *
+ * @param message - Any message from the array being injected into.
+ * @param stripSummary - Remove `[Session Memory]` blocks.
+ * @param stripRecall - Remove `[Research Recall]` blocks.
+ * @returns The message without those blocks, or the original message.
+ */
+function stripSummaryBlocks(message: any, stripSummary: boolean, stripRecall: boolean): any {
+  const target = readMessageText(message);
+  if (!target) return message;
+  const tags: string[] = [];
+  if (stripSummary) tags.push(SESSION_MEMORY_TAG);
+  if (stripRecall) tags.push(RESEARCH_RECALL_TAG);
+  // Blocks are appended after a blank line (see inject()). Matching that
+  // separator keeps a user who merely MENTIONS the tag from losing their text.
+  let cut = -1;
+  for (const tag of tags) {
+    const at = target.text.indexOf("\n\n" + tag);
+    if (at >= 0 && (cut < 0 || at < cut)) cut = at;
+  }
+  if (cut < 0) return message;
+  const kept = target.text.slice(0, cut);
+  const dropped = target.text.slice(cut);
+  // Only drop when the tail really is nothing but summary blocks. A trailing
+  // block of another kind (or the user's own text after an injected one) must
+  // survive, or this pass would delete content it does not own.
+  const tail = dropped.slice(2); // without the leading blank line
+  const foreign = tail.split("\n\n").some((part) =>
+    part.length > 0 && !tags.some((tag) => part.startsWith(tag)),
+  );
+  if (foreign) return message;
+  const next = writeMessageText(message, kept, target);
+  return next ?? message;
+}
+
+/**
+ * Replace a message's text channel, keeping its shape and non-text blocks.
+ *
+ * The counterpart of {@link appendMessageText} for the case where the whole
+ * text is being replaced rather than extended. Returns null when the shape cannot
+ * be preserved, so the caller leaves the message untouched instead of guessing.
+ */
+function writeMessageText(message: any, text: string, target: { kind: "string" | "blocks" }): any | null {
+  if (target.kind === "string") return { ...message, content: text };
+  if (!Array.isArray(message?.content)) return null;
+  const blocks: any[] = [];
+  let wrote = false;
+  for (const block of message.content) {
+    if (block && typeof block === "object" && (block as any).type === "text") {
+      // Collapse every text block into one at the position of the first: the
+      // surviving text is the same string split across blocks, and merging keeps
+      // the array from carrying an empty trailing block.
+      if (!wrote) {
+        blocks.push({ ...block, text });
+        wrote = true;
+      }
+      continue;
+    }
+    blocks.push(block);
+  }
+  return wrote ? { ...message, content: blocks } : null;
+}
+
+/**
  * Recover the user's own text from a message that may already carry injections.
  *
  * @param text - Current text channel of the target user message.
@@ -561,6 +638,31 @@ export class MemoryPipeline {
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
       const summarySuspended = !!summaryAnchor && suspended.has(summaryAnchor.id);
       const recallSuspended = !!recallAnchor && suspended.has(recallAnchor.id);
+
+      // #263 (D9): a caller may hand back the messages a PREVIOUS inject() call
+      // returned. Those still carry the old `[Session Memory]` and
+      // `[Research Recall]` blocks in their text, so skipping the append alone
+      // would leave the superseded facts in the prompt. Strip the two summary
+      // blocks before deciding what to append, then re-append only what is still
+      // valid — that is what makes "stops being injected" true for a reused
+      // history and not just for a fresh one.
+      //
+      // Only these two tags are removed. The user's own words, `[RAG Context]`,
+      // `[Recovery Digest]` and T0 preferences are left exactly as they were:
+      // this pass owns the summary slot and nothing else.
+      //
+      // Runs unconditionally, not only when something is suspended: an
+      // unsuspended summary re-injected into a history that already carries its
+      // own block would otherwise APPEND a second copy, so the same text reached
+      // the model twice. Stripping first makes the slot exactly one block, which
+      // is what the `[Session Memory]` contract always meant.
+      const anySummaryBlock = result.some((message: any) => {
+        const text = readMessageText(message)?.text ?? "";
+        return text.includes("\n\n" + SESSION_MEMORY_TAG) || text.includes("\n\n" + RESEARCH_RECALL_TAG);
+      });
+      if (anySummaryBlock) {
+        result = result.map((message: any) => stripSummaryBlocks(message, true, true));
+      }
 
       const injections: string[] = [];
       // Keep the digest in every model prompt of the resumed conversation. The

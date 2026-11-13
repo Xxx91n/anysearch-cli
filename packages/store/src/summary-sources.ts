@@ -278,7 +278,7 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
 }
 
 /**
- * Resolve search-result URLs to the material rows currently holding them.
+ * Resolve search-result URLs to the material rows that hold them.
  *
  * Why URLs are the bridge: the summary gap is distilled from the tool result
  * JSON the model saw, which carries `url`, not row ids. The archive is keyed by
@@ -288,11 +288,25 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
  * A `knowledge://` URL (how a knowledge row is cited as evidence) resolves to a
  * `knowledge` ref instead of a material one.
  *
- * Several sessions may hold a row for one URL; every CURRENT one is returned,
- * because any of them could be the row the summary actually read, and a
- * correction retiring any of them makes the summary's version stale. Rows are
- * keyed by entity on write (`invalidateOldRecords`), so in practice one URL
- * has one current row.
+ * Two different rules on purpose, and they are not interchangeable:
+ *
+ * - A MATERIAL must still be CURRENT here (`valid_until IS NULL`). `valid_until`
+ *   is set by the ordinary write-time replacement (`invalidateOldRecords`), so a
+ *   closed row is a row whose URL already moved on. Recording it would claim the
+ *   summary read a version it never saw, and a later correction to that dead row
+ *   would suspend an unrelated summary.
+ * - A KNOWLEDGE ref is recorded whenever the row EXISTS, closed or not. A tool
+ *   result can cite `knowledge://semantic/<id>` and have that row corrected
+ *   before the summary is written; dropping it here would leave the summary with
+ *   no dependency at all, so `saveSummaryAnchor` would find nothing to check and
+ *   store it as valid. Keeping it lets `isSourceCurrent` (run inside the write
+ *   transaction) see the closed row and write the summary SUSPENDED.
+ *
+ * Several sessions may hold a row for one URL, and every current one is
+ * returned: any of them could be the row the summary read, so a correction
+ * retiring any of them makes the summary's version stale. Filtering by session
+ * is deliberately NOT done — D9 counts a fact recalled from another session as a
+ * real dependency, and the same-session rule is exactly what the ticket rejects.
  *
  * @returns Deduplicated refs, in the order the URLs were given.
  */
@@ -304,18 +318,18 @@ export function resolveSummarySourcesFromUrls(
   const seen = new Set<string>();
   const KNOWLEDGE_PREFIX = "knowledge://semantic/";
   const materialStmt = db.prepare(
-    "SELECT id FROM retrieval_results WHERE url = ? AND superseded_by IS NULL AND archived = 0 ORDER BY id",
+    "SELECT id FROM retrieval_results WHERE url = ? AND valid_until IS NULL AND superseded_by IS NULL AND archived = 0 ORDER BY id",
   );
+  // Existence only: currency is decided in the write transaction by
+  // isSourceCurrent, which is the single place that knows what a replacement is.
   const knowledgeStmt = db.prepare(
-    "SELECT id FROM semantic_memories WHERE id = ? AND valid_until IS NULL",
+    "SELECT id FROM semantic_memories WHERE id = ?",
   );
   for (const raw of urls ?? []) {
     if (typeof raw !== "string" || raw.length === 0) continue;
     if (raw.startsWith(KNOWLEDGE_PREFIX)) {
       const id = Number(raw.slice(KNOWLEDGE_PREFIX.length));
       if (!Number.isInteger(id) || id <= 0) continue;
-      // Only a CURRENT knowledge row counts: a closed one was already
-      // superseded, so a summary citing it carries replaced facts.
       const row = knowledgeStmt.get(id) as { id: number } | undefined;
       if (!row) continue;
       const key = "knowledge:" + id;
