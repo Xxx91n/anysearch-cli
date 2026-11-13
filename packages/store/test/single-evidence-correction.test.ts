@@ -464,6 +464,58 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   store.close();
 }
 
+// --- 7b2. a heuristic UPDATE cannot bypass a missing verifier -------------
+{
+  const db = "no-verifier-update.db";
+  const store = openStore(db);
+  const session = await store.createSession("eval");
+  await buildKnowledge(store, db, session.id, "zeta-api",
+    "Zeta service supports the REST API. Deploys run weekly.", "https://ex.com/old-zeta");
+  const next = await store.createSession("eval");
+  const id = await seedEpisode(store, next.id, "https://ex.com/new-zeta",
+    "Zeta correction", "Zeta service no longer supports the REST API.", "zeta-api");
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [id], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: twoStageSummarize("Zeta service no longer supports the REST API.",
+        "Zeta service no longer supports the REST API. Deploys run weekly."),
+      classify: SUPPORTED,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }) },
+  );
+  assert(rep.singleEvidenceSkipped === 1 && rep.update === 0,
+    "missing relation checker: heuristic UPDATE must be withheld");
+  assert(String(q(db, "SELECT content FROM semantic_memories WHERE valid_until IS NULL").content).includes("supports the REST"),
+    "missing relation checker: old knowledge stays current");
+  store.close();
+}
+
+// --- 7b3. mixed clusters must not feed retired episodes to summarization ---
+{
+  const db = "mixed-retired.db";
+  const store = openStore(db);
+  const seed = await store.createSession("eval");
+  const oldIds = await buildKnowledge(store, db, seed.id, "zeta-api",
+    "Zeta service supports REST. Deploys run weekly.", "https://ex.com/retired");
+  const currentId = Number(q(db, "SELECT id FROM semantic_memories WHERE valid_until IS NULL").id);
+  const rw = new Database(join(dir, db), { readonly: false });
+  rw.prepare("UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" +
+    oldIds.map(() => "?").join(",") + ")").run(currentId, ...oldIds);
+  rw.close();
+  const next = await store.createSession("eval");
+  const fresh: number[] = [];
+  for (let i = 0; i < 3; i++) fresh.push(await seedEpisode(store, next.id,
+    "https://ex.com/fresh-" + i, "New note " + i,
+    "An unrelated new fact is stated here.", "zeta-api"));
+  let seen: ConsolidateEvidence[] = [];
+  await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [...oldIds, ...fresh], sessionIdNotApplied: false } },
+    { summarize: async (evidence) => { seen = evidence; return "An unrelated new fact is stated here."; },
+      classify: SUPPORTED },
+  );
+  assert(seen.length === 3 && seen.every((e) => e.url.includes("/fresh-")),
+    "mixed cluster: superseded materials cannot become current evidence");
+  store.close();
+}
+
 // --- 8. withheld corrections (merge / final check) -------------------------
 
 {
