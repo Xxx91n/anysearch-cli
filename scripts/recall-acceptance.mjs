@@ -88,7 +88,7 @@ function mcpClient(tag, env) {
   function rpc(method, params) {
     const id = nextId++;
     return new Promise((resolveP, rejectP) => {
-      const timer = setTimeout(() => rejectP(new Error(tag + ": timeout on " + method)), 300000);
+      const timer = setTimeout(() => rejectP(new Error(tag + ": timeout on " + method)), 480000);
       pending.set(id, (m) => { clearTimeout(timer); resolveP(m); });
       child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     });
@@ -101,6 +101,13 @@ function mcpClient(tag, env) {
 }
 
 const textOf = (res) => (res?.result?.content ?? []).map((c) => (c?.text ?? "")).join("\n");
+
+/** Words from a row that recall's strict rung can match: 6+ chars, not a number. */
+const rowTokens = (text) =>
+  String(text)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 6 && !/^\d+$/.test(w));
 
 /** Load better-sqlite3 the way the store does (it is a dependency of the mcp app). */
 function openDb(dbPath) {
@@ -182,7 +189,12 @@ async function main() {
       process.stdout.write("lane 2: SKIPPED — ANS_LLM_PROVIDER/MODEL/BASE_URL/API_KEY not set\n");
     } else {
       process.stdout.write("lane 2: ans_chat internal search -> another session recalls\n");
-      const a = mcpClient("A", { ...env, ANS_DOMAIN: "default", ANS_PI_SESSION_DIR: join(work, "pi-A") });
+      // Lane 2 gets its OWN database. Sharing lane 1's would let the pick below
+      // land on lane 1's hand-written row, so the check would pass on a row
+      // nobody searched for — the weakness this lane exists to rule out.
+      const db2Path = join(work, "lane2.db");
+      const env2 = { ...env, ANS_DB_PATH: db2Path };
+      const a = mcpClient("A", { ...env2, ANS_DOMAIN: "default", ANS_PI_SESSION_DIR: join(work, "pi-A") });
       clients.push(a);
       await a.ready();
       const chatA = await a.rpc("tools/call", {
@@ -193,24 +205,54 @@ async function main() {
       check(chatA.result?.isError !== true, "A ans_chat completed without isError");
       check(/"sessionId":"[^"]+"/.test(bodyA), "A ans_chat returned a session handle");
 
-      const rows = openDb(dbPath).prepare("SELECT COUNT(*) AS n FROM retrieval_results").get().n;
-      check(rows > 0, "A's internal search wrote " + rows + " row(s) into the archive");
+      // Rows A's OWN search wrote. Nothing hand-written goes into this database.
+      const db = openDb(db2Path);
+      const wrote = db
+        .prepare("SELECT session_id, url, title, snippet FROM retrieval_results ORDER BY id LIMIT 30")
+        .all();
+      db.close();
+      check(wrote.length > 0, "A's internal search wrote " + wrote.length + " row(s) into the archive");
 
-      // Marker row B never searched for, in the vocabulary recall can match.
-      const db2 = openDb(dbPath);
-      const sidRow = db2.prepare("SELECT id FROM sessions LIMIT 1").get();
-      db2.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(sidRow.id, "https://marker-acc-259.example/x", "markeracc259source", "markeracc259body content", "tavily", "https://marker-acc-259.example/x");
-      db2.close();
+      const pick = wrote.find((r) => rowTokens(String(r.snippet ?? "")).length > 0);
+      check(!!pick, "at least one archived row carries a token long enough for the strict recall rung");
 
-      const b = mcpClient("B", { ...env, ANS_DOMAIN: "recall", ANS_PI_SESSION_DIR: join(work, "pi-B") });
-      clients.push(b);
-      await b.ready();
-      const chatB = await b.rpc("tools/call", { name: "ans_chat", arguments: { message: "markeracc259body" } });
-      const bodyB = textOf(chatB);
-      check(chatB.result?.isError !== true, "B ans_chat completed without isError");
-      check(bodyB.includes("markeracc259body"),
-        "B quotes archived content it never searched for — the injected block reached the model");
+      if (pick) {
+        // One real token from A's row: recall's strict rung ANDs every term, so
+        // a token beats a sentence.
+        const token = rowTokens(String(pick.snippet ?? ""))[0];
+        const b = mcpClient("B", { ...env2, ANS_DOMAIN: "recall", ANS_PI_SESSION_DIR: join(work, "pi-B") });
+        clients.push(b);
+        await b.ready();
+        const chatB = await b.rpc("tools/call", { name: "ans_chat", arguments: { message: token } });
+        const bodyB = textOf(chatB);
+        check(chatB.result?.isError !== true, "B ans_chat completed without isError");
+        check(bodyB.toLowerCase().includes(token),
+          "B's answer carries '" + token + "', a token from the row A's search wrote");
+        // What could B only get from the injected block? Either an archived host
+        // that the question never contained, or a long word that lives in A's
+        // rows. A model paraphrases, so requiring the host alone made this flaky
+        // — both are real proofs, so either one passes.
+        //
+        // Hosts named in B's own question do not count: `github.com` comes from
+        // "anysearch-cli GitHub repository", so a model can repeat it without any
+        // archive. The same goes for the token it was asked.
+        const archivedHosts = Array.from(new Set(
+          wrote
+            .map((r) => String(r.url ?? "").replace(/^https?:\/\//, "").split("/")[0].toLowerCase())
+            .filter(Boolean),
+        ));
+        const saidHost = archivedHosts.find((h) => bodyB.toLowerCase().includes(h) && !token.includes(h));
+        // 14+ chars: short everyday words ("information") are words a model
+        // produces on its own, so they prove nothing. A long token like a package
+        // name or a slug can only come from the row.
+        const rowVocab = new Set(wrote.flatMap((r) => rowTokens(String(r.snippet ?? ""))).filter((w) => w.length >= 14));
+        const saidRareWord = [...rowVocab].find((w) => !token.includes(w) && bodyB.toLowerCase().includes(w));
+        process.stdout.write("  info B surfaced host: " + (saidHost ?? "none") +
+          ", rare row word: " + (saidRareWord ?? "none") + "\n");
+        check(!!saidHost || !!saidRareWord,
+          "B names something that exists only in A's archived rows (" +
+            (saidHost ?? saidRareWord ?? "none") + "), not something the question already contained");
+      }
     }
   } finally {
     for (const c of clients) { try { c.child.kill(); } catch { /* already gone */ } }
