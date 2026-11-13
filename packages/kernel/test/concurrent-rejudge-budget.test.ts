@@ -243,7 +243,7 @@ async function runRace(
   let betaSettled = false;
   betaRun.then(() => { betaSettled = true; }, (e) => {
     betaSettled = true;
-    console.error("concurrent-rejudget-budget: " + label + ": beta run rejected: " + (e instanceof Error ? e.message : String(e)));
+    console.error("concurrent-rejudge-budget: " + label + ": beta run rejected: " + (e instanceof Error ? e.message : String(e)));
   });
   // Hang guard: a race that settles before its held judgment, or never
   // reaches it, must fail loudly instead of draining the event loop.
@@ -338,5 +338,5 @@ await runRace(
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
 rmSync(dir, { recursive: true, force: true });
 
-console.log("concurrent-rejudget-budget: " + passed + " passed, " + failed + " failed");
+console.log("concurrent-rejudge-budget: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

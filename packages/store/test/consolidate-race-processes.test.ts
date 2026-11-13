@@ -159,7 +159,7 @@ function runChild(root: string, env: Record<string, string>): {
   const done = new Promise<ChildResult>((resolve, reject) => {
     const timer = setTimeout(() => {
       try { child.kill(); } catch { /* already gone */ }
-      reject(new Error("child " + env.RACER_SLOT + " timed out after 150s; stderr=" + stderr.slice(-400)));
+      reject(new Error("child " + env.RACER_SLOT + " timed out after 25s; stderr=" + stderr.slice(-400)));
     }, 25_000);
     child.once("exit", (code) => {
       clearTimeout(timer);
