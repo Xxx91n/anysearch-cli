@@ -279,7 +279,7 @@ export function buildAnsChatConsolidateResult(
       : "") +
     (report.correctionsIncomplete > 0
       ? "\nincomplete corrections: " + report.correctionsIncomplete +
-        " (merge or final check failed — those corrections were NOT replaced" +
+        " (merge, re-judge, or final check failed — those corrections were NOT replaced" +
         (report.update > 0 ? (report.dryRun ? "; " + report.update + " other correction(s) would land" : "; " + report.update + " other correction(s) did land") : "; nothing was replaced") +
         "; details in incompleteDetails)"
       : "") +

@@ -65,6 +65,13 @@ function help(): string {
     "replacement is withheld and the run reports the correction as incomplete (exit 1);",
     "the previous knowledge stays live.",
     "",
+    "Concurrent corrections: when another session replaced the same knowledge first,",
+    "this run re-reads the current version and re-judges at most once. An already",
+    "applied correction creates no second version; a still-needed one is re-merged",
+    "onto the latest version. If that cannot be done, the conflict is reported with",
+    "both sides' materials, the current content and the reason, and the run exits 1",
+    "(the current knowledge is NOT replaced).",
+    "",
     "--dry-run runs the identical path inside a rolled-back transaction: nothing is",
     "saved (no knowledge, no material state, no version relation, no summary change).",
     "It can still call the model and cost money, and the preview describes the state it",
@@ -379,7 +386,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   if (r.correctionsIncomplete > 0) {
     process.stderr.write(
       "ans consolidate: " + r.correctionsIncomplete +
-        " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+        " correction(s) not completed (merge, re-judge, or final check); those rows keep their previous knowledge." +
         (r.update > 0 ? (r.dryRun ? " " + r.update + " other correction(s) would land." : " " + r.update + " other correction(s) did land.") : "") + "\n",
     );
     return 1;

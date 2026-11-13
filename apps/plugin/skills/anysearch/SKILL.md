@@ -61,7 +61,11 @@ knowledge. Do not do it every turn.
   the old content, the candidate, the sources and what to check next, then go
   find the missing evidence instead of forcing the write.
 - Read the report as the answer: `failure` = no summary, `conflict` = the
-  fidelity gate refused a claim, `budgetRejected` = a cap stopped the run.
+  fidelity gate refused a claim, `unresolvedConflicts` = a concurrent session
+  replaced the same knowledge first and this run's correction did not land
+  (see `conflictDetails`; the result is `isError: true`), `resolvedCollisions`
+  = collisions resolved after one re-read and re-judge, `budgetRejected` = a
+  cap stopped the run.
   `usage.costBasis = "unknown"` means the cost is unknown, not zero.
 
 ## Anti-patterns

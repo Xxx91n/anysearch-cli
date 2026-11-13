@@ -313,7 +313,7 @@ export function registerAnsChat(
                 {
                   type: "text" as const,
                   text: "ans_chat consolidate: " + report.correctionsIncomplete +
-                    " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+                    " correction(s) not completed (merge, re-judge, or final check); those rows keep their previous knowledge." +
                     (report.update > 0 ? (report.dryRun ? " " + report.update + " other correction(s) would land." : " " + report.update + " other correction(s) did land.") : "") +
                     "\n" + result.content.map((c) => c.text).join("\n"),
                 },

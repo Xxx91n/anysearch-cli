@@ -47,9 +47,13 @@ knowledge. Do not do it on every turn, and do not run it just because it exists.
   the old content, the candidate, the sources and what to check next, then go
   find the missing evidence instead of forcing the write.
 - Treat the report as the answer, not a success flag: `failure` means no summary
-  was available, `conflict` means the fidelity gate refused a claim, and
-  `budgetRejected` means a session cap stopped the run. `usage.costBasis =
-  "unknown"` means the cost is unknown, not zero.
+  was available, `conflict` means the fidelity gate refused a claim,
+  `unresolvedConflicts` means a concurrent session replaced the same knowledge
+  first and this run's correction did not land (read `conflictDetails` for both
+  sides' materials and the current content; the result is then `isError: true`),
+  `resolvedCollisions` counts collisions resolved after one re-read and
+  re-judge, and `budgetRejected` means a session cap stopped the run.
+  `usage.costBasis = "unknown"` means the cost is unknown, not zero.
 - In a terminal, `ans consolidate --session ID` or `--memory ID` runs the same
   path, and it exits 2 when no scope is given.
 

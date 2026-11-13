@@ -275,7 +275,7 @@ async function callConsolidate(args: Record<string, unknown>) {
       currentEvidence: [{ title: "Official notice", snippet: "24x7", url: "https://acme.example/n1" }],
       sameFact: true, reliable: true, relation: "unclear",
       reason: "the re-judge could not reconcile this correction with the current version",
-      followUp: "并发更正与当前生效结论各执一词……请先查证再决定。",
+      followUp: "并发冲突：两边各执一词……请先查证再决定。",
       retries: 1,
     }],
     resolvedCollisions: [{ plannedTargetId: 4, targetId: 7, targetContent: "Acme support is 24x7.", resolution: "duplicate", sameFact: true, reliable: true, relation: "same", retries: 1 }],

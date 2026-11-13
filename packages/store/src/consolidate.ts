@@ -29,8 +29,8 @@ export const THETA_JAC = 0.80;
 export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
-// #262: ONE salience formula, shared by the plan-time clusters and the
-// collision resolution's one-material fallback, so the two cannot drift.
+// Design: #262 — ONE salience formula, shared by the plan-time clusters and
+// the collision resolution's one-material fallback, so the two cannot drift.
 function clusterSalience(liveCount: number): number {
   return Math.min(1, 0.4 + 0.1 * liveCount);
 }
@@ -1501,10 +1501,10 @@ export async function consolidateMemoryRun(
               ? "the re-judge could not reconcile this correction with the current version: conflicting claims, no basis to prefer either side"
               : "the re-judge did not accept this correction against the current version",
           followUp: relation === "different"
-            ? "并发更正与当前生效结论可能不是同一对象/事项/范围/时间；两边材料都在上面，请补查对应关系后再试。"
+            ? "并发冲突：对方与当前生效结论可能不是同一对象/事项/范围/时间；两边材料都在上面，请补查对应关系后再试。"
             : relation === "unclear"
-              ? "并发更正与当前生效结论各执一词、判不出哪边更可靠；两边材料与差异都在上面，请先查证再决定，先写入的一方不代表更正确。"
-              : "并发更正没有通过针对当前生效结论的判定；两边材料都在上面，请补查更可靠的来源后再试。",
+              ? "并发冲突：两边各执一词、判不出哪边更可靠；两边材料与差异都在上面，请先查证再决定，先写入的一方不代表更正确。"
+              : "并发冲突没有通过针对当前生效结论的判定；两边材料都在上面，请补查更可靠的来源后再试。",
         });
         continue;
       }

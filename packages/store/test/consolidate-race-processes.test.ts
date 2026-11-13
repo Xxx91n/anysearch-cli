@@ -108,7 +108,7 @@ const verify = async () => {
   if (mine === 0 && process.env.RACER_GATE) {
     const t0 = Date.now();
     while (!existsSync(process.env.RACER_GATE)) {
-      if (Date.now() - t0 > 90_000) throw new Error("gate timeout: the concurrent writer never landed");
+      if (Date.now() - t0 > 15_000) throw new Error("gate timeout: the concurrent writer never landed");
       await new Promise((r) => setTimeout(r, 20));
     }
   }
@@ -160,7 +160,7 @@ function runChild(root: string, env: Record<string, string>): {
     const timer = setTimeout(() => {
       try { child.kill(); } catch { /* already gone */ }
       reject(new Error("child " + env.RACER_SLOT + " timed out after 150s; stderr=" + stderr.slice(-400)));
-    }, 150_000);
+    }, 25_000);
     child.once("exit", (code) => {
       clearTimeout(timer);
       if (code !== 0) {
@@ -178,7 +178,7 @@ function runChild(root: string, env: Record<string, string>): {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function waitUntil(cond: () => boolean, what: string, timeoutMs = 30_000): Promise<void> {
+async function waitUntil(cond: () => boolean, what: string, timeoutMs = 15_000): Promise<void> {
   const started = Date.now();
   while (!cond()) {
     if (Date.now() - started > timeoutMs) throw new Error("timeout waiting for " + what);
