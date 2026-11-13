@@ -308,10 +308,11 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   for (const d of r.incompleteDetails) {
     process.stdout.write(formatIncompleteCorrection(d));
   }
-  // #262 (D11): an unresolved collision between concurrent corrections. Both
-  // sides travel back — the planned target, our candidate and sources, the
-  // current live content, the other side's sources, the reason, next steps.
-  // Neither side is deleted and write order is not a verdict.
+  // Design: #262 (D11) — an unresolved collision between concurrent
+  // corrections. Both sides travel back — the planned target, our candidate
+  // and sources, the current live content, the other side's sources, the
+  // reason, next steps. Neither side is deleted and write order is not a
+  // verdict.
   for (const d of r.conflictDetails) {
     process.stdout.write(
       "concurrent correction conflict: planned knowledge " + d.plannedTargetId +
@@ -325,9 +326,9 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       "  next: " + d.followUp + "\n",
     );
   }
-  // #262 (D11): a resolved collision is named too, so "the correction landed
-  // after one re-judge" is visible rather than indistinguishable from a
-  // normal run.
+  // Design: #262 (D11) — a resolved collision is named too, so "the
+  // correction landed after one re-judge" is visible rather than
+  // indistinguishable from a normal run.
   for (const d of r.resolvedCollisions) {
     process.stdout.write(
       "collision resolved: " + (d.resolution === "re-merged"

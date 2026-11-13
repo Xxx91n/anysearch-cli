@@ -326,10 +326,11 @@ export function buildAnsChatConsolidateResult(
         "\n  candidate: " + d.candidate +
         "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
       ).join("\n");
-  // #262 (D11): a content-only proxy still sees BOTH sides of an unresolved
-  // collision — the plan-era target, this run's candidate and sources, the
-  // current live content and the other side's sources, the reason and what
-  // to check next. Neither side is deleted; write order is not a verdict.
+  // Design: #262 (D11) — a content-only proxy still sees BOTH sides of an
+  // unresolved collision — the plan-era target, this run's candidate and
+  // sources, the current live content and the other side's sources, the
+  // reason and what to check next. Neither side is deleted; write order is
+  // not a verdict.
   const conflictText = (report.conflictDetails ?? []).length === 0
     ? ""
     : "\n" + report.conflictDetails.map((d) =>

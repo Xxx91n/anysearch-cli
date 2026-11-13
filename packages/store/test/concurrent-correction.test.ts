@@ -25,7 +25,9 @@
 //                             M2);
 //   - a FAILED re-merge or final check during resolution withholds the
 //     replacement the same way plan time does (correctionsIncomplete, the
-//     target row untouched);
+//     target row untouched); a model FAULT in either resolution judgment is
+//     named incomplete ("rejudge-failed" / "final-check") instead of thrown,
+//     so the work the main transaction already committed keeps its report;
 //   - dry-run spends no model call on resolution: the collision is reported
 //     as a preview fact only;
 //   - a budget refusal during resolution stops the phase and names every
@@ -177,12 +179,12 @@ function stagedSummarize(
 //              simulates the seam refusing to spend).
 function stagedVerify(
   verdicts: ConsolidateVerifyVerdict[],
-  opts: { hold?: () => Promise<void>; holdAt?: number; onCall?: (n: number) => void } = {},
+  opts: { hold?: () => Promise<void>; holdAt?: number; onCall?: (n: number) => void | Promise<void> } = {},
 ) {
   let calls = 0;
   const fn = async (input: ConsolidateVerifyInput): Promise<ConsolidateVerifyVerdict> => {
     const mine = calls++;
-    if (opts.onCall) opts.onCall(mine);
+    if (opts.onCall) await opts.onCall(mine);
     const holdAt = opts.holdAt ?? 0;
     if (mine === holdAt && opts.hold) await opts.hold();
     return verdicts[Math.min(mine, verdicts.length - 1)]!;
@@ -580,7 +582,7 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
     "budget: both losing-side materials stay live");
 }
 
-// --- S8. a FAILED re-merge withholds the replacement ------------------------
+// --- S7. a FAILED re-merge withholds the replacement ------------------------
 // The collision resolves into an accepted correction, the re-merge model call
 // then fails: no replacement, the current knowledge untouched, counted
 // incomplete (same rule as plan time), only ONE re-judge spent.
@@ -612,24 +614,24 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
 
   const lives = liveRows(db);
   assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
-    "S8: the latest version is untouched after the failed re-merge");
+    "S7: the latest version is untouched after the failed re-merge");
   assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails.length === 1,
-    "S8: the failed re-merge is counted incomplete, not dropped (incomplete=" + repB.correctionsIncomplete + ")");
+    "S7: the failed re-merge is counted incomplete, not dropped (incomplete=" + repB.correctionsIncomplete + ")");
   const d = repB.incompleteDetails[0]!;
-  assert(d.stage === "merge-failed", "S8: the stage names the failed resolution merge");
+  assert(d.stage === "merge-failed", "S7: the stage names the failed resolution merge");
   assert(d.oldId === lives[0]!.id && d.oldContent === A4_MERGED,
-    "S8: the incomplete detail is about the LATEST version, the one the re-merge targeted");
+    "S7: the incomplete detail is about the LATEST version, the one the re-merge targeted");
   assert(typeof d.reason === "string" && d.reason.includes("provider stream ended mid-merge"),
-    "S8: the merge failure's reason travels back");
+    "S7: the merge failure's reason travels back");
   assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0,
-    "S8: a failed re-merge is neither a conflict nor a claimed resolution");
-  assert(repB.update === 0 && repB.noop === 0, "S8: nothing was written");
-  assert(betaVerify.calls() === 2, "S8: exactly two judgments — initial + one re-judge (got " + betaVerify.calls() + ")");
+    "S7: a failed re-merge is neither a conflict nor a claimed resolution");
+  assert(repB.update === 0 && repB.noop === 0, "S7: nothing was written");
+  assert(betaVerify.calls() === 2, "S7: exactly two judgments — initial + one re-judge (got " + betaVerify.calls() + ")");
   assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
-    "S8: the losing side's material stays live");
+    "S7: the losing side's material stays live");
 }
 
-// --- S9. a FAILED final check during resolution withholds the replacement --
+// --- S8. a FAILED final check during resolution withholds the replacement --
 {
   const db = "final-failed.db";
   const seed = openStore(db);
@@ -666,19 +668,167 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
 
   const lives = liveRows(db);
   assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
-    "S9: the latest version survives the failed final check");
+    "S8: the latest version survives the failed final check");
   assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails[0]!.stage === "final-check",
-    "S9: the failed final check is counted incomplete at the final-check stage");
+    "S8: the failed final check is counted incomplete at the final-check stage");
   const d = repB.incompleteDetails[0]!;
   assert(d.oldId === lives[0]!.id && d.oldContent === A4_MERGED,
-    "S9: the incomplete detail is about the version the re-merge targeted");
+    "S8: the incomplete detail is about the version the re-merge targeted");
   assert(typeof d.reason === "string" && d.reason.includes("holiday arrangement"),
-    "S9: the final-check failure reason travels back");
+    "S8: the final-check failure reason travels back");
   assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0 && repB.update === 0,
-    "S9: nothing was written and nothing is claimed resolved");
-  assert(betaVerify.calls() === 2, "S9: still exactly two judgments");
+    "S8: nothing was written and nothing is claimed resolved");
+  assert(betaVerify.calls() === 2, "S8: still exactly two judgments");
   assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
-    "S9: the losing side's material stays live");
+    "S8: the losing side's material stays live");
+}
+
+// --- S9. the version moves again inside the DUPLICATE resolution ----------
+// The re-judge says "already corrected"; before this run's material union can
+// commit, a third session replaces the live version. The union must not land
+// on a version this run never judged: conflict, freshly re-read head.
+{
+  const db = "dup-moved.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-9");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-9");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-01-copy",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const gamma = openStore(db);
+  const sessG = await gamma.createSession("gamma-9");
+  const gammaNotice = await seedEpisode(gamma, sessG.id, "https://a.example/notice-2026-11-08",
+    "A 公司公告：公共假期人工客服照常服务（官方）", HOLIDAY_NOTICE, "a-support-hours");
+
+  const gammaRun = () => gamma.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [gammaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(HOLIDAY_NOTICE, GAMMA_FINAL).fn, classify: SUPPORTED, verify: async () => CORRECTION, verifyFinal: PASS_FINAL },
+  );
+  const betaVerify = stagedVerify([CORRECTION, B1_REJUDGE], {
+    hold: alphaCorrection(alpha, alphaNotice),
+    // The re-judge's answer comes back only after the third session replaced
+    // the very version the duplicate union was about to touch.
+    onCall: (n) => { if (n === 1) return gammaRun().then(() => undefined); },
+  });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(HOURS_NOTICE, A4_MERGED).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === GAMMA_FINAL,
+    "S9: the live version is the third session's, untouched by the duplicate attempt");
+  assert(repB.conflicts === 1 && repB.conflictDetails.length === 1,
+    "S9: the moved-again duplicate is reported as an unresolved conflict");
+  const d = repB.conflictDetails[0]!;
+  assert(d.reason.includes("replaced again while the collision was being resolved"),
+    "S9: the reason names the second move");
+  assert(d.currentTargetId === lives[0]!.id && d.currentContent === GAMMA_FINAL,
+    "S9: the conflict carries the freshly re-read current version");
+  assert(d.retries === 1, "S9: one re-judge was spent, no more");
+  assert(repB.noop === 0 && repB.resolvedCollisions.length === 0 && repB.update === 0,
+    "S9: the material union did not land on an unjudged version");
+  assert(betaVerify.calls() === 2, "S9: exactly two judgments");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
+    "S9: the later submitter's material stays live");
+}
+
+// --- S10. a model FAULT in the re-judge is named incomplete, not thrown ---
+// The main transaction already committed (alpha landed); a thrown error would
+// take the landed work and the spent calls down with it. The collision must
+// instead be reported as an incomplete correction with the fault's reason.
+{
+  const db = "rejudge-fault.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-10");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-10");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05",
+    "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], {
+    hold: alphaCorrection(alpha, alphaNotice),
+    // Call #0 is the plan judgment (held until alpha lands); call #1 is the
+    // resolution's one re-judge — the fault lands there.
+    onCall: (n) => { if (n === 1) throw new Error("checker transport reset"); },
+  });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, { reMerge: M1_FINAL }).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
+    "S10: the landed version survives the re-judge fault");
+  assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails.length === 1,
+    "S10: the fault is named incomplete, not thrown (incomplete=" + repB.correctionsIncomplete + ")");
+  const d = repB.incompleteDetails[0]!;
+  assert(d.stage === "rejudge-failed", "S10: the stage names the failed re-judge");
+  assert(d.oldId === lives[0]!.id && d.oldContent === A4_MERGED,
+    "S10: the incomplete detail is about the version the re-judge targeted");
+  assert(typeof d.reason === "string" && d.reason.includes("checker transport reset"),
+    "S10: the fault's reason travels back");
+  assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0 && repB.update === 0,
+    "S10: a fault is neither a conflict nor a claimed resolution");
+  assert(betaVerify.calls() === 2, "S10: one plan judgment + the one attempted re-judge");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
+    "S10: the later submitter's material stays live");
+}
+
+// --- S11. a model FAULT in the resolution final check is named incomplete --
+{
+  const db = "final-fault.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-11");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-11");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05",
+    "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], { hold: alphaCorrection(alpha, alphaNotice) });
+  let finalCalls = 0;
+  const faultingVerifyFinal = async () => {
+    finalCalls++;
+    if (finalCalls === 1) return { supported: true, preserved: true, corrected: true, noExtras: true };
+    throw new Error("final checker stream died");
+  };
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, { reMerge: M1_FINAL }).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: faultingVerifyFinal },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
+    "S11: the landed version survives the final-check fault");
+  assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails[0]!.stage === "final-check",
+    "S11: the fault is named incomplete at the final-check stage");
+  assert(String(repB.incompleteDetails[0]!.reason).includes("final checker stream died"),
+    "S11: the fault's reason travels back");
+  assert(repB.update === 0 && repB.conflicts === 0 && repB.resolvedCollisions.length === 0,
+    "S11: nothing was written and nothing is claimed resolved");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
+    "S11: the later submitter's material stays live");
 }
 
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }

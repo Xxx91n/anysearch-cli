@@ -29,10 +29,11 @@ export const THETA_JAC = 0.80;
 export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
-// #262: a one-material cluster's plan-time salience (0.4 + 0.1 * 1). The
-// collision resolution uses it when a noop-kind pending is re-judged into an
-// accepted correction, so the fallback and the plan-time formula cannot drift.
-const LONE_EP_SALIENCE = Math.min(1, 0.4 + 0.1);
+// #262: ONE salience formula, shared by the plan-time clusters and the
+// collision resolution's one-material fallback, so the two cannot drift.
+function clusterSalience(liveCount: number): number {
+  return Math.min(1, 0.4 + 0.1 * liveCount);
+}
 export const ARCHIVE_AGE_FACTOR = 3;     // D5: age > 3 * tier tau AND access_count = 0 AND stale last_accessed
 
 // Local mirror of kernel attribution.ts CONTRADICTION_RE. Store must not import kernel
@@ -161,7 +162,7 @@ export interface ConsolidateIncompleteDetail {
   oldContent: string;
   candidate: string;
   evidence: ConsolidateEvidence[];
-  stage: "merge-failed" | "merge-empty" | "final-check" | "rejudge-budget";
+  stage: "merge-failed" | "merge-empty" | "final-check" | "rejudge-budget" | "rejudge-failed";
   reason?: string;
 }
 
@@ -751,8 +752,9 @@ export async function consolidateMemoryRun(
     return rows.map((r) => ({ title: r.title ?? "", snippet: r.snippet ?? "", url: r.url }));
   };
 
-  // #262 (D11): an unresolved collision, reported with both sides and the
-  // current live content. Never deletes, never picks a side by write order.
+  // Design: #262 (D11) — an unresolved collision is reported with both sides
+  // and the current live content. Never deletes, never picks a side by write
+  // order.
   const pushConflict = (
     pending: PendingCollision,
     o: {
@@ -1165,7 +1167,7 @@ export async function consolidateMemoryRun(
         else report.gateRejected++;
         continue;
       }
-      const salience = Math.min(1, 0.4 + 0.1 * liveEps.length);
+      const salience = clusterSalience(liveEps.length);
       const insert = (extraSources: number[] = [], content: string | null = summary, buffer: Buffer | null = embBuf): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
@@ -1308,9 +1310,10 @@ export async function consolidateMemoryRun(
           // two live successors for one old row. The first write wins; a later
           // cluster targeting the same row is reported as an unresolved
           // compatibility conflict instead of silently forking the knowledge.
-          // #262 (D11): a CONCURRENT writer closing this row is a different
-          // situation — that op is withheld whole (its merged text is not
-          // reused) and queued for re-read + one re-judge after the commit.
+          // Design: #262 (D11) — a CONCURRENT writer closing this row is a
+          // different situation from the same-run fight above: that op is
+          // withheld whole (its merged text is not reused) and queued for a
+          // re-read + one re-judge after the commit.
           //
           // The source set is read in the transaction, not from the planner's
           // snapshot: a noop on the same row may already have merged its own
@@ -1382,14 +1385,23 @@ export async function consolidateMemoryRun(
     const summarize = deps.summarize;
     const verifyFinal = deps.verifyFinal;
     let resolutionStopped = false;
-    const pushIncompleteRejudge = (row: SemanticRow, pending: PendingCollision, reason: string): void => {
+    // Design: #262 — one incomplete shape for every way the resolution can
+    // stop short: a budget refusal (stage rejudge-budget), a model fault
+    // (rejudge-failed), or a withheld final check (final-check). The landed
+    // work and spend of the main transaction keep their own report fields.
+    const pushIncompleteRejudge = (
+      row: { id: number; content: string },
+      pending: PendingCollision,
+      stage: "rejudge-budget" | "rejudge-failed" | "final-check",
+      reason: string,
+    ): void => {
       report.correctionsIncomplete++;
       report.incompleteDetails.push({
         oldId: row.id,
         oldContent: row.content,
         candidate: pending.candidate,
         evidence: pending.evidence,
-        stage: "rejudge-budget",
+        stage,
         reason,
       });
     };
@@ -1398,7 +1410,7 @@ export async function consolidateMemoryRun(
       // phase, so what is left stays unresolved BY NAME: counted as
       // incomplete, never silently dropped.
       if (resolutionStopped) {
-        pushIncompleteRejudge(pending.planned, pending, "the session budget was already exhausted before this collision could be re-judged");
+        pushIncompleteRejudge(pending.planned, pending, "rejudge-budget", "the session budget was already exhausted before this collision could be re-judged");
         continue;
       }
       const head = liveHeadOf(pending.planned.id);
@@ -1422,7 +1434,7 @@ export async function consolidateMemoryRun(
         pushConflict(pending, {
           current: head, retries: 0,
           reason: "no correction checker (or summarizer) was supplied, so the collision could not be re-judged",
-          followUp: "缺少判定或摘要检查器，无法重判这次并发碰撞；材料已保留，请配置检查器后重试。",
+          followUp: "缺少判定或摘要检查器，无法重判这次并发冲突；材料已保留，请配置检查器后重试。",
         });
         continue;
       }
@@ -1434,10 +1446,17 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "the re-judge model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-judge model call was refused by the session budget");
           continue;
         }
-        throw e;
+        // Design: #262 — a model fault here must not hide the work the main
+        // transaction already committed. It is reported as an incomplete
+        // correction (the collision stays unresolved by name), not thrown:
+        // a thrown error would take the landed updates and spent calls down
+        // with it.
+        pushIncompleteRejudge(head, pending, "rejudge-failed",
+          "the re-judge model call failed: " + (e instanceof Error ? e.message : String(e)));
+        continue;
       }
       if (verdict.alreadyCurrent === true || verdict.relation === "same") {
         // 关键事实已经相同：不新建版本，本方材料并入当前行来源集。
@@ -1505,7 +1524,7 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "the re-merge model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-merge model call was refused by the session budget");
           continue;
         }
         mergeFailed = true;
@@ -1528,10 +1547,10 @@ export async function consolidateMemoryRun(
       // cluster's plan-time values. A noop-kind pending that the re-judge
       // turns into an accepted correction gets the same fallback the plan
       // would use for a one-material cluster: LOW_CONFIDENCE and
-      // LONE_EP_SALIENCE — an accepted correction never silently gets
+      // clusterSalience(1) — an accepted correction never silently gets
       // better numbers than its evidence supports.
       const insertConfidence = pending.confidence ?? LOW_CONFIDENCE;
-      const insertSalience = pending.salience ?? LONE_EP_SALIENCE;
+      const insertSalience = pending.salience ?? clusterSalience(1);
       if (!verifyFinal) {
         // Same rule as plan time: no final-content checker means no
         // replacement. Withheld, reported, materials kept.
@@ -1557,10 +1576,15 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "the final-content re-check model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the final-content re-check model call was refused by the session budget");
           continue;
         }
-        throw e;
+        // Design: #262 — same rule as the re-judge: a model fault after the
+        // main transaction committed becomes a named incomplete correction,
+        // never a throw that takes the landed work and spend down with it.
+        pushIncompleteRejudge(head, pending, "final-check",
+          "the final-content re-check call failed: " + (e instanceof Error ? e.message : String(e)));
+        continue;
       }
       if (!finalVerdict.supported || !finalVerdict.preserved || finalVerdict.corrected !== true || finalVerdict.noExtras !== true) {
         // Failed final check on the re-merge: no replacement, incomplete.
