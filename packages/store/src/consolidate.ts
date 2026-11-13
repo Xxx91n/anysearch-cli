@@ -157,8 +157,88 @@ export interface ConsolidateIncompleteDetail {
   oldContent: string;
   candidate: string;
   evidence: ConsolidateEvidence[];
-  stage: "merge-failed" | "merge-empty" | "final-check";
+  stage: "merge-failed" | "merge-empty" | "final-check" | "rejudge-budget";
   reason?: string;
+}
+
+/**
+ * #262 (D11): how a cross-run collision was resolved once the write phase
+ * found the planned target already replaced by another session. `retries`
+ * counts the re-read + re-judge rounds spent; it is at most 1 by design.
+ */
+export interface ConsolidateResolvedCollision {
+  /** The dead row this run's plan was built against. */
+  plannedTargetId: number;
+  /** The live row the collision was resolved against. */
+  targetId: number;
+  targetContent: string;
+  /** "duplicate": the re-judge found the correction already applied, so no
+   * new version was created and this run's materials joined the live row's
+   * sources. "re-merged": the correction was regenerated against the latest
+   * content and landed as a new row. */
+  resolution: "duplicate" | "re-merged";
+  newId?: number;
+  sameFact: boolean;
+  reliable: boolean;
+  relation?: CorrectionRelation;
+  reason?: string;
+  retries: number;
+}
+
+/**
+ * #262 (D11): a collision that could NOT be resolved — the later correction's
+ * plan was built against a version another session replaced, and either the
+ * re-judge refused the correction against the live version, or that live
+ * version moved again before the re-judged attempt could commit. Nothing was
+ * deleted and neither side was picked by write order: the caller gets both
+ * sides' materials, the current live content, the reason and what to check
+ * next, and goes on investigating.
+ */
+export interface ConsolidateConflictDetail {
+  plannedTargetId: number;
+  plannedContent: string;
+  candidate: string;
+  evidence: ConsolidateEvidence[];
+  currentTargetId: number | null;
+  currentContent: string;
+  currentEvidence: ConsolidateEvidence[];
+  sameFact?: boolean;
+  reliable?: boolean;
+  relation?: CorrectionRelation;
+  reason: string;
+  followUp: string;
+  /** Re-read + re-judge rounds spent before giving up: 0 or 1, never more. */
+  retries: number;
+}
+
+/**
+ * A planned correction whose write found its target already replaced by a
+ * concurrent writer (#262). Same-run replacements (two clusters of THIS run
+ * fighting over one row) are reported at once inside the write transaction;
+ * everything else lands here for the post-commit resolution phase.
+ */
+interface PendingCollision {
+  kind: "noop-exact" | "noop" | "update";
+  planned: SemanticRow;
+  candidate: string;
+  evidence: ConsolidateEvidence[];
+  epsIds: number[];
+  /** The update-kind insert parameters from plan time. The merged TEXT the
+   * first attempt produced is deliberately not carried: the re-merge must
+   * regenerate it against the latest version (D11 — never reuse a summary
+   * that was built for the dead target). */
+  confidence?: number;
+  salience?: number;
+}
+
+/** One hop of a supersede chain walk (#262). */
+interface ChainRow {
+  id: number;
+  content: string;
+  source_episode_ids: string;
+  embedding: Buffer | null;
+  valid_until: string | null;
+  superseded_by: number | null;
 }
 
 /**
@@ -223,6 +303,17 @@ export interface ConsolidateReport {
   // the final-content check failed. Not committed; the old row stays live.
   correctionsIncomplete: number;
   incompleteDetails: ConsolidateIncompleteDetail[];
+  // #262 (D11): concurrent-correction collisions that stayed UNRESOLVED —
+  // the re-judge refused the correction against the latest version, or that
+  // version moved again before the re-judged attempt could commit. This
+  // run did NOT replace the current knowledge; both sides' evidence is
+  // reported so the caller can keep investigating.
+  conflicts: number;
+  conflictDetails: ConsolidateConflictDetail[];
+  // #262 (D11): collisions a re-read + one re-judge resolved: the correction
+  // turned out to be already applied (no new version, "duplicate") or it was
+  // re-merged onto the latest version and landed ("re-merged").
+  resolvedCollisions: ConsolidateResolvedCollision[];
   semanticIds: number[];
   // Design: dedup compares against every live semantic memory, not only those
   // built from this scope — shared knowledge is corrected by reliable new
@@ -501,6 +592,11 @@ export interface ConsolidateScope {
 // *of the state it read* — a later concurrent write can still change what apply
 // would do, and the report says so rather than promising the same result.
 //
+// #262 (D11): a write that finds its target replaced by a concurrent writer is
+// withheld whole and re-read + re-judged at most once after the transaction
+// (see resolveCollisions); a replacement closed by THIS run keeps the
+// same-run conflict report it always had.
+//
 // Scope (D5/Q18): the scan reads only the resolved scope. The archive mode is
 // internal; both product entry points refuse to build it from a missing or
 // malformed caller scope, so a forgotten flag can never become "consolidate
@@ -539,8 +635,165 @@ export async function consolidateMemoryRun(
     verifiedCorrections: [],
     correctionsIncomplete: 0,
     incompleteDetails: [],
+    conflicts: 0,
+    conflictDetails: [],
+    resolvedCollisions: [],
     semanticIds: [],
     updates: [],
+  };
+
+  // The materials this run read, kept at run scope (#262): the collision
+  // resolution reports `withinScope` for updates it writes after the main
+  // transaction, and that verdict is about the whole run's read set.
+  const readIds = new Set<number>();
+
+  // #262 (D11): rows THIS run replaced inside its write transaction. A dead
+  // target found in this set is the same-run fight `reportRunCollision` has
+  // always described; anything else was closed by a concurrent writer and
+  // goes to the post-commit resolution instead.
+  const replacedRowIds = new Set<number>();
+  // Cross-run collisions collected by the write closures. Resolution needs
+  // model calls, and those must not run inside BEGIN IMMEDIATE: the budget
+  // ledger reserves through the same connection and would deadlock on it.
+  const collisions: PendingCollision[] = [];
+
+  // The live row's current source set, read inside the write transaction.
+  // Returns null when the row is no longer live — the caller reports the
+  // collision instead of writing to a closed row (#273 review).
+  //
+  // Reading it here (rather than trusting the planner's snapshot) is what
+  // keeps two clusters that touch ONE row from overwriting each other's
+  // materials: each write sees what the previous write already merged in.
+  const currentSources = (row: SemanticRow): number[] | null => {
+    const live = db
+      .prepare("SELECT source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+      .get(row.id) as { source_episode_ids: string } | undefined;
+    if (!live) return null;
+    try { return JSON.parse(live.source_episode_ids) as number[]; } catch { return []; }
+  };
+
+  // Two clusters in one run planned against the same live row and both passed
+  // their checks. The first write wins; the second is reported as an
+  // unresolved conflict instead of silently forking or editing dead knowledge.
+  const reportRunCollision = (row: SemanticRow, candidate: string, sources: ConsolidateEvidence[]): void => {
+    report.verifyRejected++;
+    report.verifyDetails.push({
+      oldId: row.id, oldContent: row.content, candidate, evidence: sources,
+      sameFact: true, reliable: true,
+      relation: "unclear",
+      reason: "this run already replaced the same knowledge row",
+      followUp: "同一次整理里另一个簇已经替换了这行知识；请先查看那次替换的结果，再单独处理这次的新材料。",
+    });
+  };
+
+  // Route a dead-row encounter in a write closure (#262): a same-run
+  // replacement keeps the historical report; a cross-run replacement queues
+  // the op for the resolution phase instead of reporting it with the
+  // same-run wording (which mislabels a concurrent writer and silently
+  // drops the later correction).
+  const noteRowCollision = (
+    row: SemanticRow,
+    kind: PendingCollision["kind"],
+    info: {
+      candidate: string;
+      evidence: ConsolidateEvidence[];
+      epsIds: number[];
+      confidence?: number;
+      salience?: number;
+    },
+  ): void => {
+    if (replacedRowIds.has(row.id)) {
+      reportRunCollision(row, info.candidate, info.evidence);
+      return;
+    }
+    collisions.push({
+      kind,
+      planned: row,
+      candidate: info.candidate,
+      evidence: info.evidence,
+      epsIds: info.epsIds,
+      ...(info.confidence !== undefined ? { confidence: info.confidence } : {}),
+      ...(info.salience !== undefined ? { salience: info.salience } : {}),
+    });
+  };
+
+  // Walk a supersede chain to its live head (#262). Calm guard: chains longer
+  // than 64 hops (or ending in a closed row with no successor) mean the line
+  // has no current version left; the collision is then reported unresolved
+  // instead of guessed at.
+  const liveHeadOf = (fromId: number): SemanticRow | null => {
+    let id = fromId;
+    for (let hop = 0; hop < 64; hop++) {
+      const row = db
+        .prepare("SELECT id, content, source_episode_ids, embedding, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
+        .get(id) as ChainRow | undefined;
+      if (!row) return null;
+      if (row.valid_until === null) {
+        return { id: row.id, content: row.content, source_episode_ids: row.source_episode_ids, embedding: row.embedding };
+      }
+      if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
+      id = row.superseded_by;
+    }
+    return null;
+  };
+
+  // The materials behind a knowledge row — snippets ARE the row's evidence
+  // text; a conflict must hand the caller both sides' materials, not just
+  // their urls (#262 / B2).
+  const materialsOf = (row: SemanticRow): ConsolidateEvidence[] => {
+    let ids: number[];
+    try { ids = JSON.parse(row.source_episode_ids) as number[]; } catch { return []; }
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const rows = db
+      .prepare("SELECT title, snippet, url FROM retrieval_results WHERE id IN (" + ids.map(() => "?").join(", ") + ")")
+      .all(...ids) as Array<{ title: string | null; snippet: string | null; url: string }>;
+    return rows.map((r) => ({ title: r.title ?? "", snippet: r.snippet ?? "", url: r.url }));
+  };
+
+  // #262 (D11): an unresolved collision, reported with both sides and the
+  // current live content. Never deletes, never picks a side by write order.
+  const pushConflict = (
+    pending: PendingCollision,
+    o: {
+      current: SemanticRow | null;
+      reason: string;
+      followUp: string;
+      retries: number;
+      verdict?: ConsolidateVerifyVerdict;
+    },
+  ): void => {
+    report.conflicts++;
+    report.conflictDetails.push({
+      plannedTargetId: pending.planned.id,
+      plannedContent: pending.planned.content,
+      candidate: pending.candidate,
+      evidence: pending.evidence,
+      currentTargetId: o.current?.id ?? null,
+      currentContent: o.current?.content ?? "(no live version left on this knowledge line)",
+      currentEvidence: o.current ? materialsOf(o.current) : [],
+      ...(o.verdict ? { sameFact: o.verdict.sameFact, reliable: o.verdict.reliable } : {}),
+      ...(o.verdict?.relation ? { relation: o.verdict.relation } : {}),
+      reason: o.verdict?.reason ? o.reason + " — " + o.verdict.reason : o.reason,
+      followUp: o.followUp,
+      retries: o.retries,
+    });
+  };
+
+  // One short write transaction for the resolution phase (#262). The fn
+  // returns null when the target moved again — nothing was written to the
+  // dead row, so committing the empty transaction is safe and the caller
+  // reports the conflict with the freshly re-read head.
+  const txnCollision = <T>(fn: () => T | null): T | null => {
+    if (db.inTransaction) throw new Error("collision resolution must not run inside an open transaction");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const out = fn();
+      db.exec("COMMIT");
+      return out;
+    } catch (err) {
+      try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+      throw err;
+    }
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -575,7 +828,7 @@ export async function consolidateMemoryRun(
     // row may have been built from materials of another entity that this run
     // also read. Using the whole read set is what makes the scope verdict
     // honest in both directions.
-    const readIds = new Set(rows.map((r) => r.id));
+    for (const r of rows) readIds.add(r.id);
 
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
@@ -617,35 +870,6 @@ export async function consolidateMemoryRun(
         ...(relation ? { relation } : {}),
         ...(verdict?.reason ? { reason: verdict.reason } : {}),
         followUp,
-      });
-    };
-
-    // The live row's current source set, read inside the write transaction.
-    // Returns null when the row is no longer live — the caller reports the
-    // same-run collision instead of writing to a closed row (#273 review).
-    //
-    // Reading it here (rather than trusting the planner's snapshot) is what
-    // keeps two clusters that touch ONE row from overwriting each other's
-    // materials: each write sees what the previous write already merged in.
-    const currentSources = (row: SemanticRow): number[] | null => {
-      const live = db
-        .prepare("SELECT source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
-        .get(row.id) as { source_episode_ids: string } | undefined;
-      if (!live) return null;
-      try { return JSON.parse(live.source_episode_ids) as number[]; } catch { return []; }
-    };
-
-    // Two clusters in one run planned against the same live row and both passed
-    // their checks. The first write wins; the second is reported as an
-    // unresolved conflict instead of silently forking or editing dead knowledge.
-    const reportRunCollision = (row: SemanticRow, candidate: string, sources: ConsolidateEvidence[]): void => {
-      report.verifyRejected++;
-      report.verifyDetails.push({
-        oldId: row.id, oldContent: row.content, candidate, evidence: sources,
-        sameFact: true, reliable: true,
-        relation: "unclear",
-        reason: "this run already replaced the same knowledge row",
-        followUp: "同一次整理里另一个簇已经替换了这行知识；请先查看那次替换的结果，再单独处理这次的新材料。",
       });
     };
 
@@ -793,7 +1017,9 @@ export async function consolidateMemoryRun(
           // row, and writing to it would land the materials on dead knowledge
           // while reporting a successful noop (#273 review).
           const current = currentSources(row);
-          if (!current) { reportRunCollision(row, summary!, evidence); return; }
+          // #262: a same-run closure routes to reportRunCollision; a cross-run
+          // one queues for the resolution phase with this op's plan context.
+          if (!current) { noteRowCollision(row, "noop-exact", { candidate: summary!, evidence, epsIds }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -935,7 +1161,9 @@ export async function consolidateMemoryRun(
           // set missing the other's materials — and a later correction would
           // never retire the lost ones (#273 review).
           const current = currentSources(row);
-          if (!current) { reportRunCollision(row, summary!, evidence); return; }
+          // #262: same-run replacement keeps this run's conflict report; a
+          // cross-run replacement goes to the resolution phase.
+          if (!current) { noteRowCollision(row, "noop", { candidate: summary!, evidence, epsIds, confidence, salience }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -1043,6 +1271,9 @@ export async function consolidateMemoryRun(
           // two live successors for one old row. The first write wins; a later
           // cluster targeting the same row is reported as an unresolved
           // compatibility conflict instead of silently forking the knowledge.
+          // #262 (D11): a CONCURRENT writer closing this row is a different
+          // situation — that op is withheld whole (its merged text is not
+          // reused) and queued for re-read + one re-judge after the commit.
           //
           // The source set is read in the transaction, not from the planner's
           // snapshot: a noop on the same row may already have merged its own
@@ -1050,9 +1281,16 @@ export async function consolidateMemoryRun(
           // materials would then never be retired by a later correction (#273
           // review). `currentSources` also carries the liveness check.
           const prev = currentSources(row);
-          if (!prev) { reportRunCollision(row, summary!, evidence); return; }
+          if (!prev) {
+            noteRowCollision(row, "update", { candidate: summary!, evidence, epsIds, confidence, salience });
+            return;
+          }
           const newId = insert(prev, finalSummary, finalEmbBuf);
           db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
+          // #262: this row is now THIS run's replacement, so a later closure in
+          // the same transaction reads it as the same-run fight it is, never as
+          // a concurrent writer.
+          replacedRowIds.add(row.id);
           // #273 review: only the materials this statement actually re-pointed.
           // `prev` holds every source the row ever had, including ones an earlier
           // correction already retired to an older successor; reporting all of
@@ -1095,6 +1333,282 @@ export async function consolidateMemoryRun(
     }
   };
 
+  // #262 (D11): concurrent-collision resolution, after the main transaction.
+  // Each withheld op gets AT MOST ONE re-read + re-judge:
+  //  - re-judge says the latest version already carries the correction -> no
+  //    new version; this run's materials join the live row's sources
+  //    ("duplicate").
+  //  - re-judge still accepts the correction -> ONE re-merge against the
+  //    latest content — never the first attempt's final summary, which was
+  //    built for the dead target — then the same final-content check, then a
+  //    write whose target must STILL be the row that was re-judged. If it
+  //    moved again the collision is reported unresolved; no third judgment.
+  //  - re-judge refuses -> unresolved conflict: both sides' materials, the
+  //    current live content and the reason go back to the caller. Nothing is
+  //    deleted and neither side is picked by write order.
+  // dryRun spends no model call here: the ROLLBACK already happened, so the
+  // collision is reported as a preview fact only.
+  const resolveCollisions = async (): Promise<void> => {
+    if (collisions.length === 0) return;
+    const verify = deps.verify;
+    const summarize = deps.summarize;
+    const verifyFinal = deps.verifyFinal;
+    let resolutionStopped = false;
+    const pushIncompleteRejudge = (row: SemanticRow, pending: PendingCollision, reason: string): void => {
+      report.correctionsIncomplete++;
+      report.incompleteDetails.push({
+        oldId: row.id,
+        oldContent: row.content,
+        candidate: pending.candidate,
+        evidence: pending.evidence,
+        stage: "rejudge-budget",
+        reason,
+      });
+    };
+    for (const pending of collisions) {
+      // The budget refused a resolution call earlier in this phase: what is
+      // left stays unresolved by name — counted as incomplete, not dropped.
+      if (resolutionStopped) {
+        pushIncompleteRejudge(pending.planned, pending, "the session budget was already exhausted before this collision could be re-judged");
+        continue;
+      }
+      const head = liveHeadOf(pending.planned.id);
+      if (!head) {
+        pushConflict(pending, {
+          current: null, retries: 0,
+          reason: "the knowledge this correction planned to replace no longer has a live version",
+          followUp: "这条知识链现在没有生效版本；材料已保留，请先弄清当前该以哪条为准，再重新发起更正。",
+        });
+        continue;
+      }
+      if (dryRun) {
+        pushConflict(pending, {
+          current: head, retries: 0,
+          reason: "dry-run preview: a concurrent write replaced the planned target while this preview ran",
+          followUp: "这是 dry-run 预览；真实运行会重读当前版本并最多重新判断一次，预览不保证之后仍得到同样结果。",
+        });
+        continue;
+      }
+      if (!verify || !summarize) {
+        pushConflict(pending, {
+          current: head, retries: 0,
+          reason: "no correction checker (or summarizer) was supplied, so the collision could not be re-judged",
+          followUp: "缺少判定或摘要检查器，无法重判这次并发碰撞；材料已保留，请配置检查器后重试。",
+        });
+        continue;
+      }
+      // The ONE re-judge, against the live head's content (D11: at most one).
+      let verdict: ConsolidateVerifyVerdict;
+      try {
+        verdict = await verify({ oldContent: head.content, summary: pending.candidate, evidence: pending.evidence });
+      } catch (e) {
+        if (isBudgetRejection(e)) {
+          report.budgetRejected++;
+          resolutionStopped = true;
+          pushIncompleteRejudge(head, pending, "the re-judge model call was refused by the session budget");
+          continue;
+        }
+        throw e;
+      }
+      if (verdict.alreadyCurrent === true || verdict.relation === "same") {
+        // 关键事实已经相同：不新建版本，本方材料并入当前行来源集。
+        const wrote = txnCollision((): boolean | null => {
+          const current = currentSources(head);
+          if (!current) return null;
+          const merged = Array.from(new Set([...current, ...pending.epsIds])).sort((a, b) => a - b);
+          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now'), source_episode_ids = ? WHERE id = ?")
+            .run(JSON.stringify(merged), head.id);
+          report.noop++;
+          report.resolvedCollisions.push({
+            plannedTargetId: pending.planned.id,
+            targetId: head.id,
+            targetContent: head.content,
+            resolution: "duplicate",
+            sameFact: verdict.sameFact,
+            reliable: verdict.reliable,
+            ...(verdict.relation ? { relation: verdict.relation } : {}),
+            ...(verdict.reason ? { reason: verdict.reason } : {}),
+            retries: 1,
+          });
+          return true;
+        });
+        if (wrote === null) {
+          pushConflict(pending, {
+            current: liveHeadOf(pending.planned.id), verdict, retries: 1,
+            reason: "the current version was replaced again while the collision was being resolved; no third judgment runs",
+            followUp: "重读后的版本在落地前又被别的会话更新，本次到此为止；请查看当前生效内容后重新决定。",
+          });
+        }
+        continue;
+      }
+      if (verdict.relation !== "correction" || !verdict.sameFact || !verdict.reliable) {
+        // B2 (Q21): the re-judge refused against the CURRENT version. The
+        // first accepted plan is now a collision the caller must see in full.
+        const relation = verdict.relation;
+        pushConflict(pending, {
+          current: head, verdict, retries: 1,
+          reason: relation === "different"
+            ? "the re-judge found the new material is not about the same object, matter, scope or time as the current version"
+            : relation === "unclear"
+              ? "the re-judge could not reconcile this correction with the current version: conflicting claims, no basis to prefer either side"
+              : "the re-judge did not accept this correction against the current version",
+          followUp: relation === "different"
+            ? "并发更正与当前生效结论可能不是同一对象/事项/范围/时间；两边材料都在上面，请补查对应关系后再试。"
+            : relation === "unclear"
+              ? "并发更正与当前生效结论各执一词、判不出哪边更可靠；两边材料与差异都在上面，请先查证再决定，先写入的一方不代表更正确。"
+              : "并发更正没有通过针对当前生效结论的判定；两边材料都在上面，请补查更可靠的来源后再试。",
+        });
+        continue;
+      }
+      // D11: the re-judge still accepts the correction — regenerate the merge
+      // against the LATEST content. The first attempt's final summary was
+      // built for the dead version and is never reused.
+      const mergeEvidence: ConsolidateEvidence[] = [
+        ...pending.evidence,
+        { title: "CURRENT KNOWLEDGE", snippet: head.content, url: "knowledge://semantic/" + head.id },
+      ];
+      let merged: string | null = null;
+      let mergeFailed = false;
+      let mergeError: unknown;
+      try {
+        merged = await summarize(mergeEvidence);
+      } catch (e) {
+        if (isBudgetRejection(e)) {
+          report.budgetRejected++;
+          resolutionStopped = true;
+          pushIncompleteRejudge(head, pending, "the re-merge model call was refused by the session budget");
+          continue;
+        }
+        mergeFailed = true;
+        mergeError = e;
+      }
+      if (mergeFailed || !merged || !merged.trim()) {
+        // 不提交替换；材料保留，明确报未完成（与计划阶段同一口径）。
+        report.correctionsIncomplete++;
+        report.incompleteDetails.push({
+          oldId: head.id, oldContent: head.content, candidate: pending.candidate, evidence: pending.evidence,
+          stage: mergeFailed ? "merge-failed" : "merge-empty",
+          ...(mergeFailed ? { reason: mergeError instanceof Error ? mergeError.message : String(mergeError) } : {}),
+        });
+        continue;
+      }
+      const finalSummary = merged.trim();
+      const mergedEmb = await embedText(finalSummary, "passage");
+      const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
+      // Insert parameters: present for update-kind pendings (the cluster
+      // computed them at plan time). A noop-kind pending that the re-judge
+      // turns into an accepted correction gets the same fallback the plan
+      // would use for a one-material cluster: LOW_CONFIDENCE and the lone-ep
+      // salience — an accepted correction under this design never silently
+      // gets better numbers than its evidence supports.
+      const insertConfidence = pending.confidence ?? LOW_CONFIDENCE;
+      const insertSalience = pending.salience ?? Math.min(1, 0.4 + 0.1);
+      if (!verifyFinal) {
+        // Same rule as plan time: no final-content checker means no
+        // replacement. Withheld, reported, materials kept.
+        report.correctionsIncomplete++;
+        report.incompleteDetails.push({
+          oldId: head.id, oldContent: head.content, candidate: pending.candidate, evidence: pending.evidence,
+          stage: "final-check",
+          reason: "no final-content checker was supplied, so fact retention could not be verified",
+        });
+        continue;
+      }
+      let finalVerdict: ConsolidateFinalCheckVerdict;
+      try {
+        finalVerdict = await verifyFinal({
+          oldContent: head.content,
+          finalContent: finalSummary,
+          evidence: pending.evidence,
+          // The bare candidate, not the merged text: the checker has to say
+          // whether the ACCEPTED correction is what got written.
+          correctedContent: pending.candidate,
+        });
+      } catch (e) {
+        if (isBudgetRejection(e)) {
+          report.budgetRejected++;
+          resolutionStopped = true;
+          pushIncompleteRejudge(head, pending, "the final-content re-check model call was refused by the session budget");
+          continue;
+        }
+        throw e;
+      }
+      if (!finalVerdict.supported || !finalVerdict.preserved || finalVerdict.corrected !== true || finalVerdict.noExtras !== true) {
+        // Failed final check on the re-merge: no replacement, incomplete.
+        report.correctionsIncomplete++;
+        report.incompleteDetails.push({
+          oldId: head.id, oldContent: head.content, candidate: pending.candidate, evidence: pending.evidence,
+          stage: "final-check",
+          ...(finalVerdict.reason ? { reason: finalVerdict.reason } : {}),
+        });
+        continue;
+      }
+      // Second submit: the target must STILL be the row that was re-judged.
+      // If it moved again the collision is unresolved and NO third re-judge
+      // runs — the ticket's hard limit.
+      const wrote = txnCollision((): number | null => {
+        const prev = currentSources(head);
+        if (!prev) return null;
+        const src = Array.from(new Set([...pending.epsIds, ...prev])).sort((a, b) => a - b);
+        const info = db
+          .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
+          .run(finalSummary, JSON.stringify(src), insertSalience, insertConfidence, finalEmbBuf);
+        const newId = Number(info.lastInsertRowid);
+        report.semanticIds.push(newId);
+        db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, head.id);
+        // Only the materials this statement actually re-pointed — `prev` holds
+        // every source the row ever had, including ones an earlier correction
+        // already retired to an older successor (#273 review).
+        let retiredNow: number[] = [];
+        if (prev.length > 0) {
+          const upd = db.prepare(
+            "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+          ).run(newId, ...prev);
+          if (Number(upd.changes) > 0) {
+            retiredNow = (db
+              .prepare("SELECT id FROM retrieval_results WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by = ?")
+              .all(...prev, newId) as Array<{ id: number }>).map((r) => r.id);
+          }
+        }
+        // The re-merged correction actually landed — "verified" starts here.
+        report.verifiedCorrections.push({
+          oldId: head.id, oldContent: head.content, candidate: pending.candidate, evidence: pending.evidence,
+          sameFact: verdict.sameFact, reliable: verdict.reliable,
+          ...(verdict.relation ? { relation: verdict.relation } : {}),
+          ...(verdict.reason ? { reason: verdict.reason } : {}),
+        });
+        const outside = prev.filter((id) => !readIds.has(id));
+        report.updates.push({
+          oldId: head.id, newId,
+          withinScope: outside.length === 0,
+          outsideScopeMaterialIds: outside,
+          supersededEpisodeIds: retiredNow,
+        });
+        report.update++;
+        report.resolvedCollisions.push({
+          plannedTargetId: pending.planned.id,
+          targetId: head.id,
+          targetContent: head.content,
+          resolution: "re-merged",
+          newId,
+          sameFact: verdict.sameFact,
+          reliable: verdict.reliable,
+          ...(verdict.relation ? { relation: verdict.relation } : {}),
+          ...(verdict.reason ? { reason: verdict.reason } : {}),
+          retries: 1,
+        });
+        return newId;
+      });
+      if (wrote === null) {
+        pushConflict(pending, {
+          current: liveHeadOf(pending.planned.id), verdict, retries: 1,
+          reason: "the current version was replaced again before the re-judged correction could commit; no third judgment runs",
+          followUp: "重判后的版本在提交前又被别的会话更新，不做第三次重判；请查看当前生效内容后重新决定。",
+        });
+      }
+    }
+  };
+
   if (db.inTransaction) throw new Error("consolidateMemoryRun must not run inside an open transaction");
   await plan();
   db.exec("BEGIN IMMEDIATE");
@@ -1105,6 +1619,7 @@ export async function consolidateMemoryRun(
     try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
     throw err;
   }
+  await resolveCollisions();
   return report;
 }
 

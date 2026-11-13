@@ -283,6 +283,16 @@ export function buildAnsChatConsolidateResult(
         (report.update > 0 ? (report.dryRun ? "; " + report.update + " other correction(s) would land" : "; " + report.update + " other correction(s) did land") : "; nothing was replaced") +
         "; details in incompleteDetails)"
       : "") +
+    // #262 (D11): collisions must not read as success. The counts line stays
+    // one glance long; the per-conflict block below carries both sides.
+    (report.conflicts > 0
+      ? "\nunresolved conflicts: " + report.conflicts +
+        " (a concurrent write replaced the same knowledge first; this run did NOT replace it — both sides' evidence is in conflictDetails, nothing was deleted)"
+      : "") +
+    ((report.resolvedCollisions ?? []).length > 0
+      ? "\ncollisions resolved after re-read: " + (report.resolvedCollisions ?? []).length +
+        " (duplicate or re-merged against the latest version, at most one re-judge each; details in resolvedCollisions)"
+      : "") +
     (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
@@ -290,7 +300,7 @@ export function buildAnsChatConsolidateResult(
     (extra.budgetUnmetered
       ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
-    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
+    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " call(s) refused by the session cap" : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
   // verdict and what to check next. The structured block carries the same
@@ -316,8 +326,35 @@ export function buildAnsChatConsolidateResult(
         "\n  candidate: " + d.candidate +
         "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
       ).join("\n");
+  // #262 (D11): a content-only proxy still sees BOTH sides of an unresolved
+  // collision — the plan-era target, this run's candidate and sources, the
+  // current live content and the other side's sources, the reason and what
+  // to check next. Neither side is deleted; write order is not a verdict.
+  const conflictText = (report.conflictDetails ?? []).length === 0
+    ? ""
+    : "\n" + report.conflictDetails.map((d) =>
+        "concurrent correction conflict (planned knowledge " + d.plannedTargetId +
+        ", current knowledge " + (d.currentTargetId ?? "none") +
+        ", retries=" + d.retries + ")" +
+        "\n  we planned to replace: " + d.plannedContent +
+        "\n  our candidate: " + d.candidate +
+        "\n  our sources: " + d.evidence.map((e) => e.url).join(", ") +
+        "\n  current live content: " + d.currentContent +
+        "\n  current sources: " + d.currentEvidence.map((e) => e.url).join(", ") +
+        "\n  reason: " + d.reason +
+        "\n  next: " + d.followUp,
+      ).join("\n");
+  const resolvedText = (report.resolvedCollisions ?? []).length === 0
+    ? ""
+    : "\n" + report.resolvedCollisions.map((d) =>
+        "collision resolved (" + d.resolution + (d.resolution === "re-merged"
+          ? " knowledge " + d.targetId + " -> " + d.newId
+          : " no new version, knowledge " + d.targetId + " keeps the correction") +
+        "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
+        (d.reason ? "; " + d.reason : "") + ")",
+      ).join("\n");
   return {
-    content: [{ type: "text", text: line + refusedText + incompleteText }],
+    content: [{ type: "text", text: line + refusedText + incompleteText + conflictText + resolvedText }],
     structuredContent: {
       operation: "consolidate",
       scope: s,
@@ -332,6 +369,10 @@ export function buildAnsChatConsolidateResult(
         verifyRejected: report.verifyRejected,
         correctionsIncomplete: report.correctionsIncomplete,
         supersededClusterSkipped: report.supersededClusterSkipped,
+        // #262: real cross-session conflicts, distinct from the gate counter
+        // above (that one counts claim-gate rejections).
+        unresolvedConflicts: report.conflicts,
+        resolvedCollisions: (report.resolvedCollisions ?? []).length,
       },
       usage,
       ...(extra.budgetUnmetered
