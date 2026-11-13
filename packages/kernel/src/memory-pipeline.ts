@@ -339,47 +339,50 @@ const PREFS_CLOSE_TAG = "</user_preferences>";
  *
  * #263: the runtime cannot assume the caller starts from a clean history. A
  * caller that hands back the array a previous `inject()` returned gets its old
- * `[Session Memory]` / `[Research Recall]` blocks back, and those blocks may
- * state a fact a correction has since replaced. Skipping the new append is not
- * enough then; the stale text has to leave the prompt.
+ * `[Session Memory]` / `[Research Recall]` blocks back, and those may state a
+ * fact a correction has since replaced. Skipping the new append is not enough
+ * then; the stale text has to leave the prompt.
  *
- * Scope is exactly those two blocks: everything before the first of them stays
- * byte-identical (the user's own words, `[RAG Context]`, `[Recovery Digest]`,
- * T0 preferences). A message that carries neither block is returned as-is, so a
- * normal turn pays nothing. Both message shapes are handled (string content and
- * content-block arrays), and the shape is preserved: a block array keeps every
- * non-text block.
+ * What may be removed is decided by PROVENANCE, not by a tag prefix: `known`
+ * holds the exact block strings this pipeline wrote (or that the store records
+ * as its own summaries). A user or assistant sentence that merely mentions
+ * `[Session Memory]` never equals one of those strings, so it survives — a
+ * prefix rule would have deleted exactly the text the reviewer flagged.
+ *
+ * Matching whole strings also fixes the multi-paragraph case: a summary body
+ * containing a blank line is still one block, and splitting on "\n\n" (the
+ * earlier approach) mistook its second paragraph for foreign content.
  *
  * @param message - Any message from the array being injected into.
- * @param stripSummary - Remove `[Session Memory]` blocks.
- * @param stripRecall - Remove `[Research Recall]` blocks.
+ * @param known - Exact block strings this pipeline may remove.
  * @returns The message without those blocks, or the original message.
  */
-function stripSummaryBlocks(message: any, stripSummary: boolean, stripRecall: boolean): any {
+function stripSummaryBlocks(message: any, known: Set<string>): any {
   const target = readMessageText(message);
   if (!target) return message;
-  const tags: string[] = [];
-  if (stripSummary) tags.push(SESSION_MEMORY_TAG);
-  if (stripRecall) tags.push(RESEARCH_RECALL_TAG);
-  // Blocks are appended after a blank line (see inject()). Matching that
-  // separator keeps a user who merely MENTIONS the tag from losing their text.
-  let cut = -1;
-  for (const tag of tags) {
-    const at = target.text.indexOf("\n\n" + tag);
-    if (at >= 0 && (cut < 0 || at < cut)) cut = at;
+  if (known.size === 0) return message;
+  let text = target.text;
+  let changed = false;
+  for (const block of known) {
+    if (block.length === 0) continue;
+    // The block was appended after a blank line (see inject()). Removing the
+    // separator with it keeps the field from leaving a growing run of blank
+    // lines behind, while never touching a block that is not ours.
+    const withSeparator = "\n\n" + block;
+    let at = text.indexOf(withSeparator);
+    while (at >= 0) {
+      text = text.slice(0, at) + text.slice(at + withSeparator.length);
+      changed = true;
+      at = text.indexOf(withSeparator);
+    }
+    // Also handle the block sitting at the very start of the text channel.
+    if (text.startsWith(block)) {
+      text = text.slice(block.length);
+      changed = true;
+    }
   }
-  if (cut < 0) return message;
-  const kept = target.text.slice(0, cut);
-  const dropped = target.text.slice(cut);
-  // Only drop when the tail really is nothing but summary blocks. A trailing
-  // block of another kind (or the user's own text after an injected one) must
-  // survive, or this pass would delete content it does not own.
-  const tail = dropped.slice(2); // without the leading blank line
-  const foreign = tail.split("\n\n").some((part) =>
-    part.length > 0 && !tags.some((tag) => part.startsWith(tag)),
-  );
-  if (foreign) return message;
-  const next = writeMessageText(message, kept, target);
+  if (!changed) return message;
+  const next = writeMessageText(message, text, target);
   return next ?? message;
 }
 
@@ -489,6 +492,13 @@ export class MemoryPipeline {
   // flight, losing the anchor and swallowing the failure. flush() lets that owner
   // drain them first.
   private readonly pendingWrites = new Set<Promise<unknown>>();
+
+  // #263: the exact summary/recall block strings this runtime appended, so a
+  // later turn that receives its own output back can remove those blocks without
+  // guessing by tag. Kept across turns (a history may be reused many turns
+  // later); bounded because a session only ever injects a handful of distinct
+  // blocks before the snapshot replaces them.
+  private readonly injectedSummaryBlocks = new Set<string>();
 
   // Usage of the pipeline's own summary requests, kept apart from the main run
   // so the caller can report both without double counting. Same ledger type as
@@ -647,21 +657,27 @@ export class MemoryPipeline {
       // valid — that is what makes "stops being injected" true for a reused
       // history and not just for a fresh one.
       //
-      // Only these two tags are removed. The user's own words, `[RAG Context]`,
-      // `[Recovery Digest]` and T0 preferences are left exactly as they were:
-      // this pass owns the summary slot and nothing else.
-      //
-      // Runs unconditionally, not only when something is suspended: an
-      // unsuspended summary re-injected into a history that already carries its
-      // own block would otherwise APPEND a second copy, so the same text reached
-      // the model twice. Stripping first makes the slot exactly one block, which
-      // is what the `[Session Memory]` contract always meant.
-      const anySummaryBlock = result.some((message: any) => {
-        const text = readMessageText(message)?.text ?? "";
-        return text.includes("\n\n" + SESSION_MEMORY_TAG) || text.includes("\n\n" + RESEARCH_RECALL_TAG);
-      });
-      if (anySummaryBlock) {
-        result = result.map((message: any) => stripSummaryBlocks(message, true, true));
+      // What may be removed is decided by provenance, not by a tag prefix:
+      //  - every summary/l2 anchor text the STORE holds for this session (any
+      //    version, including ones a correction replaced), rendered exactly as
+      //    injection renders it;
+      //  - every block THIS runtime appended in an earlier turn.
+      // A user or assistant sentence that merely mentions the tag matches neither,
+      // so it survives. A summary body with a blank line is still one exact string,
+      // so it is matched whole instead of split on "\n\n".
+      const knownBlocks = new Set<string>();
+      for (const anchor of anchors) {
+        const payload = anchor.payload as any;
+        if (anchor.anchorType === "rolling_summary" && payload?.summary) {
+          knownBlocks.add(SESSION_MEMORY_TAG + " " + String(payload.summary).slice(0, 4000));
+        }
+        if (anchor.anchorType === "l2_recall" && payload?.hits) {
+          knownBlocks.add(RESEARCH_RECALL_TAG + " " + String(payload.hits).slice(0, 1500));
+        }
+      }
+      for (const block of this.injectedSummaryBlocks) knownBlocks.add(block);
+      if (knownBlocks.size > 0) {
+        result = result.map((message: any) => stripSummaryBlocks(message, knownBlocks));
       }
 
       const injections: string[] = [];
@@ -691,11 +707,17 @@ export class MemoryPipeline {
       // rebuild ticket (09/12) owns putting a current version back.
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {
-        injections.push(SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000));
+        const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000);
+        injections.push(block);
+        this.injectedSummaryBlocks.add(block);
       }
       const recallPayload = recallAnchor?.payload as any;
       if (!recallSuspended && recallPayload?.hits) {
-        injections.push(RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500));
+        // The l2_recall payload stores an already-truncated snippet, so the
+        // rendered block is the same string every turn — a stable provenance key.
+        const block = RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500);
+        injections.push(block);
+        this.injectedSummaryBlocks.add(block);
       }
 
       // latest USER message, not blindly the last array element. The index was

@@ -185,7 +185,6 @@ async function main() {
   assert(String((staleAnchor.payload as any).summary).includes("STALE-CONCLUSION-263"),
     "P2: the suspended summary's original text is still stored (readable, just not injected)");
 
-  // P4: one runtime sees the change on its next turn. No rebuild, no restart.
   // P4: the SAME runtime that injected the summary before the correction must
   // stop injecting it on its next turn. This is what proves the suspension set
   // is read per turn instead of being cached when the pipeline was built.
@@ -220,6 +219,48 @@ async function main() {
   const mixed = promptText(await longLived.inject(mixedHistory));
   assert(mixed.includes("my own question"), "P6: the user's text is untouched");
   assert(mixed.includes("[RAG Context] operator note"), "P6: a foreign injected block is NOT stripped");
+
+  // P7: a summary body with its own blank line is still ONE block. Splitting the
+  // tail on a blank-line separator (the first implementation) read its second
+  // paragraph as foreign text and refused to strip, leaving the stale fact in
+  // the prompt.
+  // Suspended on purpose: an unsuspended one would be stripped and immediately
+  // re-appended, so the text would look unchanged and prove nothing.
+  await store.saveAnchor(sessionId, "rolling_summary", {
+    summary: "MULTI-PARA-263 first paragraph." + BLANK_LINE + "MULTI-PARA-263 second paragraph.",
+    sources: [{ kind: "material", id: 999999 }],
+  });
+  const multiHistory = [{
+    role: "user",
+    content: [{
+      type: "text",
+      text: "my question" + BLANK_LINE + "[Session Memory] MULTI-PARA-263 first paragraph."
+        + BLANK_LINE + "MULTI-PARA-263 second paragraph.",
+    }],
+  }];
+  const multiRuntime = pipelineFor(store, sessionId);
+  const multiTurn = promptText(await multiRuntime.inject(multiHistory));
+  const multiCount = multiTurn.split("MULTI-PARA-263 first paragraph.").length - 1;
+  assert(multiCount === 0,
+    "P7: a multi-paragraph summary is stripped as one block, not left behind (found " + multiCount + ")");
+  assert(multiTurn.includes("my question"), "P7: the user's own text survives");
+
+  // P8: a user or assistant sentence that MENTIONS the tag is not a pipeline
+  // block. Provenance is the exact injected string, so quoting the tag keeps the
+  // text — deleting by tag prefix would answer an incomplete question.
+  const quoted = "How does" + " the [Session Memory] tag work" + " in this tool?";
+  const quotedHistory = [{ role: "user", content: [{ type: "text", text: quoted }] }];
+  const quotedTurn = promptText(await multiRuntime.inject(quotedHistory));
+  assert(quotedTurn.includes(quoted),
+    "P8: a user question that merely mentions the tag is NOT deleted");
+  const assistantHistory = [
+    { role: "user", content: [{ type: "text", text: "explain the tags" }] },
+    { role: "assistant", content: [{ type: "text", text: "The [Session Memory] block holds a summary." }] },
+    { role: "user", content: [{ type: "text", text: "thanks" }] },
+  ];
+  const assistantTurn = (await multiRuntime.inject(assistantHistory as any)).map((m: any) => readMessageText(m)?.text ?? "");
+  assert(assistantTurn.some((t) => t.includes("The [Session Memory] block holds a summary.")),
+    "P8: an assistant reply that mentions the tag is NOT deleted");
 
   store.close();
 }
