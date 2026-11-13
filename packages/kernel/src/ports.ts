@@ -123,6 +123,17 @@ export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
 }
 
+/**
+ * #263 (D9): which summary anchors a correction has suspended.
+ *
+ * Optional on the port: a hand-built/embedded store may not track suspensions,
+ * and the pipeline then injects what it always injected. The real store
+ * implements it, and that is the path the product uses.
+ */
+export interface SummarySuspensionPort {
+  suspendedSummaryAnchorIds(sessionId: string): Set<number>;
+}
+
 /** One adapter's injection payload for a single turn. */
 export interface RagRetrievalResult {
   /** Text appended after a blank line to a user message's text channel. */

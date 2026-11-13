@@ -40,7 +40,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
-import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
+import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
@@ -544,8 +544,23 @@ export class MemoryPipeline {
       // Read side of the resume anchor (#189): capture the last anchor
       // once, before this runtime's first search can replace it.
       this.captureRecoveryDigest(anchors);
+      // #263 (D9): a summary a correction made stale must not be injected as
+      // the current conclusion. Its text stays stored (readable through
+      // getAnchors) — only the injection slot is skipped, so the caller never
+      // sees a replaced fact presented as current knowledge.
+      //
+      // The set is read per turn, not once per runtime: a correction may land
+      // between two turns of the same session, and the second turn must already
+      // respect it.
+      let suspended: Set<number> = new Set();
+      try {
+        const readSuspended = (store as unknown as SummarySuspensionPort).suspendedSummaryAnchorIds;
+        if (typeof readSuspended === "function") suspended = readSuspended.call(store, sessionId);
+      } catch { /* fail-open: an unreadable suspension list injects as before */ }
       const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
+      const summarySuspended = !!summaryAnchor && suspended.has(summaryAnchor.id);
+      const recallSuspended = !!recallAnchor && suspended.has(recallAnchor.id);
 
       const injections: string[] = [];
       // Keep the digest in every model prompt of the resumed conversation. The
@@ -567,12 +582,17 @@ export class MemoryPipeline {
           injections.push(this.recoveryDigest!);
         }
       }
+      // A suspended summary is SILENTLY skipped, not replaced with a
+      // "this section is suspended" line. The ticket forbids filling the slot
+      // with the archive's latest material or any unrelated summary, and a
+      // placeholder would be one more thing the model has to interpret. The
+      // rebuild ticket (09/12) owns putting a current version back.
       const summaryPayload = summaryAnchor?.payload as any;
-      if (summaryPayload?.summary) {
+      if (!summarySuspended && summaryPayload?.summary) {
         injections.push(SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000));
       }
       const recallPayload = recallAnchor?.payload as any;
-      if (recallPayload?.hits) {
+      if (!recallSuspended && recallPayload?.hits) {
         injections.push(RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500));
       }
 
@@ -653,6 +673,9 @@ export class MemoryPipeline {
       const prevAnchors = await store.getAnchors(sessionId);
       const prevSummaryAnchor = lastAnchorOfType(prevAnchors, "rolling_summary");
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
+      // #263: this anchor's id, so the NEW summary can inherit its dependencies
+      // (the new text is generated FROM the previous summary).
+      const previousSummaryAnchorId = prevSummaryAnchor?.id;
 
       // D5: fire-and-forget compression helper.
       const fireCompress = (deadline?: AbortSignal) => {
@@ -673,6 +696,30 @@ export class MemoryPipeline {
             consecutiveReuses: 0,
             lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
           };
+          // #263 (D9): which rows this summary actually read. Two parts:
+          //  - the new gap's material URLs, resolved to the archive rows that
+          //    currently hold them (exact ids, never text matching);
+          //  - the previous summary's own dependencies, because this summary is
+          //    generated FROM that one. Without the inheritance a correction to
+          //    an old fact would suspend the earlier summary and leave the
+          //    newest one — which still states the replaced fact — injected.
+          //
+          // Read BEFORE the anchor write so the write can carry them in one
+          // transaction. A store without the seam records nothing rather than
+          // inventing a dependency.
+          const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+          try {
+            const s = store as any;
+            if (typeof s.resolveSummarySources === "function") {
+              const gapUrls = (result.summaryRequest?.gap?.results ?? [])
+                .map((r: any) => r?.url)
+                .filter((u: any) => typeof u === "string" && u.length > 0);
+              sources.push(...(s.resolveSummarySources(gapUrls) ?? []));
+              if (previousSummaryAnchorId !== undefined && typeof s.summarySourcesForAnchor === "function") {
+                sources.push(...(s.summarySourcesForAnchor(previousSummaryAnchorId) ?? []));
+              }
+            }
+          } catch { /* fail-open: no recorded sources beats a failed summary write */ }
           // Tracked: flush() must see this write before the store is closed.
           this.track(
             (async () => {
@@ -704,6 +751,9 @@ export class MemoryPipeline {
                   summary: summaryResult.text,
                   tokenWatermark: totalTokens,
                   timestamp: Date.now(),
+                  // #263: the source list travels inside the payload, so the
+                  // anchor and its dependencies commit in one transaction.
+                  sources,
                 }).catch(() => {});
               }
               return undefined;
@@ -806,8 +856,28 @@ export class MemoryPipeline {
             .then(({ hits, variants }) => {
               if (hits.length > 0) {
                 const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
+                // #263 (D9): the rows this recall actually surfaced. The hit id
+                // encoding already carries the kind: a positive rowid is an
+                // archived material, a negative one is a knowledge row (see
+                // SessionStore's semantic arm). Recording it here is what makes
+                // this recall block a real dependency, so a correction to one
+                // of these rows suspends this block instead of leaving replaced
+                // facts injected.
+                const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+                const seen = new Set<string>();
+                for (const h of hits as any[]) {
+                  const rowid = Number(h?.rowid);
+                  if (!Number.isInteger(rowid) || rowid === 0) continue;
+                  const ref = rowid > 0
+                    ? { kind: "material" as const, id: rowid }
+                    : { kind: "knowledge" as const, id: Math.abs(rowid) };
+                  const key = ref.kind + ":" + ref.id;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  sources.push(ref);
+                }
                 return store!.saveAnchor(sessionId!, "l2_recall", {
-                  query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+                  query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(), sources,
                 }).catch(() => {});
               }
               return undefined;

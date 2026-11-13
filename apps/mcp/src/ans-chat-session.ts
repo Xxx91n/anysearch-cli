@@ -283,6 +283,12 @@ export function buildAnsChatConsolidateResult(
         (report.update > 0 ? (report.dryRun ? "; " + report.update + " other correction(s) would land" : "; " + report.update + " other correction(s) did land") : "; nothing was replaced") +
         "; details in incompleteDetails)"
       : "") +
+    (report.summariesSuspended > 0
+      ? "\nsummaries suspended: " + report.summariesSuspended +
+        " (built from a fact this run replaced, so they are no longer injected as current research;" +
+        " their text and sources are kept until a rebuild replaces them" +
+        (report.dryRun ? "; the dry-run rolled that back" : "") + ")"
+      : "") +
     (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
@@ -332,6 +338,7 @@ export function buildAnsChatConsolidateResult(
         verifyRejected: report.verifyRejected,
         correctionsIncomplete: report.correctionsIncomplete,
         supersededClusterSkipped: report.supersededClusterSkipped,
+        summariesSuspended: report.summariesSuspended,
       },
       usage,
       ...(extra.budgetUnmetered
