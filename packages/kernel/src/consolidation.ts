@@ -13,7 +13,11 @@
 import type {
   ConsolidateClaimVerdict,
   ConsolidateEvidence,
+  ConsolidateFinalCheckFn,
+  ConsolidateFinalCheckVerdict,
   ConsolidateSummarizeFn,
+  ConsolidateVerifyFn,
+  ConsolidateVerifyVerdict,
 } from "@anysearch-cli/store";
 import { classifyClaim } from "./attribution";
 import type { BudgetLedgerPort } from "./ports";
@@ -125,6 +129,12 @@ export function isConsolidationBudgetError(e: unknown): e is ConsolidationBudget
 export interface ConsolidationSeams {
   summarize: ConsolidateSummarizeFn;
   classify: (claim: string, evidence: ConsolidateEvidence[]) => ConsolidateClaimVerdict;
+  // D6: the correction-relationship check (same object/matter/scope/time +
+  // reliable evidence) before any material may replace existing knowledge.
+  verify: ConsolidateVerifyFn;
+  // D7: the final-content check (basis + fact retention) on the merged text
+  // before it is committed. Passing verify never skips this one.
+  verifyFinal: ConsolidateFinalCheckFn;
   // Accumulates across every model call this seam made. The caller reads it
   // after the run; it is not a live view of the store report.
   usage: ConsolidationUsage;
@@ -133,6 +143,82 @@ export interface ConsolidationSeams {
 export const CONSOLIDATION_SUMMARY_PROMPT = [
   "Summarize these episodic memories about the same entity into one short, factual paragraph.",
   "Only state facts directly supported by the episodes. No speculation.",
+  // D8 (preserve uncorrected facts): the UPDATE path appends the old
+  // distilled claim as a CURRENT KNOWLEDGE item. It must survive unless a new
+  // episode explicitly corrects that same fact.
+  "If an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:",
+  "keep every fact it states unless a new episode explicitly corrects that same fact.",
+].join("\n");
+
+// D6: the correction-relationship check. A negation word, a newer date,
+// overall similarity or a self-declared "official" source is not sufficient on
+// its own; the checker must see the same object, matter, scope and time, and
+// an evidence that itself asserts the change confidently.
+export const CORRECTION_CHECK_PROMPT = [
+  "You are checking a correction before it replaces durable knowledge.",
+  "CURRENT KNOWLEDGE:",
+  "{OLD}",
+  "",
+  "CANDIDATE SUMMARY FROM THE NEW MATERIAL:",
+  "{NEW}",
+  "",
+  "NEW MATERIAL:",
+  "{EVIDENCE}",
+  "",
+  "Decide:",
+  "1. alreadyCurrent: does the new material already say the same thing as the current",
+  "   knowledge (no change)? If yes, there is nothing to correct.",
+  "2. sameFact: does the new material assert a change to the SAME fact, subject and scope as",
+  "   the current knowledge? A different subject, period, population, or special case",
+  "   (for example holiday hours vs regular hours) is NOT the same fact.",
+  "3. reliable: does the material itself confidently and specifically assert the change?",
+  "   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT",
+  "   reliable enough to replace existing knowledge.",
+  "4. relation: one of",
+  '   "same"       the material restates the current value (no correction)',
+  '   "correction" the material explicitly replaces the current value (effective date,',
+  '                "changed to", "no longer", "replaced by")',
+  '   "different"  a different subject, period, population or special case',
+  '   "unclear"    same topic but a conflicting claim with no basis to prefer either side',
+  '                (for example two undated statements of equal authority)',
+  "",
+  "Reply with JSON only:",
+  '{"alreadyCurrent": true|false, "sameFact": true|false, "reliable": true|false, "relation": "same|correction|different|unclear", "reason": "<short reason>"}',
+].join("\n");
+
+// D7: the final-content check. It does not re-decide whether the correction
+// was justified (verify did that); it checks what would actually be written:
+// every statement needs a basis, and every old fact the correction did not
+// replace must survive.
+export const FINAL_CONTENT_CHECK_PROMPT = [
+  "You are checking the final text before it replaces durable knowledge.",
+  "CURRENT KNOWLEDGE (the row being replaced):",
+  "{OLD}",
+  "",
+  "REPLACEMENT TEXT (about to be written):",
+  "{FINAL}",
+  "",
+  "ACCEPTED CORRECTION (the change this replacement must express):",
+  "{CORRECTED}",
+  "",
+  "NEW MATERIAL (the evidence for the change):",
+  "{EVIDENCE}",
+  "",
+  "Decide:",
+  "1. supported: is every statement in the replacement text supported by the current",
+  "   knowledge or the new material? A statement with no basis in either is not supported.",
+  "2. preserved: does the replacement text keep every fact the current knowledge states,",
+  "   except the one fact the new material explicitly corrects? A fact that vanished",
+  "   although nothing corrected it means preserved is false.",
+  "3. corrected: does the replacement text actually state the corrected fact? The accepted",
+  "   correction is given below; if the replacement omits it or contradicts it, corrected is",
+  "   false even when supported and preserved are true.",
+  "4. noExtras: does the replacement text avoid stating facts that are neither in the current",
+  "   knowledge nor the accepted correction? A detail that appears only in the raw material",
+  "   (for example a price nobody asked to change) is an extra, and noExtras is false.",
+  "",
+  "Reply with JSON only:",
+ '{"supported": true|false, "preserved": true|false, "corrected": true|false, "noExtras": true|false, "reason": "<short reason>"}',
 ].join("\n");
 
 // Output-side reserve for a summary call. Summaries are short; this keeps the
@@ -379,11 +465,16 @@ export function createConsolidationSeams(
     }
   };
 
+  // Single-pass placeholder substitution: one regex walk over the ORIGINAL
+  // template, so inserted content is never re-scanned for placeholders.
+  const fillTemplate = (template: string, values: Record<string, string>): string =>
+    template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? values[key]! : match));
+
+  const evidenceLines = (evidence: ConsolidateEvidence[]): string =>
+    evidence.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")").join("\n");
+
   const summarize: ConsolidateSummarizeFn = async (episodes) => {
-    const prompt = [
-      CONSOLIDATION_SUMMARY_PROMPT,
-      ...episodes.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")"),
-    ].join("\n");
+    const prompt = [CONSOLIDATION_SUMMARY_PROMPT, evidenceLines(episodes)].join("\n");
     const result = await completeText(session, prompt, opts.budget);
     account(result.usage);
     finish();
@@ -397,7 +488,89 @@ export function createConsolidationSeams(
     return { label: r.label, confidence: r.confidence };
   };
 
-  return { summarize, classify, usage };
+  // Conservative parse (D6/D7): a reply without parseable JSON refuses the
+  // correction. The store keeps the old knowledge and hands the reason back;
+  // an unparseable checker never becomes a silent overwrite.
+  const parseVerifyReply = (text: string): ConsolidateVerifyVerdict => {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) {
+      return { alreadyCurrent: false, sameFact: false, reliable: false, reason: "checker returned no JSON" };
+    }
+    try {
+      const obj = JSON.parse(text.slice(start, end + 1)) as {
+        alreadyCurrent?: unknown; sameFact?: unknown; reliable?: unknown; relation?: unknown; reason?: unknown;
+      };
+      const relation = obj.relation === "same" || obj.relation === "correction" || obj.relation === "different" || obj.relation === "unclear"
+        ? obj.relation
+        : undefined;
+      return {
+        alreadyCurrent: obj.alreadyCurrent === true,
+        sameFact: obj.sameFact === true,
+        reliable: obj.reliable === true,
+        ...(relation ? { relation } : {}),
+        ...(typeof obj.reason === "string" ? { reason: obj.reason.slice(0, 240) } : {}),
+      };
+    } catch {
+      return { alreadyCurrent: false, sameFact: false, reliable: false, reason: "checker JSON unparseable" };
+    }
+  };
+
+  const parseFinalCheckReply = (text: string): ConsolidateFinalCheckVerdict => {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    // Conservative default in both places below: an unparseable reply fails
+    // every criterion including `corrected` / `noExtras`, so a checker that
+    // did not answer cannot let a row be written.
+    if (start < 0 || end <= start) {
+      return { supported: false, preserved: false, corrected: false, noExtras: false, reason: "checker returned no JSON" };
+    }
+    try {
+      const obj = JSON.parse(text.slice(start, end + 1)) as {
+        supported?: unknown; preserved?: unknown; corrected?: unknown; noExtras?: unknown; reason?: unknown;
+      };
+      return {
+        supported: obj.supported === true,
+        preserved: obj.preserved === true,
+        corrected: obj.corrected === true,
+        noExtras: obj.noExtras === true,
+        ...(typeof obj.reason === "string" ? { reason: obj.reason.slice(0, 240) } : {}),
+      };
+    } catch {
+      return { supported: false, preserved: false, corrected: false, noExtras: false, reason: "checker JSON unparseable" };
+    }
+  };
+
+  const verify: ConsolidateVerifyFn = async ({ oldContent, summary, evidence }) => {
+    // Fill the template in one pass. Chained `.replace()` calls re-scan text the
+    // earlier step just inserted, so content containing a literal `{NEW}` (for
+    // example a note that documents this very prompt) would have its own body
+    // overwritten and the candidate section left empty (#273 review).
+    const prompt = fillTemplate(CORRECTION_CHECK_PROMPT, {
+      OLD: oldContent,
+      NEW: summary,
+      EVIDENCE: evidenceLines(evidence),
+    });
+    const result = await completeText(session, prompt, opts.budget);
+    account(result.usage);
+    finish();
+    return parseVerifyReply(result.text);
+  };
+
+  const verifyFinal: ConsolidateFinalCheckFn = async ({ oldContent, finalContent, correctedContent, evidence }) => {
+    const prompt = fillTemplate(FINAL_CONTENT_CHECK_PROMPT, {
+      OLD: oldContent,
+      FINAL: finalContent,
+      CORRECTED: correctedContent,
+      EVIDENCE: evidenceLines(evidence),
+    });
+    const result = await completeText(session, prompt, opts.budget);
+    account(result.usage);
+    finish();
+    return parseFinalCheckReply(result.text);
+  };
+
+  return { summarize, classify, verify, verifyFinal, usage };
 }
 
 /** The store capabilities metering needs. Structural so kernel keeps no store import. */

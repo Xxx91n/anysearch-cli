@@ -115,10 +115,16 @@ export const AnsChatInput = Type.Object({
       description: "consolidate only: read exactly these stored material ids (from recall_memory / search results). This list is a complete scope on its own, and it may name materials from different sessions. A sessionId given alongside does not widen it. With neither this nor sessionId, the call is rejected.",
     }),
   ),
-  // The single-evidence correction flag belongs to the follow-up ticket. It is
-  // deliberately absent here: advertising a knob this build ignores would claim
-  // a capability it does not have (the spec's "do not present the old unsafe
-  // path as a new capability" rule).
+  // #261 (D6): the single-evidence correction exception. A lone material may
+  // only correct existing knowledge, never create a new long-term conclusion,
+  // and the correction must pass the same-fact and reliability checks. A
+  // refused correction returns the old content, the candidate, its sources,
+  // the verdict and what to look into next.
+  allowSingleEvidence: Type.Optional(
+    Type.Boolean({
+      description: "consolidate only: let ONE selected material correct an existing knowledge row even though it cannot pass the batch threshold. It may only correct existing knowledge, never add a new long-term conclusion, and the correction must pass the same-fact check (same object, matter, scope, time) and the reliability check. Refusals are reported with the old content, the candidate, the sources, the verdict and what to check next; the materials always stay.",
+    }),
+  ),
   dryRun: Type.Optional(
     Type.Boolean({
       description: "consolidate only: run the same path inside a transaction that is rolled back. Nothing is saved. Model calls can still happen and cost money, and the preview describes the state read at that moment.",
@@ -130,6 +136,7 @@ export type AnsChatInput = {
   sessionId?: string;
   operation?: "chat" | "consolidate";
   memoryIds?: number[];
+  allowSingleEvidence?: boolean;
   dryRun?: boolean;
 };
 
@@ -154,5 +161,5 @@ export const KernelToolDescriptions = {
   research_web: "Run a deep research query over several rounds; each round merges results with RRF and URLs are deduplicated across rounds. Returns an evidence-sufficiency signal and the top citations.",
   recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look.",
   query_knowledge: "Query the knowledge base through the retrieval adapter chosen by the domain config. With `fts` it reads the store-wide research archive, not just the current domain's rows.",
-  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls. With operation=\"consolidate\" it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge and returns what it added, updated, skipped or could not do. That scope is required; the call is rejected rather than falling back to the whole archive.",
+  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls. With operation=\"consolidate\" it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge and returns what it added, updated, skipped or could not do. That scope is required; the call is rejected rather than falling back to the whole archive. With allowSingleEvidence one selected material may correct an existing knowledge row (same fact and reliable evidence only; refused corrections come back with the old content, the candidate, the sources and what to check next).",
 } as const satisfies Record<KernelToolName, string>;

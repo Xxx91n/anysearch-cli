@@ -270,6 +270,19 @@ export function buildAnsChatConsolidateResult(
     " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")" +
     "\nscope: " + formatConsolidateScope(s) +
     outsideText +
+    (report.supersededClusterSkipped > 0
+      ? "\nskipped superseded clusters: " + report.supersededClusterSkipped +
+        " (all their materials were replaced by an earlier correction, so no new knowledge was created from them)"
+      : "") +
+    (report.verifyRejected > 0
+      ? "\nrefused corrections: " + report.verifyRejected + " (different fact, unreliable evidence, or unclear — old knowledge kept; details in verifyDetails)"
+      : "") +
+    (report.correctionsIncomplete > 0
+      ? "\nincomplete corrections: " + report.correctionsIncomplete +
+        " (merge or final check failed — those corrections were NOT replaced" +
+        (report.update > 0 ? (report.dryRun ? "; " + report.update + " other correction(s) would land" : "; " + report.update + " other correction(s) did land") : "; nothing was replaced") +
+        "; details in incompleteDetails)"
+      : "") +
     (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
@@ -278,8 +291,33 @@ export function buildAnsChatConsolidateResult(
       ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
     (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
+  // #261 (D6): one readable line per refused correction, so a content-only
+  // proxy still sees the old knowledge, the candidate, the sources, the
+  // verdict and what to check next. The structured block carries the same
+  // detail in full.
+  const refusedText = (report.verifyDetails ?? []).length === 0
+    ? ""
+    : "\n" + report.verifyDetails.map((d) =>
+        "correction refused (knowledge " + d.oldId +
+        ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
+        (d.relation ? ", relation=" + d.relation : "") + ")" +
+        "\n  old: " + d.oldContent +
+        "\n  candidate: " + d.candidate +
+        "\n  sources: " + d.evidence.map((e) => e.url).join(", ") +
+        (d.reason ? "\n  reason: " + d.reason : "") +
+        "\n  next: " + d.followUp,
+      ).join("\n");
+  const incompleteText = (report.incompleteDetails ?? []).length === 0
+    ? ""
+    : "\n" + report.incompleteDetails.map((d) =>
+        "correction incomplete (" + d.stage + ", knowledge " + d.oldId + " NOT replaced" +
+        (d.reason ? "; " + d.reason : "") + ")" +
+        "\n  old: " + d.oldContent +
+        "\n  candidate: " + d.candidate +
+        "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
+      ).join("\n");
   return {
-    content: [{ type: "text", text: line }],
+    content: [{ type: "text", text: line + refusedText + incompleteText }],
     structuredContent: {
       operation: "consolidate",
       scope: s,
@@ -291,6 +329,9 @@ export function buildAnsChatConsolidateResult(
         conflict: report.gateRejected,
         failure: report.llmUnavailable,
         budgetRejected: report.budgetRejected,
+        verifyRejected: report.verifyRejected,
+        correctionsIncomplete: report.correctionsIncomplete,
+        supersededClusterSkipped: report.supersededClusterSkipped,
       },
       usage,
       ...(extra.budgetUnmetered

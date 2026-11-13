@@ -19,6 +19,14 @@ export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundar
 // alone (near-verbatim dup). Lossy by construction — catches lexical dups, misses paraphrase;
 // the embedding path remains the dedup authority when present.
 export const THETA_JAC = 0.80;
+
+// #261: the "same topic" floor. Above this token overlap a candidate is talking
+// about the SAME thing as a live row even if the polarity matches, so the
+// relationship check — not the keyword rule — decides whether it is a
+// correction. Deliberately the same 0.4 the update rule has always used: this
+// widens which candidates reach the checker, it does not change what counts as
+// a duplicate.
+export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
 export const ARCHIVE_AGE_FACTOR = 3;     // D5: age > 3 * tier tau AND access_count = 0 AND stale last_accessed
@@ -36,6 +44,10 @@ interface EpisodeRow {
   created_at: string;
   last_accessed: string | null;
   access_count: number | null;
+  // #261: the knowledge row that replaced this material's fact, if any. The
+  // scan still reads superseded rows (the update chain needs the history), so
+  // this column is what lets a cluster know it is talking about the past.
+  superseded_by: number | null;
 }
 
 interface SemanticRow {
@@ -49,6 +61,105 @@ export interface ConsolidateEvidence { title: string; snippet: string; url: stri
 export type ConsolidateSummarizeFn = (episodes: ConsolidateEvidence[]) => Promise<string | null>;
 export interface ConsolidateClaimVerdict { label: "supported" | "uncertain" | "unsupported"; confidence: number; }
 export type ConsolidateClassifyFn = (claim: string, evidence: ConsolidateEvidence[]) => ConsolidateClaimVerdict;
+
+/** How a new material relates to the knowledge it is compared with (D6). */
+export type CorrectionRelation = "same" | "correction" | "different" | "unclear";
+
+/**
+ * D6: the correction-relationship check. Before one material may replace an
+ * existing knowledge row, the caller-supplied checker must confirm the
+ * material is about the SAME fact (object, matter, scope, time) and is itself
+ * reliable. A negation keyword, a newer date, overall similarity or a
+ * self-declared "official" source is not sufficient on its own — that call
+ * belongs to this seam, not to a regex.
+ */
+export interface ConsolidateVerifyInput {
+  oldContent: string;
+  /** Candidate distilled from the new material. */
+  summary: string;
+  evidence: ConsolidateEvidence[];
+}
+export interface ConsolidateVerifyVerdict {
+  /** The material restates what the live knowledge already says: no write. */
+  alreadyCurrent?: boolean;
+  sameFact: boolean;
+  reliable: boolean;
+  relation?: CorrectionRelation;
+  reason?: string;
+}
+export type ConsolidateVerifyFn = (input: ConsolidateVerifyInput) => Promise<ConsolidateVerifyVerdict>;
+
+/**
+ * D7: the final-content check. Passing the correction-relationship check does
+ * not skip this one. It runs on the MERGED text before anything is committed:
+ * every statement must have a basis, and every fact of the old knowledge the
+ * correction did not replace must survive in the new text.
+ */
+export interface ConsolidateFinalCheckInput {
+  oldContent: string;
+  finalContent: string;
+  evidence: ConsolidateEvidence[];
+  /**
+   * The candidate the relationship check accepted. The checker needs it to
+   * answer two questions that the raw material cannot: does the replacement
+   * actually STATE this correction (otherwise the accepted fact is lost), and
+   * does it add anything that is neither old knowledge nor this correction
+   * (otherwise a lone material smuggles a new long-term conclusion in through
+   * the merge). See #273 review.
+   */
+  correctedContent: string;
+}
+export interface ConsolidateFinalCheckVerdict {
+  supported: boolean;
+  preserved: boolean;
+  /** The replacement states the accepted correction. Absent = not checked. */
+  corrected?: boolean;
+  /** The replacement adds nothing beyond old knowledge + the correction. */
+  noExtras?: boolean;
+  reason?: string;
+}
+export type ConsolidateFinalCheckFn = (input: ConsolidateFinalCheckInput) => Promise<ConsolidateFinalCheckVerdict>;
+
+/** What a refused correction hands back to the caller (D6): old content, the
+ * candidate, its sources, the check's verdict and reason, and what to look
+ * into next. The materials stay; only the replacement is refused. */
+export interface ConsolidateVerifyDetail {
+  oldId: number;
+  oldContent: string;
+  candidate: string;
+  evidence: ConsolidateEvidence[];
+  sameFact: boolean;
+  reliable: boolean;
+  relation?: CorrectionRelation;
+  reason?: string;
+  followUp: string;
+}
+
+/** An accepted correction keeps the check's verdict, so "this was a correction
+ * of the same fact by reliable evidence" is visible, not a keyword hit. */
+export interface ConsolidateVerifiedCorrection {
+  oldId: number;
+  oldContent: string;
+  candidate: string;
+  evidence: ConsolidateEvidence[];
+  sameFact: boolean;
+  reliable: boolean;
+  relation?: CorrectionRelation;
+  reason?: string;
+}
+
+/** A correction that was NOT committed (D7/AC): the merge failed or came back
+ * empty, or the final-content check failed. The old knowledge stays live; the
+ * replacement is withheld rather than falling back to a summary that would
+ * drop the old row's other facts. */
+export interface ConsolidateIncompleteDetail {
+  oldId: number;
+  oldContent: string;
+  candidate: string;
+  evidence: ConsolidateEvidence[];
+  stage: "merge-failed" | "merge-empty" | "final-check";
+  reason?: string;
+}
 
 /**
  * Which materials a run was allowed to read.
@@ -92,6 +203,26 @@ export interface ConsolidateReport {
   // Clusters whose model call was refused by the session budget. The run stops
   // spending at the first rejection; nothing is written for those clusters.
   budgetRejected: number;
+  // D6: single-evidence episodes that could not correct existing knowledge. A
+  // lone material may correct, never create, so with no live row to correct
+  // (and no polarity disagreement) it is skipped, not added.
+  singleEvidenceSkipped: number;
+  // #261: clusters whose materials were all superseded by an earlier
+  // correction. They are kept in the scan (the update chain reads them) but
+  // may not produce a new live row: that would resurrect the replaced facts.
+  supersededClusterSkipped: number;
+  // D6: corrections the relationship check refused — different fact, unreliable
+  // evidence, or an unclear relation. The old knowledge stays live.
+  verifyRejected: number;
+  // What each refusal hands back to the caller: old content, candidate,
+  // sources, verdict, reason and what to check next.
+  verifyDetails: ConsolidateVerifyDetail[];
+  // D7: accepted corrections with the checker's verdict attached.
+  verifiedCorrections: ConsolidateVerifiedCorrection[];
+  // D7/AC: corrections withheld because the merge failed, came back empty, or
+  // the final-content check failed. Not committed; the old row stays live.
+  correctionsIncomplete: number;
+  incompleteDetails: ConsolidateIncompleteDetail[];
   semanticIds: number[];
   // Design: dedup compares against every live semantic memory, not only those
   // built from this scope — shared knowledge is corrected by reliable new
@@ -106,6 +237,10 @@ export interface ConsolidateReport {
     withinScope: boolean;
     // Materials of the closed row that the scope did not read.
     outsideScopeMaterialIds: number[];
+    // D8: the episodes whose superseded_by now points at the new row — the
+    // materials that carried the corrected fact. The rows stay (provenance);
+    // they leave current-fact recall.
+    supersededEpisodeIds: number[];
   }>;
 }
 
@@ -309,6 +444,16 @@ export function splitClaims(summary: string): string[] {
 
 export type ConsolidateOp = "add" | "noop" | "update";
 
+/**
+ * D7 polarity rule: only a polarity DISAGREEMENT between the candidate and the
+ * live row counts as a contradiction. A correction that restates the same
+ * negation as the existing claim contradicts nothing, and a negation word in
+ * the candidate alone was never sufficient grounds to replace knowledge.
+ */
+export function polarityContradiction(candidate: string, liveContent: string): boolean {
+  return CONTRADICTION_RE.test(candidate) !== CONTRADICTION_RE.test(liveContent);
+}
+
 // D4/D7 ops-quadruple decision as a pure function so the 0.90 boundary is unit-testable without
 // float32 cosine noise (integration covers the real cosine end-to-end).
 // bestCos === null marks the degraded path — no cosine was computable (embedding
@@ -335,6 +480,11 @@ export interface ConsolidateRunOptions {
   // regression tests call directly; no product surface can reach it without
   // an explicit scope.
   scope?: ConsolidateScope;
+  // D6: let one reliable material correct an existing knowledge row even
+  // though it cannot pass the batch threshold (CLUSTER_MIN). Opt-in: the batch
+  // gate stays the default, and a lone material may only UPDATE existing
+  // knowledge, never ADD a new long-term conclusion.
+  allowSingleEvidence?: boolean;
 }
 
 /** A validated scope. The store derives every count it reports from this. */
@@ -357,7 +507,12 @@ export interface ConsolidateScope {
 // everything".
 export async function consolidateMemoryRun(
   db: Database.Database,
-  deps: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn } = {},
+  deps: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+    verify?: ConsolidateVerifyFn;
+    verifyFinal?: ConsolidateFinalCheckFn;
+  } = {},
   opts: ConsolidateRunOptions = {},
 ): Promise<ConsolidateReport> {
   const dryRun = opts.dryRun === true;
@@ -377,6 +532,13 @@ export async function consolidateMemoryRun(
       materialsRead: 0,
     },
     budgetRejected: 0,
+    singleEvidenceSkipped: 0,
+    supersededClusterSkipped: 0,
+    verifyRejected: 0,
+    verifyDetails: [],
+    verifiedCorrections: [],
+    correctionsIncomplete: 0,
+    incompleteDetails: [],
     semanticIds: [],
     updates: [],
   };
@@ -403,7 +565,7 @@ export async function consolidateMemoryRun(
     }
     const rows = db
       .prepare(
-        "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count " +
+        "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count, superseded_by " +
           "FROM retrieval_results WHERE " + where.join(" AND ") + " ORDER BY entity, id",
       )
       .all(...params) as EpisodeRow[];
@@ -427,17 +589,100 @@ export async function consolidateMemoryRun(
     const nowMs = Date.now();
     let processed = 0;
     let budgetStopped = false;
+
+    // D6: one place builds the refusal the caller gets back, so the
+    // single-evidence and batch paths cannot drift in shape. What is missing is
+    // named (the relation verdict), never guessed: the old knowledge, the
+    // candidate, its sources, the check's verdict and reason travel together.
+    const refuseCorrection = (
+      row: SemanticRow,
+      candidate: string,
+      evidence: ConsolidateEvidence[],
+      verdict: ConsolidateVerifyVerdict | undefined,
+    ): void => {
+      report.verifyRejected++;
+      const relation = verdict?.relation;
+      const followUp = relation === "different"
+        ? "与旧结论可能不是同一对象/事项/范围/时间，不能当成纠正；旧结论保留，请补查对应关系后再试。"
+        : relation === "unclear"
+          ? "新资料与旧结论是否同一事实无法确定；旧结论保留，请补查后再试。"
+          : "新资料未被判定为同一事实且足够可靠；旧结论保留，请补查更可靠的来源后再试。";
+      report.verifyDetails.push({
+        oldId: row.id,
+        oldContent: row.content,
+        candidate,
+        evidence,
+        sameFact: verdict?.sameFact ?? false,
+        reliable: verdict?.reliable ?? false,
+        ...(relation ? { relation } : {}),
+        ...(verdict?.reason ? { reason: verdict.reason } : {}),
+        followUp,
+      });
+    };
+
+    // The live row's current source set, read inside the write transaction.
+    // Returns null when the row is no longer live — the caller reports the
+    // same-run collision instead of writing to a closed row (#273 review).
+    //
+    // Reading it here (rather than trusting the planner's snapshot) is what
+    // keeps two clusters that touch ONE row from overwriting each other's
+    // materials: each write sees what the previous write already merged in.
+    const currentSources = (row: SemanticRow): number[] | null => {
+      const live = db
+        .prepare("SELECT source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+        .get(row.id) as { source_episode_ids: string } | undefined;
+      if (!live) return null;
+      try { return JSON.parse(live.source_episode_ids) as number[]; } catch { return []; }
+    };
+
+    // Two clusters in one run planned against the same live row and both passed
+    // their checks. The first write wins; the second is reported as an
+    // unresolved conflict instead of silently forking or editing dead knowledge.
+    const reportRunCollision = (row: SemanticRow, candidate: string, sources: ConsolidateEvidence[]): void => {
+      report.verifyRejected++;
+      report.verifyDetails.push({
+        oldId: row.id, oldContent: row.content, candidate, evidence: sources,
+        sameFact: true, reliable: true,
+        relation: "unclear",
+        reason: "this run already replaced the same knowledge row",
+        followUp: "同一次整理里另一个簇已经替换了这行知识；请先查看那次替换的结果，再单独处理这次的新材料。",
+      });
+    };
+
     for (const [, eps] of byEntity) {
       if (budgetStopped) break;
       if (opts.limit && processed >= opts.limit) break;
       report.clustersScanned++;
-      if (eps.length < CLUSTER_MIN) continue;
+      // #261: a cluster made only of already-superseded materials describes the
+      // past. It still joins the scan (the update chain needs the history), but
+      // it may not become a NEW live knowledge row — that would resurrect the
+      // facts a later correction replaced.
+      //
+      // Skipped BEFORE the trigger counters and the summarize call: counting it
+      // as "triggered" would claim work that will not happen, and paying for a
+      // summary whose only possible outcome is "discard" is a real model call
+      // spent on nothing (CodeRabbit review on #273).
+      if (eps.every((e) => e.superseded_by !== null)) {
+        report.supersededClusterSkipped++;
+        continue;
+      }
+      // #273 review: the batch gate counts LIVE materials only. Superseded ones
+      // stay in the cluster for the update chain, but they are already history —
+      // letting three replaced episodes carry a fourth new material past
+      // CLUSTER_MIN turns one lone material into "batch evidence" and lets it
+      // write a brand-new long-term conclusion. That breaks the D6 rule that a
+      // single material may only correct, never create.
+      const liveEps = eps.filter((e) => e.superseded_by === null);
+      // D6: single-evidence correction is an opt-in exception to the batch
+      // threshold (CLUSTER_MIN stays the default gate).
+      const singleEvidence = liveEps.length === 1 && opts.allowSingleEvidence === true;
+      if (liveEps.length < CLUSTER_MIN && !singleEvidence) continue;
       // D2 deterministic trigger: oldest episode past its tier half-life OR low access signal.
       // No LLM scoring at trigger time.
-      const oldest = eps[0];
+      const oldest = liveEps[0]!;
       const tau = TAU_TIER[classifyTier(oldest.title ?? "", oldest.url ?? "")];
       const ageDays = (nowMs - parseSqliteUtc(oldest.created_at)) / DAY_MS;
-      const avgAccess = eps.reduce((a, e) => a + (e.access_count ?? 0), 0) / eps.length;
+      const avgAccess = liveEps.reduce((a, e) => a + (e.access_count ?? 0), 0) / liveEps.length;
       if (!(ageDays > tau || avgAccess <= 1)) continue;
       report.clustersTriggered++;
       processed++;
@@ -447,7 +692,7 @@ export async function consolidateMemoryRun(
       // reached, so the run stops spending and reports it instead of looping
       // through the remaining clusters only to be refused again.
       if (!deps.summarize) { report.llmUnavailable++; continue; }
-      const evidence: ConsolidateEvidence[] = eps.map((e) => ({
+      const evidence: ConsolidateEvidence[] = liveEps.map((e) => ({
         title: e.title ?? "", snippet: e.snippet ?? "", url: e.url ?? "",
       }));
       let summary: string | null;
@@ -465,8 +710,18 @@ export async function consolidateMemoryRun(
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.
+      //
+      // D7: for a verifier-backed single-evidence correction the gate is
+      // circular — the candidate states the correction and the same evidence
+      // carries the negation that describes the change, which the claim-level
+      // contradiction rule reads as counter-evidence. The correction check
+      // (same fact + reliable) is the gate for that path. Its confidence is not
+      // invented: with the claim gate skipped the row keeps LOW_CONFIDENCE and
+      // the check's verdict + reason are recorded in verifiedCorrections.
+      const verifierBackedSingle = singleEvidence && deps.verify !== undefined;
       let confidence = LOW_CONFIDENCE;
-      if (deps.classify) {
+      let claimGateRejected = false;
+      if (deps.classify && !verifierBackedSingle) {
         let rejected = false;
         let uncertain = false;
         let minConf = 1;
@@ -476,8 +731,8 @@ export async function consolidateMemoryRun(
           if (v.label === "uncertain") uncertain = true;
           minConf = Math.min(minConf, v.confidence);
         }
-        if (rejected) { report.gateRejected++; continue; }
-        confidence = uncertain ? LOW_CONFIDENCE : minConf;
+        if (rejected) claimGateRejected = true;
+        if (!rejected) confidence = uncertain ? LOW_CONFIDENCE : minConf;
       }
 
       // Embedding seam (fail-open): NULL embedding still inserts; dedup falls back to jaccard
@@ -488,7 +743,14 @@ export async function consolidateMemoryRun(
       const lives = db
         .prepare("SELECT id, content, source_episode_ids, embedding FROM semantic_memories WHERE valid_until IS NULL")
         .all() as SemanticRow[];
+      // Selection vs decision: `best` names the live row this cluster relates to
+      // most (any cosine sign — the correction check, not the similarity score,
+      // decides whether it may be replaced; A2-style different-object rows must
+      // still reach the checker instead of silently reading as "nothing to
+      // correct"). `bestCos` keeps the historical 0 floor, so decideOp's
+      // thresholds are unchanged.
       let best: SemanticRow | null = null;
+      let bestScoreCos = -Infinity;
       let bestCos = 0;
       let bestJac = 0;
       let sawCos = false; // at least one cosine actually computed this scan
@@ -497,48 +759,331 @@ export async function consolidateMemoryRun(
         const jac = jaccard(sumTokens, tokenize(l.content));
         let cos = 0;
         if (emb && l.embedding) { cos = cosineSimilarity(emb, blobToFloat32(l.embedding)); sawCos = true; }
-        if (cos > bestCos || (cos === bestCos && jac > bestJac)) {
-          best = l; bestCos = cos; bestJac = jac;
+        if (cos > bestScoreCos || (cos === bestScoreCos && jac > bestJac)) {
+          best = l; bestScoreCos = cos; bestCos = Math.max(0, cos); bestJac = jac;
         }
       }
       // Degraded-path accounting: a dedup decision ran without any cosine signal.
       if (!sawCos && lives.length > 0) report.embeddingAbsent++;
 
-      const salience = Math.min(1, 0.4 + 0.1 * eps.length);
-      const epsIds = eps.map((e) => e.id);
-      const insert = (extraSources: number[] = []): number => {
+      // D7 polarity fix (see polarityContradiction): a negation word in the
+      // candidate alone never selects the update op.
+      const contradiction = best ? polarityContradiction(summary, best.content) : false;
+
+      // #273 review: `noop` must mean "certainly the same text", not "very
+      // similar". A one-value edit ("opens at 09:00" -> "opens at 10:00") scores
+      // 0.867 and would otherwise be skipped as a duplicate, leaving the old
+      // time as current knowledge forever. So the near-verbatim test is
+      // tightened here — only an exact restatement counts as a duplicate — and
+      // anything else above the same-topic floor goes to the relationship check.
+      // decideOp itself keeps its documented thresholds for the historical ops.
+      // Hoisted above the exact-restatement short-circuit: that branch also
+      // merges this cluster's materials into the row's source set, so it needs
+      // the ids before `insert()` is defined. See the note there.
+      const epsIds = liveEps.map((e) => e.id);
+      const exactRestatement = best ? summary.trim() === best.content.trim() : false;
+      if (exactRestatement) {
+        // A summarizer may echo old knowledge even when the current material
+        // does not support it. Never attach rejected evidence to a live row.
+        if (claimGateRejected) { report.gateRejected++; continue; }
+        const row = best!;
+        writes.push(() => {
+          // Liveness + current sources recheck: see `currentSources`. A
+          // correction planned earlier in this run may already have closed this
+          // row, and writing to it would land the materials on dead knowledge
+          // while reporting a successful noop (#273 review).
+          const current = currentSources(row);
+          if (!current) { reportRunCollision(row, summary!, evidence); return; }
+          // #273 review: the materials that produced this restatement must join
+          // the row's source set. Otherwise a later correction only retires the
+          // OLD sources, and these stay live with the stale text still in them —
+          // so the fact this noop confirmed could come back after a correction.
+          const merged = Array.from(new Set([...current, ...epsIds])).sort((a, b) => a - b);
+          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now'), source_episode_ids = ? WHERE id = ?")
+            .run(JSON.stringify(merged), row.id);
+          report.noop++;
+        });
+        continue;
+      }
+
+      // D6/D7: every automatic replacement passes the same correction-relationship
+      // check, so the single-evidence path and the batch path cannot drift apart.
+      // A budget refusal is thrown back to the caller's loop, which stops the run.
+      //
+      // Design: the verdict is returned, not recorded here. `verifiedCorrections`
+      // means "this correction landed", so it is filled only after the merge and
+      // the final-content check both pass; recording it at check time made a
+      // withheld correction read as verified on the CLI.
+      type CorrectionCheck =
+        | { kind: "noop" }
+        | { kind: "refused" }
+        | { kind: "update"; verdict: ConsolidateVerifyVerdict };
+      const runCorrectionCheck = async (row: SemanticRow): Promise<CorrectionCheck> => {
+        const verdict = await deps.verify!({ oldContent: row.content, summary: summary!, evidence });
+        if (verdict.alreadyCurrent === true || verdict.relation === "same") return { kind: "noop" };
+        // Accept ONLY an explicit correction. A missing or unparseable `relation`
+        // is a refusal, not a pass: the checker's prompt asks for it, and treating
+        // its absence as "close enough" would let an incomplete reply replace
+        // live knowledge — the same defect as trusting a keyword.
+        if (verdict.relation !== "correction" || !verdict.sameFact || !verdict.reliable) {
+          refuseCorrection(row, summary!, evidence, verdict);
+          return { kind: "refused" };
+        }
+        return { kind: "update", verdict };
+      };
+
+      // #261 note: the all-superseded case was already handled above, before the
+      // trigger counters and the summarize call. The cluster reaching this point
+      // has at least one live material.
+
+      let op: ConsolidateOp = best ? decideOp(sawCos ? bestCos : null, bestJac, contradiction, theta) : "add";
+      let acceptedVerdict: ConsolidateVerifyVerdict | undefined;
+      if (singleEvidence) {
+        // A lone material may correct an existing memory; it may not create
+        // new knowledge and does not count as a duplicate touch.
+        if (!best) { report.singleEvidenceSkipped++; continue; }
+        if (deps.verify) {
+          let checked: CorrectionCheck;
+          try {
+            checked = await runCorrectionCheck(best);
+          } catch (e) {
+            if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+            throw e;
+          }
+          if (checked.kind === "refused") continue;
+          op = checked.kind;
+          if (checked.kind === "update") acceptedVerdict = checked.verdict;
+        } else {
+          // No checker: a lone material cannot authorize any replacement.
+          // Exact restatements were handled above; similarity or polarity alone
+          // cannot prove same-fact and source reliability.
+          report.singleEvidenceSkipped++;
+          continue;
+        }
+      } else if (best && (bestJac > SAME_TOPIC_JACCARD || op === "noop")) {
+        // #261 review: polarity alone cannot decide whether a candidate is a
+        // correction. A same-polarity edit ("does not support REST, deploys run
+        // weekly" -> "... monthly") disagrees with nothing by keyword, yet it
+        // changes a fact, and treating it as `add` leaves two live rows stating
+        // different cadences. So a candidate that talks about the SAME thing
+        // (high token overlap) is handed to the relationship check, which is the
+        // one place that can tell correction from restatement from new fact.
+        //
+        // `op === "noop"` joins the condition (#273 review): decideOp treats a
+        // cosine above theta as a duplicate, and cosine stays high when the
+        // wording changes but the topic does not. A value edit in different
+        // words ("opens at 09:00" -> "doors open at ten") can score ~0.95
+        // cosine with low token overlap, so it never reached this branch and
+        // was counted as a duplicate — the old value stayed current forever.
+        // Only an EXACT restatement returns above, so anything arriving here
+        // with `noop` is a paraphrase and must be judged, not assumed away.
+        if (!deps.verify) {
+          refuseCorrection(best, summary, evidence, undefined);
+          continue;
+        }
+        let checked: CorrectionCheck;
+        try {
+          checked = await runCorrectionCheck(best);
+        } catch (e) {
+          if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+          throw e;
+        }
+        if (checked.kind === "refused") continue;
+        op = checked.kind;
+        if (checked.kind === "update") acceptedVerdict = checked.verdict;
+      }
+
+      // An accepted correction may bypass the generic negation heuristic.
+      // Unsupported additions must still fail the original fidelity gate.
+      if (claimGateRejected && op !== "update") { report.gateRejected++; continue; }
+      // Similarity alone is never an authorization to replace live knowledge.
+      if (op === "update" && !acceptedVerdict) {
+        if (best) refuseCorrection(best, summary, evidence, undefined);
+        else report.gateRejected++;
+        continue;
+      }
+      const salience = Math.min(1, 0.4 + 0.1 * liveEps.length);
+      const insert = (extraSources: number[] = [], content: string | null = summary, buffer: Buffer | null = embBuf): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
           .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
-          .run(summary, JSON.stringify(src), salience, confidence, embBuf);
+          .run(content, JSON.stringify(src), salience, confidence, buffer);
         const id = Number(info.lastInsertRowid);
         report.semanticIds.push(id);
         return id;
       };
 
-      const op = best ? decideOp(sawCos ? bestCos : null, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
-      if (best && op === "noop") {
+      if (op === "noop") {
         // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
-        const row = best;
+        //
+        // `noop` reaches here from two places and both mean "same fact, nothing
+        // to write": an exact restatement (decided above, by text equality) or
+        // a checker verdict of `alreadyCurrent` / `relation: "same"` — the
+        // latter is a paraphrase, so text equality would miss it. Gating on
+        // `exactRestatement` alone let a verified same-fact candidate fall
+        // through to `insert()` and become a second copy (#273 review).
+        const row = best!;
         writes.push(() => {
-          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ?").run(row.id);
+          // Liveness recheck (#273 review): a correction cluster that was
+          // planned earlier can close this row before this write runs. Touching
+          // it then would land the materials on a closed row and report `noop`
+          // success, leaving the successor without those sources and the facts
+          // still recallable. Report the conflict instead of writing.
+          //
+          // The source set is read HERE for the same reason: the planner's copy
+          // is a snapshot, so two clusters touching one row would each write a
+          // set missing the other's materials — and a later correction would
+          // never retire the lost ones (#273 review).
+          const current = currentSources(row);
+          if (!current) { reportRunCollision(row, summary!, evidence); return; }
+          // #273 review: the materials that produced this restatement must join
+          // the row's source set. Otherwise a later correction only retires the
+          // OLD sources, and these stay live with the stale text still in them —
+          // so the fact this noop confirmed could come back after a correction.
+          const merged = Array.from(new Set([...current, ...epsIds])).sort((a, b) => a - b);
+          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now'), source_episode_ids = ? WHERE id = ?")
+            .run(JSON.stringify(merged), row.id);
           report.noop++;
         });
-      } else if (best && op === "update") {
-        // D4 UPDATE: high-overlap contradiction -> soft-close old row, write new, union sources.
-        //
-        // The closed row may have been built from materials outside the scope.
-        // That is allowed (shared knowledge is correctable by reliable new
-        // material), but the report must show it instead of leaving a caller to
-        // assume only the selected materials moved.
+      } else if (op === "update" && best) {
+        // D8: the replacement must carry the old knowledge's uncorrected facts.
+        // Regenerate the text with the current knowledge in the evidence, then
+        // run the D7 final-content check. A failed or empty merge withholds the
+        // replacement entirely — falling back to the candidate summary would
+        // silently drop every old fact the correction did not touch.
         const row = best;
+        const currentKnowledge: ConsolidateEvidence = {
+          title: "CURRENT KNOWLEDGE",
+          snippet: row.content,
+          url: "knowledge://semantic/" + row.id,
+        };
+        const mergeEvidence = [...evidence, currentKnowledge];
+        let merged: string | null = null;
+        let mergeFailed = false;
+        let mergeError: unknown;
+        try {
+          merged = await deps.summarize(mergeEvidence);
+        } catch (e) {
+          if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+          mergeFailed = true;
+          mergeError = e;
+        }
+        if (mergeFailed || !merged || !merged.trim()) {
+          report.correctionsIncomplete++;
+          report.incompleteDetails.push({
+            oldId: row.id, oldContent: row.content, candidate: summary, evidence,
+            stage: mergeFailed ? "merge-failed" : "merge-empty",
+            ...(mergeFailed ? { reason: mergeError instanceof Error ? mergeError.message : String(mergeError) } : {}),
+          });
+          continue;
+        }
+        const finalSummary = merged.trim();
+        const mergedEmb = await embedText(finalSummary, "passage");
+        const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
+        // D7 second check: the final content's basis and fact retention.
+        // Passing the correction-relationship check never skips this one.
+        if (deps.verifyFinal) {
+          let verdict: ConsolidateFinalCheckVerdict;
+          try {
+            verdict = await deps.verifyFinal({
+              oldContent: row.content,
+              finalContent: finalSummary,
+              evidence,
+              // The bare candidate, not the merged text: the checker has to say
+              // whether the ACCEPTED correction is what got written.
+              correctedContent: summary,
+            });
+          } catch (e) {
+            if (isBudgetRejection(e)) { report.budgetRejected++; budgetStopped = true; break; }
+            throw e;
+          }
+          // All four criteria gate the write. `corrected` closes the hole where
+          // the merge keeps the old facts but drops the very change that was
+          // accepted; `noExtras` closes the hole where a lone material smuggles
+          // a new long-term fact in through the merge (#273 review). An
+          // undefined field means the checker did not answer that question,
+          // which is a refusal, not a pass.
+          if (!verdict.supported || !verdict.preserved || verdict.corrected !== true || verdict.noExtras !== true) {
+            report.correctionsIncomplete++;
+            report.incompleteDetails.push({
+              oldId: row.id, oldContent: row.content, candidate: summary, evidence,
+              stage: "final-check",
+              ...(verdict.reason ? { reason: verdict.reason } : {}),
+            });
+            continue;
+          }
+        } else {
+          // No final-content seam: the replacement is withheld. The claim gate
+          // below (when present) only rejects unsupported statements; it cannot
+          // tell whether an uncorrected fact survived, and a wrong "yes" here
+          // drops exactly the facts D8 says must stay. So "no checker" means
+          // "no replacement", reported as incomplete rather than written.
+          report.correctionsIncomplete++;
+          report.incompleteDetails.push({
+            oldId: row.id, oldContent: row.content, candidate: summary, evidence,
+            stage: "final-check",
+            reason: "no final-content checker was supplied, so fact retention could not be verified",
+          });
+          continue;
+        }
         writes.push(() => {
-          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now') WHERE id = ?").run(row.id);
-          let prev: number[] = [];
-          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          const newId = insert(prev);
+          // D4/D8 UPDATE: write the merged row with the union of sources,
+          // soft-close the old row with an explicit successor, and mark the
+          // closed row's materials superseded by the new knowledge (the rows
+          // stay for provenance; they leave current-fact recall).
+          //
+          // The closed row may have been built from materials outside the scope.
+          // That is allowed (shared knowledge is correctable by reliable new
+          // material), but the report must show it instead of leaving a caller to
+          // assume only the selected materials moved.
+          //
+          // Same-run collision guard (#273 review): two clusters in ONE run can
+          // plan against the same live row (both read it before any write ran),
+          // and both plans can pass their checks. Closing it twice would leave
+          // two live successors for one old row. The first write wins; a later
+          // cluster targeting the same row is reported as an unresolved
+          // compatibility conflict instead of silently forking the knowledge.
+          //
+          // The source set is read in the transaction, not from the planner's
+          // snapshot: a noop on the same row may already have merged its own
+          // materials into it, and writing the snapshot would drop them — those
+          // materials would then never be retired by a later correction (#273
+          // review). `currentSources` also carries the liveness check.
+          const prev = currentSources(row);
+          if (!prev) { reportRunCollision(row, summary!, evidence); return; }
+          const newId = insert(prev, finalSummary, finalEmbBuf);
+          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
+          // #273 review: only the materials this statement actually re-pointed.
+          // `prev` holds every source the row ever had, including ones an earlier
+          // correction already retired to an older successor; reporting all of
+          // them would claim this run superseded materials it never touched.
+          let retiredNow: number[] = [];
+          if (prev.length > 0) {
+            const info = db.prepare(
+              "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+            ).run(newId, ...prev);
+            if (Number(info.changes) > 0) {
+              retiredNow = (db
+                .prepare("SELECT id FROM retrieval_results WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by = ?")
+                .all(...prev, newId) as Array<{ id: number }>).map((r) => r.id);
+            }
+          }
+          // The correction actually landed: this is where "verified" becomes true.
+          if (acceptedVerdict) {
+            report.verifiedCorrections.push({
+              oldId: row.id, oldContent: row.content, candidate: summary!, evidence,
+              sameFact: acceptedVerdict.sameFact, reliable: acceptedVerdict.reliable,
+              ...(acceptedVerdict.relation ? { relation: acceptedVerdict.relation } : {}),
+              ...(acceptedVerdict.reason ? { reason: acceptedVerdict.reason } : {}),
+            });
+          }
           const outside = prev.filter((id) => !readIds.has(id));
-          report.updates.push({ oldId: row.id, newId, withinScope: outside.length === 0, outsideScopeMaterialIds: outside });
+          report.updates.push({
+            oldId: row.id, newId,
+            withinScope: outside.length === 0,
+            outsideScopeMaterialIds: outside,
+            supersededEpisodeIds: retiredNow,
+          });
           report.update++;
         });
       } else {

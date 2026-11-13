@@ -353,33 +353,33 @@ function makeMockStreamFn(decision: string): any {
 {
   const streamFn = makeMockStreamFn("reuse");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "reuse", "D1/D3: adjudicator returns 'reuse' when LLM says reuse");
+  assert(result.decision === "reuse", "D1/D3: adjudicator returns 'reuse' when LLM says reuse");
 }
 
 // D1/D3: COMPRESS path — mock returns "compress".
 {
   const streamFn = makeMockStreamFn("compress");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "D1/D3: adjudicator returns 'compress' when LLM says compress");
+  assert(result.decision === "compress", "D1/D3: adjudicator returns 'compress' when LLM says compress");
 }
 
 // D10: adjudication failure → default COMPRESS (fail-open).
 {
   // Mock streamFn that throws.
-  const failingStreamFn = (_model: any, _context: any, _options?: any) => ({
+  const failingStreamFn = (_model: any, _c: any, _o?: any) => ({
     async *[Symbol.asyncIterator]() {
       throw new Error("LLM service unavailable");
     },
   });
   const result = await adjudicateReuseCompress(failingStreamFn as any, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "D10: adjudication failure -> default COMPRESS");
+  assert(result.decision === "compress", "D10: adjudication failure -> default COMPRESS");
 }
 
 // D10: unparseable response → default COMPRESS.
 {
   const streamFn = makeMockStreamFn("I think the answer is maybe perhaps...");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "D10: unparseable response -> default COMPRESS");
+  assert(result.decision === "compress", "D10: unparseable response -> default COMPRESS");
 }
 
 // D6: adjudication prompt includes IR 5-segment structure.
@@ -464,7 +464,7 @@ function makeMockStreamFn(decision: string): any {
   // .then() branches, .catch() falls back to compress.
   const streamFn = makeMockStreamFn("compress");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "gap", "summary")
-    .then((d: string) => d)
+    .then((d: { decision: "reuse" | "compress" }) => d.decision)
     .catch(() => "compress"); // D10 fallback
   assert(result === "compress", "D5: two-level async chain works correctly");
 }

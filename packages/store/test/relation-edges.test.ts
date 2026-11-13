@@ -170,6 +170,48 @@ const edgeCounts = (p: string) => {
   assert(liveRt.n === 1, "exactly one live related_to edge despite repeated episodes: " + liveRt.n);
   c.close();
 }
+// --- a related_to edge whose support was superseded does not block a new one ---
+// The relation arm hides an edge whose supporting material was superseded, so
+// that edge is already "gone" from the caller's view. If insertEdge still treats
+// it as a live write-once duplicate, the CURRENT material can never re-establish
+// the relation and the edge stays invisible forever (#273 review).
+{
+  const p3b = join(dir2, "rel3b.db");
+  const e = new SqliteSessionStore(p3b);
+  const s3b = await e.createSession("eval");
+  const mem = (n: number) => ({ url: "https://ex.com/r" + n, title: "ZetaKit is linked to WidgetKit", snippet: "ZetaKit is linked to WidgetKit in the bench notes", source: "exa", evidence: 0.9 });
+  const first = await e.adjudicateMemory(s3b.id, [mem(1)]);
+  const firstId = first[0]!.insertedId!; // the material supporting the edge
+  // Supersede that material the way a correction does: close it, point it at a
+  // successor. The edge's supporting row is now dead history.
+  { const w = new Database(p3b); w.prepare("UPDATE retrieval_results SET superseded_by = ? WHERE id = ?").run(firstId + 1, firstId); w.close(); }
+  // A second episode brings the same relation again. It must land, because the
+  // live edge is no longer backed by a live material.
+  const second = await e.adjudicateMemory(s3b.id, [mem(2)]);
+  const secondId = second[0]!.insertedId!;
+  const tel = e.relationTelemetry();
+  assert(tel.supersededSupportClosed >= 1,
+    "superseded support: the dead edge was closed so the relation could be re-established (" + tel.supersededSupportClosed + ")");
+  assert(tel.relatedToWriteOnce === 0,
+    "superseded support: the write-once skip does NOT fire on a dead edge (" + tel.relatedToWriteOnce + ")");
+  const rd = new Database(p3b, { readonly: true });
+  const liveRt2 = rd.prepare("SELECT COUNT(*) as n FROM edges WHERE relation = 'related_to' AND valid_until IS NULL").get() as { n: number };
+  rd.close();
+  assert(liveRt2.n === 1, "superseded support: one live related_to edge is backed by the current material (" + liveRt2.n + ")");
+  // Backfill must not re-extract retired episode 1 and take the live edge away
+  // from episode 2. The normal full scan sees both rows.
+  const backfilled = await e.backfillRelations({ apply: true, fromId: firstId - 1 });
+  assert(backfilled.scanned === 1 && backfilled.lastId === secondId,
+    "backfill scan: a retired episode was excluded, not just skipped by insertEdge");
+  const checkBackfill = new Database(p3b, { readonly: true });
+  const support = checkBackfill.prepare(
+    "SELECT episode_memory_id FROM edges WHERE relation = 'related_to' AND valid_until IS NULL",
+  ).get() as { episode_memory_id: number } | undefined;
+  checkBackfill.close();
+  assert(support?.episode_memory_id === secondId,
+    "backfill: the live relation remains supported by the current episode, not the retired one");
+  e.close();
+}
 // --- fullRefresh + partial window (--from-id/--limit) is rejected at the store layer ---
 {
   const p4 = join(dir2, "rel4.db");

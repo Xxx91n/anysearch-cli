@@ -158,17 +158,21 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
 }
 
 // NOOP adjudication — LLM decides REUSE vs COMPRESS.
-// `onUsage` receives the final assistant message so the caller can book this
-// helper call's tokens and cost into the same summary ledger as the compression
-// calls (D4: helper work is a real provider call, not free).
+// The call's own spend comes back with the decision: it is a separate book
+// from the summary calls (D4 重判), so neither ledger inflates the other.
+//
+// Merge note (#272 -> #261): main briefly booked this call into the SUMMARY
+// ledger through an `onUsage` callback, and said in its own commit message that
+// the real home was #261. This is that home, so the callback form is dropped
+// rather than carried alongside the returned usage — two ways to book the same
+// call would double count it.
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
   gapDistillation: string,
   existingSummary: string | undefined,
   signal?: AbortSignal,
-  onUsage?: (message: unknown) => void,
-): Promise<"reuse" | "compress"> {
+): Promise<{ decision: "reuse" | "compress"; usage?: unknown }> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
     "Decide if the new search results are already fully covered by the existing rolling summary.",
@@ -192,27 +196,28 @@ export async function adjudicateReuseCompress(
   };
 
   let text = "";
+  let usage: unknown;
   try {
     const stream = streamFn(model, context, signal ? { signal } : {});
-    let finalMessage: unknown;
     for await (const event of stream) {
       // 1.5.1 streams text as text_delta.delta; the monolithic "text" event was
       // the pre-upgrade shape.
       if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
       else if (event?.type === "text" && event.text) text += event.text;
-      if (event?.type === "done" && event.message) finalMessage = event.message;
+      // Both terminal shapes carry spend: `done` holds the successful turn's
+      // usage, and pi-ai 1.5.x reports a FAILED turn on an `error` event
+      // instead of throwing — reading only `done` would drop that spend from
+      // the adjudication book (D4: nothing hidden).
+      else if (event?.type === "done" && event.message) usage = event.message.usage;
+      else if (event?.type === "error" && event.error?.usage) usage = event.error.usage;
     }
-    // D4: report this adjudication call's usage. A stream that never names a
-    // final message contributes nothing here; the caller's `missing` list then
-    // says the figure was not reported instead of counting it as free.
-    if (onUsage && finalMessage) onUsage(finalMessage);
   } catch {
-    return "compress"; // D10: fail-open.
+    return { decision: "compress", usage }; // D10: fail-open.
   }
 
   const lower = text.toLowerCase().trim();
-  if (lower.includes("reuse")) return "reuse";
-  return "compress"; // D10: unparseable -> COMPRESS.
+  if (lower.includes("reuse")) return { decision: "reuse", usage };
+  return { decision: "compress", usage }; // D10: unparseable -> COMPRESS.
 }
 
 // PURE consolidateState function — zero I/O, zero side effects.
@@ -412,6 +417,10 @@ export class MemoryPipeline {
   // so the caller can report both without double counting. Same ledger type as
   // the run, so cost provenance follows the same rule.
   private summaryUsage = emptyUsageTotals();
+  // D4: the reuse/compress adjudication calls are a separate book from the
+  // summary calls. Both are the pipeline's own spend, but one adjudication
+  // must not read as a summary the summarizer never made.
+  private adjudicationUsage = emptyUsageTotals();
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
@@ -420,7 +429,7 @@ export class MemoryPipeline {
 
   /** Summary-call accounting for this runtime (never zero-filled). */
   getSummaryUsage(): SummaryUsage {
-    return toSummaryUsage(this.summaryUsage);
+    return toSummaryUsage(this.summaryUsage, this.adjudicationUsage);
   }
 
   /**
@@ -729,19 +738,23 @@ export class MemoryPipeline {
           // under an already-expired budget.
           const deadline = AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS);
           this.track(
-            adjudicateReuseCompress(
-              streamFn,
-              actualModel,
-              gapDistillation,
-              previousSummary,
-              deadline,
-              // D4: this adjudication is a real provider call made on the
-              // session's behalf, so its usage is booked rather than left
-              // outside the ledger.
-              (usageMessage) => accumulateUsage(this.summaryUsage, usageMessage),
-            )
-              .then((adjDecision: "reuse" | "compress") => {
-                if (adjDecision === "compress" && !deadline.aborted) {
+            adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, deadline)
+              .then((adj: { decision: "reuse" | "compress"; usage?: unknown }) => {
+                // #261/#273 review: the request was SENT, so it must appear in
+                // the adjudication book even when the provider sent no usage.
+                // Without a usage block the old code left `calls` at 0, the CLI's
+                // `calls > 0` gate then suppressed the whole line, and a real
+                // (possibly billed) call vanished from the report. When usage is
+                // missing the call is counted AND flagged, so the report names
+                // the unknown tokens instead of printing in=0 out=0 as if the
+                // call were free.
+                if (adj.usage) {
+                  accumulateUsage(this.adjudicationUsage, { role: "assistant", usage: adj.usage });
+                } else {
+                  this.adjudicationUsage.assistantCalls += 1;
+                  this.adjudicationUsage.callsWithoutUsage = (this.adjudicationUsage.callsWithoutUsage ?? 0) + 1;
+                }
+                if (adj.decision === "compress" && !deadline.aborted) {
                   fireCompress(deadline);
                 } else {
                   // Keep the incremented consecutiveReuses from the pure result.

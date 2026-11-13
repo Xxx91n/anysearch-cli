@@ -40,7 +40,7 @@ function help(): string {
   return [
     "ans consolidate - turn stored research materials into long-term knowledge",
     "",
-    "Usage: ans consolidate [--session ID | --memory ID]... [--dry-run|--apply] [--limit N]",
+    "Usage: ans consolidate [--session ID | --memory ID]... [--single-evidence] [--dry-run|--apply] [--limit N]",
     "",
     "An explicit scope is required. --session ID reads that session's materials;",
     "--memory ID reads exactly the listed materials (repeatable). Both flags may be",
@@ -51,6 +51,19 @@ function help(): string {
     "is summarized through the configured LLM (ANS_LLM_PROVIDER/MODEL, optionally",
     "ANS_LLM_BASE_URL + ANS_LLM_API + ANS_LLM_API_KEY), gated per claim against its own",
     "evidence, then written to semantic_memories as the sixth retrieval arm.",
+    "",
+    "--single-evidence lets ONE material correct an existing knowledge row even though",
+    "it cannot pass the batch threshold. A lone material may only correct existing",
+    "knowledge, never create a new long-term conclusion, and the correction must pass",
+    "the same-fact check (same object, matter, scope and time) and the reliability",
+    "check. A refused correction is reported with the old content, the candidate, its",
+    "sources, the check's verdict and what to look into next; the materials stay.",
+    "",
+    "A correction that lands replaces only the corrected fact: the merged text keeps",
+    "the old row's other facts, and a final content check runs before anything is",
+    "written. When the merge fails, comes back empty or the final check fails, the",
+    "replacement is withheld and the run reports the correction as incomplete (exit 1);",
+    "the previous knowledge stays live.",
     "",
     "--dry-run runs the identical path inside a rolled-back transaction: nothing is",
     "saved (no knowledge, no material state, no version relation, no summary change).",
@@ -72,6 +85,16 @@ function help(): string {
   ].join("\n");
 }
 
+// The same formatter is used by the CLI and its regression test: refusals
+// must show the old knowledge that was deliberately kept live.
+export function formatIncompleteCorrection(d: ConsolidateReport["incompleteDetails"][number]): string {
+  return "correction incomplete (" + d.stage + "): knowledge " + d.oldId + " was NOT replaced" +
+    (d.reason ? "; " + d.reason : "") + "\n" +
+    "  old: " + d.oldContent + "\n" +
+    "  candidate: " + d.candidate + "\n" +
+    "  sources: " + d.evidence.map((e) => e.url).join(", ") + "\n";
+}
+
 export async function runConsolidate(argv: string[]): Promise<number> {
   const cmd = argv[0];
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
@@ -84,7 +107,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // THIS command's own options. A session id may legitimately start with `--`
   // (the scope rule accepts any visible ASCII), and the old prefix test made the
   // CLI refuse handles the MCP entry accepts.
-  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply"]);
+  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply", "--single-evidence"]);
   const sessionIds: string[] = [];
   const memoryIds: number[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -111,13 +134,14 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       i++;
       continue;
     }
-    if (a !== "--dry-run" && a !== "--apply") {
+    if (a !== "--dry-run" && a !== "--apply" && a !== "--single-evidence") {
       process.stderr.write("ans consolidate: unknown flag " + a + "\n");
       return 2;
     }
   }
 
   const dryRun = args.includes("--dry-run");
+  const allowSingleEvidence = args.includes("--single-evidence");
   const li = args.indexOf("--limit");
   const limit = li >= 0 ? Number(args[li + 1]) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
@@ -199,10 +223,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   let r: ConsolidateReport;
   try {
     r = await store.consolidateMemory(
-      { dryRun, ...(limit !== undefined ? { limit } : {}), scope },
+      { dryRun, ...(limit !== undefined ? { limit } : {}), scope, ...(allowSingleEvidence ? { allowSingleEvidence: true } : {}) },
       // This run's own seams: the usage counter belongs to this invocation, so
       // it is passed in rather than parked on the store.
-      seams ? { summarize: seams.summarize, classify: seams.classify } : undefined,
+      seams
+        ? { summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal }
+        : undefined,
     );
   } catch (e) {
     if (isConsolidationBudgetError(e)) {
@@ -219,6 +245,10 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       ": scanned " + r.clustersScanned + " cluster(s), triggered " + r.clustersTriggered +
       ", llmUnavailable " + r.llmUnavailable + ", gateRejected " + r.gateRejected +
       ", add " + r.add + ", noop " + r.noop + ", update " + r.update +
+      (r.singleEvidenceSkipped > 0 ? ", singleEvidenceSkipped " + r.singleEvidenceSkipped : "") +
+      (r.supersededClusterSkipped > 0 ? ", supersededClusterSkipped " + r.supersededClusterSkipped : "") +
+      (r.verifyRejected > 0 ? ", verifyRejected " + r.verifyRejected : "") +
+      (r.correctionsIncomplete > 0 ? ", correctionsIncomplete " + r.correctionsIncomplete : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") + "\n",
   );
 
@@ -241,6 +271,40 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       "update outside scope: knowledge " + u.oldId + " -> " + u.newId +
         " (replaced; its materials outside this scope: " + u.outsideScopeMaterialIds.join(", ") + ")\n",
     );
+  }
+  // A landed correction says WHY it was accepted, so "same fact, reliable,
+  // explicit correction" is visible rather than a keyword hit.
+  //
+  // In a dry-run this word must not be "verified": the write was rolled back,
+  // so nothing landed. The preview keeps the same information, labelled as what
+  // it is — a correction that WOULD land.
+  for (const c of r.verifiedCorrections) {
+    process.stdout.write(
+      (dryRun ? "correction that would land: knowledge " : "verified correction: knowledge ") + c.oldId +
+        " sameFact=" + c.sameFact + " reliable=" + c.reliable +
+        (c.relation ? " relation=" + c.relation : "") +
+        (c.reason ? " (" + c.reason + ")" : "") + "\n",
+    );
+  }
+  // D6: a refused correction hands the caller everything needed to keep
+  // investigating — old content, the candidate, its sources, the check's
+  // verdict and reason, and what to look into next. The materials stay.
+  for (const d of r.verifyDetails) {
+    process.stdout.write(
+      "correction refused: knowledge " + d.oldId +
+        " sameFact=" + d.sameFact + " reliable=" + d.reliable +
+        (d.relation ? " relation=" + d.relation : "") + "\n" +
+        "  old: " + d.oldContent + "\n" +
+        "  candidate: " + d.candidate + "\n" +
+        "  sources: " + d.evidence.map((e) => e.url).join(", ") + "\n" +
+        (d.reason ? "  reason: " + d.reason + "\n" : "") +
+        "  next: " + d.followUp + "\n",
+    );
+  }
+  // D7: a withheld replacement is named as incomplete — which stage failed and
+  // why, with the same evidence a retry would need. The old knowledge is live.
+  for (const d of r.incompleteDetails) {
+    process.stdout.write(formatIncompleteCorrection(d));
   }
 
   if (seams) {
@@ -273,6 +337,18 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       "ans consolidate: stopped by the session budget (" + r.budgetRejected +
         " call(s) refused); " +
         (r.add + r.update === 0 ? "nothing was written." : "the rest of the scope was not processed.") + "\n",
+    );
+    return 1;
+  }
+  // A withheld correction is the same kind of "not finished": the caller asked
+  // for a correction and it did not land. The previous knowledge stays live and
+  // the report says which stage failed, but exit 0 would read as success to an
+  // automated caller that only checks the code.
+  if (r.correctionsIncomplete > 0) {
+    process.stderr.write(
+      "ans consolidate: " + r.correctionsIncomplete +
+        " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+        (r.update > 0 ? (r.dryRun ? " " + r.update + " other correction(s) would land." : " " + r.update + " other correction(s) did land.") : "") + "\n",
     );
     return 1;
   }

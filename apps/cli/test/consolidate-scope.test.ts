@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runConsolidate } from "../src/commands/consolidate.js";
+import { formatIncompleteCorrection, runConsolidate } from "../src/commands/consolidate.js";
 
 for (const key of ["ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANS_LLM_API_KEY"]) {
   delete process.env[key];
@@ -138,6 +138,52 @@ test("help documents the scope requirement and the cost basis", async () => {
   assert.match(r.out, /--memory/);
   assert.match(r.out, /not-called, unknown, a price estimate, or a server-returned/i);
   assert.match(r.out, /unknown cost is never shown as zero/i);
+});
+
+// --- #261: the single-evidence correction flag ------------------------------
+
+test("--single-evidence is a known flag: accepted, does not eat the next value", async () => {
+  const r = await run(["--single-evidence", "--memory", "5", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: memory 5/);
+  // No unknown-flag error, and --memory still got its id.
+  assert.doesNotMatch(r.err, /unknown flag/);
+});
+
+test("--single-evidence with a session scope runs and the flag is not confused with --session", async () => {
+  const r = await run(["--session", "cli-single", "--single-evidence", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: session cli-single/);
+});
+
+test("help documents the single-evidence exception and the withheld-correction exit", async () => {
+  const r = await run(["--help"]);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /--single-evidence/);
+  assert.match(r.out, /may only correct existing\s+knowledge/i);
+  assert.match(r.out, /correction as incomplete \(exit 1\)/i);
+});
+
+test("CLI incomplete correction prints retained old knowledge, candidate and sources", () => {
+  // Use the actual formatter called by runConsolidate: an ordinary empty-store
+  // command cannot reach the incomplete-correction branch without model seams.
+  for (const stage of ["merge-failed", "merge-empty", "final-check"] as const) {
+    const out = formatIncompleteCorrection({
+      oldId: 42,
+      oldContent: "Support hours weekdays; email help@acme.example.",
+      candidate: "Support hours now 24x7.",
+      evidence: [{ title: "Official update", snippet: "24x7", url: "https://acme.example/notice" }],
+      stage,
+      reason: "unable to preserve old facts",
+    });
+    assert.match(out, new RegExp("correction incomplete \\(" + stage + "\\)"));
+    assert.match(out, /knowledge 42 was NOT replaced/);
+    assert.match(out, /old: Support hours weekdays; email help@acme\.example/);
+    assert.match(out, /candidate: Support hours now 24x7/);
+    assert.match(out, /sources: https:\/\/acme\.example\/notice/);
+    assert.ok(out.indexOf("  old: ") < out.indexOf("  candidate: "),
+      "old knowledge must precede candidate for " + stage);
+  }
 });
 
 rmSync(dir, { recursive: true, force: true });

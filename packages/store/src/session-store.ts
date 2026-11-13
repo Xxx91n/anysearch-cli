@@ -31,6 +31,8 @@ import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive 
 import type {
   ConsolidateSummarizeFn,
   ConsolidateClassifyFn,
+  ConsolidateVerifyFn,
+  ConsolidateFinalCheckFn,
   ConsolidateReport,
   ConsolidateRunOptions,
   ArchiveCandidate,
@@ -229,6 +231,8 @@ export interface SessionStore {
   consolidateMemory?(opts?: ConsolidateRunOptions, deps?: {
     summarize?: ConsolidateSummarizeFn;
     classify?: ConsolidateClassifyFn;
+    verify?: ConsolidateVerifyFn;
+    verifyFinal?: ConsolidateFinalCheckFn;
   }): Promise<ConsolidateReport>;
 }
 
@@ -295,6 +299,10 @@ export interface RelationTelemetry {
   dedupSkipped: number;
   // repeat-episode attempts against a live write-once related_to edge — NOT dedup
   relatedToWriteOnce: number;
+  // Edges closed because the material supporting them was superseded, so the
+  // current material could re-establish the relation (#273 review). Counted
+  // apart from dedup: this is a replacement, not a duplicate.
+  supersededSupportClosed: number;
   schemaRejected: number;
   pendingEdges: number;
   armQueries: number;
@@ -370,6 +378,8 @@ export class SqliteSessionStore implements SessionStore {
   // `deps` argument overrides them without mutating this instance.
   private readonly consolidateSummarize?: ConsolidateSummarizeFn;
   private readonly consolidateClassify?: ConsolidateClassifyFn;
+  private readonly consolidateVerify?: ConsolidateVerifyFn;
+  private readonly consolidateVerifyFinal?: ConsolidateFinalCheckFn;
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // step7: entity arm telemetry counters (report-only in eval).
@@ -379,7 +389,7 @@ export class SqliteSessionStore implements SessionStore {
   // relation extraction + arm telemetry (report-only, never gated).
   // alert-on-silence — event write failures and bootstrap degradation are counted.
   private readonly accessEventTel: AccessEventTelemetry = { writeFailures: 0, bootstrapFailed: false };
-  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
+  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, supersededSupportClosed: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
     ensureSession: Database.Statement;
@@ -406,11 +416,19 @@ export class SqliteSessionStore implements SessionStore {
     // consolidation seams (same injection discipline as relationLlmFallback).
     consolidateSummarize?: ConsolidateSummarizeFn;
     consolidateClassify?: ConsolidateClassifyFn;
+    // #261: the two checks a replacement must pass. Both optional at the type
+    // level because old callers exist, but a run that OMITS them refuses every
+    // replacement rather than writing on faith — missing seams are a refusal,
+    // not a lenient pass.
+    consolidateVerify?: ConsolidateVerifyFn;
+    consolidateVerifyFinal?: ConsolidateFinalCheckFn;
   }) {
     this.entityLlmFallback = opts?.entityLlmFallback;
     this.relationLlmFallback = opts?.relationLlmFallback;
     this.consolidateSummarize = opts?.consolidateSummarize;
     this.consolidateClassify = opts?.consolidateClassify;
+    this.consolidateVerify = opts?.consolidateVerify;
+    this.consolidateVerifyFinal = opts?.consolidateVerifyFinal;
     // tracked opener: the teardown registry closes it on any store-side exit
     // path that drains it (eval runner, test processes) — F-16 fix, #183.
     this.db = openDatabase(dbPath, { timeout: 5000 });
@@ -486,6 +504,28 @@ export class SqliteSessionStore implements SessionStore {
     this.applyColumnMigration("entity_merge_log.resolved", "ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT", initDeadline);
     // soft archive (reversible forgetting).
     this.applyColumnMigration("retrieval_results.archived", "ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0", initDeadline);
+    // #261: correction propagation. An episode whose fact a later consolidation
+    // replaced keeps its row (provenance) but leaves current-fact recall; the
+    // column names the knowledge row that replaced it. New databases already
+    // carry the column from the CREATE TABLE above.
+    this.applyColumnMigration("retrieval_results.superseded_by", "ALTER TABLE retrieval_results ADD COLUMN superseded_by INTEGER", initDeadline);
+    this.applyColumnMigration("semantic_memories.superseded_by", "ALTER TABLE semantic_memories ADD COLUMN superseded_by INTEGER", initDeadline);
+    // #261: an existing database gains the new knowledge FTS table from the
+    // schema script, but it starts EMPTY — the CREATE VIRTUAL TABLE only
+    // registers the index, it does not copy rows that were already there. A
+    // rebuild is idempotent and cheap (one pass over the knowledge table), so
+    // doing it at every start costs nothing and keeps the keyword lane correct
+    // for old archives. Failing here must not block the start (the vector lane
+    // still works), so it degrades to a warning unless the database is busy.
+    try {
+      withInitBusyRetry(
+        "semantic fts rebuild",
+        () => this.db.exec("INSERT INTO semantic_memories_fts(semantic_memories_fts) VALUES('rebuild')"),
+        initDeadline,
+      );
+    } catch (e) {
+      this.warnOrRefuseWhenContended(e, "[warn] semantic_memories_fts rebuild failed: ");
+    }
     // T0 durable preferences — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
@@ -544,7 +584,7 @@ export class SqliteSessionStore implements SessionStore {
       // recall_memory searches the research archive (retrieval_results_fts), not messages.
       // ->: freshness_factor in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
-     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY rank LIMIT ?"),
       // L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // same exactly-once site — each returned hit logs one access event.
@@ -827,25 +867,34 @@ export class SqliteSessionStore implements SessionStore {
   // row records a domain origin; the store is the isolation unit.
   // See docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
-   const safeQuery = this.fts5Escape(query);
+    const safeQuery = this.fts5Escape(query);
+    // Spare rows per arm (#273 review). The liveness filter below can drop a
+    // candidate (a correction closed it between the SQL reads), and every arm
+    // used to cap its fetch at `limit` — so the dropped row's slot had nothing
+    // left to refill it with and the answer came back short. Reading a small
+    // margin past `limit` gives the filter something to promote.
+    const fetchLimit = limit + Math.max(4, Math.ceil(limit / 4));
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
    // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
-   if (rawHits.length < limit) {
+   if (rawHits.length < fetchLimit) {
      const relaxed = fts5RelaxedQuery(query);
      if (relaxed) {
        const terms = relaxedTerms(query);
-       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, limit * 4) as MemoryHit[])
+       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
          .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
-       rawHits = appendRelaxed(rawHits, wide, limit);
+       rawHits = appendRelaxed(rawHits, wide, fetchLimit);
      }
    }
    // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
-   const armHits = this.entityArmRows(query, limit);
-   const vecHits = await this.vectorArmRows(query, limit);
+   const armHits = this.entityArmRows(query, fetchLimit);
+   const vecHits = await this.vectorArmRows(query, fetchLimit);
    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
-   const relHits = this.relationArmRows(query, limit);
+   const relHits = this.relationArmRows(query, fetchLimit);
    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+   // Kept at `limit`: the arm allocates slots between its own keyword and vector
+   // lanes, so widening it would change that allocation and let the vector lane
+   // take the slot a keyword hit needed.
    const semHits = await this.semanticArmRows(query, limit);
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
@@ -863,8 +912,39 @@ export class SqliteSessionStore implements SessionStore {
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
+    // Material candidates from the episode arms were read BEFORE the awaits that
+    // fetch vectors and knowledge. A correction committed in that window leaves
+    // them holding rows that are now closed, while the knowledge lane already
+    // sees the successor — one answer would then carry both versions (#273
+    // review). The semantic lane rechecks its own rows; this covers the rest.
+    //
+    // Read over every candidate id (not just the first `limit`) because the
+    // filter now runs DURING the collection below: a stale row must not take a
+    // slot and then be dropped, which would return fewer than `limit` hits
+    // while a live successor sat further down the fusion order (#273 review).
+    const materialIds = Array.from(byId.values()).filter((h) => h.rowid > 0).map((h) => h.rowid);
+    let liveMaterials: Set<number> | null = null;
+    if (materialIds.length > 0) {
+      const ph = materialIds.map(() => "?").join(", ");
+      liveMaterials = new Set(
+        (this.db.prepare(
+          "SELECT id FROM retrieval_results WHERE id IN (" + ph + ") " +
+          "AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL",
+        ).all(...materialIds) as Array<{ id: number }>).map((r) => r.id),
+      );
+    }
    const fusedHits: MemoryHit[] = [];
-   for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
+   // read-side exit: rows written before the write guard (or via seed/test seams)
+   // must never surface back to the caller either. Applied while collecting so
+   // each dropped row frees its slot instead of shortening the answer.
+   for (const id of fusedIds) {
+     const h = byId.get(Number(id));
+     if (!h) continue;
+     if (h.rowid > 0 && liveMaterials !== null && !liveMaterials.has(h.rowid)) continue;
+     if (containsSecret(h.role + " " + h.content)) continue;
+     fusedHits.push(h);
+     if (fusedHits.length >= limit) break;
+   }
    // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
    const ftsIds = new Set(rawHits.map((h) => h.rowid));
    const entIds = new Set(armHits.map((h) => h.rowid));
@@ -882,14 +962,11 @@ export class SqliteSessionStore implements SessionStore {
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
      this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
-    // read-side exit: rows written before the write guard (or via seed/test seams)
-    // must never surface back to the caller either.
-    const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
     // L2: refresh last_accessed for each hit (access-time signal).
-    for (const hit of hits) {
+    for (const hit of fusedHits) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
-    return hits;
+    return fusedHits;
   }
 
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -1052,7 +1129,7 @@ export class SqliteSessionStore implements SessionStore {
     const rows = this.db.prepare(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, me.embedding as emb " +
       "FROM memory_embeddings me JOIN retrieval_results r ON r.id = me.memory_id " +
-      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0"
+      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0 AND r.superseded_by IS NULL"
     ).all() as Array<{ rowid: number; sessionId: string; role: string | null; content: string | null; emb: Buffer }>;
     const scored: Array<{ h: MemoryHit; s: number }> = [];
     for (const r of rows) {
@@ -1103,11 +1180,18 @@ export class SqliteSessionStore implements SessionStore {
    */
   async consolidateMemory(
     opts: ConsolidateRunOptions = {},
-    deps?: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn },
+    deps?: {
+      summarize?: ConsolidateSummarizeFn;
+      classify?: ConsolidateClassifyFn;
+      verify?: ConsolidateVerifyFn;
+      verifyFinal?: ConsolidateFinalCheckFn;
+    },
   ): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, {
       summarize: deps?.summarize ?? this.consolidateSummarize,
       classify: deps?.classify ?? this.consolidateClassify,
+      verify: deps?.verify ?? this.consolidateVerify,
+      verifyFinal: deps?.verifyFinal ?? this.consolidateVerifyFinal,
     }, opts);
   }
 
@@ -1128,22 +1212,318 @@ export class SqliteSessionStore implements SessionStore {
   // the RRF id-space collision-free vs retrieval_results.
   private async semanticArmRows(query: string, limit: number): Promise<MemoryHit[]> {
     this.semTel.queries++;
+    // #261 D8: a knowledge row is the only carrier of the facts a correction
+    // did not replace, so it must be reachable without an embedding on either
+    // side. The keyword lane below supplies that; the vector lane refines the
+    // order when embeddings exist. Both feed the same `semantic` arm, so the
+    // fusion registry keeps its closed label set.
+    // Both lanes must be read against ONE view of the knowledge table. The
+    // keyword lane used to read before `await embedText(...)` and the vector
+    // lane after it, so a correction committed in between left the keyword
+    // list holding the closed row and the vector list holding its successor —
+    // both then appeared in the merged result (#273 review). Reading both after
+    // the await removes the window; the validity re-check below covers anything
+    // closed between the two statements.
     const qv = await embedText(query, "query");
-    if (!qv) return [];
-    const rows = this.db
-      .prepare("SELECT id, content, embedding FROM semantic_memories WHERE valid_until IS NULL AND embedding IS NOT NULL")
-      .all() as Array<{ id: number; content: string; embedding: Buffer }>;
-    const scored: Array<{ h: MemoryHit; s: number }> = [];
-    for (const r of rows) {
-      const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
-      const sv = cosineSimilarity(qv, v);
-      scored.push({ h: { rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: -sv } as MemoryHit, s: sv });
+    const keyword = this.semanticKeywordRows(query, limit);
+    let vector: MemoryHit[] = [];
+    if (qv) {
+      const rows = this.db
+        .prepare("SELECT id, content, embedding FROM semantic_memories WHERE valid_until IS NULL AND embedding IS NOT NULL")
+        .all() as Array<{ id: number; content: string; embedding: Buffer }>;
+      const scored: Array<{ h: MemoryHit; s: number }> = [];
+      for (const r of rows) {
+        const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
+        const sv = cosineSimilarity(qv, v);
+        scored.push({ h: { rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: -sv } as MemoryHit, s: sv });
+      }
+      scored.sort((a, b) => b.s - a.s);
+      vector = scored.slice(0, limit).map((x) => x.h);
     }
-    scored.sort((a, b) => b.s - a.s);
-    const out = scored.slice(0, limit).map((x) => x.h);
+    // Merge, don't concatenate. Taking the vector list first and filling the
+    // rest from keywords would let `limit` embedded rows shut out the ONE row
+    // the keyword lane exists to rescue (a corrected row with no embedding) —
+    // the very case this lane is here for. So each lane keeps at least half the
+    // slots when it has candidates, and any spare goes to the vector lane
+    // (the more precise signal):
+    //   reserve = ceil(limit / 2)
+    //   vectorCount = min(vector.length, limit - min(keyword.length, reserve))
+    //   then fill the remainder from keyword, then from leftover vector.
+    // Validity recheck: the two SELECTs above are separate statements, so a
+    // concurrent correction can still close a row between them. Drop ids that
+    // are no longer live before merging, so one answer never carries both a
+    // replaced row and its successor.
+    if (keyword.length > 0 || vector.length > 0) {
+      const ids = [...keyword, ...vector].map((h) => Math.abs(h.rowid));
+      const ph = ids.map(() => "?").join(", ");
+      const liveRows = new Set(
+        (this.db.prepare("SELECT id FROM semantic_memories WHERE id IN (" + ph + ") AND valid_until IS NULL")
+          .all(...ids) as Array<{ id: number }>).map((r) => r.id),
+      );
+      const live = (h: MemoryHit): boolean => liveRows.has(Math.abs(h.rowid));
+      keyword.splice(0, keyword.length, ...keyword.filter(live));
+      vector.splice(0, vector.length, ...vector.filter(live));
+    }
+    const reserve = Math.ceil(limit / 2);
+    const keywordQuota = Math.min(keyword.length, reserve);
+    const vectorQuota = Math.min(vector.length, Math.max(0, limit - keywordQuota));
+    const out: MemoryHit[] = [];
+    const seen = new Set<number>();
+    const add = (h: MemoryHit): void => {
+      if (seen.has(h.rowid)) return;
+      seen.add(h.rowid);
+      out.push(h);
+    };
+    for (const h of vector.slice(0, vectorQuota)) add(h);
+    for (const h of keyword.slice(0, keywordQuota)) add(h);
+    // Spare slots: leftover vector first (precise), then leftover keyword.
+    for (const h of vector.slice(vectorQuota)) { if (out.length >= limit) break; add(h); }
+    for (const h of keyword.slice(keywordQuota)) { if (out.length >= limit) break; add(h); }
     this.semTel.hits += out.length;
     if (SEMANTIC_ARM_MODE === "serve") this.semTel.served += out.length;
-    return out;
+    return out.slice(0, limit);
+  }
+
+  // Keyword recall over live knowledge rows (semantic_memories_fts). Independent
+  // of the embedding arm on purpose: a correction's kept facts must stay
+  // retrievable even when no embedding can be computed for the query or the row.
+  //
+  // Two fallbacks behind the strict FTS rung, both mirroring the episode lane:
+  // - a relaxed OR rung, so a question with extra words ("what is the Acme
+  //   support email") still reaches a row that states the plain fact;
+  // - a LIKE rung for CJK, because `fts5EscapeQuery` strips non-ASCII (a pure
+  //   Chinese query becomes `""`), and the default unicode61 tokenizer glues a
+  //   whole Chinese run into one token, so `"客服邮箱"` could never MATCH it.
+  //   The LIKE rung is the only path that finds a Chinese fact without vectors.
+  private semanticKeywordRows(query: string, limit: number): MemoryHit[] {
+    const latin: Array<{ id: number; content: string; rank: number }> = [];
+    const cjk: Array<{ id: number; content: string; rank: number }> = [];
+    const otherScript: Array<{ id: number; content: string; rank: number }> = [];
+    // Independent indexed lane for rows matching both query scripts.
+    // Do not share 'seen' with the weaker one-script lanes.
+    const crossScript: Array<{ id: number; content: string; rank: number }> = [];
+    const seen = new Set<number>();
+    const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
+      (r: { id: number; content: string; rank: number }): void => {
+        if (seen.has(r.id)) return;
+        seen.add(r.id);
+        list.push(r);
+      };
+    const pushLatin = mark(latin);
+    const pushCjk = mark(cjk);
+    const pushOtherScript = mark(otherScript);
+
+    // 1) Strict FTS rung (latin words). Its rows are already known to match the
+    //    whole query, so no extra relevance filter applies.
+    const strict = this.fts5Escape(query);
+    if (strict !== '""') {
+      const stmt = this.db.prepare(
+        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+      );
+      for (const r of stmt.all(strict, limit) as Array<{ id: number; content: string; rank: number }>) pushLatin(r);
+      // 2) Relaxed rung (OR over content words) only when the strict rung
+      //    under-fills, and only for rows covering a strict majority of those
+      //    words — same rule as the episode lane. Without it an OR query for
+      //    "acme support email" would drag in anything containing "support".
+      if (latin.length < limit) {
+        const relaxed = fts5RelaxedQuery(query);
+        if (relaxed) {
+          const terms = relaxedTerms(query);
+          // Fetch relaxed candidates in pages and filter each page as it
+          // arrives, stopping once `limit` survivors are in hand. A fixed
+          // `limit * 2` fetch followed by filtering loses everything when the
+          // head of the list are one-word matches — the row covering the
+          // whole query can sit past the cut (#273 review).
+          // One ordered pass, filtered as it goes. The relaxed rung used to
+          // fetch a fixed `limit * 2` rows and filter afterwards; growing the
+          // LIMIT and slicing off the seen prefix re-reads and re-ranks the whole
+          // prefix every round, which on 10k one-word rows and limit 20 means
+          // ~1.25M rows transferred instead of 10k (#273 review).
+          //
+          // Iterating one cursor over the ranked rows keeps the scan linear and
+          // preserves "keep reading while the filtered count is short". The
+          // iterator is bounded so a pathological table cannot spin forever.
+          const BOUND = Math.max(limit * 20, 200);
+          let scanned = 0;
+          for (const r of stmt.iterate(relaxed, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
+            if (latin.length >= limit) break;
+            if (++scanned > BOUND) break;
+            if (coversMajority(terms, r.content)) pushLatin(r);
+          }
+        }
+      }
+    }
+
+    // 3) CJK rung. Runs whenever the query carries Han characters, even if the
+    //    ASCII part already filled `limit`: a mixed query like "Acme 客服邮箱"
+    //    is only half-served by FTS, and the half it misses is the one that
+    //    holds the kept Chinese fact.
+    //
+    //    Chinese has no spaces, so a question arrives as one long run
+    //    ("请问客服邮箱是什么") that never appears verbatim in a row stating
+    //    "客服邮箱为 help@example.com". Each run is therefore split into
+    //    overlapping slices, and the relevance floor is applied IN SQL before
+    //    LIMIT: filtering after the cut would let `limit` weak matches take the
+    //    slots and leave the strong one out.
+    if (/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(query)) {
+      const runs = query
+        .split(/[\s\p{P}\p{S}]+/u)
+        .filter((t) => /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(t));
+      const strong = new Set<string>();
+      for (const run of runs) {
+        const hanOnly = run.replace(/[^\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/g, "");
+        if (hanOnly.length < 2) continue;
+        // Slices of 4..6 characters. Three is excluded on purpose: a 3-character
+        // piece ("客服") sits in almost every support-related row, so matching
+        // it is not evidence for one particular question — with LIMIT applied,
+        // those weak rows would take the slot and the strong row would never be
+        // seen (#273 round 5).
+        //
+        // A SHORT run is taken whole instead: "邮箱" or "负责人" is a complete
+        // word, and a 4-character floor would leave such a query with no slice
+        // at all, making it unreachable without embeddings (#273 review).
+        if (hanOnly.length < 4) {
+          strong.add(hanOnly);
+          continue;
+        }
+        const maxLen = Math.min(6, hanOnly.length);
+        for (let len = maxLen; len >= 4; len--) {
+          for (let i = 0; i + len <= hanOnly.length; i++) strong.add(hanOnly.slice(i, i + len));
+        }
+      }
+      // Slice budget. A long question ("请帮我确认一下甲公司客服邮箱", 14 chars)
+      // yields ~19 six/five-char slices before the four-char ones, so a plain
+      // "keep the first 24" drops the SHORT slice at the tail ("客服邮箱") —
+      // exactly the fact word a caller asks about. Keep a few of every length,
+      // and spread the picks across the whole run so both the head ("甲公司")
+      // and the tail ("邮箱") stay represented (#273 review).
+      const SPAN = 24;
+      const byLen = new Map<number, string[]>();
+      for (const t of strong) {
+        const arr = byLen.get(t.length) ?? [];
+        arr.push(t);
+        byLen.set(t.length, arr);
+      }
+      const lengths = [...byLen.keys()].sort((a, b) => b - a); // longest first
+      const grams: string[] = [];
+      // Round-robin over lengths, taking the outermost positions of each length
+      // first: index 0, last, 1, last-1, … — that keeps head and tail words.
+      const picks = new Map<number, string[]>();
+      for (const len of lengths) {
+        const all = byLen.get(len)!;
+        const ordered: string[] = [];
+        for (let i = 0, j = all.length - 1; i <= j; i++, j--) {
+          ordered.push(all[i]!);
+          if (i !== j) ordered.push(all[j]!);
+        }
+        picks.set(len, ordered);
+      }
+      for (let round = 0; grams.length < SPAN; round++) {
+        let took = false;
+        for (const len of lengths) {
+          const arr = picks.get(len)!;
+          if (round < arr.length) {
+            grams.push(arr[round]!);
+            took = true;
+            if (grams.length >= SPAN) break;
+          }
+        }
+        if (!took) break;
+      }
+      // Two rounds, strong facts first. A query like "甲公司 客服邮箱是什么"
+      // yields both the object name (甲公司, 3 chars) and the fact word
+      // (客服邮箱, 4 chars). OR-ing them together lets any row mentioning the
+      // OBJECT fill the LIMIT before the row holding the FACT is reached —
+      // "甲公司每周一发布新版。" would win over "客服邮箱为 help@jia.example"
+      // (#273 review). So the 4+ character slices run alone first; the short
+      // object names only widen the search when that rung under-fills, which is
+      // what keeps a bare "邮箱" / "负责人" query working.
+      if (grams.length > 0) {
+        const runGran = (list: string[]): void => {
+          if (list.length === 0 || cjk.length >= limit) return;
+          const where = list.map(() => "s.content LIKE ?").join(" OR ");
+          const remaining = limit - cjk.length;
+          const rows = this.db
+            .prepare("SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?")
+            .all(...list.map((t) => "%" + t + "%"), remaining) as Array<{ id: number; content: string }>;
+          for (const r of rows) pushCjk({ id: r.id, content: r.content, rank: 0 });
+        };
+        const factGrams = grams.filter((t) => t.length >= 4);
+        const objectGrams = grams.filter((t) => t.length < 4);
+        runGran(factGrams);
+        runGran(objectGrams);
+      }
+    }
+    // Keyword fallback for scripts excluded by the ASCII query sanitizer.
+    // FTS5's unicode61 tokenizer handles case folding (e.g. почта / Почта)
+    // without scanning the whole table. LIKE is a bounded substring fallback
+    // for scripts or fragments that unicode61 does not tokenize usefully.
+    const otherWords = [...new Set(
+      (query.match(/[\p{L}\p{N}]+/gu) ?? [])
+        .filter((w) => /[^\x00-\x7F]/u.test(w) &&
+          !/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(w)),
+    )].slice(0, 8);
+    if (otherWords.length > 0) {
+      const asciiTerms = relaxedTerms(query);
+      if (asciiTerms.length > 0) {
+        // The intersection itself admits rows that match just ONE ASCII word.
+        // Scan bounded indexed candidates BEFORE trimming to 'limit', then use
+        // the same strict-majority filter as the relaxed Latin rung. Favor
+        // higher ASCII coverage before BM25, so a short two-word distractor
+        // cannot displace a row matching the entire mixed-script question.
+        const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
+        const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+        const scanBound = Math.max(limit * 20, 200);
+        const paired = this.db.prepare(
+          "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+          "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+        );
+        const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
+        const candidates = paired.iterate(
+          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound,
+        ) as Iterable<{ id: number; content: string; rank: number }>;
+        for (const row of candidates) {
+          if (!coversMajority(asciiTerms, row.content)) continue;
+          const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+          const coverage = asciiTerms.filter((term) => tokens.some((token) => token.startsWith(term))).length;
+          qualified.push({ row, coverage });
+        }
+        qualified.sort((a, b) => b.coverage - a.coverage || a.row.rank - b.row.rank);
+        crossScript.push(...qualified.slice(0, limit).map((candidate) => candidate.row));
+      }
+      const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+      const indexed = this.db.prepare(
+        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+      ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
+      for (const r of indexed) pushOtherScript(r);
+      // Keep a substring rung for languages where an indexed word differs
+      // from a useful query fragment; avoid the scan if FTS already filled.
+      if (otherScript.length < limit) {
+        const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
+        const rows = this.db.prepare(
+          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
+        ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+        for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+      }
+    }
+    // A query carrying Chinese is answered by the Chinese rows first: the
+    // ASCII rung only saw half the question, so letting its rows keep every
+    // slot would starve the half the caller actually typed (#273 round 5).
+    // Prefer evidence covering both ASCII and non-Han Unicode terms over
+    // partial matches. The existing Han-first rule is unchanged (#277).
+    const ordered = [...cjk, ...crossScript, ...otherScript, ...latin];
+    const resultSeen = new Set<number>();
+    return ordered.filter((r) => {
+      if (resultSeen.has(r.id)) return false;
+      resultSeen.add(r.id);
+      return true;
+    }).slice(0, limit).map((r) =>
+      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
   }
 
 
@@ -1477,7 +1857,7 @@ export class SqliteSessionStore implements SessionStore {
     const ids = matched.map((e) => e.id);
     const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // rank required by MemoryHit
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
-      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY r.created_at DESC LIMIT ?";
+      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
     this.entityTel.hits += rows.length;
     return rows;
@@ -1541,10 +1921,26 @@ export class SqliteSessionStore implements SessionStore {
       .get(memoryId, s.id, t.relation, o.id) as { id: number } | undefined;
     if (dup) { this.relationTel.dedupSkipped += 1; return; }
     const live = this.db
-      .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
-      .get(s.id, t.relation, o.id) as { id: number } | undefined;
-    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
-    if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+      .prepare("SELECT id, episode_memory_id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
+      .get(s.id, t.relation, o.id) as { id: number; episode_memory_id: number | null } | undefined;
+    // #273 review: an edge whose supporting material was superseded is already
+    // hidden from the relation arm (it describes the past). Counting it as a
+    // live `related_to` duplicate here would block the CURRENT material from
+    // re-establishing the same relation, so the relation would stay unusable
+    // forever. Close the dead edge first, then let this write proceed — the
+    // unique index is on live rows, so the old row has to go before the insert.
+    if (live) {
+      const supportDead = live.episode_memory_id !== null && this.db
+        .prepare("SELECT 1 AS dead FROM retrieval_results WHERE id = ? AND superseded_by IS NOT NULL")
+        .get(live.episode_memory_id) as { dead: number } | undefined;
+      if (supportDead) {
+        this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+        this.relationTel.supersededSupportClosed += 1;
+      } else {
+        if (t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
+        this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+      }
+    }
     this.db
       .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(s.id, o.id, t.relation, null, t.confidence, memoryId, RELATION_RULES_VERSION);
@@ -1566,7 +1962,11 @@ export class SqliteSessionStore implements SessionStore {
     const neighbors = this.db
       .prepare(
         "SELECT DISTINCT CASE WHEN e.source_entity_id IN (" + ph + ") THEN e.target_entity_id ELSE e.source_entity_id END as nid" +
-        " FROM edges e WHERE e.valid_until IS NULL AND (e.source_entity_id IN (" + ph + ") OR e.target_entity_id IN (" + ph + "))"
+        // An edge whose supporting material was superseded describes the past;
+        // following it would pull the neighbour's CURRENT materials in and
+        // present them as related to a fact that no longer holds (#273 review).
+        " FROM edges e WHERE e.valid_until IS NULL AND (e.source_entity_id IN (" + ph + ") OR e.target_entity_id IN (" + ph + "))" +
+        " AND NOT EXISTS (SELECT 1 FROM retrieval_results r WHERE r.id = e.episode_memory_id AND r.superseded_by IS NOT NULL)"
       )
       .all(...ids, ...ids, ...ids) as Array<{ nid: number }>;
     const allIds = Array.from(new Set([...ids, ...neighbors.map((n) => n.nid)]));
@@ -1575,7 +1975,7 @@ export class SqliteSessionStore implements SessionStore {
       .prepare(
         "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
         " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
-        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0" +
+        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0 AND r.superseded_by IS NULL" +
         " ORDER BY r.created_at DESC LIMIT ?"
       )
       .all(...allIds, Math.min(limit, 100)) as MemoryHit[];
@@ -1628,7 +2028,7 @@ export class SqliteSessionStore implements SessionStore {
         .prepare(
           "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
           " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-          " WHERE r.id > ? AND r.archived = 0 GROUP BY r.id ORDER BY r.id LIMIT ?"
+          " WHERE r.id > ? AND r.archived = 0 AND r.superseded_by IS NULL GROUP BY r.id ORDER BY r.id LIMIT ?"
         )
         .all(fromId, Math.min(batch, maxRows - res.scanned)) as ScanRow[];
     const processRow = (row: ScanRow): void => {
@@ -1685,6 +2085,7 @@ export class SqliteSessionStore implements SessionStore {
           scanned: res.scanned, lastId: res.lastId, ruleHits: this.relationTel.ruleHits,
           triplesWritten: this.relationTel.triplesWritten, dedupSkipped: this.relationTel.dedupSkipped,
           schemaRejected: this.relationTel.schemaRejected, relatedToWriteOnce: this.relationTel.relatedToWriteOnce,
+          supersededSupportClosed: this.relationTel.supersededSupportClosed,
         };
         let more = false;
         for (let attempt = 0; ; attempt++) {
@@ -1702,7 +2103,7 @@ export class SqliteSessionStore implements SessionStore {
           } catch (e) {
             if (isBusyRetryable(e) && attempt < 8) {
               Object.assign(res, { scanned: snap.scanned, lastId: snap.lastId });
-              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected, relatedToWriteOnce: snap.relatedToWriteOnce });
+              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected, relatedToWriteOnce: snap.relatedToWriteOnce, supersededSupportClosed: snap.supersededSupportClosed });
               await sleep(Math.min(50 * 2 ** attempt, 5000));
               continue;
             }

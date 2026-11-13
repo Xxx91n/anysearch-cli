@@ -33,6 +33,14 @@ export interface UsageTotals {
   costEstimated: boolean;
   // Assistant calls that actually returned usage.
   assistantCalls: number;
+  // Calls that were SENT but came back with no usage block at all. Their token
+  // figures are unknown, not zero: `assistantCalls` already counts them (the
+  // request happened), and this field is what lets the report name the gap
+  // instead of printing `in=0 out=0` as if the call were free (#273 review).
+  //
+  // Optional on purpose: the run ledger never sets it, so no existing
+  // initializer has to change.
+  callsWithoutUsage?: number;
   // Latest assistant message's totalTokens (input incl. cache + output of the
   // most recent LLM call). One input to the L0 watermark's occupancy:
   // max(this, estimateTranscriptTokens(messages)) in resolveContextOccupancy.
@@ -185,6 +193,10 @@ function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: stri
   const label = prefix ? prefix + " " : "";
   const missing: string[] = [];
   if (totals.assistantCalls === 0) missing.push(usageLabel);
+  // A call that was sent but reported no usage: its tokens are unknown. Naming
+  // them keeps `in=0 out=0` from reading as a free call. Placed before the
+  // cache/cost lines because tokens are the primary figure.
+  if ((totals.callsWithoutUsage ?? 0) > 0) missing.push(label + "token usage");
   if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push(label + "cache usage");
   // A locally estimated figure is not a provider report: say so, so the caller
   // never presents it as server-sent truth. A ledger that mixes both kinds
@@ -194,8 +206,13 @@ function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: stri
   return missing;
 }
 
-/** Summary-call report: the same ledger, labelled for the memory pipeline. */
-export interface SummaryUsage {
+/**
+ * One labelled slice of the memory pipeline's own model calls.
+ *
+ * Same honesty rules as the run ledger: a dimension that never arrived is
+ * named in `missing`, never rendered as a zero.
+ */
+export interface MemoryCallUsage {
   calls: number;
   inputTokens: number;
   outputTokens: number;
@@ -207,7 +224,18 @@ export interface SummaryUsage {
   missing: string[];
 }
 
-export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
+/** Summary-call report: the same ledger, labelled for the memory pipeline. */
+export interface SummaryUsage extends MemoryCallUsage {
+  /**
+   * The reuse/compress adjudication calls (D4 重判), kept apart from the
+   * summary slice so neither book inflates the other: a run that only
+   * adjudicated reports adjudication calls and summary calls 0, never a
+   * summary count the summaries did not produce.
+   */
+  adjudication: MemoryCallUsage;
+}
+
+function toMemoryCallUsage(totals: UsageTotals, usageLabel: string, prefix: string): MemoryCallUsage {
   return {
     calls: totals.assistantCalls,
     inputTokens: totals.inputTokens,
@@ -217,7 +245,14 @@ export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
     totalTokens: totals.totalTokens,
     costUsd: totals.costUsd,
     costSource: costSourceOf(totals),
-    missing: missingDimensions(totals, "summary usage", "summary"),
+    missing: missingDimensions(totals, usageLabel, prefix),
+  };
+}
+
+export function toSummaryUsage(totals: UsageTotals, adjudication: UsageTotals): SummaryUsage {
+  return {
+    ...toMemoryCallUsage(totals, "summary usage", "summary"),
+    adjudication: toMemoryCallUsage(adjudication, "adjudication usage", "adjudication"),
   };
 }
 

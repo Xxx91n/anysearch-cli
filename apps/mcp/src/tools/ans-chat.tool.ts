@@ -173,12 +173,14 @@ export function registerAnsChat(
           sessionId: requestedSessionId,
           operation = "chat",
           memoryIds,
+          allowSingleEvidence,
           dryRun,
         } = (args ?? {}) as {
           message?: string;
           sessionId?: string;
           operation?: "chat" | "consolidate";
           memoryIds?: number[];
+          allowSingleEvidence?: boolean;
           dryRun?: boolean;
         };
         if (operation === "consolidate") {
@@ -252,7 +254,10 @@ export function registerAnsChat(
             report = await store.consolidateMemory({
               dryRun: dryRun === true,
               scope,
-            }, seams ? { summarize: seams.summarize, classify: seams.classify } : undefined);
+              ...(allowSingleEvidence === true ? { allowSingleEvidence: true } : {}),
+            }, seams
+              ? { summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal }
+              : undefined);
           } catch (e) {
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
             return toolError("ans_chat", e instanceof Error ? e.message : String(e));
@@ -288,6 +293,28 @@ export function registerAnsChat(
                     (report.add + report.update === 0
                       ? "nothing was written."
                       : "the rest of the scope was not processed.") +
+                    "\n" + result.content.map((c) => c.text).join("\n"),
+                },
+              ],
+            };
+          }
+          // #261 (D7): a withheld correction means the requested change did not
+          // land. The work that DID happen is still reported — spend, scope,
+          // rows written — and the old knowledge stays live. isError carries
+          // "not completed" to automated callers that only read the flag.
+          if (report.correctionsIncomplete > 0) {
+            const result = buildAnsChatConsolidateResult(report, usage, metering.metered
+              ? {}
+              : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
+            return {
+              ...result,
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: "ans_chat consolidate: " + report.correctionsIncomplete +
+                    " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+                    (report.update > 0 ? (report.dryRun ? " " + report.update + " other correction(s) would land." : " " + report.update + " other correction(s) did land.") : "") +
                     "\n" + result.content.map((c) => c.text).join("\n"),
                 },
               ],

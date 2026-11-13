@@ -61,6 +61,9 @@ assert(decideOp(null, 0.5, false) === "add", "degraded: mid-jac without contradi
 // --- consolidation integration ---
 const SUMMARY_A = "Alpha service uses Beta library for builds. Release cadence is weekly.";
 const SUMMARY_B = "Alpha service does not use Beta library for builds. Release cadence is not weekly.";
+// A different fact set, used where the case needs a cluster untouched by the
+// contradiction runs above (the gate-absent ADD path).
+const SUMMARY_C = "Delta service runs on Epsilon for deploys. Rollout cadence is daily.";
 const store = new SqliteSessionStore(dbPath, {
   consolidateSummarize: async () => SUMMARY_A,
   consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
@@ -91,10 +94,18 @@ let rep2 = await store.consolidateMemory();
 assert(rep2.noop === 1 && rep2.add === 0 && rep2.update === 0, "rerun is NOOP (idempotent, D4)");
 assert(semRows()[0].ac === 1, "NOOP touched access_count");
 
-// contradiction UPDATE: negated summary, high token overlap -> soft-close old, write new
+// contradiction UPDATE: negated summary, high token overlap -> soft-close old, write new.
+// #261: a replacement now has to pass both checks, so this store supplies
+// checkers that say "same fact, reliable, explicit correction". What the case
+// still pins is the UPDATE op itself (soft-close + new row + source union).
+const CORRECTION_OK = {
+  consolidateVerify: async () => ({ alreadyCurrent: false, sameFact: true, reliable: true, relation: "correction" as const }),
+  consolidateVerifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+};
 const store2 = new SqliteSessionStore(dbPath, {
   consolidateSummarize: async () => SUMMARY_B,
   consolidateClassify: () => ({ label: "supported", confidence: 0.95 }),
+  ...CORRECTION_OK,
 });
 rep2 = await store2.consolidateMemory();
 assert(rep2.update === 1, "contradicting summary -> UPDATE op (D4)");
@@ -102,39 +113,149 @@ sem = semRows();
 assert(sem.length === 2 && sem.filter((r) => r.vu === null).length === 1, "UPDATE soft-closes old row, writes new (bi-temporal)");
 assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 
-// D7-1 fidelity negative: unsupported claim -> reject, no write
-const store3 = new SqliteSessionStore(dbPath, {
-  consolidateSummarize: async () => "Alpha service uses Gamma compiler for everything now.",
-  consolidateClassify: () => ({ label: "unsupported", confidence: 0.1 }),
-});
-rep2 = await store3.consolidateMemory();
-assert(rep2.gateRejected === 1 && rep2.add === 0 && rep2.update === 0 && rep2.noop === 0, "unsupported claim rejected by fidelity gate (D7-1)");
-assert(semRows().length === 2, "gate rejection wrote nothing");
+// D7-1 fidelity negative: unsupported claim -> reject, no write.
+// Own database: after the contradiction above every material of the original
+// cluster is superseded, and the fixed rule skips such a cluster before it ever
+// reaches the gate (#261). This case needs a cluster with a live material, so
+// it builds a fresh one.
+{
+  const gateDb2 = join(dir, "gate-negative.db");
+  const seed = new SqliteSessionStore(gateDb2, { consolidateSummarize: async () => SUMMARY_C });
+  const gs = await seed.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seed.adjudicateMemory(gs.id, [
+      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+    ]);
+  }
+  const rejecting = new SqliteSessionStore(gateDb2, {
+    consolidateSummarize: async () => "Delta service uses Zeta compiler for everything now.",
+    consolidateClassify: () => ({ label: "unsupported", confidence: 0.1 }),
+    ...CORRECTION_OK,
+  });
+  const repNeg = await rejecting.consolidateMemory();
+  assert(repNeg.gateRejected === 1 && repNeg.add === 0 && repNeg.update === 0 && repNeg.noop === 0,
+    "unsupported claim rejected by fidelity gate (D7-1); got gateRejected=" + repNeg.gateRejected);
+  const gn = new Database(gateDb2, { readonly: true });
+  const gnRows = gn.prepare("SELECT COUNT(*) c FROM semantic_memories").get() as { c: number };
+  gn.close();
+  assert(gnRows.c === 0, "gate rejection wrote nothing (rows=" + gnRows.c + ")");
+  seed.close();
+  rejecting.close();
+}
 
-// gate absent -> LOW_CONFIDENCE row (fail-open, never blocks). Same text as row1 vs live row2
-// (contradiction) -> op resolves to UPDATE per quadruple.
-const store4 = new SqliteSessionStore(dbPath, { consolidateSummarize: async () => SUMMARY_A });
-rep2 = await store4.consolidateMemory();
-assert(rep2.update === 1, "gate absent still runs ops (update expected here)");
-sem = semRows();
-assert(sem.length === 3, "row written even without fidelity gate");
-const live = sem.filter((r) => r.vu === null);
-assert(live.length === 1 && Math.abs(live[0].confidence - 0.2) < 1e-9, "gate-absent row carries LOW_CONFIDENCE 0.2 marker");
+// gate absent -> LOW_CONFIDENCE row (fail-open, never blocks). #261 needs this
+// case on its own database: after the contradiction above, every material of
+// this cluster is superseded, and the fixed rule then skips the cluster
+// instead of re-summarizing the past (pinned separately). What this case still
+// covers is the ADD path with no fidelity gate: new knowledge is written and
+// carries the LOW_CONFIDENCE marker rather than being blocked.
+{
+  const gateDb = join(dir, "gate-absent.db");
+  const seed = new SqliteSessionStore(gateDb, { consolidateSummarize: async () => SUMMARY_C });
+  const gs = await seed.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seed.adjudicateMemory(gs.id, [
+      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+    ]);
+  }
+  const rep4 = await seed.consolidateMemory();
+  assert(rep4.add === 1, "gate absent still runs ops (add expected here)");
+  const gd = new Database(gateDb, { readonly: true });
+  const gateRows = gd.prepare("SELECT confidence as c, valid_until as vu FROM semantic_memories ORDER BY id").all() as Array<{ c: number; vu: string | null }>;
+  gd.close();
+  assert(gateRows.length === 1, "gate absent: the row was written");
+  assert(Math.abs(gateRows[0]!.c - 0.2) < 1e-9, "gate absent: the row carries the LOW_CONFIDENCE 0.2 marker");
+  assert(gateRows[0]!.vu === null, "gate absent: the written row is live");
+  seed.close();
+
+  // The same state now has a superseded-only cluster story: the contradiction
+  // run above replaced every material of ITS cluster, so a rerun over that
+  // archive skips it rather than re-summarizing replaced facts.
+  const store4 = new SqliteSessionStore(dbPath, { consolidateSummarize: async () => SUMMARY_A });
+  rep2 = await store4.consolidateMemory();
+  assert(rep2.supersededClusterSkipped === 1 && rep2.add === 0 && rep2.update === 0,
+    "all materials replaced: the cluster is skipped, not re-summarized (got " +
+    rep2.supersededClusterSkipped + ", add=" + rep2.add + ", update=" + rep2.update + ")");
+  sem = semRows();
+  assert(sem.length === 2, "all materials replaced: no knowledge row was invented from them");
+  const live = sem.filter((r) => r.vu === null);
+  assert(live.length === 1, "all materials replaced: the corrected row stays the only live one");
+  store4.close();
+}
+
+// #261: without both checks a contradiction is refused, not written on faith.
+// Its own database on purpose: this case needs a freshly built knowledge row,
+// not whatever the earlier runs left behind.
+{
+  const nocheckDb = join(dir, "nocheck.db");
+  const seed = new SqliteSessionStore(nocheckDb, {
+    consolidateSummarize: async () => SUMMARY_A,
+    consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
+  });
+  const ns = await seed.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seed.adjudicateMemory(ns.id, [
+      { url: "https://ex.com/alpha", title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9 },
+    ]);
+  }
+  const seededReport = await seed.consolidateMemory();
+  assert(seededReport.add === 1, "no checker setup: one knowledge row was built");
+
+  const counter = new SqliteSessionStore(nocheckDb, {
+    consolidateSummarize: async () => SUMMARY_B,
+    consolidateClassify: () => ({ label: "supported", confidence: 0.95 }),
+    // deliberately no verify / verifyFinal
+  });
+  const repNoCheck = await counter.consolidateMemory();
+  assert(repNoCheck.update === 0 && repNoCheck.verifyRejected === 1,
+    "no checker: a contradiction is refused, not replaced (update=" + repNoCheck.update + ", verifyRejected=" + repNoCheck.verifyRejected + ")");
+  const refused = repNoCheck.verifyDetails[0];
+  assert(!!refused && refused.sameFact === false && refused.reliable === false,
+    "no checker: the refusal says no verdict was obtained");
+  const ro = new Database(nocheckDb, { readonly: true });
+  const rowsNow = ro
+    .prepare("SELECT content, valid_until as vu FROM semantic_memories ORDER BY id").all() as Array<{ content: string; vu: string | null }>;
+  ro.close();
+  assert(rowsNow.length === 1 && rowsNow[0]!.vu === null && rowsNow[0]!.content === SUMMARY_A,
+    "no checker: the old knowledge is still the only live row");
+  seed.close();
+  counter.close();
+}
 
 // --- semantic arm resolves on the single-query searchMemory path.
 // Pre-fix, negative synthetic rowids entered the RRF list but never the byId map -> silent drop.
 {
+  // The live row at this point is the corrected one from the contradiction run.
+  const liveRow = semRows().filter((r) => r.vu === null)[0]!;
   const hits = await store.searchMemory(SUMMARY_A, 5);
-  const semHit = hits.find((h) => h.rowid === -live[0].id);
+  const semHit = hits.find((h) => h.rowid === -liveRow.id);
   if (!semHit) { console.error("FAIL: semantic-only id resolves via searchMemory (r94 A1)"); process.exit(1); }
   assert(semHit.role === "(semantic)", "semantic hit carries the (semantic) role");
   assert(!!semHit.arms && semHit.arms.includes("semantic"), "hit provenance lists the semantic arm");
 }
 
-// summarize seam absent -> llmUnavailable, fail-open, no write
-const store5 = new SqliteSessionStore(dbPath);
-rep2 = await store5.consolidateMemory();
-assert(rep2.llmUnavailable === 1 && rep2.add === 0 && rep2.update === 0 && rep2.noop === 0, "missing summarize seam -> llmUnavailable, fail-open");
+// summarize seam absent -> llmUnavailable, fail-open, no write.
+// Own database for the same reason as the gate case: the original cluster is
+// fully superseded by now, and a superseded cluster is skipped before the
+// summarizer is consulted at all (#261).
+{
+  const llmDb = join(dir, "no-summarizer.db");
+  const seed = new SqliteSessionStore(llmDb, { consolidateSummarize: async () => SUMMARY_C });
+  const ls = await seed.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seed.adjudicateMemory(ls.id, [
+      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+    ]);
+  }
+  // A store with no summarize seam at all: the cluster triggers, the missing
+  // seam is reported, and nothing is written.
+  const bare = new SqliteSessionStore(llmDb);
+  const repBare = await bare.consolidateMemory();
+  assert(repBare.llmUnavailable === 1 && repBare.add === 0 && repBare.update === 0 && repBare.noop === 0,
+    "missing summarize seam -> llmUnavailable, fail-open; got llmUnavailable=" + repBare.llmUnavailable);
+  seed.close();
+  bare.close();
+}
 
 // --- D5 forget: reversible archive (D7-4) ---
 const seedRw = new Database(dbPath);
@@ -230,6 +351,6 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
   }
 }
 
-for (const st of [store, store2, store3, store4, store5]) st.close();
+for (const st of [store, store2]) st.close();
 rmSync(dir, { recursive: true, force: true });
 console.log("consolidate-forget: all assertions passed");
