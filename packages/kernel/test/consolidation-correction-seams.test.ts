@@ -126,15 +126,36 @@ const EVIDENCE: ConsolidateEvidence[] = [
 // --- verifyFinal: the final-content check -----------------------------------
 
 {
+  // All four criteria true: the only reply shape that lets a replacement land.
+  // `corrected` and `noExtras` are asserted explicitly — a parser that dropped
+  // them would still look "affirmative" if only supported/preserved were read,
+  // and the store would then refuse every real correction for no visible reason
+  // (#273 review).
   const session = fakeSession({
-    text: '{"supported": true, "preserved": true, "reason": "all facts kept"}',
+    text: '{"supported": true, "preserved": true, "corrected": true, "noExtras": true, "reason": "all facts kept, correction applied"}',
     usage: { input: 500, output: 40, totalTokens: 540 },
   });
   const seams = createConsolidationSeams(session);
   const verdict = await seams.verifyFinal({ oldContent: "old", finalContent: "merged", correctedContent: "new", evidence: EVIDENCE });
-  assert(verdict.supported === true && verdict.preserved === true, "verifyFinal: parses an affirmative verdict");
+  assert(verdict.supported === true && verdict.preserved === true,
+    "verifyFinal: parses supported/preserved");
+  assert(verdict.corrected === true, "verifyFinal: parses corrected (the accepted change is what got written)");
+  assert(verdict.noExtras === true, "verifyFinal: parses noExtras (no smuggled new fact)");
+  assert(verdict.reason === "all facts kept, correction applied", "verifyFinal: parses the reason");
   assert(seams.usage.calls === 1 && seams.usage.totalTokens === 540,
     "verifyFinal: the check call is accounted in the seam's usage ledger");
+}
+
+{
+  // Only two of the four fields present: the missing ones must read as false,
+  // not as "unasked, so fine". A parser defaulting them to true would let an
+  // incomplete reply approve a write.
+  const session = fakeSession({ text: '{"supported": true, "preserved": true, "reason": "all facts kept"}' });
+  const seams = createConsolidationSeams(session);
+  const verdict = await seams.verifyFinal({ oldContent: "old", finalContent: "merged", correctedContent: "new", evidence: EVIDENCE });
+  assert(verdict.supported === true && verdict.preserved === true, "verifyFinal: the two reported fields still parse");
+  assert(verdict.corrected === false, "verifyFinal: an absent `corrected` is a refusal, not a pass");
+  assert(verdict.noExtras === false, "verifyFinal: an absent `noExtras` is a refusal, not a pass");
 }
 
 {

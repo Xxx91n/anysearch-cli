@@ -1249,24 +1249,33 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   const store = openStore(db);
   const rw = new Database(join(dir, db), { readonly: false });
   // Four English-only rows first, so the strict rung has plenty to fill one slot.
+  // Their ASCII token is `email` — a FACT word, not an object name. That is
+  // deliberate (#273 review): a fixture where the ASCII half is a company name
+  // ("Acme") and the Chinese row belongs to a DIFFERENT company ("甲公司")
+  // would assert that a stranger's email answers an Acme question, which is
+  // exactly the cross-language binding gap this ticket does not close (tracked
+  // as its own issue). What this case pins is narrower and provable: the CJK
+  // rung runs even when the ASCII slot is already full.
   const englishRows = [
-    "Acme release cadence is weekly. Deploys happen on Monday.",
-    "Acme pricing tiers are published quarterly.",
-    "Acme partner program opens in spring.",
-    "Acme hiring plan covers three regions.",
+    "Acme support email is help@acme.example.",
+    "Acme billing email is bills@acme.example.",
+    "Acme press email is press@acme.example.",
+    "Acme hiring email is jobs@acme.example.",
   ];
   for (const content of englishRows) {
     rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
       .run(content);
   }
-  // The Chinese fact row, inserted last so it ranks behind the English rows.
+  // The Chinese fact row, inserted last so it ranks behind the English rows. It
+  // carries no company name, so returning it claims nothing about whose email
+  // it is — only that a Chinese fact about 客服邮箱 is reachable.
   rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
-    .run("甲公司客服邮箱为 help@jia.example，全年可用。");
+    .run("客服邮箱为 help@jia.example，全年可用。");
   rw.close();
 
   const lane = (store as unknown as {
     semanticKeywordRows(query: string, limit: number): Array<{ content: string }>;
-  }).semanticKeywordRows("Acme 客服邮箱是什么", 1);
+  }).semanticKeywordRows("客服邮箱是什么 email", 1);
   const got = lane.map((h) => String(h.content));
   assert(got.some((c) => c.includes("help@jia.example")),
     "kw mixed: with one ASCII slot already filled, the Chinese fact is still reached (got " +
@@ -1290,6 +1299,11 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     .run("Acme support email is help@acme.com.");
   rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, ?)")
     .run("Acme support email moved to help2@acme.com.", Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength));
+  // A third LIVE row, keyword-matchable like the stale one, so a freed slot has
+  // somewhere to go. Without it the fixture holds only one live row and both
+  // implementations return one hit — the assertion would not tell them apart.
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("Acme support email backup is help3@acme.com.");
   rw.close();
 
   // Close the FIRST row after the keyword read but before the vector read, the
@@ -1311,6 +1325,40 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   assert(!contents.some((c) => c.includes("help@acme.com.")),
     "stale read: the row closed mid-read is not returned alongside its successor (got " +
     JSON.stringify(contents.map((c) => c.slice(0, 26))) + ")");
+  // A dropped row frees its slot instead of shortening the answer (#273 review).
+  // The semantic lane filters its own rows, so this case is built on the
+  // MATERIAL lane: three keyword-matching materials, the first closed mid-read,
+  // limit 2. Filtering after the truncation keeps one material instead of two.
+  const matDir = "stale-slot.db";
+  const matStore = openStore(matDir);
+  const matIds: number[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const s = await matStore.createSession("eval");
+    const ra = await matStore.adjudicateMemory(s.id, [{
+      url: "https://acme.example/stale-" + i,
+      title: "Acme support email note " + i,
+      snippet: "Acme support email " + i + " is help" + i + "@acme.example.",
+      source: "tavily", evidence: 0.9, entity: "acme-stale",
+    }]);
+    matIds.push(ra[0]!.insertedId!);
+  }
+  const matAsAny = matStore as unknown as {
+    semanticKeywordRows(q: string, l: number): Array<{ rowid: number; content: string }>;
+  };
+  const matOriginal = matAsAny.semanticKeywordRows.bind(matAsAny);
+  matAsAny.semanticKeywordRows = (q: string, l: number) => {
+    const res = matOriginal(q, l);
+    const write = new Database(join(dir, matDir), { readonly: false });
+    write.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(matIds[0]);
+    write.close();
+    return res;
+  };
+  const matHits = await matStore.searchMemory("acme support email", 2);
+  assert(matHits.length === 2,
+    "stale read: the freed slot is refilled, not lost (materials=" + matHits.length + ", " +
+    JSON.stringify(matHits.map((h) => h.rowid)) + ")");
+  assert(!matHits.some((h) => h.rowid === matIds[0]),
+    "stale read: the closed material is not returned");
   store.close();
 }
 
@@ -1493,6 +1541,124 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "lane quota: the embedding-free knowledge row is still returned (got " +
     JSON.stringify(contents.map((c) => c.slice(0, 24))) + ")",
   );
+  store.close();
+}
+
+// --- 12. two clusters touching ONE knowledge row in a single run ----------
+// Both clusters are planned before anything is written, so both see the same
+// live row and the same source set. What the writes must not do (#273 review):
+//   (a) land a restatement on a row another cluster already closed — that
+//       reports a successful noop against dead knowledge and loses the
+//       materials from the successor;
+//   (b) write a source set from a stale snapshot, dropping the materials the
+//       earlier write already merged in. Those would never be retired by a
+//       later correction, so their stale text stays recallable.
+//
+// Construction: one knowledge row, then two entity clusters of 3 live
+// materials each. Clusters iterate in entity order, so the notice cluster
+// (update) writes first and the restate cluster (noop) arrives second, on a
+// row that is already closed.
+{
+  const db = "run-collision.db";
+  const store = openStore(db);
+  const shared = "Acme support hours are weekdays 9:00-17:00.";
+  const seed = await store.createSession("eval");
+  await buildKnowledge(store, db, seed.id, "acme-shared", shared, "https://acme.example/base");
+
+  // Cluster "acme-notice" sorts before "acme-restate", so the correction runs first.
+  // Its text deliberately reuses the old wording ("hours ... weekdays") so the
+  // pair scores as the SAME topic and reaches the relationship check; a
+  // unrelated phrasing would decide `add` and the two clusters would never
+  // compete for the same row.
+  const sessB = await store.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seedEpisode(store, sessB.id, "https://acme.example/notice-" + i, "Acme notice " + i,
+      "Acme support hours are 24x7 now, not weekdays.", "acme-notice");
+  }
+  const sessA = await store.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seedEpisode(store, sessA.id, "https://acme.example/restate-" + i, "Acme restate " + i, shared, "acme-restate");
+  }
+
+  const rep = await store.consolidateMemory(
+    { scope: { by: "session", sessionIds: [sessA.id, sessB.id], memoryIds: [], sessionIdNotApplied: false } },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) => {
+        if (eps.some((e) => e.title === "CURRENT KNOWLEDGE")) {
+          return "Acme support hours are 24x7 now, not weekdays. Support email is help@acme.com.";
+        }
+        return eps.some((e) => String(e.url).includes("/restate-"))
+          ? shared
+          : "Acme support hours are 24x7 now, not weekdays.";
+      },
+      classify: SUPPORTED,
+      verify: async () => CORRECTION,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+
+  assert(rep.update === 1,
+    "run collision: the first cluster's correction lands (update=" + rep.update + ")");
+  assert(rep.noop === 0,
+    "run collision: the later restatement does NOT also write to the closed row (noop=" + rep.noop + ")");
+  assert(rep.verifyRejected === 1,
+    "run collision: the losing cluster is reported as a conflict, not silence (verifyRejected=" + rep.verifyRejected + ")");
+  const liveRows = q(db, "SELECT COUNT(*) c FROM semantic_memories WHERE valid_until IS NULL").c;
+  assert(liveRows === 1, "run collision: exactly one live knowledge row survives (live=" + liveRows + ")");
+  const live = q(db, "SELECT source_episode_ids src FROM semantic_memories WHERE valid_until IS NULL");
+  assert(JSON.parse(live.src).length >= 4,
+    "run collision: the successor's source set carries the corrected materials too (src=" + live.src + ")");
+  store.close();
+}
+
+// --- 12b. a non-exact paraphrase is judged, not counted as a duplicate ----
+// decideOp calls cosine > theta a `noop`, and cosine stays high when only the
+// wording changes. With low token overlap the old code skipped the relationship
+// check and left the old value current forever (#273 review).
+//
+// The fixture makes that exact shape deterministic: the stored row carries the
+// embedding `embedText` would compute for the candidate, so cosine is 1.0,
+// while the two texts share almost no words (Jaccard well under
+// SAME_TOPIC_JACCARD). Only the `op === "noop"` leg can send this to the
+// checker — drop it and the candidate is counted as a duplicate.
+//
+// Verified by mutation: removing `|| op === "noop"` from the batch gate makes
+// this case report noop=1 / update=0.
+{
+  const db = "paraphrase-nodup.db";
+  const store = openStore(db);
+  const oldContent = "Acme office hours are 09:00 to 17:00 on weekdays.";
+  const candidate = "Doors open at ten and close at six.";
+  // The passage prefix matters: embedText embeds `passage: <text>`, so a raw
+  // vector would give a cosine of ~0 and the case would test the wrong branch.
+  const vec = vecFor("passage: " + candidate);
+  const rw = new Database(join(dir, db), { readonly: false });
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, ?)")
+    .run(oldContent, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength));
+  rw.close();
+
+  const sess = await store.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await seedEpisode(store, sess.id, "https://acme.example/hours-" + i, "Acme hours note " + i,
+      candidate, "acme-hours");
+  }
+  const rep = await store.consolidateMemory(
+    { scope: { by: "session", sessionIds: [sess.id], memoryIds: [], sessionIdNotApplied: false } },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) =>
+        eps.some((e) => e.title === "CURRENT KNOWLEDGE")
+          ? "Doors open at ten and close at six. Support email is help@acme.com."
+          : candidate,
+      classify: SUPPORTED,
+      verify: async () => CORRECTION,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep.noop === 0,
+    "paraphrase: a different-wording candidate is not silently counted as a duplicate (noop=" + rep.noop + ")");
+  assert(rep.update === 1, "paraphrase: the checker's verdict decides, and the correction lands (update=" + rep.update + ")");
+  assert(String(q(db, "SELECT content FROM semantic_memories WHERE valid_until IS NULL").content).includes("ten"),
+    "paraphrase: the new value is the current knowledge");
   store.close();
 }
 

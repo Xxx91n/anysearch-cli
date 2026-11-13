@@ -620,6 +620,35 @@ export async function consolidateMemoryRun(
       });
     };
 
+    // The live row's current source set, read inside the write transaction.
+    // Returns null when the row is no longer live — the caller reports the
+    // same-run collision instead of writing to a closed row (#273 review).
+    //
+    // Reading it here (rather than trusting the planner's snapshot) is what
+    // keeps two clusters that touch ONE row from overwriting each other's
+    // materials: each write sees what the previous write already merged in.
+    const currentSources = (row: SemanticRow): number[] | null => {
+      const live = db
+        .prepare("SELECT source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+        .get(row.id) as { source_episode_ids: string } | undefined;
+      if (!live) return null;
+      try { return JSON.parse(live.source_episode_ids) as number[]; } catch { return []; }
+    };
+
+    // Two clusters in one run planned against the same live row and both passed
+    // their checks. The first write wins; the second is reported as an
+    // unresolved conflict instead of silently forking or editing dead knowledge.
+    const reportRunCollision = (row: SemanticRow, candidate: string, sources: ConsolidateEvidence[]): void => {
+      report.verifyRejected++;
+      report.verifyDetails.push({
+        oldId: row.id, oldContent: row.content, candidate, evidence: sources,
+        sameFact: true, reliable: true,
+        relation: "unclear",
+        reason: "this run already replaced the same knowledge row",
+        followUp: "同一次整理里另一个簇已经替换了这行知识；请先查看那次替换的结果，再单独处理这次的新材料。",
+      });
+    };
+
     for (const [, eps] of byEntity) {
       if (budgetStopped) break;
       if (opts.limit && processed >= opts.limit) break;
@@ -755,13 +784,17 @@ export async function consolidateMemoryRun(
       if (exactRestatement) {
         const row = best!;
         writes.push(() => {
+          // Liveness + current sources recheck: see `currentSources`. A
+          // correction planned earlier in this run may already have closed this
+          // row, and writing to it would land the materials on dead knowledge
+          // while reporting a successful noop (#273 review).
+          const current = currentSources(row);
+          if (!current) { reportRunCollision(row, summary!, evidence); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
           // so the fact this noop confirmed could come back after a correction.
-          let prev: number[] = [];
-          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          const merged = Array.from(new Set([...prev, ...epsIds])).sort((a, b) => a - b);
+          const merged = Array.from(new Set([...current, ...epsIds])).sort((a, b) => a - b);
           db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now'), source_episode_ids = ? WHERE id = ?")
             .run(JSON.stringify(merged), row.id);
           report.noop++;
@@ -824,7 +857,7 @@ export async function consolidateMemoryRun(
           report.singleEvidenceSkipped++;
           continue;
         }
-      } else if (best && bestJac > SAME_TOPIC_JACCARD) {
+      } else if (best && (bestJac > SAME_TOPIC_JACCARD || op === "noop")) {
         // #261 review: polarity alone cannot decide whether a candidate is a
         // correction. A same-polarity edit ("does not support REST, deploys run
         // weekly" -> "... monthly") disagrees with nothing by keyword, yet it
@@ -833,9 +866,14 @@ export async function consolidateMemoryRun(
         // (high token overlap) is handed to the relationship check, which is the
         // one place that can tell correction from restatement from new fact.
         //
-        // The op decided by decideOp still matters as the fallback: `noop`
-        // (near-verbatim duplicate) and `add` (a genuinely different statement)
-        // are handled above and below respectively.
+        // `op === "noop"` joins the condition (#273 review): decideOp treats a
+        // cosine above theta as a duplicate, and cosine stays high when the
+        // wording changes but the topic does not. A value edit in different
+        // words ("opens at 09:00" -> "doors open at ten") can score ~0.95
+        // cosine with low token overlap, so it never reached this branch and
+        // was counted as a duplicate — the old value stayed current forever.
+        // Only an EXACT restatement returns above, so anything arriving here
+        // with `noop` is a paraphrase and must be judged, not assumed away.
         if (!deps.verify) {
           refuseCorrection(best, summary, evidence, undefined);
           continue;
@@ -874,13 +912,23 @@ export async function consolidateMemoryRun(
         // through to `insert()` and become a second copy (#273 review).
         const row = best!;
         writes.push(() => {
+          // Liveness recheck (#273 review): a correction cluster that was
+          // planned earlier can close this row before this write runs. Touching
+          // it then would land the materials on a closed row and report `noop`
+          // success, leaving the successor without those sources and the facts
+          // still recallable. Report the conflict instead of writing.
+          //
+          // The source set is read HERE for the same reason: the planner's copy
+          // is a snapshot, so two clusters touching one row would each write a
+          // set missing the other's materials — and a later correction would
+          // never retire the lost ones (#273 review).
+          const current = currentSources(row);
+          if (!current) { reportRunCollision(row, summary!, evidence); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
           // so the fact this noop confirmed could come back after a correction.
-          let prev: number[] = [];
-          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          const merged = Array.from(new Set([...prev, ...epsIds])).sort((a, b) => a - b);
+          const merged = Array.from(new Set([...current, ...epsIds])).sort((a, b) => a - b);
           db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now'), source_episode_ids = ? WHERE id = ?")
             .run(JSON.stringify(merged), row.id);
           report.noop++;
@@ -976,27 +1024,21 @@ export async function consolidateMemoryRun(
           // That is allowed (shared knowledge is correctable by reliable new
           // material), but the report must show it instead of leaving a caller to
           // assume only the selected materials moved.
-          let prev: number[] = [];
-          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
+          //
           // Same-run collision guard (#273 review): two clusters in ONE run can
           // plan against the same live row (both read it before any write ran),
           // and both plans can pass their checks. Closing it twice would leave
           // two live successors for one old row. The first write wins; a later
           // cluster targeting the same row is reported as an unresolved
           // compatibility conflict instead of silently forking the knowledge.
-          const stillLive = db
-            .prepare("SELECT 1 AS ok FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
-            .get(row.id) as { ok: number } | undefined;
-          if (!stillLive) {
-            report.verifyRejected++;
-            report.verifyDetails.push({
-              oldId: row.id, oldContent: row.content, candidate: summary, evidence,
-              sameFact: true, reliable: true,
-              reason: "this run already replaced the same knowledge row",
-              followUp: "同一次整理里另一个簇已经替换了这行知识；请先查看那次替换的结果，再单独处理这次的新材料。",
-            });
-            return;
-          }
+          //
+          // The source set is read in the transaction, not from the planner's
+          // snapshot: a noop on the same row may already have merged its own
+          // materials into it, and writing the snapshot would drop them — those
+          // materials would then never be retired by a later correction (#273
+          // review). `currentSources` also carries the liveness check.
+          const prev = currentSources(row);
+          if (!prev) { reportRunCollision(row, summary!, evidence); return; }
           const newId = insert(prev, finalSummary, finalEmbBuf);
           db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
           // #273 review: only the materials this statement actually re-pointed.

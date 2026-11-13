@@ -738,12 +738,14 @@ export class MemoryPipeline {
                 // Without a usage block the old code left `calls` at 0, the CLI's
                 // `calls > 0` gate then suppressed the whole line, and a real
                 // (possibly billed) call vanished from the report. When usage is
-                // missing the call is counted and its dimensions are named
-                // missing, not rendered as free.
+                // missing the call is counted AND flagged, so the report names
+                // the unknown tokens instead of printing in=0 out=0 as if the
+                // call were free.
                 if (adj.usage) {
                   accumulateUsage(this.adjudicationUsage, { role: "assistant", usage: adj.usage });
                 } else {
                   this.adjudicationUsage.assistantCalls += 1;
+                  this.adjudicationUsage.callsWithoutUsage = (this.adjudicationUsage.callsWithoutUsage ?? 0) + 1;
                 }
                 if (adj.decision === "compress" && !deadline.aborted) {
                   fireCompress(deadline);

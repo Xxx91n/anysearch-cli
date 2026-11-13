@@ -299,6 +299,10 @@ export interface RelationTelemetry {
   dedupSkipped: number;
   // repeat-episode attempts against a live write-once related_to edge — NOT dedup
   relatedToWriteOnce: number;
+  // Edges closed because the material supporting them was superseded, so the
+  // current material could re-establish the relation (#273 review). Counted
+  // apart from dedup: this is a replacement, not a duplicate.
+  supersededSupportClosed: number;
   schemaRejected: number;
   pendingEdges: number;
   armQueries: number;
@@ -385,7 +389,7 @@ export class SqliteSessionStore implements SessionStore {
   // relation extraction + arm telemetry (report-only, never gated).
   // alert-on-silence — event write failures and bootstrap degradation are counted.
   private readonly accessEventTel: AccessEventTelemetry = { writeFailures: 0, bootstrapFailed: false };
-  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
+  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, supersededSupportClosed: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
     ensureSession: Database.Statement;
@@ -863,25 +867,34 @@ export class SqliteSessionStore implements SessionStore {
   // row records a domain origin; the store is the isolation unit.
   // See docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
-   const safeQuery = this.fts5Escape(query);
+    const safeQuery = this.fts5Escape(query);
+    // Spare rows per arm (#273 review). The liveness filter below can drop a
+    // candidate (a correction closed it between the SQL reads), and every arm
+    // used to cap its fetch at `limit` — so the dropped row's slot had nothing
+    // left to refill it with and the answer came back short. Reading a small
+    // margin past `limit` gives the filter something to promote.
+    const fetchLimit = limit + Math.max(4, Math.ceil(limit / 4));
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
    // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
-   if (rawHits.length < limit) {
+   if (rawHits.length < fetchLimit) {
      const relaxed = fts5RelaxedQuery(query);
      if (relaxed) {
        const terms = relaxedTerms(query);
-       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, limit * 4) as MemoryHit[])
+       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
          .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
-       rawHits = appendRelaxed(rawHits, wide, limit);
+       rawHits = appendRelaxed(rawHits, wide, fetchLimit);
      }
    }
    // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
-   const armHits = this.entityArmRows(query, limit);
-   const vecHits = await this.vectorArmRows(query, limit);
+   const armHits = this.entityArmRows(query, fetchLimit);
+   const vecHits = await this.vectorArmRows(query, fetchLimit);
    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
-   const relHits = this.relationArmRows(query, limit);
+   const relHits = this.relationArmRows(query, fetchLimit);
    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+   // Kept at `limit`: the arm allocates slots between its own keyword and vector
+   // lanes, so widening it would change that allocation and let the vector lane
+   // take the slot a keyword hit needed.
    const semHits = await this.semanticArmRows(query, limit);
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
@@ -899,8 +912,39 @@ export class SqliteSessionStore implements SessionStore {
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
+    // Material candidates from the episode arms were read BEFORE the awaits that
+    // fetch vectors and knowledge. A correction committed in that window leaves
+    // them holding rows that are now closed, while the knowledge lane already
+    // sees the successor — one answer would then carry both versions (#273
+    // review). The semantic lane rechecks its own rows; this covers the rest.
+    //
+    // Read over every candidate id (not just the first `limit`) because the
+    // filter now runs DURING the collection below: a stale row must not take a
+    // slot and then be dropped, which would return fewer than `limit` hits
+    // while a live successor sat further down the fusion order (#273 review).
+    const materialIds = Array.from(byId.values()).filter((h) => h.rowid > 0).map((h) => h.rowid);
+    let liveMaterials: Set<number> | null = null;
+    if (materialIds.length > 0) {
+      const ph = materialIds.map(() => "?").join(", ");
+      liveMaterials = new Set(
+        (this.db.prepare(
+          "SELECT id FROM retrieval_results WHERE id IN (" + ph + ") " +
+          "AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL",
+        ).all(...materialIds) as Array<{ id: number }>).map((r) => r.id),
+      );
+    }
    const fusedHits: MemoryHit[] = [];
-   for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
+   // read-side exit: rows written before the write guard (or via seed/test seams)
+   // must never surface back to the caller either. Applied while collecting so
+   // each dropped row frees its slot instead of shortening the answer.
+   for (const id of fusedIds) {
+     const h = byId.get(Number(id));
+     if (!h) continue;
+     if (h.rowid > 0 && liveMaterials !== null && !liveMaterials.has(h.rowid)) continue;
+     if (containsSecret(h.role + " " + h.content)) continue;
+     fusedHits.push(h);
+     if (fusedHits.length >= limit) break;
+   }
    // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
    const ftsIds = new Set(rawHits.map((h) => h.rowid));
    const entIds = new Set(armHits.map((h) => h.rowid));
@@ -918,32 +962,11 @@ export class SqliteSessionStore implements SessionStore {
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
      this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
-    // Material candidates from the episode arms were read BEFORE the awaits that
-    // fetch vectors and knowledge. A correction committed in that window leaves
-    // them holding rows that are now closed, while the knowledge lane already
-    // sees the successor — one answer would then carry both versions (#273
-    // review). The semantic lane rechecks its own rows; this covers the rest.
-    const materialIds = fusedHits.filter((h) => h.rowid > 0).map((h) => h.rowid);
-    let liveMaterials: Set<number> | null = null;
-    if (materialIds.length > 0) {
-      const ph = materialIds.map(() => "?").join(", ");
-      liveMaterials = new Set(
-        (this.db.prepare(
-          "SELECT id FROM retrieval_results WHERE id IN (" + ph + ") " +
-          "AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL",
-        ).all(...materialIds) as Array<{ id: number }>).map((r) => r.id),
-      );
-    }
-    // read-side exit: rows written before the write guard (or via seed/test seams)
-    // must never surface back to the caller either.
-    const hits = fusedHits
-      .filter((h) => h.rowid <= 0 || (liveMaterials !== null && liveMaterials.has(h.rowid)))
-      .filter((h) => !containsSecret(h.role + " " + h.content));
     // L2: refresh last_accessed for each hit (access-time signal).
-    for (const hit of hits) {
+    for (const hit of fusedHits) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
-    return hits;
+    return fusedHits;
   }
 
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -1831,10 +1854,26 @@ export class SqliteSessionStore implements SessionStore {
       .get(memoryId, s.id, t.relation, o.id) as { id: number } | undefined;
     if (dup) { this.relationTel.dedupSkipped += 1; return; }
     const live = this.db
-      .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
-      .get(s.id, t.relation, o.id) as { id: number } | undefined;
-    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
-    if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+      .prepare("SELECT id, episode_memory_id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
+      .get(s.id, t.relation, o.id) as { id: number; episode_memory_id: number | null } | undefined;
+    // #273 review: an edge whose supporting material was superseded is already
+    // hidden from the relation arm (it describes the past). Counting it as a
+    // live `related_to` duplicate here would block the CURRENT material from
+    // re-establishing the same relation, so the relation would stay unusable
+    // forever. Close the dead edge first, then let this write proceed — the
+    // unique index is on live rows, so the old row has to go before the insert.
+    if (live) {
+      const supportDead = live.episode_memory_id !== null && this.db
+        .prepare("SELECT 1 AS dead FROM retrieval_results WHERE id = ? AND superseded_by IS NOT NULL")
+        .get(live.episode_memory_id) as { dead: number } | undefined;
+      if (supportDead) {
+        this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+        this.relationTel.supersededSupportClosed += 1;
+      } else {
+        if (t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
+        this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+      }
+    }
     this.db
       .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(s.id, o.id, t.relation, null, t.confidence, memoryId, RELATION_RULES_VERSION);
@@ -1979,6 +2018,7 @@ export class SqliteSessionStore implements SessionStore {
           scanned: res.scanned, lastId: res.lastId, ruleHits: this.relationTel.ruleHits,
           triplesWritten: this.relationTel.triplesWritten, dedupSkipped: this.relationTel.dedupSkipped,
           schemaRejected: this.relationTel.schemaRejected, relatedToWriteOnce: this.relationTel.relatedToWriteOnce,
+          supersededSupportClosed: this.relationTel.supersededSupportClosed,
         };
         let more = false;
         for (let attempt = 0; ; attempt++) {
@@ -1996,7 +2036,7 @@ export class SqliteSessionStore implements SessionStore {
           } catch (e) {
             if (isBusyRetryable(e) && attempt < 8) {
               Object.assign(res, { scanned: snap.scanned, lastId: snap.lastId });
-              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected, relatedToWriteOnce: snap.relatedToWriteOnce });
+              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected, relatedToWriteOnce: snap.relatedToWriteOnce, supersededSupportClosed: snap.supersededSupportClosed });
               await sleep(Math.min(50 * 2 ** attempt, 5000));
               continue;
             }

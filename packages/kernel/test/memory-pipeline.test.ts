@@ -422,6 +422,34 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(usage.adjudication.missing.length > 0, "adjudication: an all-zero price is named missing, not free");
 }
 
+// Test: an adjudication call that reports NO usage still names its unknown
+// tokens. Counting the call alone left `in=0 out=0` looking like a free call,
+// and when other calls had already set cache/cost the MISSING line could vanish
+// entirely (#273 review).
+{
+  const store = new MockStore();
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    models: undefined,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: ((_m: any, _c: any) => (async function* () {
+      // A stream that ends without ever naming a final message: no usage block.
+      yield { type: "text_delta", delta: "reuse" };
+    })()) as any,
+    sessionId: "s1",
+  });
+  const msgs = Array.from({ length: 6 }, (_, i) => ({ role: "user", content: `msg${i}` }));
+  await pipeline.consolidate(msgs as any, 1000, true); // post-search path -> adjudication only
+  await pipeline.flush();
+  const usage = pipeline.getSummaryUsage();
+  assert(usage.adjudication.calls === 1, "adjudication no-usage: the call is still counted (calls=" + usage.adjudication.calls + ")");
+  assert(usage.adjudication.totalTokens === 0, "adjudication no-usage: no tokens were reported (total=" + usage.adjudication.totalTokens + ")");
+  assert(usage.adjudication.missing.some((m) => m.includes("token usage")),
+    "adjudication no-usage: the unknown tokens are named, not rendered as free (missing=" + JSON.stringify(usage.adjudication.missing) + ")");
+}
+
 // Test: consecutive REUSE cap = 3 forces direct COMPRESS (D8) — no adjudication on 4th.
 {
   const callLog = { count: 0 };

@@ -33,6 +33,14 @@ export interface UsageTotals {
   costEstimated: boolean;
   // Assistant calls that actually returned usage.
   assistantCalls: number;
+  // Calls that were SENT but came back with no usage block at all. Their token
+  // figures are unknown, not zero: `assistantCalls` already counts them (the
+  // request happened), and this field is what lets the report name the gap
+  // instead of printing `in=0 out=0` as if the call were free (#273 review).
+  //
+  // Optional on purpose: the run ledger never sets it, so no existing
+  // initializer has to change.
+  callsWithoutUsage?: number;
   // Latest assistant message's totalTokens (input incl. cache + output of the
   // most recent LLM call). One input to the L0 watermark's occupancy:
   // max(this, estimateTranscriptTokens(messages)) in resolveContextOccupancy.
@@ -185,6 +193,10 @@ function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: stri
   const label = prefix ? prefix + " " : "";
   const missing: string[] = [];
   if (totals.assistantCalls === 0) missing.push(usageLabel);
+  // A call that was sent but reported no usage: its tokens are unknown. Naming
+  // them keeps `in=0 out=0` from reading as a free call. Placed before the
+  // cache/cost lines because tokens are the primary figure.
+  if ((totals.callsWithoutUsage ?? 0) > 0) missing.push(label + "token usage");
   if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push(label + "cache usage");
   // A locally estimated figure is not a provider report: say so, so the caller
   // never presents it as server-sent truth. A ledger that mixes both kinds
