@@ -383,10 +383,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
     return 1;
   }
-  // #262 (D11): an unresolved concurrent conflict is "not finished" too: the
-  // caller's correction did not land and the current knowledge was not
-  // replaced by this run. Both sides' evidence is printed above; exit 0 would
-  // read as success to an automated caller that only checks the code.
+  // Design: #262 (D11) — an unresolved concurrent conflict is "not finished"
+  // too: the caller's correction did not land and the current knowledge was
+  // not replaced by this run. Both sides' evidence is printed above; exit 0
+  // would read as success to an automated caller that only checks the code.
+  // (Dry-run keeps this exit: the repo already treats a previewed withheld
+  // correction as exit 1, and a previewed conflict is the same kind of
+  // "this would not finish" fact.)
   if (r.conflicts > 0) {
     process.stderr.write(
       "ans consolidate: " + r.conflicts +

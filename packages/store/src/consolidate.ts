@@ -29,6 +29,10 @@ export const THETA_JAC = 0.80;
 export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
+// #262: a one-material cluster's plan-time salience (0.4 + 0.1 * 1). The
+// collision resolution uses it when a noop-kind pending is re-judged into an
+// accepted correction, so the fallback and the plan-time formula cannot drift.
+const LONE_EP_SALIENCE = Math.min(1, 0.4 + 0.1);
 export const ARCHIVE_AGE_FACTOR = 3;     // D5: age > 3 * tier tau AND access_count = 0 AND stale last_accessed
 
 // Local mirror of kernel attribution.ts CONTRADICTION_RE. Store must not import kernel
@@ -218,25 +222,26 @@ export interface ConsolidateConflictDetail {
  * everything else lands here for the post-commit resolution phase.
  */
 interface PendingCollision {
-  kind: "noop-exact" | "noop" | "update";
   planned: SemanticRow;
   candidate: string;
   evidence: ConsolidateEvidence[];
   epsIds: number[];
-  /** The update-kind insert parameters from plan time. The merged TEXT the
-   * first attempt produced is deliberately not carried: the re-merge must
-   * regenerate it against the latest version (D11 — never reuse a summary
-   * that was built for the dead target). */
+  /** Design: #262 (D11) — the update-kind insert parameters from plan time
+   * travel with the pending op; the merged TEXT the first attempt produced
+   * deliberately does not: the re-merge must regenerate it against the
+   * latest version, because a summary built for the dead target is exactly
+   * what D11 forbids reusing. */
   confidence?: number;
   salience?: number;
 }
 
-/** One hop of a supersede chain walk (#262). */
+/** The live head of a supersede chain: every field the resolution reads
+ * (#262). No embedding — the re-merge embeds the text it merges, not the
+ * row it replaces. */
 interface ChainRow {
   id: number;
   content: string;
   source_episode_ids: string;
-  embedding: Buffer | null;
   valid_until: string | null;
   superseded_by: number | null;
 }
@@ -693,7 +698,6 @@ export async function consolidateMemoryRun(
   // drops the later correction).
   const noteRowCollision = (
     row: SemanticRow,
-    kind: PendingCollision["kind"],
     info: {
       candidate: string;
       evidence: ConsolidateEvidence[];
@@ -707,7 +711,6 @@ export async function consolidateMemoryRun(
       return;
     }
     collisions.push({
-      kind,
       planned: row,
       candidate: info.candidate,
       evidence: info.evidence,
@@ -721,16 +724,14 @@ export async function consolidateMemoryRun(
   // than 64 hops (or ending in a closed row with no successor) mean the line
   // has no current version left; the collision is then reported unresolved
   // instead of guessed at.
-  const liveHeadOf = (fromId: number): SemanticRow | null => {
+  const liveHeadOf = (fromId: number): ChainRow | null => {
     let id = fromId;
     for (let hop = 0; hop < 64; hop++) {
       const row = db
-        .prepare("SELECT id, content, source_episode_ids, embedding, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
+        .prepare("SELECT id, content, source_episode_ids, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
         .get(id) as ChainRow | undefined;
       if (!row) return null;
-      if (row.valid_until === null) {
-        return { id: row.id, content: row.content, source_episode_ids: row.source_episode_ids, embedding: row.embedding };
-      }
+      if (row.valid_until === null) return row;
       if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
       id = row.superseded_by;
     }
@@ -740,7 +741,7 @@ export async function consolidateMemoryRun(
   // The materials behind a knowledge row — snippets ARE the row's evidence
   // text; a conflict must hand the caller both sides' materials, not just
   // their urls (#262 / B2).
-  const materialsOf = (row: SemanticRow): ConsolidateEvidence[] => {
+  const materialsOf = (row: { source_episode_ids: string }): ConsolidateEvidence[] => {
     let ids: number[];
     try { ids = JSON.parse(row.source_episode_ids) as number[]; } catch { return []; }
     if (!Array.isArray(ids) || ids.length === 0) return [];
@@ -755,7 +756,7 @@ export async function consolidateMemoryRun(
   const pushConflict = (
     pending: PendingCollision,
     o: {
-      current: SemanticRow | null;
+      current: ChainRow | null;
       reason: string;
       followUp: string;
       retries: number;
@@ -779,11 +780,11 @@ export async function consolidateMemoryRun(
     });
   };
 
-  // One short write transaction for the resolution phase (#262). The fn
+  // Design: #262 — one short write transaction per resolution step. The fn
   // returns null when the target moved again — nothing was written to the
   // dead row, so committing the empty transaction is safe and the caller
   // reports the conflict with the freshly re-read head.
-  const txnCollision = <T>(fn: () => T | null): T | null => {
+  const resolutionTxn = <T>(fn: () => T | null): T | null => {
     if (db.inTransaction) throw new Error("collision resolution must not run inside an open transaction");
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -794,6 +795,42 @@ export async function consolidateMemoryRun(
       try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
       throw err;
     }
+  };
+
+  // Design: #262 — the physical UPDATE write lives in one place, shared by
+  // the plan-phase closure and the post-collision re-merge. Two copies of
+  // the same SQL in one function is exactly how one path drifts from the
+  // other (a retire rule fixed here would silently miss there).
+  // `retireIds` are the target's own still-live sources — the materials of
+  // the replaced row; the row's whole history stays untouched.
+  const writeUpdateRow = (
+    targetId: number,
+    content: string,
+    buffer: Buffer | null,
+    opts: { sources: number[]; retireIds: number[]; salience: number; confidence: number },
+  ): { newId: number; retiredNow: number[] } => {
+    const info = db
+      .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
+      .run(content, JSON.stringify(opts.sources), opts.salience, opts.confidence, buffer);
+    const newId = Number(info.lastInsertRowid);
+    report.semanticIds.push(newId);
+    db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, targetId);
+    // #273 review: only the materials this statement actually re-pointed.
+    // `retireIds` holds every source the target row ever had, including ones
+    // an earlier correction already retired to an older successor; reporting
+    // all of them would claim this run superseded materials it never touched.
+    let retiredNow: number[] = [];
+    if (opts.retireIds.length > 0) {
+      const upd = db.prepare(
+        "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + opts.retireIds.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+      ).run(newId, ...opts.retireIds);
+      if (Number(upd.changes) > 0) {
+        retiredNow = (db
+          .prepare("SELECT id FROM retrieval_results WHERE id IN (" + opts.retireIds.map(() => "?").join(", ") + ") AND superseded_by = ?")
+          .all(...opts.retireIds, newId) as Array<{ id: number }>).map((r) => r.id);
+      }
+    }
+    return { newId, retiredNow };
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -1019,7 +1056,7 @@ export async function consolidateMemoryRun(
           const current = currentSources(row);
           // #262: a same-run closure routes to reportRunCollision; a cross-run
           // one queues for the resolution phase with this op's plan context.
-          if (!current) { noteRowCollision(row, "noop-exact", { candidate: summary!, evidence, epsIds }); return; }
+          if (!current) { noteRowCollision(row, { candidate: summary!, evidence, epsIds }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -1163,7 +1200,7 @@ export async function consolidateMemoryRun(
           const current = currentSources(row);
           // #262: same-run replacement keeps this run's conflict report; a
           // cross-run replacement goes to the resolution phase.
-          if (!current) { noteRowCollision(row, "noop", { candidate: summary!, evidence, epsIds, confidence, salience }); return; }
+          if (!current) { noteRowCollision(row, { candidate: summary!, evidence, epsIds, confidence, salience }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -1282,30 +1319,19 @@ export async function consolidateMemoryRun(
           // review). `currentSources` also carries the liveness check.
           const prev = currentSources(row);
           if (!prev) {
-            noteRowCollision(row, "update", { candidate: summary!, evidence, epsIds, confidence, salience });
+            noteRowCollision(row, { candidate: summary!, evidence, epsIds, confidence, salience });
             return;
           }
-          const newId = insert(prev, finalSummary, finalEmbBuf);
-          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
+          const { newId, retiredNow } = writeUpdateRow(row.id, finalSummary, finalEmbBuf, {
+            sources: Array.from(new Set([...epsIds, ...prev])).sort((a, b) => a - b),
+            retireIds: prev,
+            salience,
+            confidence,
+          });
           // #262: this row is now THIS run's replacement, so a later closure in
           // the same transaction reads it as the same-run fight it is, never as
           // a concurrent writer.
           replacedRowIds.add(row.id);
-          // #273 review: only the materials this statement actually re-pointed.
-          // `prev` holds every source the row ever had, including ones an earlier
-          // correction already retired to an older successor; reporting all of
-          // them would claim this run superseded materials it never touched.
-          let retiredNow: number[] = [];
-          if (prev.length > 0) {
-            const info = db.prepare(
-              "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
-            ).run(newId, ...prev);
-            if (Number(info.changes) > 0) {
-              retiredNow = (db
-                .prepare("SELECT id FROM retrieval_results WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by = ?")
-                .all(...prev, newId) as Array<{ id: number }>).map((r) => r.id);
-            }
-          }
           // The correction actually landed: this is where "verified" becomes true.
           if (acceptedVerdict) {
             report.verifiedCorrections.push({
@@ -1333,8 +1359,10 @@ export async function consolidateMemoryRun(
     }
   };
 
-  // #262 (D11): concurrent-collision resolution, after the main transaction.
-  // Each withheld op gets AT MOST ONE re-read + re-judge:
+  // Design: #262 (D11) — concurrent-collision resolution runs AFTER the main
+  // transaction (model calls must not sit inside BEGIN IMMEDIATE: the budget
+  // ledger reserves through the same connection and would deadlock), and each
+  // withheld op gets AT MOST ONE re-read + re-judge:
   //  - re-judge says the latest version already carries the correction -> no
   //    new version; this run's materials join the live row's sources
   //    ("duplicate").
@@ -1366,8 +1394,9 @@ export async function consolidateMemoryRun(
       });
     };
     for (const pending of collisions) {
-      // The budget refused a resolution call earlier in this phase: what is
-      // left stays unresolved by name — counted as incomplete, not dropped.
+      // Design: #262 — the budget refused a resolution call earlier in this
+      // phase, so what is left stays unresolved BY NAME: counted as
+      // incomplete, never silently dropped.
       if (resolutionStopped) {
         pushIncompleteRejudge(pending.planned, pending, "the session budget was already exhausted before this collision could be re-judged");
         continue;
@@ -1412,7 +1441,7 @@ export async function consolidateMemoryRun(
       }
       if (verdict.alreadyCurrent === true || verdict.relation === "same") {
         // 关键事实已经相同：不新建版本，本方材料并入当前行来源集。
-        const wrote = txnCollision((): boolean | null => {
+        const wrote = resolutionTxn((): boolean | null => {
           const current = currentSources(head);
           if (!current) return null;
           const merged = Array.from(new Set([...current, ...pending.epsIds])).sort((a, b) => a - b);
@@ -1495,14 +1524,14 @@ export async function consolidateMemoryRun(
       const finalSummary = merged.trim();
       const mergedEmb = await embedText(finalSummary, "passage");
       const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
-      // Insert parameters: present for update-kind pendings (the cluster
-      // computed them at plan time). A noop-kind pending that the re-judge
+      // Design: #262 — insert parameters: update-kind pendings carry the
+      // cluster's plan-time values. A noop-kind pending that the re-judge
       // turns into an accepted correction gets the same fallback the plan
-      // would use for a one-material cluster: LOW_CONFIDENCE and the lone-ep
-      // salience — an accepted correction under this design never silently
-      // gets better numbers than its evidence supports.
+      // would use for a one-material cluster: LOW_CONFIDENCE and
+      // LONE_EP_SALIENCE — an accepted correction never silently gets
+      // better numbers than its evidence supports.
       const insertConfidence = pending.confidence ?? LOW_CONFIDENCE;
-      const insertSalience = pending.salience ?? Math.min(1, 0.4 + 0.1);
+      const insertSalience = pending.salience ?? LONE_EP_SALIENCE;
       if (!verifyFinal) {
         // Same rule as plan time: no final-content checker means no
         // replacement. Withheld, reported, materials kept.
@@ -1546,30 +1575,15 @@ export async function consolidateMemoryRun(
       // Second submit: the target must STILL be the row that was re-judged.
       // If it moved again the collision is unresolved and NO third re-judge
       // runs — the ticket's hard limit.
-      const wrote = txnCollision((): number | null => {
+      const wrote = resolutionTxn((): number | null => {
         const prev = currentSources(head);
         if (!prev) return null;
-        const src = Array.from(new Set([...pending.epsIds, ...prev])).sort((a, b) => a - b);
-        const info = db
-          .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
-          .run(finalSummary, JSON.stringify(src), insertSalience, insertConfidence, finalEmbBuf);
-        const newId = Number(info.lastInsertRowid);
-        report.semanticIds.push(newId);
-        db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, head.id);
-        // Only the materials this statement actually re-pointed — `prev` holds
-        // every source the row ever had, including ones an earlier correction
-        // already retired to an older successor (#273 review).
-        let retiredNow: number[] = [];
-        if (prev.length > 0) {
-          const upd = db.prepare(
-            "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
-          ).run(newId, ...prev);
-          if (Number(upd.changes) > 0) {
-            retiredNow = (db
-              .prepare("SELECT id FROM retrieval_results WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by = ?")
-              .all(...prev, newId) as Array<{ id: number }>).map((r) => r.id);
-          }
-        }
+        const { newId, retiredNow } = writeUpdateRow(head.id, finalSummary, finalEmbBuf, {
+          sources: Array.from(new Set([...pending.epsIds, ...prev])).sort((a, b) => a - b),
+          retireIds: prev,
+          salience: insertSalience,
+          confidence: insertConfidence,
+        });
         // The re-merged correction actually landed — "verified" starts here.
         report.verifiedCorrections.push({
           oldId: head.id, oldContent: head.content, candidate: pending.candidate, evidence: pending.evidence,

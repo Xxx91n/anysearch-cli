@@ -300,7 +300,7 @@ export function buildAnsChatConsolidateResult(
     (extra.budgetUnmetered
       ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
-    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " call(s) refused by the session cap" : "");
+    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
   // verdict and what to check next. The structured block carries the same
@@ -369,8 +369,10 @@ export function buildAnsChatConsolidateResult(
         verifyRejected: report.verifyRejected,
         correctionsIncomplete: report.correctionsIncomplete,
         supersededClusterSkipped: report.supersededClusterSkipped,
-        // #262: real cross-session conflicts, distinct from the gate counter
-        // above (that one counts claim-gate rejections).
+        // Design: #262 — real cross-session conflicts, kept DISTINCT from the
+        // gate counter above (that one counts claim-gate rejections);
+        // renaming either into the other would silently change what a host
+        // reads today.
         unresolvedConflicts: report.conflicts,
         resolvedCollisions: (report.resolvedCollisions ?? []).length,
       },

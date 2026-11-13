@@ -320,11 +320,11 @@ export function registerAnsChat(
               ],
             };
           }
-          // #262 (D11): an unresolved concurrent conflict is a "not finished"
-          // run for the caller — the correction they sent did not land, and
-          // the current knowledge was not replaced by this run. Both sides'
-          // evidence is in the report; nothing was deleted and neither side
-          // was picked by write order.
+          // Design: #262 (D11) — an unresolved concurrent conflict is a "not
+          // finished" run for the caller — the correction they sent did not
+          // land, and the current knowledge was not replaced by this run.
+          // Both sides' evidence is in the report; nothing was deleted and
+          // neither side was picked by write order.
           if (report.conflicts > 0) {
             const result = buildAnsChatConsolidateResult(report, usage, metering.metered
               ? {}

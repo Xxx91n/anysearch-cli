@@ -301,8 +301,8 @@ async function callConsolidate(args: Record<string, unknown>) {
     "the conflict block shows the CURRENT live content — not a guess");
   assert(text.includes("https://b.example/notice-2") && text.includes("https://acme.example/n1"),
     "the conflict block shows BOTH sides' source urls");
-  assert(/collision resolved \(duplicate no new version, knowledge 7 keeps the correction\)/.test(text) || /collision resolved/.test(text),
-    "the resolved-collision line renders");
+  assert(/collision resolved \(duplicate no new version, knowledge 7 keeps the correction; re-judge retries=1/.test(text),
+    "the resolved-collision line names the duplicate resolution and its one retry");
   const sc = result.structuredContent as any;
   assert(sc.counts.unresolvedConflicts === 1, "counts.unresolvedConflicts carries the real conflicts");
   assert(sc.counts.resolvedCollisions === 1, "counts.resolvedCollisions carries the resolved count");

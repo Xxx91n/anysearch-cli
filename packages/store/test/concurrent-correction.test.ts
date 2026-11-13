@@ -23,6 +23,9 @@
 //                             materials, the current live content, the reason
 //                             and what to check next. No third judgment (B2,
 //                             M2);
+//   - a FAILED re-merge or final check during resolution withholds the
+//     replacement the same way plan time does (correctionsIncomplete, the
+//     target row untouched);
 //   - dry-run spends no model call on resolution: the collision is reported
 //     as a preview fact only;
 //   - a budget refusal during resolution stops the phase and names every
@@ -149,7 +152,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
 function stagedSummarize(
   candidate: string,
   firstMerge: string,
-  opts: { reMerge?: string; onReMerge?: () => Promise<void> } = {},
+  opts: { reMerge?: string; onReMerge?: () => Promise<void>; reMergeError?: Error } = {},
 ) {
   let calls = 0;
   const fn = async (eps: ConsolidateEvidence[]): Promise<string | null> => {
@@ -157,6 +160,7 @@ function stagedSummarize(
     const ck = eps.find((e) => e.title === "CURRENT KNOWLEDGE");
     if (!ck) return candidate;
     if (ck.snippet.includes("7×24")) {
+      if (opts.reMergeError) throw opts.reMergeError;
       if (opts.onReMerge) await opts.onReMerge();
       return opts.reMerge ?? firstMerge;
     }
@@ -574,6 +578,107 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaHours).superseded_by === null
     && q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaEmail).superseded_by === null,
     "budget: both losing-side materials stay live");
+}
+
+// --- S8. a FAILED re-merge withholds the replacement ------------------------
+// The collision resolves into an accepted correction, the re-merge model call
+// then fails: no replacement, the current knowledge untouched, counted
+// incomplete (same rule as plan time), only ONE re-judge spent.
+{
+  const db = "remerge-failed.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-8");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-8");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05",
+    "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], { hold: alphaCorrection(alpha, alphaNotice) });
+  const betaSum = stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, {
+    reMerge: M1_FINAL,
+    reMergeError: new Error("provider stream ended mid-merge"),
+  });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: betaSum.fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
+    "S8: the latest version is untouched after the failed re-merge");
+  assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails.length === 1,
+    "S8: the failed re-merge is counted incomplete, not dropped (incomplete=" + repB.correctionsIncomplete + ")");
+  const d = repB.incompleteDetails[0]!;
+  assert(d.stage === "merge-failed", "S8: the stage names the failed resolution merge");
+  assert(d.oldId === lives[0]!.id && d.oldContent === A4_MERGED,
+    "S8: the incomplete detail is about the LATEST version, the one the re-merge targeted");
+  assert(typeof d.reason === "string" && d.reason.includes("provider stream ended mid-merge"),
+    "S8: the merge failure's reason travels back");
+  assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0,
+    "S8: a failed re-merge is neither a conflict nor a claimed resolution");
+  assert(repB.update === 0 && repB.noop === 0, "S8: nothing was written");
+  assert(betaVerify.calls() === 2, "S8: exactly two judgments — initial + one re-judge (got " + betaVerify.calls() + ")");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
+    "S8: the losing side's material stays live");
+}
+
+// --- S9. a FAILED final check during resolution withholds the replacement --
+{
+  const db = "final-failed.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const alpha = openStore(db);
+  const sessA = await alpha.createSession("alpha-9");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-9");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05",
+    "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], { hold: alphaCorrection(alpha, alphaNotice) });
+  // Final check: the plan-time check (against the old row) passes; the
+  // resolution re-check FAILS fact retention — e.g. the re-merged text
+  // dropped the holiday arrangement the other session just updated.
+  let finalCalls = 0;
+  const failingVerifyFinal = async () => {
+    finalCalls++;
+    if (finalCalls === 1) return { supported: true, preserved: true, corrected: true, noExtras: true };
+    return {
+      supported: true, preserved: false, corrected: true, noExtras: true,
+      reason: "the re-merged text no longer states the holiday arrangement the current version carries",
+    };
+  };
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, { reMerge: M1_FINAL }).fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: failingVerifyFinal },
+  );
+
+  const lives = liveRows(db);
+  assert(lives.length === 1 && lives[0]!.content === A4_MERGED,
+    "S9: the latest version survives the failed final check");
+  assert(repB.correctionsIncomplete === 1 && repB.incompleteDetails[0]!.stage === "final-check",
+    "S9: the failed final check is counted incomplete at the final-check stage");
+  const d = repB.incompleteDetails[0]!;
+  assert(d.oldId === lives[0]!.id && d.oldContent === A4_MERGED,
+    "S9: the incomplete detail is about the version the re-merge targeted");
+  assert(typeof d.reason === "string" && d.reason.includes("holiday arrangement"),
+    "S9: the final-check failure reason travels back");
+  assert(repB.conflicts === 0 && repB.resolvedCollisions.length === 0 && repB.update === 0,
+    "S9: nothing was written and nothing is claimed resolved");
+  assert(betaVerify.calls() === 2, "S9: still exactly two judgments");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", betaNotice).superseded_by === null,
+    "S9: the losing side's material stays live");
 }
 
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
