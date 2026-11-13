@@ -189,9 +189,11 @@ async function callConsolidate(args: Record<string, unknown>) {
   // A single material is below the batch threshold; the flag opts into the
   // correction exception. With no model configured the cluster reports
   // llmUnavailable (the honest shape), and the new count fields are present.
-  const res = await callConsolidate({ memoryIds: idsB, allowSingleEvidence: true });
+  const res = await callConsolidate({ memoryIds: [idsB[0]!], allowSingleEvidence: true });
   assert(!isError(res), "a single-evidence run without an LLM is a report, not an error");
   const sc = res?.result?.structuredContent as any;
+  assert(sc?.report?.clustersTriggered === 1 && sc?.report?.llmUnavailable === 1,
+    "one material reaches the single-evidence path before the unavailable LLM");
   assert(sc?.counts?.verifyRejected === 0, "counts carries verifyRejected");
   assert(sc?.counts?.correctionsIncomplete === 0, "counts carries correctionsIncomplete");
 }
@@ -240,6 +242,8 @@ async function callConsolidate(args: Record<string, unknown>) {
   assert(/incomplete corrections: 1/.test(text), "the readable line counts incomplete corrections");
   assert(/correction incomplete \(final-check, knowledge 4 NOT replaced; the email fact vanished\)/.test(text),
     "the incomplete line names the stage and reason");
+  assert(text.split("correction incomplete (")[1]?.includes("old: Acme support runs weekdays 9-17."),
+    "text-only incomplete detail includes the old knowledge");
   const sc = result.structuredContent as any;
   assert(sc.counts.verifyRejected === 1 && sc.counts.correctionsIncomplete === 1,
     "structuredContent counts carry both new fields");
