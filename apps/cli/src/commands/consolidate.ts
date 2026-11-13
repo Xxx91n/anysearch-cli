@@ -85,6 +85,16 @@ function help(): string {
   ].join("\n");
 }
 
+// The same formatter is used by the CLI and its regression test: refusals
+// must show the old knowledge that was deliberately kept live.
+export function formatIncompleteCorrection(d: ConsolidateReport["incompleteDetails"][number]): string {
+  return "correction incomplete (" + d.stage + "): knowledge " + d.oldId + " was NOT replaced" +
+    (d.reason ? "; " + d.reason : "") + "\n" +
+    "  old: " + d.oldContent + "\n" +
+    "  candidate: " + d.candidate + "\n" +
+    "  sources: " + d.evidence.map((e) => e.url).join(", ") + "\n";
+}
+
 export async function runConsolidate(argv: string[]): Promise<number> {
   const cmd = argv[0];
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
@@ -294,12 +304,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // D7: a withheld replacement is named as incomplete — which stage failed and
   // why, with the same evidence a retry would need. The old knowledge is live.
   for (const d of r.incompleteDetails) {
-    process.stdout.write(
-      "correction incomplete (" + d.stage + "): knowledge " + d.oldId + " was NOT replaced" +
-        (d.reason ? "; " + d.reason : "") + "\n" +
-        "  candidate: " + d.candidate + "\n" +
-        "  sources: " + d.evidence.map((e) => e.url).join(", ") + "\n",
-    );
+    process.stdout.write(formatIncompleteCorrection(d));
   }
 
   if (seams) {

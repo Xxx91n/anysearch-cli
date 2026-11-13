@@ -36,9 +36,11 @@ knowledge. Do not do it on every turn, and do not run it just because it exists.
   still call the model and cost money.
 - One reliable material can correct existing knowledge: `allowSingleEvidence:
   true`. The exception is decided per entity cluster, not per call, so a
-  `sessionId` scope works only when that session holds exactly one material for
-  the entity in question — a session with materials for several entities will
-  trigger whole clusters, not a single-evidence correction. Preview with
+  `sessionId` scope can correct an entity only when that session holds exactly
+  one non-superseded material for that entity. The exception is judged per
+  entity cluster: a session with one such material for each of several
+  entities can correct each one separately. An entity with three or more
+  materials uses the batch path; with two, it is skipped. Preview with
   `dryRun: true` and read `structuredContent.scope` before applying. `memoryIds`
   with one entry is the precise form. It may only correct, never create new
   long-term knowledge. A refusal is a normal answer — read `verifyDetails` for
