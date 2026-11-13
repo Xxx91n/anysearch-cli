@@ -9,6 +9,7 @@
 import type Database from "better-sqlite3";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
+import { suspendSummariesForCorrection } from "./summary-sources.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
@@ -242,6 +243,20 @@ export interface ConsolidateReport {
     // they leave current-fact recall.
     supersededEpisodeIds: number[];
   }>;
+  // #263 (D9): summaries that stopped being injected because this run replaced
+  // a fact they were built from. Named per anchor so a caller can see which
+  // session's summary went stale, not just a count. A summary that read
+  // neither the closed knowledge row nor one of its retired materials is not
+  // listed — similarity and shared session are not dependencies.
+  summariesSuspended: number;
+  suspendedSummaries: ConsolidateSuspendedSummary[];
+}
+
+/** #263: one summary the run suspended, with the knowledge row that triggered it. */
+export interface ConsolidateSuspendedSummary {
+  sessionId: string;
+  anchorId: number;
+  triggerKnowledgeId: number;
 }
 
 /**
@@ -541,6 +556,8 @@ export async function consolidateMemoryRun(
     incompleteDetails: [],
     semanticIds: [],
     updates: [],
+    summariesSuspended: 0,
+    suspendedSummaries: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -1084,6 +1101,32 @@ export async function consolidateMemoryRun(
             outsideScopeMaterialIds: outside,
             supersededEpisodeIds: retiredNow,
           });
+          // #263 (D8/D9): summaries built on what this correction replaced must
+          // stop being injected. It runs HERE, in the same transaction that
+          // closed the old row and re-pointed its materials, so no window can
+          // exist where the new version is current and an old summary still
+          // injects the replaced fact as the current conclusion.
+          //
+          // The dependency is exact ids only: the closed knowledge row and the
+          // materials this statement actually retired. A summary that read
+          // neither is left alone — "same session" and "similar wording" are
+          // explicitly not dependencies (D9).
+          const suspendedNow = suspendSummariesForCorrection(
+            db,
+            [
+              { kind: "knowledge" as const, id: row.id },
+              ...retiredNow.map((id) => ({ kind: "material" as const, id })),
+            ],
+            {
+              kind: "knowledge",
+              id: row.id,
+              reason: "knowledge " + row.id + " was replaced by knowledge " + newId,
+            },
+          ).suspended;
+          for (const s of suspendedNow) {
+            report.summariesSuspended++;
+            report.suspendedSummaries.push({ sessionId: s.sessionId, anchorId: s.anchorId, triggerKnowledgeId: row.id });
+          }
           report.update++;
         });
       } else {

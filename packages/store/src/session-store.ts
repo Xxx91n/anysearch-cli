@@ -20,6 +20,17 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
+import {
+  isSourceCurrent,
+  isSummaryAnchorType,
+  parseSummarySourceRefs,
+  recordSummarySources,
+  resolveSummarySourcesFromUrls,
+  suspendedSummaryAnchorIds,
+  suspendSummaries,
+  type SummaryAnchorType,
+  type SummarySourceRef,
+} from "./summary-sources.js";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
@@ -180,8 +191,19 @@ export interface SessionStore {
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
+  // #263: a summary anchor may carry `sources` (the rows it was built from);
+  // the anchor insert and its dependency rows commit together.
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
+  // #263: anchor ids of summary anchors that must not be injected because a
+  // correction replaced a fact they were built from. Their text stays readable.
+  suspendedSummaryAnchorIds?(sessionId: string): Set<number>;
+  // #263: URL -> current material/knowledge refs, the exact bridge from the
+  // tool-result JSON a summary read to storable dependency ids.
+  resolveSummarySources?(urls: string[]): SummarySourceRef[];
+  // #263: the dependencies already recorded for one anchor, so the next
+  // summary can inherit them (it was generated FROM the previous one).
+  summarySourcesForAnchor?(anchorId: number): SummarySourceRef[];
   // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -1074,11 +1096,29 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // saveAnchor with UPSERT semantics for state-type anchors.
-  // State-type anchors (consolidation_state) use an atomic INSERT ... ON CONFLICT
-  // DO UPDATE against the partial UNIQUE index (see schema.sql), keeping one row
-  // per (session_id, anchor_type) without a DELETE or a schema migration.
-  // All historical anchor types (query, fetch, sufficiency, rolling_summary,
-  // l2_recall) remain append-only INSERT — sufficiency joined them in #106.
+  // State-type anchors (consolidation_state) use an atomic INSERT ... ON
+  // CONFLICT DO UPDATE against the partial UNIQUE index (see schema.sql),
+  // keeping one row per (session_id, anchor_type) without a DELETE or a schema
+  // migration. All historical anchor types (query, fetch, sufficiency,
+  // rolling_summary, l2_recall) remain append-only INSERT — sufficiency joined
+  // them in #106.
+  //
+  // #263 (D9): a derived summary records the rows it was BUILT FROM, so a later
+  // correction can name exactly which summaries went stale instead of guessing
+  // by session or wording. The payload may carry `sources: SummarySourceRef[]`;
+  // the anchor insert and the dependency rows run in ONE transaction, so a
+  // summary never exists without its dependency list — and a concurrent reader
+  // never sees "summary live, dependencies missing".
+  //
+  // The version check happens HERE, inside that transaction: a summary whose
+  // source was already superseded (a correction landed between generation and
+  // this write) is written SUSPENDED, never marked valid. That is the ticket's
+  // "a summary built on an old version must not be re-marked as valid".
+  /**
+   * #263: summary anchors also carry their dependency list (see below).
+   * Returns nothing, like every other anchor write — the anchor id is only
+   * needed inside this store, where the insert already reports it.
+   */
   async saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void> {
     const json = JSON.stringify(payload);
     // write entry: anchors are searchable surfaces too — refuse secret payloads.
@@ -1087,9 +1127,94 @@ export class SqliteSessionStore implements SessionStore {
     // non-state anchors (including sufficiency, #106) stay append-only INSERT.
     if (anchorType === "consolidation_state") {
       this.stmts.saveAnchorUpsert.run(sessionId, anchorType, json);
-    } else {
-      this.stmts.saveAnchor.run(sessionId, anchorType, json);
+      return;
     }
+    if (isSummaryAnchorType(anchorType)) {
+      this.saveSummaryAnchor(sessionId, anchorType, json, payload as { sources?: unknown });
+      return;
+    }
+    this.stmts.saveAnchor.run(sessionId, anchorType, json);
+  }
+
+  /**
+   * Write one summary anchor plus its dependency rows, atomically.
+   *
+   * A source that is no longer current when this write commits means the
+   * summary describes a version another writer already replaced. The text is
+   * still stored (it is an honest record of what was generated), but the
+   * summary is inserted SUSPENDED so it can never be injected as the current
+   * conclusion. Nothing is invented to "fix" it — the rebuild ticket owns
+   * producing a fresh version.
+   */
+  private saveSummaryAnchor(
+    sessionId: string,
+    anchorType: SummaryAnchorType,
+    json: string,
+    payload: { sources?: unknown },
+  ): number {    const refs = parseSummarySourceRefs(payload?.sources);
+    const write = this.db.transaction((): number => {
+      const info = this.stmts.saveAnchor.run(sessionId, anchorType, json);
+      const anchorId = Number(info.lastInsertRowid);
+      if (refs.length > 0) {
+        // Checked against the CURRENT state at commit time, not at generation
+        // time: that is the whole point of doing it here.
+        const stale = refs.filter((ref) => !isSourceCurrent(this.db, ref));
+        recordSummarySources(this.db, { sessionId, anchorId, anchorType, sources: refs });
+        if (stale.length > 0) {
+          suspendSummaries(
+            this.db,
+            [{ sessionId, anchorId }],
+            {
+              kind: stale[0]!.kind,
+              id: stale[0]!.id,
+              reason: "the summary was built from " + stale.map((r) => r.kind + " " + r.id).join(", ") +
+                ", which had already been replaced when the summary was written",
+            },
+          );
+        }
+      }
+      return anchorId;
+    });
+    return write.immediate();
+  }
+
+  /**
+   * Summary anchors that must not be injected as the current conclusion.
+   *
+   * #263: a correction that replaced a fact those summaries were built from
+   * suspended them. Their text stays readable (`getAnchors`) for anyone
+   * investigating what the session once believed; this set only says which of
+   * them may no longer be injected.
+   */
+  suspendedSummaryAnchorIds(sessionId: string): Set<number> {
+    return suspendedSummaryAnchorIds(this.db, sessionId);
+  }
+
+  /**
+   * Turn the URLs a summary read into the rows that currently hold them.
+   *
+   * The summary gap is distilled from the tool-result JSON the model saw, which
+   * carries `url` and not row ids, so this is the exact bridge — no text
+   * matching and no session guessing. See resolveSummarySourcesFromUrls.
+   */
+  resolveSummarySources(urls: string[]): SummarySourceRef[] {
+    return resolveSummarySourcesFromUrls(this.db, urls);
+  }
+
+  /**
+   * The dependencies already recorded for one anchor.
+   *
+   * Needed because a summary is generated from the previous summary PLUS the
+   * new gap: its dependencies are the previous version's plus the new
+   * material. Without inheriting them, a correction to an old fact would
+   * suspend the earlier summary but leave the newest one — which still states
+   * the replaced fact — happily injected.
+   */
+  summarySourcesForAnchor(anchorId: number): SummarySourceRef[] {
+    const rows = this.db
+      .prepare("SELECT source_kind AS kind, source_id AS id FROM summary_sources WHERE anchor_id = ? ORDER BY id")
+      .all(anchorId) as SummarySourceRef[];
+    return rows;
   }
 
   async getAnchors(sessionId: string): Promise<ResumeAnchor[]> {
