@@ -704,9 +704,10 @@ export class MemoryPipeline {
           //    an old fact would suspend the earlier summary and leave the
           //    newest one — which still states the replaced fact — injected.
           //
-          // Read BEFORE the anchor write so the write can carry them in one
-          // transaction. A store without the seam records nothing rather than
-          // inventing a dependency.
+          // Read here, before the model call: the material was archived when the
+          // search ran, so the ids exist already, and the anchor write can then
+          // carry them through one transaction. A store without the seam
+          // records nothing rather than inventing a dependency.
           const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
           try {
             const s = store as any;
