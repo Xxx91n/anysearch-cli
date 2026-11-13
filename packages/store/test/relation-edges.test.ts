@@ -200,7 +200,9 @@ const edgeCounts = (p: string) => {
   assert(liveRt2.n === 1, "superseded support: one live related_to edge is backed by the current material (" + liveRt2.n + ")");
   // Backfill must not re-extract retired episode 1 and take the live edge away
   // from episode 2. The normal full scan sees both rows.
-  await e.backfillRelations({ apply: true });
+  const backfilled = await e.backfillRelations({ apply: true, fromId: firstId - 1 });
+  assert(backfilled.scanned === 1 && backfilled.lastId === secondId,
+    "backfill scan: a retired episode was excluded, not just skipped by insertEdge");
   const checkBackfill = new Database(p3b, { readonly: true });
   const support = checkBackfill.prepare(
     "SELECT episode_memory_id FROM edges WHERE relation = 'related_to' AND valid_until IS NULL",

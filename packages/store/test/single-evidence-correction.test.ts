@@ -431,6 +431,35 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "noop-links: the original sources stay in the set");
   store.close();
 }
+// --- 7d2. rejected exact text must not attach unrelated evidence ----------
+{
+  const db = "noop-rejected-links.db";
+  const store = openStore(db);
+  const seed = await store.createSession("eval");
+  const oldIds = await buildKnowledge(store, db, seed.id, "zeta-api",
+    "Zeta service supports REST.", "https://ex.com/noop-old");
+  const unrelated = await store.createSession("eval");
+  const newIds: number[] = [];
+  for (let i = 0; i < 3; i++) newIds.push(await seedEpisode(store, unrelated.id,
+    "https://ex.com/other-" + i, "Unrelated report " + i,
+    "An independent topic was discussed.", "zeta-api"));
+  // The summarizer echoed old knowledge that the new evidence cannot support.
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: newIds, sessionIdNotApplied: false } },
+    { summarize: async () => "Zeta service supports REST.",
+      classify: () => ({ label: "unsupported", confidence: 0 }) },
+  );
+  assert(rep.gateRejected === 1 && rep.noop === 0,
+    "rejected exact restatement: no noop touch or source merge");
+  const live = q(db, "SELECT source_episode_ids FROM semantic_memories WHERE valid_until IS NULL");
+  const sources = JSON.parse(live.source_episode_ids) as number[];
+  assert(oldIds.every((id) => sources.includes(id)) && newIds.every((id) => !sources.includes(id)),
+    "rejected exact restatement: original sources preserved, unrelated ones excluded");
+  assert(newIds.every((id) => q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", id).superseded_by === null),
+    "rejected exact restatement: unrelated materials remain available");
+  store.close();
+}
+
 // --- 7b. no correction checker: a lone material may not write at all --------
 // The negation-keyword quadruple is not a substitute for the same-fact /
 // reliability verdict, so with `verify` absent neither a correction nor a new
@@ -1343,6 +1372,29 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     "Unicode fallback: Cyrillic knowledge is recalled without embeddings");
   assert(lowerCaseHits.some((h) => h.rowid < 0 && String(h.content).includes("help@sample.example")),
     "Unicode FTS: a lowercase Cyrillic query recalls the uppercase source text");
+  store.close();
+}
+
+// --- 11c2b. matching both scripts outranks one-script rows at limit=1 -----
+{
+  const db = "kw-cyrillic-mixed.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db), { readonly: false });
+  const put = rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)");
+  put.run("почта"); // Shorter Unicode-only row is preferred by standalone BM25.
+  put.run("Acme почта: help@acme.example"); // The only row covering BOTH.
+  put.run("Acme account details without the requested email.");
+  rw.close();
+  __setEmbeddingModuleForTest(null);
+  const lane = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme почта", 1);
+  const hits = await store.searchMemory("Acme почта", 1);
+  __setEmbeddingModuleForTest("auto");
+  assert(lane.length === 1 && lane[0]!.content.includes("help@acme.example"),
+    "mixed script: the indexed both-term hit survives independent lane LIMIT cuts");
+  assert(hits.some((h) => h.rowid < 0 && String(h.content).includes("help@acme.example")),
+    "mixed script: single-result recall does not select a Unicode-only distractor");
   store.close();
 }
 

@@ -1299,6 +1299,9 @@ export class SqliteSessionStore implements SessionStore {
     const latin: Array<{ id: number; content: string; rank: number }> = [];
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
     const otherScript: Array<{ id: number; content: string; rank: number }> = [];
+    // Independent indexed lane for rows matching both query scripts.
+    // Do not share 'seen' with the weaker one-script lanes.
+    const crossScript: Array<{ id: number; content: string; rank: number }> = [];
     const seen = new Set<number>();
     const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
       (r: { id: number; content: string; rank: number }): void => {
@@ -1463,6 +1466,19 @@ export class SqliteSessionStore implements SessionStore {
           !/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(w)),
     )].slice(0, 8);
     if (otherWords.length > 0) {
+      const asciiTerms = relaxedTerms(query);
+      if (asciiTerms.length > 0) {
+        // Independent intersection: even at LIMIT 1, the partial-script
+        // lanes cannot hide a row that matches both halves of the query.
+        const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
+        const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
+        const paired = this.db.prepare(
+          "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
+          "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
+          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+        ).all("(" + asciiMatch + ") AND (" + unicodeMatch + ")", limit) as Array<{ id: number; content: string; rank: number }>;
+        crossScript.push(...paired);
+      }
       const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
       const indexed = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
@@ -1483,8 +1499,15 @@ export class SqliteSessionStore implements SessionStore {
     // A query carrying Chinese is answered by the Chinese rows first: the
     // ASCII rung only saw half the question, so letting its rows keep every
     // slot would starve the half the caller actually typed (#273 round 5).
-    // Latin rows fill whatever is left.
-    return [...cjk, ...otherScript, ...latin].slice(0, limit).map((r) =>
+    // Prefer evidence covering both ASCII and non-Han Unicode terms over
+    // partial matches. The existing Han-first rule is unchanged (#277).
+    const ordered = [...cjk, ...crossScript, ...otherScript, ...latin];
+    const resultSeen = new Set<number>();
+    return ordered.filter((r) => {
+      if (resultSeen.has(r.id)) return false;
+      resultSeen.add(r.id);
+      return true;
+    }).slice(0, limit).map((r) =>
       ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
   }
 

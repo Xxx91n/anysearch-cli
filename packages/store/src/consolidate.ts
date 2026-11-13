@@ -783,6 +783,9 @@ export async function consolidateMemoryRun(
       const epsIds = liveEps.map((e) => e.id);
       const exactRestatement = best ? summary.trim() === best.content.trim() : false;
       if (exactRestatement) {
+        // A summarizer may echo old knowledge even when the current material
+        // does not support it. Never attach rejected evidence to a live row.
+        if (claimGateRejected) { report.gateRejected++; continue; }
         const row = best!;
         writes.push(() => {
           // Liveness + current sources recheck: see `currentSources`. A
@@ -892,7 +895,7 @@ export async function consolidateMemoryRun(
 
       // An accepted correction may bypass the generic negation heuristic.
       // Unsupported additions must still fail the original fidelity gate.
-      if (claimGateRejected && op === "add") { report.gateRejected++; continue; }
+      if (claimGateRejected && op !== "update") { report.gateRejected++; continue; }
       // Similarity alone is never an authorization to replace live knowledge.
       if (op === "update" && !acceptedVerdict) {
         if (best) refuseCorrection(best, summary, evidence, undefined);
