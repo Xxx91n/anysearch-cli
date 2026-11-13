@@ -851,10 +851,9 @@ export async function consolidateMemoryRun(
           op = checked.kind;
           if (checked.kind === "update") acceptedVerdict = checked.verdict;
         } else {
-          // No checker: a lone material may only touch an existing row. Without
-          // the correction check there is no same-fact/reliability verdict, so a
-          // correction or new knowledge must not be written at all — the
-          // negation-keyword quadruple is not a substitute for that check.
+          // No checker: a lone material cannot authorize any replacement.
+          // Exact restatements were handled above; similarity or polarity alone
+          // cannot prove same-fact and source reliability.
           report.singleEvidenceSkipped++;
           continue;
         }
@@ -891,7 +890,7 @@ export async function consolidateMemoryRun(
         if (checked.kind === "update") acceptedVerdict = checked.verdict;
       }
 
-            // An accepted correction may bypass the generic negation heuristic.
+      // An accepted correction may bypass the generic negation heuristic.
       // Unsupported additions must still fail the original fidelity gate.
       if (claimGateRejected && op === "add") { report.gateRejected++; continue; }
       // Similarity alone is never an authorization to replace live knowledge.
