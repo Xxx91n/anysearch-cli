@@ -665,12 +665,13 @@ export async function consolidateMemoryRun(
 
   // The live row's current source set, read inside the write transaction.
   // Returns null when the row is no longer live — the caller reports the
-  // collision instead of writing to a closed row (#273 review).
+  // collision instead of writing to a closed row (#273 review). Only the id
+  // is read, so both the planner's row and the resolution's chain head fit.
   //
   // Reading it here (rather than trusting the planner's snapshot) is what
   // keeps two clusters that touch ONE row from overwriting each other's
   // materials: each write sees what the previous write already merged in.
-  const currentSources = (row: SemanticRow): number[] | null => {
+  const currentSources = (row: { id: number }): number[] | null => {
     const live = db
       .prepare("SELECT source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
       .get(row.id) as { source_episode_ids: string } | undefined;

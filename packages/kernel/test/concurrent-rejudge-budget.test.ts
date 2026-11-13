@@ -26,7 +26,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import Database from "better-sqlite3";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { createConsolidationSeams } from "../src/consolidation";
 import type { BudgetLedgerPort } from "../src/ports";
@@ -172,9 +171,18 @@ function openStore(db: string): SqliteSessionStore {
   stores.push(s);
   return s;
 }
+// Reads go through the store's own query surface: better-sqlite3 is NOT a
+// kernel dependency (CI's clean install rejects the bare import), and the
+// independent-handle assertions live in the store-level race test.
+const readers = new Map<string, SqliteSessionStore>();
 function q(db: string, sql: string, ...params: unknown[]): any {
-  const d = new Database(join(dir, db), { readonly: true });
-  try { return d.prepare(sql).get(...params); } finally { d.close(); }
+  let reader = readers.get(db);
+  if (!reader) {
+    reader = new SqliteSessionStore(join(dir, db));
+    readers.set(db, reader);
+    stores.push(reader);
+  }
+  return reader.dbQuery(sql, ...params)[0];
 }
 
 async function seedEpisode(

@@ -179,7 +179,7 @@ function stagedSummarize(
 //              simulates the seam refusing to spend).
 function stagedVerify(
   verdicts: ConsolidateVerifyVerdict[],
-  opts: { hold?: () => Promise<void>; holdAt?: number; onCall?: (n: number) => void | Promise<void> } = {},
+  opts: { hold?: () => Promise<unknown>; holdAt?: number; onCall?: (n: number) => void | Promise<void> } = {},
 ) {
   let calls = 0;
   const fn = async (input: ConsolidateVerifyInput): Promise<ConsolidateVerifyVerdict> => {
