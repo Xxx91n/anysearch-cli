@@ -63,15 +63,26 @@ export interface ReservationOwner {
 }
 
 /**
- * Whether a pid is still running. EPERM means the process exists but belongs
- * to another user, so it is alive; any other error means no such process.
+ * Whether a pid is still running.
+ *
+ * Design: only ESRCH is proof of death — every other outcome counts as
+ * "cannot confirm", so the reservation is kept. The earlier rule was "any
+ * error except EPERM means dead", and that released a reservation on errors
+ * that say nothing about liveness: a malformed pid raises
+ * ERR_INVALID_ARG_TYPE, and Windows has other probe failures of its own.
+ * Releasing an unconfirmed reservation loosens a session's cap under a run
+ * that may still be going, which is the harm this file exists to prevent.
+ * Keeping one only costs headroom until a later run can confirm the owner is
+ * gone.
  */
 function pidIsAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
   } catch (e) {
-    return (e as NodeJS.ErrnoException)?.code === "EPERM";
+    // ESRCH: no such process. Anything else (EPERM, a malformed pid, an
+    // unexpected probe failure) is unconfirmed and treated as still holding.
+    return (e as NodeJS.ErrnoException)?.code !== "ESRCH";
   }
 }
 

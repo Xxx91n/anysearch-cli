@@ -12,6 +12,7 @@
 // Run: pnpm --filter @anysearch-cli/cli test
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,19 @@ import { wireChatMemory, type ChatMemoryWiring } from "../src/commands/chat-memo
 let passed = 0, failed = 0;
 function check(cond: boolean, msg: string): void {
   if (cond) { passed++; } else { failed++; console.error("FAIL: " + msg); }
+}
+
+/**
+ * A pid this host can confirm is gone: a child that has already exited. The
+ * default liveness probe is what the store's own ledger uses, so the fixture
+ * has to give it a pid it will really read as dead.
+ */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("could not start a child to obtain a dead pid");
+  await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return pid;
 }
 
 async function main() {
@@ -202,10 +216,20 @@ async function main() {
       // budget_ledger and budget_reservations both have an FK to sessions,
       // so the killed run's own registration row has to exist first.
       await killStore.ensureSession("cli-sigkill-275", "default");
+      // #275/CodeRabbit: the fixture's owner pid has to be one this host can
+      // really confirm dead. A hardcoded 999_999 can be a live process on
+      // another machine, which would keep the fixture's reservation and fail the
+      // zero assertion below — a test depending on what else the host runs.
+      // A child that has just exited is confirmed dead by `process.kill`, and no
+      // other process can take its pid in the same instant. That matters here
+      // because the sweep runs from `store.initBudget`'s own ledger, which uses
+      // the production probe — pinning an injected probe on this test's ledger
+      // would not reach it.
+      const deadPid = await exitedPid();
       const killLedger = killStore.createBudgetLedger();
       const killed = new BudgetLedger((killStore as any).db, {
-        owner: { pid: 999_999, host: hostname() },
-        isOwnerAlive: () => false,
+        owner: { pid: deadPid, host: hostname() },
+        isOwnerAlive: (pid) => pid !== deadPid,
       });
       killed.initBudget("cli-sigkill-275", { tokenCap: 20_000, timeLimitMs: 60_000 });
       check(killed.reserveTokens("cli-sigkill-275", 12_304),

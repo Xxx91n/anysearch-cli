@@ -551,6 +551,71 @@ async function main() {
         "#275: unowned usd/calls cleared while the owned token reservation stays (got "
         + JSON.stringify([afterUnowned.reservedTokens, afterUnowned.reservedUsd, afterUnowned.reservedCalls]) + ")");
 
+      // 25. #275/CodeRabbit: only ESRCH counts as death — the liveness probe's
+      //     own default rule, driven through the real `process.kill` rather than
+      //     an injected stub. Each branch is its own fixture because the probe
+      //     is a per-instance option.
+      //     What this pins: an unconfirmed owner keeps its reservation, which is
+      //     the conservative direction the ticket requires. A probe that treated
+      //     "unknown" as dead would release a live run's headroom.
+      {
+        const seen: Array<{ pid: number; outcome: string }> = [];
+        const originalKill = process.kill;
+        // Stand in for the probe's error, then restore. The real function is
+        // replaced only for the duration of one sweep.
+        const withKillError = (code: string | undefined, expectedPid: number): void => {
+          (process as any).kill = (pid: number, sig: number | string) => {
+            if (sig === 0 && pid === expectedPid) {
+              seen.push({ pid, outcome: code ?? "no-code" });
+              const err: any = new Error("probe failure");
+              if (code !== undefined) err.code = code;
+              throw err;
+            }
+            return originalKill.call(process, pid, sig as any);
+          };
+        };
+        const restore = () => { (process as any).kill = originalKill; };
+        try {
+          // ESRCH -> confirmed dead -> released.
+          const s21 = await store.createSession("probe-esrch");
+          const esrchOwner = new BudgetLedger((store as any).db, { owner: { pid: 888_001, host: hostname() } });
+          esrchOwner.initBudget(s21.id, { tokenCap: 20_000, timeLimitMs: 60_000 });
+          assert(esrchOwner.reserveTokens(s21.id, 5_000), "#275 fixture: esrch owner holds 5000");
+          withKillError("ESRCH", 888_001);
+          assert(esrchOwner.reclaimDeadReservations(s21.id) === 1,
+            "#275: an ESRCH probe releases the reservation (confirmed dead)");
+          assert(esrchOwner.getBalance(s21.id)!.reservedTokens === 0,
+            "#275: ESRCH leaves the counter released");
+          restore();
+          // EPERM -> exists, other user -> kept.
+          const s22 = await store.createSession("probe-eperm");
+          const epermOwner = new BudgetLedger((store as any).db, { owner: { pid: 888_002, host: hostname() } });
+          epermOwner.initBudget(s22.id, { tokenCap: 20_000, timeLimitMs: 60_000 });
+          assert(epermOwner.reserveTokens(s22.id, 5_000), "#275 fixture: eperm owner holds 5000");
+          withKillError("EPERM", 888_002);
+          assert(epermOwner.reclaimDeadReservations(s22.id) === 0,
+            "#275: an EPERM probe is kept — the process exists for another user");
+          assert(epermOwner.getBalance(s22.id)!.reservedTokens === 5_000,
+            "#275: EPERM leaves the reservation in place");
+          restore();
+          // An unknown probe failure -> cannot confirm -> kept. This is the
+          // branch the fix changed: treating it as dead released live headroom.
+          const s23 = await store.createSession("probe-unknown");
+          const unknownOwner = new BudgetLedger((store as any).db, { owner: { pid: 888_003, host: hostname() } });
+          unknownOwner.initBudget(s23.id, { tokenCap: 20_000, timeLimitMs: 60_000 });
+          assert(unknownOwner.reserveTokens(s23.id, 5_000), "#275 fixture: unknown owner holds 5000");
+          withKillError("ERR_INVALID_ARG_TYPE", 888_003);
+          assert(unknownOwner.reclaimDeadReservations(s23.id) === 0,
+            "#275: an unconfirmable probe keeps the reservation instead of guessing");
+          assert(unknownOwner.getBalance(s23.id)!.reservedTokens === 5_000,
+            "#275: an unknown probe error leaves the reservation in place");
+          restore();
+        } finally {
+          restore();
+        }
+        assert(seen.length === 3, "#275: all three probe branches really ran (got " + JSON.stringify(seen) + ")");
+      }
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");

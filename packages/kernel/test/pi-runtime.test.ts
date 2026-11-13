@@ -10,6 +10,7 @@ import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, utimesSync, mkdirSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,20 @@ let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return false; }
   passed++; return true;
+}
+
+/**
+ * A pid this host can confirm is gone: a child that has already exited. A fixed
+ * number such as 999_999 can be a live process on another machine, and the
+ * store's own ledger uses the production probe, so the fixture must hand it a
+ * pid it will really read as dead.
+ */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("could not start a child to obtain a dead pid");
+  await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return pid;
 }
 
 // Mock retriever.
@@ -2181,10 +2196,15 @@ console.log("---");
     // A killed run's leftover, recorded by a dead owner exactly as #275 measured
     // it. The cap leaves no room for the next run until this is released: the
     // runtime's default reserve is input occupancy + 12288.
+    //
+    // The dead pid is a child that really exited, because the sweep that must
+    // release it runs inside `store.initBudget`'s own ledger — the production
+    // probe, not an stub this test could pin.
     const ledger = store.createBudgetLedger();
+    const deadPid = await exitedPid();
     const killed = new BudgetLedger((store as any).db, {
-      owner: { pid: 999_999, host: hostname() },
-      isOwnerAlive: () => false,
+      owner: { pid: deadPid, host: hostname() },
+      isOwnerAlive: (pid) => pid !== deadPid,
     });
     killed.initBudget(session.id, { tokenCap: 20_000, timeLimitMs: 60_000, callCap: 10 });
     assert(killed.reserveTokens(session.id, 12_304), "#275 runtime fixture: killed run reserved 12304");
