@@ -279,6 +279,20 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   gets an explicit "session busy" error result and is expected to retry;
   different sessions still run in parallel. No evidence exists for
   network-filesystem session directories; same machine only.
+- The single-writer rule is a property of this build. Released versions up
+  to and including v0.1.2 predate the lock (#266) and the reservation owner
+  table (#275): they write the same session without taking the session lock
+  and leave reserved amounts with no owner row. When upgrading, stop the
+  old processes first — an old process still running against the same
+  session spends against the same cap while the new build holds the lock,
+  and nothing in either build can stop it.
+- Leftover reserved amounts with no owner row (a pre-#275 build's writes)
+  are deliberately not cleared (#279). Clearing them cannot prove the old
+  writer is gone, and a still-running old process would then spend against
+  the same cap — measured at 21% over tokenCap in #279's repro. The
+  recovery is starting a new session: a fresh sessionId starts with a clean
+  budget row. A rejected reserve whose session holds such a leftover says
+  so in its error message instead of reading as plain exhaustion.
 - A run that is cut off before the provider reports its final usage returns
   no answer text, and its `structuredContent` says `interrupted: true` with
   a `usage.run` block whose `costSource` is `"unknown"` and whose `missing`

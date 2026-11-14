@@ -1222,13 +1222,25 @@ export class PiAgentRuntime {
       const reserveAmount = resolveTokenReserve(inputOccupancy.tokens, outputReserve);
       try {
         if (!ledger!.reserveTokens(sessionId!, reserveAmount)) {
+          // #279: when the session holds reserved tokens that no owner row
+          // claims, the cap is being eaten by a pre-#275 build's leftover. That
+          // residue is deliberately not cleared (clearing it cannot prove the
+          // old writer is gone), so the actionable fix is restarting the
+          // session with a new id, not raising the cap. Read-only probe; a fault omits the
+          // hint and the rejection above still stands on its own.
+          let unownedHint = "";
+          try {
+            if (ledger!.hasUnownedReservedTokens?.(sessionId!)) {
+              unownedHint = " Part of the reserved tokens is claimed by no owner row — likely a leftover from a pre-#275 build; start a new session to get a clean budget.";
+            }
+          } catch { /* read-only probe; omit the hint */ }
           yield {
             type: "error",
             message:
               "Token budget exhausted: this run needs " + reserveAmount +
               " tokens reserved (input " + inputOccupancy.tokens +
               " + output limit " + outputReserve + ") but the session cap cannot cover it. " +
-              "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML).",
+              "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML)." + unownedHint,
           };
           try { session.dispose(); } catch { /* already disposed */ }
           stopRunScope("budget rejected");
