@@ -41,7 +41,7 @@ const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
-import { rebuildSuspendedSummary, type SummaryRebuildAttempt } from "./summary-rebuild";
+import { rebuildSuspendedSummary, SUMMARY_INJECT_MAX_CHARS, type SummaryRebuildAttempt } from "./summary-rebuild";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
@@ -633,7 +633,9 @@ const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
 // sources. When they drift the write side records a hit whose text no prompt
 // ever carried, and a later correction then suspends a recall block that never
 // used it.
-const SUMMARY_INJECT_MAX_CHARS = 4000;
+// SUMMARY_INJECT_MAX_CHARS lives in ./summary-rebuild (exported from there) so the
+// generator that must respect it and the injection that renders it share ONE
+// number; see the import below.
 const RECALL_INJECT_MAX_CHARS = 1500;
 
 /**
@@ -904,8 +906,16 @@ export class MemoryPipeline {
    *
    * @param sessionId - Session owning the summary.
    * @param anchorId - The suspended anchor.
+   * @param currentUserTurn - The user turn this run is handling. It is not in the
+   *   message table yet (the runtime persists finalized messages at the end of a
+   *   run), so the plan needs it handed in or the rebuilt summary silently loses
+   *   this turn's change.
    */
-  private async maybeRebuildSummary(sessionId: string, anchorId: number): Promise<SummaryRebuildAttempt | undefined> {
+  private async maybeRebuildSummary(
+    sessionId: string,
+    anchorId: number,
+    currentUserTurn?: string,
+  ): Promise<SummaryRebuildAttempt | undefined> {
     const existing = this.rebuildAttempts.get(anchorId);
     if (existing) return existing;
     // The seam check lives at the dispatch site (`inject`) so there is exactly one
@@ -927,6 +937,7 @@ export class MemoryPipeline {
         anchorId,
         streamFn: this.deps.streamFn as any,
         model: this.deps.model,
+        ...(currentUserTurn ? { currentUserTurn } : {}),
         // Same hand-off as every peer kernel call: without it, a host that
         // configured the key outside ANS_LLM_API_KEY fails every rebuild on auth.
         ...(apiKey ? { apiKey } : {}),
@@ -1207,7 +1218,15 @@ export class MemoryPipeline {
           // per provider request, so two requests can be in flight before either
           // rebuild finishes.
           this.rebuildStarted.add(anchorId);
-          this.track(this.maybeRebuildSummary(sessionId, anchorId).then(() => undefined, () => undefined));
+          // The pre-injection text of the latest user turn IS this run's input.
+          // `inject` is the point that knows it, and `preInjectionQueryText` is
+          // the helper that strips the blocks a resumed array may already carry.
+          const liveTarget = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx]) : null;
+          const liveTurn = liveTarget ? preInjectionQueryText(liveTarget.text) : "";
+          this.track(
+            this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
+              .then(() => undefined, () => undefined),
+          );
         }
       }
       // A suspended l2_recall block stays out of the prompt and is NOT rebuilt

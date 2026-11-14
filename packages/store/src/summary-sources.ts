@@ -88,8 +88,18 @@ export interface DependentSummary {
 /**
  * Is this ref still a current fact?
  *
- * The rule matches the rest of the store: a material is current while
- * `superseded_by` is NULL, a knowledge row while `valid_until` is NULL.
+ * The rule matches the rest of the store: a material is current while BOTH
+ * `superseded_by` and `valid_until` are NULL, a knowledge row while `valid_until`
+ * is NULL.
+ *
+ * Why the material checks `valid_until` too: there are two ways a material stops
+ * being the current version. A correction sets `superseded_by` (a knowledge row
+ * replaced its fact); an ordinary re-fetch of the same URL sets `valid_until` with
+ * no successor. Checking only the first let a rebuild commit against a row the
+ * planner had already rejected as stale, and then clear the suspension — a
+ * rebuilt summary built on an invalidated source, marked current. The planner and
+ * the commit have to use the same rule or they can disagree about the same row.
+ *
  * Archiving is deliberately NOT checked — archiving is not a correction, and
  * treating it as one would suspend summaries the ticket says must keep
  * working. A row missing entirely reads as "not current": the thing the
@@ -98,9 +108,9 @@ export interface DependentSummary {
 export function isSourceCurrent(db: Database.Database, ref: SummarySourceRef): boolean {
   if (ref.kind === "material") {
     const row = db
-      .prepare("SELECT superseded_by FROM retrieval_results WHERE id = ?")
-      .get(ref.id) as { superseded_by: number | null } | undefined;
-    return !!row && row.superseded_by === null;
+      .prepare("SELECT superseded_by, valid_until FROM retrieval_results WHERE id = ?")
+      .get(ref.id) as { superseded_by: number | null; valid_until: string | null } | undefined;
+    return !!row && row.superseded_by === null && row.valid_until === null;
   }
   const row = db
     .prepare("SELECT valid_until FROM semantic_memories WHERE id = ?")

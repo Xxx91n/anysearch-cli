@@ -78,9 +78,13 @@ current. That summary is no longer injected; the owning session's next turn trie
 to rebuild it once from the sources it originally read (now their current
 versions) plus that session's own stored user turns.
 
-- You do not start the rebuild. It is automatic, once per suspended summary, and
-  it is reported in `structuredContent.summaryRebuilds` (one `[summary]` line in
-  the answer text too). Read `outcome` before reporting anything to the user:
+- You do not start the rebuild. It is automatic for a suspended `rolling_summary`
+  (session memory), once per anchor per run, and it is reported in
+  `structuredContent.summaryRebuilds` (one `[summary]` line in the answer text
+  too). A suspended `l2_recall` (research-recall snippet) is NOT rebuilt — the
+  next search turn regenerates recall — but it still appears in the report with
+  the reason, so its absence is not silent. Read `outcome` before reporting
+  anything to the user:
   - `rebuilt` with `cleared: true` — a current version is back and gets injected
     from the next turn on.
   - `already-current` — the new version is current and injectable; only the clear

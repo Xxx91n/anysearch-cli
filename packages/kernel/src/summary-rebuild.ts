@@ -109,6 +109,16 @@ function replacedSection(plan: SummaryRebuildPlanShape): string {
  * from the prompt for good. The section header and rule 5 say plainly that it is
  * not evidence, so the model cannot promote it to a current fact.
  */
+/**
+ * How much of a summary `inject` actually renders.
+ *
+ * Defined here, not in memory-pipeline, because BOTH need it and the pipeline
+ * already imports this module: the generator must refuse a text longer than the
+ * slot, and the injection side renders exactly this many characters. One
+ * constant means the two cannot drift apart.
+ */
+export const SUMMARY_INJECT_MAX_CHARS = 4000;
+
 /** How much of the suspended summary's own text the prompt carries. */
 export const PREVIOUS_SUMMARY_PROMPT_MAX_CHARS = 4000;
 
@@ -152,7 +162,19 @@ export type SummaryRebuildAttempt = SummaryRebuildReport;
 
 /** Minimal provider-stream shape this module needs (the SDK's streaming seam). */
 interface RebuildStream {
-  (model: any, context: any, options?: any): AsyncIterable<{ type?: string; delta?: string; message?: unknown }>;
+  (model: any, context: any, options?: any): AsyncIterable<{
+    type?: string;
+    delta?: string;
+    message?: unknown;
+    /**
+     * pi-ai 1.5.1 puts the stop reason on the `done` event:
+     * `"stop" | "length" | "toolUse" | "deferred"`. Only `stop` means the model
+     * finished its answer; `length` means the output was CUT OFF at the token
+     * limit, which is a truncated summary, not a short one.
+     */
+    reason?: string;
+    error?: unknown;
+  }>;
 }
 
 function textOfDone(message: unknown): string {
@@ -189,11 +211,19 @@ export async function generateRebuiltSummary(
   model: any,
   plan: SummaryRebuildPlanShape,
   options?: { signal?: AbortSignal; apiKey?: string },
-): Promise<{ text: string; usage?: unknown }> {
+): Promise<{ text: string; usage?: unknown; truncated?: boolean }> {
   const prompt = buildSummaryRebuildPrompt(plan);
   let text = "";
   let usage: unknown;
   let failed = false;
+  // Set when the provider reports the answer was cut off (`done.reason: "length"`)
+  // or the stream ended without any successful terminal event. Either way the
+  // accumulated text is a fragment, and a fragment must not clear a suspension.
+  let truncated = false;
+  // Did a terminal event arrive at all? A stream that just stops (a closed
+  // socket, a consumer that walked away) leaves partial text behind; committing
+  // it would present half an answer as a complete summary.
+  let sawTerminal = false;
   const callOptions: Record<string, unknown> = {};
   if (options?.apiKey) callOptions.apiKey = options.apiKey;
   if (options?.signal) callOptions.signal = options.signal;
@@ -206,9 +236,14 @@ export async function generateRebuiltSummary(
     for await (const event of stream) {
       if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
       else if (event?.type === "done" && event.message) {
+        sawTerminal = true;
         usage = (event.message as { usage?: unknown }).usage;
         if (!text) text = textOfDone(event.message);
+        // Only `stop` means the model finished. `length` is a cut-off answer;
+        // `toolUse`/`deferred` are not a finished summary either.
+        if (event.reason !== undefined && event.reason !== "stop") truncated = true;
       } else if (event?.type === "error") {
+        sawTerminal = true;
         // pi-ai 1.5.x reports a failed turn here instead of throwing. The call
         // still happened, so its usage (when the provider sent one) is kept.
         failed = true;
@@ -217,9 +252,14 @@ export async function generateRebuiltSummary(
       }
     }
   } catch {
-    return { text: "", usage };
+    return { text: "", usage, truncated: true };
   }
   if (failed) return { text: "", usage };
+  // A stream with text but no terminal event is a fragment: report it as
+  // truncated so the caller keeps the suspension instead of committing half an
+  // answer.
+  if (!sawTerminal) return { text: "", usage, truncated: true };
+  if (truncated) return { text: "", usage, truncated: true };
   return { text: text.trim(), usage };
 }
 
@@ -274,6 +314,8 @@ export async function rebuildSuspendedSummary(
     model?: any;
     apiKey?: string;
     signal?: AbortSignal;
+    /** The user turn being handled now, when it is not stored yet. */
+    currentUserTurn?: string;
   },
 ): Promise<SummaryRebuildAttempt> {
   const s = store as Partial<SummaryRebuildPort>;
@@ -288,7 +330,11 @@ export async function rebuildSuspendedSummary(
       cleared: false,
     };
   }
-  const plan = planSummary.call(s, { sessionId: req.sessionId, anchorId: req.anchorId });
+  const plan = planSummary.call(s, {
+    sessionId: req.sessionId,
+    anchorId: req.anchorId,
+    ...(req.currentUserTurn ? { currentUserTurn: req.currentUserTurn } : {}),
+  });
   if (!plan.complete) {
     return {
       anchorId: req.anchorId,
@@ -331,11 +377,34 @@ export async function rebuildSuspendedSummary(
     return {
       anchorId: req.anchorId,
       outcome: "generation-failed",
-      reasons: ["the model call produced no usable summary, so the old version stays suspended"],
+      reasons: [
+        generated.truncated
+          ? "the model stopped before finishing (a cut-off or unterminated stream is not a summary), " +
+            "so the old version stays suspended"
+          : "the model call produced no usable summary, so the old version stays suspended",
+      ],
       newAnchorId: null,
       cleared: false,
       // The call was billed even though it produced nothing: report its usage so
       // it is not hidden behind the "nothing happened" wording (D4).
+      ...(generated.usage ? { usage: generated.usage } : {}),
+    };
+  }
+  // The text must fit the injection slot. `inject` renders only the first
+  // SUMMARY_INJECT_MAX_CHARS, so a longer summary would be reported as rebuilt
+  // while its tail — possibly the user's latest change — never reaches the model.
+  // Refused here rather than cut: a silent truncation reported as a full rebuild
+  // is what the ticket forbids.
+  if (generated.text.length > SUMMARY_INJECT_MAX_CHARS) {
+    return {
+      anchorId: req.anchorId,
+      outcome: "generation-failed",
+      reasons: [
+        "the rebuilt summary is longer than the " + SUMMARY_INJECT_MAX_CHARS +
+          "-character injection limit, so it would be cut before reaching the model; the old version stays suspended",
+      ],
+      newAnchorId: null,
+      cleared: false,
       ...(generated.usage ? { usage: generated.usage } : {}),
     };
   }

@@ -264,28 +264,39 @@ function anchorBody(anchor: StoredAnchorRow): string | null {
  * shapes are the user's words, so both must be readable — taking the JSON
  * verbatim would paste `[{"type":"text"...` into the rebuilt task section and
  * make the requirement unreadable.
+ *
+ * The hard part is telling the two apart. A user who types `{"format":"csv"}` is
+ * stating a requirement, not giving a content block; returning "" for it dropped
+ * that change while the plan still called itself complete.
+ *
+ * So the parse only wins when the JSON really LOOKS like content blocks: a
+ * non-empty array whose every element is an object carrying a string `type`.
+ * Everything else — a bare object, an array of scalars, an array of objects with
+ * no `type` — is user text and comes back verbatim. A genuine block array with no
+ * text block (an image-only turn) still yields "", which is right: there is no
+ * text channel to quote.
  */
 export function readStoredMessageText(content: unknown): string {
   if (typeof content !== "string") return "";
   const trimmed = content.trimStart();
   if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return content;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(content) as unknown;
-    const blocks = Array.isArray(parsed) ? parsed : [parsed];
-    const parts: string[] = [];
-    for (const block of blocks) {
-      if (typeof block === "string") { parts.push(block); continue; }
-      if (!block || typeof block !== "object") continue;
-      const { type, text } = block as { type?: unknown; text?: unknown };
-      if (type === "text" && typeof text === "string") parts.push(text);
-    }
-    // A JSON blob with no text block is not a user turn's text (an image-only
-    // turn, or tool JSON). Returning "" keeps it out of the task section.
-    return parts.join("\n");
+    parsed = JSON.parse(content) as unknown;
   } catch {
     // Not JSON after all: a user really typed something starting with "[".
     return content;
   }
+  if (!Array.isArray(parsed) || parsed.length === 0) return content;
+  const isBlock = (b: unknown): boolean =>
+    !!b && typeof b === "object" && typeof (b as { type?: unknown }).type === "string";
+  if (!parsed.every(isBlock)) return content;
+  const parts: string[] = [];
+  for (const block of parsed) {
+    const { type, text } = block as { type?: unknown; text?: unknown };
+    if (type === "text" && typeof text === "string") parts.push(text);
+  }
+  return parts.join("\n");
 }
 
 /**
@@ -293,8 +304,15 @@ export function readStoredMessageText(content: unknown): string {
  *
  * This is the ONLY accepted source of task requirements (D9). Role filtering is
  * what keeps tool results and assistant text out; stripping keeps injected
- * memory/RAG blocks out. Exact duplicates collapse to their first occurrence:
- * a retried call re-appending the same turn must not weight it twice.
+ * memory/RAG blocks out.
+ *
+ * Every stored turn is kept, in order, INCLUDING textually identical ones. A
+ * global text de-dup was tried and removed: "use Chinese" -> "switch to English"
+ * -> "use Chinese again" lost the third line, which is the user's latest explicit
+ * change, and the plan still looked complete. Re-appends from a retry carry a
+ * different message id and cannot be told apart from a real repeat by text alone,
+ * so keeping the order is the honest answer. The prompt budget is what bounds the
+ * cost, and it reports what did not fit.
  *
  * @returns Records in message order; empty when the session has no user turn of
  *   its own (a new session inherits no other session's task).
@@ -304,12 +322,9 @@ export function collectTaskRecords(db: Database.Database, sessionId: string): Re
     .prepare("SELECT id, content, created_at AS createdAt FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id")
     .all(sessionId) as Array<{ id: number; content: string; createdAt: string }>;
   const out: RebuildTaskRecord[] = [];
-  const seen = new Set<string>();
   for (const row of rows) {
     const text = stripInjectedBlocks(readStoredMessageText(row.content));
     if (text.length === 0) continue;
-    if (seen.has(text)) continue;
-    seen.add(text);
     out.push({ messageId: row.id, text, createdAt: row.createdAt });
   }
   return out;
@@ -334,6 +349,17 @@ export function planSummaryRebuild(
     anchorId: number;
     factBudgetChars?: number;
     taskBudgetChars?: number;
+    /**
+     * The user turn this run is handling, when it is not stored yet.
+     *
+     * The runtime persists finalized messages at the END of a run, so the turn
+     * that triggered this rebuild is still missing from `messages` while the
+     * rebuild runs. Without it the plan can look complete (earlier turns are
+     * stored) and the rebuilt summary silently loses THIS turn's change — the
+     * "changed to weekends only" case. Anything that is not a non-empty string
+     * is ignored.
+     */
+    currentUserTurn?: string;
   },
 ): SummaryRebuildPlan {
   const factBudget = req.factBudgetChars ?? SUMMARY_REBUILD_FACT_BUDGET_CHARS;
@@ -414,6 +440,18 @@ export function planSummaryRebuild(
   // Task requirements: the user's own turns, oldest first. The first turn is the
   // original request; later turns are the explicit changes the user asked for.
   const allRecords = collectTaskRecords(db, req.sessionId);
+  // The live turn goes LAST: it is the newest instruction, and a later explicit
+  // change must win over an earlier one in a reader's mind.
+  //
+  // It is appended even when the same text is already stored — a persisted copy
+  // and the live one carry no shared id, so dropping either could drop the real
+  // change. The budget below is what bounds the list.
+  const liveTurn = typeof req.currentUserTurn === "string"
+    ? stripInjectedBlocks(req.currentUserTurn)
+    : "";
+  if (liveTurn.length > 0) {
+    allRecords.push({ messageId: 0, text: liveTurn, createdAt: "" });
+  }
   const taskRecords: RebuildTaskRecord[] = [];
   let taskChars = 0;
   for (const record of allRecords) {
@@ -544,6 +582,28 @@ export function writeRebuiltSummaryAnchor(
   }
 
   const write = db.transaction((): SummaryRebuildWriteResult => {
+    // Is the version being rebuilt still the newest one? A compression that ran
+    // while this rebuild was generating writes a NEWER summary C. Committing R
+    // after it would make R the injected summary, and R only knows the sources of
+    // the OLD version — so every fact C added would silently vanish from the
+    // prompt. Checked inside the transaction and before the insert, so the old
+    // version simply stays suspended: the safe direction, and nothing C added is
+    // lost.
+    const newer = db
+      .prepare(
+        "SELECT id FROM resume_anchors WHERE session_id = ? AND anchor_type = 'rolling_summary' AND id > ? LIMIT 1",
+      )
+      .get(req.sessionId, req.rebuildOfAnchorId) as { id: number } | undefined;
+    if (newer) {
+      return {
+        anchorId: null,
+        cleared: false,
+        status: "rejected",
+        reason:
+          "a newer summary (anchor " + newer.id + ") was written while this one was being rebuilt; " +
+          "it was left in place so nothing it added is lost",
+      };
+    }
     const info = db
       .prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, 'rolling_summary', ?)")
       .run(req.sessionId, json);

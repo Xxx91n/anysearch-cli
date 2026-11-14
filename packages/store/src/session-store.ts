@@ -286,6 +286,8 @@ export interface SessionStore {
     anchorId: number;
     factBudgetChars?: number;
     taskBudgetChars?: number;
+    /** The user turn being handled now, when it is not stored yet. */
+    currentUserTurn?: string;
   }): SummaryRebuildPlan;
   writeRebuiltSummaryAnchor?(req: {
     sessionId: string;
@@ -1264,7 +1266,13 @@ export class SqliteSessionStore implements SessionStore {
    * `complete` is false whenever either half is short, so a caller can report
    * the gap instead of presenting a partial rebuild as a full recovery.
    */
-  planSummaryRebuild(req: { sessionId: string; anchorId: number; factBudgetChars?: number; taskBudgetChars?: number }): SummaryRebuildPlan {
+  planSummaryRebuild(req: {
+    sessionId: string;
+    anchorId: number;
+    factBudgetChars?: number;
+    taskBudgetChars?: number;
+    currentUserTurn?: string;
+  }): SummaryRebuildPlan {
     return planSummaryRebuild(this.db, req);
   }
 

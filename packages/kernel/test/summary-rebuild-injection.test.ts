@@ -33,6 +33,7 @@ import {
   previousSummaryFitsPrompt,
   rebuildSuspendedSummary,
   PREVIOUS_SUMMARY_PROMPT_MAX_CHARS,
+  SUMMARY_INJECT_MAX_CHARS,
 } from "../src/summary-rebuild";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
@@ -139,7 +140,8 @@ async function seedSuspended(
   const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
   if (opts.withSources !== false) {
     const old = "Acme online support runs weekdays 9:00-17:00.";
-    // Three materials of one entity -> one live knowledge row (the batch path).
+    // Three writes of one entity key -> one live knowledge row (the batch path).
+    // The earlier rows are closed by supersede, so only the last stays current.
     const ids: number[] = [];
     for (let i = 1; i <= 3; i++) {
       const ra = await store.adjudicateMemory(sessionId, [{
@@ -154,7 +156,11 @@ async function seedSuspended(
     );
     knowledgeId = built.semanticIds[0] ?? null;
     if (knowledgeId !== null) sources.push({ kind: "knowledge", id: knowledgeId });
-    if (ids[0] !== undefined) sources.push({ kind: "material", id: ids[0] });
+    // Only the LAST material of an entity key stays live: writing the next one of
+    // the same key closes the previous (temporal supersede). Citing an earlier id
+    // would pin a row the store already retired, which the rebuild then refuses.
+    const survivor = ids[ids.length - 1];
+    if (survivor !== undefined) sources.push({ kind: "material", id: survivor });
   }
   await store.saveAnchor(sessionId, "rolling_summary", {
     summary: "superseded summary text that must not be injected",
@@ -294,8 +300,16 @@ async function seedSuspended(
   const rebuilt = anchors.find((a) => a.id === attempts[0]!.newAnchorId)!;
   const payload = rebuilt.payload as any;
   assert(payload.rebuiltFrom?.anchorId === anchorId, "K3: the new anchor points at the version it replaces");
-  assert(Array.isArray(payload.rebuiltFrom?.taskRecordIds) && payload.rebuiltFrom.taskRecordIds.length === 2,
-    "K3: both of the user's turns are recorded as the task source");
+  // Two STORED turns (message ids) plus the live turn of this run, whose id is 0
+  // because the runtime has not persisted it yet. All three must be quoted: the
+  // live one carries this turn's change, the stored ones carry the original ask.
+  assert(Array.isArray(payload.rebuiltFrom?.taskRecordIds) && payload.rebuiltFrom.taskRecordIds.length === 3,
+    "K3: both stored turns and this run's live turn are recorded (got " +
+      (payload.rebuiltFrom?.taskRecordIds?.length ?? "none") + ")");
+  assert(payload.rebuiltFrom.taskRecordIds.slice(0, 2).every((id: number) => id > 0),
+    "K3: the stored turns keep their message ids");
+  assert(payload.rebuiltFrom.taskRecordIds[2] === 0,
+    "K3: the live turn is recorded with id 0 (not stored yet) rather than a fake id");
   assert(payload.sources.length > 0, "K3: the new anchor carries the sources it was built from");
   // Generation spend is in the memory ledger, not hidden outside the run.
   const usage = pipeline.getSummaryUsage();
@@ -652,6 +666,127 @@ async function seedSuspended(
   assert(attempts[0]!.reasons.some((r) => r.includes("research-recall snippet")),
     "K13: the reason says why a recall snippet is not rebuilt");
   assert(attempts[0]!.newAnchorId === null, "K13: no anchor is written for a recall snippet");
+}
+
+// --- K14: a cut-off answer is not a summary --------------------------------
+//
+// pi-ai reports output truncation on the `done` event as `reason: "length"`, not
+// as an `error`. Treating it as success committed half an answer and cleared the
+// suspension — the replaced fact would then come back as a "rebuilt" summary.
+{
+  const lengthStream = (() => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta" as const, delta: "Acme support is now 24x7 but the hours" };
+      yield {
+        type: "done" as const,
+        reason: "length",
+        message: { role: "assistant", content: "", usage: { input: 10, output: 5, totalTokens: 15 } },
+      };
+    },
+  })) as any;
+
+  const out = await generateRebuiltSummary(lengthStream, {} as any, {
+    sessionId: "s", anchorId: 1, anchorType: "rolling_summary", previousSummary: null,
+    taskRecords: [{ messageId: 1, text: "t", createdAt: "now" }],
+    facts: [{ kind: "knowledge", id: 1, text: "f" }], replaced: [], exclusions: [],
+    complete: true, reasons: [], recordedSources: 1,
+  });
+  assert(out.text === "", "K14: a `length` stop yields no summary text");
+  assert(out.truncated === true, "K14: the result says it was truncated");
+  assert(!!out.usage, "K14: the call's usage is still reported (it was billed)");
+
+  // A normal stop is fine.
+  const okStream = (() => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta" as const, delta: "a complete summary" };
+      yield { type: "done" as const, reason: "stop", message: { role: "assistant", content: "" } };
+    },
+  })) as any;
+  const ok = await generateRebuiltSummary(okStream, {} as any, {
+    sessionId: "s", anchorId: 1, anchorType: "rolling_summary", previousSummary: null,
+    taskRecords: [{ messageId: 1, text: "t", createdAt: "now" }],
+    facts: [{ kind: "knowledge", id: 1, text: "f" }], replaced: [], exclusions: [],
+    complete: true, reasons: [], recordedSources: 1,
+  });
+  assert(ok.text === "a complete summary" && ok.truncated !== true,
+    "K14: a `stop` reason produces a usable summary");
+
+  // A stream that just ends, with no terminal event at all, is a fragment.
+  const unterminated = (() => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta" as const, delta: "half an answer" };
+    },
+  })) as any;
+  const frag = await generateRebuiltSummary(unterminated, {} as any, {
+    sessionId: "s", anchorId: 1, anchorType: "rolling_summary", previousSummary: null,
+    taskRecords: [{ messageId: 1, text: "t", createdAt: "now" }],
+    facts: [{ kind: "knowledge", id: 1, text: "f" }], replaced: [], exclusions: [],
+    complete: true, reasons: [], recordedSources: 1,
+  });
+  assert(frag.text === "" && frag.truncated === true,
+    "K14: a stream with no terminal event is treated as truncated");
+}
+
+// --- K15: an answer longer than the injection slot is refused --------------
+//
+// `inject` renders only the first SUMMARY_INJECT_MAX_CHARS. A longer summary would
+// be reported as rebuilt while its tail — possibly the user's latest change —
+// never reached the model.
+{
+  const db = "k15.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k15";
+  await store.ensureSession(sid, "acme");
+  const { anchorId } = await seedSuspended(store, sid);
+  const before = (await store.getAnchors(sid)).length;
+
+  const attempt = await rebuildSuspendedSummary(store, {
+    sessionId: sid,
+    anchorId,
+    streamFn: stubStream("Acme support is now 24x7. " + "x".repeat(SUMMARY_INJECT_MAX_CHARS)),
+    model: {} as any,
+  });
+  assert(attempt.outcome === "generation-failed",
+    "K15: an over-long answer is refused (got " + attempt.outcome + ")");
+  assert(attempt.reasons.some((r) => r.includes("injection limit")),
+    "K15: the reason names the injection limit");
+  assert(attempt.newAnchorId === null, "K15: nothing is written");
+  assert((await store.getAnchors(sid)).length === before, "K15: no anchor was added");
+  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId), "K15: the suspension stays");
+}
+
+// --- K16: a newer summary written during the rebuild is not replaced -------
+//
+// The store refuses the write; the kernel must report it as a refusal (not a
+// success and not a crash), and the newer version must stay the newest.
+{
+  const db = "k16.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k16";
+  await store.ensureSession(sid, "acme");
+  const { anchorId } = await seedSuspended(store, sid);
+
+  // A normal compression lands a newer summary before the rebuild commits.
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "a newer summary written during the rebuild", sources: [],
+  });
+  const newerId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  const attempt = await rebuildSuspendedSummary(store, {
+    sessionId: sid, anchorId, streamFn: stubStream("a rebuild of the older version"), model: {} as any,
+  });
+  assert(attempt.outcome === "rejected-write",
+    "K16: the write is reported as refused (got " + attempt.outcome + ")");
+  assert(attempt.newAnchorId === null, "K16: nothing is inserted");
+  assert(attempt.reasons.some((r) => r.includes("newer summary")),
+    "K16: the reason explains why");
+  const anchors = await store.getAnchors(sid);
+  const newest = anchors.filter((a) => a.anchorType === "rolling_summary").pop()!;
+  assert(newest.id === newerId, "K16: the newer summary stays the newest");
+  assert((newest.payload as any).summary.includes("newer summary written during"),
+    "K16: its text is unchanged");
 }
 
 // --- cleanup ---------------------------------------------------------------

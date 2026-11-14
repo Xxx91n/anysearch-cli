@@ -153,6 +153,12 @@ export interface SummaryRebuildPort {
     anchorId: number;
     factBudgetChars?: number;
     taskBudgetChars?: number;
+    /**
+     * The user turn being handled right now, when it is not stored yet. The
+     * runtime persists messages at the end of a run, so the turn that triggered
+     * the rebuild is absent from the message table while it runs.
+     */
+    currentUserTurn?: string;
   }): SummaryRebuildPlanShape;
   writeRebuiltSummaryAnchor(req: {
     sessionId: string;

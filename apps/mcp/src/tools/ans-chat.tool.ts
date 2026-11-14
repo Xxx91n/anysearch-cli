@@ -463,7 +463,31 @@ export function registerAnsChat(
           for (const r of summaryRebuilds) output += "\n" + formatSummaryRebuildLine(r);
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
-          if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
+          //
+          // #264: the rebuild report rides along even here. The summary work runs
+          // in the background and was already drained above, so a rebuilt summary
+          // really does exist; dropping the report would tell the caller nothing
+          // about it and leave it guessing whether the old version is still
+          // suspended.
+          if (runtimeError !== undefined) {
+            // The failure result keeps its stable "<tool> error: " prefix and
+            // gains the rebuild outcome as one extra line, so a host reading
+            // `content` learns it too. The report is appended to the error text
+            // rather than replacing it: the error is the reason the call failed,
+            // and hiding it behind a summary note would be worse.
+            const failure = toolError("ans_chat", runtimeError);
+            const rebuildLines = summaryRebuilds.map(formatSummaryRebuildLine);
+            return {
+              ...failure,
+              content: [
+                ...failure.content,
+                ...rebuildLines.map((text) => ({ type: "text" as const, text })),
+              ],
+              ...(summaryRebuilds.length > 0
+                ? { structuredContent: { summaryRebuilds } as Record<string, unknown> }
+                : {}),
+            };
+          }
           // Cancellation is a transport outcome, not a finished run (#211). The
           // partial text is dropped so a cut-off stream never reads as an
           // answer. The run still spent real money before it was cut off, and
@@ -479,6 +503,9 @@ export function registerAnsChat(
                 memorySummary: runtime.getMemoryUsage(),
               },
               interrupted: true,
+              // #264: the background rebuild did finish, so its outcome is a fact
+              // about this call, not part of the dropped answer text.
+              ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
             });
           }
           // Every call reports what it spent. A run that produced no accounting

@@ -116,6 +116,10 @@ async function buildKnowledge(
 ): Promise<{ materialIds: number[]; knowledgeId: number }> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
+    // One entity key (clustering groups by entity), distinct URLs. The store's
+    // temporal supersede closes the earlier rows of that key as each new one is
+    // written, so only the LAST row stays live; `buildKnowledge` therefore uses
+    // the live survivor as the summary's source (see below).
     ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
@@ -125,7 +129,12 @@ async function buildKnowledge(
   assert(rep.add === 1, "fixture: the batch run built one knowledge row (add=" + rep.add + ")");
   const knowledgeId = rep.semanticIds[0];
   if (typeof knowledgeId !== "number") throw new Error("fixture: no knowledge id");
-  return { materialIds: ids, knowledgeId };
+  // Only the LAST row of an entity key stays live (temporal supersede closes the
+  // earlier ones as they are written), so the survivor is the only material a
+  // summary could honestly cite. Returning an earlier id would pin a row the
+  // store itself already retired — which is exactly the stale-source case the
+  // rebuild must refuse.
+  return { materialIds: [ids[ids.length - 1]!], knowledgeId };
 }
 
 /** One real correction: a single reliable material replaces the live knowledge row. */
@@ -520,21 +529,32 @@ function userText(db: string, sessionId: string): any[] {
   assert(column, "R8: the cleared_by_anchor_id column exists after migration");
 }
 
-// --- R9: a collection of user turns collapses exact duplicates --------------
-
+// --- R9: repeated wording is kept, because a repeat IS a real instruction --
+//
+// "use Chinese" -> "switch to English" -> "use Chinese again" is a genuine
+// sequence of demands. A global text de-dup dropped the third line, which is the
+// user's LATEST explicit change, and the plan still looked complete. Retry
+// re-appends carry a different message id and cannot be told apart by text, so
+// every stored turn is kept in order and the budget is what bounds the cost.
 {
   const db = "r9.db";
   const store = openStore(db);
   await store.createSession("acme");
   const owner = "session-dupes";
   await store.ensureSession(owner, "acme");
-  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
-  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
-  await store.append(owner, { role: "user", content: TASK_CHANGE });
+  await store.append(owner, { role: "user", content: "use Chinese" });
+  await store.append(owner, { role: "user", content: "switch to English" });
+  await store.append(owner, { role: "user", content: "use Chinese" });
   const records = withDb(db, (d) => collectTaskRecords(d, owner));
-  assert(records.length === 2, "R9: an exactly repeated turn counts once (got " + records.length + ")");
-  assert(records[0]!.text === TASK_ORIGINAL && records[1]!.text === TASK_CHANGE,
-    "R9: order is preserved after collapsing");
+  assert(records.length === 3,
+    "R9: an repeated instruction is kept, not collapsed by text (got " + records.length + ")");
+  assert(records.map((r) => r.text).join(" | ") === "use Chinese | switch to English | use Chinese",
+    "R9: the order of the user's turns is preserved, so the latest change wins");
+
+  // The live turn is appended last, so THIS run's change is never the one lost.
+  const plan = withDb(db, (d) => collectTaskRecords(d, owner));
+  assert(plan[plan.length - 1]!.text === "use Chinese",
+    "R9: the final turn is the one a reader sees last");
   closeStore(store);
 }
 
@@ -589,6 +609,170 @@ function userText(db: string, sessionId: string): any[] {
   assert(!plan.complete, "R10: a source with no current version leaves the plan incomplete");
   assert(plan.reasons.some((r) => r.includes("no current version")),
     "R10: the reason names the missing current version");
+
+  closeStore(store);
+}
+
+// --- R11: a repeat of the live turn is kept, and the live turn is last -------
+//
+// The runtime persists messages at the END of a run, so the turn that triggered
+// the rebuild is not in the message table. It travels in as `currentUserTurn` and
+// must be last, so this run's change is never the one that gets dropped.
+{
+  const db = "r11.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const owner = "session-live";
+  await store.ensureSession(owner, "acme");
+  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
+
+  const built = await buildKnowledge(store, owner, "acme", THREE_OLD, "https://acme.example/live");
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "an earlier summary",
+    sources: [{ kind: "material", id: built.materialIds[0]! }],
+  });
+  const anchorId = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  const withoutLive = store.planSummaryRebuild({ sessionId: owner, anchorId });
+  assert(withoutLive.taskRecords.length === 1,
+    "R11: only the stored turn is quoted when no live turn is passed (got " + withoutLive.taskRecords.length + ")");
+
+  const withLive = store.planSummaryRebuild({ sessionId: owner, anchorId, currentUserTurn: TASK_CHANGE });
+  assert(withLive.taskRecords.length === 2,
+    "R11: the live turn is added to the plan (got " + withLive.taskRecords.length + ")");
+  assert(withLive.taskRecords[withLive.taskRecords.length - 1]!.text === TASK_CHANGE,
+    "R11: the live turn is LAST, so this run's change reads as the newest instruction");
+  assert(withLive.taskRecords[withLive.taskRecords.length - 1]!.messageId === 0,
+    "R11: the live turn carries id 0, not a fabricated message id");
+
+  // An injected block in the live text must not become the user's words either.
+  const injected = store.planSummaryRebuild({
+    sessionId: owner,
+    anchorId,
+    currentUserTurn: "real change\n\n[Session Memory] stale fact",
+  });
+  const lastText = injected.taskRecords[injected.taskRecords.length - 1]!.text;
+  assert(lastText === "real change",
+    "R11: injection stripped from the live turn too (got " + JSON.stringify(lastText) + ")");
+
+  closeStore(store);
+}
+
+// --- R12: a user-typed JSON object is text, not a content block -------------
+//
+// `{"format":"csv"}` is a requirement. Treating it as a block array emptied it and
+// the plan still looked complete, so the change vanished. Only an ARRAY of
+// block-shaped objects counts as content blocks.
+{
+  assert(readStoredMessageText('{"format":"csv"}') === '{"format":"csv"}',
+    "R12: a bare JSON object is the user's own text");
+  assert(readStoredMessageText('[{"type":"text","text":"block turn"}]') === "block turn",
+    "R12: a real block array still reads as its text");
+  assert(readStoredMessageText('[{"foo":"bar"}]') === '[{"foo":"bar"}]',
+    "R12: an array of objects with no type is user text");
+  assert(readStoredMessageText('["a","b"]') === '["a","b"]',
+    "R12: an array of scalars is user text");
+  assert(readStoredMessageText('[{"type":"image"}]') === "",
+    "R12: an image-only block array has no text channel and yields empty");
+}
+
+// --- R13: a rebuild is refused when a newer summary already exists ----------
+//
+// A compression that ran during the rebuild writes summary C. Committing R after
+// it would make R the injected version, and R only knows the OLD sources, so every
+// fact C added would vanish from the prompt. The safe direction is to refuse and
+// leave the newer one in place.
+{
+  const db = "r13.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const owner = "session-newer";
+  await store.ensureSession(owner, "acme");
+  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
+
+  const built = await buildKnowledge(store, owner, "acme", THREE_OLD, "https://acme.example/newer");
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "the version being rebuilt",
+    sources: [{ kind: "material", id: built.materialIds[0]! }],
+  });
+  const rebuiltOf = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  // A normal compression lands a newer summary while the rebuild is generating.
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "a newer summary written during the rebuild",
+    sources: [{ kind: "material", id: built.materialIds[0]! }],
+  });
+  const newerAnchorId = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  const before = (await store.getAnchors(owner)).length;
+  const wrote = store.writeRebuiltSummaryAnchor({
+    sessionId: owner,
+    rebuildOfAnchorId: rebuiltOf,
+    text: "a rebuild built from the older version",
+    sources: [{ kind: "material", id: built.materialIds[0]! }],
+    taskRecordIds: [],
+  });
+  assert(wrote.status === "rejected", "R13: the write is refused (got " + wrote.status + ")");
+  assert(wrote.anchorId === null, "R13: nothing is inserted");
+  assert(!!wrote.reason && wrote.reason.includes(String(newerAnchorId)),
+    "R13: the reason names the newer summary that was kept");
+  assert((await store.getAnchors(owner)).length === before,
+    "R13: the newer version stays the newest — no stale rebuild replaces it");
+
+  closeStore(store);
+}
+
+// --- R14: a source invalidated by an ordinary re-fetch blocks the clear -----
+//
+// `valid_until` with no successor is the write-time replacement. The planner
+// already refuses such a row as a current fact; the commit must use the SAME rule,
+// or it can clear a suspension for a summary built on a row the planner rejected.
+{
+  const db = "r14.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const owner = "session-invalidated-commit";
+  await store.ensureSession(owner, "acme");
+  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
+
+  const built = await buildKnowledge(store, owner, "acme", THREE_OLD, "https://acme.example/inv");
+  const materialId = built.materialIds[0]!;
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "a summary before refetch",
+    sources: [
+      { kind: "knowledge", id: built.knowledgeId },
+      { kind: "material", id: materialId },
+    ],
+  });
+  const anchorId = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  // A real correction suspends it (this is how the product gets here).
+  const rep = await correctKnowledge(store, owner, "acme");
+  assert(rep.summariesSuspended === 1, "R14 fixture: the correction suspended the summary");
+
+  // Then the SAME url is re-fetched: the row is invalidated with no successor,
+  // which is different from the correction that caused the suspension.
+  const d = new Database(join(dir, db));
+  try {
+    d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(materialId);
+  } finally {
+    d.close();
+  }
+
+  const wrote = store.writeRebuiltSummaryAnchor({
+    sessionId: owner,
+    rebuildOfAnchorId: anchorId,
+    text: "a rebuild over a row that was just invalidated",
+    sources: [
+      { kind: "knowledge", id: built.knowledgeId },
+      { kind: "material", id: materialId },
+    ],
+    taskRecordIds: [],
+  });
+  assert(wrote.status === "stored-not-current",
+    "R14: an invalidated source keeps the new version suspended (got " + wrote.status + ")");
+  assert(wrote.cleared === false, "R14: the old suspension is NOT cleared");
+  assert(store.suspendedSummaryAnchorIds(owner).has(anchorId),
+    "R14: the original suspension stays in force");
 
   closeStore(store);
 }
