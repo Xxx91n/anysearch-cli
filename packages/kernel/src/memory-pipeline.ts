@@ -242,6 +242,27 @@ export function snapshotMessages(messages: any[]): any[] {
   return messages.slice();
 }
 
+/**
+ * #263: does the message list the generator will read carry an injected
+ * `[Research Recall]` block?
+ *
+ * The gate for inheriting the l2_recall anchor's dependencies. Inheriting
+ * unconditionally is wrong both ways: with no block, the summary records a
+ * dependency it never read (a later correction then suspends an unrelated
+ * summary); with a block that is not the newest anchor, it inherits the wrong
+ * one and misses what was actually read.
+ *
+ * Matches the injected shape (block after a blank line), so a user who merely
+ * mentions the tag does not count as having a block.
+ *
+ * @param messages - The snapshot the summarizer will receive.
+ * @returns True when a recall block is really present.
+ */
+export function carriesRecallBlock(messages: any[]): boolean {
+  const marker = BLANK_LINE_BEFORE_BLOCK + RESEARCH_RECALL_TAG;
+  return (messages ?? []).some((m: any) => (readMessageText(m)?.text ?? "").includes(marker));
+}
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -1007,6 +1028,14 @@ export class MemoryPipeline {
       // paused when the block's own material is corrected.
       const previousRecallAnchor = lastAnchorOfType(prevAnchors, "l2_recall");
       const previousRecallAnchorId = previousRecallAnchor?.id;
+      // Whether the generator will actually READ a recall block. Inheriting the
+      // newest l2_recall anchor unconditionally would be wrong in both
+      // directions: with no block in the history it would record a dependency
+      // the summary never used (a later correction of that material would then
+      // suspend an unrelated summary), and with a block that is NOT the newest
+      // anchor it would inherit the wrong one and miss the one actually read.
+      // So the block's presence in the message list is the gate.
+      const historyCarriesRecallBlock = carriesRecallBlock(messages);
 
       // D5: fire-and-forget compression helper.
       // #263: set when the source read failed. The state must NOT advance then:
@@ -1072,8 +1101,11 @@ export class MemoryPipeline {
             gapUrls: scanFromStart.results
               .map((r: any) => r?.url)
               .filter((u: any) => typeof u === "string" && u.length > 0),
-            previousAnchorIds: [previousSummaryAnchorId, previousRecallAnchorId]
-              .filter((id): id is number => typeof id === "number"),
+            previousAnchorIds: [
+              previousSummaryAnchorId,
+              // Only when the history really carries a recall block (see above).
+              historyCarriesRecallBlock ? previousRecallAnchorId : undefined,
+            ].filter((id): id is number => typeof id === "number"),
           });
           if (!read.ok) {
             // Report the skip on stderr (stdout stays protocol-pure) and stop

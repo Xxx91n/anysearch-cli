@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap, snapshotMessages } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap, snapshotMessages, carriesRecallBlock } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -533,6 +533,45 @@ async function main() {
     );
     assert(secondFails.ok === false,
       "P13: a failure on any inherited anchor skips the write (partial deps are not accepted)");
+
+    // 3c. A recall anchor is inherited ONLY when the history actually carries
+    // that block. Two failure shapes the reviewer named:
+    //   - no recall block at all, but a newest l2_recall anchor exists on the
+    //     store: inheriting it would record a dependency the summary never read,
+    //     and a later correction would suspend an unrelated summary.
+    //   - the history carries an OLDER recall block than the newest anchor:
+    //     inheriting only the newest misses what was actually read.
+    // The gate is the block's presence, which is what the caller passes in.
+
+    // Shape 1: the write helper is given no recall anchor because the history has
+    // no block. Asserted at the helper boundary: an empty inherit list records
+    // nothing.
+    const noBlock = readSummarySourcesForWrite(
+      { resolveSummarySources: () => [], summarySourcesForAnchor: () => [{ kind: "material", id: 77 }] },
+      { gapUrls: [], previousAnchorIds: [] },
+    );
+    assert(noBlock.ok === true && noBlock.sources.length === 0,
+      "P13: with no inherited anchor the helper records nothing (got " +
+      (noBlock.ok ? noBlock.sources.length : "not-ok") + ")");
+
+    // Shape 2: the anchor that IS inherited is the one named, not "whatever is
+    // newest". Passing the block's own anchor id gets that anchor's sources.
+    const namedAnchor = readSummarySourcesForWrite(
+      { resolveSummarySources: () => [], summarySourcesForAnchor: (id: number) => [{ kind: "material", id: id }] },
+      { gapUrls: [], previousAnchorIds: [42] },
+    );
+    assert(namedAnchor.ok === true && namedAnchor.sources.some((r) => r.id === 42),
+      "P13: the inherited anchor is the one the caller named, not the newest by default");
+
+    // 3d. The GATE itself: only a real injected block counts.
+    assert(carriesRecallBlock([
+      userTurn("q" + BLANK_LINE + "[Research Recall] learned facts"),
+    ]) === true, "P13: a real injected recall block is detected");
+    assert(carriesRecallBlock([userTurn("what does [Research Recall] mean?")]) === false,
+      "P13: merely MENTIONING the tag is not a block");
+    assert(carriesRecallBlock([userTurn("no blocks here")]) === false,
+      "P13: a plain message carries no block");
+    assert(carriesRecallBlock([]) === false, "P13: an empty list carries no block");
 
     // 4. The happy path merges both parts and dedupes nothing it should not.
     const happy = readSummarySourcesForWrite(
