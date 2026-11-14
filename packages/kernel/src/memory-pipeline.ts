@@ -41,6 +41,7 @@ const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
+import { rebuildSuspendedSummary, SUMMARY_INJECT_MAX_CHARS, type SummaryRebuildAttempt } from "./summary-rebuild";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
@@ -632,7 +633,9 @@ const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
 // sources. When they drift the write side records a hit whose text no prompt
 // ever carried, and a later correction then suspends a recall block that never
 // used it.
-const SUMMARY_INJECT_MAX_CHARS = 4000;
+// SUMMARY_INJECT_MAX_CHARS lives in ./summary-rebuild (exported from there) so the
+// generator that must respect it and the injection that renders it share ONE
+// number; see the import below.
 const RECALL_INJECT_MAX_CHARS = 1500;
 
 /**
@@ -850,6 +853,19 @@ export class MemoryPipeline {
   // must not read as a summary the summarizer never made.
   private adjudicationUsage = emptyUsageTotals();
 
+  // #264 (D9): which suspended anchors this runtime already tried to rebuild.
+  // One attempt per anchor, not per turn: a rebuild that failed on a fact the
+  // archive genuinely lacks must not re-spend a model call on every later turn.
+  // Keyed by anchor id, so a NEW suspension (a later correction of another fact)
+  // still gets its own attempt.
+  //
+  // `rebuildStarted` is added SYNCHRONOUSLY at dispatch time; `rebuildAttempts`
+  // only holds finished results. Two guards, because the turn that dispatches the
+  // background call must not dispatch a second one while the first is still
+  // waiting on the provider.
+  private readonly rebuildStarted = new Set<number>();
+  private readonly rebuildAttempts = new Map<number, SummaryRebuildAttempt>();
+
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
     this.rag = new RagAdapterRegistry({ store: deps.store });
@@ -858,6 +874,116 @@ export class MemoryPipeline {
   /** Summary-call accounting for this runtime (never zero-filled). */
   getSummaryUsage(): SummaryUsage {
     return toSummaryUsage(this.summaryUsage, this.adjudicationUsage);
+  }
+
+  /**
+   * #264 (D9): the rebuild attempts this runtime made, newest anchor last.
+   *
+   * Reported next to the run summary so a caller can see that a suspended
+   * summary came back, or why it did not — "the hole is still there" is
+   * something a caller must be told, never left to infer from silence.
+   */
+  getSummaryRebuilds(): SummaryRebuildAttempt[] {
+    return [...this.rebuildAttempts.values()];
+  }
+
+  /** Does the store expose the rebuild seams at all? */
+  private hasRebuildSeam(): boolean {
+    const probe = this.deps.store as unknown as { planSummaryRebuild?: unknown; writeRebuiltSummaryAnchor?: unknown };
+    return typeof probe?.planSummaryRebuild === "function" && typeof probe?.writeRebuiltSummaryAnchor === "function";
+  }
+
+  /**
+   * Attempt one rebuild of a suspended summary, at most once per anchor.
+   *
+   * `rebuildStarted` is filled by the caller (`inject`) BEFORE this runs, so a
+   * second turn arriving while the model call is still in flight cannot start a
+   * duplicate attempt.
+   *
+   * Fail-open: a rebuild fault must not break the turn. A thrown plan read is
+   * recorded as `incomplete` with the message, so the caller still learns that
+   * the summary did not come back.
+   *
+   * @param sessionId - Session owning the summary.
+   * @param anchorId - The suspended anchor.
+   * @param currentUserTurn - The user turn this run is handling. It is not in the
+   *   message table yet (the runtime persists finalized messages at the end of a
+   *   run), so the plan needs it handed in or the rebuilt summary silently loses
+   *   this turn's change.
+   */
+  private async maybeRebuildSummary(
+    sessionId: string,
+    anchorId: number,
+    currentUserTurn?: string,
+  ): Promise<SummaryRebuildAttempt | undefined> {
+    const existing = this.rebuildAttempts.get(anchorId);
+    if (existing) return existing;
+    // The seam check lives at the dispatch site (`inject`) so there is exactly one
+    // place that decides whether a rebuild can run at all. Reaching here without
+    // the seam means the store was swapped mid-runtime: return undefined rather
+    // than claim an attempt it cannot make.
+    if (!this.hasRebuildSeam()) return undefined;
+    let attempt: SummaryRebuildAttempt;
+    let called = false;
+    try {
+      const apiKey = await this.deps.getApiKey?.();
+      // A rebuild that got past the plan makes exactly one model call, whether or
+      // not the provider answers with usage. `called` is what lets the ledger
+      // count it even then — the same rule #273 applied to adjudication: a sent
+      // call that reports nothing is a call with UNKNOWN tokens, not a free one.
+      called = typeof this.deps.streamFn === "function" && !!this.deps.model;
+      attempt = await rebuildSuspendedSummary(this.deps.store, {
+        sessionId,
+        anchorId,
+        streamFn: this.deps.streamFn as any,
+        model: this.deps.model,
+        ...(currentUserTurn ? { currentUserTurn } : {}),
+        // Same hand-off as every peer kernel call: without it, a host that
+        // configured the key outside ANS_LLM_API_KEY fails every rebuild on auth.
+        ...(apiKey ? { apiKey } : {}),
+        // Same bound as the other background summary work: flush() waits for this
+        // write before the store closes, so an unbounded provider stall would hold
+        // the CLI open until the provider timed out.
+        signal: AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+      });
+      // A plan that was not complete (or a store without the seam) never reached
+      // the model, so it must not be counted as a billed call.
+      if (attempt.outcome === "incomplete" || attempt.outcome === "no-model") called = false;
+    } catch (e) {
+      attempt = {
+        anchorId,
+        outcome: "incomplete",
+        reasons: ["the rebuild could not run (" + (e instanceof Error ? e.message : String(e)) + ")"],
+        newAnchorId: null,
+        cleared: false,
+      };
+      called = false;
+    }
+    this.rebuildAttempts.set(anchorId, attempt);
+    if (attempt.usage) {
+      // The rebuild is a real provider call on this session's behalf, so it books
+      // to the same summary ledger the run reports (D4: nothing hidden outside
+      // the main call).
+      accumulateUsage(this.summaryUsage, { role: "assistant", usage: attempt.usage });
+    } else if (called) {
+      // Sent but no usage block came back: count the call and say the tokens are
+      // unknown. Leaving it out entirely would let a silent provider hide the
+      // call from the cost report, which is the failure #273 fixed for
+      // adjudication.
+      this.summaryUsage.assistantCalls += 1;
+      this.summaryUsage.callsWithoutUsage = (this.summaryUsage.callsWithoutUsage ?? 0) + 1;
+    }
+    if (!attempt.cleared) {
+      // stderr, not stdout: the host protocols own stdout. The caller also sees
+      // it in the result metadata, this line is for a person reading a log.
+      try {
+        process.stderr.write(
+          "[anysearch] summary rebuild for anchor " + anchorId + " did not complete: " +
+            attempt.reasons.join("; ") + "\n",
+        );
+      } catch { /* stderr unavailable */ }
+    }
+    return attempt;
   }
 
   /**
@@ -1055,8 +1181,76 @@ export class MemoryPipeline {
       // A suspended summary is SILENTLY skipped, not replaced with a
       // "this section is suspended" line. The ticket forbids filling the slot
       // with the archive's latest material or any unrelated summary, and a
-      // placeholder would be one more thing the model has to interpret. The
-      // rebuild ticket (09/12) owns putting a current version back.
+      // placeholder would be one more thing the model has to interpret.
+      //
+      // #264 (D9): a suspended summary is not injected (above), but leaving the
+      // hole there forever is the state this ticket closes. The rebuild runs in
+      // the background exactly like the summary/recall writes do: `inject()` is
+      // the hot path BEFORE every provider request, so awaiting a second model
+      // call here would stall the turn and double its latency. The result is
+      // drained by flush() and reported at the end of the run.
+      //
+      // Design: the rebuild is dispatched as background work, not awaited in
+      // `inject()` — `inject` runs before every provider request, so waiting on a
+      // second model call here would double the turn's latency. Accepted cost:
+      // the rebuilt text reaches the prompt one turn later than ideal.
+      //
+      // At most once per anchor per runtime, and only when the plan is complete:
+      // an unrecoverable summary costs no model call, and a failed rebuild leaves
+      // the suspension in force.
+      //
+      // NOT dispatched when `suspensionUnknown`: that flag means the read threw,
+      // so this summary is only ASSUMED suspended. Rebuilding on that assumption
+      // would spend a model call and add an anchor for a summary that may be
+      // perfectly current — and the write would then report "no open suspension
+      // to clear" about work nobody asked for. Unknown state skips this turn;
+      // the next readable turn decides.
+      //
+      // Design: l2_recall is not rebuilt — its payload is a recall snippet
+      // produced by a query, not a statement of the session's task, so
+      // regenerating it means running that recall again, which the next search
+      // turn does on its own. Inventing text for it is the fabrication D10
+      // forbids.
+      if (summarySuspended && !suspensionUnknown && summaryAnchor) {
+        const anchorId = summaryAnchor.id;
+        if (!this.rebuildStarted.has(anchorId) && this.hasRebuildSeam()) {
+          // Marked SYNCHRONOUSLY, before the async body runs: `inject` is awaited
+          // per provider request, so two requests can be in flight before either
+          // rebuild finishes.
+          this.rebuildStarted.add(anchorId);
+          // The latest user turn IS this run's input, and this is the point that
+          // knows it. Read the text as given and let the STORE strip injected
+          // blocks: `preInjectionQueryText` cuts at the first known tag anywhere in
+          // the message, which is right for building a recall query (it only needs
+          // the leading question) but wrong here — a user who writes
+          // "[RAG Context] ..." followed by a real instruction would lose the
+          // instruction. The store's stripper only removes a TRAILING run of
+          // blocks, so user-authored tags survive.
+          const liveTarget = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx]) : null;
+          const liveTurn = liveTarget ? liveTarget.text : "";
+          this.track(
+            this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
+              .then(() => undefined, () => undefined),
+          );
+        }
+      }
+      // A suspended l2_recall block stays out of the prompt and is NOT rebuilt
+      // (see the Design note above). It must still be reported, once: silence
+      // reads as "this session never recalled anything", and the ticket requires
+      // that a limit be stated instead of hidden. Recorded in the same map so the
+      // run's end-of-run report names it with the reason a rebuild cannot run.
+      if (recallSuspended && recallAnchor && !this.rebuildAttempts.has(recallAnchor.id)) {
+        this.rebuildAttempts.set(recallAnchor.id, {
+          anchorId: recallAnchor.id,
+          outcome: "incomplete",
+          reasons: [
+            "this anchor is a research-recall snippet, not a summary of the session's task; " +
+              "it is not rebuilt from session material — the next search turn regenerates recall on its own",
+          ],
+          newAnchorId: null,
+          cleared: false,
+        });
+      }
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {
         const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS);

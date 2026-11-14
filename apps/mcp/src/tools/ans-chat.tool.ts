@@ -24,7 +24,9 @@ import {
   MISSING_CONSOLIDATION_COST,
   KernelJsonSchemas,
   KernelToolDescriptions,
+  formatSummaryRebuildLine,
   type LlmSession,
+  type SummaryRebuildReport,
 } from "@anysearch-cli/kernel";
 import {
   domainTomlPath,
@@ -36,6 +38,7 @@ import {
 import { createHash } from "node:crypto";
 import {
   buildAnsChatConsolidateResult,
+  buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
 } from "../ans-chat-session.js";
@@ -423,6 +426,9 @@ export function registerAnsChat(
           // short (cancellation, a closed generator), and partial text must not
           // be presented as a completed answer.
           let completed = false;
+          // #264 (D9): the rebuild attempts of this run, reported in metadata so
+          // a host reading structuredContent can see them too.
+          let summaryRebuilds: SummaryRebuildReport[] = [];
           // Retrieval/tool work is counted separately from LLM usage: a search
           // spends provider quota, not model tokens.
           const toolCalls: Record<string, number> = {};
@@ -447,9 +453,26 @@ export function registerAnsChat(
           // real spend unrecorded and later read as free. Fail-open: a drain
           // fault is reported by the runtime, never turned into a tool failure.
           await runtime.flushMemory().catch(() => {});
+          // #264 (D9): read the rebuild attempts ONLY after the drain — a rebuild
+          // is background work flushMemory() waits for, so reading earlier would
+          // describe an attempt that had not run.
+          summaryRebuilds = runtime.getSummaryRebuilds();
+          // #264 (D9): say what happened to each suspended summary in the answer
+          // text too. A host that only reads `content` must still learn that a
+          // memory block is missing because a rebuild failed, not because the
+          // session never had a summary.
+          for (const r of summaryRebuilds) output += "\n" + formatSummaryRebuildLine(r);
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
-          if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
+          //
+          // #264: the rebuild report rides along even here. The summary work runs
+          // in the background and was already drained above, so a rebuilt summary
+          // really does exist; dropping the report would tell the caller nothing
+          // about it and leave it guessing whether the old version is still
+          // suspended.
+          if (runtimeError !== undefined) {
+            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
+          }
           // Cancellation is a transport outcome, not a finished run (#211). The
           // partial text is dropped so a cut-off stream never reads as an
           // answer. The run still spent real money before it was cut off, and
@@ -465,6 +488,9 @@ export function registerAnsChat(
                 memorySummary: runtime.getMemoryUsage(),
               },
               interrupted: true,
+              // #264: the background rebuild did finish, so its outcome is a fact
+              // about this call, not part of the dropped answer text.
+              ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
             });
           }
           // Every call reports what it spent. A run that produced no accounting
@@ -477,6 +503,7 @@ export function registerAnsChat(
             },
             context: runContext,
             toolCalls,
+            ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
           });
         } catch (e) {
           return toolError("ans_chat", e instanceof Error ? e.message : String(e));

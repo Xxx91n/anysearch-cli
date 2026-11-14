@@ -67,6 +67,38 @@ knowledge. Do not do it every turn.
   = collisions resolved after one re-read and re-judge, `budgetRejected` = a
   cap stopped the run.
   `usage.costBasis = "unknown"` means the cost is unknown, not zero.
+  `summariesSuspended` / `suspendedSummaries` mean a stored summary in some
+  session stated the fact this run replaced; it stops being injected until that
+  session's next turn rebuilds it.
+
+## Suspended summaries (after a correction)
+
+A correction can leave a stored session summary stating a fact that is no longer
+current. That summary is no longer injected; the owning session's next turn tries
+to rebuild it once from the sources it originally read (now their current
+versions) plus that session's own stored user turns.
+
+- You do not start the rebuild. It is automatic for a suspended `rolling_summary`
+  (session memory), once per anchor per run, and it is reported in
+  `structuredContent.summaryRebuilds` (one `[summary]` line in the answer text
+  too). A suspended `l2_recall` (research-recall snippet) is NOT rebuilt — the
+  next search turn regenerates recall — but it still appears in the report with
+  the reason, so its absence is not silent. Read `outcome` before reporting
+  anything to the user:
+  - `rebuilt` with `cleared: true` — a current version is back and gets injected
+    from the next turn on.
+  - `already-current` — the new version is current and injectable; only the clear
+    did not happen (nothing was left open to clear).
+  - `stored-not-current` — written but suspended too, because a source was
+    replaced mid-rebuild. Nothing is injected. One attempt per anchor per run:
+    a NEW run tries again, never a later turn of the same run.
+  - Any other outcome means it is STILL suspended; `reasons` says what was
+    missing.
+- The task requirement comes from the user's own stored turns, never from the old
+  summary, tool output or memory. If the reasons say there is no stored user
+  turn, ask the user instead of assuming what they wanted.
+- When a `summaryRebuilds` entry is present, do not read a missing
+  `[Session Memory]` block as "this session has nothing" — read the reasons.
 
 ## Anti-patterns
 

@@ -359,6 +359,11 @@ CREATE INDEX IF NOT EXISTS idx_summary_sources_lookup ON summary_sources(source_
 -- cleared_at NULL means "still suspended". One row per anchor: the first
 -- correction that touches it names the trigger, later ones do not rewrite the
 -- reason.
+--
+-- #264 (D9): `cleared_by_anchor_id` names the rebuilt version that replaced the
+-- suspended one, so the trail points forward (what cleared me) as well as
+-- backward (what suspended me). NULL for rows written by an older version, and
+-- for a clear whose replacement anchor was removed afterwards.
 CREATE TABLE IF NOT EXISTS summary_suspensions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -368,6 +373,7 @@ CREATE TABLE IF NOT EXISTS summary_suspensions (
   trigger_id INTEGER NOT NULL CHECK (trigger_id > 0),
   suspended_at TEXT NOT NULL DEFAULT (datetime('now')),
   cleared_at TEXT,
+  cleared_by_anchor_id INTEGER,
   UNIQUE (session_id, anchor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_summary_suspensions_anchor ON summary_suspensions(anchor_id);
