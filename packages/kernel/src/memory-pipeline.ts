@@ -647,15 +647,26 @@ export class MemoryPipeline {
       // The set is read per turn, not once per runtime: a correction may land
       // between two turns of the same session, and the second turn must already
       // respect it.
+      // "The store has no suspension tracking" and "the read failed" must not
+      // look the same. A store without the seam keeps the pre-#263 behaviour
+      // (inject what it always injected). A read that THROWS is different: the
+      // suspension state is unknown, and guessing "nothing is suspended" would
+      // put a replaced fact back in the prompt — the exact failure this ticket
+      // exists to stop. So the two summary slots are skipped for this turn.
       let suspended: Set<number> = new Set();
-      try {
-        const readSuspended = (store as unknown as SummarySuspensionPort).suspendedSummaryAnchorIds;
-        if (typeof readSuspended === "function") suspended = readSuspended.call(store, sessionId);
-      } catch { /* fail-open: an unreadable suspension list injects as before */ }
+      let suspensionUnknown = false;
+      const readSuspended = (store as unknown as SummarySuspensionPort).suspendedSummaryAnchorIds;
+      if (typeof readSuspended === "function") {
+        try {
+          suspended = readSuspended.call(store, sessionId);
+        } catch {
+          suspensionUnknown = true;
+        }
+      }
       const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
-      const summarySuspended = !!summaryAnchor && suspended.has(summaryAnchor.id);
-      const recallSuspended = !!recallAnchor && suspended.has(recallAnchor.id);
+      const summarySuspended = suspensionUnknown || (!!summaryAnchor && suspended.has(summaryAnchor.id));
+      const recallSuspended = suspensionUnknown || (!!recallAnchor && suspended.has(recallAnchor.id));
 
       // #263 (D9): a caller may hand back the messages a PREVIOUS inject() call
       // returned. Those still carry the old `[Session Memory]` and
@@ -988,17 +999,43 @@ export class MemoryPipeline {
             })
             .then(({ hits, variants }) => {
               if (hits.length > 0) {
-                const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
-                // #263 (D9): the rows this recall actually surfaced. The hit id
-                // encoding already carries the kind: a positive rowid is an
-                // archived material, a negative one is a knowledge row (see
-                // SessionStore's semantic arm). Recording it here is what makes
-                // this recall block a real dependency, so a correction to one
-                // of these rows suspends this block instead of leaving replaced
-                // facts injected.
+                // #263 (D9): sources are collected in the SAME loop that builds
+                // the text, and only for hits that actually contributed to it.
+                // Recording every returned hit would claim the summary used rows
+                // whose text was truncated away — a later correction to one of
+                // those would then suspend a recall block it never fed, and with
+                // no rebuild yet that silently removes valid recall text.
+                //
+                // Both caps are applied here, not after the fact: the block is
+                // built from the hits until the text budget is spent, and the
+                // anchor payload is capped at CHUNK_BUDGET below.
+                const CHUNK_BUDGET = 2000;
+                const parts: string[] = [];
                 const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
                 const seen = new Set<string>();
+                let used = 0;
                 for (const h of hits as any[]) {
+                  const text = h?.content || "";
+                  if (!text) continue;
+                  // The separator costs characters too; measuring it keeps the
+                  // payload cap from silently dropping the last included hit.
+                  const sep = parts.length === 0 ? 0 : 3; // " | "
+                  const room = CHUNK_BUDGET - used - sep;
+                  if (room <= 0) break;
+                  // The FIRST hit is always taken, truncated if it alone exceeds
+                  // the budget: an over-long top hit must not leave the block
+                  // empty (no anchor, no recall at all). Later hits are taken
+                  // whole or not at all, so a hit that contributed nothing is
+                  // never recorded as a source.
+                  const include = parts.length === 0
+                    ? text.slice(0, room)
+                    : (text.length <= room ? text : "");
+                  if (!include) break;
+                  parts.push(include);
+                  used += sep + include.length;
+                  // The hit id encoding already carries the kind: a positive
+                  // rowid is an archived material, a negative one a knowledge
+                  // row (see SessionStore's semantic arm).
                   const rowid = Number(h?.rowid);
                   if (!Number.isInteger(rowid) || rowid === 0) continue;
                   const ref = rowid > 0
@@ -1009,8 +1046,9 @@ export class MemoryPipeline {
                   seen.add(key);
                   sources.push(ref);
                 }
+                if (parts.length === 0) return undefined;
                 return store!.saveAnchor(sessionId!, "l2_recall", {
-                  query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(), sources,
+                  query: l2Query, variants, hits: parts.join(" | ").slice(0, CHUNK_BUDGET), timestamp: Date.now(), sources,
                 }).catch(() => {});
               }
               return undefined;

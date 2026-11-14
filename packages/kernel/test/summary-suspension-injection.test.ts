@@ -306,6 +306,109 @@ async function main() {
     "P9: the longer block's tail is removed with it, not left behind");
   assert(prefixTurn.includes("my question"), "P9: the user's own text survives");
 
+  // P10: a suspension read that THROWS is not the same as "nothing suspended".
+  // The state is unknown, so the two summary slots are skipped for this turn —
+  // guessing "nothing is suspended" would put a replaced fact back in the
+  // prompt, which is the failure this ticket exists to stop.
+  const throwingStore = Object.create(store) as SqliteSessionStore;
+  Object.defineProperty(throwingStore, "suspendedSummaryAnchorIds", {
+    value: () => { throw new Error("suspension read failed"); },
+  });
+  const unknownRuntime = new MemoryPipeline({
+    store: throwingStore as any,
+    retriever,
+    domain,
+    model: { id: "test" } as any,
+    streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+    sessionId,
+  });
+  const unknownPrompt = promptText(await unknownRuntime.inject([userTurn("what are the support hours?")]));
+  assert(!unknownPrompt.includes("[Session Memory]"),
+    "P10: an unreadable suspension list skips the summary slot instead of injecting it");
+  assert(!unknownPrompt.includes("[Research Recall]"),
+    "P10: the recall slot is skipped for the same reason");
+  assert(unknownPrompt.includes("what are the support hours?"),
+    "P10: the turn itself still runs — only the two summary slots are skipped");
+
+  // A store that simply has no suspension tracking keeps the old behaviour:
+  // no seam means "this store predates the feature", not "the read failed".
+  const plainStore = Object.create(store) as SqliteSessionStore;
+  Object.defineProperty(plainStore, "suspendedSummaryAnchorIds", { value: undefined });
+  const plainRuntime = new MemoryPipeline({
+    store: plainStore as any,
+    retriever,
+    domain,
+    model: { id: "test" } as any,
+    streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+    sessionId,
+  });
+  const plainPrompt = promptText(await plainRuntime.inject([userTurn("legacy store turn")]));
+  assert(plainPrompt.includes("[Research Recall]") && plainPrompt.includes("UNRELATED-RECALL-263"),
+    "P10: a store WITHOUT the seam still injects (absence is not a failed read)");
+
+  // P11: the l2 recall anchor records only hits that actually made it into the
+  // capped block. A hit whose text was truncated away is NOT a dependency —
+  // recording it would let a later correction to that row suspend a recall
+  // block it never fed, and with no rebuild yet that silently removes valid
+  // recall text.
+  //
+  // Built over a private store so the huge hit cannot disturb the fixtures above.
+  {
+    const l2Store = new SqliteSessionStore(join(dir, "l2.db"));
+    const l2Session = "session-l2";
+    await l2Store.createSession("acme");
+    await l2Store.ensureSession(l2Session, "acme");
+    // The FIRST hit alone exceeds the whole budget (3012 chars vs 2000), so it
+    // is truncated to fit and the second hit can never be included. Fusion
+    // order puts the big one first because it is the only match for the query.
+    const bigText = "BIGFIRST263 " + "y".repeat(3000);
+    const otherText = "OTHER263 filler text here";
+    const big = (await l2Store.adjudicateMemory(l2Session, [
+      { url: "https://l2.example/big", title: "BIGFIRST263", snippet: bigText, source: "tavily", evidence: 0.9, entity: "b-big" },
+    ]))[0]!.insertedId!;
+    const other = (await l2Store.adjudicateMemory(l2Session, [
+      { url: "https://l2.example/other", title: "OTHER263", snippet: otherText, source: "tavily", evidence: 0.9, entity: "b-other" },
+    ]))[0]!.insertedId!;
+    // `searchMemoryBIGFIRST263` reaches both rows: the query matches the big one
+    // exactly and the small one shares the relaxed rung.
+    const l2Runtime = new MemoryPipeline({
+      store: l2Store as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: l2Session,
+      llmRewriteFn: undefined,
+    });
+    const searchTurn = [{
+      role: "assistant",
+      content: [{ type: "toolCall", name: "search", arguments: { query: "BIGFIRST263" } }],
+    }, { role: "user", content: [{ type: "text", text: "follow up" }] }];
+    await l2Runtime.consolidate(searchTurn as any, 200_000, true);
+    await l2Runtime.flush();
+    const l2Anchors = (await l2Store.getAnchors(l2Session)).filter((a) => a.anchorType === "l2_recall");
+    assert(l2Anchors.length === 1, "P11 fixture: one l2_recall anchor was written (got " + l2Anchors.length + ")");
+    const payload = l2Anchors[0]!.payload as any;
+    const raw = l2Store as any;
+    const recorded = raw.db
+      .prepare("SELECT source_id FROM summary_sources WHERE anchor_id = ? ORDER BY source_id")
+      .all(l2Anchors[0]!.id) as Array<{ source_id: number }>;
+    const ids = recorded.map((r) => r.source_id);
+    assert(String(payload.hits).includes("BIGFIRST263"),
+      "P11 fixture: the big hit is the one that fills the block");
+    assert(!String(payload.hits).includes("OTHER263"),
+      "P11 fixture: the second hit's text was NOT included (its text is absent)");
+    assert(ids.includes(big), "P11: the hit that fills the block is recorded as its source");
+    assert(!ids.includes(other),
+      "P11: a hit whose text was truncated away is NOT recorded (got " + JSON.stringify(ids) + ")");
+    const storedHits = String(payload.hits);
+    assert(storedHits.startsWith("BIGFIRST263"),
+      "P11: the stored block starts with the hit whose source was recorded");
+    assert(storedHits.length === 2000,
+      "P11: the top hit alone exceeded the budget, so the stored text is the capped block (len=" + storedHits.length + ")");
+    l2Store.close();
+  }
+
   store.close();
 }
 
