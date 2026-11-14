@@ -169,19 +169,28 @@ function trailingInjectionStart(body: string): number {
 }
 
 /**
- * Could this whole tail be injected blocks?
+ * Could this whole tail be a run of injected blocks?
  *
- * Two conditions, and the second is the one an earlier version missed:
+ * Injection writes "TAG <body>" — a tag, one space, then real content — and joins
+ * blocks with a blank line. Three conditions follow, and each one closes a way a
+ * user's own text got eaten:
  *
- * 1. every blank-line-separated segment begins with a known tag;
- * 2. no segment carries a SINGLE newline followed by a line that is neither blank
- *    nor another tag.
+ * 1. every blank-line-separated segment starts with a known tag;
+ * 2. inside a segment, no line after the first is non-blank and untagged —
+ *    injection never continues a block on a bare newline;
+ * 3. every segment carries actual body text after its tag, not just the tag and a
+ *    word.
  *
- * Condition 2 exists because injection joins its blocks with a blank line, so
- * inside one injected block there is no bare newline starting a new non-tag line.
- * A user writing a tag line and then the real instruction one newline below
- * produced exactly that shape ("[RAG Context] example" then "change: weekends
- * only"), and a tag-only check swallowed the instruction.
+ * Condition 3 is what separates "a" + tag + "b" + tag + "c" (a user talking about
+ * the tags) from two real injected blocks. Without it, the user's "b" was treated
+ * as the body of an injected block and their text vanished.
+ *
+ * Known limit, stated rather than hidden: a SINGLE very short block
+ * ("[Session Memory] 24x7") is not stripped, because it is indistinguishable from
+ * a person writing about the tag. The bias is deliberate — a leftover noise line
+ * is visible to whoever reads the prompt, a dropped instruction is not. Fixing
+ * this properly needs the injection site to record which block it wrote, which is
+ * a kernel change and out of scope here.
  */
 function isAllInjectedBlocks(tail: string): boolean {
   if (tail.length === 0) return false;
@@ -189,13 +198,22 @@ function isAllInjectedBlocks(tail: string): boolean {
   if (segments.length === 0) return false;
   return segments.every((seg) => {
     const t = seg.trimStart();
-    if (!INJECTED_BLOCK_TAGS.some((tag) => t.startsWith(tag))) return false;
+    const tag = INJECTED_BLOCK_TAGS.find((candidate) => t.startsWith(candidate));
+    if (!tag) return false;
+    // A short body is ambiguous: "[Session Memory] 24x7" can be a real (very
+    // short) summary OR a person writing about the tag. It is accepted only when
+    // the tail has MORE than one block, because a real injection tail of several
+    // blocks is already improbable in user text — while a single short
+    // tag-plus-word is exactly how someone talks about tags.
+    //
+    // Deliberate bias: a leftover noise line is visible, a dropped instruction is
+    // not. When in doubt, keep the text.
+    const body = t.slice(tag.length).trim();
+    if (body.length < 20 && segments.length === 1) return false;
     for (const line of seg.split("\n").slice(1)) {
       const trimmed = line.trimStart();
       if (trimmed.length === 0) continue;
-      if (INJECTED_BLOCK_TAGS.some((tag) => trimmed.startsWith(tag))) continue;
-      // A continuation line inside a real injected block never exists, so this
-      // is the user's own text and the tail is not pure injection.
+      if (INJECTED_BLOCK_TAGS.some((candidate) => trimmed.startsWith(candidate))) continue;
       return false;
     }
     return true;

@@ -649,11 +649,21 @@ function userText(db: string, sessionId: string): any[] {
   const injected = store.planSummaryRebuild({
     sessionId: owner,
     anchorId,
-    currentUserTurn: "real change\n\n[Session Memory] stale fact",
+    currentUserTurn: "real change\n\n[Session Memory] support runs weekdays 9-17 and answers email",
   });
   const lastText = injected.taskRecords[injected.taskRecords.length - 1]!.text;
   assert(lastText === "real change",
-    "R11: injection stripped from the live turn too (got " + JSON.stringify(lastText) + ")");
+    "R11: a real injected block is stripped from the live turn too (got " + JSON.stringify(lastText) + ")");
+
+  // The documented limit: a SINGLE very short block is kept, because it cannot be
+  // told apart from a user writing about the tag. Keeping it is the safe choice.
+  const shortBlock = store.planSummaryRebuild({
+    sessionId: owner,
+    anchorId,
+    currentUserTurn: "real change\n\n[Session Memory] 24x7",
+  });
+  assert(shortBlock.taskRecords[shortBlock.taskRecords.length - 1]!.text.includes("[Session Memory] 24x7"),
+    "R11: a single short tagged block is kept rather than risk dropping the user's words");
 
   closeStore(store);
 }
@@ -802,7 +812,7 @@ function userText(db: string, sessionId: string): any[] {
   const strippedMixed = stripInjectedBlocks(mixed);
   assert(strippedMixed.includes("must output JSON"),
     "R15: text between a user tag and a real injected tail is kept");
-  assert(!strippedMixed.includes("[Session Memory] injected"),
+  assert(!strippedMixed.includes("a real injected summary body"),
     "R15: the genuine trailing block is still removed");
 
   // Preferences stay a leading block: that shape is unambiguous.
