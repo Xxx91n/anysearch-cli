@@ -206,6 +206,12 @@ export function collectRecallSourceRefs(
   return out;
 }
 
+// #263: the summarizer reads the whole message list, so dependency scanning for
+// recall hits starts at the beginning too. Exported so a test can pin the
+// wiring: a window of `messages.length` (what `summaryRequest.msgCountAtTrigger`
+// carries) would be empty and silently record nothing.
+export const RECALL_SOURCE_SCAN_FROM = 0;
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -1023,9 +1029,14 @@ export class MemoryPipeline {
           // #263 (D9): recall hits the summarizer also saw. They carry no URL,
           // so they cannot be recovered from `resolveSummarySources`; the ids
           // come straight from the tool result (see collectRecallSourceRefs).
-          // Merged with the search-material refs, deduped by kind+id.
+          //
+          // Scanned from index 0 because the summarizer reads the WHOLE message
+          // list (`generateSummaryWithUsage(messages, ...)`). A window starting
+          // at `msgCountAtTrigger` would be empty by construction — that value
+          // IS `messages.length` — so no recall hit could be recorded while the
+          // summary still used them. Merged with the search-material refs.
           const sources = read.sources;
-          for (const ref of collectRecallSourceRefs(messages, result.summaryRequest?.msgCountAtTrigger ?? 0)) {
+          for (const ref of collectRecallSourceRefs(messages, RECALL_SOURCE_SCAN_FROM)) {
             if (!sources.some((r) => r.kind === ref.kind && r.id === ref.id)) sources.push(ref);
           }
           this.consolidationState = {

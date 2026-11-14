@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -706,6 +706,18 @@ async function main() {
     const twoTurns = [...hitsFrom([9]), ...hitsFrom([11])];
     assert(collectRecallSourceRefs(twoTurns, 1).every((r) => r.id === 11),
       "P17: the fromIdx window is respected (only the newer turn counts)");
+
+    // The WIRING, not just the helper: the summarizer reads the whole message
+    // list, so the scan must start at 0. A window of `messages.length` (which is
+    // what `summaryRequest.msgCountAtTrigger` carries) yields an empty slice and
+    // silently records nothing while the summary still uses those hits.
+    assert(RECALL_SOURCE_SCAN_FROM === 0,
+      "P17: the recall scan starts at the beginning of the message list (got " + RECALL_SOURCE_SCAN_FROM + ")");
+    const allMessages = [...hitsFrom([9]), ...hitsFrom([11])];
+    assert(collectRecallSourceRefs(allMessages, allMessages.length).length === 0,
+      "P17: a window of messages.length is empty — which is exactly why that value cannot be used here");
+    assert(collectRecallSourceRefs(allMessages, RECALL_SOURCE_SCAN_FROM).length === 2,
+      "P17: the real scan window sees every recall hit the summarizer could read");
   }
 
   store.close();
