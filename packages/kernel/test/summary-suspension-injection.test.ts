@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -369,8 +369,10 @@ async function main() {
     const other = (await l2Store.adjudicateMemory(l2Session, [
       { url: "https://l2.example/other", title: "OTHER263", snippet: otherText, source: "tavily", evidence: 0.9, entity: "b-other" },
     ]))[0]!.insertedId!;
-    // `searchMemoryBIGFIRST263` reaches both rows: the query matches the big one
-    // exactly and the small one shares the relaxed rung.
+    // The query reaches BOTH rows: the store's fusion returns `big` first (it
+    // owns the unique term) and `other` as a second candidate. Stating that here
+    // is what makes the exclusion assertion below meaningful — `other` must
+    // really be in the returned list for "it was not recorded" to test anything.
     const l2Runtime = new MemoryPipeline({
       store: l2Store as any,
       retriever,
@@ -394,6 +396,14 @@ async function main() {
       .prepare("SELECT source_id FROM summary_sources WHERE anchor_id = ? ORDER BY source_id")
       .all(l2Anchors[0]!.id) as Array<{ source_id: number }>;
     const ids = recorded.map((r) => r.source_id);
+    // Provenance of the fixture: the second row really WAS returned by recall,
+    // so excluding it below is not vacuous.
+    const returned = await l2Store.searchMemory("BIGFIRST263", 5);
+    const returnedIds = returned.map((h: any) => Math.abs(Number(h.rowid)));
+    assert(returnedIds.includes(other),
+      "P11 fixture: the second row is among the recalled hits (got " + JSON.stringify(returnedIds) + ")");
+    assert(returnedIds[0] === big,
+      "P11 fixture: the big row is first in fusion order, so it owns the text budget");
     assert(String(payload.hits).includes("BIGFIRST263"),
       "P11 fixture: the big hit is the one that fills the block");
     assert(!String(payload.hits).includes("OTHER263"),
@@ -407,6 +417,108 @@ async function main() {
     assert(storedHits.length === 2000,
       "P11: the top hit alone exceeded the budget, so the stored text is the capped block (len=" + storedHits.length + ")");
     l2Store.close();
+  }
+
+  // P12: removing a summary from a message with INTERLEAVED text and images
+  // must not reorder the other blocks. Rewriting every text block into the first
+  // one turned "caption A, image A, caption B, image B" into "caption A,
+  // caption B, image A, image B" — a model could pair B's caption with A's image.
+  {
+    const p12Store = new SqliteSessionStore(join(dir, "p12.db"));
+    const p12Session = "session-p12";
+    await p12Store.createSession("acme");
+    await p12Store.ensureSession(p12Session, "acme");
+    const staleText = "P12-STALE-263 the summary to remove";
+    await p12Store.saveAnchor(p12Session, "rolling_summary", {
+      summary: staleText,
+      sources: [{ kind: "material", id: 999999 }],
+    });
+    const p12Runtime = new MemoryPipeline({
+      store: p12Store as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: p12Session,
+    });
+    // The summary block sits at the END of the LAST text block, as inject writes
+    // it; two image blocks sit between the two text blocks.
+    const blocks = [
+      { type: "text", text: "caption A" },
+      { type: "image", data: "imgA" },
+      { type: "text", text: "caption B" + BLANK_LINE + "[Session Memory] " + staleText },
+      { type: "image", data: "imgB" },
+    ];
+    const history = [{ role: "user", content: blocks }];
+    const out = (await p12Runtime.inject(history as any))[0].content as any[];
+    const shape = out.map((b: any) => b.type + ":" + (b.type === "text" ? b.text : b.data));
+    assert(shape.length === 4, "P12: every block is still present (got " + JSON.stringify(shape) + ")");
+    assert(shape[0] === "text:caption A", "P12: the first text block keeps its own text");
+    assert(shape[1] === "image:imgA", "P12: image A stays right after caption A");
+    assert(shape[2] === "text:caption B",
+      "P12: the second text block keeps its own text, with the summary removed (got " + JSON.stringify(shape[2]) + ")");
+    assert(shape[3] === "image:imgB", "P12: image B stays after caption B");
+    assert(!JSON.stringify(shape).includes("P12-STALE-263"),
+      "P12: the suspended summary's text is gone from the prompt");
+    p12Store.close();
+  }
+
+  // P13: a summary whose sources could not be READ must not be written.
+  //
+  // The summarizer itself is `generateSummaryWithUsage`, a real SDK import that
+  // the repo's own tests document as un-mockable (see the note in
+  // memory-pipeline.test.ts), so the write path cannot be driven end-to-end here.
+  // What IS testable — and what the guard is — is the decision function the write
+  // path calls: it must distinguish "no provenance feature" (write as before)
+  // from "the read failed" (write nothing), because storing a summary with
+  // unknown dependencies makes it immune to suspension.
+  {
+    // 1. A store WITHOUT the seams: absence is not failure.
+    const plain = readSummarySourcesForWrite(
+      { getAnchors: async () => [] },
+      { gapUrls: ["https://x.example/1"], previousAnchorId: 7 },
+    );
+    assert(plain.ok === true && plain.sources.length === 0,
+      "P13: a store without provenance seams writes the summary with no recorded sources (old behaviour)");
+
+    // 2. A seam that THROWS: the write must be skipped.
+    const throwing = readSummarySourcesForWrite(
+      { resolveSummarySources: () => { throw new Error("source lookup failed"); } },
+      { gapUrls: ["https://x.example/1"], previousAnchorId: 7 },
+    );
+    assert(throwing.ok === false,
+      "P13: a failed source read reports not-ok, so the caller skips the write");
+
+    // 3. A failing inheritance read is just as fatal: half a dependency list
+    //    would leave the inherited facts unsuspendable.
+    const inheritThrows = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [{ kind: "material", id: 5 }],
+        summarySourcesForAnchor: () => { throw new Error("inherit failed"); },
+      },
+      { gapUrls: ["https://x.example/1"], previousAnchorId: 7 },
+    );
+    assert(inheritThrows.ok === false,
+      "P13: a failed inheritance read also skips the write (partial deps are not accepted)");
+
+    // 4. The happy path merges both parts and dedupes nothing it should not.
+    const happy = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [{ kind: "material", id: 5 }],
+        summarySourcesForAnchor: () => [{ kind: "knowledge", id: 3 }],
+      },
+      { gapUrls: ["https://x.example/1"], previousAnchorId: 7 },
+    );
+    assert(happy.ok === true && happy.sources.length === 2,
+      "P13: the new gap's sources and the inherited ones both travel (got " + (happy.ok ? happy.sources.length : "not-ok") + ")");
+    // Blank/absent URLs must not reach the resolver as empty strings.
+    let seenUrls: string[] = [];
+    const filtered = readSummarySourcesForWrite(
+      { resolveSummarySources: (urls: string[]) => { seenUrls = urls; return []; } },
+      { gapUrls: ["https://x.example/1", "", null, undefined] },
+    );
+    assert(filtered.ok === true && seenUrls.length === 1 && seenUrls[0] === "https://x.example/1",
+      "P13: blank and missing URLs are filtered before the resolver sees them (got " + JSON.stringify(seenUrls) + ")");
   }
 
   store.close();

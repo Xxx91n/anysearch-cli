@@ -106,6 +106,57 @@ export interface ConsolidateResult {
   };
 }
 
+/**
+ * #263 (D9): read the dependency list for a summary that is about to be written.
+ *
+ * Three outcomes, and the difference between the last two is the whole point:
+ *
+ * - `{ok: true, sources}` — the store read fine (possibly returning nothing,
+ *   which is a legitimate "this summary used nothing addressable").
+ * - `{ok: true, sources: []}` with no seams — the store has no provenance
+ *   feature at all. Absence is not failure; the pre-#263 behaviour stands.
+ * - `{ok: false}` — a seam EXISTS but threw. The dependency set is unknowable,
+ *   so the caller must not write the summary: one stored with empty or partial
+ *   dependencies would never be suspended when a fact it used is corrected,
+ *   and with no rebuild yet the replaced fact keeps being injected.
+ *
+ * Kept as a standalone function so this contract is testable without the real
+ * summarizer (a SDK import the repo's tests document as un-mockable).
+ *
+ * @param store - Session store, possibly without the provenance seams.
+ * @param req.gapUrls - URLs the new material arrived under, resolved by the store.
+ * @param req.previousAnchorId - Previous summary anchor, whose dependencies the
+ *   new summary inherits (it was generated from that summary).
+ * @returns The sources, or `{ok: false}` when a read failed.
+ */
+export function readSummarySourcesForWrite(
+  store: unknown,
+  req: { gapUrls: Array<string | null | undefined>; previousAnchorId?: number },
+): { ok: true; sources: Array<{ kind: "material" | "knowledge"; id: number }> } | { ok: false } {
+  const s = store as {
+    resolveSummarySources?: (urls: string[]) => unknown;
+    summarySourcesForAnchor?: (anchorId: number) => unknown;
+  };
+  const hasResolve = typeof s?.resolveSummarySources === "function";
+  const hasInherit = typeof s?.summarySourcesForAnchor === "function";
+  if (!hasResolve && !(hasInherit && req.previousAnchorId !== undefined)) {
+    return { ok: true, sources: [] };
+  }
+  const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+  try {
+    if (hasResolve) {
+      const urls = (req.gapUrls ?? []).filter((u): u is string => typeof u === "string" && u.length > 0);
+      sources.push(...((s.resolveSummarySources!(urls) ?? []) as typeof sources));
+    }
+    if (hasInherit && req.previousAnchorId !== undefined) {
+      sources.push(...((s.summarySourcesForAnchor!(req.previousAnchorId) ?? []) as typeof sources));
+    }
+  } catch {
+    return { ok: false };
+  }
+  return { ok: true, sources };
+}
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -395,31 +446,57 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
 }
 
 /**
- * Replace a message's text channel, keeping its shape and non-text blocks.
+ * Replace the text of the block that carried the removed summary, keeping
+ * every other block exactly where it was.
  *
- * The counterpart of {@link appendMessageText} for the case where the whole
- * text is being replaced rather than extended. Returns null when the shape cannot
- * be preserved, so the caller leaves the message untouched instead of guessing.
+ * The summary is always appended into the LAST text block (see inject()), so
+ * that block is the one whose tail was removed. Rewriting it in place and
+ * leaving the other text blocks alone keeps "text A, image A, text B, image B"
+ * in that order — collapsing all text into the first block (an earlier version)
+ * moved the caption of image B ahead of image A, so a model could pair the
+ * wrong caption with the wrong image.
+ *
+ * The updated message is `{ ...message, content: blocks }`, or null when the
+ * shape cannot be preserved (caller leaves the message untouched).
+ *
+ * @param message - Message whose text changed.
+ * @param text - The full text channel after the removal.
+ * @param target - Shape descriptor from {@link readMessageText}.
  */
 function writeMessageText(message: any, text: string, target: { kind: "string" | "blocks" }): any | null {
   if (target.kind === "string") return { ...message, content: text };
   if (!Array.isArray(message?.content)) return null;
+  // Find the last text block: that is the one appendMessageText wrote into.
+  let lastTextIdx = -1;
+  for (let i = message.content.length - 1; i >= 0; i--) {
+    const block = message.content[i];
+    if (block && typeof block === "object" && (block as any).type === "text") { lastTextIdx = i; break; }
+  }
+  if (lastTextIdx < 0) return null;
+  // Distribute the surviving text the same way it was read: text blocks joined
+  // by "\n". The strict rule is that the tail removed from the last block
+  // shrinks only that block, so the earlier text blocks keep their exact text.
   const blocks: any[] = [];
-  let wrote = false;
-  for (const block of message.content) {
-    if (block && typeof block === "object" && (block as any).type === "text") {
-      // Collapse every text block into one at the position of the first: the
-      // surviving text is the same string split across blocks, and merging keeps
-      // the array from carrying an empty trailing block.
-      if (!wrote) {
-        blocks.push({ ...block, text });
-        wrote = true;
+  let remaining = text;
+  for (let i = 0; i < message.content.length; i++) {
+    const block = message.content[i];
+    if (i !== lastTextIdx) {
+      blocks.push(block);
+      // Consume this block's text (plus the join separator) from the front so
+      // the last block receives whatever is left.
+      if (block && typeof block === "object" && (block as any).type === "text" && typeof (block as any).text === "string") {
+        const own = (block as any).text as string;
+        remaining = remaining.startsWith(own + "\n")
+          ? remaining.slice(own.length + 1)
+          : remaining.startsWith(own)
+            ? remaining.slice(own.length)
+            : remaining;
       }
       continue;
     }
-    blocks.push(block);
+    blocks.push({ ...block, text: remaining });
   }
-  return wrote ? { ...message, content: blocks } : null;
+  return { ...message, content: blocks };
 }
 
 /**
@@ -834,11 +911,6 @@ export class MemoryPipeline {
           } catch {
             return;
           }
-          this.consolidationState = {
-            version: result.state.version,
-            consecutiveReuses: 0,
-            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
-          };
           // #263 (D9): which rows this summary actually read. Two parts:
           //  - the new gap's material URLs, resolved to the archive rows that
           //    currently hold them (exact ids, never text matching);
@@ -849,21 +921,39 @@ export class MemoryPipeline {
           //
           // Read here, before the model call: the material was archived when the
           // search ran, so the ids exist already, and the anchor write can then
-          // carry them through one transaction. A store without the seam
-          // records nothing rather than inventing a dependency.
-          const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
-          try {
-            const s = store as any;
-            if (typeof s.resolveSummarySources === "function") {
-              const gapUrls = (result.summaryRequest?.gap?.results ?? [])
-                .map((r: any) => r?.url)
-                .filter((u: any) => typeof u === "string" && u.length > 0);
-              sources.push(...(s.resolveSummarySources(gapUrls) ?? []));
-              if (previousSummaryAnchorId !== undefined && typeof s.summarySourcesForAnchor === "function") {
-                sources.push(...(s.summarySourcesForAnchor(previousSummaryAnchorId) ?? []));
-              }
-            }
-          } catch { /* fail-open: no recorded sources beats a failed summary write */ }
+          // carry them through one transaction.
+          //
+          // A store without the seam records nothing (absence is not an error).
+          // A read that THROWS ends this turn's summary instead: a summary
+          // stored with half its dependencies (or none) would never be
+          // suspended when a fact it used is corrected, and with no rebuild yet
+          // that leaves the replaced fact injected — worse than no summary at
+          // all for one turn. `consolidationState` is updated only after the
+          // sources were read, so a skipped turn does not advance the state the
+          // next turn depends on.
+          const read = readSummarySourcesForWrite(store, {
+            gapUrls: (result.summaryRequest?.gap?.results ?? [])
+              .map((r: any) => r?.url)
+              .filter((u: any) => typeof u === "string" && u.length > 0),
+            previousAnchorId: previousSummaryAnchorId,
+          });
+          if (!read.ok) {
+            // Report the skip on stderr (stdout stays protocol-pure) and stop
+            // this turn's summary: writing one with unknown dependencies is what
+            // the ticket forbids.
+            try {
+              process.stderr.write(
+                "[anysearch] summary sources unreadable — skipping this turn's summary write\n",
+              );
+            } catch { /* stderr unavailable */ }
+            return;
+          }
+          const sources = read.sources;
+          this.consolidationState = {
+            version: result.state.version,
+            consecutiveReuses: 0,
+            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
+          };
           // Tracked: flush() must see this write before the store is closed.
           this.track(
             (async () => {
