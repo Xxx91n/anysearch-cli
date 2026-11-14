@@ -293,7 +293,7 @@ export interface SessionStore {
     text: string;
     sources: SummarySourceRef[];
     taskRecordIds: number[];
-    generator?: { kind: "model" | "none"; note?: string };
+    generator?: { kind: "model"; note?: string };
   }): SummaryRebuildWriteResult;
 }
 

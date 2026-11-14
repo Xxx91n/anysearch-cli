@@ -908,9 +908,10 @@ export class MemoryPipeline {
   private async maybeRebuildSummary(sessionId: string, anchorId: number): Promise<SummaryRebuildAttempt | undefined> {
     const existing = this.rebuildAttempts.get(anchorId);
     if (existing) return existing;
-    // No store seam at all: nothing to plan against. Recording "incomplete" here
-    // would claim an attempt the store never saw, so this returns undefined and
-    // the injection path keeps its pre-#264 behaviour.
+    // The seam check lives at the dispatch site (`inject`) so there is exactly one
+    // place that decides whether a rebuild can run at all. Reaching here without
+    // the seam means the store was swapped mid-runtime: return undefined rather
+    // than claim an attempt it cannot make.
     if (!this.hasRebuildSeam()) return undefined;
     let attempt: SummaryRebuildAttempt;
     let called = false;
@@ -1208,6 +1209,23 @@ export class MemoryPipeline {
           this.rebuildStarted.add(anchorId);
           this.track(this.maybeRebuildSummary(sessionId, anchorId).then(() => undefined, () => undefined));
         }
+      }
+      // A suspended l2_recall block stays out of the prompt and is NOT rebuilt
+      // (see the Design note above). It must still be reported, once: silence
+      // reads as "this session never recalled anything", and the ticket requires
+      // that a limit be stated instead of hidden. Recorded in the same map so the
+      // run's end-of-run report names it with the reason a rebuild cannot run.
+      if (recallSuspended && recallAnchor && !this.rebuildAttempts.has(recallAnchor.id)) {
+        this.rebuildAttempts.set(recallAnchor.id, {
+          anchorId: recallAnchor.id,
+          outcome: "incomplete",
+          reasons: [
+            "this anchor is a research-recall snippet, not a summary of the session's task; " +
+              "it is not rebuilt from session material — the next search turn regenerates recall on its own",
+          ],
+          newAnchorId: null,
+          cleared: false,
+        });
       }
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {

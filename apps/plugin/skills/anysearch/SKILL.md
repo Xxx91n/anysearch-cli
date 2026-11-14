@@ -80,9 +80,15 @@ versions) plus that session's own stored user turns.
 
 - You do not start the rebuild. It is automatic, once per suspended summary, and
   it is reported in `structuredContent.summaryRebuilds` (one `[summary]` line in
-  the answer text too). `outcome: "rebuilt"` with `cleared: true` means a current
-  version is back and gets injected from the next turn on; any other outcome
-  means it is STILL suspended and `reasons` says what was missing.
+  the answer text too). Read `outcome` before reporting anything to the user:
+  - `rebuilt` with `cleared: true` — a current version is back and gets injected
+    from the next turn on.
+  - `already-current` — the new version is current and injectable; only the clear
+    did not happen (nothing was left open to clear).
+  - `stored-not-current` — written but suspended too, because a source was
+    replaced mid-rebuild. Nothing is injected.
+  - Any other outcome means it is STILL suspended; `reasons` says what was
+    missing.
 - The task requirement comes from the user's own stored turns, never from the old
   summary, tool output or memory. If the reasons say there is no stored user
   turn, ask the user instead of assuming what they wanted.

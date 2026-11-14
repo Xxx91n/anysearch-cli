@@ -43,10 +43,14 @@ export interface SummaryRebuildReport {
 /**
  * How one rebuild attempt ended (the store and the kernel share this list).
  *
- * `stored-not-current` is distinct on purpose: the text WAS written, but the
- * suspension stayed because a source moved on (or there was no open suspension
- * to clear). Calling that "write-failed" would report a stored anchor as a write
- * error, and calling it "rebuilt" would claim a recovery that did not happen.
+ * - `rebuilt`: the new version is current and this call cleared the suspension.
+ * - `already-current`: the new version is current, but there was no open
+ *   suspension row left to clear (another writer cleared it first). The summary
+ *   IS injectable; only the clearing act did not happen here.
+ * - `stored-not-current`: the text was written but is itself suspended, because a
+ *   source was replaced while it was being rebuilt.
+ * - `rejected-write`: the store refused the write (empty text, secret guard, a
+ *   non-rolling anchor).
  */
 export type SummaryRebuildOutcome =
   | "rebuilt"
@@ -55,6 +59,7 @@ export type SummaryRebuildOutcome =
   | "generation-failed"
   | "write-failed"
   | "stored-not-current"
+  | "already-current"
   | "rejected-write";
 
 /** One run's complete accounting; `missing` names the dimensions the provider did not report. */

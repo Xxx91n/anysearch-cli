@@ -40,14 +40,6 @@ import {
   type SummarySourceRef,
 } from "./summary-sources.js";
 
-interface MaterialRow {
-  id: number;
-  title: string | null;
-  snippet: string | null;
-  url: string;
-  superseded_by: number | null;
-}
-
 /**
  * Character budget for the CURRENT FACT material handed to the generator.
  *
@@ -101,7 +93,7 @@ export interface RebuildReplacedFact {
 
 /** Something the plan refused to include, named so the caller can see the gap. */
 export interface RebuildExclusion {
-  kind: "task" | "material" | "knowledge";
+  kind: "task" | "material" | "knowledge" | "summary";
   id: number;
   reason: "over-budget" | "missing-row" | "no-current-version";
 }
@@ -427,12 +419,17 @@ export function planSummaryRebuild(
     );
   }
 
+  const previousSummary = anchorBody(anchor);
+  // The suspended text travels as context (D8: a fact no source recorded but no
+  // correction touched must not vanish). Whether it fits the PROMPT budget is the
+  // kernel's call, because that cap belongs to the prompt: the kernel checks it
+  // before generating and refuses an over-long version rather than cutting it.
   const complete = reasons.length === 0 && facts.length > 0 && taskRecords.length > 0;
   return {
     sessionId: req.sessionId,
     anchorId: req.anchorId,
     anchorType,
-    previousSummary: anchorBody(anchor),
+    previousSummary,
     taskRecords,
     facts,
     replaced,

@@ -69,10 +69,17 @@ their current versions) plus that session's own stored user turns.
 
 - You do not start a rebuild yourself. It is automatic, once per suspended
   summary, and it is reported in the run's `structuredContent.summaryRebuilds`
-  (and as one `[summary]` line in the answer text): `outcome: "rebuilt"` with
-  `cleared: true` means a current version is back, and its text is injected from
-  the next turn on. Every other outcome means the summary is STILL suspended,
-  and `reasons` says what was missing.
+  (and as one `[summary]` line in the answer text):
+  - `rebuilt` with `cleared: true` — a current version is back and is injected
+    from the next turn on.
+  - `already-current` — the new version is current and injectable too; the only
+    thing that did not happen is the clear (no suspension row was left open, so
+    something else cleared it first). Read `reasons`, do not re-run anything.
+  - `stored-not-current` — the text was written but is suspended as well, because
+    a source was replaced mid-rebuild. Nothing is injected; a later turn retries.
+  - Any other outcome means the summary is STILL suspended, and `reasons` says
+    what was missing (no recorded sources, no stored user turn, over budget, no
+    model configured, or the model produced nothing).
 - The task requirement in a rebuilt summary comes from the user's own stored
   turns, never from the old summary text, from tool output or from memory. If
   the reasons say there is no stored user turn, the rebuild cannot recover the

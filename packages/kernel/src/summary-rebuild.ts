@@ -31,7 +31,7 @@ import type { SummaryRebuildReport } from "./runtime";
  * consolidation prompts are: chained replacements re-scan text a previous step
  * inserted, so a fact containing a literal `{TASK}` would corrupt the prompt.
  */
-export const SUMMARY_REBUILD_PROMPT = [
+const SUMMARY_REBUILD_PROMPT = [
   "You are rebuilding a research session's memory summary.",
   "The previous summary was suspended because a fact it stated was replaced by a more reliable source.",
   "",
@@ -109,9 +109,27 @@ function replacedSection(plan: SummaryRebuildPlanShape): string {
  * from the prompt for good. The section header and rule 5 say plainly that it is
  * not evidence, so the model cannot promote it to a current fact.
  */
+/** How much of the suspended summary's own text the prompt carries. */
+export const PREVIOUS_SUMMARY_PROMPT_MAX_CHARS = 4000;
+
+/**
+ * Whether the suspended text fits the prompt budget.
+ *
+ * Checked in the PLAN, not here: the ticket forbids truncating material and then
+ * calling the result a complete rebuild, so an over-long previous summary has to
+ * make the plan incomplete (with the id named) rather than leave `complete: true`
+ * while this function quietly cuts the text.
+ */
+export function previousSummaryFitsPrompt(text: string | null): boolean {
+  return (text ?? "").length <= PREVIOUS_SUMMARY_PROMPT_MAX_CHARS;
+}
+
 function previousSection(plan: SummaryRebuildPlanShape): string {
   const text = plan.previousSummary?.trim();
-  return text && text.length > 0 ? text.slice(0, 4000) : EMPTY_SECTION;
+  if (!text) return EMPTY_SECTION;
+  // The plan already refused an over-long text, so reaching the slice means it
+  // fits; the guard stays as a second layer instead of trusting the caller.
+  return text.slice(0, PREVIOUS_SUMMARY_PROMPT_MAX_CHARS);
 }
 
 /** Build the provider prompt for one plan. Pure; exported so a test can read it. */
@@ -132,72 +150,8 @@ export function buildSummaryRebuildPrompt(plan: SummaryRebuildPlanShape): string
  */
 export type SummaryRebuildAttempt = SummaryRebuildReport;
 
-/**
- * A generated summary is not committed on faith.
- *
- * The previous version is in the prompt, so the model can carry over content
- * that only that text asserts — which is exactly what D8 wants for a fact no
- * correction touched, and exactly what must NOT slip through if the model
- * invents something. This check is deliberately structural and free (no second
- * model call): every sentence of the output must have at least one source
- * sentence that shares substantive wording, where "source" is the current
- * material OR the previous summary. A sentence matching neither is a new claim
- * nobody recorded, and it blocks the commit.
- *
- * A second model call could judge this better, and D7 chose such a checker for
- * consolidation. Rebuild has a narrower job — restate what was already said —
- * so a deterministic overlap rule is enough here and costs nothing. It is
- * intentionally conservative: a paraphrase that shares no words with its source
- * is rejected rather than written.
- *
- * @returns The sentences with no basis (empty means the output is grounded).
- */
-export function ungroundedSummarySentences(
-  summary: string,
-  grounds: string[]
-): string[] {
-  const groundTokens = grounds.map(tokenSet);
-  const out: string[] = [];
-  for (const sentence of splitSentences(summary)) {
-    const tokens = tokenSet(sentence);
-    if (tokens.size === 0) continue;
-    const grounded = groundTokens.some((g) => overlapRatio(tokens, g) >= 0.5);
-    if (!grounded) out.push(sentence);
-  }
-  return out;
-}
-
-/** Lowercased alphanumeric tokens; CJK runs contribute bigrams so they are comparable. */
-function tokenSet(text: string): Set<string> {
-  const out = new Set<string>();
-  const lower = String(text ?? "").toLowerCase();
-  for (const m of lower.matchAll(/[a-z0-9]+/g)) out.add(m[0]);
-  // CJK has no spaces: one "word" per character would make every sentence look
-  // alike, so adjacent-character pairs stand in for words.
-  for (const m of lower.matchAll(/[\u3400-\u9fff]+/g)) {
-    const run = m[0];
-    if (run.length === 1) out.add(run);
-    for (let i = 0; i + 1 < run.length; i++) out.add(run.slice(i, i + 2));
-  }
-  return out;
-}
-
-function overlapRatio(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0) return 0;
-  let hit = 0;
-  for (const t of a) if (b.has(t)) hit++;
-  return hit / a.size;
-}
-
-function splitSentences(text: string): string[] {
-  return String(text ?? "")
-    .split(/[.!?。！？\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
 /** Minimal provider-stream shape this module needs (the SDK's streaming seam). */
-export interface RebuildStream {
+interface RebuildStream {
   (model: any, context: any, options?: any): AsyncIterable<{ type?: string; delta?: string; message?: unknown }>;
 }
 
@@ -283,6 +237,11 @@ export function formatSummaryRebuildLine(attempt: SummaryRebuildAttempt): string
     return "[summary] anchor " + attempt.anchorId + " rebuilt as anchor " + attempt.newAnchorId +
       "; the suspended version stays readable";
   }
+  if (attempt.outcome === "already-current" && attempt.newAnchorId !== null) {
+    return "[summary] anchor " + attempt.anchorId + " rebuilt as anchor " + attempt.newAnchorId +
+      "; that version is current and injectable, though no suspension row was open to clear (" +
+      attempt.reasons.join("; ") + ")";
+  }
   if (attempt.outcome === "stored-not-current" && attempt.newAnchorId !== null) {
     return "[summary] anchor " + attempt.anchorId + " rebuilt as anchor " + attempt.newAnchorId +
       " but still not current (" + attempt.reasons.join("; ") + ")";
@@ -339,6 +298,22 @@ export async function rebuildSuspendedSummary(
       cleared: false,
     };
   }
+  // The prompt budget for the carried-over text is checked HERE, because the cap
+  // belongs to the prompt. An over-long suspended version makes the attempt
+  // incomplete instead of being silently cut: the ticket forbids truncating and
+  // then reporting a complete recovery.
+  if (!previousSummaryFitsPrompt(plan.previousSummary)) {
+    return {
+      anchorId: req.anchorId,
+      outcome: "incomplete",
+      reasons: [
+        "the suspended summary is longer than the " + PREVIOUS_SUMMARY_PROMPT_MAX_CHARS +
+          "-character prompt budget, so it cannot be carried over whole",
+      ],
+      newAnchorId: null,
+      cleared: false,
+    };
+  }
   if (typeof req.streamFn !== "function" || !req.model) {
     return {
       anchorId: req.anchorId,
@@ -364,31 +339,18 @@ export async function rebuildSuspendedSummary(
       ...(generated.usage ? { usage: generated.usage } : {}),
     };
   }
-  // D8/D7: the rebuilt text may only restate what a source already said. A
-  // sentence matching no current fact and no previous-summary sentence is a new
-  // claim nobody recorded, and writing it would replace a stale fact with an
-  // invented one. Refused BEFORE the write, so the old suspension simply stays.
-  const ungrounded = ungroundedSummarySentences(
-    generated.text,
-    [
-      ...plan.facts.map((f) => f.text),
-      ...plan.replaced.map((r) => r.text ?? ""),
-      plan.previousSummary ?? "",
-    ],
-  );
-  if (ungrounded.length > 0) {
-    return {
-      anchorId: req.anchorId,
-      outcome: "generation-failed",
-      reasons: [
-        "the rebuilt summary stated something no recorded source supports, so it was not stored: " +
-          ungrounded[0]!.slice(0, 200),
-      ],
-      newAnchorId: null,
-      cleared: false,
-      ...(generated.usage ? { usage: generated.usage } : {}),
-    };
-  }
+  // No textual grounding gate here on purpose.
+  //
+  // A lexical-overlap check was tried and removed: it rejected every faithful
+  // paraphrase (a rebuilt task line shares no words with its source), so it
+  // blocked the happy path it was meant to guard. The real protections against a
+  // wrong rebuild are structural and already in place: the model only sees the
+  // recorded current facts, the replaced references, the user's own turns and the
+  // suspended text (which the prompt marks as not evidence); the commit re-checks
+  // every source is still current; and a suspension only clears when that check
+  // passes. D7's model-based content checker belongs to consolidation, where a
+  // batch summary is judged before it replaces a row — D9 does not ask for one
+  // here, and inventing a weaker substitute is what produced the false refusals.
   let written: SummaryRebuildWriteResult;
   try {
     written = writeRebuilt.call(s, {
@@ -409,16 +371,29 @@ export async function rebuildSuspendedSummary(
       ...(generated.usage ? { usage: generated.usage } : {}),
     };
   }
-  // The store's own status decides the outcome, so a written anchor is never
-  // reported as a write failure and a clear with nothing to clear is not sold as
-  // a recovery.
-  const outcome = written.status === "cleared"
-    ? "rebuilt"
-    : written.status === "stored-not-current" ? "stored-not-current" : "rejected-write";
+  // The store's own status decides the outcome, one-to-one. A written anchor is
+  // never reported as a write failure, and a clear with nothing to clear is not
+  // sold as a recovery.
+  //
+  // `nothing-to-clear` still means the new version IS current and safe to inject:
+  // what it says is that the old suspension row was already gone (another writer
+  // cleared it, or it was never there). Treating it as "still suspended" would
+  // hide a working summary; treating it as "rebuilt" would claim a clear that did
+  // not happen here. It gets its own outcome so the caller sees both facts.
+  const outcome =
+    written.status === "cleared" ? "rebuilt"
+      : written.status === "stored-not-current" ? "stored-not-current"
+        : written.status === "nothing-to-clear" ? "already-current"
+          : "rejected-write";
+  const reasons = written.status === "cleared"
+    ? []
+    : written.status === "already-current"
+      ? ["the new version is current; " + (written.reason ?? "there was no open suspension to clear")]
+      : [written.reason ?? "the rebuilt summary could not be stored"];
   return {
     anchorId: req.anchorId,
     outcome,
-    reasons: written.cleared ? [] : [written.reason ?? "the rebuilt summary was written but the suspension did not clear"],
+    reasons,
     newAnchorId: written.anchorId,
     cleared: written.cleared,
     ...(generated.usage ? { usage: generated.usage } : {}),

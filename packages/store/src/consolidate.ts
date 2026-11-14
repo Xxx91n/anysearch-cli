@@ -744,22 +744,12 @@ export async function consolidateMemoryRun(
   };
 
   // Walk a supersede chain to its live head (#262). The walk itself lives in
-  // summary-rebuild.ts: the rebuild must reach the same verdict for the same
+  // summary-sources.ts: the rebuild must reach the same verdict for the same
   // chain, and two copies of the loop is how they would drift. Calm guard:
   // chains longer than the hop limit (or ending in a closed row with no
   // successor) mean the line has no current version left; the collision is then
   // reported unresolved instead of guessed at.
-  const liveHead = (fromId: number): ChainRow | null => {
-    const row = liveHeadOf(db, fromId);
-    if (!row) return null;
-    // The shared walker reads only the chain columns; the collision path also
-    // needs the row's own source list, so it is read here rather than widening
-    // the walker's SELECT for every caller.
-    const full = db
-      .prepare("SELECT id, content, source_episode_ids, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
-      .get(row.id) as ChainRow | undefined;
-    return full ?? null;
-  };
+  const liveHead = (fromId: number): ChainRow | null => liveHeadOf(db, fromId);
 
   // The materials behind a knowledge row — snippets ARE the row's evidence
   // text; a conflict must hand the caller both sides' materials, not just

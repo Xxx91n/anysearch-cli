@@ -280,10 +280,18 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
 /** How many hops a supersede chain may take before the line is treated as dead. */
 export const MAX_SUPERSEDE_CHAIN_HOPS = 64;
 
-/** One row of a knowledge line while walking it to its live head. */
+/**
+ * One row of a knowledge line while walking it to its live head.
+ *
+ * `source_episode_ids` is included because consolidation's collision path needs
+ * the live row's own material list right after the walk. Selecting it here costs
+ * nothing (same row, same read) and saves that caller a second SELECT of the row
+ * it just received.
+ */
 export interface SupersedeChainRow {
   id: number;
   content: string;
+  source_episode_ids: string;
   valid_until: string | null;
   superseded_by: number | null;
 }
@@ -302,7 +310,7 @@ export function liveHeadOf(db: Database.Database, fromId: number): SupersedeChai
   let id = fromId;
   for (let hop = 0; hop < MAX_SUPERSEDE_CHAIN_HOPS; hop++) {
     const row = db
-      .prepare("SELECT id, content, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
+      .prepare("SELECT id, content, source_episode_ids, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
       .get(id) as SupersedeChainRow | undefined;
     if (!row) return null;
     if (row.valid_until === null) return row;

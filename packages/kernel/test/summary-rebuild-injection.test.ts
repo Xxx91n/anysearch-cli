@@ -30,8 +30,9 @@ import {
   fillOnce,
   formatSummaryRebuildLine,
   generateRebuiltSummary,
+  previousSummaryFitsPrompt,
   rebuildSuspendedSummary,
-  ungroundedSummarySentences,
+  PREVIOUS_SUMMARY_PROMPT_MAX_CHARS,
 } from "../src/summary-rebuild";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
@@ -426,44 +427,47 @@ async function seedSuspended(
   assert(attempt.outcome === "rebuilt", "K9: the call with a key succeeds (got " + attempt.outcome + ")");
 }
 
-// --- K10: an unsupported sentence is refused before the write ----------------
-
+// --- K10: an over-long suspended summary is refused, not truncated ----------
+//
+// The previous version is carried into the prompt as context (so a fact no source
+// recorded but no correction touched survives). When it does not fit the prompt
+// budget, the attempt is INCOMPLETE: cutting it and reporting a full rebuild is
+// exactly what the ticket forbids.
 {
   const db = "k10.db";
   const store = openStore(db);
   await store.createSession("acme");
   const sid = "sess-k10";
   await store.ensureSession(sid, "acme");
-  const { anchorId } = await seedSuspended(store, sid);
+  await store.append(sid, { role: "user", content: USER_TASK });
+  const ra = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/long", title: "long", snippet: "Acme support runs weekdays 9-17.",
+    source: "tavily", evidence: 0.9, entity: "acme",
+  }]);
+  const materialId = ra[0]?.insertedId ?? 1;
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "x".repeat(PREVIOUS_SUMMARY_PROMPT_MAX_CHARS + 1),
+    sources: [{ kind: "material", id: materialId }],
+  });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
   const before = (await store.getAnchors(sid)).length;
 
+  const calls = { n: 0 };
   const attempt = await rebuildSuspendedSummary(store, {
-    sessionId: sid,
-    anchorId,
-    // Nothing in the plan says anything like this.
-    streamFn: stubStream("Acme was acquired by Zenith Holdings in 2019 for four billion dollars."),
-    model: {} as any,
+    sessionId: sid, anchorId, streamFn: stubStream("anything", { calls }), model: {} as any,
   });
-  assert(attempt.outcome === "generation-failed",
-    "K10: a summary stating unsourced facts is refused (got " + attempt.outcome + ")");
-  assert(attempt.reasons.some((r) => r.includes("no recorded source")),
-    "K10: the reason says the text had no support");
-  assert(attempt.newAnchorId === null, "K10: nothing is written");
-  assert((await store.getAnchors(sid)).length === before, "K10: no anchor was added");
-  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId), "K10: the suspension stays");
+  assert(attempt.outcome === "incomplete",
+    "K10: an over-long suspended summary leaves the plan incomplete (got " + attempt.outcome + ")");
+  assert(attempt.reasons.some((r) => r.includes("prompt budget")),
+    "K10: the reason names the prompt budget");
+  assert(calls.n === 0, "K10: no model call is spent on a rebuild that cannot fit");
+  assert(attempt.newAnchorId === null && (await store.getAnchors(sid)).length === before,
+    "K10: nothing is written");
 
-  // The pure check: a sentence that restates a source passes, an invented one
-  // does not, and the previous summary counts as a ground (D8 keeps a fact no
-  // source recorded but no correction touched).
-  const grounds = ["Acme online support runs weekdays 9:00-17:00", "the user asked for the weekend schedule"];
-  assert(ungroundedSummarySentences("Acme online support runs weekdays 9:00-17:00.", grounds).length === 0,
-    "K10: a restatement of a source is grounded");
-  assert(ungroundedSummarySentences("Zenith Holdings acquired the company in 2019.", grounds).length === 1,
-    "K10: an invented sentence is caught");
-  assert(ungroundedSummarySentences("Zenith Holdings acquired the company in 2019.", [
-    ...grounds, "Zenith Holdings acquired the company in 2019",
-  ]).length === 0,
-    "K10: text carried over from the previous summary is grounded");
+  // A version that fits is carried over and used.
+  assert(previousSummaryFitsPrompt("short summary"), "K10: a short previous summary fits");
+  assert(!previousSummaryFitsPrompt("x".repeat(PREVIOUS_SUMMARY_PROMPT_MAX_CHARS + 1)),
+    "K10: an over-long one does not fit");
 }
 
 // --- K11: a summary that was never suspended is not rebuilt on a guess ------
@@ -541,6 +545,45 @@ async function seedSuspended(
   assert(!promptText(out).includes("stale text"), "K8: the suspended summary is still not injected");
   assert(pipeline.getSummaryRebuilds().length === 0,
     "K8: no attempt is claimed when the store cannot rebuild");
+}
+
+// --- K12: a clear with nothing to clear is reported as current, not as failure --
+//
+// The summary that was written IS current and injectable; only the clearing act
+// did not happen (another writer had already cleared the row). Calling that
+// "still suspended" hides a working summary, and calling it "rebuilt" claims a
+// clear that did not happen here.
+{
+  const db = "k12.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k12";
+  await store.ensureSession(sid, "acme");
+  await store.append(sid, { role: "user", content: USER_TASK });
+  const ra = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/k12", title: "k12", snippet: "Acme support runs weekdays 9-17.",
+    source: "tavily", evidence: 0.9, entity: "acme",
+  }]);
+  const materialId = ra[0]?.insertedId ?? 1;
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "Acme support runs weekdays 9-17.", sources: [{ kind: "material", id: materialId }],
+  });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  // Never suspended in this fixture, so there is no open row to clear.
+  const attempt = await rebuildSuspendedSummary(store, {
+    sessionId: sid,
+    anchorId,
+    streamFn: stubStream("Acme support runs weekdays 9-17, Monday through Friday."),
+    model: {} as any,
+  });
+  assert(attempt.outcome === "already-current",
+    "K12: a written, current version reports already-current (got " + attempt.outcome + ")");
+  assert(attempt.cleared === false, "K12: cleared stays false — this call did not clear anything");
+  assert(attempt.newAnchorId !== null, "K12: the new anchor is named");
+  const line = formatSummaryRebuildLine(attempt);
+  assert(line.includes("is current and injectable") && !line.includes("still suspended"),
+    "K12: the line says the version is current, not that it is still suspended (got " + line + ")");
 }
 
 // --- cleanup ---------------------------------------------------------------
