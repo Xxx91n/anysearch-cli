@@ -181,6 +181,20 @@ async function main() {
         "A1: the row is recorded under the searching session's handle");
       assert(retriever.calls.length >= 1, "A1: the search actually ran");
       assert(writerEvents.some((e) => e.type === "done"), "A1: the writing run completed");
+      // A9: the row id the search archived travels to the MODEL, inside the
+      // tool result. This is what lets a summary later name the exact version
+      // it read instead of guessing by URL — and it has to be in the request,
+      // because that JSON is the only place `distillGap` can recover it.
+      //
+      // The id sits inside a doubly-encoded JSON string (the envelope is a
+      // string field of the tool result), so the assertion strips the escaping
+      // before matching rather than trying to count backslashes.
+      const archivedId = archiveRows[0]!.id as number;
+      const modelSawRowId = searchProvider.calls
+        .filter((c) => c.kind === "main")
+        .some((c) => c.text.replace(/\\/g, "").includes('"archiveRowId":' + archivedId));
+      assert(modelSawRowId,
+        "A9: the archived row id reaches the model's tool result (id=" + archivedId + ")");
 
       // A DIFFERENT session, fresh runtime, archive adapter on. Its prompt must
       // carry the material the first session found, and it must not need to

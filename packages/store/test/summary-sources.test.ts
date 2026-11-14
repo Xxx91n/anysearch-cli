@@ -602,6 +602,95 @@ async function buildKnowledge(
     "S9: reading an archived material does not suspend the summary (archiving is not a correction)");
 }
 
+// --- S11: one URL, two versions — the read decides which one --------------
+
+{
+  // The window this closes (CodeRabbit, round 14): a URL can hold an OLD
+  // superseded row A and a live row B. Recording both would mean `isSourceCurrent`
+  // sees A, reports it stale, and suspends a summary whose every fact came from
+  // B. Excluding the old row is not the fix either: it is exactly what S8 needs
+  // when the citation really is to the replaced version.
+  //
+  // So the read carries the row id and the id decides. S11a: the exact-read
+  // form. S11b: the URL form, which must prefer the live row.
+  const db = "s11.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "session-s11";
+  await store.ensureSession(sid, "acme");
+
+  // Row A: the version a correction later retired.
+  const oldMaterial = await seedEpisode(store, sid, "https://acme.example/s11", "s11-v1", OLD_FACT, "acme");
+  const url = q(db, "SELECT url FROM retrieval_results WHERE id = ?", oldMaterial)!.url as string;
+  // Row B: the same URL written again (a re-fetch / the corrected version).
+  const newMaterial = await seedEpisode(store, sid, url, "s11-v2", NEW_FACT, "acme");
+  // The temporal replacement closes A's valid_until at write time.
+  assert(q(db, "SELECT valid_until FROM retrieval_results WHERE id = ?", oldMaterial)!.valid_until !== null,
+    "S11 fixture: writing B closed A's valid_until");
+  assert(q(db, "SELECT valid_until FROM retrieval_results WHERE id = ?", newMaterial)!.valid_until === null,
+    "S11 fixture: B is the live row for that URL");
+
+  // S11a: the exact read form resolves to the row that was read, only.
+  const exact = store.resolveSummarySourcesFromReads([{ url, rowId: newMaterial }]);
+  const exactIds = exact.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(exactIds.length === 1 && exactIds[0] === newMaterial,
+    "S11a: a read with its row id resolves to THAT row only (got " + JSON.stringify(exactIds) + ")");
+
+  // ...and the summary written from it is NOT suspended: its one dependency is
+  // live.
+  await store.saveAnchor(sid, "rolling_summary", { summary: "S11-FROM-B", sources: exact });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  assert(!store.suspendedSummaryAnchorIds(sid).has(anchorId),
+    "S11a: a summary built from the LIVE row is not suspended by its URL's retired predecessor");
+
+  // S11b: the URL form (no row id) prefers the live row for the same URL.
+  const viaUrl = store.resolveSummarySources([url]);
+  const urlIds = viaUrl.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(urlIds.includes(newMaterial) && !urlIds.includes(oldMaterial),
+    "S11b: an unattributed URL resolves to its LIVE row, not its retired predecessor (got " + JSON.stringify(urlIds) + ")");
+
+  // S11d: the exact form is the row that was READ even when another row of the
+  // same URL is live. This is the case that separates "used the id" from "looked
+  // the URL up anyway": a citation of A must resolve to A, not to the live B.
+  const citedOld = store.resolveSummarySourcesFromReads([{ url, rowId: oldMaterial }]);
+  const citedOldIds = citedOld.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(citedOldIds.length === 1 && citedOldIds[0] === oldMaterial,
+    "S11d: a citation of the older row resolves to THAT row, not the live one (got " + JSON.stringify(citedOldIds) + ")");
+
+  // S11c: the exact read form keeps a citation to a row that was retired BEFORE
+  // the write (the S8 window). Currency is the write-time check's job, not the
+  // resolver's: dropping it here would leave the summary with no dependency and
+  // store it as VALID. Proven over the REAL correction path on its own entity,
+  // so the retirement is the product's, not SQL tampering.
+  const built = await buildKnowledge(store, sid, "gamma-s11", OLD_FACT, "https://gamma.example/s11");
+  const retiredTarget = built.materialIds[0]!;
+  const retiredUrl = q(db, "SELECT url FROM retrieval_results WHERE id = ?", retiredTarget)!.url as string;
+  const correctionMaterial = await seedEpisode(store, sid, "https://gamma.example/s11-notice", "notice", NEW_FACT, "gamma-s11");
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [correctionMaterial], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) =>
+        eps.some((e) => e.title === "CURRENT KNOWLEDGE") ? MERGED_FACT : NEW_FACT,
+      classify: SUPPORTED,
+      verify: async () => CORRECTION_VERDICT,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep.update === 1,
+    "S11c fixture: the correction landed as an UPDATE (update=" + rep.update + " add=" + rep.add +
+    " rejected=" + rep.verifyRejected + " skipped=" + rep.singleEvidenceSkipped + ")");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", retiredTarget)!.superseded_by !== null,
+    "S11c fixture: the correction retired the material");
+  const afterCorrection = store.resolveSummarySourcesFromReads([{ url: retiredUrl, rowId: retiredTarget }]);
+  const afterIds = afterCorrection.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(afterIds.includes(retiredTarget),
+    "S11c: a citation to a material retired BEFORE the write is still resolved (got " + JSON.stringify(afterIds) + ")");
+  await store.saveAnchor(sid, "rolling_summary", { summary: "S11-STALE-CITATION", sources: afterCorrection });
+  const lateAnchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  assert(store.suspendedSummaryAnchorIds(sid).has(lateAnchorId),
+    "S11c: the summary citing the retired row is written SUSPENDED, not as current");
+}
+
 // --- S10: the URL lookup uses an index -------------------------------------
 
 {

@@ -56,6 +56,13 @@ export interface TaggedGapResult {
   snippet: string;
   source: string;
   label: SourceTraceLabel;
+  /**
+   * #263: the archive row this result was fetched into, when the search path
+   * recorded it (see `stampArchiveRowIds` in pi-runtime). This is what makes a
+   * summary's dependency exact: a URL can hold a retired older row and a live
+   * newer one, and only the id says which version the summary read.
+   */
+  archiveRowId?: number;
 }
 
 export interface TaggedGap {
@@ -125,6 +132,11 @@ export interface ConsolidateResult {
  *
  * @param store - Session store, possibly without the provenance seams.
  * @param req.gapUrls - URLs the new material arrived under, resolved by the store.
+ * @param req.gapReads - The gap's reads WITH their archive row ids, when the
+ *   search path recorded them. Preferred over `gapUrls`: two rows can share one
+ *   URL, so only the id says which version the summary read. Falls back to
+ *   `gapUrls` when the store has no read-based seam or none of the reads
+ *   carries an id.
  * @param req.previousAnchorId - Previous summary anchor, whose dependencies the
  *   new summary inherits (it was generated from that summary).
  * @returns The sources, or `{ok: false}` when a read failed.
@@ -133,6 +145,11 @@ export function readSummarySourcesForWrite(
   store: unknown,
   req: {
     gapUrls: Array<string | null | undefined>;
+    // #263: the gap's reads with their archive row ids when the search path
+    // recorded them (see resolveSummarySourcesFromReads). Takes precedence over
+    // `gapUrls` so one URL's older row cannot be attributed to a summary that
+    // read the newer one.
+    gapReads?: Array<{ url: string; rowId?: number | null } | null | undefined>;
     // Anchors whose dependencies the new summary inherits. More than one
     // because the summarizer can read BOTH the previous rolling summary and a
     // `[Research Recall]` block still present in the reused history.
@@ -143,20 +160,32 @@ export function readSummarySourcesForWrite(
 ): { ok: true; sources: Array<{ kind: "material" | "knowledge"; id: number }> } | { ok: false } {
   const s = store as {
     resolveSummarySources?: (urls: string[]) => unknown;
+    resolveSummarySourcesFromReads?: (reads: Array<{ url: string; rowId?: number | null }>) => unknown;
     summarySourcesForAnchor?: (anchorId: number) => unknown;
   };
   const hasResolve = typeof s?.resolveSummarySources === "function";
+  const hasReads = typeof s?.resolveSummarySourcesFromReads === "function";
   const hasInherit = typeof s?.summarySourcesForAnchor === "function";
   const inheritIds = [
     ...(req.previousAnchorIds ?? []),
     ...(req.previousAnchorId !== undefined ? [req.previousAnchorId] : []),
   ].filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
-  if (!hasResolve && !(hasInherit && inheritIds.length > 0)) {
+  if (!hasResolve && !hasReads && !(hasInherit && inheritIds.length > 0)) {
     return { ok: true, sources: [] };
   }
   const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
   try {
-    if (hasResolve) {
+    // Exact form first: a read that carries its archive row pins the version the
+    // summary saw. Without it a URL with a retired predecessor AND a live
+    // successor would record both, and the write-time currency check would
+    // suspend a summary built entirely from the live one.
+    const reads = (req.gapReads ?? []).filter(
+      (r): r is { url: string; rowId?: number | null } =>
+        !!r && typeof r.url === "string" && r.url.length > 0,
+    );
+    if (hasReads && reads.length > 0) {
+      sources.push(...((s.resolveSummarySourcesFromReads!(reads) ?? []) as typeof sources));
+    } else if (hasResolve) {
       const urls = (req.gapUrls ?? []).filter((u): u is string => typeof u === "string" && u.length > 0);
       sources.push(...((s.resolveSummarySources!(urls) ?? []) as typeof sources));
     }
@@ -243,24 +272,83 @@ export function snapshotMessages(messages: any[]): any[] {
 }
 
 /**
- * #263: does the message list the generator will read carry an injected
- * `[Research Recall]` block?
+ * #263: which stored summary anchors the message list ACTUALLY carries.
  *
- * The gate for inheriting the l2_recall anchor's dependencies. Inheriting
- * unconditionally is wrong both ways: with no block, the summary records a
- * dependency it never read (a later correction then suspends an unrelated
- * summary); with a block that is not the newest anchor, it inherits the wrong
- * one and misses what was actually read.
+ * The gate for inheriting dependencies, done exactly instead of by "newest
+ * anchor wins". Injection renders each anchor to one exact string (see `inject`),
+ * so an anchor whose rendered block appears in the history is an anchor whose
+ * text the summarizer will read — whatever its age, and regardless of whether a
+ * newer anchor exists.
  *
- * Matches the injected shape (block after a blank line), so a user who merely
- * mentions the tag does not count as having a block.
+ * Both wrong answers the guessing version produced are closed here:
+ * - no block for the newest anchor but an OLDER block present: the older
+ *   anchor's dependencies are inherited (guessing the newest would record a
+ *   dependency the summary never read AND miss the one it did);
+ * - no block at all: nothing is inherited. A block that matches no stored
+ *   anchor of this session (a caller passing another session's history) also
+ *   inherits nothing — its sources are unknowable, and inventing them would
+ *   suspend an unrelated summary later.
  *
  * @param messages - The snapshot the summarizer will receive.
- * @returns True when a recall block is really present.
+ * @param anchors - This session's anchors (already read by the caller).
+ * @returns Anchor ids whose rendered block is present.
  */
-export function carriesRecallBlock(messages: any[]): boolean {
-  const marker = BLANK_LINE_BEFORE_BLOCK + RESEARCH_RECALL_TAG;
-  return (messages ?? []).some((m: any) => (readMessageText(m)?.text ?? "").includes(marker));
+export function injectedSummaryAnchorIds(messages: any[], anchors: Array<{ id: number; anchorType: string; payload: unknown }>): number[] {
+  const texts: string[] = [];
+  for (const m of messages ?? []) {
+    const t = readMessageText(m)?.text;
+    if (t) texts.push(t);
+  }
+  if (texts.length === 0) return [];
+  const out: number[] = [];
+  for (const anchor of anchors ?? []) {
+    if (anchor?.anchorType !== "rolling_summary" && anchor?.anchorType !== "l2_recall") continue;
+    const payload = anchor.payload as any;
+    // Same truncation as injection, so the compared string IS the injected one.
+    const body = anchor.anchorType === "rolling_summary" ? payload?.summary : payload?.hits;
+    if (typeof body !== "string" || body.length === 0) continue;
+    const block = anchor.anchorType === "rolling_summary"
+      ? SESSION_MEMORY_TAG + " " + body.slice(0, 4000)
+      : RESEARCH_RECALL_TAG + " " + body.slice(0, 1500);
+    const marker = BLANK_LINE_BEFORE_BLOCK + block;
+    if (texts.some((t) => t.includes(marker))) out.push(anchor.id);
+  }
+  return out;
+}
+
+/**
+ * #263: the anchor ids a NEW summary inherits its dependencies from.
+ *
+ * The one place this decision is made, so the call site and the test cannot
+ * disagree: a second copy of the rule (here and at the call site) is exactly how
+ * the "newest anchor wins" version survived a test that only drove the helper.
+ *
+ * Two sources, and only these:
+ * - the previous rolling summary's anchor: `previousSummary` is passed to the
+ *   generator as its own argument, so that text is read regardless of what the
+ *   message list contains.
+ * - every summary anchor whose RENDERED block the history really carries (see
+ *   injectedSummaryAnchorIds). This is what makes an older recall block count
+ *   while a newer anchor the history never saw does not.
+ *
+ * @param messages - The snapshot the summarizer will receive.
+ * @param anchors - This session's anchors.
+ * @param previousSummaryAnchorId - The anchor behind `previousSummary`, if any.
+ * @returns Valid, deduplicated anchor ids.
+ */
+export function summaryAnchorsToInherit(
+  messages: any[],
+  anchors: Array<{ id: number; anchorType: string; payload: unknown }>,
+  previousSummaryAnchorId: number | undefined,
+): number[] {
+  const ids: number[] = [];
+  const add = (id: unknown): void => {
+    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return;
+    if (!ids.includes(id)) ids.push(id);
+  };
+  add(previousSummaryAnchorId);
+  for (const id of injectedSummaryAnchorIds(messages, anchors)) add(id);
+  return ids;
 }
 
 // gap distillation returns a tagged object, never a bare string.
@@ -300,12 +388,17 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
           : "retrieved",
         traceId,
       });
+      const rowId = Number(item?.archiveRowId);
       results.push({
         url: typeof item?.url === "string" ? item.url : "",
         title: typeof item?.title === "string" ? item.title : "",
         snippet: typeof item?.snippet === "string" ? item.snippet : String(raw).slice(0, 4000),
         source: typeof item?.source === "string" ? item.source : "retrieved",
         label: itemLabel,
+        // #263: carried through when the search path recorded it. Absent on an
+        // older transcript or a store without the seam — the URL bridge then
+        // applies, which is why this stays optional rather than defaulted.
+        ...(Number.isInteger(rowId) && rowId > 0 ? { archiveRowId: rowId } : {}),
       });
       label = combineLabels(label, itemLabel);
     }
@@ -1017,26 +1110,28 @@ export class MemoryPipeline {
       const prevAnchors = await store.getAnchors(sessionId);
       const prevSummaryAnchor = lastAnchorOfType(prevAnchors, "rolling_summary");
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
-      // #263: this anchor's id, so the NEW summary can inherit its dependencies
-      // (the new text is generated FROM the previous summary).
       const previousSummaryAnchorId = prevSummaryAnchor?.id;
-      // #263: the l2_recall block the caller's history may still carry. When a
-      // caller hands `inject()`'s output to `consolidate()`, the model reads that
-      // `[Research Recall]` text too, so the new summary can state its facts.
-      // Inheriting its sources keeps those facts suspendable; without it a
-      // summary built on that block would be stored with no dependency and never
-      // paused when the block's own material is corrected.
-      const previousRecallAnchor = lastAnchorOfType(prevAnchors, "l2_recall");
-      const previousRecallAnchorId = previousRecallAnchor?.id;
-      // Whether the generator will actually READ a recall block. Inheriting the
-      // newest l2_recall anchor unconditionally would be wrong in both
-      // directions: with no block in the history it would record a dependency
-      // the summary never used (a later correction of that material would then
-      // suspend an unrelated summary), and with a block that is NOT the newest
-      // anchor it would inherit the wrong one and miss the one actually read.
-      // So the block's presence in the message list is the gate.
-      const historyCarriesRecallBlock = carriesRecallBlock(messages);
-
+      // #263: which summary anchors the generator will ACTUALLY read.
+      //
+      // The new summary is generated FROM the previous summary text
+      // (`previousSummary`) plus whatever summary / recall blocks the message
+      // list already carries (a caller may hand `inject()`'s output straight to
+      // `consolidate()`). Its dependencies are the union of those anchors'
+      // dependencies — recorded so a correction of a fact stated in them
+      // suspends this newer summary too.
+      //
+      // Done by matching the RENDERED blocks, not by "newest anchor wins":
+      // - the newest l2_recall anchor with NO block in the history is a
+      //   dependency the summary never read. Inheriting it would let a later
+      //   correction suspend an unrelated summary — the exact false suspension
+      //   the ticket forbids.
+      // - a block in the history that is NOT the newest anchor is a dependency
+      //   the summary DID read. Inheriting only the newest would miss it, so the
+      //   correction would leave the replaced fact in the newly injected
+      //   summary.
+      // Both cases are covered because the match is per anchor, and an anchor
+      // absent from the list is an anchor absent from the sources.
+      const inheritedAnchorIds = summaryAnchorsToInherit(messages, prevAnchors, previousSummaryAnchorId);
       // D5: fire-and-forget compression helper.
       // #263: set when the source read failed. The state must NOT advance then:
       // this turn's summary was skipped, so the next turn has to retry the same
@@ -1101,11 +1196,11 @@ export class MemoryPipeline {
             gapUrls: scanFromStart.results
               .map((r: any) => r?.url)
               .filter((u: any) => typeof u === "string" && u.length > 0),
-            previousAnchorIds: [
-              previousSummaryAnchorId,
-              // Only when the history really carries a recall block (see above).
-              historyCarriesRecallBlock ? previousRecallAnchorId : undefined,
-            ].filter((id): id is number => typeof id === "number"),
+            // The exact form: each read carries the archive row the search wrote,
+            // so a URL with a retired predecessor AND a live successor records
+            // only the version actually read.
+            gapReads: scanFromStart.results.map((r) => ({ url: r.url, rowId: r.archiveRowId ?? null })),
+            previousAnchorIds: inheritedAnchorIds,
           });
           if (!read.ok) {
             // Report the skip on stderr (stdout stays protocol-pure) and stop

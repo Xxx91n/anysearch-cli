@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap, snapshotMessages, carriesRecallBlock } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, injectedSummaryAnchorIds, summaryAnchorsToInherit, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap, snapshotMessages } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -563,15 +563,99 @@ async function main() {
     assert(namedAnchor.ok === true && namedAnchor.sources.some((r) => r.id === 42),
       "P13: the inherited anchor is the one the caller named, not the newest by default");
 
-    // 3d. The GATE itself: only a real injected block counts.
-    assert(carriesRecallBlock([
-      userTurn("q" + BLANK_LINE + "[Research Recall] learned facts"),
-    ]) === true, "P13: a real injected recall block is detected");
-    assert(carriesRecallBlock([userTurn("what does [Research Recall] mean?")]) === false,
+    // 3d. The GATE itself: only a block that the history REALLY carries, and
+    // that belongs to a stored anchor, is inherited. Matching is per anchor by
+    // its rendered block, which is what closes both reviewer cases:
+    //   - the newest anchor with NO block in the history: not inherited;
+    //   - an OLDER anchor whose block IS in the history: inherited, even though
+    //     a newer anchor exists.
+    const anchor = (id: number, anchorType: string, payload: any) => ({ id, anchorType, payload });
+    const withOlderBlock = injectedSummaryAnchorIds(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] learned facts")],
+      [
+        anchor(1, "l2_recall", { hits: "learned facts" }),
+        anchor(2, "l2_recall", { hits: "newer facts the history never carried" }),
+      ],
+    );
+    assert(withOlderBlock.length === 1 && withOlderBlock[0] === 1,
+      "P13: the anchor whose block the history carries is inherited (got " + JSON.stringify(withOlderBlock) + ")");
+    assert(!withOlderBlock.includes(2),
+      "P13: the newest anchor with NO block in the history is NOT inherited");
+    assert(injectedSummaryAnchorIds([userTurn("no blocks here")], [anchor(1, "l2_recall", { hits: "x" })]).length === 0,
+      "P13: a plain message inherits nothing");
+    assert(injectedSummaryAnchorIds([userTurn("what does [Research Recall] mean?")], [anchor(1, "l2_recall", { hits: "x" })]).length === 0,
       "P13: merely MENTIONING the tag is not a block");
-    assert(carriesRecallBlock([userTurn("no blocks here")]) === false,
-      "P13: a plain message carries no block");
-    assert(carriesRecallBlock([]) === false, "P13: an empty list carries no block");
+    assert(injectedSummaryAnchorIds([], [anchor(1, "l2_recall", { hits: "x" })]).length === 0,
+      "P13: an empty history inherits nothing");
+    // A block that matches no stored anchor (another session's history) inherits
+    // nothing: its sources are unknowable, and inventing them would suspend an
+    // unrelated summary later.
+    assert(injectedSummaryAnchorIds(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] foreign block")],
+      [anchor(1, "l2_recall", { hits: "x" })],
+    ).length === 0,
+      "P13: a block belonging to no stored anchor inherits nothing");
+
+    // 3f. The WIRING, not just the matcher: the id list the call site passes to
+    // the write. This is the level CodeRabbit's round-13 finding lived at — the
+    // matcher was right while the call site still said "newest anchor wins", and
+    // a test that only drives the matcher could not see the difference.
+    const wiringAnchors = [
+      anchor(10, "rolling_summary", { summary: "older summary" }),
+      anchor(11, "l2_recall", { hits: "block the history carries" }),
+      anchor(12, "l2_recall", { hits: "newest anchor the history never saw" }),
+    ];
+    const wiring = summaryAnchorsToInherit(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] block the history carries")],
+      wiringAnchors,
+      10,
+    );
+    assert(wiring.includes(10), "P13: the previous summary anchor is inherited (got " + JSON.stringify(wiring) + ")");
+    assert(wiring.includes(11), "P13: the recall anchor whose block the history carries is inherited");
+    assert(!wiring.includes(12),
+      "P13: the NEWEST recall anchor is NOT inherited when the history does not carry its block");
+    // With no previous summary and no block, nothing is inherited — the case
+    // where inheriting the newest anchor would suspend an unrelated summary.
+    assert(summaryAnchorsToInherit([userTurn("no blocks")], wiringAnchors, undefined).length === 0,
+      "P13: no previous summary and no block inherits nothing");
+    // Ids are deduplicated and junk is dropped.
+    const dup = summaryAnchorsToInherit(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] block the history carries")],
+      [anchor(11, "l2_recall", { hits: "block the history carries" })],
+      11,
+    );
+    assert(dup.length === 1 && dup[0] === 11, "P13: an anchor named twice is inherited once (got " + JSON.stringify(dup) + ")");
+
+    // 3e. The exact read form wins over the URL form: a read that carries its
+    // archive row resolves to that row only, so an older version of the same URL
+    // is not attributed to a summary that read the newer one.
+    let readsSeen: Array<{ url: string; rowId?: number | null }> = [];
+    const exact = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [{ kind: "material", id: 111 }],
+        resolveSummarySourcesFromReads: (reads2: Array<{ url: string; rowId?: number | null }>) => {
+          readsSeen = reads2;
+          return [{ kind: "material", id: 222 }];
+        },
+      },
+      { gapUrls: ["https://x.example/1"], gapReads: [{ url: "https://x.example/1", rowId: 222 }] },
+    );
+    const exactIds = exact.ok ? exact.sources.map((r) => r.id) : [];
+    assert(exact.ok === true && exactIds.includes(222) && !exactIds.includes(111),
+      "P13: the read's row id decides the dependency, not the URL lookup (got " + JSON.stringify(exactIds) + ")");
+    assert(readsSeen.length === 1 && readsSeen[0]!.rowId === 222,
+      "P13: the row id reaches the store seam unchanged");
+    const blankReads = exact.ok
+      ? readSummarySourcesForWrite(
+        {
+          resolveSummarySources: () => [{ kind: "material", id: 111 }],
+          resolveSummarySourcesFromReads: () => [],
+        },
+        { gapUrls: ["https://x.example/1"], gapReads: [{ url: "" }] },
+      )
+      : { ok: false as const, sources: [] };
+    assert(blankReads.ok === true && blankReads.sources.some((r) => r.id === 111),
+      "P13: with no usable read, the URL form still resolves (stores that predate the annotation)");
 
     // 4. The happy path merges both parts and dedupes nothing it should not.
     const happy = readSummarySourcesForWrite(
@@ -850,6 +934,55 @@ async function main() {
     assert(both.ok === true && both.sources.length === 2,
       "P18: the write receives a source for each result the summarizer read (got " +
       (both.ok ? both.sources.length : "not-ok") + ")");
+
+    // P20: the row id the search path stamped on a result survives distillation,
+    // so the summary's dependency can name the VERSION it read. Without it a URL
+    // with a retired older row and a live newer one records both, and the
+    // write-time currency check suspends a summary built entirely from the live
+    // one.
+    const stamped = [{
+      role: "toolResult",
+      name: "search",
+      content: [{ type: "text", text: JSON.stringify({
+        query: "q",
+        results: [
+          { url: "https://x263.example/stamped", title: "t", snippet: "s", source: "tavily", archiveRowId: 4242 },
+          { url: "https://x263.example/plain", title: "t2", snippet: "s2", source: "tavily" },
+        ],
+      }) }],
+    }];
+    const distilled = distillGap(stamped, 0);
+    assert(distilled.results[0]!.archiveRowId === 4242,
+      "P20: the archive row id travels with the distilled result (got " + String(distilled.results[0]!.archiveRowId) + ")");
+    assert(distilled.results[1]!.archiveRowId === undefined,
+      "P20: a result with no recorded row stays without an id (the URL bridge covers it)");
+    // A junk annotation must not become an id (id 0 or a float would resolve to
+    // no row and silently drop the dependency).
+    const junk = distillGap([{
+      role: "toolResult",
+      name: "search",
+      content: [{ type: "text", text: JSON.stringify({
+        query: "q",
+        results: [
+          { url: "https://x263.example/zero", title: "t", snippet: "s", source: "tavily", archiveRowId: 0 },
+          { url: "https://x263.example/float", title: "t", snippet: "s", source: "tavily", archiveRowId: 1.5 },
+        ],
+      }) }],
+    }], 0);
+    assert(junk.results.every((r) => r.archiveRowId === undefined),
+      "P20: a non-positive or fractional row id is dropped, not recorded");
+    // And the write path prefers the ids over the URLs.
+    const byRead = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [{ kind: "material", id: 999 }],
+        resolveSummarySourcesFromReads: (reads2: Array<{ url: string; rowId?: number | null }>) =>
+          reads2.map((r: { url: string; rowId?: number | null }) => ({ kind: "material" as const, id: r.rowId ?? 777 })),
+      },
+      { gapUrls: distilled.results.map((r) => r.url), gapReads: distilled.results.map((r) => ({ url: r.url, rowId: r.archiveRowId ?? null })) },
+    );
+    const byReadIds = byRead.ok ? byRead.sources.map((r) => r.id) : [];
+    assert(byRead.ok === true && byReadIds.includes(4242) && !byReadIds.includes(999),
+      "P20: the write resolves the reads by id, not by URL (got " + JSON.stringify(byReadIds) + ")");
   }
 
   store.close();

@@ -26,9 +26,11 @@ import {
   parseSummarySourceRefs,
   recordSummarySources,
   resolveSummarySourcesFromUrls,
+  resolveSummarySourcesFromReads,
   suspendedSummaryAnchorIds,
   suspendSummaries,
   type SummaryAnchorType,
+  type SummaryRead,
   type SummarySourceRef,
 } from "./summary-sources.js";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
@@ -191,6 +193,11 @@ export interface SessionStore {
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
+  // #263: same write, plus the archive row each result landed in (null when the
+  // result was skipped). Optional on the port so hand-built stores stay
+  // source-compatible; the search path stamps the ids onto the tool result only
+  // when the seam exists, and the URL bridge covers the rest.
+  saveResultsWithIds?(sessionId: string, results: NormalizedResult[]): Promise<Array<number | null>>;
   // #263: a summary anchor may carry `sources` (the rows it was built from);
   // the anchor insert and its dependency rows commit together.
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
@@ -201,6 +208,11 @@ export interface SessionStore {
   // #263: URL -> current material/knowledge refs, the exact bridge from the
   // tool-result JSON a summary read to storable dependency ids.
   resolveSummarySources?(urls: string[]): SummarySourceRef[];
+  // #263: same resolution when a read carries the archive row it came from.
+  // Preferred over the URL form: two rows can share a URL (an older version a
+  // correction retired, a newer one a later fetch wrote), and only the id says
+  // which one the summary actually read.
+  resolveSummarySourcesFromReads?(reads: SummaryRead[]): SummarySourceRef[];
   // #263: the dependencies already recorded for one anchor, so the next
   // summary can inherit them (it was generated FROM the previous one).
   summarySourcesForAnchor?(anchorId: number): SummarySourceRef[];
@@ -1029,20 +1041,41 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async saveResults(sessionId: string, results: NormalizedResult[]): Promise<void> {
+    await this.saveResultsWithIds(sessionId, results);
+  }
+
+  /**
+   * Archive a batch and report which row each result landed in.
+   *
+   * #263: the row id is what makes a summary's dependency exact. Two rows can
+   * share one URL (an older version a correction retired, a newer one a later
+   * fetch wrote), and only the id says which one the model actually read.
+   * Returning the ids lined up with `results` lets the search path stamp them
+   * onto the tool result the model sees, so the summary write can later resolve
+   * the citation to the exact row instead of guessing by URL.
+   *
+   * `null` at index i means "no row was written for result i" — a result
+   * carrying a secret is skipped by design (see containsSecret), so the caller
+   * must not assume the arrays line up by position alone.
+   */
+  async saveResultsWithIds(sessionId: string, results: NormalizedResult[]): Promise<Array<number | null>> {
+    const ids: Array<number | null> = [];
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
        // write entry: skip secret-bearing results entirely (no row, no FTS).
-       if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) continue;
+       if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) { ids.push(null); continue; }
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
        const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url, sourceLabel, traceId);
-                // bi-temporal invalidation — close old records for same entity (URL) at write time.
-                // Not relying on decay to suppress staleness; valid_until set immediately on new write.
-                try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
+       // bi-temporal invalidation — close old records for same entity (URL) at write time.
+       // Not relying on decay to suppress staleness; valid_until set immediately on new write.
+       try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
+       ids.push(Number(info.lastInsertRowid));
       }
     });
     insertMany(results);
+    return ids;
   }
 
   // (Q3=A): write-path adjudication (MemTX-simplified three checks).
@@ -1188,6 +1221,18 @@ export class SqliteSessionStore implements SessionStore {
    */
   suspendedSummaryAnchorIds(sessionId: string): Set<number> {
     return suspendedSummaryAnchorIds(this.db, sessionId);
+  }
+
+  /**
+   * Turn what a summary READ into the rows that back those reads.
+   *
+   * The exact form: a read may carry the archive row id the search path
+   * recorded, which distinguishes two versions of one URL. Without an id the
+   * URL bridge applies (current rows first, else every row). No text matching
+   * and no session guessing either way. See resolveSummarySourcesFromReads.
+   */
+  resolveSummarySourcesFromReads(reads: SummaryRead[]): SummarySourceRef[] {
+    return resolveSummarySourcesFromReads(this.db, reads);
   }
 
   /**

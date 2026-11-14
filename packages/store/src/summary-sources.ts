@@ -277,36 +277,121 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
   return new Set(rows.map((r) => r.anchorId));
 }
 
+/** One thing the summarizer read: the URL it saw, and the archive row when known. */
+export interface SummaryRead {
+  url: string;
+  /**
+   * The exact `retrieval_results` row this read came from, when the search path
+   * recorded it. This is what makes the dependency exact: the same URL can hold
+   * an older row (a correction retired it) and a newer one (a later fetch), and
+   * only the row tells the two versions apart.
+   */
+  rowId?: number | null;
+}
+
+const KNOWLEDGE_PREFIX = "knowledge://semantic/";
+
+/**
+ * Rows the archive holds for one URL, preferring the CURRENT ones.
+ *
+ * Why the preference: a summary is written after the search that fed it, so a
+ * URL with a live row at write time is a URL the summary read in its live
+ * version. Returning the closed predecessors too would mark that summary as
+ * built on a replaced version and suspend it — the false suspension the ticket
+ * forbids — even though every fact in it came from the live row.
+ *
+ * Why the all-rows fallback when nothing is current: the citation can be to a
+ * material that was retired BEFORE the summary was written (the S8 window). The
+ * retired row is then the only row, and dropping it would leave the summary
+ * with no dependency at all, so `saveSummaryAnchor` would store it VALID while
+ * its body still states the replaced fact. Keeping it lets the write-time
+ * check suspend it.
+ *
+ * `superseded_by` and `valid_until` are both treated as "this row moved on": the
+ * first is a correction, the second the ordinary write-time replacement
+ * (`invalidateOldRecords`) when a URL is fetched again. Archived rows are a
+ * retention decision, not a version change, so they stay dependencies (see
+ * isSourceCurrent).
+ */
+function urlMaterialRows(db: Database.Database, url: string): number[] {
+  const current = db
+    .prepare(
+      "SELECT id FROM retrieval_results WHERE url = ? AND superseded_by IS NULL AND valid_until IS NULL ORDER BY id",
+    )
+    .all(url) as Array<{ id: number }>;
+  if (current.length > 0) return current.map((r) => r.id);
+  const any = db
+    .prepare("SELECT id FROM retrieval_results WHERE url = ? ORDER BY id")
+    .all(url) as Array<{ id: number }>;
+  return any.map((r) => r.id);
+}
+
+/**
+ * Resolve what the summarizer READ to the rows that back those reads.
+ *
+ * This is the exact form: the search path records the archive row id it created
+ * next to the URL (see `MemoryPipeline`'s gap distillation), so a read of
+ * version B does not inherit version A's dependency just because both live
+ * under one URL. The per-read rules:
+ *
+ * - an explicit row id is used as given (existence checked only): the row the
+ *   summary actually saw is the dependency, whether it is still current or was
+ *   replaced after the read. Currency is decided at write time by
+ *   `isSourceCurrent`, which suspends the summary instead of marking it valid.
+ * - without an id, the URL rules apply (current rows, else every row — see
+ *   urlMaterialRows). That covers reround results and stores that predate the
+ *   id annotation.
+ * - a `knowledge://` citation resolves to the knowledge row whenever it EXISTS,
+ *   closed or not, for the same reason.
+ *
+ * Filtering by session is deliberately NOT done: D9 counts a fact recalled from
+ * another session as a real dependency, and the same-session rule is exactly
+ * what the ticket rejects.
+ *
+ * @returns Deduplicated refs, in the order the reads were given.
+ */
+export function resolveSummarySourcesFromReads(
+  db: Database.Database,
+  reads: Array<SummaryRead | null | undefined>,
+): SummarySourceRef[] {
+  const out: SummarySourceRef[] = [];
+  const seen = new Set<string>();
+  // Existence only: currency is decided at write time.
+  const knowledgeStmt = db.prepare("SELECT id FROM semantic_memories WHERE id = ?");
+  const materialStmt = db.prepare("SELECT id FROM retrieval_results WHERE id = ?");
+  const push = (kind: "material" | "knowledge", id: number): void => {
+    const key = kind + ":" + id;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ kind, id });
+  };
+  for (const read of reads ?? []) {
+    const url = read?.url;
+    if (typeof url !== "string" || url.length === 0) continue;
+    if (url.startsWith(KNOWLEDGE_PREFIX)) {
+      const id = Number(url.slice(KNOWLEDGE_PREFIX.length));
+      if (!Number.isInteger(id) || id <= 0) continue;
+      if (!knowledgeStmt.get(id)) continue;
+      push("knowledge", id);
+      continue;
+    }
+    const rowId = read?.rowId;
+    if (typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0) {
+      if (materialStmt.get(rowId)) push("material", rowId);
+      continue;
+    }
+    for (const id of urlMaterialRows(db, url)) push("material", id);
+  }
+  return out;
+}
+
 /**
  * Resolve search-result URLs to the material rows that hold them.
  *
- * Why URLs are the bridge: the summary gap is distilled from the tool result
- * JSON the model saw, which carries `url`, not row ids. The archive is keyed by
- * the same URL, so the ids are recoverable exactly — no text matching, no
- * session guessing.
- *
- * A `knowledge://` URL (how a knowledge row is cited as evidence) resolves to a
- * `knowledge` ref instead of a material one.
- *
- * Two different rules on purpose, and they are not interchangeable:
- *
- * - A MATERIAL must still be CURRENT here (`valid_until IS NULL`). `valid_until`
- *   is set by the ordinary write-time replacement (`invalidateOldRecords`), so a
- *   closed row is a row whose URL already moved on. Recording it would claim the
- *   summary read a version it never saw, and a later correction to that dead row
- *   would suspend an unrelated summary.
- * - A KNOWLEDGE ref is recorded whenever the row EXISTS, closed or not. A tool
- *   result can cite `knowledge://semantic/<id>` and have that row corrected
- *   before the summary is written; dropping it here would leave the summary with
- *   no dependency at all, so `saveSummaryAnchor` would find nothing to check and
- *   store it as valid. Keeping it lets `isSourceCurrent` (run inside the write
- *   transaction) see the closed row and write the summary SUSPENDED.
- *
- * Several sessions may hold a row for one URL, and every current one is
- * returned: any of them could be the row the summary read, so a correction
- * retiring any of them makes the summary's version stale. Filtering by session
- * is deliberately NOT done — D9 counts a fact recalled from another session as a
- * real dependency, and the same-session rule is exactly what the ticket rejects.
+ * The URL-only form, kept for callers that have no row id (and for stores that
+ * predate the annotation). It delegates to `resolveSummarySourcesFromReads`'s
+ * URL rule, so the two cannot drift: a URL resolves to its current rows, or —
+ * when nothing is current — to every row it ever had.
  *
  * @returns Deduplicated refs, in the order the URLs were given.
  */
@@ -314,51 +399,8 @@ export function resolveSummarySourcesFromUrls(
   db: Database.Database,
   urls: Array<string | null | undefined>,
 ): SummarySourceRef[] {
-  const out: SummarySourceRef[] = [];
-  const seen = new Set<string>();
-  const KNOWLEDGE_PREFIX = "knowledge://semantic/";
-  // EVERY row the URL ever had: closed ones, archived ones, all of them. Two
-  // distinct cases here and both matter:
-  //
-  // - a CORRECTION closed the row between generation and this write, so the
-  //   version the summary text actually states is the closed one. Keeping only
-  //   the current row would drop that citation, `saveSummaryAnchor` would find
-  //   nothing to check, and the summary would be stored VALID.
-  // - ARCHIVING is a retention decision, not a version change. A material the
-  //   tool read and that was archived before this write is still what the
-  //   summary used; skipping it would lose the dependency entirely, so a later
-  //   correction of the knowledge it supported could not find this summary.
-  //
-  // Currency is NOT decided here. `isSourceCurrent` (inside the write
-  // transaction) treats a superseded row as "not current" and suspends the
-  // summary; archived-but-not-superseded stays a valid dependency, which is
-  // exactly the distinction the ticket's archive rule asks for.
-  const materialStmt = db.prepare(
-    "SELECT id FROM retrieval_results WHERE url = ? ORDER BY id",
+  return resolveSummarySourcesFromReads(
+    db,
+    (urls ?? []).map((url) => (typeof url === "string" ? { url } : null)),
   );
-  // Existence only: same reason as above, currency is decided at write time.
-  const knowledgeStmt = db.prepare(
-    "SELECT id FROM semantic_memories WHERE id = ?",
-  );
-  for (const raw of urls ?? []) {
-    if (typeof raw !== "string" || raw.length === 0) continue;
-    if (raw.startsWith(KNOWLEDGE_PREFIX)) {
-      const id = Number(raw.slice(KNOWLEDGE_PREFIX.length));
-      if (!Number.isInteger(id) || id <= 0) continue;
-      const row = knowledgeStmt.get(id) as { id: number } | undefined;
-      if (!row) continue;
-      const key = "knowledge:" + id;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ kind: "knowledge", id });
-      continue;
-    }
-    for (const row of materialStmt.all(raw) as Array<{ id: number }>) {
-      const key = "material:" + row.id;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ kind: "material", id: row.id });
-    }
-  }
-  return out;
 }

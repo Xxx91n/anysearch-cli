@@ -178,10 +178,17 @@ async function indexSearchResults(
   writer: { store: SessionStorePort; sessionId: string } | undefined,
   results: unknown[] | null | undefined,
   signal?: AbortSignal,
-): Promise<void> {
-  if (!writer || signal?.aborted || !results || results.length === 0) return;
+): Promise<Array<number | null> | undefined> {
+  if (!writer || signal?.aborted || !results || results.length === 0) return undefined;
   try {
+    const withIds = writer.store.saveResultsWithIds;
+    if (typeof withIds === "function") {
+      // #263: the ids back the summary's dependency. Only the seam that reports
+      // them is used here; `saveResults` stays the plain write.
+      return await withIds.call(writer.store, writer.sessionId, results as any);
+    }
     await writer.store.saveResults(writer.sessionId, results as any);
+    return undefined;
   } catch (e) {
     try {
       process.stderr.write(
@@ -189,7 +196,35 @@ async function indexSearchResults(
         (e instanceof Error ? e.message : String(e)) + "\n",
       );
     } catch { /* stderr unavailable */ }
+    return undefined;
   }
+}
+
+/**
+ * Attach the archive row ids to the search results the model will read.
+ *
+ * #263: a summary records which rows it was built from, and a URL alone cannot
+ * answer that — one URL may hold a row a correction retired plus a newer row a
+ * later fetch wrote. The id is what tells the versions apart, so the id has to
+ * travel WITH the result the model sees (the envelope JSON inside the tool
+ * result), where `distillGap` can read it back.
+ *
+ * Copies rather than mutates: `envelope.results` is also handed to the
+ * sufficiency gate and to `onResults`, and adding a field to shared objects
+ * would leak the annotation into surfaces that never asked for it.
+ */
+function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined): any {
+  const results = envelope?.results;
+  if (!ids || !Array.isArray(results)) return envelope;
+  return {
+    ...envelope,
+    results: results.map((r: any, i: number) => {
+      const id = ids[i];
+      return typeof id === "number" && Number.isInteger(id) && id > 0
+        ? { ...(r ?? {}), archiveRowId: id }
+        : r;
+    }),
+  };
 }
 
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
@@ -231,11 +266,15 @@ export function createSearchTool(
         // search through the engine's #209 caller-signal seam.
         ...(signal ? { signal } : {}),
       };
-      const envelope = await retriever.search(q);
-      onResults?.((envelope.results ?? []).map((r) => r.url));
+      const rawEnvelope = await retriever.search(q);
+      onResults?.((rawEnvelope.results ?? []).map((r) => r.url));
       // #259: archive this search so a later call — same session or another one —
       // can recall the material instead of searching again.
-      await indexSearchResults(archive, envelope.results, signal);
+      // #263: the write also reports which row each result landed in, and those
+      // ids are stamped onto the results BELOW — the model reads that JSON, so
+      // it is the only place a later summary can recover which version it saw.
+      const archiveIds = await indexSearchResults(archive, rawEnvelope.results, signal);
+      const envelope = stampArchiveRowIds(rawEnvelope, archiveIds);
       // every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
@@ -630,7 +669,7 @@ export class PiAgentRuntime {
       // that field, so the re-read would come back `undefined` and the write
       // would go through — the hole this guard exists to close.
       ...(this.archive
-        ? { archive: (results: unknown[], signal?: AbortSignal) => indexSearchResults(this.archive, results, signal) }
+        ? { archive: (results: unknown[], signal?: AbortSignal) => indexSearchResults(this.archive, results, signal).then(() => undefined) }
         : {}),
     });
   }
