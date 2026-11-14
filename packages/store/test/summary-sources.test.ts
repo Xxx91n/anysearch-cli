@@ -657,6 +657,26 @@ async function buildKnowledge(
   assert(citedOldIds.length === 1 && citedOldIds[0] === oldMaterial,
     "S11d: a citation of the older row resolves to THAT row, not the live one (got " + JSON.stringify(citedOldIds) + ")");
 
+  // S11e: a read with a usable row id but an EMPTY URL still resolves.
+  //
+  // `saveResults` archives a result whose URL sanitized to "", so such a row is
+  // real. The resolver must take the id before the URL check, or the dependency
+  // vanishes and the summary is stored as valid — a later correction then has
+  // nothing to find.
+  const noUrlId = (store as any).db
+    .prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, '', ?, ?, 'tavily', 'no-url')")
+    .run(sid, "no-url row", "a material archived without a URL");
+  const insertedId = Number(noUrlId.lastInsertRowid);
+  const emptyUrl = store.resolveSummarySourcesFromReads([{ url: "", rowId: insertedId }]);
+  const emptyUrlIds = emptyUrl.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(emptyUrlIds.length === 1 && emptyUrlIds[0] === insertedId,
+    "S11e: an id-only read resolves even with an empty URL (got " + JSON.stringify(emptyUrlIds) + ")");
+  // The summary written from it is valid (the row is current), and a later
+  // correction CAN find it — the dependency exists at all, which is the point.
+  await store.saveAnchor(sid, "rolling_summary", { summary: "S11-NO-URL", sources: emptyUrl });
+  assert(q(db, "SELECT COUNT(*) AS n FROM summary_sources WHERE source_kind = 'material' AND source_id = ?", insertedId)!.n === 1,
+    "S11e: the id-only read was recorded as a dependency");
+
   // S11c: the exact read form keeps a citation to a row that was retired BEFORE
   // the write (the S8 window). Currency is the write-time check's job, not the
   // resolver's: dropping it here would leave the summary with no dependency and

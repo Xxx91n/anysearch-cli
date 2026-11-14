@@ -179,10 +179,23 @@ export function readSummarySourcesForWrite(
     // summary saw. Without it a URL with a retired predecessor AND a live
     // successor would record both, and the write-time currency check would
     // suspend a summary built entirely from the live one.
-    const reads = (req.gapReads ?? []).filter(
-      (r): r is { url: string; rowId?: number | null } =>
-        !!r && typeof r.url === "string" && r.url.length > 0,
-    );
+    //
+    // A read with a usable row id is kept even when its URL is empty: the id IS
+    // the dependency, and dropping the read here — before the resolver sees it —
+    // would silently lose it (a summary stored as valid that a later correction
+    // could never find).
+    //
+    // Normalized to `{url: string, rowId}`: an id-only read legitimately has no
+    // URL, and `""` is how "no URL" is spelled for the store.
+    const reads: Array<{ url: string; rowId: number | null }> = [];
+    for (const r of req.gapReads ?? []) {
+      if (!r) continue;
+      const rowId = (r as { rowId?: unknown }).rowId;
+      const hasRowId = typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0;
+      const url = typeof r.url === "string" ? r.url : "";
+      if (!hasRowId && url.length === 0) continue;
+      reads.push({ url, rowId: hasRowId ? (rowId as number) : null });
+    }
     if (hasReads && reads.length > 0) {
       sources.push(...((s.resolveSummarySourcesFromReads!(reads) ?? []) as typeof sources));
     } else if (hasResolve) {
@@ -308,12 +321,39 @@ export function injectedSummaryAnchorIds(messages: any[], anchors: Array<{ id: n
     const body = anchor.anchorType === "rolling_summary" ? payload?.summary : payload?.hits;
     if (typeof body !== "string" || body.length === 0) continue;
     const block = anchor.anchorType === "rolling_summary"
-      ? SESSION_MEMORY_TAG + " " + body.slice(0, 4000)
-      : RESEARCH_RECALL_TAG + " " + body.slice(0, 1500);
+      ? SESSION_MEMORY_TAG + " " + body.slice(0, SUMMARY_INJECT_MAX_CHARS)
+      : RESEARCH_RECALL_TAG + " " + body.slice(0, RECALL_INJECT_MAX_CHARS);
     const marker = BLANK_LINE_BEFORE_BLOCK + block;
-    if (texts.some((t) => t.includes(marker))) out.push(anchor.id);
+    if (texts.some((t) => carriesBlock(t, marker))) out.push(anchor.id);
   }
   return out;
+}
+
+/**
+ * #263: does this text carry the WHOLE block, ending at a block boundary?
+ *
+ * A plain `includes(marker)` is not enough: one summary's text can be the
+ * prefix of another's ("shared wording" vs "shared wording plus more"), and
+ * then a history carrying only the LONGER block matches the shorter anchor too.
+ * The new summary would inherit a dependency it never read, and a later
+ * correction of that row would suspend it.
+ *
+ * Injection puts every block after a blank line and joins blocks with a blank
+ * line, so a block is real when what follows its text is either the end of the
+ * message or the next blank-line separator. Text that continues (a longer
+ * summary of the same prefix) is a different block, not this one.
+ *
+ * @param text - One message's text.
+ * @param marker - The blank line plus the rendered block.
+ */
+function carriesBlock(text: string, marker: string): boolean {
+  let at = text.indexOf(marker);
+  while (at >= 0) {
+    const after = text.slice(at + marker.length);
+    if (after.length === 0 || after.startsWith(BLANK_LINE_BEFORE_BLOCK)) return true;
+    at = text.indexOf(marker, at + 1);
+  }
+  return false;
 }
 
 /**
@@ -586,6 +626,14 @@ const PREFS_CLOSE_TAG = "</user_preferences>";
 // The separator inject() puts before each injected block (a blank line). Named
 // once so the write side and the strip side cannot disagree about it.
 const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
+// #263: how much of each summary body injection renders. Named constants because
+// three places must agree: the render itself, the provenance key used to strip a
+// stale block, and the WRITE side that decides which recall hits count as
+// sources. When they drift the write side records a hit whose text no prompt
+// ever carried, and a later correction then suspends a recall block that never
+// used it.
+const SUMMARY_INJECT_MAX_CHARS = 4000;
+const RECALL_INJECT_MAX_CHARS = 1500;
 
 /**
  * Remove previously injected summary blocks from one message.
@@ -973,10 +1021,10 @@ export class MemoryPipeline {
       for (const anchor of anchors) {
         const payload = anchor.payload as any;
         if (anchor.anchorType === "rolling_summary" && payload?.summary) {
-          knownBlocks.add(SESSION_MEMORY_TAG + " " + String(payload.summary).slice(0, 4000));
+          knownBlocks.add(SESSION_MEMORY_TAG + " " + String(payload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS));
         }
         if (anchor.anchorType === "l2_recall" && payload?.hits) {
-          knownBlocks.add(RESEARCH_RECALL_TAG + " " + String(payload.hits).slice(0, 1500));
+          knownBlocks.add(RESEARCH_RECALL_TAG + " " + String(payload.hits).slice(0, RECALL_INJECT_MAX_CHARS));
         }
       }
       for (const block of this.injectedSummaryBlocks) knownBlocks.add(block);
@@ -1011,7 +1059,7 @@ export class MemoryPipeline {
       // rebuild ticket (09/12) owns putting a current version back.
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {
-        const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000);
+        const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS);
         injections.push(block);
         this.injectedSummaryBlocks.add(block);
       }
@@ -1019,7 +1067,7 @@ export class MemoryPipeline {
       if (!recallSuspended && recallPayload?.hits) {
         // The l2_recall payload stores an already-truncated snippet, so the
         // rendered block is the same string every turn — a stable provenance key.
-        const block = RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500);
+        const block = RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, RECALL_INJECT_MAX_CHARS);
         injections.push(block);
         this.injectedSummaryBlocks.add(block);
       }
@@ -1387,8 +1435,15 @@ export class MemoryPipeline {
                 //
                 // Both caps are applied here, not after the fact: the block is
                 // built from the hits until the text budget is spent, and the
-                // anchor payload is capped at CHUNK_BUDGET below.
-                const CHUNK_BUDGET = 2000;
+                // anchor payload is capped at the SAME budget below.
+                //
+                // The budget is the injection cap (1500), not a larger number:
+                // `inject` renders `hits.slice(0, 1500)`, so anything past that
+                // is never shown. Recording a hit that only lives beyond the
+                // cap would claim the summary used text that no prompt ever
+                // carried, and a later correction of that row would suspend the
+                // whole recall block — removing valid text it never fed.
+                const CHUNK_BUDGET = RECALL_INJECT_MAX_CHARS;
                 const parts: string[] = [];
                 const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
                 const seen = new Set<string>();

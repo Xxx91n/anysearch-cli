@@ -364,8 +364,11 @@ async function main() {
     const l2Session = "session-l2";
     await l2Store.createSession("acme");
     await l2Store.ensureSession(l2Session, "acme");
-    // The FIRST hit alone exceeds the whole budget (3012 chars vs 2000), so it
-    // is truncated to fit and the second hit can never be included.
+    // The FIRST hit alone exceeds the whole budget (3012 chars vs the 1500
+    // injection cap), so it is truncated to fit and the second hit can never be
+    // included. The budget IS the injection cap (RECALL_INJECT_MAX_CHARS): text
+    // past it is never rendered, so a hit living only there must not be recorded
+    // as a source.
     const bigText = "BIGFIRST263 " + "y".repeat(3000);
     const otherText = "OTHER263 is a second recalled row";
     const big = (await l2Store.adjudicateMemory(l2Session, [
@@ -421,6 +424,72 @@ async function main() {
     assert(storedHits.startsWith("BIGFIRST263"),
       "P11: the stored block starts with the hit whose source was recorded");
     l2Store.close();
+  }
+
+  // P21: a hit that lands in the 1500-2000 range is NOT a source.
+  //
+  // The write side used to budget 2000 while injection renders 1500, so a hit
+  // whose text starts past 1500 was recorded as a dependency but never shown in
+  // any `[Research Recall]` block. A later correction of that row would then
+  // suspend the whole recall anchor — removing valid text it never fed.
+  //
+  // First hit is 1600 chars (fits under the old 2000, truncated to 1500 now),
+  // second hit is short but starts past the cap either way. The assertion is that
+  // the SECOND hit is not recorded, which is the range the two budgets disagreed
+  // about.
+  {
+    const p21Store = new SqliteSessionStore(join(dir, "p21.db"));
+    const p21Session = "session-p21";
+    await p21Store.createSession("acme");
+    await p21Store.ensureSession(p21Session, "acme");
+    const firstText = "FIRST263 " + "z".repeat(1600);
+    const secondText = "SECOND263 short second hit";
+    const first = (await p21Store.adjudicateMemory(p21Session, [
+      { url: "https://p21.example/first", title: "first", snippet: firstText, source: "tavily", evidence: 0.9, entity: "p21-first" },
+    ]))[0]!.insertedId!;
+    const second = (await p21Store.adjudicateMemory(p21Session, [
+      { url: "https://p21.example/second", title: "second", snippet: secondText, source: "tavily", evidence: 0.9, entity: "p21-second" },
+    ]))[0]!.insertedId!;
+    const pinned = () => [
+      { rowid: first, sessionId: p21Session, role: "material", content: firstText, rank: -1 },
+      { rowid: second, sessionId: p21Session, role: "material", content: secondText, rank: -2 },
+    ];
+    const p21Runtime = new MemoryPipeline({
+      store: {
+        ...(p21Store as any),
+        getAnchors: (sid: string) => (p21Store as any).getAnchors(sid),
+        saveAnchor: (sid: string, type: string, payload: any) => (p21Store as any).saveAnchor(sid, type, payload),
+        searchMemoryMulti: async () => pinned(),
+        searchMemory: async () => pinned(),
+      } as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: p21Session,
+    });
+    const turn = [{
+      role: "assistant",
+      content: [{ type: "toolCall", name: "search", arguments: { query: "FIRST263" } }],
+    }, { role: "user", content: [{ type: "text", text: "follow up" }] }];
+    await p21Runtime.consolidate(turn as any, 200_000, true);
+    await p21Runtime.flush();
+    const anchors = (await p21Store.getAnchors(p21Session)).filter((a) => a.anchorType === "l2_recall");
+    assert(anchors.length === 1, "P21 fixture: one l2_recall anchor was written (got " + anchors.length + ")");
+    const stored = String((anchors[0]!.payload as any).hits);
+    const recorded = ((p21Store as any).db
+      .prepare("SELECT source_id FROM summary_sources WHERE anchor_id = ? ORDER BY source_id")
+      .all(anchors[0]!.id) as Array<{ source_id: number }>).map((r) => r.source_id);
+    // The stored block never contained the second hit: it starts past the cap.
+    assert(!stored.includes("SECOND263"),
+      "P21: the second hit's text is not in the stored block");
+    assert(recorded.includes(first), "P21: the hit that fills the block is recorded (got " + JSON.stringify(recorded) + ")");
+    assert(!recorded.includes(second),
+      "P21: a hit that would only appear past the injection cap is NOT recorded as a source (got " + JSON.stringify(recorded) + ")");
+    // And the stored block is within the injection cap, so what is recorded is
+    // exactly what injection can render.
+    assert(stored.length <= 1500, "P21: the stored block fits the injection cap (got " + stored.length + ")");
+    p21Store.close();
   }
 
   // P12: removing a summary from a message with INTERLEAVED text and images
@@ -625,6 +694,58 @@ async function main() {
       11,
     );
     assert(dup.length === 1 && dup[0] === 11, "P13: an anchor named twice is inherited once (got " + JSON.stringify(dup) + ")");
+
+    // 3g. A block is matched WHOLE, to its end boundary. One summary's text can be
+    // the prefix of another's, and a plain `includes` would then match BOTH: the
+    // history carries only the longer block, but the shorter anchor looks
+    // present, so the new summary inherits a dependency it never read.
+    const prefixAnchors = [
+      anchor(20, "l2_recall", { hits: "shared wording" }),
+      anchor(21, "l2_recall", { hits: "shared wording plus more" }),
+    ];
+    const longOnly = summaryAnchorsToInherit(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] shared wording plus more")],
+      prefixAnchors,
+      undefined,
+    );
+    assert(longOnly.includes(21), "P13: the anchor whose block is really present is inherited (got " + JSON.stringify(longOnly) + ")");
+    assert(!longOnly.includes(20),
+      "P13: the shorter anchor whose text is only a PREFIX of the carried block is NOT inherited");
+    // The reverse: the history carries the SHORT block alone, so only the short
+    // anchor is a dependency.
+    const shortOnly = summaryAnchorsToInherit(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] shared wording")],
+      prefixAnchors,
+      undefined,
+    );
+    assert(shortOnly.includes(20) && !shortOnly.includes(21),
+      "P13: a carried short block does not pull in the longer anchor (got " + JSON.stringify(shortOnly) + ")");
+    // A block followed by the pipeline's own separator (another block) still
+    // counts: that is the shape inject() writes.
+    const followed = summaryAnchorsToInherit(
+      [userTurn("q" + BLANK_LINE + "[Research Recall] shared wording" + BLANK_LINE + "[Session Memory] next block")],
+      prefixAnchors,
+      undefined,
+    );
+    assert(followed.includes(20),
+      "P13: a block followed by another injected block still counts (got " + JSON.stringify(followed) + ")");
+
+    // 3h. A read with a usable row id survives the gapReads filter even when its
+    // URL is empty. `saveResults` archives such a result, so dropping it here
+    // would lose the dependency entirely and the summary would be stored as
+    // valid.
+    let readsWithEmptyUrl: Array<{ url: string; rowId?: number | null }> = [];
+    readSummarySourcesForWrite(
+      {
+        resolveSummarySourcesFromReads: (rs: Array<{ url: string; rowId?: number | null }>) => {
+          readsWithEmptyUrl = rs;
+          return [{ kind: "material", id: 42 }];
+        },
+      },
+      { gapUrls: [], gapReads: [{ url: "", rowId: 42 }, { url: "", rowId: null }, { url: "", rowId: 0 }] },
+    );
+    assert(readsWithEmptyUrl.length === 1 && readsWithEmptyUrl[0]!.rowId === 42,
+      "P13: an id-only read reaches the resolver instead of being filtered out (got " + JSON.stringify(readsWithEmptyUrl) + ")");
 
     // 3e. The exact read form wins over the URL form: a read that carries its
     // archive row resolves to that row only, so an older version of the same URL

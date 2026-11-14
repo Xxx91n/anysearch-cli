@@ -367,19 +367,25 @@ export function resolveSummarySourcesFromReads(
   };
   for (const read of reads ?? []) {
     const url = read?.url;
-    if (typeof url !== "string" || url.length === 0) continue;
-    if (url.startsWith(KNOWLEDGE_PREFIX)) {
+    const rowId = read?.rowId;
+    // A knowledge citation is recognized by its URL, so it needs one.
+    if (typeof url === "string" && url.startsWith(KNOWLEDGE_PREFIX)) {
       const id = Number(url.slice(KNOWLEDGE_PREFIX.length));
       if (!Number.isInteger(id) || id <= 0) continue;
       if (!knowledgeStmt.get(id)) continue;
       push("knowledge", id);
       continue;
     }
-    const rowId = read?.rowId;
+    // The row id comes BEFORE the URL checks: it is the exact dependency, and it
+    // survives an empty URL. `saveResults` archives a result whose URL sanitized
+    // to "" (and a secret-free one is still archived), so requiring a non-empty
+    // URL here would silently drop the dependency — the summary would be stored
+    // as valid and a later correction could not find it.
     if (typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0) {
       if (materialStmt.get(rowId)) push("material", rowId);
       continue;
     }
+    if (typeof url !== "string" || url.length === 0) continue;
     for (const id of urlMaterialRows(db, url)) push("material", id);
   }
   return out;
