@@ -131,7 +131,15 @@ export interface ConsolidateResult {
  */
 export function readSummarySourcesForWrite(
   store: unknown,
-  req: { gapUrls: Array<string | null | undefined>; previousAnchorId?: number },
+  req: {
+    gapUrls: Array<string | null | undefined>;
+    // Anchors whose dependencies the new summary inherits. More than one
+    // because the summarizer can read BOTH the previous rolling summary and a
+    // `[Research Recall]` block still present in the reused history.
+    previousAnchorIds?: number[];
+    /** @deprecated single-anchor form, kept for existing call sites/tests. */
+    previousAnchorId?: number;
+  },
 ): { ok: true; sources: Array<{ kind: "material" | "knowledge"; id: number }> } | { ok: false } {
   const s = store as {
     resolveSummarySources?: (urls: string[]) => unknown;
@@ -139,7 +147,11 @@ export function readSummarySourcesForWrite(
   };
   const hasResolve = typeof s?.resolveSummarySources === "function";
   const hasInherit = typeof s?.summarySourcesForAnchor === "function";
-  if (!hasResolve && !(hasInherit && req.previousAnchorId !== undefined)) {
+  const inheritIds = [
+    ...(req.previousAnchorIds ?? []),
+    ...(req.previousAnchorId !== undefined ? [req.previousAnchorId] : []),
+  ].filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  if (!hasResolve && !(hasInherit && inheritIds.length > 0)) {
     return { ok: true, sources: [] };
   }
   const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
@@ -148,8 +160,10 @@ export function readSummarySourcesForWrite(
       const urls = (req.gapUrls ?? []).filter((u): u is string => typeof u === "string" && u.length > 0);
       sources.push(...((s.resolveSummarySources!(urls) ?? []) as typeof sources));
     }
-    if (hasInherit && req.previousAnchorId !== undefined) {
-      sources.push(...((s.summarySourcesForAnchor!(req.previousAnchorId) ?? []) as typeof sources));
+    if (hasInherit) {
+      for (const id of inheritIds) {
+        sources.push(...((s.summarySourcesForAnchor!(id) ?? []) as typeof sources));
+      }
     }
   } catch {
     return { ok: false };
@@ -985,6 +999,14 @@ export class MemoryPipeline {
       // #263: this anchor's id, so the NEW summary can inherit its dependencies
       // (the new text is generated FROM the previous summary).
       const previousSummaryAnchorId = prevSummaryAnchor?.id;
+      // #263: the l2_recall block the caller's history may still carry. When a
+      // caller hands `inject()`'s output to `consolidate()`, the model reads that
+      // `[Research Recall]` text too, so the new summary can state its facts.
+      // Inheriting its sources keeps those facts suspendable; without it a
+      // summary built on that block would be stored with no dependency and never
+      // paused when the block's own material is corrected.
+      const previousRecallAnchor = lastAnchorOfType(prevAnchors, "l2_recall");
+      const previousRecallAnchorId = previousRecallAnchor?.id;
 
       // D5: fire-and-forget compression helper.
       // #263: set when the source read failed. The state must NOT advance then:
@@ -1050,7 +1072,8 @@ export class MemoryPipeline {
             gapUrls: scanFromStart.results
               .map((r: any) => r?.url)
               .filter((u: any) => typeof u === "string" && u.length > 0),
-            previousAnchorId: previousSummaryAnchorId,
+            previousAnchorIds: [previousSummaryAnchorId, previousRecallAnchorId]
+              .filter((id): id is number => typeof id === "number"),
           });
           if (!read.ok) {
             // Report the skip on stderr (stdout stays protocol-pure) and stop

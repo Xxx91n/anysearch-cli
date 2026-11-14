@@ -602,6 +602,29 @@ async function buildKnowledge(
     "S9: reading an archived material does not suspend the summary (archiving is not a correction)");
 }
 
+// --- S10: the URL lookup uses an index -------------------------------------
+
+{
+  // resolveSummarySourcesFromUrls looks a material up BY URL. Without an index
+  // that is a full scan of the archive on every compression, and the cost grows
+  // with the table. The assertion is the query PLAN, which is what actually
+  // proves the index is used; an index that the planner ignores would be dead
+  // schema weight.
+  const db = "s10.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const raw = (store as any).db as Database.Database;
+  const plan = raw
+    .prepare("EXPLAIN QUERY PLAN SELECT id FROM retrieval_results WHERE url = ? ORDER BY id")
+    .all("https://s10.example/1") as Array<{ detail: string }>;
+  const usesIndex = plan.some((p) => String(p.detail).includes("idx_retrieval_results_url"));
+  assert(usesIndex,
+    "S10: the URL lookup uses idx_retrieval_results_url (plan=" + JSON.stringify(plan.map((p) => p.detail)) + ")");
+  const cur = stores.indexOf(store);
+  if (cur >= 0) stores.splice(cur, 1);
+  store.close();
+}
+
 // --- helper contracts -----------------------------------------------------
 
 {

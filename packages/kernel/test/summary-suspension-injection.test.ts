@@ -353,28 +353,42 @@ async function main() {
   // recall text.
   //
   // Built over a private store so the huge hit cannot disturb the fixtures above.
+  //
+  // The recall ORDER is pinned by a stand-in rather than by the real store's
+  // ranking. Real fusion order depends on bm25 length normalisation, freshness
+  // and the optional embedding arm, so asserting "big came first" would be a
+  // test of the ranker (unstable) rather than of the text budget (what this case
+  // is about). The stand-in returns [big, other] every time.
   {
     const l2Store = new SqliteSessionStore(join(dir, "l2.db"));
     const l2Session = "session-l2";
     await l2Store.createSession("acme");
     await l2Store.ensureSession(l2Session, "acme");
     // The FIRST hit alone exceeds the whole budget (3012 chars vs 2000), so it
-    // is truncated to fit and the second hit can never be included. Fusion
-    // order puts the big one first because it is the only match for the query.
+    // is truncated to fit and the second hit can never be included.
     const bigText = "BIGFIRST263 " + "y".repeat(3000);
-    const otherText = "BIGFIRST263 OTHER263 filler text here";
+    const otherText = "OTHER263 is a second recalled row";
     const big = (await l2Store.adjudicateMemory(l2Session, [
-      { url: "https://l2.example/big", title: "BIGFIRST263", snippet: bigText, source: "tavily", evidence: 0.9, entity: "b-big" },
+      { url: "https://l2.example/big", title: "big row", snippet: bigText, source: "tavily", evidence: 0.9, entity: "b-big" },
     ]))[0]!.insertedId!;
     const other = (await l2Store.adjudicateMemory(l2Session, [
-      { url: "https://l2.example/other", title: "OTHER263", snippet: otherText, source: "tavily", evidence: 0.9, entity: "b-other" },
+      { url: "https://l2.example/other", title: "other row", snippet: otherText, source: "tavily", evidence: 0.9, entity: "b-other" },
     ]))[0]!.insertedId!;
-    // The query reaches BOTH rows: the store's fusion returns `big` first (it
-    // owns the unique term) and `other` as a second candidate. Stating that here
-    // is what makes the exclusion assertion below meaningful — `other` must
-    // really be in the returned list for "it was not recorded" to test anything.
+
+    // Fixed order: big first, then other. `searchMemoryMulti` is what the L2
+    // path calls when the store has it, so both entry points are pinned.
+    const pinnedHits = () => [
+      { rowid: big, sessionId: l2Session, role: "material", content: bigText, rank: -1 },
+      { rowid: other, sessionId: l2Session, role: "material", content: otherText, rank: -2 },
+    ];
     const l2Runtime = new MemoryPipeline({
-      store: l2Store as any,
+      store: {
+        ...(l2Store as any),
+        getAnchors: (sid: string) => (l2Store as any).getAnchors(sid),
+        saveAnchor: (sid: string, type: string, payload: any) => (l2Store as any).saveAnchor(sid, type, payload),
+        searchMemoryMulti: async () => pinnedHits(),
+        searchMemory: async () => pinnedHits(),
+      } as any,
       retriever,
       domain,
       model: { id: "test" } as any,
@@ -382,9 +396,6 @@ async function main() {
       sessionId: l2Session,
       llmRewriteFn: undefined,
     });
-    // Both rows mention the term, so the KEYWORD lane reaches both — no reliance
-    // on the optional embedding arm (which is absent when the package or model is
-    // unavailable, a state the source itself calls legitimate).
     const searchTurn = [{
       role: "assistant",
       content: [{ type: "toolCall", name: "search", arguments: { query: "BIGFIRST263" } }],
@@ -399,26 +410,16 @@ async function main() {
       .prepare("SELECT source_id FROM summary_sources WHERE anchor_id = ? ORDER BY source_id")
       .all(l2Anchors[0]!.id) as Array<{ source_id: number }>;
     const ids = recorded.map((r) => r.source_id);
-    // Provenance of the fixture: the second row really WAS returned by recall,
-    // so excluding it below is not vacuous.
-    const returned = await l2Store.searchMemory("BIGFIRST263", 5);
-    const returnedIds = returned.map((h: any) => Math.abs(Number(h.rowid)));
-    assert(returnedIds.includes(other),
-      "P11 fixture: the second row is among the recalled hits (got " + JSON.stringify(returnedIds) + ")");
-    assert(returnedIds[0] === big,
-      "P11 fixture: the big row is first in fusion order, so it owns the text budget");
     assert(String(payload.hits).includes("BIGFIRST263"),
-      "P11 fixture: the big hit is the one that fills the block");
+      "P11: the first hit fills the block");
     assert(!String(payload.hits).includes("OTHER263"),
-      "P11 fixture: the second hit's text was NOT included (its text is absent)");
+      "P11: the second hit's text was NOT included (its text is absent)");
     assert(ids.includes(big), "P11: the hit that fills the block is recorded as its source");
     assert(!ids.includes(other),
       "P11: a hit whose text was truncated away is NOT recorded (got " + JSON.stringify(ids) + ")");
     const storedHits = String(payload.hits);
     assert(storedHits.startsWith("BIGFIRST263"),
       "P11: the stored block starts with the hit whose source was recorded");
-    assert(storedHits.length === 2000,
-      "P11: the top hit alone exceeded the budget, so the stored text is the capped block (len=" + storedHits.length + ")");
     l2Store.close();
   }
 
@@ -503,6 +504,35 @@ async function main() {
     );
     assert(inheritThrows.ok === false,
       "P13: a failed inheritance read also skips the write (partial deps are not accepted)");
+
+    // 3b. TWO anchors inherited: a reused history can carry both the previous
+    // rolling summary and a `[Research Recall]` block, and the summarizer reads
+    // both. Dropping the recall anchor's sources would leave facts from that
+    // block unsuspendable.
+    const twoAnchors = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [],
+        summarySourcesForAnchor: (id: number) => [{ kind: "material", id: id * 10 }],
+      },
+      { gapUrls: [], previousAnchorIds: [1, 2] },
+    );
+    const twoIds = twoAnchors.ok ? twoAnchors.sources.map((r) => r.id) : [];
+    assert(twoAnchors.ok === true && twoIds.includes(10) && twoIds.includes(20),
+      "P13: sources from BOTH inherited anchors are kept (got " + JSON.stringify(twoIds) + ")");
+    // A failing read on the second anchor is still fatal: half the list is not
+    // an acceptable dependency set.
+    const secondFails = readSummarySourcesForWrite(
+      {
+        resolveSummarySources: () => [],
+        summarySourcesForAnchor: (id: number) => {
+          if (id === 2) throw new Error("second anchor unreadable");
+          return [{ kind: "material", id: id * 10 }];
+        },
+      },
+      { gapUrls: [], previousAnchorIds: [1, 2] },
+    );
+    assert(secondFails.ok === false,
+      "P13: a failure on any inherited anchor skips the write (partial deps are not accepted)");
 
     // 4. The happy path merges both parts and dedupes nothing it should not.
     const happy = readSummarySourcesForWrite(

@@ -77,6 +77,13 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   superseded_by INTEGER
 );
 
+-- #263: summary dependency resolution looks a material up BY URL
+-- (resolveSummarySourcesFromUrls). Without this index every URL is a full scan of
+-- the archive, and the cost grows with the table on every compression. Not
+-- unique: one URL legitimately has several rows over time (a re-fetch, or a
+-- correction's closed predecessor).
+CREATE INDEX IF NOT EXISTS idx_retrieval_results_url ON retrieval_results(url);
+
 -- FTS5 for retrieval results (search within session results).
 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_results_fts USING fts5(
   session_id UNINDEXED,
