@@ -218,6 +218,16 @@ export const SOURCE_SCAN_FROM_INDEX = 0;
 
 export const RECALL_SOURCE_SCAN_FROM = 0;
 
+// #263: the dependency scan and the summarizer call must read the SAME message
+// membership. The caller hands in the live agent-state array and two `await`s
+// separate the scan from the model call, so an append in that window would give
+// the summary a fact its sources never saw. A shallow copy pins membership
+// without copying message contents. Exported so the "is it a copy" contract is
+// assertable: the real summarizer is an un-mockable SDK import.
+export function snapshotMessages(messages: any[]): any[] {
+  return messages.slice();
+}
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -1027,7 +1037,15 @@ export class MemoryPipeline {
           //
           // The fix needs no new bookkeeping: run the SAME scan over the whole
           // list, which is what the generator reads.
-          const scanFromStart = distillGap(messages, SOURCE_SCAN_FROM_INDEX);
+          //
+          // The scan and the model call must read the SAME list. Two `await`s
+          // separate them (the API key and the SDK load), and the caller hands
+          // in the live agent-state array, so a message appended in that window
+          // would reach the generator while being absent from the scan — a fact
+          // in the summary with no recorded dependency. A shallow copy pins the
+          // membership without copying message contents.
+          const snapshot = snapshotMessages(messages);
+          const scanFromStart = distillGap(snapshot, SOURCE_SCAN_FROM_INDEX);
           const read = readSummarySourcesForWrite(store, {
             gapUrls: scanFromStart.results
               .map((r: any) => r?.url)
@@ -1075,7 +1093,10 @@ export class MemoryPipeline {
               // The old 0.84.2 shape took a Models object and returned a
               // Result, so the whole call is restructured here.
               const result = await sdk.generateSummaryWithUsage(
-                messages,
+                // The SAME snapshot the dependency scan read (see above): a
+                // later append to the caller's live array cannot add a fact the
+                // sources do not cover.
+                snapshot,
                 actualModel,
                 COMPACTION_RESERVE_TOKENS,
                 apiKey,

@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap, snapshotMessages } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -758,6 +758,18 @@ async function main() {
       "P18: a gap-only scan would have dropped the earlier result — exactly the bug");
     assert(SOURCE_SCAN_FROM_INDEX === 0,
       "P18: the write path scans from the beginning of the message list (got " + SOURCE_SCAN_FROM_INDEX + ")");
+
+    // P19: the scan and the model call must see the SAME membership. An append
+    // to the caller's live array between them would put a fact in the summary
+    // that the sources never covered, so the write path takes a copy first.
+    const live = [userTurn("first")];
+    const snap = snapshotMessages(live);
+    assert(snap !== live, "P19: snapshotMessages returns a DIFFERENT array (not the caller's live one)");
+    live.push(userTurn("appended later"));
+    assert(snap.length === 1,
+      "P19: appending to the caller's array after the snapshot does not change the snapshot (got " + snap.length + ")");
+    assert(snap[0] === live[0],
+      "P19: the snapshot holds the same message references (shallow, contents untouched)");
     const fromWiring = distillGap(allMessages, SOURCE_SCAN_FROM_INDEX);
     assert(fromWiring.results.map((r: any) => r.url).includes("https://x263.example/one"),
       "P18: the scan window used by the write path keeps the earlier result's URL");
