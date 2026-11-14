@@ -1226,12 +1226,12 @@ export class PiAgentRuntime {
           // claims, the cap is being eaten by a pre-#275 build's leftover. That
           // residue is deliberately not cleared (clearing it cannot prove the
           // old writer is gone), so the actionable fix is restarting the
-          // session, not raising the cap. Read-only probe; a fault omits the
+          // session with a new id, not raising the cap. Read-only probe; a fault omits the
           // hint and the rejection above still stands on its own.
           let unownedHint = "";
           try {
             if (ledger!.hasUnownedReservedTokens?.(sessionId!)) {
-              unownedHint = " Part of the reserved tokens is claimed by no owner row — likely a leftover from a pre-#275 build; restart the session to clear it.";
+              unownedHint = " Part of the reserved tokens is claimed by no owner row — likely a leftover from a pre-#275 build; start a new session to get a clean budget.";
             }
           } catch { /* read-only probe; omit the hint */ }
           yield {

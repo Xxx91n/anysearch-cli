@@ -290,7 +290,7 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   are deliberately not cleared (#279). Clearing them cannot prove the old
   writer is gone, and a still-running old process would then spend against
   the same cap — measured at 21% over tokenCap in #279's repro. The
-  recovery is restarting that session: a fresh session starts with a clean
+  recovery is starting a new session: a fresh sessionId starts with a clean
   budget row. A rejected reserve whose session holds such a leftover says
   so in its error message instead of reading as plain exhaustion.
 - A run that is cut off before the provider reports its final usage returns

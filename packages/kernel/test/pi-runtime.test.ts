@@ -2268,8 +2268,8 @@ console.log("---");
     assert(legacyError !== undefined, "#279: the run over the unowned leftover is rejected");
     assert(/pre-#275 build/.test(legacyError?.message ?? ""),
       "#279: the rejection names the pre-#275 leftover (got " + JSON.stringify(legacyError?.message) + ")");
-    assert(/restart the session/.test(legacyError?.message ?? ""),
-      "#279: the rejection names the restart recovery");
+    assert(/start a new session/.test(legacyError?.message ?? ""),
+      "#279: the rejection names the new-session recovery");
     assert(legacyLedger.getBalance(legacy.id)!.reservedTokens === 12_304,
       "#279: the hint path clears nothing — the residue is kept");
     // Plain exhaustion (no residue) keeps the old message without the hint.
