@@ -221,6 +221,41 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
   };
 }
 
+/**
+ * #264: the failure result for a run that ended with an error.
+ *
+ * The rebuild report is attached HERE rather than at each call site, and for a
+ * reason worth stating: the summary work runs in the background and is drained
+ * before this point, so a rebuilt summary really exists even though the turn
+ * failed. Returning a bare error discarded that fact, and the caller could not
+ * tell whether the old version was still suspended.
+ *
+ * The error text stays FIRST and keeps its stable "<tool> error: " prefix — it is
+ * the reason the call failed, and burying it under a summary note would be worse
+ * than the silence this fixes.
+ *
+ * Exported so the shape is testable without orchestrating a real provider failure.
+ */
+export function buildAnsChatErrorResult(
+  detail: string,
+  rebuilds: Array<{ anchorId: number; outcome: string; reasons: string[]; newAnchorId: number | null; cleared: boolean }>,
+  formatLine: (r: any) => string,
+): AnsChatToolResult {
+  const failure: AnsChatToolResult = {
+    isError: true,
+    content: [{ type: "text", text: "ans_chat error: " + detail }],
+  };
+  if (rebuilds.length === 0) return failure;
+  return {
+    ...failure,
+    content: [
+      ...failure.content,
+      ...rebuilds.map((r) => ({ type: "text" as const, text: formatLine(r) })),
+    ],
+    structuredContent: { summaryRebuilds: rebuilds },
+  };
+}
+
 // ---- consolidation result (D5 / Q18 / Q19) ----
 
 // The report and usage shapes are imported, not re-declared: a second copy of

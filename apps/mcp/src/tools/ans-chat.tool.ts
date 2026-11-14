@@ -38,6 +38,7 @@ import {
 import { createHash } from "node:crypto";
 import {
   buildAnsChatConsolidateResult,
+  buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
 } from "../ans-chat-session.js";
@@ -470,23 +471,7 @@ export function registerAnsChat(
           // about it and leave it guessing whether the old version is still
           // suspended.
           if (runtimeError !== undefined) {
-            // The failure result keeps its stable "<tool> error: " prefix and
-            // gains the rebuild outcome as one extra line, so a host reading
-            // `content` learns it too. The report is appended to the error text
-            // rather than replacing it: the error is the reason the call failed,
-            // and hiding it behind a summary note would be worse.
-            const failure = toolError("ans_chat", runtimeError);
-            const rebuildLines = summaryRebuilds.map(formatSummaryRebuildLine);
-            return {
-              ...failure,
-              content: [
-                ...failure.content,
-                ...rebuildLines.map((text) => ({ type: "text" as const, text })),
-              ],
-              ...(summaryRebuilds.length > 0
-                ? { structuredContent: { summaryRebuilds } as Record<string, unknown> }
-                : {}),
-            };
+            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
           }
           // Cancellation is a transport outcome, not a finished run (#211). The
           // partial text is dropped so a cut-off stream never reads as an
