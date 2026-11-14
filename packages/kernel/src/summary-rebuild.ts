@@ -387,7 +387,7 @@ export async function rebuildSuspendedSummary(
           : "rejected-write";
   const reasons = written.status === "cleared"
     ? []
-    : written.status === "already-current"
+    : written.status === "nothing-to-clear"
       ? ["the new version is current; " + (written.reason ?? "there was no open suspension to clear")]
       : [written.reason ?? "the rebuilt summary could not be stored"];
   return {

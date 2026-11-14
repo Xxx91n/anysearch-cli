@@ -254,8 +254,8 @@ async function seedSuspended(
   const { anchorId } = await seedSuspended(store, sid);
 
   const calls = { n: 0 };
-  // The text restates the CURRENT knowledge row (the correction's replacement),
-  // so it passes the grounding check the same way a real rebuild answer would.
+  // The answer restates the current knowledge row and keeps the user's task,
+  // which is what a working rebuild actually produces.
   const rebuiltText =
     "Acme online support is now 24x7 every day, effective 2026-11-01. " +
     "Task: weekend schedule only.";
