@@ -210,6 +210,12 @@ export function collectRecallSourceRefs(
 // recall hits starts at the beginning too. Exported so a test can pin the
 // wiring: a window of `messages.length` (what `summaryRequest.msgCountAtTrigger`
 // carries) would be empty and silently record nothing.
+// #263: the dependency scan must start where the SUMMARIZER starts, which is the
+// beginning of the message list. A later start (the current gap only) loses the
+// dependencies of facts an overlapping earlier compression put into the same
+// message list. Named so the call site's value is testable, not just implied.
+export const SOURCE_SCAN_FROM_INDEX = 0;
+
 export const RECALL_SOURCE_SCAN_FROM = 0;
 
 // gap distillation returns a tagged object, never a bare string.
@@ -1008,8 +1014,22 @@ export class MemoryPipeline {
           // all for one turn. `consolidationState` is updated only after the
           // sources were read, so a skipped turn does not advance the state the
           // next turn depends on.
+          // #263 (D9): the URLs the SUMMARIZER actually read, not just this
+          // turn's gap.
+          //
+          // `generateSummaryWithUsage(messages, ...)` receives the whole message
+          // list, so a second compression starting before the first one's write
+          // can produce a summary containing the FIRST gap's facts while
+          // `summaryRequest.gap` covers only its own slice. Recording the gap
+          // alone would leave the newer summary without the earlier dependency;
+          // a later correction of that fact would suspend the first summary and
+          // keep injecting the newer one.
+          //
+          // The fix needs no new bookkeeping: run the SAME scan over the whole
+          // list, which is what the generator reads.
+          const scanFromStart = distillGap(messages, SOURCE_SCAN_FROM_INDEX);
           const read = readSummarySourcesForWrite(store, {
-            gapUrls: (result.summaryRequest?.gap?.results ?? [])
+            gapUrls: scanFromStart.results
               .map((r: any) => r?.url)
               .filter((u: any) => typeof u === "string" && u.length > 0),
             previousAnchorId: previousSummaryAnchorId,

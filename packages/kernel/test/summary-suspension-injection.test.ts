@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs, RECALL_SOURCE_SCAN_FROM, SOURCE_SCAN_FROM_INDEX, distillGap } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -718,6 +718,57 @@ async function main() {
       "P17: a window of messages.length is empty — which is exactly why that value cannot be used here");
     assert(collectRecallSourceRefs(allMessages, RECALL_SOURCE_SCAN_FROM).length === 2,
       "P17: the real scan window sees every recall hit the summarizer could read");
+  }
+
+  // P18: the dependency scan covers what the SUMMARIZER reads, not just this
+  // turn's gap.
+  //
+  // Overlapping compressions: turn one reads search result X and advances
+  // `lastSummaryMsgCount` while its summary is still being generated; turn two
+  // starts before that write lands, so its `summaryRequest.gap` covers only Y.
+  // The generator still receives messages holding BOTH X and Y. Recording only
+  // the gap would leave the newest summary without X's dependency, and a later
+  // correction of X would suspend the first summary while the newer one kept
+  // being injected.
+  {
+    // The scan is what feeds `gapUrls`, so exercise it directly: the gap for
+    // turn two covers only Y, while the full scan covers X and Y.
+    const turnOne = [{
+      role: "toolResult",
+      name: "search",
+      content: [{ type: "text", text: JSON.stringify({ results: [{ url: "https://x263.example/one", title: "x", snippet: "X fact" }] }) }],
+    }];
+    const turnTwo = [{
+      role: "toolResult",
+      name: "search",
+      content: [{ type: "text", text: JSON.stringify({ results: [{ url: "https://x263.example/two", title: "y", snippet: "Y fact" }] }) }],
+    }];
+    const allMessages = [...turnOne, ...turnTwo];
+    const gapOnly = distillGap(allMessages, turnOne.length);
+    const fullScan = distillGap(allMessages, 0);
+    const gapUrls = gapOnly.results.map((r: any) => r.url);
+    const scanUrls = fullScan.results.map((r: any) => r.url);
+    assert(gapUrls.length === 1 && gapUrls[0].includes("two"),
+      "P18 fixture: the turn-two gap covers only its own result");
+    assert(scanUrls.includes("https://x263.example/one") && scanUrls.includes("https://x263.example/two"),
+      "P18: the full scan covers both results, which is what the summarizer reads");
+    // The wiring must use the full scan: gap-only URLs would drop X. Pinned as a
+    // constant so the CALL SITE's value is asserted, not just the helper's.
+    assert(!gapUrls.includes("https://x263.example/one"),
+      "P18: a gap-only scan would have dropped the earlier result — exactly the bug");
+    assert(SOURCE_SCAN_FROM_INDEX === 0,
+      "P18: the write path scans from the beginning of the message list (got " + SOURCE_SCAN_FROM_INDEX + ")");
+    const fromWiring = distillGap(allMessages, SOURCE_SCAN_FROM_INDEX);
+    assert(fromWiring.results.map((r: any) => r.url).includes("https://x263.example/one"),
+      "P18: the scan window used by the write path keeps the earlier result's URL");
+    // And the sources the write would receive therefore include both rows.
+    const both = readSummarySourcesForWrite(
+      { resolveSummarySources: (urls: string[]) => urls.map((u, i) => ({ kind: "material", id: 100 + i })) },
+      { gapUrls: scanUrls },
+    );
+    assert(both.ok === true && both.sources.length === 2,
+      "P18: the write receives a source for each result the summarizer read (got " +
+      (both.ok ? both.sources.length : "not-ok") + ")");
   }
 
   store.close();
