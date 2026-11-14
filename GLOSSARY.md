@@ -60,6 +60,15 @@
 - **上下文压缩**:上下文快满时 PI 把较早的内容压成一段摘要，近期内容原样保留，原始记录仍在会话记录里可查（代码里叫 compaction）。
   _Avoid_: Compaction、压缩摘要
 
+- **摘要来源**:一条调研摘要当时到底读了哪些资料和知识、各自是第几版，按 id 记下来，不看会话也不看文字像不像（代码里叫 summary_sources）。
+  _Avoid_: 来源依赖、provenance、摘要血缘
+
+- **摘要暂停**:摘要里的事实被纠正之后，这条摘要就不再当当前结论喂给模型，原文和来源都留着，只是先退出注入（代码里叫 summary_suspensions）。
+  _Avoid_: 摘要失效、invalidate summary、吊起
+
+- **摘要重建**:把暂停的摘要用当前有效的资料来源重写一遍，同时把用户自己说过的话原样带上，成功后才解除暂停；缺料或缺原始要求就明说不完整（代码里叫 planSummaryRebuild / writeRebuiltSummaryAnchor）。
+  _Avoid_: 刷新摘要、regenerate、重新总结
+
 - **一次运行的用量**:一次对话花了多少调用、token、缓存读写和钱，并写清楚这个钱数是服务端给的、按价格估的、两者混着还是完全不知道（代码里叫 RunUsage）。
   _Avoid_: Usage、用量统计
 

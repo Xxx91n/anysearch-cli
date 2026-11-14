@@ -134,6 +134,60 @@ export interface SummarySuspensionPort {
   suspendedSummaryAnchorIds(sessionId: string): Set<number>;
 }
 
+/**
+ * #264 (D9): rebuilding a suspended summary from current sources.
+ *
+ * Split from `SummarySuspensionPort` because the two halves answer different
+ * questions and a store may implement one without the other: reading "what is
+ * suspended" is cheap and synchronous, planning and committing a rebuild touches
+ * the archive and the session's own message log.
+ *
+ * The plan is computed WITHOUT a model call, so a rebuild that cannot succeed
+ * (no recorded sources, no user records, no current version, over budget) costs
+ * nothing and says why. Only a complete plan may be generated, and the
+ * suspension is cleared only by a commit that is itself current.
+ */
+export interface SummaryRebuildPort {
+  planSummaryRebuild(req: {
+    sessionId: string;
+    anchorId: number;
+    factBudgetChars?: number;
+    taskBudgetChars?: number;
+  }): SummaryRebuildPlanShape;
+  writeRebuiltSummaryAnchor(req: {
+    sessionId: string;
+    rebuildOfAnchorId: number;
+    text: string;
+    sources: Array<{ kind: "material" | "knowledge"; id: number }>;
+    taskRecordIds: number[];
+    generator?: { kind: "model" | "none"; note?: string };
+  }): { anchorId: number | null; cleared: boolean; reason: string | null };
+}
+
+/**
+ * Structural mirror of the store's plan, so kernel keeps no store type import at
+ * this boundary (the same reason `ConsolidationMeteringStore` is structural).
+ */
+export interface SummaryRebuildPlanShape {
+  sessionId: string;
+  anchorId: number;
+  anchorType: "rolling_summary" | "l2_recall";
+  previousSummary: string | null;
+  taskRecords: Array<{ messageId: number; text: string; createdAt: string }>;
+  facts: Array<{ kind: "material" | "knowledge"; id: number; text: string }>;
+  replaced: Array<{
+    kind: "material" | "knowledge";
+    id: number;
+    currentKind: "material" | "knowledge" | null;
+    currentId: number | null;
+    text: string | null;
+  }>;
+  exclusions: Array<{ kind: "task" | "material" | "knowledge"; id: number; reason: "over-budget" | "missing-row" | "no-current-version" }>;
+  complete: boolean;
+  reasons: string[];
+  recordedSources: number;
+}
+
 /** One adapter's injection payload for a single turn. */
 export interface RagRetrievalResult {
   /** Text appended after a blank line to a user message's text channel. */

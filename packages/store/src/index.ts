@@ -22,6 +22,10 @@ export * from "./consolidate";
 // #263: summary provenance and the suspension a correction causes (D8/D9).
 export * from "./summary-sources";
 
+// #264: rebuilding a suspended summary from current sources, keeping the task
+// the user actually stated (D9).
+export * from "./summary-rebuild";
+
 // access_events tamper-evidence chain (writer side; verifier is independent).
 export * from "./access-chain";
 

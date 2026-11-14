@@ -10,6 +10,9 @@ export * from "./pi-session";
 // Cross-process session lock: one PI record, one writer (#266).
 export * from "./session-lock";
 export * from "./memory-pipeline";
+// #264 (D9): rebuild a suspended summary from current sources plus the user's
+// own stored turns.
+export * from "./summary-rebuild";
 // rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
 export * from "./rag-adapter";
 // Recovery summary (#189): read side of the resume anchor.

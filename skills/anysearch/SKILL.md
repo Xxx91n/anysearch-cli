@@ -54,8 +54,31 @@ knowledge. Do not do it on every turn, and do not run it just because it exists.
   `resolvedCollisions` counts collisions resolved after one re-read and
   re-judge, and `budgetRejected` means a session cap stopped the run.
   `usage.costBasis = "unknown"` means the cost is unknown, not zero.
+  `summariesSuspended` / `suspendedSummaries` mean a stored summary in some
+  session stated the fact this run replaced; that summary stops being injected
+  until the next turn of that session rebuilds it (see below).
 - In a terminal, `ans consolidate --session ID` or `--memory ID` runs the same
   path, and it exits 2 when no scope is given.
+
+## Suspended summaries (after a correction)
+
+A correction can make a stored session summary stale. That summary is not
+injected as a current conclusion any more; the next turn of the owning session
+tries to rebuild it once, from the sources it originally read (now resolved to
+their current versions) plus that session's own stored user turns.
+
+- You do not start a rebuild yourself. It is automatic, once per suspended
+  summary, and it is reported in the run's `structuredContent.summaryRebuilds`
+  (and as one `[summary]` line in the answer text): `outcome: "rebuilt"` with
+  `cleared: true` means a current version is back, and its text is injected from
+  the next turn on. Every other outcome means the summary is STILL suspended,
+  and `reasons` says what was missing.
+- The task requirement in a rebuilt summary comes from the user's own stored
+  turns, never from the old summary text, from tool output or from memory. If
+  the reasons say there is no stored user turn, the rebuild cannot recover the
+  task — ask the user instead of assuming what they wanted.
+- Do not treat "no `[Session Memory]` block" as "this session has nothing" when
+  a `summaryRebuilds` entry is present: read its reasons.
 
 ## Anti-patterns
 

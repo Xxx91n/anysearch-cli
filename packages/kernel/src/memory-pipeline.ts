@@ -41,6 +41,7 @@ const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
+import { rebuildSuspendedSummary, type SummaryRebuildAttempt } from "./summary-rebuild";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
@@ -850,6 +851,19 @@ export class MemoryPipeline {
   // must not read as a summary the summarizer never made.
   private adjudicationUsage = emptyUsageTotals();
 
+  // #264 (D9): which suspended anchors this runtime already tried to rebuild.
+  // One attempt per anchor, not per turn: a rebuild that failed on a fact the
+  // archive genuinely lacks must not re-spend a model call on every later turn.
+  // Keyed by anchor id, so a NEW suspension (a later correction of another fact)
+  // still gets its own attempt.
+  //
+  // `rebuildStarted` is added SYNCHRONOUSLY at dispatch time; `rebuildAttempts`
+  // only holds finished results. Two guards, because the turn that dispatches the
+  // background call must not dispatch a second one while the first is still
+  // waiting on the provider.
+  private readonly rebuildStarted = new Set<number>();
+  private readonly rebuildAttempts = new Map<number, SummaryRebuildAttempt>();
+
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
     this.rag = new RagAdapterRegistry({ store: deps.store });
@@ -858,6 +872,85 @@ export class MemoryPipeline {
   /** Summary-call accounting for this runtime (never zero-filled). */
   getSummaryUsage(): SummaryUsage {
     return toSummaryUsage(this.summaryUsage, this.adjudicationUsage);
+  }
+
+  /**
+   * #264 (D9): the rebuild attempts this runtime made, newest anchor last.
+   *
+   * Reported next to the run summary so a caller can see that a suspended
+   * summary came back, or why it did not — "the hole is still there" is
+   * something a caller must be told, never left to infer from silence.
+   */
+  getSummaryRebuilds(): SummaryRebuildAttempt[] {
+    return [...this.rebuildAttempts.values()];
+  }
+
+  /** Does the store expose the rebuild seams at all? */
+  private hasRebuildSeam(): boolean {
+    const probe = this.deps.store as unknown as { planSummaryRebuild?: unknown; writeRebuiltSummaryAnchor?: unknown };
+    return typeof probe?.planSummaryRebuild === "function" && typeof probe?.writeRebuiltSummaryAnchor === "function";
+  }
+
+  /**
+   * Attempt one rebuild of a suspended summary, at most once per anchor.
+   *
+   * `rebuildStarted` is filled by the caller (`inject`) BEFORE this runs, so a
+   * second turn arriving while the model call is still in flight cannot start a
+   * duplicate attempt.
+   *
+   * Fail-open: a rebuild fault must not break the turn. A thrown plan read is
+   * recorded as `incomplete` with the message, so the caller still learns that
+   * the summary did not come back.
+   *
+   * @param sessionId - Session owning the summary.
+   * @param anchorId - The suspended anchor.
+   */
+  private async maybeRebuildSummary(sessionId: string, anchorId: number): Promise<SummaryRebuildAttempt | undefined> {
+    const existing = this.rebuildAttempts.get(anchorId);
+    if (existing) return existing;
+    // No store seam at all: nothing to plan against. Recording "incomplete" here
+    // would claim an attempt the store never saw, so this returns undefined and
+    // the injection path keeps its pre-#264 behaviour.
+    if (!this.hasRebuildSeam()) return undefined;
+    let attempt: SummaryRebuildAttempt;
+    try {
+      attempt = await rebuildSuspendedSummary(this.deps.store, {
+        sessionId,
+        anchorId,
+        streamFn: this.deps.streamFn as any,
+        model: this.deps.model,
+        // Same bound as the other background summary work: flush() waits for this
+        // write before the store closes, so an unbounded provider stall would hold
+        // the CLI open until the provider timed out.
+        signal: AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+      });
+    } catch (e) {
+      attempt = {
+        anchorId,
+        outcome: "incomplete",
+        reasons: ["the rebuild could not run (" + (e instanceof Error ? e.message : String(e)) + ")"],
+        newAnchorId: null,
+        cleared: false,
+      };
+    }
+    this.rebuildAttempts.set(anchorId, attempt);
+    if (attempt.usage) {
+      // The rebuild is a real provider call on this session's behalf, so it books
+      // to the same summary ledger the run reports (D4: nothing hidden outside
+      // the main call). Missing usage is handled by accumulateUsage.
+      accumulateUsage(this.summaryUsage, { role: "assistant", usage: attempt.usage });
+    }
+    if (!attempt.cleared) {
+      // stderr, not stdout: the host protocols own stdout. The caller also sees
+      // it in the result metadata, this line is for a person reading a log.
+      try {
+        process.stderr.write(
+          "[anysearch] summary rebuild for anchor " + anchorId + " did not complete: " +
+            attempt.reasons.join("; ") + "\n",
+        );
+      } catch { /* stderr unavailable */ }
+    }
+    return attempt;
   }
 
   /**
@@ -1055,8 +1148,36 @@ export class MemoryPipeline {
       // A suspended summary is SILENTLY skipped, not replaced with a
       // "this section is suspended" line. The ticket forbids filling the slot
       // with the archive's latest material or any unrelated summary, and a
-      // placeholder would be one more thing the model has to interpret. The
-      // rebuild ticket (09/12) owns putting a current version back.
+      // placeholder would be one more thing the model has to interpret.
+      //
+      // #264 (D9): a suspended summary is not injected (above), but leaving the
+      // hole there forever is the state this ticket closes. The rebuild runs in
+      // the background exactly like the summary/recall writes do: `inject()` is
+      // the hot path BEFORE every provider request, so awaiting a second model
+      // call here would stall the turn and double its latency. The result is
+      // drained by flush() and reported at the end of the run.
+      //
+      // At most once per anchor per runtime, and only when the plan is complete:
+      // an unrecoverable summary costs no model call, and a failed rebuild leaves
+      // the suspension in force. The rebuilt version reaches the caller's prompt
+      // on the NEXT turn — one turn later than ideal, but never at the price of
+      // making the current turn wait on a summary call.
+      //
+      // l2_recall is deliberately not rebuilt: its payload is a recall snippet
+      // produced by a query, not a statement of the session's task, so
+      // regenerating it means running that recall again — which the next search
+      // turn does on its own. Inventing text for it is the fabrication D10
+      // forbids.
+      if (summarySuspended && summaryAnchor) {
+        const anchorId = summaryAnchor.id;
+        if (!this.rebuildStarted.has(anchorId) && this.hasRebuildSeam()) {
+          // Marked SYNCHRONOUSLY, before the async body runs: `inject` is awaited
+          // per provider request, so two requests can be in flight before either
+          // rebuild finishes.
+          this.rebuildStarted.add(anchorId);
+          this.track(this.maybeRebuildSummary(sessionId, anchorId).then(() => undefined, () => undefined));
+        }
+      }
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {
         const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS);

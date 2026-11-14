@@ -42,7 +42,7 @@ import {
 } from "@anysearch-cli/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
-import type { AgentEvent } from "./runtime";
+import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
@@ -1585,5 +1585,16 @@ export class PiAgentRuntime {
   /** Usage of the memory pipeline's own summary calls (separate from the run). */
   getMemoryUsage(): SummaryUsage | null {
     return this.pipeline ? this.pipeline.getSummaryUsage() : null;
+  }
+
+  /**
+   * #264 (D9): rebuild attempts for suspended summaries, once they finished.
+   *
+   * Read AFTER `flushMemory()`, never from the `done` event: rebuilds are
+   * background work the flush drains, so a caller that reported before the drain
+   * would describe an attempt that had not run yet.
+   */
+  getSummaryRebuilds(): SummaryRebuildReport[] {
+    return this.pipeline ? this.pipeline.getSummaryRebuilds() : [];
   }
 }

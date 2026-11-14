@@ -33,6 +33,13 @@ import {
   type SummaryRead,
   type SummarySourceRef,
 } from "./summary-sources.js";
+import {
+  planSummaryRebuild,
+  writeRebuiltSummaryAnchor,
+  type SummaryRebuildPlan,
+  type SummaryRebuildWriteResult,
+} from "./summary-rebuild.js";
+
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
@@ -268,6 +275,26 @@ export interface SessionStore {
     verify?: ConsolidateVerifyFn;
     verifyFinal?: ConsolidateFinalCheckFn;
   }): Promise<ConsolidateReport>;
+  // #264 (D9): rebuild one suspended summary from its own recorded sources
+  // (resolved to their current versions) plus the owning session's stored user
+  // turns. The plan is free; only a complete plan may be generated, and only a
+  // commit that is itself current clears the suspension. Optional on the port so
+  // hand-built stores stay source-compatible — the pipeline then keeps its
+  // pre-#264 behaviour instead of claiming an attempt it cannot make.
+  planSummaryRebuild?(req: {
+    sessionId: string;
+    anchorId: number;
+    factBudgetChars?: number;
+    taskBudgetChars?: number;
+  }): SummaryRebuildPlan;
+  writeRebuiltSummaryAnchor?(req: {
+    sessionId: string;
+    rebuildOfAnchorId: number;
+    text: string;
+    sources: SummarySourceRef[];
+    taskRecordIds: number[];
+    generator?: { kind: "model" | "none"; note?: string };
+  }): SummaryRebuildWriteResult;
 }
 
 // +: secret guard lives in ./secret.ts (shared containsSecret) —
@@ -544,6 +571,11 @@ export class SqliteSessionStore implements SessionStore {
     // carry the column from the CREATE TABLE above.
     this.applyColumnMigration("retrieval_results.superseded_by", "ALTER TABLE retrieval_results ADD COLUMN superseded_by INTEGER", initDeadline);
     this.applyColumnMigration("semantic_memories.superseded_by", "ALTER TABLE semantic_memories ADD COLUMN superseded_by INTEGER", initDeadline);
+    // #264 (D9): a cleared suspension names the rebuilt anchor that replaced it.
+    // New databases get the column from the CREATE TABLE above; old ones get it
+    // here. Nullable on purpose: a row written before this ticket cannot say what
+    // cleared it, and inventing an id would be a fabricated provenance link.
+    this.applyColumnMigration("summary_suspensions.cleared_by_anchor_id", "ALTER TABLE summary_suspensions ADD COLUMN cleared_by_anchor_id INTEGER", initDeadline);
     // #261: an existing database gains the new knowledge FTS table from the
     // schema script, but it starts EMPTY — the CREATE VIRTUAL TABLE only
     // registers the index, it does not copy rows that were already there. A
@@ -1221,6 +1253,31 @@ export class SqliteSessionStore implements SessionStore {
    */
   suspendedSummaryAnchorIds(sessionId: string): Set<number> {
     return suspendedSummaryAnchorIds(this.db, sessionId);
+  }
+
+  /**
+   * #264 (D9): what rebuilding one suspended summary would use, without calling
+   * a model.
+   *
+   * Current facts come from the recorded dependencies (resolved forward to the
+   * live version), the task text from this session's own stored user turns.
+   * `complete` is false whenever either half is short, so a caller can report
+   * the gap instead of presenting a partial rebuild as a full recovery.
+   */
+  planSummaryRebuild(req: { sessionId: string; anchorId: number; factBudgetChars?: number; taskBudgetChars?: number }): SummaryRebuildPlan {
+    return planSummaryRebuild(this.db, req);
+  }
+
+  /**
+   * #264 (D9): commit a rebuilt summary and clear the suspension it replaces.
+   *
+   * One transaction. The suspension is cleared only when the new anchor is
+   * current — a source that moved on during the model call leaves both versions
+   * suspended, which is the honest state (no stale fact injected) and lets a
+   * later turn try again.
+   */
+  writeRebuiltSummaryAnchor(req: Parameters<typeof writeRebuiltSummaryAnchor>[1]): SummaryRebuildWriteResult {
+    return writeRebuiltSummaryAnchor(this.db, req);
   }
 
   /**

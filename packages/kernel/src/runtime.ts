@@ -13,8 +13,30 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }
   | { type: "search_result"; envelope: unknown }
-  | { type: "done"; summary: string; recovery?: string; usage?: RunUsage; context?: RunContextUsage }
+  | {
+      type: "done";
+      summary: string;
+      recovery?: string;
+      usage?: RunUsage;
+      context?: RunContextUsage;
+    }
   | { type: "error"; message: string };
+
+/**
+ * #264 (D9): one rebuild attempt as the caller sees it.
+ *
+ * Deliberately NOT part of the `done` event: rebuilds are background work that
+ * `flushMemory()` drains, and the `done` event is emitted before that drain. A
+ * caller reports these after flushing, so the answer never says "nothing was
+ * suspended" about an attempt that had not finished yet.
+ */
+export interface SummaryRebuildReport {
+  anchorId: number;
+  outcome: "rebuilt" | "incomplete" | "no-model" | "generation-failed" | "write-failed";
+  reasons: string[];
+  newAnchorId: number | null;
+  cleared: boolean;
+}
 
 /** One run's complete accounting; `missing` names the dimensions the provider did not report. */
 export interface RunUsage {
