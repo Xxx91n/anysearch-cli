@@ -54,6 +54,12 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             content: h.content.slice(0, 200),
             rank: h.rank,
             sessionId: h.sessionId,
+            // #263 (D9): the archive row this hit came from. A summary records
+            // its dependencies by id, and a recall result carries no URL, so
+            // without this the material the model actually read could never be
+            // bound to the summary that used it. Positive rowid = archive
+            // material, negative = knowledge row (SessionStore's semantic arm).
+            rowid: h.rowid,
             provenance: "internal",
           })),
           projectIndex: projectHits.map((h) => ({

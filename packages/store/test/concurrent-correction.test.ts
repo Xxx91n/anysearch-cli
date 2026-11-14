@@ -938,6 +938,78 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   assert(betaVerify.calls() === 2, "S13: exactly two judgments");
 }
 
+// --- S263. #263 (D9): the RE-MERGE path also suspends dependent summaries --
+// #262 added a SECOND place where a correction lands: after a cross-session
+// collision the withheld correction is re-judged and, if it still applies,
+// written again against the latest version. A summary built on the fact that
+// version replaced must stop being injected there too. The suspension lives
+// inside the shared write function precisely so both paths are covered.
+//
+// This case pins the re-merge path specifically: the summary is anchored on the
+// row ALPHA's correction produced, which is the exact row BETA's re-merge then
+// replaces. Nothing else in this scenario touches that row, so a suspension can
+// only come from the re-merge.
+{
+  const db = "s263-merge.db";
+  const seed = openStore(db);
+  const sessSeed = await seed.createSession("eval");
+  await buildKnowledge(seed, sessSeed.id, "a-support-hours", A4_OLD, "https://a.example/support-facts");
+  seed.close();
+
+  const summaryOwner = "session-summary-263";
+  const alpha = openStore(db);
+  await alpha.ensureSession(summaryOwner, "eval");
+  const sessA = await alpha.createSession("alpha-s263");
+  const alphaNotice = await seedEpisode(alpha, sessA.id, "https://a.example/notice-2026-11-01c",
+    "A 公司客服时间更新通知（官方）", HOURS_NOTICE, "a-support-hours");
+  const beta = openStore(db);
+  const sessB = await beta.createSession("beta-s263");
+  const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05b",
+    "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+
+  // alpha lands first, holding inside beta's judgment, so beta's plan is stale
+  // and has to go through the re-merge path. `onHold` anchors the summary on
+  // alpha's brand-new row — after alpha's write, before beta's.
+  let staleAnchorId = -1;
+  const betaVerify = stagedVerify([CORRECTION, CORRECTION], {
+    hold: async () => {
+      const alphaRep = await alphaCorrection(alpha, alphaNotice)();
+      assert(alphaRep.update === 1, "S263 fixture: alpha's correction landed");
+      const alphaLive = liveRows(db)[0]!;
+      assert(alphaLive.content === A4_MERGED, "S263 fixture: alpha's merged text is the live version");
+      await alpha.saveAnchor(summaryOwner, "rolling_summary", {
+        summary: "S263-STALE: support runs weekdays 9-17",
+        sources: [{ kind: "knowledge", id: alphaLive.id }],
+      });
+      staleAnchorId = (await alpha.getAnchors(summaryOwner))
+        .filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+      assert(alpha.suspendedSummaryAnchorIds(summaryOwner).size === 0,
+        "S263 fixture: nothing is suspended before the re-merge");
+    },
+  });
+  const betaSum = stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, { reMerge: M1_FINAL });
+  const repB = await beta.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [betaNotice], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    { summarize: betaSum.fn, classify: SUPPORTED, verify: betaVerify.fn, verifyFinal: PASS_FINAL },
+  );
+  assert(repB.update === 1, "S263: the re-merged correction landed (update=" + repB.update + ")");
+  const res = repB.resolvedCollisions[0]!;
+  assert(res && res.resolution === "re-merged", "S263 fixture: this run really went through the re-merge path");
+  assert(staleAnchorId > 0, "S263 fixture: the summary anchor exists");
+
+  // The suspension can only have come from beta's re-merge.
+  assert(alpha.suspendedSummaryAnchorIds(summaryOwner).has(staleAnchorId),
+    "S263: the re-merge correction suspended the summary built on the row it replaced");
+  // The run that did it names it, so a caller can find the summary without
+  // opening the database.
+  assert(repB.suspendedSummaries.some((x) => x.sessionId === summaryOwner && x.anchorId === staleAnchorId),
+    "S263: the re-merge run's report names the suspended summary (session + anchor)");
+  // The text is still stored: the block being absent is a decision, not data loss.
+  const anchor = (await alpha.getAnchors(summaryOwner)).find((a) => a.id === staleAnchorId)!;
+  assert(String((anchor.payload as any).summary).includes("S263-STALE"),
+    "S263: the suspended summary's original text is kept");
+}
+
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
 __setEmbeddingModuleForTest("auto");
 rmSync(dir, { recursive: true, force: true });

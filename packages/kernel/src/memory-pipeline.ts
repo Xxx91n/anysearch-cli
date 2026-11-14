@@ -40,7 +40,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
-import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
+import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
@@ -56,6 +56,13 @@ export interface TaggedGapResult {
   snippet: string;
   source: string;
   label: SourceTraceLabel;
+  /**
+   * #263: the archive row this result was fetched into, when the search path
+   * recorded it (see `stampArchiveRowIds` in pi-runtime). This is what makes a
+   * summary's dependency exact: a URL can hold a retired older row and a live
+   * newer one, and only the id says which version the summary read.
+   */
+  archiveRowId?: number;
 }
 
 export interface TaggedGap {
@@ -106,6 +113,284 @@ export interface ConsolidateResult {
   };
 }
 
+/**
+ * #263 (D9): read the dependency list for a summary that is about to be written.
+ *
+ * Three outcomes, and the difference between the last two is the whole point:
+ *
+ * - `{ok: true, sources}` — the store read fine (possibly returning nothing,
+ *   which is a legitimate "this summary used nothing addressable").
+ * - `{ok: true, sources: []}` with no seams — the store has no provenance
+ *   feature at all. Absence is not failure; the pre-#263 behaviour stands.
+ * - `{ok: false}` — a seam EXISTS but threw. The dependency set is unknowable,
+ *   so the caller must not write the summary: one stored with empty or partial
+ *   dependencies would never be suspended when a fact it used is corrected,
+ *   and with no rebuild yet the replaced fact keeps being injected.
+ *
+ * Kept as a standalone function so this contract is testable without the real
+ * summarizer (a SDK import the repo's tests document as un-mockable).
+ *
+ * @param store - Session store, possibly without the provenance seams.
+ * @param req.gapUrls - URLs the new material arrived under, resolved by the store.
+ * @param req.gapReads - The gap's reads WITH their archive row ids, when the
+ *   search path recorded them. Preferred over `gapUrls`: two rows can share one
+ *   URL, so only the id says which version the summary read. Falls back to
+ *   `gapUrls` when the store has no read-based seam or none of the reads
+ *   carries an id.
+ * @param req.previousAnchorId - Previous summary anchor, whose dependencies the
+ *   new summary inherits (it was generated from that summary).
+ * @returns The sources, or `{ok: false}` when a read failed.
+ */
+export function readSummarySourcesForWrite(
+  store: unknown,
+  req: {
+    gapUrls: Array<string | null | undefined>;
+    // #263: the gap's reads with their archive row ids when the search path
+    // recorded them (see resolveSummarySourcesFromReads). Takes precedence over
+    // `gapUrls` so one URL's older row cannot be attributed to a summary that
+    // read the newer one.
+    gapReads?: Array<{ url: string; rowId?: number | null } | null | undefined>;
+    // Anchors whose dependencies the new summary inherits. More than one
+    // because the summarizer can read BOTH the previous rolling summary and a
+    // `[Research Recall]` block still present in the reused history.
+    previousAnchorIds?: number[];
+    /** @deprecated single-anchor form, kept for existing call sites/tests. */
+    previousAnchorId?: number;
+  },
+): { ok: true; sources: Array<{ kind: "material" | "knowledge"; id: number }> } | { ok: false } {
+  const s = store as {
+    resolveSummarySources?: (urls: string[]) => unknown;
+    resolveSummarySourcesFromReads?: (reads: Array<{ url: string; rowId?: number | null }>) => unknown;
+    summarySourcesForAnchor?: (anchorId: number) => unknown;
+  };
+  const hasResolve = typeof s?.resolveSummarySources === "function";
+  const hasReads = typeof s?.resolveSummarySourcesFromReads === "function";
+  const hasInherit = typeof s?.summarySourcesForAnchor === "function";
+  const inheritIds = [
+    ...(req.previousAnchorIds ?? []),
+    ...(req.previousAnchorId !== undefined ? [req.previousAnchorId] : []),
+  ].filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  if (!hasResolve && !hasReads && !(hasInherit && inheritIds.length > 0)) {
+    return { ok: true, sources: [] };
+  }
+  const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+  try {
+    // Exact form first: a read that carries its archive row pins the version the
+    // summary saw. Without it a URL with a retired predecessor AND a live
+    // successor would record both, and the write-time currency check would
+    // suspend a summary built entirely from the live one.
+    //
+    // A read with a usable row id is kept even when its URL is empty: the id IS
+    // the dependency, and dropping the read here — before the resolver sees it —
+    // would silently lose it (a summary stored as valid that a later correction
+    // could never find).
+    //
+    // Normalized to `{url: string, rowId}`: an id-only read legitimately has no
+    // URL, and `""` is how "no URL" is spelled for the store.
+    const reads: Array<{ url: string; rowId: number | null }> = [];
+    for (const r of req.gapReads ?? []) {
+      if (!r) continue;
+      const rowId = (r as { rowId?: unknown }).rowId;
+      const hasRowId = typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0;
+      const url = typeof r.url === "string" ? r.url : "";
+      if (!hasRowId && url.length === 0) continue;
+      reads.push({ url, rowId: hasRowId ? (rowId as number) : null });
+    }
+    if (hasReads && reads.length > 0) {
+      sources.push(...((s.resolveSummarySourcesFromReads!(reads) ?? []) as typeof sources));
+    } else if (hasResolve) {
+      const urls = (req.gapUrls ?? []).filter((u): u is string => typeof u === "string" && u.length > 0);
+      sources.push(...((s.resolveSummarySources!(urls) ?? []) as typeof sources));
+    }
+    if (hasInherit) {
+      for (const id of inheritIds) {
+        sources.push(...((s.summarySourcesForAnchor!(id) ?? []) as typeof sources));
+      }
+    }
+  } catch {
+    return { ok: false };
+  }
+  return { ok: true, sources };
+}
+
+// #263 (D9): the row ids a tool result cited, from a `recall_memory` payload.
+//
+// `distillGap` only reads `search` results, and that is correct: the gap text is
+// built from search snippets for the summarizer. But the summarizer also sees
+// the FULL message list, so a `recall_memory` result can end up in the summary
+// body. A recall hit carries no URL, so it can never be bound to a dependency
+// through `resolveSummarySources`; what it does carry (since #263) is the
+// archive row id in `internal[].rowid`. Collecting those ids here is what lets
+// the summary record "I read this row too" — without it, correcting that row
+// would never suspend the summary, and the replaced text would keep being
+// injected.
+//
+// Positive rowid = archive material, negative = knowledge row (SessionStore's
+// semantic arm). Unknown/absent rowids contribute nothing.
+export function collectRecallSourceRefs(
+  messages: any[],
+  fromIdx: number,
+): Array<{ kind: "material" | "knowledge"; id: number }> {
+  const out: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+  const seen = new Set<string>();
+  for (const msg of messages.slice(Math.max(0, fromIdx))) {
+    if (msg?.role !== "tool" && msg?.role !== "toolResult") continue;
+    const toolName = msg.toolName || msg.name || "";
+    if (typeof toolName !== "string" || !toolName.includes("recall_memory")) continue;
+    const raw = typeof msg.content === "string"
+      ? msg.content
+      : Array.isArray(msg.content)
+        ? msg.content.map((c: any) => c?.text || "").join("")
+        : "";
+    if (!raw) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { continue; }
+    const internal = parsed?.internal;
+    if (!Array.isArray(internal)) continue;
+    for (const hit of internal) {
+      const rowid = Number(hit?.rowid);
+      if (!Number.isInteger(rowid) || rowid === 0) continue;
+      const ref = rowid > 0
+        ? { kind: "material" as const, id: rowid }
+        : { kind: "knowledge" as const, id: Math.abs(rowid) };
+      const key = ref.kind + ":" + ref.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ref);
+    }
+  }
+  return out;
+}
+
+// #263: the summarizer reads the whole message list, so dependency scanning for
+// recall hits starts at the beginning too. Exported so a test can pin the
+// wiring: a window of `messages.length` (what `summaryRequest.msgCountAtTrigger`
+// carries) would be empty and silently record nothing.
+// #263: the dependency scan must start where the SUMMARIZER starts, which is the
+// beginning of the message list. A later start (the current gap only) loses the
+// dependencies of facts an overlapping earlier compression put into the same
+// message list. Named so the call site's value is testable, not just implied.
+export const SOURCE_SCAN_FROM_INDEX = 0;
+
+export const RECALL_SOURCE_SCAN_FROM = 0;
+
+// #263: the dependency scan and the summarizer call must read the SAME message
+// membership. The caller hands in the live agent-state array and two `await`s
+// separate the scan from the model call, so an append in that window would give
+// the summary a fact its sources never saw. A shallow copy pins membership
+// without copying message contents. Exported so the "is it a copy" contract is
+// assertable: the real summarizer is an un-mockable SDK import.
+export function snapshotMessages(messages: any[]): any[] {
+  return messages.slice();
+}
+
+/**
+ * #263: which stored summary anchors the message list ACTUALLY carries.
+ *
+ * The gate for inheriting dependencies, done exactly instead of by "newest
+ * anchor wins". Injection renders each anchor to one exact string (see `inject`),
+ * so an anchor whose rendered block appears in the history is an anchor whose
+ * text the summarizer will read — whatever its age, and regardless of whether a
+ * newer anchor exists.
+ *
+ * Both wrong answers the guessing version produced are closed here:
+ * - no block for the newest anchor but an OLDER block present: the older
+ *   anchor's dependencies are inherited (guessing the newest would record a
+ *   dependency the summary never read AND miss the one it did);
+ * - no block at all: nothing is inherited. A block that matches no stored
+ *   anchor of this session (a caller passing another session's history) also
+ *   inherits nothing — its sources are unknowable, and inventing them would
+ *   suspend an unrelated summary later.
+ *
+ * @param messages - The snapshot the summarizer will receive.
+ * @param anchors - This session's anchors (already read by the caller).
+ * @returns Anchor ids whose rendered block is present.
+ */
+export function injectedSummaryAnchorIds(messages: any[], anchors: Array<{ id: number; anchorType: string; payload: unknown }>): number[] {
+  const texts: string[] = [];
+  for (const m of messages ?? []) {
+    const t = readMessageText(m)?.text;
+    if (t) texts.push(t);
+  }
+  if (texts.length === 0) return [];
+  const out: number[] = [];
+  for (const anchor of anchors ?? []) {
+    if (anchor?.anchorType !== "rolling_summary" && anchor?.anchorType !== "l2_recall") continue;
+    const payload = anchor.payload as any;
+    // Same truncation as injection, so the compared string IS the injected one.
+    const body = anchor.anchorType === "rolling_summary" ? payload?.summary : payload?.hits;
+    if (typeof body !== "string" || body.length === 0) continue;
+    const block = anchor.anchorType === "rolling_summary"
+      ? SESSION_MEMORY_TAG + " " + body.slice(0, SUMMARY_INJECT_MAX_CHARS)
+      : RESEARCH_RECALL_TAG + " " + body.slice(0, RECALL_INJECT_MAX_CHARS);
+    const marker = BLANK_LINE_BEFORE_BLOCK + block;
+    if (texts.some((t) => carriesBlock(t, marker))) out.push(anchor.id);
+  }
+  return out;
+}
+
+/**
+ * #263: does this text carry the WHOLE block, ending at a block boundary?
+ *
+ * A plain `includes(marker)` is not enough: one summary's text can be the
+ * prefix of another's ("shared wording" vs "shared wording plus more"), and
+ * then a history carrying only the LONGER block matches the shorter anchor too.
+ * The new summary would inherit a dependency it never read, and a later
+ * correction of that row would suspend it.
+ *
+ * Injection puts every block after a blank line and joins blocks with a blank
+ * line, so a block is real when what follows its text is either the end of the
+ * message or the next blank-line separator. Text that continues (a longer
+ * summary of the same prefix) is a different block, not this one.
+ *
+ * @param text - One message's text.
+ * @param marker - The blank line plus the rendered block.
+ */
+function carriesBlock(text: string, marker: string): boolean {
+  let at = text.indexOf(marker);
+  while (at >= 0) {
+    const after = text.slice(at + marker.length);
+    if (after.length === 0 || after.startsWith(BLANK_LINE_BEFORE_BLOCK)) return true;
+    at = text.indexOf(marker, at + 1);
+  }
+  return false;
+}
+
+/**
+ * #263: the anchor ids a NEW summary inherits its dependencies from.
+ *
+ * The one place this decision is made, so the call site and the test cannot
+ * disagree: a second copy of the rule (here and at the call site) is exactly how
+ * the "newest anchor wins" version survived a test that only drove the helper.
+ *
+ * Two sources, and only these:
+ * - the previous rolling summary's anchor: `previousSummary` is passed to the
+ *   generator as its own argument, so that text is read regardless of what the
+ *   message list contains.
+ * - every summary anchor whose RENDERED block the history really carries (see
+ *   injectedSummaryAnchorIds). This is what makes an older recall block count
+ *   while a newer anchor the history never saw does not.
+ *
+ * @param messages - The snapshot the summarizer will receive.
+ * @param anchors - This session's anchors.
+ * @param previousSummaryAnchorId - The anchor behind `previousSummary`, if any.
+ * @returns Valid, deduplicated anchor ids.
+ */
+export function summaryAnchorsToInherit(
+  messages: any[],
+  anchors: Array<{ id: number; anchorType: string; payload: unknown }>,
+  previousSummaryAnchorId: number | undefined,
+): number[] {
+  const ids: number[] = [];
+  const add = (id: unknown): void => {
+    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return;
+    if (!ids.includes(id)) ids.push(id);
+  };
+  add(previousSummaryAnchorId);
+  for (const id of injectedSummaryAnchorIds(messages, anchors)) add(id);
+  return ids;
+}
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -143,12 +428,17 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
           : "retrieved",
         traceId,
       });
+      const rowId = Number(item?.archiveRowId);
       results.push({
         url: typeof item?.url === "string" ? item.url : "",
         title: typeof item?.title === "string" ? item.title : "",
         snippet: typeof item?.snippet === "string" ? item.snippet : String(raw).slice(0, 4000),
         source: typeof item?.source === "string" ? item.source : "retrieved",
         label: itemLabel,
+        // #263: carried through when the search path recorded it. Absent on an
+        // older transcript or a store without the seam — the URL bridge then
+        // applies, which is why this stays optional rather than defaulted.
+        ...(Number.isInteger(rowId) && rowId > 0 ? { archiveRowId: rowId } : {}),
       });
       label = combineLabels(label, itemLabel);
     }
@@ -333,6 +623,137 @@ const RESEARCH_RECALL_TAG = "[Research Recall]";
 const INJECTION_TAGS = [RAG_CONTEXT_TAG, RECOVERY_DIGEST_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
 const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
+// The separator inject() puts before each injected block (a blank line). Named
+// once so the write side and the strip side cannot disagree about it.
+const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
+// #263: how much of each summary body injection renders. Named constants because
+// three places must agree: the render itself, the provenance key used to strip a
+// stale block, and the WRITE side that decides which recall hits count as
+// sources. When they drift the write side records a hit whose text no prompt
+// ever carried, and a later correction then suspends a recall block that never
+// used it.
+const SUMMARY_INJECT_MAX_CHARS = 4000;
+const RECALL_INJECT_MAX_CHARS = 1500;
+
+/**
+ * Remove previously injected summary blocks from one message.
+ *
+ * #263: the runtime cannot assume the caller starts from a clean history. A
+ * caller that hands back the array a previous `inject()` returned gets its old
+ * `[Session Memory]` / `[Research Recall]` blocks back, and those may state a
+ * fact a correction has since replaced. Skipping the new append is not enough
+ * then; the stale text has to leave the prompt.
+ *
+ * What may be removed is decided by PROVENANCE, not by a tag prefix: `known`
+ * holds the exact block strings this pipeline wrote (or that the store records
+ * as its own summaries). A user or assistant sentence that merely mentions
+ * `[Session Memory]` never equals one of those strings, so it survives — a
+ * prefix rule would have deleted exactly the text the reviewer flagged.
+ *
+ * Matching whole strings also fixes the multi-paragraph case: a summary body
+ * containing a blank line is still one block, and splitting on "\n\n" (the
+ * earlier approach) mistook its second paragraph for foreign content.
+ *
+ * @param message - Any message from the array being injected into.
+ * @param known - Exact block strings this pipeline may remove.
+ * @returns The message without those blocks, or the original message.
+ */
+function stripSummaryBlocks(message: any, known: Set<string>): any {
+  if (known.size === 0) return message;
+  if (!Array.isArray(message?.content)) {
+    // String content: one text channel, so the whole-string removal applies.
+    const target = readMessageText(message);
+    if (!target) return message;
+    const text = removeKnownBlocks(target.text, known);
+    return text === target.text ? message : writeMessageText(message, text, target) ?? message;
+  }
+  // Block array: remove per TEXT BLOCK, in place. Operating on the joined text
+  // and then writing it back into one block is what reordered interleaved
+  // content: a caller may append its own text block after the injected one
+  // ("question + summary", image, "more text"), so the summary is not
+  // necessarily in the LAST block, and the text around it belongs to other
+  // blocks. Each block keeps its own text and its own position.
+  let changed = false;
+  const blocks: any[] = [];
+  for (const block of message.content) {
+    if (block && typeof block === "object" && (block as any).type === "text" && typeof (block as any).text === "string") {
+      const before = (block as any).text as string;
+      const after = removeKnownBlocks(before, known);
+      if (after !== before) {
+        changed = true;
+        blocks.push({ ...block, text: after });
+        continue;
+      }
+    }
+    blocks.push(block);
+  }
+  return changed ? { ...message, content: blocks } : message;
+}
+
+/**
+ * Remove every known block string from one text channel.
+ *
+ * Longest first: two summaries can share a prefix (an older short version and a
+ * newer one that extends it), and removing the short one first would cut that
+ * prefix out of the longer one so it could never match — leaving exactly the
+ * stale line the removal exists to delete.
+ *
+ * @param text - The text channel of one block.
+ * @param known - Exact block strings the pipeline may remove.
+ * @returns The text with those blocks deleted; unchanged when none matched.
+ */
+function removeKnownBlocks(text: string, known: Set<string>): string {
+  let out = text;
+  const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
+  for (const block of ordered) {
+    // The block was appended after a blank line (see inject()); removing the
+    // separator with it keeps the field from leaving a run of blank lines behind.
+    const withSeparator = BLANK_LINE_BEFORE_BLOCK + block;
+    let at = out.indexOf(withSeparator);
+    while (at >= 0) {
+      out = out.slice(0, at) + out.slice(at + withSeparator.length);
+      at = out.indexOf(withSeparator);
+    }
+    // A block sitting at the very start of the channel has no separator before it.
+    if (out.startsWith(block)) out = out.slice(block.length);
+  }
+  return out;
+}
+
+/**
+ * Replace the text of the block that carried the removed summary, keeping
+ * every other block exactly where it was.
+ *
+ * The summary is always appended into the LAST text block (see inject()), so
+ * that block is the one whose tail was removed. Rewriting it in place and
+ * leaving the other text blocks alone keeps "text A, image A, text B, image B"
+ * in that order — collapsing all text into the first block (an earlier version)
+ * moved the caption of image B ahead of image A, so a model could pair the
+ * wrong caption with the wrong image.
+ *
+ * The updated message is `{ ...message, content: blocks }`, or null when the
+ * shape cannot be preserved (caller leaves the message untouched).
+ *
+ * @param message - Message whose text changed.
+ * @param text - The full text channel after the removal.
+ * @param target - Shape descriptor from {@link readMessageText}.
+ */
+function writeMessageText(message: any, text: string, target: { kind: "string" | "blocks" }): any | null {
+  if (target.kind === "string") return { ...message, content: text };
+  // A block array reaching here means the caller is replacing the whole text
+  // channel (string-shaped removal only), so the text lands in the last text
+  // block and the other blocks keep their order.
+  if (!Array.isArray(message?.content)) return null;
+  let lastTextIdx = -1;
+  for (let i = message.content.length - 1; i >= 0; i--) {
+    const block = message.content[i];
+    if (block && typeof block === "object" && (block as any).type === "text") { lastTextIdx = i; break; }
+  }
+  if (lastTextIdx < 0) return null;
+  const blocks = message.content.map((block: any, i: number) =>
+    i === lastTextIdx ? { ...block, text } : block);
+  return { ...message, content: blocks };
+}
 
 /**
  * Recover the user's own text from a message that may already carry injections.
@@ -412,6 +833,13 @@ export class MemoryPipeline {
   // flight, losing the anchor and swallowing the failure. flush() lets that owner
   // drain them first.
   private readonly pendingWrites = new Set<Promise<unknown>>();
+
+  // #263: the exact summary/recall block strings this runtime appended, so a
+  // later turn that receives its own output back can remove those blocks without
+  // guessing by tag. Kept across turns (a history may be reused many turns
+  // later); bounded because a session only ever injects a handful of distinct
+  // blocks before the snapshot replaces them.
+  private readonly injectedSummaryBlocks = new Set<string>();
 
   // Usage of the pipeline's own summary requests, kept apart from the main run
   // so the caller can report both without double counting. Same ledger type as
@@ -544,8 +972,65 @@ export class MemoryPipeline {
       // Read side of the resume anchor (#189): capture the last anchor
       // once, before this runtime's first search can replace it.
       this.captureRecoveryDigest(anchors);
+      // #263 (D9): a summary a correction made stale must not be injected as
+      // the current conclusion. Its text stays stored (readable through
+      // getAnchors) — only the injection slot is skipped, so the caller never
+      // sees a replaced fact presented as current knowledge.
+      //
+      // The set is read per turn, not once per runtime: a correction may land
+      // between two turns of the same session, and the second turn must already
+      // respect it.
+      // "The store has no suspension tracking" and "the read failed" must not
+      // look the same. A store without the seam keeps the pre-#263 behaviour
+      // (inject what it always injected). A read that THROWS is different: the
+      // suspension state is unknown, and guessing "nothing is suspended" would
+      // put a replaced fact back in the prompt — the exact failure this ticket
+      // exists to stop. So the two summary slots are skipped for this turn.
+      let suspended: Set<number> = new Set();
+      let suspensionUnknown = false;
+      const readSuspended = (store as unknown as SummarySuspensionPort).suspendedSummaryAnchorIds;
+      if (typeof readSuspended === "function") {
+        try {
+          suspended = readSuspended.call(store, sessionId);
+        } catch {
+          suspensionUnknown = true;
+        }
+      }
       const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
+      const summarySuspended = suspensionUnknown || (!!summaryAnchor && suspended.has(summaryAnchor.id));
+      const recallSuspended = suspensionUnknown || (!!recallAnchor && suspended.has(recallAnchor.id));
+
+      // #263 (D9): a caller may hand back the messages a PREVIOUS inject() call
+      // returned. Those still carry the old `[Session Memory]` and
+      // `[Research Recall]` blocks in their text, so skipping the append alone
+      // would leave the superseded facts in the prompt. Strip the two summary
+      // blocks before deciding what to append, then re-append only what is still
+      // valid — that is what makes "stops being injected" true for a reused
+      // history and not just for a fresh one.
+      //
+      // What may be removed is decided by provenance, not by a tag prefix:
+      //  - every summary/l2 anchor text the STORE holds for this session (any
+      //    version, including ones a correction replaced), rendered exactly as
+      //    injection renders it;
+      //  - every block THIS runtime appended in an earlier turn.
+      // A user or assistant sentence that merely mentions the tag matches neither,
+      // so it survives. A summary body with a blank line is still one exact string,
+      // so it is matched whole instead of split on "\n\n".
+      const knownBlocks = new Set<string>();
+      for (const anchor of anchors) {
+        const payload = anchor.payload as any;
+        if (anchor.anchorType === "rolling_summary" && payload?.summary) {
+          knownBlocks.add(SESSION_MEMORY_TAG + " " + String(payload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS));
+        }
+        if (anchor.anchorType === "l2_recall" && payload?.hits) {
+          knownBlocks.add(RESEARCH_RECALL_TAG + " " + String(payload.hits).slice(0, RECALL_INJECT_MAX_CHARS));
+        }
+      }
+      for (const block of this.injectedSummaryBlocks) knownBlocks.add(block);
+      if (knownBlocks.size > 0) {
+        result = result.map((message: any) => stripSummaryBlocks(message, knownBlocks));
+      }
 
       const injections: string[] = [];
       // Keep the digest in every model prompt of the resumed conversation. The
@@ -567,13 +1052,24 @@ export class MemoryPipeline {
           injections.push(this.recoveryDigest!);
         }
       }
+      // A suspended summary is SILENTLY skipped, not replaced with a
+      // "this section is suspended" line. The ticket forbids filling the slot
+      // with the archive's latest material or any unrelated summary, and a
+      // placeholder would be one more thing the model has to interpret. The
+      // rebuild ticket (09/12) owns putting a current version back.
       const summaryPayload = summaryAnchor?.payload as any;
-      if (summaryPayload?.summary) {
-        injections.push(SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000));
+      if (!summarySuspended && summaryPayload?.summary) {
+        const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS);
+        injections.push(block);
+        this.injectedSummaryBlocks.add(block);
       }
       const recallPayload = recallAnchor?.payload as any;
-      if (recallPayload?.hits) {
-        injections.push(RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500));
+      if (!recallSuspended && recallPayload?.hits) {
+        // The l2_recall payload stores an already-truncated snippet, so the
+        // rendered block is the same string every turn — a stable provenance key.
+        const block = RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, RECALL_INJECT_MAX_CHARS);
+        injections.push(block);
+        this.injectedSummaryBlocks.add(block);
       }
 
       // latest USER message, not blindly the last array element. The index was
@@ -599,6 +1095,15 @@ export class MemoryPipeline {
       // then this runtime's own search could have written an anchor and been
       // mistaken for a recovered record.
       this.recoveryDigestResolved = true;
+      // #263: the anchor read failed, so the suspension state is unknown. The
+      // removal above could not run, and a caller that reuses a previous
+      // inject() output would keep its old `[Session Memory]` / `[Research
+      // Recall]` blocks — which may already be suspended. Remove the blocks
+      // THIS runtime wrote (no anchor read needed) and append nothing: with
+      // unknown state, injecting is the failure mode the ticket forbids.
+      if (this.injectedSummaryBlocks.size > 0) {
+        result = result.map((message: any) => stripSummaryBlocks(message, this.injectedSummaryBlocks));
+      }
     }
 
     return result;
@@ -653,8 +1158,33 @@ export class MemoryPipeline {
       const prevAnchors = await store.getAnchors(sessionId);
       const prevSummaryAnchor = lastAnchorOfType(prevAnchors, "rolling_summary");
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
-
+      const previousSummaryAnchorId = prevSummaryAnchor?.id;
+      // #263: which summary anchors the generator will ACTUALLY read.
+      //
+      // The new summary is generated FROM the previous summary text
+      // (`previousSummary`) plus whatever summary / recall blocks the message
+      // list already carries (a caller may hand `inject()`'s output straight to
+      // `consolidate()`). Its dependencies are the union of those anchors'
+      // dependencies — recorded so a correction of a fact stated in them
+      // suspends this newer summary too.
+      //
+      // Done by matching the RENDERED blocks, not by "newest anchor wins":
+      // - the newest l2_recall anchor with NO block in the history is a
+      //   dependency the summary never read. Inheriting it would let a later
+      //   correction suspend an unrelated summary — the exact false suspension
+      //   the ticket forbids.
+      // - a block in the history that is NOT the newest anchor is a dependency
+      //   the summary DID read. Inheriting only the newest would miss it, so the
+      //   correction would leave the replaced fact in the newly injected
+      //   summary.
+      // Both cases are covered because the match is per anchor, and an anchor
+      // absent from the list is an anchor absent from the sources.
+      const inheritedAnchorIds = summaryAnchorsToInherit(messages, prevAnchors, previousSummaryAnchorId);
       // D5: fire-and-forget compression helper.
+      // #263: set when the source read failed. The state must NOT advance then:
+      // this turn's summary was skipped, so the next turn has to retry the same
+      // gap instead of believing it was compressed.
+      let summaryWriteSkipped = false;
       const fireCompress = (deadline?: AbortSignal) => {
         // A shared deadline that already expired means this turn's background
         // budget is spent; do not start a call that can only fail.
@@ -667,6 +1197,83 @@ export class MemoryPipeline {
             if (gap && gap.text) assertJudgmentInput(gap, "consolidation");
           } catch {
             return;
+          }
+          // #263 (D9): which rows this summary actually read. Two parts:
+          //  - the new gap's material URLs, resolved to the archive rows that
+          //    currently hold them (exact ids, never text matching);
+          //  - the previous summary's own dependencies, because this summary is
+          //    generated FROM that one. Without the inheritance a correction to
+          //    an old fact would suspend the earlier summary and leave the
+          //    newest one — which still states the replaced fact — injected.
+          //
+          // Read here, before the model call: the material was archived when the
+          // search ran, so the ids exist already, and the anchor write can then
+          // carry them through one transaction.
+          //
+          // A store without the seam records nothing (absence is not an error).
+          // A read that THROWS ends this turn's summary instead: a summary
+          // stored with half its dependencies (or none) would never be
+          // suspended when a fact it used is corrected, and with no rebuild yet
+          // that leaves the replaced fact injected — worse than no summary at
+          // all for one turn. `consolidationState` is updated only after the
+          // sources were read, so a skipped turn does not advance the state the
+          // next turn depends on.
+          // #263 (D9): the URLs the SUMMARIZER actually read, not just this
+          // turn's gap.
+          //
+          // `generateSummaryWithUsage(messages, ...)` receives the whole message
+          // list, so a second compression starting before the first one's write
+          // can produce a summary containing the FIRST gap's facts while
+          // `summaryRequest.gap` covers only its own slice. Recording the gap
+          // alone would leave the newer summary without the earlier dependency;
+          // a later correction of that fact would suspend the first summary and
+          // keep injecting the newer one.
+          //
+          // The fix needs no new bookkeeping: run the SAME scan over the whole
+          // list, which is what the generator reads.
+          //
+          // The scan and the model call must read the SAME list. Two `await`s
+          // separate them (the API key and the SDK load), and the caller hands
+          // in the live agent-state array, so a message appended in that window
+          // would reach the generator while being absent from the scan — a fact
+          // in the summary with no recorded dependency. A shallow copy pins the
+          // membership without copying message contents.
+          const snapshot = snapshotMessages(messages);
+          const scanFromStart = distillGap(snapshot, SOURCE_SCAN_FROM_INDEX);
+          const read = readSummarySourcesForWrite(store, {
+            gapUrls: scanFromStart.results
+              .map((r: any) => r?.url)
+              .filter((u: any) => typeof u === "string" && u.length > 0),
+            // The exact form: each read carries the archive row the search wrote,
+            // so a URL with a retired predecessor AND a live successor records
+            // only the version actually read.
+            gapReads: scanFromStart.results.map((r) => ({ url: r.url, rowId: r.archiveRowId ?? null })),
+            previousAnchorIds: inheritedAnchorIds,
+          });
+          if (!read.ok) {
+            // Report the skip on stderr (stdout stays protocol-pure) and stop
+            // this turn's summary: writing one with unknown dependencies is what
+            // the ticket forbids.
+            try {
+              process.stderr.write(
+                "[anysearch] summary sources unreadable — skipping this turn's summary write\n",
+              );
+            } catch { /* stderr unavailable */ }
+            summaryWriteSkipped = true;
+            return;
+          }
+          // #263 (D9): recall hits the summarizer also saw. They carry no URL,
+          // so they cannot be recovered from `resolveSummarySources`; the ids
+          // come straight from the tool result (see collectRecallSourceRefs).
+          //
+          // Scanned from index 0 because the summarizer reads the WHOLE message
+          // list (`generateSummaryWithUsage(messages, ...)`). A window starting
+          // at `msgCountAtTrigger` would be empty by construction — that value
+          // IS `messages.length` — so no recall hit could be recorded while the
+          // summary still used them. Merged with the search-material refs.
+          const sources = read.sources;
+          for (const ref of collectRecallSourceRefs(messages, RECALL_SOURCE_SCAN_FROM)) {
+            if (!sources.some((r) => r.kind === ref.kind && r.id === ref.id)) sources.push(ref);
           }
           this.consolidationState = {
             version: result.state.version,
@@ -684,7 +1291,10 @@ export class MemoryPipeline {
               // The old 0.84.2 shape took a Models object and returned a
               // Result, so the whole call is restructured here.
               const result = await sdk.generateSummaryWithUsage(
-                messages,
+                // The SAME snapshot the dependency scan read (see above): a
+                // later append to the caller's live array cannot add a fact the
+                // sources do not cover.
+                snapshot,
                 actualModel,
                 COMPACTION_RESERVE_TOKENS,
                 apiKey,
@@ -704,6 +1314,9 @@ export class MemoryPipeline {
                   summary: summaryResult.text,
                   tokenWatermark: totalTokens,
                   timestamp: Date.now(),
+                  // #263: the source list travels inside the payload, so the
+                  // anchor and its dependencies commit in one transaction.
+                  sources,
                 }).catch(() => {});
               }
               return undefined;
@@ -771,10 +1384,18 @@ export class MemoryPipeline {
       }
 
       // D7: Persist consolidation state to anchor (UPSERT in saveAnchor).
-      this.consolidationState = result.state;
-      try {
-        await store.saveAnchor(sessionId, "consolidation_state", result.state);
-      } catch {}
+      //
+      // #263: NOT when this turn's summary was skipped. Advancing
+      // `lastSummaryMsgCount` would make the next turn's distillGap skip the
+      // very search results this turn never compressed, and the later summary
+      // would state those facts with no recorded source — the summary that
+      // cannot be suspended.
+      if (!summaryWriteSkipped) {
+        this.consolidationState = result.state;
+        try {
+          await store.saveAnchor(sessionId, "consolidation_state", result.state);
+        } catch {}
+      }
 
       // L2 cold path — FTS5 recall.
       // 1.5.1 stores assistant tool calls as type:"toolCall" with `arguments`;
@@ -805,9 +1426,63 @@ export class MemoryPipeline {
             })
             .then(({ hits, variants }) => {
               if (hits.length > 0) {
-                const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
+                // #263 (D9): sources are collected in the SAME loop that builds
+                // the text, and only for hits that actually contributed to it.
+                // Recording every returned hit would claim the summary used rows
+                // whose text was truncated away — a later correction to one of
+                // those would then suspend a recall block it never fed, and with
+                // no rebuild yet that silently removes valid recall text.
+                //
+                // Both caps are applied here, not after the fact: the block is
+                // built from the hits until the text budget is spent, and the
+                // anchor payload is capped at the SAME budget below.
+                //
+                // The budget is the injection cap (1500), not a larger number:
+                // `inject` renders `hits.slice(0, 1500)`, so anything past that
+                // is never shown. Recording a hit that only lives beyond the
+                // cap would claim the summary used text that no prompt ever
+                // carried, and a later correction of that row would suspend the
+                // whole recall block — removing valid text it never fed.
+                const CHUNK_BUDGET = RECALL_INJECT_MAX_CHARS;
+                const parts: string[] = [];
+                const sources: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+                const seen = new Set<string>();
+                let used = 0;
+                for (const h of hits as any[]) {
+                  const text = h?.content || "";
+                  if (!text) continue;
+                  // The separator costs characters too; measuring it keeps the
+                  // payload cap from silently dropping the last included hit.
+                  const sep = parts.length === 0 ? 0 : 3; // " | "
+                  const room = CHUNK_BUDGET - used - sep;
+                  if (room <= 0) break;
+                  // The FIRST hit is always taken, truncated if it alone exceeds
+                  // the budget: an over-long top hit must not leave the block
+                  // empty (no anchor, no recall at all). Later hits are taken
+                  // whole or not at all, so a hit that contributed nothing is
+                  // never recorded as a source.
+                  const include = parts.length === 0
+                    ? text.slice(0, room)
+                    : (text.length <= room ? text : "");
+                  if (!include) break;
+                  parts.push(include);
+                  used += sep + include.length;
+                  // The hit id encoding already carries the kind: a positive
+                  // rowid is an archived material, a negative one a knowledge
+                  // row (see SessionStore's semantic arm).
+                  const rowid = Number(h?.rowid);
+                  if (!Number.isInteger(rowid) || rowid === 0) continue;
+                  const ref = rowid > 0
+                    ? { kind: "material" as const, id: rowid }
+                    : { kind: "knowledge" as const, id: Math.abs(rowid) };
+                  const key = ref.kind + ":" + ref.id;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  sources.push(ref);
+                }
+                if (parts.length === 0) return undefined;
                 return store!.saveAnchor(sessionId!, "l2_recall", {
-                  query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+                  query: l2Query, variants, hits: parts.join(" | ").slice(0, CHUNK_BUDGET), timestamp: Date.now(), sources,
                 }).catch(() => {});
               }
               return undefined;

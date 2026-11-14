@@ -283,6 +283,12 @@ export function buildAnsChatConsolidateResult(
         (report.update > 0 ? (report.dryRun ? "; " + report.update + " other correction(s) would land" : "; " + report.update + " other correction(s) did land") : "; nothing was replaced") +
         "; details in incompleteDetails)"
       : "") +
+    (report.summariesSuspended > 0
+      ? "\nsummaries suspended: " + report.summariesSuspended +
+        " (built from a fact this run replaced, so they are no longer injected as current research;" +
+        " their text and sources are kept until a rebuild replaces them" +
+        (report.dryRun ? "; the dry-run rolled that back" : "") + ")"
+      : "") +
     // #262 (D11): collisions must not read as success. The counts line stays
     // one glance long; the per-conflict block below carries both sides.
     (report.conflicts > 0
@@ -326,6 +332,23 @@ export function buildAnsChatConsolidateResult(
         "\n  candidate: " + d.candidate +
         "\n  sources: " + d.evidence.map((e) => e.url).join(", "),
       ).join("\n");
+  // #263 (D9): one line per suspended summary, naming the session and the anchor
+  // it lives in. A text-only client reads this block and nothing else, and the
+  // count alone leaves it unable to find the summary it should rebuild. The
+  // wording tracks the dry-run: in a preview the suspension was rolled back, so
+  // "would be suspended" is the honest phrasing — the same rule the correction
+  // lines above follow.
+  // A summary can depend ONLY on retired materials and never have read the
+  // knowledge row whose correction triggered this, so "built from knowledge X"
+  // would name a source it never had. What the id honestly is: the correction
+  // that caused the suspension.
+  const suspendedText = (report.suspendedSummaries ?? []).length === 0
+    ? ""
+    : "\n" + report.suspendedSummaries.map((s) =>
+        (report.dryRun ? "summary that would be suspended: " : "summary suspended: ") +
+        "session " + s.sessionId + " anchor " + s.anchorId +
+        " (suspended by the correction of knowledge " + s.triggerKnowledgeId + ")",
+      ).join("\n");
   // Design: #262 (D11) — a content-only proxy still sees BOTH sides of an
   // unresolved collision — the plan-era target, this run's candidate and
   // sources, the current live content and the other side's sources, the
@@ -355,7 +378,7 @@ export function buildAnsChatConsolidateResult(
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
   return {
-    content: [{ type: "text", text: line + refusedText + incompleteText + conflictText + resolvedText }],
+    content: [{ type: "text", text: line + refusedText + incompleteText + suspendedText + conflictText + resolvedText }],
     structuredContent: {
       operation: "consolidate",
       scope: s,
@@ -370,6 +393,7 @@ export function buildAnsChatConsolidateResult(
         verifyRejected: report.verifyRejected,
         correctionsIncomplete: report.correctionsIncomplete,
         supersededClusterSkipped: report.supersededClusterSkipped,
+        summariesSuspended: report.summariesSuspended,
         // Design: #262 — real cross-session conflicts, kept DISTINCT from the
         // gate counter above (that one counts claim-gate rejections);
         // renaming either into the other would silently change what a host

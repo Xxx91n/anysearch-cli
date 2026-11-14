@@ -256,6 +256,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       (r.supersededClusterSkipped > 0 ? ", supersededClusterSkipped " + r.supersededClusterSkipped : "") +
       (r.verifyRejected > 0 ? ", verifyRejected " + r.verifyRejected : "") +
       (r.correctionsIncomplete > 0 ? ", correctionsIncomplete " + r.correctionsIncomplete : "") +
+      (r.summariesSuspended > 0 ? ", summariesSuspended " + r.summariesSuspended : "") +
       (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
       (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") + "\n",
@@ -293,6 +294,21 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         " sameFact=" + c.sameFact + " reliable=" + c.reliable +
         (c.relation ? " relation=" + c.relation : "") +
         (c.reason ? " (" + c.reason + ")" : "") + "\n",
+    );
+  }
+  // #263 (D9): a summary built from the replaced fact stopped being injected.
+  // Named per session and anchor so a caller can find the exact stale block;
+  // its text and dependency list are still stored, which is why this says
+  // "suspended" and not "deleted". In a dry-run nothing was committed.
+  // A summary can depend ONLY on retired materials and never have read the
+  // knowledge row whose correction triggered this, so "built from knowledge X"
+  // would name a source it never had. What the id honestly is: the correction
+  // that caused the suspension.
+  for (const s of r.suspendedSummaries) {
+    process.stdout.write(
+      (dryRun ? "summary that would be suspended: " : "summary suspended: ") +
+        "session " + s.sessionId + " anchor " + s.anchorId +
+        " (suspended by the correction of knowledge " + s.triggerKnowledgeId + ")\n",
     );
   }
   // D6: a refused correction hands the caller everything needed to keep

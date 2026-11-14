@@ -19,6 +19,9 @@ export * from "./relation";
 // consolidation + reversible forgetting (sixth arm, Phase-1 shadow).
 export * from "./consolidate";
 
+// #263: summary provenance and the suspension a correction causes (D8/D9).
+export * from "./summary-sources";
+
 // access_events tamper-evidence chain (writer side; verifier is independent).
 export * from "./access-chain";
 
