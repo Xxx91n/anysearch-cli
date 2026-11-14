@@ -514,6 +514,59 @@ async function buildKnowledge(
   upgraded.close();
 }
 
+// --- S8: a citation to an ALREADY-RETIRED material still suspends ---------
+
+{
+  // The window this closes: the summary was generated from a tool result that
+  // cited a material, and that material was corrected before the summary was
+  // written. Resolving only the CURRENT row would drop the citation, so
+  // `saveSummaryAnchor` would find nothing to check and store the summary as
+  // VALID even though its body states the replaced fact.
+  const db = "s8.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "session-s8";
+  await store.ensureSession(sid, "acme");
+
+  const built = await buildKnowledge(store, sid, "acme", OLD_FACT, "https://acme.example/s8");
+  // One of the row's own materials — these are what a correction retires.
+  const oldMaterial = built.materialIds[0]!;
+  const oldUrl = q(db, "SELECT url FROM retrieval_results WHERE id = ?", oldMaterial)!.url as string;
+  assert(typeof oldUrl === "string" && oldUrl.length > 0, "S8 fixture: the material has a URL");
+
+  // The correction retires that material.
+  const correctionMaterial = await seedEpisode(store, sid, "https://acme.example/s8-notice", "notice", NEW_FACT, "acme");
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [correctionMaterial], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    {
+      summarize: async (eps: ConsolidateEvidence[]) =>
+        eps.some((e) => e.title === "CURRENT KNOWLEDGE") ? MERGED_FACT : NEW_FACT,
+      classify: SUPPORTED,
+      verify: async () => CORRECTION_VERDICT,
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep.update === 1, "S8 fixture: the correction landed");
+  const retired = qAll(db, "SELECT id FROM retrieval_results WHERE id = ? AND superseded_by IS NOT NULL", oldMaterial);
+  assert(retired.length === 1, "S8 fixture: the old material is now retired");
+
+  // The summary arrives AFTER, citing the retired material's URL.
+  const resolved = store.resolveSummarySources([oldUrl]);
+  const ids = resolved.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(ids.includes(oldMaterial),
+    "S8: a citation to an ALREADY-RETIRED material is still resolved (got " + JSON.stringify(ids) + ")");
+
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "S8-STALE: written after the material was retired",
+    sources: resolved,
+  });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId),
+    "S8: the summary is written SUSPENDED instead of being injected as current");
+  const text = (await store.getAnchors(sid)).find((a) => a.id === anchorId)!.payload as any;
+  assert(String(text.summary).includes("S8-STALE"), "S8: its text is still recorded");
+}
+
 // --- helper contracts -----------------------------------------------------
 
 {

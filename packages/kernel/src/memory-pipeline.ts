@@ -898,6 +898,10 @@ export class MemoryPipeline {
       const previousSummaryAnchorId = prevSummaryAnchor?.id;
 
       // D5: fire-and-forget compression helper.
+      // #263: set when the source read failed. The state must NOT advance then:
+      // this turn's summary was skipped, so the next turn has to retry the same
+      // gap instead of believing it was compressed.
+      let summaryWriteSkipped = false;
       const fireCompress = (deadline?: AbortSignal) => {
         // A shared deadline that already expired means this turn's background
         // budget is spent; do not start a call that can only fail.
@@ -946,6 +950,7 @@ export class MemoryPipeline {
                 "[anysearch] summary sources unreadable — skipping this turn's summary write\n",
               );
             } catch { /* stderr unavailable */ }
+            summaryWriteSkipped = true;
             return;
           }
           const sources = read.sources;
@@ -1055,10 +1060,18 @@ export class MemoryPipeline {
       }
 
       // D7: Persist consolidation state to anchor (UPSERT in saveAnchor).
-      this.consolidationState = result.state;
-      try {
-        await store.saveAnchor(sessionId, "consolidation_state", result.state);
-      } catch {}
+      //
+      // #263: NOT when this turn's summary was skipped. Advancing
+      // `lastSummaryMsgCount` would make the next turn's distillGap skip the
+      // very search results this turn never compressed, and the later summary
+      // would state those facts with no recorded source — the summary that
+      // cannot be suspended.
+      if (!summaryWriteSkipped) {
+        this.consolidationState = result.state;
+        try {
+          await store.saveAnchor(sessionId, "consolidation_state", result.state);
+        } catch {}
+      }
 
       // L2 cold path — FTS5 recall.
       // 1.5.1 stores assistant tool calls as type:"toolCall" with `arguments`;

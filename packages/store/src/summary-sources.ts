@@ -317,11 +317,21 @@ export function resolveSummarySourcesFromUrls(
   const out: SummarySourceRef[] = [];
   const seen = new Set<string>();
   const KNOWLEDGE_PREFIX = "knowledge://semantic/";
+  // Every row the URL ever had, CLOSED ones included. The summary was generated
+  // from a tool result that cited this URL; if a correction replaced that row
+  // between generation and this write, the version the text actually states is
+  // the CLOSED one. Resolving only the current row would drop exactly that
+  // citation, `saveSummaryAnchor` would find nothing to check, and the summary
+  // would be stored VALID even though its body came from the replaced version.
+  //
+  // Currency is NOT decided here: `isSourceCurrent` runs inside the write
+  // transaction and turns a closed ref into a suspended summary. Unsigned
+  // (archived = 0) rows are skipped — archiving is a retention decision, not a
+  // version change.
   const materialStmt = db.prepare(
-    "SELECT id FROM retrieval_results WHERE url = ? AND valid_until IS NULL AND superseded_by IS NULL AND archived = 0 ORDER BY id",
+    "SELECT id FROM retrieval_results WHERE url = ? AND archived = 0 ORDER BY id",
   );
-  // Existence only: currency is decided in the write transaction by
-  // isSourceCurrent, which is the single place that knows what a replacement is.
+  // Existence only: same reason as above, currency is decided at write time.
   const knowledgeStmt = db.prepare(
     "SELECT id FROM semantic_memories WHERE id = ?",
   );

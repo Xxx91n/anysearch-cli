@@ -521,6 +521,61 @@ async function main() {
       "P13: blank and missing URLs are filtered before the resolver sees them (got " + JSON.stringify(seenUrls) + ")");
   }
 
+  // P14: a skipped summary must NOT advance the consolidation state.
+  //
+  // The guard lives inside fireCompress, but the state is persisted OUTSIDE it
+  // (see consolidate()). A `return` inside fireCompress alone would still let
+  // `lastSummaryMsgCount` move to the current message count, so the next turn's
+  // distillGap would skip the very search results this turn never compressed —
+  // and the later summary would state those facts with no recorded source.
+  //
+  // Driven here through the real consolidate() with a store whose source read
+  // throws: the summarizer itself is a real SDK import (un-mockable, see
+  // memory-pipeline.test.ts), so no anchor is written either way — but the
+  // STATE is what this assertion reads, and that is exactly the observable this
+  // guard changes.
+  {
+    const p14Store = new SqliteSessionStore(join(dir, "p14.db"));
+    const p14Session = "session-p14";
+    await p14Store.createSession("acme");
+    await p14Store.ensureSession(p14Session, "acme");
+    const throwing = Object.create(p14Store) as SqliteSessionStore;
+    Object.defineProperty(throwing, "resolveSummarySources", {
+      value: () => { throw new Error("source lookup failed"); },
+    });
+    const p14Runtime = new MemoryPipeline({
+      store: throwing as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: p14Session,
+      models: { getModel: () => ({ id: "stub" }) } as any,
+    });
+    const longTurn = [
+      { role: "user", content: [{ type: "text", text: "go investigate" }] },
+      { role: "assistant", content: [{ type: "toolCall", name: "search", arguments: { query: "p14 query" } }] },
+      { role: "toolResult", name: "search", content: [{ type: "text", text: "{}" }] },
+      { role: "assistant", content: [{ type: "text", text: "first look" }] },
+      { role: "user", content: [{ type: "text", text: "keep going" }] },
+    ];
+    const before = p14Runtime.getConsolidationState();
+    await p14Runtime.consolidate(longTurn as any, 200_000, true);
+    await p14Runtime.flush();
+    const after = p14Runtime.getConsolidationState();
+    assert(after.lastSummaryMsgCount === before.lastSummaryMsgCount,
+      "P14: lastSummaryMsgCount did not advance after a skipped summary write (before=" +
+      before.lastSummaryMsgCount + " after=" + after.lastSummaryMsgCount + ")");
+    // And the persisted state agrees with the in-memory one.
+    const stateAnchors = (await p14Store.getAnchors(p14Session)).filter((a) => a.anchorType === "consolidation_state");
+    const persistedCount = stateAnchors.length === 0
+      ? 0
+      : Number((stateAnchors[stateAnchors.length - 1]!.payload as any)?.lastSummaryMsgCount ?? 0);
+    assert(persistedCount === 0,
+      "P14: no advanced consolidation state was persisted either (got " + persistedCount + ")");
+    p14Store.close();
+  }
+
   store.close();
 }
 
