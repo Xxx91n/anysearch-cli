@@ -134,13 +134,72 @@ export function stripInjectedBlocks(text: string): string {
     const end = body.indexOf(PREFS_CLOSE_TAG);
     if (end >= 0) body = body.slice(end + PREFS_CLOSE_TAG.length);
   }
-  let cut = -1;
-  for (const tag of INJECTED_BLOCK_TAGS) {
-    const at = body.indexOf(BLANK_LINE + tag);
-    if (at >= 0 && (cut < 0 || at < cut)) cut = at;
-  }
+  // Only a TRAILING run of injected blocks is removed.
+  //
+  // Injection appends its blocks after the user's text and leaves nothing after
+  // them, so a genuine injected region always reaches the end of the message.
+  // Cutting at the first tag seen anywhere was wrong: a user writing a log check
+  // followed by an example [RAG Context] line and then a real instruction lost
+  // everything after that tag — including the instruction — and the plan still
+  // reported itself complete.
+  //
+  // So a candidate cut only counts when every blank-line-separated segment from
+  // that point to the end begins with one of the known tags. Otherwise the tag is
+  // the user's own text and the message is left whole.
+  const cut = trailingInjectionStart(body);
   if (cut >= 0) body = body.slice(0, cut);
   return body.trim();
+}
+
+/**
+ * Where a trailing run of injected blocks starts, or -1 when there is none.
+ *
+ * @param body - The message text, after any leading preferences block is removed.
+ */
+function trailingInjectionStart(body: string): number {
+  for (const tag of INJECTED_BLOCK_TAGS) {
+    let at = body.indexOf(BLANK_LINE + tag);
+    while (at >= 0) {
+      const candidate = at + BLANK_LINE.length;
+      if (isAllInjectedBlocks(body.slice(candidate))) return at;
+      at = body.indexOf(BLANK_LINE + tag, at + 1);
+    }
+  }
+  return -1;
+}
+
+/**
+ * Could this whole tail be injected blocks?
+ *
+ * Two conditions, and the second is the one an earlier version missed:
+ *
+ * 1. every blank-line-separated segment begins with a known tag;
+ * 2. no segment carries a SINGLE newline followed by a line that is neither blank
+ *    nor another tag.
+ *
+ * Condition 2 exists because injection joins its blocks with a blank line, so
+ * inside one injected block there is no bare newline starting a new non-tag line.
+ * A user writing a tag line and then the real instruction one newline below
+ * produced exactly that shape ("[RAG Context] example" then "change: weekends
+ * only"), and a tag-only check swallowed the instruction.
+ */
+function isAllInjectedBlocks(tail: string): boolean {
+  if (tail.length === 0) return false;
+  const segments = tail.split(BLANK_LINE);
+  if (segments.length === 0) return false;
+  return segments.every((seg) => {
+    const t = seg.trimStart();
+    if (!INJECTED_BLOCK_TAGS.some((tag) => t.startsWith(tag))) return false;
+    for (const line of seg.split("\n").slice(1)) {
+      const trimmed = line.trimStart();
+      if (trimmed.length === 0) continue;
+      if (INJECTED_BLOCK_TAGS.some((tag) => trimmed.startsWith(tag))) continue;
+      // A continuation line inside a real injected block never exists, so this
+      // is the user's own text and the tail is not pure injection.
+      return false;
+    }
+    return true;
+  });
 }
 
 interface MaterialRow {

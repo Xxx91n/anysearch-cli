@@ -777,6 +777,63 @@ function userText(db: string, sessionId: string): any[] {
   closeStore(store);
 }
 
+// --- R15: a tag the USER wrote does not cut their instruction -------------
+//
+// Injection appends its blocks at the END. Cutting at the first known tag seen
+// anywhere was wrong: a user quoting "[RAG Context]" and then giving the real
+// instruction lost that instruction, and the plan still reported itself complete.
+{
+  // A genuine injected tail still goes.
+  assert(stripInjectedBlocks("my question\n\n[Session Memory] support runs weekdays") === "my question",
+    "R15: a real injected tail is removed");
+  assert(stripInjectedBlocks("q\n\n[RAG Context] a\n\n[Session Memory] b\n\n[Research Recall] c") === "q",
+    "R15: a run of several injected blocks is removed together");
+
+  // A tag in the MIDDLE of the user's own text does not cut it.
+  const withTag = "check this log:\n\n[RAG Context] example\nchange: weekends only";
+  assert(stripInjectedBlocks(withTag) === withTag,
+    "R15: a tag the user wrote mid-message leaves the text intact (got " +
+      JSON.stringify(stripInjectedBlocks(withTag)) + ")");
+  assert(stripInjectedBlocks(withTag).includes("change: weekends only"),
+    "R15: the instruction AFTER the user's own tag survives");
+
+  // Mixed: user tag first, genuine injected tail last — only the tail goes.
+  const mixed = "fix the tag handling:\n\n[Session Memory] sample\nmust output JSON\n\n[Session Memory] injected";
+  const strippedMixed = stripInjectedBlocks(mixed);
+  assert(strippedMixed.includes("must output JSON"),
+    "R15: text between a user tag and a real injected tail is kept");
+  assert(!strippedMixed.includes("[Session Memory] injected"),
+    "R15: the genuine trailing block is still removed");
+
+  // Preferences stay a leading block: that shape is unambiguous.
+  assert(stripInjectedBlocks('<user_preferences updated="x">\n- a: b\n</user_preferences>\n\nreal question') === "real question",
+    "R15: a leading preferences block is removed as before");
+}
+
+// --- R16: the plan receives an instruction the user put after a tag --------
+{
+  const db = "r16.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const owner = "session-tagging";
+  await store.ensureSession(owner, "acme");
+  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
+
+  const built = await buildKnowledge(store, owner, "acme", THREE_OLD, "https://acme.example/tag");
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "an earlier summary", sources: [{ kind: "material", id: built.materialIds[0]! }],
+  });
+  const anchorId = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  const live = "fix the tag handling:\n\n[RAG Context] example\nchange: weekends only";
+  const plan = store.planSummaryRebuild({ sessionId: owner, anchorId, currentUserTurn: live });
+  const lastTurn = plan.taskRecords[plan.taskRecords.length - 1]!;
+  assert(lastTurn.text.includes("change: weekends only"),
+    "R16: the instruction after the user's own tag reaches the plan (got " + JSON.stringify(lastTurn.text) + ")");
+
+  closeStore(store);
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }

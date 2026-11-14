@@ -1218,11 +1218,16 @@ export class MemoryPipeline {
           // per provider request, so two requests can be in flight before either
           // rebuild finishes.
           this.rebuildStarted.add(anchorId);
-          // The pre-injection text of the latest user turn IS this run's input.
-          // `inject` is the point that knows it, and `preInjectionQueryText` is
-          // the helper that strips the blocks a resumed array may already carry.
+          // The latest user turn IS this run's input, and this is the point that
+          // knows it. Read the text as given and let the STORE strip injected
+          // blocks: `preInjectionQueryText` cuts at the first known tag anywhere in
+          // the message, which is right for building a recall query (it only needs
+          // the leading question) but wrong here — a user who writes
+          // "[RAG Context] ..." followed by a real instruction would lose the
+          // instruction. The store's stripper only removes a TRAILING run of
+          // blocks, so user-authored tags survive.
           const liveTarget = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx]) : null;
-          const liveTurn = liveTarget ? preInjectionQueryText(liveTarget.text) : "";
+          const liveTurn = liveTarget ? liveTarget.text : "";
           this.track(
             this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
               .then(() => undefined, () => undefined),

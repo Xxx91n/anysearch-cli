@@ -42,7 +42,14 @@ const TASK_1 = "Find out when Acme support is reachable. Keep the answer short."
 const TASK_2 = "Change of plan: I only need the weekend schedule.";
 // What the "model" answers when the rebuild prompt arrives. It restates the
 // current fact and carries the task forward, the way a working rebuild does.
-const REBUILT = "Acme online support is now 24x7 every day, effective 2026-11-01. Task: weekend schedule only.";
+//
+// REBUILT_MARK is a string that appears ONLY in this generated summary — not in
+// the knowledge row, not in any task turn. Without it, "24x7 reached the prompt"
+// could be satisfied by the semantic recall arm alone, and the assertion would
+// pass while the summary block never showed up.
+const REBUILT_MARK = "SUMMARY-ONLY-MARKER-264";
+const REBUILT = "Acme online support is now 24x7 every day, effective 2026-11-01. " +
+  "Task: weekend schedule only. (" + REBUILT_MARK + ")";
 
 // ---------- local OpenAI-compatible SSE endpoint ----------
 
@@ -355,8 +362,13 @@ endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
     assert(!!rebuildReq, "M1: the rebuild prompt reached the provider");
     const rebuildBody = rebuildReq ? bodyText(rebuildReq.body) : "";
     assert(rebuildBody.includes(TASK_1), "M1: the rebuild prompt carries the user's own turn");
-    assert(rebuildBody.includes(OLD_FACT) || rebuildBody.includes(NEW_FACT),
-      "M1: the rebuild prompt carries material (old or current), so it is not empty");
+    // The CURRENT fact specifically. Accepting the old one here would let a
+    // mis-resolved source pass: the fake endpoint answers a fixed string either
+    // way, so nothing downstream would notice the input was stale.
+    assert(rebuildBody.includes(NEW_FACT),
+      "M1: the rebuild prompt carries the CURRENT fact, not only the replaced one");
+    assert(rebuildBody.includes(OLD_FACT),
+      "M1: the replaced value is still shown, but as history (the prompt has a REPLACED section)");
 
     // Turn two: the rebuilt summary is now current, so the request must show it.
     requestLog = [];
@@ -365,8 +377,8 @@ endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
     const chatBodies = requestLog.filter((r) => r.role === "chat").map((r) => bodyText(r.body)).join("\n");
     assert(chatBodies.includes(TASK_2),
       "M1: the user's own second turn is in the request, not pushed out");
-    assert(chatBodies.includes("24x7"),
-      "M1: the rebuilt summary text reached the model on the next turn");
+    assert(chatBodies.includes(REBUILT_MARK),
+      "M1: the REBUILT SUMMARY BLOCK reached the model (marker only the summary carries)");
     assert(!chatBodies.includes("weekdays 9:00-17:00"),
       "M2: the replaced fact is NOT presented as a current conclusion");
 
