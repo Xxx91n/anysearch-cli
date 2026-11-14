@@ -300,11 +300,15 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // Named per session and anchor so a caller can find the exact stale block;
   // its text and dependency list are still stored, which is why this says
   // "suspended" and not "deleted". In a dry-run nothing was committed.
+  // A summary can depend ONLY on retired materials and never have read the
+  // knowledge row whose correction triggered this, so "built from knowledge X"
+  // would name a source it never had. What the id honestly is: the correction
+  // that caused the suspension.
   for (const s of r.suspendedSummaries) {
     process.stdout.write(
       (dryRun ? "summary that would be suspended: " : "summary suspended: ") +
         "session " + s.sessionId + " anchor " + s.anchorId +
-        " (built from replaced knowledge " + s.triggerKnowledgeId + ")\n",
+        " (suspended by the correction of knowledge " + s.triggerKnowledgeId + ")\n",
     );
   }
   // D6: a refused correction hands the caller everything needed to keep

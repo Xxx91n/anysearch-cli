@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { MemoryPipeline, readSummarySourcesForWrite } from "../src/memory-pipeline";
+import { MemoryPipeline, readSummarySourcesForWrite, collectRecallSourceRefs } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -362,7 +362,7 @@ async function main() {
     // is truncated to fit and the second hit can never be included. Fusion
     // order puts the big one first because it is the only match for the query.
     const bigText = "BIGFIRST263 " + "y".repeat(3000);
-    const otherText = "OTHER263 filler text here";
+    const otherText = "BIGFIRST263 OTHER263 filler text here";
     const big = (await l2Store.adjudicateMemory(l2Session, [
       { url: "https://l2.example/big", title: "BIGFIRST263", snippet: bigText, source: "tavily", evidence: 0.9, entity: "b-big" },
     ]))[0]!.insertedId!;
@@ -382,6 +382,9 @@ async function main() {
       sessionId: l2Session,
       llmRewriteFn: undefined,
     });
+    // Both rows mention the term, so the KEYWORD lane reaches both — no reliance
+    // on the optional embedding arm (which is absent when the package or model is
+    // unavailable, a state the source itself calls legitimate).
     const searchTurn = [{
       role: "assistant",
       content: [{ type: "toolCall", name: "search", arguments: { query: "BIGFIRST263" } }],
@@ -574,6 +577,135 @@ async function main() {
     assert(persistedCount === 0,
       "P14: no advanced consolidation state was persisted either (got " + persistedCount + ")");
     p14Store.close();
+  }
+
+  // P15: the summary block is NOT necessarily in the last text block. A caller
+  // can append its own text block after the injected one — then the stale
+  // summary sits in an EARLIER block while the last block holds new user text.
+  // Removing from the joined text and writing it into the last block moved the
+  // user's own words there and left the stale summary in place.
+  {
+    const p15Store = new SqliteSessionStore(join(dir, "p15.db"));
+    const p15Session = "session-p15";
+    await p15Store.createSession("acme");
+    await p15Store.ensureSession(p15Session, "acme");
+    const stale = "P15-STALE-263 old conclusion";
+    await p15Store.saveAnchor(p15Session, "rolling_summary", {
+      summary: stale,
+      sources: [{ kind: "material", id: 999999 }],
+    });
+    const p15Runtime = new MemoryPipeline({
+      store: p15Store as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: p15Session,
+    });
+    const blocks = [
+      { type: "text", text: "my question" + BLANK_LINE + "[Session Memory] " + stale },
+      { type: "image", data: "img1" },
+      { type: "text", text: "a later note the caller appended" },
+    ];
+    const history = [{ role: "user", content: blocks }];
+    const out = (await p15Runtime.inject(history as any))[0].content as any[];
+    const texts = out.filter((b: any) => b.type === "text").map((b: any) => b.text);
+    assert(!JSON.stringify(out).includes("P15-STALE-263"),
+      "P15: the stale summary is gone even though it was NOT in the last text block");
+    assert(texts[0] === "my question",
+      "P15: the first block keeps only the user's question (got " + JSON.stringify(texts[0]) + ")");
+    assert(texts[1] === "a later note the caller appended",
+      "P15: the later note stays in its own block, not merged into the first");
+    assert(out.length === 3 && out[1].type === "image",
+      "P15: the image block keeps its position");
+  }
+
+  // P16: an anchor read that THROWS must still clear the blocks the SAME runtime
+  // wrote earlier. Otherwise a caller reusing a previous inject() output keeps a
+  // summary a correction may already have suspended.
+  //
+  // The memory is per runtime, so this takes one runtime through: inject (which
+  // records the block), then make getAnchors fail, then inject the earlier
+  // output back. A fresh runtime could not know those blocks existed — that is
+  // the honest limit of the recovery, and why the check reads
+  // `injectedSummaryBlocks` rather than re-deriving blocks from the store.
+  {
+    const p16Store = new SqliteSessionStore(join(dir, "p16.db"));
+    const p16Session = "session-p16";
+    await p16Store.createSession("acme");
+    await p16Store.ensureSession(p16Session, "acme");
+    const p16Material = await seedMaterial(p16Store, p16Session, "https://p16.example/one", "P16 material text", "p16");
+    await p16Store.saveAnchor(p16Session, "rolling_summary", {
+      summary: "P16-BLOCK-263",
+      sources: [{ kind: "material", id: p16Material }],
+    });
+
+    // One runtime, but with a `getAnchors` we can break on demand.
+    let anchorReadsFail = false;
+    const flaky = Object.create(p16Store) as SqliteSessionStore;
+    Object.defineProperty(flaky, "getAnchors", {
+      value: async function (this: unknown, sid: string) {
+        if (anchorReadsFail) throw new Error("anchor read failed");
+        return (p16Store as any).getAnchors(sid);
+      },
+    });
+    const p16Runtime = new MemoryPipeline({
+      store: flaky as any,
+      retriever,
+      domain,
+      model: { id: "test" } as any,
+      streamFn: (() => ({ async *[Symbol.asyncIterator]() {} })) as any,
+      sessionId: p16Session,
+    });
+    const firstOut = await p16Runtime.inject([userTurn("turn one")]);
+    assert(promptText(firstOut).includes("P16-BLOCK-263"),
+      "P16 fixture: the first turn injected the summary");
+    // Now the anchor read starts failing and the caller hands back that output.
+    anchorReadsFail = true;
+    const out = promptText(await p16Runtime.inject(firstOut));
+    assert(!out.includes("P16-BLOCK-263"),
+      "P16: a failed anchor read clears the block this runtime wrote (unknown state injects nothing stale)");
+    assert(out.includes("turn one"), "P16: the user's own text survives");
+    p16Store.close();
+  }
+
+  // P17: a `recall_memory` result the summarizer saw becomes a dependency too.
+  // distillGap only reads `search` results, but the summarizer gets the full
+  // message list, so a recall hit can end up in the summary body. A recall hit
+  // has no URL, so it can only be bound through its row id.
+  {
+    const hitsFrom = (rowids: Array<number | string | null>) => [{
+      role: "toolResult",
+      name: "recall_memory",
+      content: [{ type: "text", text: JSON.stringify({
+        query: "q",
+        internal: rowids.map((rowid, i) => ({ role: "(semantic)", content: "c" + i, rank: i, sessionId: "s", rowid })),
+      }) }],
+    }];
+    const refs = collectRecallSourceRefs(hitsFrom([5, -7, 5, 0, "x", null]), 0);
+    assert(refs.length === 2,
+      "P17: only valid, distinct rowids count (got " + JSON.stringify(refs) + ")");
+    assert(refs.some((r) => r.kind === "material" && r.id === 5),
+      "P17: a positive rowid is an archive material");
+    assert(refs.some((r) => r.kind === "knowledge" && r.id === 7),
+      "P17: a negative rowid is a knowledge row (absolute id)");
+
+    // A search result is NOT a recall result: its material comes from the URL
+    // path, so it must not be double-counted here.
+    const searchOnly = [{
+      role: "toolResult",
+      name: "search",
+      content: [{ type: "text", text: JSON.stringify({ results: [{ url: "https://x.example/1" }] }) }],
+    }];
+    assert(collectRecallSourceRefs(searchOnly, 0).length === 0,
+      "P17: a search result contributes nothing here (it is bound by URL)");
+    // Malformed payloads never throw into the turn.
+    assert(collectRecallSourceRefs([{ role: "toolResult", name: "recall_memory", content: [{ type: "text", text: "not json" }] }], 0).length === 0,
+      "P17: an unparseable recall payload yields no refs, not an exception");
+    // Only messages from fromIdx onward are read.
+    const twoTurns = [...hitsFrom([9]), ...hitsFrom([11])];
+    assert(collectRecallSourceRefs(twoTurns, 1).every((r) => r.id === 11),
+      "P17: the fromIdx window is respected (only the newer turn counts)");
   }
 
   store.close();

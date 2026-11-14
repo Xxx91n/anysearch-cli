@@ -317,19 +317,24 @@ export function resolveSummarySourcesFromUrls(
   const out: SummarySourceRef[] = [];
   const seen = new Set<string>();
   const KNOWLEDGE_PREFIX = "knowledge://semantic/";
-  // Every row the URL ever had, CLOSED ones included. The summary was generated
-  // from a tool result that cited this URL; if a correction replaced that row
-  // between generation and this write, the version the text actually states is
-  // the CLOSED one. Resolving only the current row would drop exactly that
-  // citation, `saveSummaryAnchor` would find nothing to check, and the summary
-  // would be stored VALID even though its body came from the replaced version.
+  // EVERY row the URL ever had: closed ones, archived ones, all of them. Two
+  // distinct cases here and both matter:
   //
-  // Currency is NOT decided here: `isSourceCurrent` runs inside the write
-  // transaction and turns a closed ref into a suspended summary. Unsigned
-  // (archived = 0) rows are skipped — archiving is a retention decision, not a
-  // version change.
+  // - a CORRECTION closed the row between generation and this write, so the
+  //   version the summary text actually states is the closed one. Keeping only
+  //   the current row would drop that citation, `saveSummaryAnchor` would find
+  //   nothing to check, and the summary would be stored VALID.
+  // - ARCHIVING is a retention decision, not a version change. A material the
+  //   tool read and that was archived before this write is still what the
+  //   summary used; skipping it would lose the dependency entirely, so a later
+  //   correction of the knowledge it supported could not find this summary.
+  //
+  // Currency is NOT decided here. `isSourceCurrent` (inside the write
+  // transaction) treats a superseded row as "not current" and suspends the
+  // summary; archived-but-not-superseded stays a valid dependency, which is
+  // exactly the distinction the ticket's archive rule asks for.
   const materialStmt = db.prepare(
-    "SELECT id FROM retrieval_results WHERE url = ? AND archived = 0 ORDER BY id",
+    "SELECT id FROM retrieval_results WHERE url = ? ORDER BY id",
   );
   // Existence only: same reason as above, currency is decided at write time.
   const knowledgeStmt = db.prepare(

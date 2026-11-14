@@ -338,12 +338,16 @@ export function buildAnsChatConsolidateResult(
   // wording tracks the dry-run: in a preview the suspension was rolled back, so
   // "would be suspended" is the honest phrasing — the same rule the correction
   // lines above follow.
+  // A summary can depend ONLY on retired materials and never have read the
+  // knowledge row whose correction triggered this, so "built from knowledge X"
+  // would name a source it never had. What the id honestly is: the correction
+  // that caused the suspension.
   const suspendedText = (report.suspendedSummaries ?? []).length === 0
     ? ""
     : "\n" + report.suspendedSummaries.map((s) =>
         (report.dryRun ? "summary that would be suspended: " : "summary suspended: ") +
         "session " + s.sessionId + " anchor " + s.anchorId +
-        " (built from replaced knowledge " + s.triggerKnowledgeId + ")",
+        " (suspended by the correction of knowledge " + s.triggerKnowledgeId + ")",
       ).join("\n");
   // Design: #262 (D11) — a content-only proxy still sees BOTH sides of an
   // unresolved collision — the plan-era target, this run's candidate and

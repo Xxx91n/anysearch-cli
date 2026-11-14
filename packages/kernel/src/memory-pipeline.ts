@@ -157,6 +157,55 @@ export function readSummarySourcesForWrite(
   return { ok: true, sources };
 }
 
+// #263 (D9): the row ids a tool result cited, from a `recall_memory` payload.
+//
+// `distillGap` only reads `search` results, and that is correct: the gap text is
+// built from search snippets for the summarizer. But the summarizer also sees
+// the FULL message list, so a `recall_memory` result can end up in the summary
+// body. A recall hit carries no URL, so it can never be bound to a dependency
+// through `resolveSummarySources`; what it does carry (since #263) is the
+// archive row id in `internal[].rowid`. Collecting those ids here is what lets
+// the summary record "I read this row too" — without it, correcting that row
+// would never suspend the summary, and the replaced text would keep being
+// injected.
+//
+// Positive rowid = archive material, negative = knowledge row (SessionStore's
+// semantic arm). Unknown/absent rowids contribute nothing.
+export function collectRecallSourceRefs(
+  messages: any[],
+  fromIdx: number,
+): Array<{ kind: "material" | "knowledge"; id: number }> {
+  const out: Array<{ kind: "material" | "knowledge"; id: number }> = [];
+  const seen = new Set<string>();
+  for (const msg of messages.slice(Math.max(0, fromIdx))) {
+    if (msg?.role !== "tool" && msg?.role !== "toolResult") continue;
+    const toolName = msg.toolName || msg.name || "";
+    if (typeof toolName !== "string" || !toolName.includes("recall_memory")) continue;
+    const raw = typeof msg.content === "string"
+      ? msg.content
+      : Array.isArray(msg.content)
+        ? msg.content.map((c: any) => c?.text || "").join("")
+        : "";
+    if (!raw) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { continue; }
+    const internal = parsed?.internal;
+    if (!Array.isArray(internal)) continue;
+    for (const hit of internal) {
+      const rowid = Number(hit?.rowid);
+      if (!Number.isInteger(rowid) || rowid === 0) continue;
+      const ref = rowid > 0
+        ? { kind: "material" as const, id: rowid }
+        : { kind: "knowledge" as const, id: Math.abs(rowid) };
+      const key = ref.kind + ":" + ref.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ref);
+    }
+  }
+  return out;
+}
+
 // gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
@@ -384,6 +433,9 @@ const RESEARCH_RECALL_TAG = "[Research Recall]";
 const INJECTION_TAGS = [RAG_CONTEXT_TAG, RECOVERY_DIGEST_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
 const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
+// The separator inject() puts before each injected block (a blank line). Named
+// once so the write side and the strip side cannot disagree about it.
+const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
 
 /**
  * Remove previously injected summary blocks from one message.
@@ -409,40 +461,65 @@ const PREFS_CLOSE_TAG = "</user_preferences>";
  * @returns The message without those blocks, or the original message.
  */
 function stripSummaryBlocks(message: any, known: Set<string>): any {
-  const target = readMessageText(message);
-  if (!target) return message;
   if (known.size === 0) return message;
-  let text = target.text;
-  let changed = false;
-  // Longest first. Two summaries can share a prefix — an older short version and
-  // a newer one that extends it ("para one" vs "para one\n\nold hours 9-17"). A
-  // shorter block removed first would cut that prefix out of the longer block,
-  // and the longer one could then never match, leaving exactly the stale line the
-  // removal exists to delete. Removing the longer string first keeps both cases
-  // correct: it disappears whole, and the shorter one is no longer present.
-  const ordered = [...known]
-    .filter((block) => block.length > 0)
-    .sort((a, b) => b.length - a.length);
-  for (const block of ordered) {
-    // The block was appended after a blank line (see inject()). Removing the
-    // separator with it keeps the field from leaving a growing run of blank
-    // lines behind, while never touching a block that is not ours.
-    const withSeparator = "\n\n" + block;
-    let at = text.indexOf(withSeparator);
-    while (at >= 0) {
-      text = text.slice(0, at) + text.slice(at + withSeparator.length);
-      changed = true;
-      at = text.indexOf(withSeparator);
-    }
-    // Also handle the block sitting at the very start of the text channel.
-    if (text.startsWith(block)) {
-      text = text.slice(block.length);
-      changed = true;
-    }
+  if (!Array.isArray(message?.content)) {
+    // String content: one text channel, so the whole-string removal applies.
+    const target = readMessageText(message);
+    if (!target) return message;
+    const text = removeKnownBlocks(target.text, known);
+    return text === target.text ? message : writeMessageText(message, text, target) ?? message;
   }
-  if (!changed) return message;
-  const next = writeMessageText(message, text, target);
-  return next ?? message;
+  // Block array: remove per TEXT BLOCK, in place. Operating on the joined text
+  // and then writing it back into one block is what reordered interleaved
+  // content: a caller may append its own text block after the injected one
+  // ("question + summary", image, "more text"), so the summary is not
+  // necessarily in the LAST block, and the text around it belongs to other
+  // blocks. Each block keeps its own text and its own position.
+  let changed = false;
+  const blocks: any[] = [];
+  for (const block of message.content) {
+    if (block && typeof block === "object" && (block as any).type === "text" && typeof (block as any).text === "string") {
+      const before = (block as any).text as string;
+      const after = removeKnownBlocks(before, known);
+      if (after !== before) {
+        changed = true;
+        blocks.push({ ...block, text: after });
+        continue;
+      }
+    }
+    blocks.push(block);
+  }
+  return changed ? { ...message, content: blocks } : message;
+}
+
+/**
+ * Remove every known block string from one text channel.
+ *
+ * Longest first: two summaries can share a prefix (an older short version and a
+ * newer one that extends it), and removing the short one first would cut that
+ * prefix out of the longer one so it could never match — leaving exactly the
+ * stale line the removal exists to delete.
+ *
+ * @param text - The text channel of one block.
+ * @param known - Exact block strings the pipeline may remove.
+ * @returns The text with those blocks deleted; unchanged when none matched.
+ */
+function removeKnownBlocks(text: string, known: Set<string>): string {
+  let out = text;
+  const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
+  for (const block of ordered) {
+    // The block was appended after a blank line (see inject()); removing the
+    // separator with it keeps the field from leaving a run of blank lines behind.
+    const withSeparator = BLANK_LINE_BEFORE_BLOCK + block;
+    let at = out.indexOf(withSeparator);
+    while (at >= 0) {
+      out = out.slice(0, at) + out.slice(at + withSeparator.length);
+      at = out.indexOf(withSeparator);
+    }
+    // A block sitting at the very start of the channel has no separator before it.
+    if (out.startsWith(block)) out = out.slice(block.length);
+  }
+  return out;
 }
 
 /**
@@ -465,37 +542,18 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
  */
 function writeMessageText(message: any, text: string, target: { kind: "string" | "blocks" }): any | null {
   if (target.kind === "string") return { ...message, content: text };
+  // A block array reaching here means the caller is replacing the whole text
+  // channel (string-shaped removal only), so the text lands in the last text
+  // block and the other blocks keep their order.
   if (!Array.isArray(message?.content)) return null;
-  // Find the last text block: that is the one appendMessageText wrote into.
   let lastTextIdx = -1;
   for (let i = message.content.length - 1; i >= 0; i--) {
     const block = message.content[i];
     if (block && typeof block === "object" && (block as any).type === "text") { lastTextIdx = i; break; }
   }
   if (lastTextIdx < 0) return null;
-  // Distribute the surviving text the same way it was read: text blocks joined
-  // by "\n". The strict rule is that the tail removed from the last block
-  // shrinks only that block, so the earlier text blocks keep their exact text.
-  const blocks: any[] = [];
-  let remaining = text;
-  for (let i = 0; i < message.content.length; i++) {
-    const block = message.content[i];
-    if (i !== lastTextIdx) {
-      blocks.push(block);
-      // Consume this block's text (plus the join separator) from the front so
-      // the last block receives whatever is left.
-      if (block && typeof block === "object" && (block as any).type === "text" && typeof (block as any).text === "string") {
-        const own = (block as any).text as string;
-        remaining = remaining.startsWith(own + "\n")
-          ? remaining.slice(own.length + 1)
-          : remaining.startsWith(own)
-            ? remaining.slice(own.length)
-            : remaining;
-      }
-      continue;
-    }
-    blocks.push({ ...block, text: remaining });
-  }
+  const blocks = message.content.map((block: any, i: number) =>
+    i === lastTextIdx ? { ...block, text } : block);
   return { ...message, content: blocks };
 }
 
@@ -839,6 +897,15 @@ export class MemoryPipeline {
       // then this runtime's own search could have written an anchor and been
       // mistaken for a recovered record.
       this.recoveryDigestResolved = true;
+      // #263: the anchor read failed, so the suspension state is unknown. The
+      // removal above could not run, and a caller that reuses a previous
+      // inject() output would keep its old `[Session Memory]` / `[Research
+      // Recall]` blocks — which may already be suspended. Remove the blocks
+      // THIS runtime wrote (no anchor read needed) and append nothing: with
+      // unknown state, injecting is the failure mode the ticket forbids.
+      if (this.injectedSummaryBlocks.size > 0) {
+        result = result.map((message: any) => stripSummaryBlocks(message, this.injectedSummaryBlocks));
+      }
     }
 
     return result;
@@ -953,7 +1020,14 @@ export class MemoryPipeline {
             summaryWriteSkipped = true;
             return;
           }
+          // #263 (D9): recall hits the summarizer also saw. They carry no URL,
+          // so they cannot be recovered from `resolveSummarySources`; the ids
+          // come straight from the tool result (see collectRecallSourceRefs).
+          // Merged with the search-material refs, deduped by kind+id.
           const sources = read.sources;
+          for (const ref of collectRecallSourceRefs(messages, result.summaryRequest?.msgCountAtTrigger ?? 0)) {
+            if (!sources.some((r) => r.kind === ref.kind && r.id === ref.id)) sources.push(ref);
+          }
           this.consolidationState = {
             version: result.state.version,
             consecutiveReuses: 0,

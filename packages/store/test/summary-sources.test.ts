@@ -567,6 +567,41 @@ async function buildKnowledge(
   assert(String(text.summary).includes("S8-STALE"), "S8: its text is still recorded");
 }
 
+// --- S9: an ARCHIVED material is still a dependency -----------------------
+
+{
+  // Archiving is a retention decision, not a version change (see
+  // isSourceCurrent). A material the tool read and that was archived before the
+  // summary was written is STILL what the summary used; dropping it would lose
+  // the dependency, and a later correction of the knowledge it supported could
+  // not find this summary.
+  const db = "s9.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "session-s9";
+  await store.ensureSession(sid, "acme");
+  const material = await seedEpisode(store, sid, "https://acme.example/s9", "s9", OLD_FACT, "acme");
+  const url = q(db, "SELECT url FROM retrieval_results WHERE id = ?", material)!.url as string;
+
+  // Archive it through the product path (explicit ids, apply).
+  store.applyArchive([material]);
+  assert(q(db, "SELECT archived FROM retrieval_results WHERE id = ?", material)!.archived === 1,
+    "S9 fixture: the material is archived");
+  assert(q(db, "SELECT superseded_by FROM retrieval_results WHERE id = ?", material)!.superseded_by === null,
+    "S9 fixture: archived is NOT the same as superseded");
+
+  const resolved = store.resolveSummarySources([url]);
+  const ids = resolved.filter((r: SummarySourceRef) => r.kind === "material").map((r: SummarySourceRef) => r.id);
+  assert(ids.includes(material),
+    "S9: an archived material is still resolved as a dependency (got " + JSON.stringify(ids) + ")");
+
+  // And it does NOT suspend the summary: archived-but-current is still current.
+  await store.saveAnchor(sid, "rolling_summary", { summary: "S9-LIVE", sources: resolved });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  assert(!store.suspendedSummaryAnchorIds(sid).has(anchorId),
+    "S9: reading an archived material does not suspend the summary (archiving is not a correction)");
+}
+
 // --- helper contracts -----------------------------------------------------
 
 {
