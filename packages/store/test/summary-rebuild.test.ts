@@ -37,6 +37,7 @@ import {
   readStoredMessageText,
   stripInjectedBlocks,
   SUMMARY_REBUILD_FACT_BUDGET_CHARS,
+  SUMMARY_REBUILD_TASK_BUDGET_CHARS,
 } from "../src/summary-rebuild";
 import { __setExtractorForTest } from "@anysearch-cli/embedding";
 import type { ConsolidateEvidence, ConsolidateVerifyVerdict } from "../src/consolidate";
@@ -244,6 +245,10 @@ function userText(db: string, sessionId: string): any[] {
   const plan = store.planSummaryRebuild({ sessionId: owner, anchorId: summaryAnchorId });
   assert(plan.recordedSources === 2, "R1: the plan sees both recorded sources (got " + plan.recordedSources + ")");
   assert(plan.complete, "R1: a live source plus user turns make the plan complete");
+  // The suspended version's own text travels with the plan so a fact no source
+  // records but no correction touched is not silently dropped (D8).
+  assert(plan.previousSummary === "Acme support runs weekdays 9-17",
+    "R1: the plan carries the suspended summary's own text (got " + String(plan.previousSummary) + ")");
   assert(plan.facts.length === 2, "R1: both current facts are included (got " + plan.facts.length + ")");
   const factIds = new Set(plan.facts.map((f) => f.kind + ":" + f.id));
   assert(factIds.has("knowledge:" + built.knowledgeId), "R1: the knowledge row the summary read is included");
@@ -270,10 +275,11 @@ function userText(db: string, sessionId: string): any[] {
   });
   // No suspension existed yet in this fixture, so the write reports that honestly.
   assert(wrote.anchorId !== null, "R6: the rebuilt summary is stored");
-  assert(wrote.cleared === false && wrote.reason === "the old summary had no open suspension to clear",
+  assert(wrote.status === "nothing-to-clear" && wrote.reason === "the old summary had no open suspension to clear",
     "R6: a clear with nothing to clear says so instead of claiming one");
+  assert(wrote.cleared === false, "R6: nothing was cleared, so the flag stays false");
 
-  const after = store.getAnchors(owner);
+  const after = await store.getAnchors(owner);
   const newest = after.filter((a) => a.anchorType === "rolling_summary").pop()!;
   assert(newest.id === wrote.anchorId, "R6: the rebuilt anchor is the newest rolling summary");
   const payload = newest.payload as any;
@@ -344,7 +350,8 @@ function userText(db: string, sessionId: string): any[] {
     sources: plan.facts.map((f) => ({ kind: f.kind, id: f.id })),
     taskRecordIds: plan.taskRecords.map((r) => r.messageId),
   });
-  assert(wrote.cleared === true, "R6: a successful rebuild clears the suspension");
+  assert(wrote.cleared === true && wrote.status === "cleared",
+    "R6: a successful rebuild clears the suspension");
   assert(store.suspendedSummaryAnchorIds(owner).size === 0, "R6: the session has no suspended summary left");
 
   const trail = qAll(db, "SELECT cleared_at, cleared_by_anchor_id FROM summary_suspensions WHERE session_id = ? AND anchor_id = ?", owner, suspendedAnchor);
@@ -430,6 +437,10 @@ function userText(db: string, sessionId: string): any[] {
 
   const defaultBudgetIsPositive = SUMMARY_REBUILD_FACT_BUDGET_CHARS > 0;
   assert(defaultBudgetIsPositive, "R5: the default fact budget is a usable positive number");
+  // Both budgets must be real numbers: a zero or negative task budget would make
+  // every plan incomplete, which silently turns the whole rebuild off.
+  assert(SUMMARY_REBUILD_TASK_BUDGET_CHARS > 0,
+    "R5: the default task budget is a usable positive number");
 
   closeStore(store);
 }
@@ -466,6 +477,8 @@ function userText(db: string, sessionId: string): any[] {
   });
   assert(wrote.anchorId !== null, "R7: the text is still stored (it is an honest record of what was generated)");
   assert(wrote.cleared === false, "R7: the SUSPENSION IS NOT CLEARED when the source moved on");
+  assert(wrote.status === "stored-not-current",
+    "R7: the write says the text was stored but is not current (got " + wrote.status + ")");
   assert(!!wrote.reason && wrote.reason.includes("replaced"), "R7: the reason says a source was replaced");
   assert(store.suspendedSummaryAnchorIds(owner).has(anchorId),
     "R7: the old suspension stays in force");

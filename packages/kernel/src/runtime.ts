@@ -32,11 +32,30 @@ export type AgentEvent =
  */
 export interface SummaryRebuildReport {
   anchorId: number;
-  outcome: "rebuilt" | "incomplete" | "no-model" | "generation-failed" | "write-failed";
+  outcome: SummaryRebuildOutcome;
   reasons: string[];
   newAnchorId: number | null;
   cleared: boolean;
+  /** Usage of the generation call, when one ran. Absent when no call was made. */
+  usage?: unknown;
 }
+
+/**
+ * How one rebuild attempt ended (the store and the kernel share this list).
+ *
+ * `stored-not-current` is distinct on purpose: the text WAS written, but the
+ * suspension stayed because a source moved on (or there was no open suspension
+ * to clear). Calling that "write-failed" would report a stored anchor as a write
+ * error, and calling it "rebuilt" would claim a recovery that did not happen.
+ */
+export type SummaryRebuildOutcome =
+  | "rebuilt"
+  | "incomplete"
+  | "no-model"
+  | "generation-failed"
+  | "write-failed"
+  | "stored-not-current"
+  | "rejected-write";
 
 /** One run's complete accounting; `missing` names the dimensions the provider did not report. */
 export interface RunUsage {

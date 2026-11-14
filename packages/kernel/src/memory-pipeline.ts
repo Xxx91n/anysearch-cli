@@ -913,17 +913,30 @@ export class MemoryPipeline {
     // the injection path keeps its pre-#264 behaviour.
     if (!this.hasRebuildSeam()) return undefined;
     let attempt: SummaryRebuildAttempt;
+    let called = false;
     try {
+      const apiKey = await this.deps.getApiKey?.();
+      // A rebuild that got past the plan makes exactly one model call, whether or
+      // not the provider answers with usage. `called` is what lets the ledger
+      // count it even then — the same rule #273 applied to adjudication: a sent
+      // call that reports nothing is a call with UNKNOWN tokens, not a free one.
+      called = typeof this.deps.streamFn === "function" && !!this.deps.model;
       attempt = await rebuildSuspendedSummary(this.deps.store, {
         sessionId,
         anchorId,
         streamFn: this.deps.streamFn as any,
         model: this.deps.model,
+        // Same hand-off as every peer kernel call: without it, a host that
+        // configured the key outside ANS_LLM_API_KEY fails every rebuild on auth.
+        ...(apiKey ? { apiKey } : {}),
         // Same bound as the other background summary work: flush() waits for this
         // write before the store closes, so an unbounded provider stall would hold
         // the CLI open until the provider timed out.
         signal: AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
       });
+      // A plan that was not complete (or a store without the seam) never reached
+      // the model, so it must not be counted as a billed call.
+      if (attempt.outcome === "incomplete" || attempt.outcome === "no-model") called = false;
     } catch (e) {
       attempt = {
         anchorId,
@@ -932,13 +945,21 @@ export class MemoryPipeline {
         newAnchorId: null,
         cleared: false,
       };
+      called = false;
     }
     this.rebuildAttempts.set(anchorId, attempt);
     if (attempt.usage) {
       // The rebuild is a real provider call on this session's behalf, so it books
       // to the same summary ledger the run reports (D4: nothing hidden outside
-      // the main call). Missing usage is handled by accumulateUsage.
+      // the main call).
       accumulateUsage(this.summaryUsage, { role: "assistant", usage: attempt.usage });
+    } else if (called) {
+      // Sent but no usage block came back: count the call and say the tokens are
+      // unknown. Leaving it out entirely would let a silent provider hide the
+      // call from the cost report, which is the failure #273 fixed for
+      // adjudication.
+      this.summaryUsage.assistantCalls += 1;
+      this.summaryUsage.callsWithoutUsage = (this.summaryUsage.callsWithoutUsage ?? 0) + 1;
     }
     if (!attempt.cleared) {
       // stderr, not stdout: the host protocols own stdout. The caller also sees
@@ -1157,18 +1178,28 @@ export class MemoryPipeline {
       // call here would stall the turn and double its latency. The result is
       // drained by flush() and reported at the end of the run.
       //
+      // Design: the rebuild is dispatched as background work, not awaited in
+      // `inject()` — `inject` runs before every provider request, so waiting on a
+      // second model call here would double the turn's latency. Accepted cost:
+      // the rebuilt text reaches the prompt one turn later than ideal.
+      //
       // At most once per anchor per runtime, and only when the plan is complete:
       // an unrecoverable summary costs no model call, and a failed rebuild leaves
-      // the suspension in force. The rebuilt version reaches the caller's prompt
-      // on the NEXT turn — one turn later than ideal, but never at the price of
-      // making the current turn wait on a summary call.
+      // the suspension in force.
       //
-      // l2_recall is deliberately not rebuilt: its payload is a recall snippet
+      // NOT dispatched when `suspensionUnknown`: that flag means the read threw,
+      // so this summary is only ASSUMED suspended. Rebuilding on that assumption
+      // would spend a model call and add an anchor for a summary that may be
+      // perfectly current — and the write would then report "no open suspension
+      // to clear" about work nobody asked for. Unknown state skips this turn;
+      // the next readable turn decides.
+      //
+      // Design: l2_recall is not rebuilt — its payload is a recall snippet
       // produced by a query, not a statement of the session's task, so
-      // regenerating it means running that recall again — which the next search
+      // regenerating it means running that recall again, which the next search
       // turn does on its own. Inventing text for it is the fabrication D10
       // forbids.
-      if (summarySuspended && summaryAnchor) {
+      if (summarySuspended && !suspensionUnknown && summaryAnchor) {
         const anchorId = summaryAnchor.id;
         if (!this.rebuildStarted.has(anchorId) && this.hasRebuildSeam()) {
           // Marked SYNCHRONOUSLY, before the async body runs: `inject` is awaited

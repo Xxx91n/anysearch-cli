@@ -277,6 +277,41 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
   return new Set(rows.map((r) => r.anchorId));
 }
 
+/** How many hops a supersede chain may take before the line is treated as dead. */
+export const MAX_SUPERSEDE_CHAIN_HOPS = 64;
+
+/** One row of a knowledge line while walking it to its live head. */
+export interface SupersedeChainRow {
+  id: number;
+  content: string;
+  valid_until: string | null;
+  superseded_by: number | null;
+}
+
+/**
+ * Walk a supersede chain to the version that is live now.
+ *
+ * Design: one walker shared by consolidation and the summary rebuild — a chain
+ * longer than 64 hops, or one ending in a closed row with no successor, means
+ * the line has no current version, and both callers must reach that verdict the
+ * same way. A second copy of this loop is how the two would drift.
+ *
+ * @returns The live head, or null when the line has no current version.
+ */
+export function liveHeadOf(db: Database.Database, fromId: number): SupersedeChainRow | null {
+  let id = fromId;
+  for (let hop = 0; hop < MAX_SUPERSEDE_CHAIN_HOPS; hop++) {
+    const row = db
+      .prepare("SELECT id, content, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
+      .get(id) as SupersedeChainRow | undefined;
+    if (!row) return null;
+    if (row.valid_until === null) return row;
+    if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
+    id = row.superseded_by;
+  }
+  return null;
+}
+
 /** One thing the summarizer read: the URL it saw, and the archive row when known. */
 export interface SummaryRead {
   url: string;

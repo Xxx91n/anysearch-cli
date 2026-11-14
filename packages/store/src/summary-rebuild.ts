@@ -32,14 +32,21 @@ import type Database from "better-sqlite3";
 import { containsSecret } from "./secret.js";
 import {
   isSourceCurrent,
+  liveHeadOf,
   parseSummarySourceRefs,
   recordSummarySources,
+  type SupersedeChainRow,
   type SummaryAnchorType,
   type SummarySourceRef,
 } from "./summary-sources.js";
 
-/** How many hops a supersede chain may take before the line is treated as dead. */
-const MAX_CHAIN_HOPS = 64;
+interface MaterialRow {
+  id: number;
+  title: string | null;
+  snippet: string | null;
+  url: string;
+  superseded_by: number | null;
+}
 
 /**
  * Character budget for the CURRENT FACT material handed to the generator.
@@ -144,28 +151,6 @@ export function stripInjectedBlocks(text: string): string {
   return body.trim();
 }
 
-interface KnowledgeRow {
-  id: number;
-  content: string;
-  valid_until: string | null;
-  superseded_by: number | null;
-}
-
-/** The live head of one knowledge line, or null when the line has no current version. */
-function knowledgeHead(db: Database.Database, fromId: number): KnowledgeRow | null {
-  let id = fromId;
-  for (let hop = 0; hop < MAX_CHAIN_HOPS; hop++) {
-    const row = db
-      .prepare("SELECT id, content, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
-      .get(id) as KnowledgeRow | undefined;
-    if (!row) return null;
-    if (row.valid_until === null) return row;
-    if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
-    id = row.superseded_by;
-  }
-  return null;
-}
-
 interface MaterialRow {
   id: number;
   title: string | null;
@@ -201,12 +186,12 @@ function resolveCurrent(
   if (ref.kind === "knowledge") {
     const row = db
       .prepare("SELECT id, content, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
-      .get(ref.id) as KnowledgeRow | undefined;
+      .get(ref.id) as SupersedeChainRow | undefined;
     if (!row) return { fact: null, replaced: null, exclusion: { kind: "knowledge", id: ref.id, reason: "missing-row" } };
     if (row.valid_until === null) {
       return { fact: { kind: "knowledge", id: row.id, text: row.content }, replaced: null, exclusion: null };
     }
-    const head = knowledgeHead(db, ref.id);
+    const head = liveHeadOf(db, ref.id);
     if (!head) {
       return {
         fact: null,
@@ -227,7 +212,7 @@ function resolveCurrent(
   if (row.superseded_by === null) {
     return { fact: { kind: "material", id: row.id, text: materialText(row) }, replaced: null, exclusion: null };
   }
-  const head = knowledgeHead(db, row.superseded_by);
+  const head = liveHeadOf(db, row.superseded_by);
   if (!head) {
     return {
       fact: null,
@@ -467,6 +452,16 @@ export interface SummaryRebuildWriteResult {
    * suspension was cleared. False means the suspension is still in force.
    */
   cleared: boolean;
+  /**
+   * How the write ended, so the caller can tell the three cases apart instead of
+   * folding them into one "not cleared":
+   * - `cleared`: the new version is current and the old suspension is gone;
+   * - `stored-not-current`: the anchor was written but is itself suspended (a
+   *   source moved on), so both versions stay out of the prompt;
+   * - `nothing-to-clear`: the anchor was written and is current, but there was no
+   *   open suspension row to clear (something else already cleared it).
+   */
+  status: "cleared" | "stored-not-current" | "nothing-to-clear" | "rejected";
   /** Why the write did not clear the suspension, when it did not. */
   reason: string | null;
 }
@@ -494,11 +489,11 @@ export function writeRebuiltSummaryAnchor(
     text: string;
     sources: SummarySourceRef[];
     taskRecordIds: number[];
-    generator?: { kind: "model" | "none"; note?: string };
+    generator?: { kind: "model"; note?: string };
   },
 ): SummaryRebuildWriteResult {
   if (typeof req.text !== "string" || req.text.trim().length === 0) {
-    return { anchorId: null, cleared: false, reason: "the generated summary was empty" };
+    return { anchorId: null, cleared: false, status: "rejected", reason: "the generated summary was empty" };
   }
   // Only a rolling summary is rebuilt from session material. An l2_recall block
   // is a recall snippet produced by a query, so rewriting it here would claim a
@@ -510,6 +505,7 @@ export function writeRebuiltSummaryAnchor(
     return {
       anchorId: null,
       cleared: false,
+      status: "rejected",
       reason: old
         ? "only a rolling summary can be rebuilt from session material; this anchor is " + old.anchorType
         : "the suspended anchor no longer exists in this session",
@@ -534,7 +530,7 @@ export function writeRebuiltSummaryAnchor(
   // a generated summary that trips the secret detector is dropped here too. The
   // suspension then stays in force, which is the safe direction.
   if (containsSecret("rolling_summary " + json)) {
-    return { anchorId: null, cleared: false, reason: "the generated summary matched the secret guard, so it was not stored" };
+    return { anchorId: null, cleared: false, status: "rejected", reason: "the generated summary matched the secret guard, so it was not stored" };
   }
 
   const write = db.transaction((): SummaryRebuildWriteResult => {
@@ -563,6 +559,7 @@ export function writeRebuiltSummaryAnchor(
       return {
         anchorId,
         cleared: false,
+        status: "stored-not-current",
         reason: "a source was replaced while the summary was being rebuilt; the new version is suspended too",
       };
     }
@@ -575,9 +572,9 @@ export function writeRebuiltSummaryAnchor(
       // No live suspension row: either another writer already cleared it or the
       // anchor was never suspended. The new summary is still current, so this is
       // not a failure — but say what happened instead of implying a clear.
-      return { anchorId, cleared: false, reason: "the old summary had no open suspension to clear" };
+      return { anchorId, cleared: false, status: "nothing-to-clear", reason: "the old summary had no open suspension to clear" };
     }
-    return { anchorId, cleared: true, reason: null };
+    return { anchorId, cleared: true, status: "cleared", reason: null };
   });
   return write.immediate();
 }

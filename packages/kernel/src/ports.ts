@@ -160,8 +160,23 @@ export interface SummaryRebuildPort {
     text: string;
     sources: Array<{ kind: "material" | "knowledge"; id: number }>;
     taskRecordIds: number[];
-    generator?: { kind: "model" | "none"; note?: string };
-  }): { anchorId: number | null; cleared: boolean; reason: string | null };
+    generator?: { kind: "model"; note?: string };
+  }): SummaryRebuildWriteResult;
+}
+
+/**
+ * Structural mirror of the store's write result.
+ *
+ * `status` is the discriminator: a written anchor that is not current
+ * (`stored-not-current`) and a clear with nothing to clear (`nothing-to-clear`)
+ * are different from a rejection, and folding them together is how a stored
+ * summary gets reported as a write error.
+ */
+export interface SummaryRebuildWriteResult {
+  anchorId: number | null;
+  cleared: boolean;
+  status: "cleared" | "stored-not-current" | "nothing-to-clear" | "rejected";
+  reason: string | null;
 }
 
 /**

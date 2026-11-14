@@ -31,6 +31,7 @@ import {
   formatSummaryRebuildLine,
   generateRebuiltSummary,
   rebuildSuspendedSummary,
+  ungroundedSummarySentences,
 } from "../src/summary-rebuild";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort } from "../src/ports";
@@ -227,6 +228,15 @@ async function seedSuspended(
   assert(!prompt.slice(0, replacedAt).includes("weekdays 9-17"),
     "K2: the old value is not offered as current material");
 
+  // The suspended version's own text is offered as context, clearly marked as
+  // not evidence, so a fact no source recorded but no correction touched is not
+  // silently dropped (D8).
+  assert(prompt.includes("=== PREVIOUS SUMMARY (suspended; not evidence) ==="),
+    "K2: the previous summary has its own section");
+  assert(prompt.includes("old text"), "K2: the previous summary text is present");
+  assert(prompt.includes("Do not treat it as evidence"),
+    "K2: the prompt says the previous summary is not evidence");
+
   // Placeholder filling is single-pass: inserted text is never re-scanned.
   const injected = fillOnce("{A} {B}", { A: "{B}", B: "value" });
   assert(injected === "{B} value", "K1: a fact containing a placeholder is not rewritten (got " + injected + ")");
@@ -243,7 +253,12 @@ async function seedSuspended(
   const { anchorId } = await seedSuspended(store, sid);
 
   const calls = { n: 0 };
-  const pipeline = pipelineFor(store, sid, { streamFn: stubStream("Acme support is now 24x7. Task: weekend schedule only.", { calls }) });
+  // The text restates the CURRENT knowledge row (the correction's replacement),
+  // so it passes the grounding check the same way a real rebuild answer would.
+  const rebuiltText =
+    "Acme online support is now 24x7 every day, effective 2026-11-01. " +
+    "Task: weekend schedule only.";
+  const pipeline = pipelineFor(store, sid, { streamFn: stubStream(rebuiltText, { calls }) });
 
   // First turn: the suspended version is NOT injected, and a rebuild is dispatched.
   const first = await pipeline.inject([userTurn("What did we find so far?")]);
@@ -273,7 +288,6 @@ async function seedSuspended(
   assert(text.includes("24x7"), "K3: the rebuilt summary is injected on the next turn");
   assert(!text.includes("superseded summary text"), "K3: the replaced summary text is gone from the prompt");
   assert(text.includes("And now?"), "K3: the user's own turn is untouched");
-
   // The rebuilt anchor records where its task text came from.
   const anchors = await store.getAnchors(sid);
   const rebuilt = anchors.find((a) => a.id === attempts[0]!.newAnchorId)!;
@@ -379,7 +393,112 @@ async function seedSuspended(
     facts: [{ kind: "knowledge", id: 1, text: "f" }], replaced: [], exclusions: [],
     complete: true, reasons: [], recordedSources: 1,
   });
-  assert(empty === null, "K6: a stream with no text produces no summary");
+  assert(empty.text === "", "K6: a stream with no text produces no summary text");
+}
+
+// --- K9: the api key reaches the generation call -----------------------------
+//
+// Without it, a key configured outside ANS_LLM_API_KEY fails auth and EVERY
+// rebuild reports generation-failed for a reason the caller cannot see.
+{
+  const db = "k9.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k9";
+  await store.ensureSession(sid, "acme");
+  const { anchorId } = await seedSuspended(store, sid);
+
+  let seenOptions: any = null;
+  const capturingStream = ((_model: any, _ctx: any, options: any) => {
+    seenOptions = options;
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text_delta" as const, delta: "Acme online support is now 24x7 every day, effective 2026-11-01." };
+        yield { type: "done" as const, message: { role: "assistant", content: "", usage: { input: 5, output: 5, totalTokens: 10 } } };
+      },
+    };
+  }) as any;
+
+  const attempt = await rebuildSuspendedSummary(store, {
+    sessionId: sid, anchorId, streamFn: capturingStream, model: {} as any, apiKey: "sk-test-key",
+  });
+  assert(seenOptions?.apiKey === "sk-test-key", "K9: the generation call carries the api key");
+  assert(attempt.outcome === "rebuilt", "K9: the call with a key succeeds (got " + attempt.outcome + ")");
+}
+
+// --- K10: an unsupported sentence is refused before the write ----------------
+
+{
+  const db = "k10.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k10";
+  await store.ensureSession(sid, "acme");
+  const { anchorId } = await seedSuspended(store, sid);
+  const before = (await store.getAnchors(sid)).length;
+
+  const attempt = await rebuildSuspendedSummary(store, {
+    sessionId: sid,
+    anchorId,
+    // Nothing in the plan says anything like this.
+    streamFn: stubStream("Acme was acquired by Zenith Holdings in 2019 for four billion dollars."),
+    model: {} as any,
+  });
+  assert(attempt.outcome === "generation-failed",
+    "K10: a summary stating unsourced facts is refused (got " + attempt.outcome + ")");
+  assert(attempt.reasons.some((r) => r.includes("no recorded source")),
+    "K10: the reason says the text had no support");
+  assert(attempt.newAnchorId === null, "K10: nothing is written");
+  assert((await store.getAnchors(sid)).length === before, "K10: no anchor was added");
+  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId), "K10: the suspension stays");
+
+  // The pure check: a sentence that restates a source passes, an invented one
+  // does not, and the previous summary counts as a ground (D8 keeps a fact no
+  // source recorded but no correction touched).
+  const grounds = ["Acme online support runs weekdays 9:00-17:00", "the user asked for the weekend schedule"];
+  assert(ungroundedSummarySentences("Acme online support runs weekdays 9:00-17:00.", grounds).length === 0,
+    "K10: a restatement of a source is grounded");
+  assert(ungroundedSummarySentences("Zenith Holdings acquired the company in 2019.", grounds).length === 1,
+    "K10: an invented sentence is caught");
+  assert(ungroundedSummarySentences("Zenith Holdings acquired the company in 2019.", [
+    ...grounds, "Zenith Holdings acquired the company in 2019",
+  ]).length === 0,
+    "K10: text carried over from the previous summary is grounded");
+}
+
+// --- K11: a summary that was never suspended is not rebuilt on a guess ------
+//
+// `suspendedSummaryAnchorIds` throwing sets `suspensionUnknown`, which means the
+// summary is only ASSUMED suspended. Rebuilding on that assumption would spend a
+// model call and add an anchor for a summary that may be perfectly current.
+{
+  const db = "k11.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k11";
+  await store.ensureSession(sid, "acme");
+  await store.append(sid, { role: "user", content: USER_TASK });
+  const ra = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/x", title: "x", snippet: "Acme support runs weekdays 9-17.", source: "tavily", evidence: 0.9, entity: "acme",
+  }]);
+  const materialId = ra[0]?.insertedId ?? 1;
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "a perfectly current summary", sources: [{ kind: "material", id: materialId }],
+  });
+  const before = (await store.getAnchors(sid)).length;
+  const calls = { n: 0 };
+
+  // Same real store, but its suspension read throws — the "state is unknown" path.
+  const broken = Object.create(store) as any;
+  broken.suspendedSummaryAnchorIds = () => { throw new Error("suspension read failed"); };
+  const pipeline = pipelineFor(broken, sid, { streamFn: stubStream("should not run", { calls }) });
+  const out = await pipeline.inject([userTurn("question")]);
+  await pipeline.flush();
+  assert(!promptText(out).includes("a perfectly current summary"),
+    "K11: an unknown suspension state still suppresses the block");
+  assert(calls.n === 0, "K11: no rebuild is attempted on a guess (got " + calls.n + " model calls)");
+  assert(pipeline.getSummaryRebuilds().length === 0, "K11: no attempt is claimed");
+  assert((await store.getAnchors(sid)).length === before, "K11: no anchor was added");
 }
 
 // --- K7: one attempt per anchor, not per turn ------------------------------
