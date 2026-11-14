@@ -538,6 +538,61 @@ function userText(db: string, sessionId: string): any[] {
   closeStore(store);
 }
 
+// --- R10: a material retired by ordinary replacement is history, not current --
+//
+// `valid_until` set with no successor is the write-time replacement (the same URL
+// fetched again). Quoting such a row as a current fact would put a stale value
+// into the rebuilt summary — the exact failure the ticket exists to stop. Archiving
+// is a retention decision, not a version change, so an archived row that is still
+// current stays a valid source.
+{
+  const db = "r10.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const owner = "session-invalidated";
+  await store.ensureSession(owner, "acme");
+  await store.append(owner, { role: "user", content: TASK_ORIGINAL });
+
+  // A distinct ENTITY per row on purpose: a second write for the same entity
+  // closes the earlier one (temporal supersede), and this section must control
+  // exactly which row closes and how.
+  const stale = await seedEpisode(store, owner, "https://acme.example/old-hours", "old", "Acme hours were 9-17.", "acme-hours-a");
+  const live = await seedEpisode(store, owner, "https://acme.example/live-hours", "live", "Acme hours are 8-20.", "acme-hours-b");
+  const fresh = await seedEpisode(store, owner, "https://acme.example/other", "other", "Acme support email is help@acme.com.", "acme-mail");
+  await store.saveAnchor(owner, "rolling_summary", {
+    summary: "summary over three materials",
+    sources: [
+      { kind: "material", id: stale },
+      { kind: "material", id: live },
+      { kind: "material", id: fresh },
+    ],
+  });
+  const anchorId = (await store.getAnchors(owner)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+
+  // The ordinary write-time replacement: the older row for the same URL is closed
+  // with no successor (this is what invalidateOldRecords does on a re-fetch).
+  const d = new Database(join(dir, db));
+  try {
+    d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(stale);
+  } finally {
+    d.close();
+  }
+
+  const plan = store.planSummaryRebuild({ sessionId: owner, anchorId });
+  const factIds = new Set(plan.facts.map((f) => f.kind + ":" + f.id));
+  assert(!factIds.has("material:" + stale),
+    "R10: a material retired by ordinary replacement is NOT quoted as a current fact");
+  assert(factIds.has("material:" + live), "R10: the live material is still quoted");
+  assert(factIds.has("material:" + fresh), "R10: an unrelated live material is still quoted");
+  assert(plan.replaced.some((r) => r.kind === "material" && r.id === stale),
+    "R10: the retired material is reported as replaced history");
+  assert(!plan.complete, "R10: a source with no current version leaves the plan incomplete");
+  assert(plan.reasons.some((r) => r.includes("no current version")),
+    "R10: the reason names the missing current version");
+
+  closeStore(store);
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }

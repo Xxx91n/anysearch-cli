@@ -149,6 +149,7 @@ interface MaterialRow {
   snippet: string | null;
   url: string;
   superseded_by: number | null;
+  valid_until: string | null;
 }
 
 function materialText(row: MaterialRow): string {
@@ -198,11 +199,23 @@ function resolveCurrent(
     };
   }
   const row = db
-    .prepare("SELECT id, title, snippet, url, superseded_by FROM retrieval_results WHERE id = ?")
+    .prepare("SELECT id, title, snippet, url, superseded_by, valid_until FROM retrieval_results WHERE id = ?")
     .get(ref.id) as MaterialRow | undefined;
   if (!row) return { fact: null, replaced: null, exclusion: { kind: "material", id: ref.id, reason: "missing-row" } };
-  if (row.superseded_by === null) {
+  if (row.superseded_by === null && row.valid_until === null) {
     return { fact: { kind: "material", id: row.id, text: materialText(row) }, replaced: null, exclusion: null };
+  }
+  // `valid_until` set with no successor is the ordinary write-time replacement
+  // (the same URL fetched again invalidates the older row). That row is history:
+  // quoting it as current would put a stale fact in the rebuilt summary, which is
+  // exactly what the ticket says must not happen. Archived rows are a retention
+  // decision, not a version change, so archiving alone does NOT disqualify a row.
+  if (row.superseded_by === null) {
+    return {
+      fact: null,
+      replaced: { kind: "material", id: ref.id, currentKind: null, currentId: null, text: materialText(row) },
+      exclusion: { kind: "material", id: ref.id, reason: "no-current-version" },
+    };
   }
   const head = liveHeadOf(db, row.superseded_by);
   if (!head) {

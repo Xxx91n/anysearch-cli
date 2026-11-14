@@ -86,7 +86,8 @@ versions) plus that session's own stored user turns.
   - `already-current` — the new version is current and injectable; only the clear
     did not happen (nothing was left open to clear).
   - `stored-not-current` — written but suspended too, because a source was
-    replaced mid-rebuild. Nothing is injected.
+    replaced mid-rebuild. Nothing is injected. One attempt per anchor per run:
+    a NEW run tries again, never a later turn of the same run.
   - Any other outcome means it is STILL suspended; `reasons` says what was
     missing.
 - The task requirement comes from the user's own stored turns, never from the old

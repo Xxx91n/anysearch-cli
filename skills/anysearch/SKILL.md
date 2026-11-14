@@ -76,7 +76,9 @@ their current versions) plus that session's own stored user turns.
     thing that did not happen is the clear (no suspension row was left open, so
     something else cleared it first). Read `reasons`, do not re-run anything.
   - `stored-not-current` — the text was written but is suspended as well, because
-    a source was replaced mid-rebuild. Nothing is injected; a later turn retries.
+    a source was replaced mid-rebuild. Nothing is injected. The rebuild is tried
+    once per anchor per run, so a NEW run (a new ans_chat call or a new `ans chat`
+    process) tries again — do not expect a retry inside the same run.
   - Any other outcome means the summary is STILL suspended, and `reasons` says
     what was missing (no recorded sources, no stored user turn, over budget, no
     model configured, or the model produced nothing).

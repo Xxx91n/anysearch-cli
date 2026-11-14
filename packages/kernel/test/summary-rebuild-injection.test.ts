@@ -586,6 +586,74 @@ async function seedSuspended(
     "K12: the line says the version is current, not that it is still suspended (got " + line + ")");
 }
 
+// --- K13: a suspended recall snippet is explained, not silently absent ------
+//
+// l2_recall is not rebuilt (a recall snippet belongs to the query that produced
+// it). Leaving it out with no word reads as "this session never recalled
+// anything"; the ticket requires a limit be stated instead of hidden.
+{
+  const db = "k13.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k13";
+  await store.ensureSession(sid, "acme");
+  await store.append(sid, { role: "user", content: USER_TASK });
+
+  // A live knowledge row built from three materials, plus a recall block that
+  // read one of them. The real correction then suspends BOTH: the rolling
+  // summary (rebuilt) and the recall block (reported, never rebuilt).
+  const old = "Acme online support runs weekdays 9:00-17:00.";
+  const ids: number[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const ra = await store.adjudicateMemory(sid, [{
+      url: "https://acme.example/k13-v" + i, title: "k13 v" + i, snippet: old,
+      source: "tavily", evidence: 0.9, entity: "acme-k13",
+    }]);
+    if (typeof ra[0]?.insertedId === "number") ids.push(ra[0]!.insertedId!);
+  }
+  const built = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+    { summarize: async () => old, classify: () => ({ label: "supported" as const, confidence: 0.95 }) },
+  );
+  const knowledgeId = built.semanticIds[0]!;
+  await store.saveAnchor(sid, "l2_recall", {
+    query: "acme hours", hits: old, sources: [{ kind: "knowledge", id: knowledgeId }],
+  });
+  const recallAnchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "l2_recall").pop()!.id;
+
+  const fresh = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/k13-notice", title: "notice",
+    snippet: "Acme online support is now 24x7 every day, effective 2026-11-01.",
+    source: "tavily", evidence: 0.9, entity: "acme-k13",
+  }]);
+  const rep = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: [fresh[0]!.insertedId!], sessionIdNotApplied: false }, allowSingleEvidence: true },
+    {
+      summarize: async () => "Acme online support is now 24x7 every day, effective 2026-11-01.",
+      classify: () => ({ label: "supported" as const, confidence: 0.95 }),
+      verify: async () => ({ alreadyCurrent: false, sameFact: true, reliable: true, relation: "correction" as const }),
+      verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+    },
+  );
+  assert(rep.update === 1, "K13 fixture: the correction landed (update=" + rep.update + ")");
+  assert(store.suspendedSummaryAnchorIds(sid).has(recallAnchorId),
+    "K13 fixture: the recall block is suspended by the correction");
+
+  const calls = { n: 0 };
+  const pipeline = pipelineFor(store, sid, { streamFn: stubStream("should not run", { calls }) });
+  await pipeline.inject([userTurn("question")]);
+  await pipeline.flush();
+
+  const attempts = pipeline.getSummaryRebuilds().filter((a) => a.anchorId === recallAnchorId);
+  assert(attempts.length === 1,
+    "K13: the suspended recall anchor is reported (got " + attempts.length + " entries)");
+  assert(attempts[0]!.outcome === "incomplete",
+    "K13: it is reported as not rebuilt, not as a recovery (got " + attempts[0]!.outcome + ")");
+  assert(attempts[0]!.reasons.some((r) => r.includes("research-recall snippet")),
+    "K13: the reason says why a recall snippet is not rebuilt");
+  assert(attempts[0]!.newAnchorId === null, "K13: no anchor is written for a recall snippet");
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }
