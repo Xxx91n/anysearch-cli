@@ -313,8 +313,30 @@ export function registerAnsChat(
                 {
                   type: "text" as const,
                   text: "ans_chat consolidate: " + report.correctionsIncomplete +
-                    " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+                    " correction(s) not completed (merge, re-judge, or final check); those rows keep their previous knowledge." +
                     (report.update > 0 ? (report.dryRun ? " " + report.update + " other correction(s) would land." : " " + report.update + " other correction(s) did land.") : "") +
+                    "\n" + result.content.map((c) => c.text).join("\n"),
+                },
+              ],
+            };
+          }
+          // Design: #262 (D11) — an unresolved concurrent conflict is a "not
+          // finished" run for the caller — the correction they sent did not
+          // land, and the current knowledge was not replaced by this run.
+          // Both sides' evidence is in the report; nothing was deleted and
+          // neither side was picked by write order.
+          if (report.conflicts > 0) {
+            const result = buildAnsChatConsolidateResult(report, usage, metering.metered
+              ? {}
+              : { budgetUnmetered: true, budgetUnmeteredReason: CONSOLIDATION_UNMETERED_TEXT[metering.reason] });
+            return {
+              ...result,
+              isError: true,
+              content: [
+                {
+                  type: "text" as const,
+                  text: "ans_chat consolidate: " + report.conflicts +
+                    " concurrent correction conflict(s) unresolved — this run did NOT replace the current knowledge; both sides' evidence is in the report." +
                     "\n" + result.content.map((c) => c.text).join("\n"),
                 },
               ],

@@ -251,6 +251,66 @@ async function callConsolidate(args: Record<string, unknown>) {
     "the full report travels in structuredContent");
 }
 
+// --- 10. #262 (D11): the result renders unresolved conflicts and resolved
+//         collisions for content-only proxies; the counts carry them ------
+{
+  const { buildAnsChatConsolidateResult } = await import("../src/ans-chat-session.js");
+  const report = {
+    dryRun: false, clustersScanned: 2, clustersTriggered: 2, llmUnavailable: 0,
+    gateRejected: 0, add: 0, noop: 1, update: 0, embeddingAbsent: 0,
+    scope: { by: "memory", sessionIds: [], memoryIds: [9, 10], sessionIdNotApplied: false, requestedMaterials: 2, materialsRead: 2 },
+    budgetRejected: 0,
+    singleEvidenceSkipped: 0,
+    verifyRejected: 0,
+    verifyDetails: [],
+    verifiedCorrections: [],
+    correctionsIncomplete: 0,
+    incompleteDetails: [],
+    conflicts: 1,
+    conflictDetails: [{
+      plannedTargetId: 4, plannedContent: "Acme support runs weekdays 9-17.",
+      candidate: "Acme support is weekend-only 10-18.",
+      evidence: [{ title: "Conflicting note", snippet: "weekend only", url: "https://b.example/notice-2" }],
+      currentTargetId: 7, currentContent: "Acme support is 24x7.",
+      currentEvidence: [{ title: "Official notice", snippet: "24x7", url: "https://acme.example/n1" }],
+      sameFact: true, reliable: true, relation: "unclear",
+      reason: "the re-judge could not reconcile this correction with the current version",
+      followUp: "并发冲突：两边各执一词……请先查证再决定。",
+      retries: 1,
+    }],
+    resolvedCollisions: [{ plannedTargetId: 4, targetId: 7, targetContent: "Acme support is 24x7.", resolution: "duplicate", sameFact: true, reliable: true, relation: "same", retries: 1 }],
+    semanticIds: [],
+    updates: [],
+  };
+  const usage = {
+    calls: 5, inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0,
+    totalTokens: 30, costUsd: 0, costBasis: "unknown" as const,
+    missing: ["consolidation cost"],
+  };
+  const result = buildAnsChatConsolidateResult(report as never, usage as never, {});
+  const text = result.content[0]!.text;
+  assert(/unresolved conflicts: 1/.test(text), "the readable line counts unresolved conflicts");
+  assert(/collisions resolved after re-read: 1/.test(text), "the readable line counts resolved collisions");
+  assert(/concurrent correction conflict \(planned knowledge 4, current knowledge 7, retries=1\)/.test(text),
+    "the conflict line names both knowledge rows and the retry count");
+  assert(text.includes("we planned to replace: Acme support runs weekdays 9-17."),
+    "the conflict block shows the planned target's text");
+  assert(text.includes("our candidate: Acme support is weekend-only 10-18."),
+    "the conflict block shows our candidate");
+  assert(text.includes("current live content: Acme support is 24x7."),
+    "the conflict block shows the CURRENT live content — not a guess");
+  assert(text.includes("https://b.example/notice-2") && text.includes("https://acme.example/n1"),
+    "the conflict block shows BOTH sides' source urls");
+  assert(/collision resolved \(duplicate no new version, knowledge 7 keeps the correction; re-judge retries=1/.test(text),
+    "the resolved-collision line names the duplicate resolution and its one retry");
+  const sc = result.structuredContent as any;
+  assert(sc.counts.unresolvedConflicts === 1, "counts.unresolvedConflicts carries the real conflicts");
+  assert(sc.counts.resolvedCollisions === 1, "counts.resolvedCollisions carries the resolved count");
+  assert(sc.counts.conflict === 0, "counts.conflict stays the claim-gate counter (0 here)");
+  assert(Array.isArray(sc.report.conflictDetails) && sc.report.conflictDetails.length === 1,
+    "the full conflict detail travels in structuredContent");
+}
+
 await server.close();
 store.close();
 rmSync(dir, { recursive: true, force: true });

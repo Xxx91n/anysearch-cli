@@ -22,6 +22,21 @@
 // Skip policy: the endpoint env must be present; a silent no-model run would
 // fake a pass, so this skips loudly instead.
 // Evidence: .scratch/correction-a1-a4-evidence.json (gitignored).
+//
+// UNCOVERED (real model) — #262 retry branches, deliberately not forced:
+// The concurrent-collision retry branches are validated by CONTROLLED
+// checkers only (packages/store/test/concurrent-correction.test.ts and
+// packages/store/test/consolidate-race-processes.test.ts). Real-model
+// coverage stays explicitly uncovered with these three labels, carried over
+// from the confirmed prototype round (SAMPLES-Q20-Q21-LOCK-COLDSTART.md):
+//   U1  B1 重试收敛：后提交方重读后识别"已有同样更正"、不制造第二个版本
+//       —— 真实模型未覆盖。
+//   U2  B2 重判后仍冲突：返回双方材料原文、来源、当前生效内容与差异
+//       —— 真实模型未覆盖。B2 的首次真实模型判定拒绝了这次更正；按
+//       Q21 这正是保守方向的预期行为，记录在案，但不把它当成重试分支
+//       的真实模型结论。
+//   U3  重试上限与入账：后提交方最多 2 次真实模型判断、不出现第三次
+//       重试、额外调用如实计入预算 —— 真实模型未覆盖。
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";

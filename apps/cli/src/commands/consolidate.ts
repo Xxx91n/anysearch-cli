@@ -65,6 +65,13 @@ function help(): string {
     "replacement is withheld and the run reports the correction as incomplete (exit 1);",
     "the previous knowledge stays live.",
     "",
+    "Concurrent corrections: when another session replaced the same knowledge first,",
+    "this run re-reads the current version and re-judges at most once. An already",
+    "applied correction creates no second version; a still-needed one is re-merged",
+    "onto the latest version. If that cannot be done, the conflict is reported with",
+    "both sides' materials, the current content and the reason, and the run exits 1",
+    "(the current knowledge is NOT replaced).",
+    "",
     "--dry-run runs the identical path inside a rolled-back transaction: nothing is",
     "saved (no knowledge, no material state, no version relation, no summary change).",
     "It can still call the model and cost money, and the preview describes the state it",
@@ -249,6 +256,8 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       (r.supersededClusterSkipped > 0 ? ", supersededClusterSkipped " + r.supersededClusterSkipped : "") +
       (r.verifyRejected > 0 ? ", verifyRejected " + r.verifyRejected : "") +
       (r.correctionsIncomplete > 0 ? ", correctionsIncomplete " + r.correctionsIncomplete : "") +
+      (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
+      (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") + "\n",
   );
 
@@ -306,6 +315,36 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   for (const d of r.incompleteDetails) {
     process.stdout.write(formatIncompleteCorrection(d));
   }
+  // Design: #262 (D11) — an unresolved collision between concurrent
+  // corrections. Both sides travel back — the planned target, our candidate
+  // and sources, the current live content, the other side's sources, the
+  // reason, next steps. Neither side is deleted and write order is not a
+  // verdict.
+  for (const d of r.conflictDetails) {
+    process.stdout.write(
+      "concurrent correction conflict: planned knowledge " + d.plannedTargetId +
+      ", current knowledge " + (d.currentTargetId ?? "none") + ", retries=" + d.retries + "\n" +
+      "  we planned to replace: " + d.plannedContent + "\n" +
+      "  our candidate: " + d.candidate + "\n" +
+      "  our sources: " + d.evidence.map((e) => e.url).join(", ") + "\n" +
+      "  current live content: " + d.currentContent + "\n" +
+      "  current sources: " + d.currentEvidence.map((e) => e.url).join(", ") + "\n" +
+      "  reason: " + d.reason + "\n" +
+      "  next: " + d.followUp + "\n",
+    );
+  }
+  // Design: #262 (D11) — a resolved collision is named too, so "the
+  // correction landed after one re-judge" is visible rather than
+  // indistinguishable from a normal run.
+  for (const d of r.resolvedCollisions) {
+    process.stdout.write(
+      "collision resolved: " + (d.resolution === "re-merged"
+        ? "knowledge " + d.targetId + " -> " + d.newId + " re-merged against the latest version"
+        : "no new version; knowledge " + d.targetId + " already carries the correction") +
+      " (re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
+      (d.reason ? ", " + d.reason : "") + ")\n",
+    );
+  }
 
   if (seams) {
     const u = seams.usage;
@@ -347,8 +386,22 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   if (r.correctionsIncomplete > 0) {
     process.stderr.write(
       "ans consolidate: " + r.correctionsIncomplete +
-        " correction(s) not completed (merge or final check); those rows keep their previous knowledge." +
+        " correction(s) not completed (merge, re-judge, or final check); those rows keep their previous knowledge." +
         (r.update > 0 ? (r.dryRun ? " " + r.update + " other correction(s) would land." : " " + r.update + " other correction(s) did land.") : "") + "\n",
+    );
+    return 1;
+  }
+  // Design: #262 (D11) — an unresolved concurrent conflict is "not finished"
+  // too: the caller's correction did not land and the current knowledge was
+  // not replaced by this run. Both sides' evidence is printed above; exit 0
+  // would read as success to an automated caller that only checks the code.
+  // (Dry-run keeps this exit: the repo already treats a previewed withheld
+  // correction as exit 1, and a previewed conflict is the same kind of
+  // "this would not finish" fact.)
+  if (r.conflicts > 0) {
+    process.stderr.write(
+      "ans consolidate: " + r.conflicts +
+        " concurrent correction conflict(s) unresolved — this run did not replace the current knowledge; both sides' evidence is printed above.\n",
     );
     return 1;
   }
