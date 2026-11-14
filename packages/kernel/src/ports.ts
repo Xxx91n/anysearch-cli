@@ -106,6 +106,12 @@ export interface BudgetLedgerPort {
   // Optional like the cap seams above; a ledger without it simply keeps the
   // pre-#275 behaviour. Returns the number of owner entries released.
   reclaimDeadReservations?(sessionId: string): number;
+  // #279: read-only probe for the rejected-reserve hint. True when the session
+  // holds reserved tokens that no owner row claims — the signature of a
+  // pre-#275 build's leftover (that build recorded no owners and took no
+  // session lock). Optional like the seams above; a ledger without it simply
+  // omits the hint. Never mutates anything.
+  hasUnownedReservedTokens?(sessionId: string): boolean;
 }
 
 // ResumeAnchorsPort: engine-side resume-anchor writer (#48).

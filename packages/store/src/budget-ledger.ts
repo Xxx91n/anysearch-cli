@@ -432,4 +432,16 @@ export class BudgetLedger {
       remainingCalls: row.callCap - row.reservedCalls - row.billableCalls,
     };
   }
+  // #279: read-only probe for the rejected-reserve hint. True when the session
+  // holds reserved tokens that no owner row claims — the signature of a
+  // pre-#275 build's leftover (that build recorded no owners and took no
+  // session lock). The residue itself is deliberately not cleared: clearing it
+  // cannot prove the old writer is gone, and a still-running old process would
+  // then spend against the same cap. Recovery is restarting the session.
+  hasUnownedReservedTokens(sessionId: string): boolean {
+    const balance = this.getBalance(sessionId);
+    if (!balance || !(balance.reservedTokens > 0)) return false;
+    const rows = this.stmts.sessionReservations.all(sessionId) as Array<{ dim: string }>;
+    return !rows.some((r) => r.dim === "tokens");
+  }
 }

@@ -2238,6 +2238,64 @@ console.log("---");
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
   }
 }
+// #279: a rejected reserve over a pre-#275 build's unowned leftover names the
+// leftover and the restart recovery in the error; a plain exhaustion does not.
+// The hint path itself clears nothing — the residue is kept by the #279
+// direction-1 rule (clearing it cannot prove the old writer is gone).
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-279-hint-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    // The pre-#275 write: the counter moved with no owner recorded.
+    const legacy = await store.createSession("chat");
+    store.initBudget(legacy.id, { tokenCap: 20_000, timeLimitMs: 60_000, callCap: 10 });
+    (store as any).db.prepare(
+      "UPDATE budget_ledger SET reserved_tokens = 12304 WHERE session_id = ?"
+    ).run(legacy.id);
+    const legacyLedger = store.createBudgetLedger();
+    const legacyRuntime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 20_000 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: legacy.id,
+      ledger: legacyLedger,
+    });
+    const legacyEvents: any[] = [];
+    for await (const ev of legacyRuntime.run("hello")) legacyEvents.push(ev);
+    const legacyError = legacyEvents.find((e) => e.type === "error");
+    assert(legacyError !== undefined, "#279: the run over the unowned leftover is rejected");
+    assert(/pre-#275 build/.test(legacyError?.message ?? ""),
+      "#279: the rejection names the pre-#275 leftover (got " + JSON.stringify(legacyError?.message) + ")");
+    assert(/restart the session/.test(legacyError?.message ?? ""),
+      "#279: the rejection names the restart recovery");
+    assert(legacyLedger.getBalance(legacy.id)!.reservedTokens === 12_304,
+      "#279: the hint path clears nothing — the residue is kept");
+    // Plain exhaustion (no residue) keeps the old message without the hint.
+    const plain = await store.createSession("chat");
+    store.initBudget(plain.id, { tokenCap: 100, timeLimitMs: 60_000, callCap: 10 });
+    const plainLedger = store.createBudgetLedger();
+    const plainRuntime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: plain.id,
+      ledger: plainLedger,
+    });
+    const plainEvents: any[] = [];
+    for await (const ev of plainRuntime.run("hello")) plainEvents.push(ev);
+    const plainError = plainEvents.find((e) => e.type === "error");
+    assert(plainError !== undefined, "#279 fixture: the plain cap rejects");
+    assert(!/pre-#275 build/.test(plainError?.message ?? ""),
+      "#279: plain exhaustion carries no leftover hint");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
 
 // #275: the runtime runs the dead-owner sweep at every run boundary, whether or
 // not a session lock was taken. Clearing counter amounts that no owner row

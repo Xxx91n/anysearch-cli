@@ -436,6 +436,27 @@ async function main() {
         "#275: a live owner's recorded share is never released");
       assert(ownedLedger.getBalance(s16.id)!.reservedTokens === 2304,
         "#275: the unowned 1000 and the owned 1304 are both still counted");
+      // 21b. #279: the read-only probe behind the rejected-reserve hint. The
+      //     s15 residue (12304 with no owner row) reads true; a session whose
+      //     reserved tokens are claimed by an owner row reads false. The probe
+      //     clears nothing — the residue stays, by the #279 direction-1 rule.
+      assert(residueLedger.hasUnownedReservedTokens(s15.id),
+        "#279: the probe sees the unowned residue on s15");
+      assert(!ownedLedger.hasUnownedReservedTokens(s16.id),
+        "#279: an owner row claiming the tokens dim reads false even with unowned residue present");
+      assert(residueLedger.getBalance(s15.id)!.reservedTokens === 12_304,
+        "#279: the probe is read-only — the residue is kept, not cleared");
+      // 21c. #279: an owner row in another dimension does not mask an unowned
+      //      token residue — the probe looks at the tokens dim only.
+      const s24 = await store.createSession("unowned-tokens-owned-usd");
+      const mixedLedger = new BudgetLedger((store as any).db);
+      mixedLedger.initBudget(s24.id, { tokenCap: 20_000, usdCap: 5, timeLimitMs: 60_000 });
+      (store as any).db.prepare(
+        "UPDATE budget_ledger SET reserved_tokens = 12304 WHERE session_id = ?"
+      ).run(s24.id);
+      assert(mixedLedger.reserveUsd(s24.id, 1), "#279 fixture: a live owner holds a usd reservation");
+      assert(mixedLedger.hasUnownedReservedTokens(s24.id),
+        "#279: a usd owner row does not mask the unowned token residue");
 
       // 22. #275: the leak exists in all three counters, so the release must too
       //     (CodeRabbit on #274 explicitly asked for usd and calls, not only
