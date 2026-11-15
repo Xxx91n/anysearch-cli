@@ -1705,13 +1705,12 @@ export class SqliteSessionStore implements SessionStore {
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
         "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank LIMIT ?",
+        " ORDER BY rank",
       );
       // SQL narrows to rows mentioning the object; the JS check applies the
       // exact rule (word boundaries for Latin names), so `LIKE '%acme%'` letting
       // `AcmeCloud` through cannot reach the caller.
-      const strictWindow = objectActive ? Math.max(limit * 4, 40) : limit;
-      for (const r of stmt.all(strict, ...objectParams, strictWindow) as Array<{ id: number; content: string; rank: number }>) {
+      for (const r of stmt.iterate(strict, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>) {
         if (latin.length >= limit) break;
         if (matchesObject(r.content)) pushLatin(r);
       }
@@ -1740,12 +1739,12 @@ export class SqliteSessionStore implements SessionStore {
           const BOUND = Math.max(limit * 20, 200);
           let scanned = 0;
           // The statement already carries the object condition, so the bound
-          // counts rows that can answer; the JS check below stays as the
-          // cross-language containment test the SQL LIKE cannot express.
-          for (const r of stmt.iterate(relaxed, ...objectParams, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
+          // counts object-eligible rows, not SQL prefix collisions.
+          for (const r of stmt.iterate(relaxed, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>) {
             if (latin.length >= limit) break;
+            if (!matchesObject(r.content)) continue;
             if (++scanned > BOUND) break;
-            if (coversMajority(terms, r.content) && matchesObject(r.content)) pushLatin(r);
+            if (coversMajority(terms, r.content)) pushLatin(r);
           }
         }
       }
@@ -1839,15 +1838,9 @@ export class SqliteSessionStore implements SessionStore {
         const runGran = (list: string[]): void => {
           if (list.length === 0 || cjk.length >= limit) return;
           const where = list.map(() => "s.content LIKE ?").join(" OR ");
-          const remaining = limit - cjk.length;
-          // SQL narrows to rows that mention the object at all; the JS check
-          // below applies the exact rule (word boundaries for Latin names).
-          // Reading a wider window is therefore safe rather than necessary: the
-          // pre-filter is what makes the answering row reachable at all, and the
-          // wider window only covers rows the loose LIKE let in and the exact
-          // check will drop. Without the JS check the CJK rung would serve
-          // `AcmeCloud 客服邮箱…` for the object `acme`.
-          const readWindow = objectActive ? Math.max(remaining * 4, 40) : remaining;
+          // SQL provides the coarse object check; the cursor keeps reading
+          // until exact word-boundary checks admit enough rows. Prefix
+          // collisions must not exhaust a fixed pre-filter window.
           // Design: full mixed-query coverage wins BEFORE LIMIT (#283).
           // Otherwise the Han lane can take a weaker Chinese row while the
           // Latin lane takes a short English row, cutting the bilingual answer
@@ -1859,9 +1852,9 @@ export class SqliteSessionStore implements SessionStore {
           const rows = this.db
             .prepare(
               "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
-              " AND (" + where + ")" + objectWhere + pairedOrder + " LIMIT ?",
+              " AND (" + where + ")" + objectWhere + pairedOrder,
             )
-            .all(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams, readWindow) as Array<{ id: number; content: string }>;
+            .iterate(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams) as Iterable<{ id: number; content: string }>;
           for (const r of rows) {
             if (cjk.length >= limit) break;
             if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
@@ -1875,8 +1868,8 @@ export class SqliteSessionStore implements SessionStore {
     }
     // Keyword fallback for scripts excluded by the ASCII query sanitizer.
     // FTS5's unicode61 tokenizer handles case folding (e.g. почта / Почта)
-    // without scanning the whole table. LIKE is a bounded substring fallback
-    // for scripts or fragments that unicode61 does not tokenize usefully.
+    // without scanning the whole table. LIKE reads substring candidates until
+    // enough object-eligible rows survive or the cursor is exhausted.
     const otherWords = [...new Set(
       (query.match(/[\p{L}\p{N}]+/gu) ?? [])
         .filter((w) => /[^\x00-\x7F]/u.test(w) &&
@@ -1896,14 +1889,16 @@ export class SqliteSessionStore implements SessionStore {
         const paired = this.db.prepare(
           "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
           "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere + " ORDER BY rank LIMIT ?",
+          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere + " ORDER BY rank",
         );
         const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
         const candidates = paired.iterate(
-          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", ...objectParams, scanBound,
+          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", ...objectParams,
         ) as Iterable<{ id: number; content: string; rank: number }>;
+        let objectCandidates = 0;
         for (const row of candidates) {
           if (!matchesObject(row.content)) continue;
+          if (++objectCandidates > scanBound) break;
           if (!coversMajority(asciiTerms, row.content)) continue;
           const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
           const coverage = asciiTerms.filter((term) => tokens.some((token) => token.startsWith(term))).length;
