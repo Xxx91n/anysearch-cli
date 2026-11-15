@@ -2020,7 +2020,11 @@ export class SqliteSessionStore implements SessionStore {
     // object cannot be resolved yet.
     const unresolvedStated: Array<{ left: string; right: string }> = [];
     for (const pair of stated) {
-      if (this.applyStatedPair(pair, memoryId)) unresolvedStated.push({ left: pair.latin, right: pair.han });
+      const chosen = this.applyStatedPair(pair, memoryId);
+      // Store the name the call actually chose, not the full match: a ladder
+      // suffix is what the entity table matched, and re-checking with the full
+      // match would fail to see it as settled.
+      if (chosen) unresolvedStated.push({ left: chosen, right: pair.han });
     }
 
     // 2) model proposals, only when something is actually unresolved.
@@ -2099,7 +2103,7 @@ export class SqliteSessionStore implements SessionStore {
   // When the two names already belong to different live entities this writes
   // nothing and counts it as "needs merge": appending an alias there would leave
   // both objects live and make every later query about them ambiguous.
-  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): boolean {
+  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): string | null {
     const live = this.liveEntities();
     const linkedIds = new Set(
       (this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(memoryId) as Array<{ entity_id: number }>)
@@ -2111,9 +2115,9 @@ export class SqliteSessionStore implements SessionStore {
     const res = applyStatedPairAsAlias(this.db, live, pair, "declared-parentheses", { memoryId }, preferred);
     if (res.applied) this.entityTel.crossScriptDeclared += 1;
     else if (res.needsMerge) this.entityTel.crossScriptNeedsMerge += 1;
-    // True when the pair is stated but NOT settled, so the caller must treat the
-    // material as undetermined.
-    return res.needsMerge !== undefined;
+    // The chosen Latin name when the pair is stated but NOT settled, so the
+    // caller can record exactly that name as undetermined. Null means settled.
+    return res.needsMerge ? res.needsMerge.latinName : null;
   }
 
   // A model said these two names are one object. Record it for review; do NOT

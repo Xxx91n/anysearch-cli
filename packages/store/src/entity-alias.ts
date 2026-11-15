@@ -542,7 +542,7 @@ export function applyStatedPairAsAlias(
   evidence: AliasEvidence,
   detail: Record<string, unknown>,
   preferred?: number,
-): { applied: boolean; needsMerge?: { keepId: number; dropId: number } } {
+): { applied: boolean; needsMerge?: { keepId: number; dropId: number; latinName: string } } {
   // Which Latin name this pair is about. A multi-word match may run into the
   // sentence in front of it (`Contact Acme`), and no word list can settle that.
   // So the longest candidate that is already a known entity wins; when none is
@@ -564,7 +564,11 @@ export function applyStatedPairAsAlias(
     // alias path would, and report it instead of guessing.
     const keep = preferred === hanEntity.id ? hanEntity : (latinEntity ?? hanEntity);
     const drop = keep.id === latinEntity.id ? hanEntity : latinEntity;
-    return { applied: false, needsMerge: { keepId: keep.id, dropId: drop.id } };
+    // `latinName` is the name this call actually chose (a ladder suffix, not the
+    // full match). The caller stores it so a later "is this pair settled now?"
+    // check looks up the same name — using the full match there misses an entity
+    // the caller had already matched by its suffix.
+    return { applied: false, needsMerge: { keepId: keep.id, dropId: drop.id, latinName: latinNorm } };
   }
   let target: LiveEntityRow | undefined;
   if (preferred !== undefined) target = [latinEntity, hanEntity].find((e) => e?.id === preferred);
