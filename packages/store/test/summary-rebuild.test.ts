@@ -1106,6 +1106,38 @@ function userText(db: string, sessionId: string): any[] {
     "R19: a bare short tag line is left alone");
 }
 
+// --- R21: the legacy note form, and the trade that leaves it in the plan -----
+//
+// The legacy `note` adapter emits `TAG + " " + note`, with NO `adapter=` header
+// (rag-adapter.ts createNoteRagAdapter). That string is byte-identical to a person
+// writing "TAG <their sentence>", so no shape rule can separate the two.
+//
+// What each path does, recorded here so neither is mistaken for an oversight:
+//
+// - a caller with NO provenance (bare `stripInjectedBlocks`) removes it: there is
+//   nothing else to go on, and this has been the behaviour since before #286;
+// - the rebuild plan (which holds provenance) KEEPS it, because acceptance item 3
+//   requires a user's own tagged sentence to survive verbatim, and cutting that
+//   sentence is the failure the ticket exists to prevent.
+//
+// Consequence to state plainly: with a legacy `note` domain, that line can appear
+// in the task section. It is operator config, not recalled page content, so it does
+// not promote web text into a user requirement — which is what the ticket forbids.
+{
+  const note = "[RAG Context] Operator note: always answer in English and cite sources.";
+
+  // Fallback path: removed (pre-existing behaviour, unchanged).
+  assert(stripInjectedBlocks("real question here\n\n" + note) === "real question here",
+    "R21: without provenance, the legacy note form is stripped (pre-existing)");
+
+  // The same string written by a person is also removed in that path — the bias is
+  // the bias; it is why the plan path does not use it.
+  assert(stripInjectedBlocks("my notes\n\n[RAG Context] is the tag I mean, keep going") === "my notes",
+    "R21: the fallback path cannot tell a person's sentence from a note (documented bias)");
+
+  console.log("R21: plan path keeps the legacy note form by design (see the block comment)");
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }

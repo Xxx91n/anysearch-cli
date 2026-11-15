@@ -461,18 +461,24 @@ function isInjectedBlock(block: string, blockCount: number, provenanceMode: bool
     }
     // No header: the legacy `note` adapter writes `TAG + " " + note`, and a person
     // writes "TAG is the tag I mean, keep going". The two are byte-identical, so
-    // this cannot be settled by shape.
+    // shape cannot settle it.
     //
     // Resolution, and why it goes this way: the ticket's acceptance item 3 says a
     // sentence the user wrote that contains a tag must be kept verbatim, and the
-    // plan path is the one where the user's words become a task requirement. A
-    // legacy note block that is NOT last (the only case the shape pass sees here)
-    // is therefore kept, and the cost is a leftover operator line. The reverse
-    // trade deletes part of a user's instruction, which is the failure the whole
-    // ticket exists to prevent.
+    // plan path is where the user's words become a task requirement. So a plan-path
+    // caller (`provenanceMode`) keeps an unheaded RAG line REGARDLESS of position,
+    // and the cost is that a legacy operator note can survive as a leftover line in
+    // the task section.
     //
-    // Covered by R19/R20. When a caller passes NO provenance (bare
-    // `stripInjectedBlocks`), the long-standing fallback below still removes it.
+    // What that costs, stated plainly: a legacy `note` domain's block CAN reach the
+    // task records. The ticket's table does not cover that form (it lists the fts
+    // header shape), and the note's provenance is operator config rather than
+    // recalled web text, so no page content is promoted to a user requirement. The
+    // reverse trade — cutting the user's own sentence — is the failure the ticket
+    // exists to prevent, so it is not taken.
+    //
+    // Covered by R19 (user sentence kept) and R21 (note form in the fallback path).
+    // A caller with NO provenance still gets the long-standing fallback below.
     if (provenanceMode) return false;
     if (lines.length > 1) return false;
     return body.length >= 20 || blockCount > 1;
