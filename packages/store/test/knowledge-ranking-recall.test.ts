@@ -19,6 +19,9 @@ try {
     // its language nor its relevance can bypass #277's object check.
     put.run("乙公司客服邮箱 email 为 wrong@sample.example。");
     for (let i = 0; i < 60; i++) put.run("甲公司客服邮箱页面正在维护 " + i + "。");
+    put.run("AcmeCloud 客服邮箱 почта: impostor@sample.example。");
+    for (let i = 0; i < 60; i++) put.run("AcmeCloud почта поддержки " + i + ": impostor@sample.example.");
+    put.run("甲公司 почта: correct@sample.example。");
     put.run("Acme 客服邮箱 email 为 help@sample.example。");
     put.run("Acme support email is support@sample.example.");
     const old = put.run("Acme 客服邮箱 email 为 retired@sample.example。");
@@ -37,6 +40,17 @@ try {
     assert(all.some((h) => h.content.includes("support@sample.example")), "English evidence is retained");
     assert(all.some((h) => h.content.includes("help@sample.example")), "Chinese LIKE works without embeddings");
     assert(!all.some((h) => /wrong@|retired@/.test(h.content)), "wrong objects and replaced knowledge stay out");
+  }
+  for (const query of ["Acme 客服邮箱 почта", "Acme очта"]) {
+    for (const recall of [
+      (limit: number) => store.searchMemory(query, limit),
+      (limit: number) => store.searchMemoryMulti([query], limit),
+    ]) {
+      const hits = await recall(1);
+      assert.equal(hits.length, 1, "object checking must refill past prefix collisions: " + query);
+      assert(!hits.some((hit) => hit.content.includes("AcmeCloud")), "cross-script fusion must reject the wrong object");
+      assert(hits[0]!.content.includes(query.includes("客服邮箱") ? "help@sample.example" : "correct@sample.example"));
+    }
   }
   console.log("knowledge recall: object check, relevance, both languages and no-vector Chinese passed");
 } finally {

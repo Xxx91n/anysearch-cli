@@ -16,3 +16,10 @@
 `knowledge-ranking` 工作流另取起始基准和当前分支，用同一份固定数据跑实际的 `searchMemory` / `searchMemoryMulti`。数据在 `packages/store/test/fixtures/knowledge-ranking-cases.json`，中文、英文、混合查询各 4 条；不用模型、不用向量。输出每组的 nDCG@10、MRR@10、Recall@10，要求各组都不下降，混合查询的 nDCG 必须上升。原始数字和比较结果保存在 `knowledge-ranking-by-language` 构件里。
 
 这 12 条是针对本次排序问题的小样本回归集，不能代表真实文库的整体检索质量，也没有覆盖真实向量模型质量。没有跑完远端工作流之前，不填写提升数字，不宣称验收通过。本地不编译、不跑测试和评测。
+
+## 审查处理
+
+CodeRabbit 首轮提出两项问题，均采纳：
+
+- 比较脚本后接 `tee`，默认 shell 可能吞掉失败状态。评测步骤显式使用 `shell: bash`（启用 `pipefail`），再给一份故意下降的指标，验证整条管道确实失败。
+- 其他文字的 crossScript 和 LIKE 回退原本缺少完整对象检查，新 RRF 会把它们的重复命中抬高，可能压过正确对象。因此在这些路径补齐 SQL 对象粗筛和截断前的精确检查；新增 Acme/AcmeCloud 前缀碰撞及三种文字混合查询回归。这里是保住 #277 已承诺的对象边界，不扩展实体识别需求。
