@@ -131,14 +131,16 @@ function latinNameLadder(rawMatch: string): { primary: string; ladder: string[] 
     const v = n.trim();
     if (v && !ladder.includes(v)) ladder.push(v);
   };
-  // Longest first: the full match, then the cleaned form, then every trailing
-  // sub-phrase of the cleaned form. A real multi-word name is tried before any
-  // trimmed variant, so `Hello Labs` is never mistaken for the prose prefix
-  // `Hello` plus an object called `Labs`.
-  push(untrimmed);
+  // Every word-level suffix of the UNCLEANED match, longest first, so a real
+  // multi-word name is reachable at every length: `Please Contact Acme` offers
+  // `Please Contact Acme`, `Contact Acme`, `Acme`. Deriving the ladder from the
+  // cleaned form instead loses `Contact Acme` — trimming strips both leading
+  // words at once, and an existing `Contact Acme` entity would never be chosen.
+  const words = untrimmed.split(/\s+/);
+  for (let i = 0; i < words.length; i++) push(words.slice(i).join(" "));
+  // The cleaned form too, in case trimming removed something the word-by-word
+  // suffixes do not produce (punctuation or repeated spaces collapse).
   push(cleaned);
-  const words = cleaned.split(/\s+/);
-  for (let i = 1; i < words.length; i++) push(words.slice(i).join(" "));
   return { primary: untrimmed, ladder };
 }
 

@@ -2012,8 +2012,15 @@ export class SqliteSessionStore implements SessionStore {
     const { stated, candidates } = crossScriptPairsInText(text, live);
 
     // 1) stated pairs: the material itself says these two names are one object.
+    //
+    // A pair that needs a merge is NOT settled — the two names belong to
+    // different live objects, so this material's object is still undetermined.
+    // Collect those and feed them into step 3; counting them only in telemetry
+    // would leave the material in default recall while its stated pair says the
+    // object cannot be resolved yet.
+    const unresolvedStated: Array<{ left: string; right: string }> = [];
     for (const pair of stated) {
-      this.applyStatedPair(pair, memoryId);
+      if (this.applyStatedPair(pair, memoryId)) unresolvedStated.push({ left: pair.latin, right: pair.han });
     }
 
     // 2) model proposals, only when something is actually unresolved.
@@ -2057,13 +2064,23 @@ export class SqliteSessionStore implements SessionStore {
     //    No `linked.length > 0` gate: a material that names an object but got no
     //    entity link is exactly the case where nothing says which object it
     //    belongs to — requiring a link would exempt the worst case of all.
-    if (candidates.length > 0) {
+    if (candidates.length > 0 || unresolvedStated.length > 0) {
       const fresh = this.liveEntities();
-      const still = candidates.filter((p) => {
+      const stillInCandidates = candidates.filter((p) => {
         const left = findEntityForForm(fresh, normalizeEntityName(p.left));
         const right = findEntityForForm(fresh, normalizeEntityName(p.right));
         return !(left && right && left.id === right.id);
       });
+      // A stated pair that needed a merge is unresolved by definition: the two
+      // names still belong to different objects, so nothing says which one this
+      // material is about. Re-check against the fresh table so a declaration that
+      // landed during the judge call counts.
+      const stillStated = unresolvedStated.filter((p) => {
+        const left = findEntityForForm(fresh, normalizeEntityName(p.left));
+        const right = findEntityForForm(fresh, normalizeEntityName(p.right));
+        return !(left && right && left.id === right.id);
+      });
+      const still = [...stillStated, ...stillInCandidates];
       if (still.length > 0) {
         markMemoryUnresolved(
           this.db,
@@ -2082,7 +2099,7 @@ export class SqliteSessionStore implements SessionStore {
   // When the two names already belong to different live entities this writes
   // nothing and counts it as "needs merge": appending an alias there would leave
   // both objects live and make every later query about them ambiguous.
-  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): void {
+  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): boolean {
     const live = this.liveEntities();
     const linkedIds = new Set(
       (this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(memoryId) as Array<{ entity_id: number }>)
@@ -2094,6 +2111,9 @@ export class SqliteSessionStore implements SessionStore {
     const res = applyStatedPairAsAlias(this.db, live, pair, "declared-parentheses", { memoryId }, preferred);
     if (res.applied) this.entityTel.crossScriptDeclared += 1;
     else if (res.needsMerge) this.entityTel.crossScriptNeedsMerge += 1;
+    // True when the pair is stated but NOT settled, so the caller must treat the
+    // material as undetermined.
+    return res.needsMerge !== undefined;
   }
 
   // A model said these two names are one object. Record it for review; do NOT

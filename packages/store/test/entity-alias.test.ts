@@ -780,6 +780,9 @@ function q(db: string, sql: string, ...params: unknown[]): any {
     source: "user", evidence: 1, entity: "甲公司",
   }]);
   const proposal = store.listEntityAliases({ pendingOnly: true })[0];
+  // Assert the proposal exists BEFORE using it: if proposal creation regresses,
+  // the conflict checks below would all be skipped and the test would print OK.
+  assert(!!proposal, "a pending proposal was created for the conflict case");
   if (proposal) {
     // A human binds Acme to a DIFFERENT object first.
     const decl = store.declareEntityAlias("Acme", "阿克米");
@@ -791,6 +794,63 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   }
   store.close();
   console.log("10b confirming cannot alias one name to two live objects: OK");
+}
+
+{
+  // 11a. The name ladder must keep every word-level suffix, so the LONGEST known
+  //      name wins. With both `Contact Acme` and `Acme` present,
+  //      `Please Contact Acme（甲公司）` must bind to `Contact Acme`, not to `Acme`.
+  const ladder = extractCrossScriptPairs("Please Contact Acme（甲公司）");
+  assert(ladder.length === 1, "one stated pair parsed");
+  assert(ladder[0]!.latinSuffixes.includes("Contact Acme"),
+    "the intermediate suffix survives the ladder: " + JSON.stringify(ladder[0]!.latinSuffixes));
+  assert(ladder[0]!.latinSuffixes.includes("Acme"), "the shortest suffix is still offered");
+
+  const db = "longest-known.db";
+  const store = openStore(db);
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [
+    { url: "https://lk.example/1", title: "Contact Acme 页面", snippet: "Contact Acme 相关内容。", source: "user", evidence: 1, entity: "Contact Acme" },
+    { url: "https://lk.example/2", title: "Acme 页面", snippet: "Acme 相关内容。", source: "user", evidence: 1, entity: "Acme" },
+  ]);
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://lk.example/3", title: "公告", snippet: "Please Contact Acme（甲公司）获取支持。",
+    source: "user", evidence: 1,
+  }]);
+  const contactRow = store.dbQuery<{ id: number; aliases: string }>("SELECT id, aliases FROM entities WHERE name_norm = 'contact acme' AND valid_until IS NULL")[0];
+  const acmeRow = store.dbQuery<{ id: number; aliases: string }>("SELECT id, aliases FROM entities WHERE name_norm = 'acme' AND valid_until IS NULL")[0];
+  assert(!!contactRow && !!acmeRow, "both objects exist");
+  assert((JSON.parse(contactRow!.aliases) as string[]).includes("甲公司"),
+    "the LONGEST known name got the alias: " + contactRow!.aliases);
+  assert(!(JSON.parse(acmeRow!.aliases) as string[]).includes("甲公司"),
+    "the shorter name did not: " + acmeRow!.aliases);
+  store.close();
+  console.log("11a the longest known name wins: OK");
+}
+
+{
+  // 11b. A stated pair that needs a merge still leaves the object undetermined.
+  //      The pair is settled enough to know the names are one object, but not
+  //      enough to know which live entity to attach to — so the material must not
+  //      stay in default recall.
+  const db = "needs-merge-unresolved.db";
+  const store = openStore(db);
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [
+    { url: "https://nm.example/1", title: "甲公司页面", snippet: "甲公司相关内容。", source: "user", evidence: 1, entity: "甲公司" },
+    { url: "https://nm.example/2", title: "Acme 页面", snippet: "Acme 相关内容。", source: "user", evidence: 1, entity: "Acme" },
+  ]);
+  const res = await store.adjudicateMemory(sess.id, [{
+    url: "https://nm.example/3", title: "公告", snippet: "Acme（甲公司）宣布新的客服邮箱。",
+    source: "user", evidence: 1,
+  }]);
+  const id = res[0]!.insertedId!;
+  const row = q(db, "SELECT quarantine FROM retrieval_results WHERE id = ?", id) as { quarantine: string | null };
+  assert(row.quarantine === "entity_unresolved",
+    "a stated pair that needs a merge marks the material undetermined (got " + row.quarantine + ")");
+  assert(store.entityTelemetry().crossScriptNeedsMerge >= 1, "the merge need is counted");
+  store.close();
+  console.log("11b a stated pair needing a merge marks the material: OK");
 }
 
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
