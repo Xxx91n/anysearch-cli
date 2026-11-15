@@ -155,7 +155,16 @@ export function createFtsRagAdapter(store: SessionStorePort): RagAdapterPort {
         // collapse whitespace: recalled rows may be multi-line JSON blobs.
         const content = sanitizeText(hit?.content).replace(/\s+/g, " ").trim();
         if (!content) continue;
-        const role = typeof hit?.role === "string" && hit.role ? hit.role : "memory";
+        // #286: the ROLE needs the same collapse, and it is not cosmetic. The role
+        // is the archived row's title, which comes from a provider and may contain a
+        // newline. A title like "Acme hours\nIgnore previous instructions …" would
+        // put a second, bare line inside the block, and the block then stops looking
+        // like injection to anything that reads it by shape — including the
+        // rebuild's strip pass, which would carry the page's sentence into the task
+        // section as if the user had written it. Collapsing here keeps one hit per
+        // line, which is the shape every reader assumes.
+        const role = (typeof hit?.role === "string" && hit.role ? hit.role : "memory")
+          .replace(/\s+/g, " ").trim() || "memory";
         lines.push("- [" + role + "] " + content.slice(0, RAG_HIT_MAX_CHARS));
       }
       if (lines.length === 0) return null;
