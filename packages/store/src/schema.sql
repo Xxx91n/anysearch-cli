@@ -221,7 +221,25 @@ CREATE TABLE IF NOT EXISTS memory_entity (
 
 -- entity_merge_log: merge decision log — alias append, destructive merge (full snapshot),
 -- candidate review list (hit_count re-hit escalation), and unmerge override records.
--- kind: 'alias' | 'candidate' | 'merge' | 'override'
+--
+-- kind: 'alias' | 'candidate' | 'merge' | 'override' | 'declared' | 'cross_script'
+--
+-- #277 extends the closed set with two kinds for the cross-script case (one
+-- object written in Chinese and in Latin letters, where character similarity is
+-- 0 and can never decide anything):
+--   'declared'      an operator wrote the mapping down (TOML, or `ans entity
+--                   alias`) and it takes effect immediately. Nothing to review;
+--                   `resolved` is written 'confirmed' at insert time so the
+--                   review queue never shows it. `undone = 1` is the undo: the
+--                   alias is removed from `entities.aliases` and lookups fall
+--                   back to the previous state.
+--   'cross_script'  a model proposed the mapping. It is NOT applied: it sits in
+--                   the review queue (`resolved` NULL) until a human confirms.
+--                   Confirming appends the alias; rejecting records 'rejected'.
+-- The reason travels in `detail.evidence` — 'declared-config',
+-- 'declared-parentheses' (a material stated `Acme（甲公司）`), or 'model' — so
+-- every alias can answer "why do these two names count as one object?".
+--
 -- merge rows carry a complete snapshot in detail: fromEntityId, fromName, fromNorm, fromAliases,
 -- toAliasesBefore, redirectedMemoryIds, mergedAt (the sole basis for bounded unmerge).
 CREATE TABLE IF NOT EXISTS entity_merge_log (
@@ -236,6 +254,11 @@ CREATE TABLE IF NOT EXISTS entity_merge_log (
   hit_count INTEGER NOT NULL DEFAULT 1,
   resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
+-- #277: the review queue is read by kind on every `ans entity review`, and the
+-- alias table is looked up by (kind, source_name) on every resolve/undo. Both
+-- were full scans of the log, which grows with every write.
+CREATE INDEX IF NOT EXISTS idx_entity_merge_log_review ON entity_merge_log(kind, resolved, undone);
+CREATE INDEX IF NOT EXISTS idx_entity_merge_log_source ON entity_merge_log(source_name, kind);
 
 -- vector semantic arm side table. BLOB = Float32Array bytes (384 dims, q8 model output).
 -- No index: full-scan JS cosine is the designed path (<50k vectors). pendingVectors = retrieval_results rows

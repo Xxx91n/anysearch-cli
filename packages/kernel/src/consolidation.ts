@@ -22,6 +22,7 @@ import type {
 import { classifyClaim } from "./attribution";
 import type { BudgetLedgerPort } from "./ports";
 import type { LlmSession } from "./llm-init";
+import type { AliasJudgeFn, AliasJudgeVerdict } from "@anysearch-cli/store";
 
 /**
  * What a `costUsd` number can honestly claim.
@@ -135,6 +136,10 @@ export interface ConsolidationSeams {
   // D7: the final-content check (basis + fact retention) on the merged text
   // before it is committed. Passing verify never skips this one.
   verifyFinal: ConsolidateFinalCheckFn;
+  // #277: "are these two names the same object?" — the question character
+  // similarity cannot answer across scripts. Its answer is a proposal for the
+  // review queue, never an automatic merge.
+  judgeEntityAlias: AliasJudgeFn;
   // Accumulates across every model call this seam made. The caller reads it
   // after the run; it is not a live view of the store report.
   usage: ConsolidationUsage;
@@ -221,6 +226,81 @@ export const FINAL_CONTENT_CHECK_PROMPT = [
  '{"supported": true|false, "preserved": true|false, "corrected": true|false, "noExtras": true|false, "reason": "<short reason>"}',
 ].join("\n");
 
+// #277: the cross-script entity check. Character similarity is 0 between a
+// Chinese name and a Latin one, so this is the only evidence source that can
+// relate them — and being a model, it can be wrong. That is why its answer is
+// only a proposal: the store queues it for review and never applies it alone.
+//
+// The prompt asks for `null` explicitly. A model that must answer yes/no will
+// guess; letting it say "cannot tell" is what keeps the caller from reading a
+// coin flip as a decision.
+export const CROSS_SCRIPT_ALIAS_PROMPT = [
+  "You are deciding whether names written in DIFFERENT writing systems refer to the same object.",
+  "Each pair below has one Latin-letter name and one Chinese name, taken from the same text.",
+  "",
+  "{PAIRS}",
+  "",
+  "For each pair answer:",
+  "- true  only when the text gives clear evidence they name one object: a translation in",
+  "        parentheses, a transliteration a reader would recognize as the same company, or an",
+  "        explicit equivalence. A well-known company's established Chinese name counts.",
+  "- false when the text suggests they are different objects, or when the two names are",
+  "        merely mentioned near each other.",
+  "- null  when you cannot tell. Use this freely: a wrong merge is costly and hard to undo,",
+  "        while an undetermined pair is simply reported as undetermined.",
+  "",
+  "Do not decide from the names alone when the context does not support it.",
+  "",
+  "Reply with JSON only, one entry per pair in the same order:",
+  '[{"i": 1, "same": true|false|null, "reason": "<short reason>"}]',
+].join("\n");
+
+function aliasPairsBlock(pairs: ReadonlyArray<{ left: string; right: string; context?: string }>): string {
+  return pairs
+    .map((p, i) => {
+      const ctx = p.context ? "\n   context: " + p.context.replace(/\s+/g, " ").slice(0, 300) : "";
+      return (i + 1) + ". Latin: " + p.left + " | Chinese: " + p.right + ctx;
+    })
+    .join("\n");
+}
+
+/**
+ * #277: read the judge's reply.
+ *
+ * Deliberately conservative in three ways, each of which would otherwise turn a
+ * broken reply into a wrong merge:
+ * - an entry that is missing keeps `same: null` (undetermined), never `false`
+ *   and never `true`;
+ * - only a JSON `true` counts as yes — the string "true", a truthy number or a
+ *   prose answer all stay undetermined;
+ * - an unparseable reply returns all-null, so the caller records "undetermined"
+ *   instead of acting on nothing.
+ */
+export function parseAliasReply(text: string, expected: number): AliasJudgeVerdict[] {
+  const out: AliasJudgeVerdict[] = Array.from({ length: expected }, () => ({ same: null }));
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start < 0 || end <= start) return out;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return out;
+  }
+  if (!Array.isArray(parsed)) return out;
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as { i?: unknown; same?: unknown; reason?: unknown };
+    const idx = typeof obj.i === "number" && Number.isInteger(obj.i) ? obj.i - 1 : -1;
+    if (idx < 0 || idx >= expected) continue;
+    const same = obj.same === true ? true : obj.same === false ? false : null;
+    out[idx] = {
+      same,
+      ...(typeof obj.reason === "string" ? { reason: obj.reason.slice(0, 240) } : {}),
+    };
+  }
+  return out;
+}
 // Output-side reserve for a summary call. Summaries are short; this keeps the
 // pre-call token reservation conservative without pinning the model's own
 // maxTokens (8192 on a custom endpoint) and over-reserving on every cluster.
@@ -570,7 +650,19 @@ export function createConsolidationSeams(
     return parseFinalCheckReply(result.text);
   };
 
-  return { summarize, classify, verify, verifyFinal, usage };
+  // #277: the cross-script entity judge. `same: true` means "one object written
+  // two ways"; `same: false` means "different objects"; `same: null` means the
+  // model could not tell. The store must not treat a null as either answer, so
+  // the parser keeps it distinct instead of collapsing it to false.
+  const judgeEntityAlias: AliasJudgeFn = async (pairs) => {
+    const prompt = fillTemplate(CROSS_SCRIPT_ALIAS_PROMPT, { PAIRS: aliasPairsBlock(pairs) });
+    const result = await completeText(session, prompt, opts.budget);
+    account(result.usage);
+    finish();
+    return parseAliasReply(result.text, pairs.length);
+  };
+
+  return { summarize, classify, verify, verifyFinal, judgeEntityAlias, usage };
 }
 
 /** The store capabilities metering needs. Structural so kernel keeps no store import. */

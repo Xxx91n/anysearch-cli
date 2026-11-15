@@ -52,7 +52,7 @@ Five tools are registered by name, with input schemas sourced from the kernel
 |------|-----------|----------|
 | `search_web` | `query` (required); `mode` = `fast` (default) \| `index` \| `deep` \| `answer`; `verticalDomain`, `verticalSubDomain`, `verticalParams` | One search sent to the enabled providers at once. Results are fused (RRF) and filtered by the domain filter. `maxResults` is absent from the public schema: each provider adapter's own default (10 per provider) applies, and the tool shows the top 10 of the fused set while `totalResults` still reports the full count. |
 | `research_web` | `question` (required); `depth` = `brief` (1 round) \| `standard` (2) \| `deep` (3, default); same three vertical args | Repeats the deep search per round, dedupes URLs across rounds, and stops early when the `sufficiency` verdict is `correct`. Returns the merged result set (last 10 shown) and the top 5 citations. |
-| `recall_memory` | `query` (required); `limit` (default 5, integer ≥ 1) | FTS5 recall over the store-level research archive (the same range `query_knowledge` reads), with a time-sensitivity tag (QDF) and time decay. When internal hits are short of `limit` and `ANS_PROJECT_DB` is set, it falls back to the project index. That fallback is optional and keeps going when it fails. |
+| `recall_memory` | `query` (required); `limit` (default 5, integer ≥ 1) | FTS5 recall over the store-level research archive (the same range `query_knowledge` reads), with a time-sensitivity tag (QDF) and time decay. When internal hits are short of `limit` and `ANS_PROJECT_DB` is set, it falls back to the project index. That fallback is optional and keeps going when it fails. The result carries an `object` field when the query names a known entity: `{"status":"resolved","name":...}` when exactly one is named, or `{"status":"undetermined","candidates":[...]}` when a Chinese name and a Latin name both appear and nothing says whether they are the same object. In the undetermined case no knowledge row is returned: "cannot tell which object" is reported as such, never as "nothing found". |
 | `query_knowledge` | `query` (required) | Dispatches through the current domain's `rag.adapter`. Only `fts` retrieves. `none` and `note` return an explicit empty result. An unknown adapter id falls back to `none` with a stderr warning (deduped within the server instance, so stateless HTTP can repeat it once per request). |
 | `ans_chat` | `message` (required for chat); `sessionId` (optional); `operation` = `chat` (default) \| `consolidate`; `memoryIds`, `allowSingleEvidence`, `dryRun` (consolidate only) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). With `operation = "consolidate"` it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge. See [Consolidation](#consolidation). |
 
@@ -135,6 +135,29 @@ not depend on embeddings — a preserved fact must not disappear just because
 no vector can be computed. Materials whose facts were all replaced do not
 form a new knowledge row when consolidated again (`supersededClusterSkipped`);
 they stay readable as history.
+
+#### Cross-language objects
+
+A company written in Chinese and in Latin letters is one object even though
+the two names share no characters. Character similarity is 0 for such a pair,
+so consolidation identifies the object from evidence instead:
+
+- the material states the mapping itself (`Acme（甲公司）`) — applied at once,
+  no model call;
+- an operator declared it (`ans entity alias Acme 甲公司`) — applied at once;
+- a model proposed it — queued in `ans entity aliases --pending`, and applied
+  only after `ans entity review keep <id>`.
+
+Materials are then clustered by the object, not by their source URL, so the
+Chinese and English pages about one company reach one summarizer call and can
+correct the same knowledge row. The report counts the three outcomes as
+`crossScriptDeclared`, `crossScriptProposed` and `crossScriptUndetermined`.
+
+A pair the evidence does not settle stays undetermined: the material is stored
+with the `entity_unresolved` mark, takes part in no recall path, and is listed
+by `ans entity unresolved` until a human answers `keep` or `drop`. The alias
+records carry their reason (`detail.evidence`) and can be undone with
+`ans entity unmerge <id>`, which puts lookups back to their previous state.
 
 The result reports the scope it really used, not the one the caller thinks it
 passed:

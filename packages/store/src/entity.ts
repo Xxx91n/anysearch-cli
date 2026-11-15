@@ -32,6 +32,85 @@ export function normalizeEntityName(raw: string): string {
     .replace(/\s+/g, " ");
 }
 
+// Which writing system a name is in. The character-level similarity above is
+// blind across scripts: `acme` vs `甲公司` scores 0, and no threshold can fix
+// that. So cross-script sameness is decided by evidence (a declared mapping or
+// a model check), never by this module's similarity score (#277).
+export type TextScript = "han" | "latin" | "other";
+
+const HAN_RE = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
+const LATIN_LETTER_RE = /[A-Za-z]/;
+
+export function scriptOf(name: string): TextScript {
+  const hasHan = HAN_RE.test(name);
+  const hasLatin = LATIN_LETTER_RE.test(name);
+  if (hasHan && hasLatin) return "other";
+  if (hasHan) return "han";
+  if (hasLatin) return "latin";
+  return "other";
+}
+
+// Two names that can never be matched by the trigram tiers: one Han-only, one
+// Latin-only. This is the pair the alias layer has to decide, not the score.
+export function isCrossScriptPair(a: string, b: string): boolean {
+  const sa = scriptOf(a);
+  const sb = scriptOf(b);
+  return (sa === "han" && sb === "latin") || (sa === "latin" && sb === "han");
+}
+
+export interface CrossScriptPair {
+  latin: string;
+  han: string;
+}
+
+// Surface forms written side by side in one text — `Acme（甲公司）` or
+// `甲公司 (Acme)` — are the one place a material states "these two names are the
+// same object" without a model call. Only the parenthesis form is read: a bare
+// sentence that happens to mention both names does not claim they are equal.
+const HAN_RUN = "[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]";
+const PAIR_RES = [
+  // Latin then parenthesised Han: Acme（甲公司）
+  new RegExp("([A-Za-z][A-Za-z0-9._-]{1,39})\\s*[（(]\\s*(" + HAN_RUN + "{2,8})\\s*[)）]", "g"),
+  // Han then parenthesised Latin: 甲公司（Acme）
+  new RegExp("(" + HAN_RUN + "{2,8})\\s*[（(]\\s*([A-Za-z][A-Za-z0-9._-]{1,39})\\s*[)）]", "g"),
+];
+
+export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
+  const out: CrossScriptPair[] = [];
+  const seen = new Set<string>();
+  for (const re of PAIR_RES) {
+    re.lastIndex = 0;
+    for (const m of text.matchAll(re)) {
+      const a = (m[1] ?? "").trim();
+      const b = (m[2] ?? "").trim();
+      const latin = scriptOf(a) === "latin" ? a : b;
+      const han = scriptOf(a) === "han" ? a : b;
+      if (!latin || !han) continue;
+      const key = normalizeEntityName(latin) + "\u0000" + normalizeEntityName(han);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ latin, han });
+    }
+  }
+  return out;
+}
+
+// Which of these known surface forms actually appear in the text. Used to tie a
+// knowledge row or a query to an object: the alias table is the only thing that
+// can relate `甲公司` to `Acme`, so matching is a plain containment test over
+// the strings that table holds. Forms shorter than 2 characters are skipped —
+// they match almost everything and would attribute unrelated text.
+export function surfaceFormHits(text: string, forms: readonly string[]): string[] {
+  const hay = text.toLowerCase();
+  const out: string[] = [];
+  for (const raw of forms) {
+    const form = raw.trim().toLowerCase();
+    if (form.length < 2) continue;
+    if (hay.includes(form) && !out.includes(form)) out.push(form);
+  }
+  return out;
+}
+
 // Jaccard over character trigram sets. Short strings (<3 chars) degrade to 2-gram/1-gram.
 export function trigramSimilarity(a: string, b: string): number {
   const ngrams = (s: string, n: number): Set<string> => {
