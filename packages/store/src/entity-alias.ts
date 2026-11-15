@@ -140,18 +140,39 @@ export function findEntityForForm(live: readonly LiveEntityRow[], norm: string):
   return live.find((e) => e.nameNorm === norm || e.aliases.includes(norm));
 }
 
-/** Append one normalized alias. Returns false when it was already there. */
+/**
+ * Append one normalized alias. Returns false when it was already there.
+ *
+ * One statement, not read-then-write: two writers declaring different aliases on
+ * the same entity at once would each read the same array and the second UPDATE
+ * would drop the first one's alias. `json_each` guards the duplicate check and
+ * `json_insert` does the append inside the same statement, so the row is never
+ * read and written in two steps. A row whose aliases blob is not valid JSON
+ * (hand-edited, or written by an older build) starts over from an empty array
+ * instead of taking the whole entity down with it.
+ */
 export function appendAlias(db: Database.Database, entityId: number, norm: string): boolean {
-  const row = db.prepare("SELECT aliases FROM entities WHERE id = ?").get(entityId) as { aliases: string } | undefined;
-  if (!row) return false;
-  let aliases: string[] = [];
-  try { aliases = JSON.parse(row.aliases || "[]") as string[]; } catch { aliases = []; }
-  if (aliases.includes(norm)) return false;
-  db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify([...aliases, norm]), entityId);
-  return true;
+  const info = db
+    .prepare(
+      "UPDATE entities SET aliases = json_insert(" +
+      "  CASE WHEN json_valid(aliases) THEN aliases ELSE '[]' END, '$[#]', ?" +
+      ") WHERE id = ? AND NOT EXISTS (" +
+      "  SELECT 1 FROM json_each(CASE WHEN json_valid(entities.aliases) THEN entities.aliases ELSE '[]' END) WHERE value = ?" +
+      ")",
+    )
+    .run(norm, entityId, norm);
+  return Number(info.changes) > 0;
 }
 
-/** Remove one normalized alias. Returns false when it was not there. */
+/**
+ * Remove one normalized alias. Returns false when it was not there.
+ *
+ * Built in JS from a single read and written back in one UPDATE: SQLite has no
+ * JSON array-remove, and the only writer that needs atomicity here is the undo
+ * path, which runs in the caller's transaction (`but resolve`, the review
+ * confirmation). The read is immediately followed by the write in that same
+ * transaction, so no other writer can interleave.
+ */
 export function removeAlias(db: Database.Database, entityId: number, norm: string): boolean {
   const row = db.prepare("SELECT aliases FROM entities WHERE id = ?").get(entityId) as { aliases: string } | undefined;
   if (!row) return false;
@@ -248,14 +269,24 @@ export function listAliasRows(db: Database.Database, opts: { pendingOnly?: boole
  * declared the mapping can retract it, and so can the reviewer who confirmed a
  * model proposal. Reads fall back to the previous state on the next lookup
  * because `entities.aliases` is the only thing they consult.
+ *
+ * Only a record that actually put the alias there may take it out again. A
+ * pending proposal never touched `entities.aliases` — undoing it must not remove
+ * an alias that some later declaration wrote for the same pair, which would
+ * silently break a mapping whose own log still reads `confirmed`.
  */
 export function undoAliasRow(db: Database.Database, logId: number): boolean {
   const row = db
-    .prepare("SELECT id, kind, source_name, target_entity_id, undone FROM entity_merge_log WHERE id = ?")
-    .get(logId) as { id: number; kind: string; source_name: string; target_entity_id: number; undone: number } | undefined;
+    .prepare("SELECT id, kind, source_name, target_entity_id, undone, resolved FROM entity_merge_log WHERE id = ?")
+    .get(logId) as {
+      id: number; kind: string; source_name: string; target_entity_id: number; undone: number; resolved: string | null;
+    } | undefined;
   if (!row || row.undone !== 0) return false;
   if (row.kind !== ALIAS_KIND_DECLARED && row.kind !== ALIAS_KIND_CROSS_SCRIPT && row.kind !== "alias") return false;
-  removeAlias(db, row.target_entity_id, normalizeEntityName(row.source_name));
+  // A cross_script row is a PROPOSAL until it is confirmed. While `resolved` is
+  // NULL it never applied anything, so undoing it only drops the proposal.
+  const applied = row.kind !== ALIAS_KIND_CROSS_SCRIPT || row.resolved === "confirmed";
+  if (applied) removeAlias(db, row.target_entity_id, normalizeEntityName(row.source_name));
   db.prepare("UPDATE entity_merge_log SET undone = 1 WHERE id = ?").run(logId);
   return true;
 }
@@ -325,6 +356,36 @@ export function isLikelyObjectName(form: string): boolean {
   return true;
 }
 
+// Words that show up inside ordinary Chinese prose and are never an object name
+// on their own. A run taken from a sentence ("今日宣布客服邮箱") is description,
+// not a name; pairing it with a known Latin object would ask the model a
+// question nobody asked and, worse, mark the material undetermined on the
+// strength of it.
+const HAN_PROSE_WORDS = [
+  "公告", "通知", "消息", "页面", "官网", "内容", "相关", "今日", "昨天", "本周", "上月",
+  "客服", "邮箱", "电话", "地址", "时间", "服务", "支持", "问题", "说明", "介绍", "更新",
+  "宣布", "发布", "转发", "报道", "新闻", "文章", "资料", "信息", "我们", "他们", "它们",
+  "公司", "团队", "部门", "产品", "版本", "计划", "项目", "工作", "功能", "系统",
+];
+
+/**
+ * Whether a Han run could be an object name rather than a piece of a sentence.
+ *
+ * Chinese has no word boundaries, so the run extractor hands back whatever
+ * characters sit between punctuation — often a whole clause. A run is taken as a
+ * candidate only when it is short and does not read as prose: up to 6 characters,
+ * and not a stock sentence word. This is a filter on what may be ASKED, not on
+ * what may be merged — a rejected run simply never becomes a question.
+ */
+export function isLikelyHanObjectName(run: string): boolean {
+  const f = run.trim();
+  if (f.length < 2 || f.length > 6) return false;
+  if (HAN_PROSE_WORDS.some((w) => f === w)) return false;
+  // A run that merely contains a stock word is still prose ("客服邮箱", "官方公告").
+  if (HAN_PROSE_WORDS.some((w) => f.includes(w) && f.length > w.length)) return false;
+  return true;
+}
+
 /**
  * Surface forms that a knowledge row mentions, used by the object constraint.
  * Returns [] when the row names none of them — the row is about something else.
@@ -388,6 +449,11 @@ export function listUnresolvedEntityMemories(db: Database.Database): UnresolvedE
  * `candidates` are pairs where one side is already a known object and the other
  * is a name in a different script that the table cannot relate to it yet; those
  * need a judgement.
+ *
+ * A pair the text states is NOT also a candidate. The caller applies it first
+ * and would then spend a model call asking about something it has just settled;
+ * on a long archive that is one wasted call per stated pair, charged to the
+ * session's budget.
  */
 export function crossScriptPairsInText(
   text: string,
@@ -396,11 +462,9 @@ export function crossScriptPairsInText(
   const stated = extractStatedPairs(text);
   const candidates: AliasPairRequest[] = [];
   const seen = new Set<string>();
+  // A stated pair is already answered by the material itself.
   for (const pair of stated) {
-    const key = normalizeEntityName(pair.latin) + "\u0000" + normalizeEntityName(pair.han);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    candidates.push({ left: pair.latin, right: pair.han, context: text.slice(0, 400) });
+    seen.add(normalizeEntityName(pair.latin) + "\u0000" + normalizeEntityName(pair.han));
   }
   // Names the entity table already knows, paired against the other script's
   // names found in the same text. Both sides must ACTUALLY appear in the text:
@@ -410,12 +474,18 @@ export function crossScriptPairsInText(
   const hanRuns = Array.from(text.matchAll(/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]{2,8}/g)).map((m) => m[0]!);
   const latinRuns = Array.from(text.matchAll(/[A-Za-z][A-Za-z0-9._-]{1,39}/g)).map((m) => m[0]!);
   if (hanRuns.length === 0 || latinRuns.length === 0) return { stated, candidates };
+  // A Han run from a sentence is description, not a name. Filtering here keeps
+  // ordinary prose ("今日宣布客服邮箱") from becoming a question — and, through
+  // that, from marking a perfectly good material undetermined.
+  const hanNames = hanRuns.filter(isLikelyHanObjectName);
+  const latinNames = latinRuns.filter(isLikelyObjectName);
+  if (hanNames.length === 0 || latinNames.length === 0) return { stated, candidates };
   for (const e of live) {
     for (const form of entityForms(e)) {
       if (!isLikelyObjectName(form)) continue;
       if (!formAppearsInText(text, form)) continue; // this object is not mentioned here
       if (scriptOf(form) === "latin") {
-        for (const han of hanRuns) {
+        for (const han of hanNames) {
           if (!isCrossScriptPair(form, han)) continue;
           const linked = findEntityForForm(live, normalizeEntityName(han));
           if (linked && linked.id === e.id) continue; // already the same object
@@ -425,7 +495,7 @@ export function crossScriptPairsInText(
           candidates.push({ left: form, right: han, context: text.slice(0, 400) });
         }
       } else if (scriptOf(form) === "han") {
-        for (const latin of latinRuns) {
+        for (const latin of latinNames) {
           if (!isCrossScriptPair(form, latin)) continue;
           const linked = findEntityForForm(live, normalizeEntityName(latin));
           if (linked && linked.id === e.id) continue;
@@ -455,6 +525,14 @@ export function crossScriptPairsInText(
  * first asserted with, and keeping it avoids re-pointing rows that already
  * exist.
  *
+ * When the two names already belong to DIFFERENT live entities, nothing is
+ * written and `needsMerge` reports the pair. Appending an alias there would
+ * leave both entities live: a later query naming 甲公司 then matches two rows and
+ * comes back ambiguous, while the materials already linked stay split across two
+ * objects — the exact state this ticket is meant to remove. Merging them here is
+ * a destructive redirect that needs a snapshot, so it stays an explicit
+ * `ans entity merge` the operator can see and undo.
+ *
  * Returns true when an alias was appended.
  */
 export function applyStatedPairAsAlias(
@@ -464,20 +542,27 @@ export function applyStatedPairAsAlias(
   evidence: AliasEvidence,
   detail: Record<string, unknown>,
   preferred?: number,
-): boolean {
+): { applied: boolean; needsMerge?: { keepId: number; dropId: number } } {
   const latinNorm = normalizeEntityName(pair.latin);
   const hanNorm = normalizeEntityName(pair.han);
   const latinEntity = findEntityForForm(live, latinNorm);
   const hanEntity = findEntityForForm(live, hanNorm);
-  if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) return false; // already one object
+  if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) return { applied: false }; // already one object
+  if (latinEntity && hanEntity) {
+    // Two live objects, one claim. Pick which one survives the same way the
+    // alias path would, and report it instead of guessing.
+    const keep = preferred === hanEntity.id ? hanEntity : (latinEntity ?? hanEntity);
+    const drop = keep.id === latinEntity.id ? hanEntity : latinEntity;
+    return { applied: false, needsMerge: { keepId: keep.id, dropId: drop.id } };
+  }
   let target: LiveEntityRow | undefined;
   if (preferred !== undefined) target = [latinEntity, hanEntity].find((e) => e?.id === preferred);
   target ??= latinEntity ?? hanEntity;
-  if (!target) return false;
+  if (!target) return { applied: false };
   const aliasNorm = target.id === latinEntity?.id ? hanNorm : latinNorm;
-  if (!appendAlias(db, target.id, aliasNorm)) return false;
+  if (!appendAlias(db, target.id, aliasNorm)) return { applied: false };
   logDeclaredAlias(db, aliasNorm, target.id, evidence, { pair, ...detail });
-  return true;
+  return { applied: true };
 }
 
 /**

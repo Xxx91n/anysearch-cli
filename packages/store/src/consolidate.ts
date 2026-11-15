@@ -355,6 +355,10 @@ export interface ConsolidateReport {
   crossScriptDeclared: number;
   crossScriptProposed: number;
   crossScriptUndetermined: number;
+  // Pairs the material stated but that cannot be applied by adding an alias:
+  // both names already belong to different live entities, so the fix is an
+  // explicit merge with its snapshot, not a silent rewrite.
+  crossScriptNeedsMerge: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }>;
 }
 
 /** #263: one summary the run suspended, with the knowledge row that triggered it. */
@@ -584,11 +588,18 @@ export async function linkCrossScriptForConsolidation(
   db: Database.Database,
   rows: ReadonlyArray<{ id: number; title: string | null; snippet: string | null }>,
   judge?: AliasJudgeFn,
-): Promise<{ declared: number; proposed: number; undetermined: number }> {
+): Promise<{
+  declared: number;
+  proposed: number;
+  undetermined: number;
+  /** Pairs whose two names already belong to different live entities. */
+  needsMerge: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }>;
+}> {
   let declared = 0;
   let proposed = 0;
   let undetermined = 0;
-  if (rows.length === 0) return { declared, proposed, undetermined };
+  const mergeNeeded: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }> = [];
+  if (rows.length === 0) return { declared, proposed, undetermined, needsMerge: mergeNeeded };
 
   // Group the material text by the object it was already linked to, so a run
   // over many pages makes one judge call per material rather than one per pair.
@@ -601,7 +612,14 @@ export async function linkCrossScriptForConsolidation(
 
     // 1) stated in the text itself — applied at once.
     for (const pair of stated) {
-      if (applyStatedPairAsAlias(db, live, pair, "declared-parentheses", { memoryId: row.id })) declared += 1;
+      const res = applyStatedPairAsAlias(db, live, pair, "declared-parentheses", { memoryId: row.id });
+      if (res.applied) declared += 1;
+      else if (res.needsMerge) {
+        // The two names already belong to different live objects. Merging is a
+        // destructive redirect that needs a snapshot, so it stays an explicit
+        // `ans entity merge`; the pair is reported instead of half-fixed.
+        mergeNeeded.push({ ...res.needsMerge, memoryId: row.id, pair });
+      }
     }
     if (candidates.length === 0) continue;
 
@@ -610,8 +628,13 @@ export async function linkCrossScriptForConsolidation(
     let verdicts: AliasJudgeVerdict[] = [];
     try {
       verdicts = await judge(candidates);
-    } catch {
-      // Fail-open, but honestly: a judge fault leaves the pairs undetermined.
+    } catch (e) {
+      // A budget refusal is not a judgement fault: the caller's cap was reached,
+      // so this run must stop spending instead of reporting every remaining pair
+      // as "undetermined" and looping on. Rethrown for the caller's own
+      // budget-rejection handling, exactly like the summarize seam.
+      if (isBudgetRejection(e)) throw e;
+      // Any other fault is fail-open, but honestly: the pairs stay undetermined.
       undetermined += candidates.length;
       continue;
     }
@@ -626,7 +649,7 @@ export async function linkCrossScriptForConsolidation(
       else undetermined += 1;
     }
   }
-  return { declared, proposed, undetermined };
+  return { declared, proposed, undetermined, needsMerge: mergeNeeded };
 }
 
 // #277: the object key a material belongs to.
@@ -788,6 +811,7 @@ export async function consolidateMemoryRun(
     crossScriptDeclared: 0,
     crossScriptProposed: 0,
     crossScriptUndetermined: 0,
+    crossScriptNeedsMerge: [],
   };
 
   // The materials this run read, kept at run scope (#262): the collision
@@ -1047,6 +1071,7 @@ export async function consolidateMemoryRun(
       report.crossScriptDeclared = cs.declared;
       report.crossScriptProposed = cs.proposed;
       report.crossScriptUndetermined = cs.undetermined;
+      report.crossScriptNeedsMerge = cs.needsMerge;
     }
 
     // #277: cluster by the OBJECT, not by the entity key string.

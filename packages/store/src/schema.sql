@@ -254,11 +254,11 @@ CREATE TABLE IF NOT EXISTS entity_merge_log (
   hit_count INTEGER NOT NULL DEFAULT 1,
   resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
--- #277: the review queue is read by kind on every `ans entity review`, and the
--- alias table is looked up by (kind, source_name) on every resolve/undo. Both
--- were full scans of the log, which grows with every write.
-CREATE INDEX IF NOT EXISTS idx_entity_merge_log_review ON entity_merge_log(kind, resolved, undone);
-CREATE INDEX IF NOT EXISTS idx_entity_merge_log_source ON entity_merge_log(source_name, kind);
+-- #277: the two indexes for the review queue and the alias lookup are created
+-- in session-store's migration block, NOT here. `resolved` is a column older
+-- databases do not have yet, and this script runs BEFORE the ALTER statements
+-- that add it — an index naming `resolved` would make an existing database fail
+-- to open. Do not move them back.
 
 -- vector semantic arm side table. BLOB = Float32Array bytes (384 dims, q8 model output).
 -- No index: full-scan JS cosine is the designed path (<50k vectors). pendingVectors = retrieval_results rows

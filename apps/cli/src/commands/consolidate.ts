@@ -216,10 +216,15 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // before any material is clustered, so a pair the operator wrote down is in
   // force for this run. Applied once per run and idempotent.
   //
+  // Not under --dry-run: that mode promises "nothing saved", and an alias (plus
+  // the entity row and log row behind it) is a saved change like any other. The
+  // dry-run preview still describes the mappings correctly, because the same
+  // table is read again by the run itself.
+  //
   // A skipped group is a real conflict (one name claimed by two objects) and is
   // reported by name: silently dropping it would leave the operator believing a
   // mapping they wrote is active.
-  if (domainForBudget?.entityAliases) {
+  if (domainForBudget?.entityAliases && !dryRun) {
     const applied = store.applyDeclaredAliases(domainForBudget.entityAliases);
     for (const s of applied.skipped) {
       process.stderr.write("[warn] entityAliases." + s.group + " not applied: " + s.reason + "\n");
@@ -227,6 +232,8 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     if (applied.applied > 0) {
       process.stdout.write("entity pairs declared: " + applied.applied + " alias(es) applied from the Active Domain\n");
     }
+  } else if (domainForBudget?.entityAliases && dryRun) {
+    process.stdout.write("dry-run: entityAliases mappings were NOT applied (nothing is saved in this mode)\n");
   }
 
   let seams: ReturnType<typeof createConsolidationSeams> | undefined;

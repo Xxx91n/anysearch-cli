@@ -495,6 +495,128 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   console.log("7 same-language behaviour unchanged: OK");
 }
 
+// --- 8. review fixes (PR #287 CodeRabbit round) -----------------------------
+{
+  // 8a. A pending proposal that never applied anything must not remove an alias
+  //     a later declaration wrote for the same pair.
+  const db = "undo-proposal.db";
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => pairs.map(() => ({ same: true, reason: "x" } as AliasJudgeVerdict)),
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://u2.example/1", title: "甲公司公告", snippet: "甲公司公告。合作方 Acme 也转发了。",
+    source: "user", evidence: 1, entity: "甲公司",
+  }]);
+  const pending = store.listEntityAliases({ pendingOnly: true });
+  assert(pending.length === 1, "one pending proposal exists");
+  const decl = store.declareEntityAlias("Acme", "甲公司");
+  assert(decl.ok, "manual declaration ok");
+  const aliasesBefore = JSON.parse((q(db, "SELECT aliases FROM entities WHERE id = ?", decl.entityId) as { aliases: string }).aliases) as string[];
+  assert(aliasesBefore.includes("acme"), "the declaration applied the alias");
+  // Undo the PROPOSAL (which never applied anything).
+  assert(store.undoEntityMerge(pending[0]!.id), "undoing the proposal succeeds");
+  const aliasesAfter = JSON.parse((q(db, "SELECT aliases FROM entities WHERE id = ?", decl.entityId) as { aliases: string }).aliases) as string[];
+  assert(aliasesAfter.includes("acme"), "undoing an unapplied proposal must not remove the declared alias");
+  store.close();
+  console.log("8a undoing an unapplied proposal keeps the declared alias: OK");
+}
+
+{
+  // 8b. A multi-word Latin name is taken whole, not as its last word.
+  const pairs = extractCrossScriptPairs("Acme Corp（甲公司）发布公告");
+  assert(pairs.length === 1 && pairs[0]!.latin === "Acme Corp",
+    "multi-word Latin name kept whole: " + JSON.stringify(pairs));
+  const withNoise = extractCrossScriptPairs("see Acme Corp（甲公司）");
+  assert(withNoise.length === 1 && withNoise[0]!.latin === "Acme Corp",
+    "a leading sentence word is trimmed: " + JSON.stringify(withNoise));
+  console.log("8b multi-word names parse whole: OK");
+}
+
+{
+  // 8c. A stated pair is not also sent to the model — the material already
+  //     settled it, so a judge call would be wasted budget.
+  const db = "no-double-ask.db";
+  let judgeCalls = 0;
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => { judgeCalls += 1; return pairs.map(() => ({ same: null })); },
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://nd.example/1", title: "Acme（甲公司）公告",
+    snippet: "Acme（甲公司）今日宣布客服邮箱为 help@nd.example。",
+    source: "user", evidence: 1, entity: "Acme",
+  }]);
+  assert(judgeCalls === 0, "a pair the material states is not sent to the judge (calls=" + judgeCalls + ")");
+  store.close();
+  console.log("8c stated pairs are not re-asked: OK");
+}
+
+{
+  // 8d. Object filtering happens before the cut, not after.
+  //     Two knowledge rows share the fact word, different objects, no embeddings
+  //     — so only the keyword lane can find them. The row ranked first belongs to
+  //     the WRONG object; the answering row sits behind it. Filtering the
+  //     finished `limit` would drop it and return nothing.
+  const db = "gate-before-cut.db";
+  const store = openStore(db);
+  const sess = await store.createSession("eval");
+  const rw = new Database(join(dir, db));
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("乙公司客服邮箱为 help@yi.example。");
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("甲公司客服邮箱为 help@jia.example。");
+  rw.close();
+  await store.adjudicateMemory(sess.id, [
+    { url: "https://jia.example/x", title: "甲公司页面", snippet: "甲公司相关内容。", source: "user", evidence: 1, entity: "甲公司" },
+    { url: "https://yi.example/x", title: "乙公司页面", snippet: "乙公司相关内容。", source: "user", evidence: 1, entity: "乙公司" },
+  ]);
+  const decl = store.declareEntityAlias("Acme", "甲公司");
+  assert(decl.ok, "declaration ok");
+  // The keyword lane alone, before any fusion: the answering row must survive
+  // even when only ONE slot is asked for. Private on purpose (it is an internal
+  // rung), so the test reaches it the way a white-box test has to.
+  const kw = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number, forms?: readonly string[]): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme 客服邮箱", 1, ["甲公司", "acme"]);
+  const kwContents = kw.map((h) => String(h.content));
+  assert(kwContents.some((c) => c.includes("help@jia.example")),
+    "the answering row survives a one-slot keyword read: " + JSON.stringify(kwContents));
+  assert(!kwContents.some((c) => c.includes("help@yi.example")),
+    "the other object's row is filtered out before the cut");
+  // And end to end: the wrong object's knowledge row never comes back.
+  const hits = await store.searchMemory("Acme 客服邮箱", 5);
+  const sem = hits.filter((h) => h.rowid < 0).map((h) => String(h.content));
+  assert(!sem.some((c) => c.includes("help@yi.example")), "the other object's knowledge row is never returned");
+  store.close();
+  console.log("8d object filter runs before the cut: OK");
+}
+
+{
+  // 8e. A material with an unresolved pair is still marked when another pair in
+  //     the same text WAS stated — the check is per pair, not per material.
+  const db = "per-pair.db";
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => pairs.map(() => ({ same: null })),
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [
+    { url: "https://pp.example/a", title: "甲公司页面", snippet: "甲公司相关内容。", source: "user", evidence: 1, entity: "甲公司" },
+    { url: "https://pp.example/b", title: "乙公司页面", snippet: "乙公司相关内容。", source: "user", evidence: 1, entity: "乙公司" },
+  ]);
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://pp.example/c", title: "Acme（甲公司）公告",
+    snippet: "Acme（甲公司）公告。另见 Globex 与 乙公司 的说明。",
+    source: "user", evidence: 1,
+  }]);
+  // The stated pair (Acme/甲公司) applied; the unresolved pair (Globex/乙公司)
+  // must still mark the material rather than being skipped wholesale.
+  const marked = store.listUnresolvedEntityMemories();
+  assert(marked.length >= 1, "a partly-stated material is still marked for its unresolved pair (got " + marked.length + ")");
+  store.close();
+  console.log("8e undetermined is decided per pair: OK");
+}
+
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
 rmSync(dir, { recursive: true, force: true });
 console.log("entity-alias.test.ts: " + passed + " passed, " + failed + " failed");

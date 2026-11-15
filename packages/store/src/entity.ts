@@ -68,12 +68,33 @@ export interface CrossScriptPair {
 // same object" without a model call. Only the parenthesis form is read: a bare
 // sentence that happens to mention both names does not claim they are equal.
 const HAN_RUN = "[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]";
+// A Latin name may be several words (`Acme Corp`, `Acme Software Ltd`). Matching
+// one word only would turn `Acme Corp（甲公司）` into the pair `Corp/甲公司`, which
+// then binds 甲公司 to whatever object happens to be called "Corp" — a wrong
+// mapping the caller applies immediately. So up to four words are taken, and the
+// leading sentence words are trimmed afterwards.
+const LATIN_NAME = "[A-Za-z][A-Za-z0-9._-]{0,39}(?:[ ][A-Za-z][A-Za-z0-9._-]{0,39}){0,3}";
 const PAIR_RES = [
   // Latin then parenthesised Han: Acme（甲公司）
-  new RegExp("([A-Za-z][A-Za-z0-9._-]{1,39})\\s*[（(]\\s*(" + HAN_RUN + "{2,8})\\s*[)）]", "g"),
+  new RegExp("(" + LATIN_NAME + ")\\s*[（(]\\s*(" + HAN_RUN + "{2,8})\\s*[)）]", "g"),
   // Han then parenthesised Latin: 甲公司（Acme）
-  new RegExp("(" + HAN_RUN + "{2,8})\\s*[（(]\\s*([A-Za-z][A-Za-z0-9._-]{1,39})\\s*[)）]", "g"),
+  new RegExp("(" + HAN_RUN + "{2,8})\\s*[（(]\\s*(" + LATIN_NAME + ")\\s*[)）]", "g"),
 ];
+
+// Words that start a sentence rather than name an object. A multi-word match can
+// pick one up from the text in front of the name (`see Acme Corp`), and carrying
+// it into the alias would store a phrase nobody would look up.
+const LEADING_NOISE = new Set([
+  "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "by", "with",
+  "see", "per", "via", "vs", "our", "your", "their", "its", "this", "that", "these", "those",
+]);
+
+function trimLeadingNoise(name: string): string {
+  const words = name.trim().split(/\s+/);
+  let start = 0;
+  while (start < words.length - 1 && LEADING_NOISE.has(words[start]!.toLowerCase())) start += 1;
+  return words.slice(start).join(" ");
+}
 
 export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
   const out: CrossScriptPair[] = [];
@@ -81,10 +102,11 @@ export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
   for (const re of PAIR_RES) {
     re.lastIndex = 0;
     for (const m of text.matchAll(re)) {
-      const a = (m[1] ?? "").trim();
-      const b = (m[2] ?? "").trim();
-      const latin = scriptOf(a) === "latin" ? a : b;
-      const han = scriptOf(a) === "han" ? a : b;
+      const rawA = (m[1] ?? "").trim();
+      const rawB = (m[2] ?? "").trim();
+      const latinRaw = scriptOf(rawA) === "latin" ? rawA : rawB;
+      const han = scriptOf(rawA) === "han" ? rawA : rawB;
+      const latin = trimLeadingNoise(latinRaw);
       if (!latin || !han) continue;
       const key = normalizeEntityName(latin) + "\u0000" + normalizeEntityName(han);
       if (seen.has(key)) continue;
