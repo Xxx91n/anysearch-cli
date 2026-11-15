@@ -5,6 +5,7 @@
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
 import { rankKnowledge } from "./knowledge-ranking";
+import { knowledgeFtsSql } from "./knowledge-fts";
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
 import {
@@ -1683,12 +1684,7 @@ export class SqliteSessionStore implements SessionStore {
     //    whole query, so no extra relevance filter applies.
     const strict = this.fts5Escape(query);
     if (strict !== '""') {
-      const stmt = this.db.prepare(
-        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank",
-      );
+      const stmt = this.db.prepare(knowledgeFtsSql(objectWhere));
       // SQL narrows to rows mentioning the object; the JS check applies the
       // exact rule (word boundaries for Latin names), so `LIKE '%acme%'` letting
       // `AcmeCloud` through cannot reach the caller.
@@ -1855,11 +1851,7 @@ export class SqliteSessionStore implements SessionStore {
         const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
         const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
         const scanBound = Math.max(limit * 20, 200);
-        const paired = this.db.prepare(
-          "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-          "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere + " ORDER BY rank",
-        );
+        const paired = this.db.prepare(knowledgeFtsSql(objectWhere));
         const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
         const candidates = paired.iterate(
           "(" + asciiMatch + ") AND (" + unicodeMatch + ")", ...objectParams,
@@ -1880,12 +1872,8 @@ export class SqliteSessionStore implements SessionStore {
       // SQL LIKE candidates (#283). Prefix collisions (AcmeCloud) can exhaust
       // any fixed window, so read one cursor until enough rows survive or EOF.
       const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
-      const indexed = this.db.prepare(
-        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank",
-      ).iterate(queryFts, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>;
+      const indexed = this.db.prepare(knowledgeFtsSql(objectWhere))
+        .iterate(queryFts, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>;
       for (const r of indexed) {
         if (otherScript.length >= limit) break;
         if (matchesObject(r.content)) pushOtherScript(r);

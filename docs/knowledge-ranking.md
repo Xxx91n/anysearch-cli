@@ -27,3 +27,5 @@ CodeRabbit 首轮提出两项问题，均采纳：
 CodeRabbit 复查又指出：固定 200 条的读取窗口仍可能被前缀碰撞填满。该意见采纳；其他文字的索引与 LIKE 回退都改成游标逐条读取，先精确检查对象，收到足够结果或候选耗尽就停止。前缀碰撞回归改为 260 条，不再用加大窗口来掩盖截断问题。
 
 同类修复也覆盖英文严格 FTS、中文 LIKE，以及松匹配/混合文字通路：对象检查失败的前缀碰撞不再消耗候选名额。原有的相关度扫描预算保留，但在精确对象检查之后计数。测试分别加入 260 条中英俄混合、260 条英文、260 条俄文前缀碰撞，两个召回入口都检查正确行仍能返回。
+
+CodeRabbit 第三轮的性能意见也采纳：游标不能按 `bm25(...)` 的 SELECT 别名排序，否则 SQLite 可能先用临时 B-tree 排完所有匹配行。三个知识 FTS 游标共用完整 JOIN 查询，改按 `semantic_memories_fts.rank` 排序，返回的 `rank` 数值仍取 BM25。远端测试对实际使用的 SQL 跑 `EXPLAIN QUERY PLAN`，检查严格、松匹配、混合文字和 Unicode 查询都不出现临时排序，并对比直接 BM25 排序的分数顺序与候选集合。依据：[SQLite FTS5 排序说明](https://www.sqlite.org/fts5.html#sorting_by_auxiliary_function_results)。
