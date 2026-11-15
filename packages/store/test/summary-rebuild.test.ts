@@ -1108,6 +1108,19 @@ function userText(db: string, sessionId: string): any[] {
     const twoKeptThenReal = "q\n\n" + rag + " explain A\n\n" + second + " explain B\n\n" + digest;
     assert(stripInjectedBlocks(twoKeptThenReal, [rag, second], { trustProvenance: true }) === twoKept,
       "R20d: a real block after the LAST protected one is still removed");
+
+    // R20e: the SAME block appearing twice. A user pastes the same summary back and
+    // comments on it twice. Stopping at the first match dropped the second copy and
+    // the sentence after it (#288 review).
+    const repeated = "q\n\n" + rag + " explain A\n\n" + rag + " explain B";
+    const repeatedOut = stripInjectedBlocks(repeated, [rag], { trustProvenance: true });
+    assert(repeatedOut === repeated,
+      "R20e: the same protected block twice keeps both copies and both sentences (got " +
+        JSON.stringify(repeatedOut) + ")");
+
+    const repeatedThenReal = repeated + "\n\n" + digest;
+    assert(stripInjectedBlocks(repeatedThenReal, [rag], { trustProvenance: true }) === repeated,
+      "R20e: a real block after the second copy is still removed");
   }
 
   closeStore(store);

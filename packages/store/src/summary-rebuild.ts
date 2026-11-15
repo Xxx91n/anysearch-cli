@@ -283,6 +283,11 @@ export function stripInjectedBlocks(
 /**
  * End offset of the LAST protected block at or after `from`, or -1 when none.
  *
+ * Every occurrence counts, not just the first one: the same block can appear twice
+ * in a message (a user pasting the same summary back and commenting on each), and
+ * stopping at the first match dropped the second copy and the sentence after it
+ * (#288 review).
+ *
  * @param text - Text to scan.
  * @param protectedBlocks - Blocks pass 1 refused because the user kept typing.
  * @param from - First offset to consider.
@@ -295,10 +300,7 @@ function lastProtectedEnd(text: string, protectedBlocks: Set<string>, from: numb
     while (at >= from) {
       // A block the user's words run on from is their text; one that ends at a
       // boundary was ordinary injection and pass 1 would have removed it.
-      if (!endsAtBlockBoundary(text.slice(at), block)) {
-        best = Math.max(best, at + block.length);
-        break;
-      }
+      if (!endsAtBlockBoundary(text.slice(at), block)) best = Math.max(best, at + block.length);
       at = text.indexOf(block, at + 1);
     }
   }
