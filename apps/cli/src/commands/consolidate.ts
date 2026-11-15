@@ -212,6 +212,30 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   });
   const budget = metering.metered ? metering.budget : undefined;
 
+  // #277: the Active Domain's declared cross-script mappings take effect here,
+  // before any material is clustered, so a pair the operator wrote down is in
+  // force for this run. Applied once per run and idempotent.
+  //
+  // Not under --dry-run: that mode promises "nothing saved", and an alias (plus
+  // the entity row and log row behind it) is a saved change like any other. The
+  // dry-run preview still describes the mappings correctly, because the same
+  // table is read again by the run itself.
+  //
+  // A skipped group is a real conflict (one name claimed by two objects) and is
+  // reported by name: silently dropping it would leave the operator believing a
+  // mapping they wrote is active.
+  if (domainForBudget?.entityAliases && !dryRun) {
+    const applied = store.applyDeclaredAliases(domainForBudget.entityAliases);
+    for (const s of applied.skipped) {
+      process.stderr.write("[warn] entityAliases." + s.group + " not applied: " + s.reason + "\n");
+    }
+    if (applied.applied > 0) {
+      process.stdout.write("entity pairs declared: " + applied.applied + " alias(es) applied from the Active Domain\n");
+    }
+  } else if (domainForBudget?.entityAliases && dryRun) {
+    process.stdout.write("dry-run: entityAliases mappings were NOT applied (nothing is saved in this mode)\n");
+  }
+
   let seams: ReturnType<typeof createConsolidationSeams> | undefined;
   if (providerName && modelName) {
     try {
@@ -227,15 +251,23 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stderr.write("[warn] LLM provider/model not configured (env, config files, or --llm.* flags); consolidation will report llmUnavailable\n");
   }
 
+  // #277: the cross-script entity judge rides the same run's seams, so its calls
+  // are counted in the same usage block the operator already reads. Absent an
+  // LLM it is simply unavailable, and the declared paths still work.
+  const deps = seams
+    ? {
+        summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal,
+        judgeEntityAlias: seams.judgeEntityAlias,
+      }
+    : undefined;
+
   let r: ConsolidateReport;
   try {
     r = await store.consolidateMemory(
       { dryRun, ...(limit !== undefined ? { limit } : {}), scope, ...(allowSingleEvidence ? { allowSingleEvidence: true } : {}) },
       // This run's own seams: the usage counter belongs to this invocation, so
       // it is passed in rather than parked on the store.
-      seams
-        ? { summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal }
-        : undefined,
+      deps,
     );
   } catch (e) {
     if (isConsolidationBudgetError(e)) {
@@ -259,7 +291,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       (r.summariesSuspended > 0 ? ", summariesSuspended " + r.summariesSuspended : "") +
       (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
       (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
-      (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") + "\n",
+      (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") +
+      // #277: how the cross-script pass went. Printed only when it did
+      // something, so a run over same-language material reads exactly as before.
+      (r.crossScriptDeclared > 0 ? ", crossScriptDeclared " + r.crossScriptDeclared : "") +
+      (r.crossScriptProposed > 0 ? ", crossScriptProposed " + r.crossScriptProposed + " (review: ans entity aliases --pending)" : "") +
+      (r.crossScriptUndetermined > 0 ? ", crossScriptUndetermined " + r.crossScriptUndetermined : "") + "\n",
   );
 
   // The scope that was really used, not the one the caller thinks it passed.

@@ -42,10 +42,36 @@ import {
 
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
-import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
+import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
+import {
+  loadLiveEntities,
+  findEntityForForm,
+  appendAlias,
+  logDeclaredAlias,
+  applyStatedPairAsAlias,
+  queueProposedAlias,
+  listAliasRows,
+  undoAliasRow,
+  resolveQueryObject,
+  objectFormsInText,
+  formAppearsInText,
+  crossScriptPairsInText,
+  markMemoryUnresolved,
+  listUnresolvedEntityMemories,
+  ALIAS_KIND_CROSS_SCRIPT,
+  ALIAS_KIND_DECLARED,
+  UNRESOLVED_ENTITY_MARK,
+  type AliasJudgeFn,
+  type AliasJudgeVerdict,
+  type AliasPairRequest,
+  type AliasRow,
+  type QueryObjectResolution,
+  type LiveEntityRow,
+  type UnresolvedEntityMemory,
+} from "./entity-alias.js";
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
-import type { EntityType, EntityCandidate } from "./entity.js";
+import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
@@ -254,6 +280,26 @@ export interface SessionStore {
   // candidate review list (list + keep/drop resolution, quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
+  // #277: cross-script entity correspondence. Declaring a pair takes effect at
+  // once; a model's proposal reaches the review list above and is applied only
+  // after `resolveEntityReview(..., "keep")`.
+  //
+  // Optional on the port, like `consolidateMemory`, so hand-built store mocks
+  // stay source-compatible. A caller must treat an absent method as "this store
+  // cannot answer", never as a licence to guess an object.
+  declareEntityAlias?(a: string, b: string): { ok: boolean; entityId?: number; logId?: number; error?: string };
+  // The Active Domain's `[entityAliases]` table. Idempotent; skipped groups are
+  // reported by name so a mistyped mapping never looks active.
+  applyDeclaredAliases?(table: Record<string, string[]> | undefined): { applied: number; skipped: Array<{ group: string; reason: string }> };
+  listEntityAliases?(opts?: { pendingOnly?: boolean }): AliasRow[];
+  // Records whose object could not be established: stored, excluded from every
+  // recall path, and resolvable here.
+  listUnresolvedEntityMemories?(): UnresolvedEntityMemory[];
+  resolveUnresolvedEntityMemory?(id: number, action: "keep" | "drop"): { ok: boolean; error?: string };
+  // Which object a query names, or that it cannot be told. `searchMemory` gates
+  // the knowledge lane on this; callers use it to report "object undetermined"
+  // instead of presenting whichever row ranked first.
+  resolveQueryObject?(query: string): QueryObjectResolution;
   // entity-relation edge layer (fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
@@ -274,6 +320,9 @@ export interface SessionStore {
     classify?: ConsolidateClassifyFn;
     verify?: ConsolidateVerifyFn;
     verifyFinal?: ConsolidateFinalCheckFn;
+    // #277: cross-script entity judge for the materials this run read. Its
+    // proposals go to the review queue; nothing is applied without a human.
+    judgeEntityAlias?: AliasJudgeFn;
   }): Promise<ConsolidateReport>;
   // #264 (D9): rebuild one suspended summary from its own recorded sources
   // (resolved to their current versions) plus the owning session's stored user
@@ -306,6 +355,10 @@ export interface SessionStore {
 // one unresolved candidate row in the entity review list.
 export interface EntityReviewRow {
   id: number;
+  // #277: 'candidate' is the same-type fuzzy pair; 'cross_script' is a
+  // model-proposed mapping between a Chinese and a Latin name. The two need
+  // different wording in the review UI, so the kind travels.
+  kind: "candidate" | "cross_script";
   sourceName: string;
   targetEntityId: number;
   targetName: string | null;
@@ -432,6 +485,11 @@ export class SqliteSessionStore implements SessionStore {
   private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
+  // #277: the cross-script judge (optional, fail-open). It answers "are these
+  // two names the same object?" — a question the character layer cannot ask.
+  // Its answer is only a proposal; `resolveEntityReview` applies it after a human
+  // confirms. Absent seam = no proposals, the declared paths still work.
+  private readonly entityAliasJudge?: AliasJudgeFn;
   // LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
   // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
@@ -446,7 +504,15 @@ export class SqliteSessionStore implements SessionStore {
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // step7: entity arm telemetry counters (report-only in eval).
-  private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
+  private readonly entityTel = {
+    queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0,
+    // #277 cross-script pass: pairs sent to the judge, proposals queued,
+    // mappings applied from the material itself, judge failures (fail-open),
+    // and materials left "object undetermined".
+    crossScriptJudged: 0, crossScriptProposed: 0, crossScriptDeclared: 0,
+    crossScriptJudgeFailures: 0, unresolvedMarked: 0, crossScriptAmbiguousQueries: 0,
+    crossScriptNeedsMerge: 0,
+  };
   // vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
   // relation extraction + arm telemetry (report-only, never gated).
@@ -476,6 +542,10 @@ export class SqliteSessionStore implements SessionStore {
   constructor(dbPath: string, opts?: {
     entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
     relationLlmFallback?: (text: string) => Promise<string | null>;
+    // #277: cross-script correspondence judge (optional, fail-open). Answers
+    // "is `Acme` the same object as `甲公司`?" — proposals land in the review
+    // queue, never straight into the alias table.
+    entityAliasJudge?: AliasJudgeFn;
     // consolidation seams (same injection discipline as relationLlmFallback).
     consolidateSummarize?: ConsolidateSummarizeFn;
     consolidateClassify?: ConsolidateClassifyFn;
@@ -488,6 +558,7 @@ export class SqliteSessionStore implements SessionStore {
   }) {
     this.entityLlmFallback = opts?.entityLlmFallback;
     this.relationLlmFallback = opts?.relationLlmFallback;
+    this.entityAliasJudge = opts?.entityAliasJudge;
     this.consolidateSummarize = opts?.consolidateSummarize;
     this.consolidateClassify = opts?.consolidateClassify;
     this.consolidateVerify = opts?.consolidateVerify;
@@ -565,6 +636,17 @@ export class SqliteSessionStore implements SessionStore {
     // candidate review list columns on entity_merge_log.
     this.applyColumnMigration("entity_merge_log.hit_count", "ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1", initDeadline);
     this.applyColumnMigration("entity_merge_log.resolved", "ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT", initDeadline);
+    // #277: these two indexes read `resolved`, so they must be created AFTER the
+    // column migration above — not in schema.sql, which runs before every ALTER.
+    // Putting them there made an existing database fail to open with "no such
+    // column: resolved". Both are read on every review list / resolve / undo;
+    // without them each is a full scan of a log that grows with every write.
+    try {
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_entity_merge_log_review ON entity_merge_log(kind, resolved, undone)");
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_entity_merge_log_source ON entity_merge_log(source_name, kind)");
+    } catch (e) {
+      this.warnOrRefuseWhenContended(e, "[warn] entity_merge_log index creation failed: ");
+    }
     // soft archive (reversible forgetting).
     this.applyColumnMigration("retrieval_results.archived", "ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0", initDeadline);
     // #261: correction propagation. An episode whose fact a later consolidation
@@ -959,17 +1041,34 @@ export class SqliteSessionStore implements SessionStore {
    const vecHits = await this.vectorArmRows(query, fetchLimit);
    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
    const relHits = this.relationArmRows(query, fetchLimit);
+   // #277: which object this query names, resolved BEFORE the knowledge lane
+   // reads. The ambiguity bites there — a Han-named knowledge row and a Latin
+   // query share no characters, so the keyword slices match BOTH companies' rows
+   // and whichever ranks first answers. One object means only its own names may
+   // answer; an unresolved collision means no knowledge row is offered at all.
+   //
+   // Resolved here and pushed DOWN into the lane on purpose: filtering the
+   // finished `limit` rows would drop the answering row whenever the head of the
+   // list belongs to another object, returning empty while the right row sat one
+   // position past the cut.
+   const objectResolution = resolveQueryObject(this.liveEntities(), query);
+   if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
+   const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
    // Kept at `limit`: the arm allocates slots between its own keyword and vector
    // lanes, so widening it would change that allocation and let the vector lane
    // take the slot a keyword hit needed.
-   const semHits = await this.semanticArmRows(query, limit);
+   const semHitsRaw = await this.semanticArmRows(query, limit, objectForms);
+   // An undetermined object offers no knowledge row: "cannot tell which object"
+   // is the answer, not a guess. Materials stay (they carry their own URL).
+   const semHits = objectResolution.kind === "ambiguous" ? [] : semHitsRaw;
+   const semHitsGated = semHits;
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
     for (const h of armHits) byId.set(h.rowid, h);
     for (const h of vecHits) byId.set(h.rowid, h);
     for (const h of relHits) byId.set(h.rowid, h);
-    for (const h of semHits) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
+    for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
    // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory
    // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
@@ -978,7 +1077,7 @@ export class SqliteSessionStore implements SessionStore {
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
-    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
+   if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
     // Material candidates from the episode arms were read BEFORE the awaits that
     // fetch vectors and knowledge. A correction committed in that window leaves
@@ -1018,14 +1117,14 @@ export class SqliteSessionStore implements SessionStore {
    const entIds = new Set(armHits.map((h) => h.rowid));
    const vecIds = new Set(vecHits.map((h) => h.rowid));
    const relIds = new Set(relHits.map((h) => h.rowid));
-   const semIds = new Set(semHits.map((h) => h.rowid));
+   const semIds = new Set(semHitsGated.map((h) => h.rowid));
    // provenance snapshot taken BEFORE the read-side secret filter (the filter can
    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
    { const armLabels: string[] = ["fts"];
      if (armHits.length > 0) armLabels.push("entity");
      if (vecHits.length > 0) armLabels.push("vector");
      if (relHits.length > 0) armLabels.push("relation");
-      if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) armLabels.push("semantic");
+     if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
      const provTexts = new Map<number, string>();
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
      this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
@@ -1055,7 +1154,14 @@ export class SqliteSessionStore implements SessionStore {
     if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
     // Phase-2: semantic arm fused into RRF in serve mode (negative ids resolved
     // from semantic_memories in fts5.ts); telemetry still runs in both modes.
-    const semHits = await this.semanticArmRows(queries[0] ?? "", limit);
+    // #277: the same object gate the single-query path applies — both recall
+    // lanes must answer for the object the query names, or the multi-query path
+    // would still serve another company's row.
+    const multiObject = resolveQueryObject(this.liveEntities(), queries[0] ?? "");
+    if (multiObject.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
+    const semHits = multiObject.kind === "ambiguous"
+      ? []
+      : await this.semanticArmRows(queries[0] ?? "", limit, multiObject.kind === "resolved" ? multiObject.forms : undefined);
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) arms.push({ label: "semantic", ids: semHits.map((h) => String(h.rowid)) });
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
     // read-side exit: same guard as searchMemory.
@@ -1136,10 +1242,26 @@ export class SqliteSessionStore implements SessionStore {
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
+        // #277: the cross-script pass runs AFTER this write's verdict, never
+        // before it. Run inside `linkEntities` it could mark the NEW row
+        // "object undetermined" and the supersede below would then close the old
+        // row anyway — leaving the entity with no live version at all, and no way
+        // back even after a human resolves the mark.
+        try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
         if (existing) {
           try {
-            this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
-            out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+            // Only close the old version when the new one will actually be
+            // recallable. A row marked undetermined is not, so closing the old
+            // row would remove the last answerable version of this fact.
+            const newRowUnresolved = this.db
+              .prepare("SELECT 1 AS m FROM retrieval_results WHERE id = ? AND quarantine IS NOT NULL")
+              .get(insertedId) as { m: number } | undefined;
+            if (newRowUnresolved) {
+              out.push({ action: "accept", insertedId });
+            } else {
+              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
+              out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+            }
           } catch {
             out.push({ action: "accept", insertedId });
           }
@@ -1156,6 +1278,11 @@ export class SqliteSessionStore implements SessionStore {
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
+        // #277: after the equal-conflict verdict, not before it — otherwise this
+        // pass's "undetermined" mark is overwritten by the line above, and a
+        // reviewer choosing `keep` on the conflict would clear the quarantine and
+        // put a record with no established object back into recall.
+        try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
         out.push({ action: "quarantine", reason: "equal_conflict", insertedId });
       }
     }
@@ -1334,7 +1461,13 @@ export class SqliteSessionStore implements SessionStore {
 
   // ---- entity link layer (write link + query arm) ----
 
-  public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number; truncated: number } {
+  public entityTelemetry(): {
+    queries: number; candidates: number; activations: number; hits: number; truncated: number;
+    // #277 cross-script pass (report-only, like every other counter here).
+    crossScriptJudged: number; crossScriptProposed: number; crossScriptDeclared: number;
+    crossScriptJudgeFailures: number; unresolvedMarked: number; crossScriptAmbiguousQueries: number;
+    crossScriptNeedsMerge: number;
+  } {
     return { ...this.entityTel };
   }
   // vector arm telemetry + breaker state (report-only).
@@ -1420,6 +1553,7 @@ export class SqliteSessionStore implements SessionStore {
       classify?: ConsolidateClassifyFn;
       verify?: ConsolidateVerifyFn;
       verifyFinal?: ConsolidateFinalCheckFn;
+      judgeEntityAlias?: AliasJudgeFn;
     },
   ): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, {
@@ -1427,6 +1561,8 @@ export class SqliteSessionStore implements SessionStore {
       classify: deps?.classify ?? this.consolidateClassify,
       verify: deps?.verify ?? this.consolidateVerify,
       verifyFinal: deps?.verifyFinal ?? this.consolidateVerifyFinal,
+      // #277: the per-run seam wins over the constructor default, like the rest.
+      judgeEntityAlias: deps?.judgeEntityAlias ?? this.entityAliasJudge,
     }, opts);
   }
 
@@ -1445,7 +1581,7 @@ export class SqliteSessionStore implements SessionStore {
   // semantic arm scoring (served in Phase-2). Full-table JS cosine over live semantic
   // rows, same pattern as vectorArmRows. Synthetic negative rowids (-semantic_memories.id) keep
   // the RRF id-space collision-free vs retrieval_results.
-  private async semanticArmRows(query: string, limit: number): Promise<MemoryHit[]> {
+  private async semanticArmRows(query: string, limit: number, objectForms?: readonly string[]): Promise<MemoryHit[]> {
     this.semTel.queries++;
     // #261 D8: a knowledge row is the only carrier of the facts a correction
     // did not replace, so it must be reachable without an embedding on either
@@ -1460,7 +1596,7 @@ export class SqliteSessionStore implements SessionStore {
     // the await removes the window; the validity re-check below covers anything
     // closed between the two statements.
     const qv = await embedText(query, "query");
-    const keyword = this.semanticKeywordRows(query, limit);
+    const keyword = this.semanticKeywordRows(query, limit, objectForms);
     let vector: MemoryHit[] = [];
     if (qv) {
       const rows = this.db
@@ -1468,6 +1604,12 @@ export class SqliteSessionStore implements SessionStore {
         .all() as Array<{ id: number; content: string; embedding: Buffer }>;
       const scored: Array<{ h: MemoryHit; s: number }> = [];
       for (const r of rows) {
+        // #277: the same object rule the keyword lane applies, applied before the
+        // cut for the same reason. Filtering only the keyword lane left the
+        // vector lane free to answer with another object's row — the exact
+        // failure this ticket exists to remove, just arriving through the other
+        // lane.
+        if (objectForms && objectForms.length > 0 && !objectForms.some((f) => formAppearsInText(r.content, f))) continue;
         const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
         const sv = cosineSimilarity(qv, v);
         scored.push({ h: { rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: -sv } as MemoryHit, s: sv });
@@ -1530,7 +1672,36 @@ export class SqliteSessionStore implements SessionStore {
   //   Chinese query becomes `""`), and the default unicode61 tokenizer glues a
   //   whole Chinese run into one token, so `"客服邮箱"` could never MATCH it.
   //   The LIKE rung is the only path that finds a Chinese fact without vectors.
-  private semanticKeywordRows(query: string, limit: number): MemoryHit[] {
+  private semanticKeywordRows(query: string, limit: number, objectForms?: readonly string[]): MemoryHit[] {
+    // #277: the object filter runs in SQL, before the LIMIT — not after it.
+    //
+    // Two earlier attempts got this wrong, so the rule is written down here:
+    // filtering the finished `limit` rows drops the answering row whenever the
+    // head of the list belongs to another object; reading a wider fixed window
+    // and filtering that only moves the boundary (100 companies all stating
+    // "客服邮箱为 …" put the right row past any fixed cut). The object condition
+    // is therefore part of the query: `LIMIT limit` then counts rows that can
+    // actually answer.
+    //
+    // `objectForms` are normalized names. Two layers, each doing what it can:
+    //
+    // - SQL does a cheap containment pre-filter (`LIKE '%form%'`) so `LIMIT`
+    //   counts rows that mention the object at all instead of rows from any
+    //   object. A fixed read window was the earlier attempt and only moved the
+    //   boundary: with enough rows about other objects the answering row always
+    //   sat past it.
+    // - Every row that comes back is THEN checked with `formAppearsInText`, the
+    //   one function that also enforces word boundaries for Latin names. `LIKE
+    //   '%acme%'` alone would accept `AcmeCloud`, and the CJK rung pushes rows
+    //   without any further check — so the pre-filter must never be the last
+    //   word. Because the pre-filter is strictly looser, the JS check only ever
+    //   removes rows, and the rungs keep reading while the accepted count is
+    //   still short (bounded, like the relaxed rung).
+    const objectActive = !!objectForms && objectForms.length > 0;
+    const objectWhere = objectActive ? " AND (" + objectForms!.map(() => "s.content LIKE ?").join(" OR ") + ")" : "";
+    const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
+    const matchesObject = (content: string): boolean =>
+      !objectActive || objectForms!.some((f) => formAppearsInText(content, f));
     const latin: Array<{ id: number; content: string; rank: number }> = [];
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
     const otherScript: Array<{ id: number; content: string; rank: number }> = [];
@@ -1555,9 +1726,17 @@ export class SqliteSessionStore implements SessionStore {
       const stmt = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
+        " ORDER BY rank LIMIT ?",
       );
-      for (const r of stmt.all(strict, limit) as Array<{ id: number; content: string; rank: number }>) pushLatin(r);
+      // SQL narrows to rows mentioning the object; the JS check applies the
+      // exact rule (word boundaries for Latin names), so `LIKE '%acme%'` letting
+      // `AcmeCloud` through cannot reach the caller.
+      const strictWindow = objectActive ? Math.max(limit * 4, 40) : limit;
+      for (const r of stmt.all(strict, ...objectParams, strictWindow) as Array<{ id: number; content: string; rank: number }>) {
+        if (latin.length >= limit) break;
+        if (matchesObject(r.content)) pushLatin(r);
+      }
       // 2) Relaxed rung (OR over content words) only when the strict rung
       //    under-fills, and only for rows covering a strict majority of those
       //    words — same rule as the episode lane. Without it an OR query for
@@ -1582,10 +1761,13 @@ export class SqliteSessionStore implements SessionStore {
           // iterator is bounded so a pathological table cannot spin forever.
           const BOUND = Math.max(limit * 20, 200);
           let scanned = 0;
-          for (const r of stmt.iterate(relaxed, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
+          // The statement already carries the object condition, so the bound
+          // counts rows that can answer; the JS check below stays as the
+          // cross-language containment test the SQL LIKE cannot express.
+          for (const r of stmt.iterate(relaxed, ...objectParams, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
             if (latin.length >= limit) break;
             if (++scanned > BOUND) break;
-            if (coversMajority(terms, r.content)) pushLatin(r);
+            if (coversMajority(terms, r.content) && matchesObject(r.content)) pushLatin(r);
           }
         }
       }
@@ -1680,10 +1862,24 @@ export class SqliteSessionStore implements SessionStore {
           if (list.length === 0 || cjk.length >= limit) return;
           const where = list.map(() => "s.content LIKE ?").join(" OR ");
           const remaining = limit - cjk.length;
+          // SQL narrows to rows that mention the object at all; the JS check
+          // below applies the exact rule (word boundaries for Latin names).
+          // Reading a wider window is therefore safe rather than necessary: the
+          // pre-filter is what makes the answering row reachable at all, and the
+          // wider window only covers rows the loose LIKE let in and the exact
+          // check will drop. Without the JS check the CJK rung would serve
+          // `AcmeCloud 客服邮箱…` for the object `acme`.
+          const readWindow = objectActive ? Math.max(remaining * 4, 40) : remaining;
           const rows = this.db
-            .prepare("SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?")
-            .all(...list.map((t) => "%" + t + "%"), remaining) as Array<{ id: number; content: string }>;
-          for (const r of rows) pushCjk({ id: r.id, content: r.content, rank: 0 });
+            .prepare(
+              "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
+              " AND (" + where + ")" + objectWhere + " LIMIT ?",
+            )
+            .all(...list.map((t) => "%" + t + "%"), ...objectParams, readWindow) as Array<{ id: number; content: string }>;
+          for (const r of rows) {
+            if (cjk.length >= limit) break;
+            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
+          }
         };
         const factGrams = grams.filter((t) => t.length >= 4);
         const objectGrams = grams.filter((t) => t.length < 4);
@@ -1733,16 +1929,18 @@ export class SqliteSessionStore implements SessionStore {
       const indexed = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
-      ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
-      for (const r of indexed) pushOtherScript(r);
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
+        " ORDER BY rank LIMIT ?",
+      ).all(queryFts, ...objectParams, limit) as Array<{ id: number; content: string; rank: number }>;
+      for (const r of indexed) if (matchesObject(r.content)) pushOtherScript(r);
       // Keep a substring rung for languages where an indexed word differs
       // from a useful query fragment; avoid the scan if FTS already filled.
       if (otherScript.length < limit) {
         const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
         const rows = this.db.prepare(
-          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
-        ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
+          " AND (" + where + ")" + objectWhere + " LIMIT ?",
+        ).all(...otherWords.map((w) => "%" + w + "%"), ...objectParams, limit) as Array<{ id: number; content: string }>;
         for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
       }
     }
@@ -1763,8 +1961,7 @@ export class SqliteSessionStore implements SessionStore {
 
 
   private liveEntities(): Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string[] }> {
-    const rows = this.db.prepare("SELECT id, name, name_norm as nameNorm, entity_type as type, aliases FROM entities WHERE valid_until IS NULL").all() as Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string }>;
-    return rows.map((r) => ({ ...r, aliases: JSON.parse(r.aliases || "[]") as string[] }));
+    return loadLiveEntities(this.db);
   }
 
   // Write-path linking: declared entity key (non-URL) + rule extraction; LLM backfill only on empty rules (fail-open).
@@ -1789,10 +1986,146 @@ export class SqliteSessionStore implements SessionStore {
       linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
     try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // fail-open, same discipline as linkEntities
+    // #277: the cross-script pass is NOT called here. It writes the
+    // "object undetermined" mark, and adjudicateMemory still has to decide this
+    // write's quarantine/supersede verdict — a mark written now would be
+    // overwritten, or would close the old version of a row nobody can recall.
+    // Both write paths call it after their verdict instead.
     // extraction overflow (capped out) enters the candidate review list — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
     for (const c of overflow) this.logOverflowCandidate(c);
+  }
+
+  // #277: relate the names in one material that the trigram tiers cannot.
+  //
+  // Two sources of evidence, in the order the ticket fixes:
+  //   1. the material states it (`Acme（甲公司）`) — applied at once;
+  //   2. the model proposes it — queued for review, NOT applied.
+  //
+  // A material whose names cannot be tied to any single object is recorded as
+  // "object undetermined" instead of being linked to a guess: leaving a fact out
+  // is recoverable, attaching it to the wrong company is not.
+  private async linkCrossScript(memoryId: number, text: string): Promise<void> {
+    const live = this.liveEntities();
+    if (live.length === 0) return;
+    const { stated, candidates } = crossScriptPairsInText(text, live);
+
+    // 1) stated pairs: the material itself says these two names are one object.
+    //
+    // A pair that needs a merge is NOT settled — the two names belong to
+    // different live objects, so this material's object is still undetermined.
+    // Collect those and feed them into step 3; counting them only in telemetry
+    // would leave the material in default recall while its stated pair says the
+    // object cannot be resolved yet.
+    const unresolvedStated: Array<{ left: string; right: string }> = [];
+    for (const pair of stated) {
+      const chosen = this.applyStatedPair(pair, memoryId);
+      // Store the name the call actually chose, not the full match: a ladder
+      // suffix is what the entity table matched, and re-checking with the full
+      // match would fail to see it as settled.
+      if (chosen) unresolvedStated.push({ left: chosen, right: pair.han });
+    }
+
+    // 2) model proposals, only when something is actually unresolved.
+    if (candidates.length > 0 && this.entityAliasJudge) {
+      this.entityTel.crossScriptJudged += candidates.length;
+      let verdicts: AliasJudgeVerdict[] = [];
+      try {
+        verdicts = await this.entityAliasJudge(candidates);
+      } catch {
+        // Fail-open on the PROPOSAL, not on the outcome: an unreachable model
+        // must not block the write, and it must not turn "I could not ask" into
+        // "this material is fine either way". Passing no verdicts leaves every
+        // pair unestablished, so step 3 below treats them exactly like a null
+        // answer — otherwise the same material would be excluded when the model
+        // says "cannot tell" and stay in recall when the model is offline.
+        this.entityTel.crossScriptJudgeFailures += 1;
+        verdicts = [];
+      }
+      for (let i = 0; i < candidates.length; i++) {
+        const pair = candidates[i]!;
+        const verdict = verdicts[i];
+        // `same` must be an explicit true. A missing answer, a null answer or a
+        // thrown call all mean "not established" — never a silent yes.
+        if (verdict?.same !== true) continue;
+        this.queueModelAlias(pair, verdict);
+      }
+    }
+
+    // 3) an object that stays undetermined after all of the above is marked, not
+    //    guessed. Decided PER PAIR, not per material: a text that states one
+    //    mapping (`Acme（甲公司）`) and also mentions an unresolved second name
+    //    (`Globex/乙公司`) must still be marked for the second one — skipping the
+    //    whole material because one pair was stated is how an unresolved object
+    //    slips back into recall.
+    //
+    //    The entity table is re-read here: the judge is an await, and a
+    //    declaration landing meanwhile may already have settled one of these
+    //    pairs. Judging them against the snapshot taken before the call would
+    //    mark a material unresolved that is no longer ambiguous.
+    //
+    //    No `linked.length > 0` gate: a material that names an object but got no
+    //    entity link is exactly the case where nothing says which object it
+    //    belongs to — requiring a link would exempt the worst case of all.
+    if (candidates.length > 0 || unresolvedStated.length > 0) {
+      const fresh = this.liveEntities();
+      const stillInCandidates = candidates.filter((p) => {
+        const left = findEntityForForm(fresh, normalizeEntityName(p.left));
+        const right = findEntityForForm(fresh, normalizeEntityName(p.right));
+        return !(left && right && left.id === right.id);
+      });
+      // A stated pair that needed a merge is unresolved by definition: the two
+      // names still belong to different objects, so nothing says which one this
+      // material is about. Re-check against the fresh table so a declaration that
+      // landed during the judge call counts.
+      const stillStated = unresolvedStated.filter((p) => {
+        const left = findEntityForForm(fresh, normalizeEntityName(p.left));
+        const right = findEntityForForm(fresh, normalizeEntityName(p.right));
+        return !(left && right && left.id === right.id);
+      });
+      const still = [...stillStated, ...stillInCandidates];
+      if (still.length > 0) {
+        markMemoryUnresolved(
+          this.db,
+          memoryId,
+          "cross-script object not established: " + still.slice(0, 3).map((p) => p.left + " / " + p.right).join("; "),
+        );
+        this.entityTel.unresolvedMarked += 1;
+      }
+    }
+  }
+
+  // A pair the material wrote down (`Acme（甲公司）`). Both sides end up as ONE
+  // entity: the one this material is already linked to when there is such a row,
+  // so a record's object does not hop; otherwise the Latin side wins.
+  //
+  // When the two names already belong to different live entities this writes
+  // nothing and counts it as "needs merge": appending an alias there would leave
+  // both objects live and make every later query about them ambiguous.
+  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): string | null {
+    const live = this.liveEntities();
+    const linkedIds = new Set(
+      (this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(memoryId) as Array<{ entity_id: number }>)
+        .map((r) => r.entity_id),
+    );
+    const preferred = [pair.latin, ...(pair.latinSuffixes ?? []), pair.han]
+      .map((n) => findEntityForForm(live, normalizeEntityName(n)))
+      .find((e) => e !== undefined && linkedIds.has(e.id))?.id;
+    const res = applyStatedPairAsAlias(this.db, live, pair, "declared-parentheses", { memoryId }, preferred);
+    if (res.applied) this.entityTel.crossScriptDeclared += 1;
+    else if (res.needsMerge) this.entityTel.crossScriptNeedsMerge += 1;
+    // The chosen Latin name when the pair is stated but NOT settled, so the
+    // caller can record exactly that name as undetermined. Null means settled.
+    return res.needsMerge ? res.needsMerge.latinName : null;
+  }
+
+  // A model said these two names are one object. Record it for review; do NOT
+  // touch `entities.aliases` — the ticket requires a human to confirm first.
+  private queueModelAlias(pair: AliasPairRequest, verdict: AliasJudgeVerdict): void {
+    if (queueProposedAlias(this.db, this.liveEntities(), pair, verdict)) {
+      this.entityTel.crossScriptProposed += 1;
+    }
   }
 
   // dedup'd candidate write — a re-hit of the same unresolved (source, target) pair
@@ -1879,14 +2212,176 @@ export class SqliteSessionStore implements SessionStore {
   // reversible merge undo — only alias-appends are undoable (candidate band never mutated anything).
   public undoEntityMerge(logId: number): boolean {
     const log = this.db.prepare("SELECT id, kind, source_name, target_entity_id, undone FROM entity_merge_log WHERE id = ?").get(logId) as { id: number; kind: string; source_name: string; target_entity_id: number; undone: number } | undefined;
-    if (!log || log.undone !== 0 || log.kind !== "alias") return false;
-    const row = this.db.prepare("SELECT aliases FROM entities WHERE id = ?").get(log.target_entity_id) as { aliases: string } | undefined;
-    if (!row) return false;
-    const norm = normalizeEntityName(log.source_name);
-    const next = (JSON.parse(row.aliases) as string[]).filter((a) => a !== norm);
-    this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(next), log.target_entity_id);
+    if (!log || log.undone !== 0) return false;
+    // #277: the cross-script kinds undo the same way an alias append does —
+    // take the alias back out of the entity. Decline, don't silently ignore, an
+    // unknown kind: the caller gets false and knows nothing happened.
+    if (log.kind !== "alias" && log.kind !== ALIAS_KIND_DECLARED && log.kind !== ALIAS_KIND_CROSS_SCRIPT) return false;
+    if (undoAliasRow(this.db, logId)) return true;
+    // A declared alias logged before its alias landed (a duplicate pair) has
+    // nothing to remove; marking it undone is still the honest state.
     this.db.prepare("UPDATE entity_merge_log SET undone = 1 WHERE id = ?").run(logId);
     return true;
+  }
+
+  // ---- #277: cross-script entity correspondence (public surface) ----
+
+  /**
+   * Declare that two surface forms name the same object.
+   *
+   * This is the operator's path and it takes effect at once — no model call, no
+   * review. The other side is attached as an alias of whichever entity already
+   * exists; when neither exists yet, this refuses instead of inventing an object
+   * (the ticket does not ask this path to create entities).
+   *
+   * Why two arguments instead of a table: the ticket's requirement is
+   * traceability, and recording one row per declaration in `entity_merge_log`
+   * with evidence 'manual' is exactly that. `ans entity alias <a> <b>` is the
+   * CLI face.
+   */
+  public declareEntityAlias(a: string, b: string): { ok: boolean; entityId?: number; logId?: number; error?: string } {
+    const aNorm = normalizeEntityName(a);
+    const bNorm = normalizeEntityName(b);
+    if (aNorm.length < 2 || bNorm.length < 2) return { ok: false, error: "both names need at least 2 characters" };
+    if (aNorm === bNorm) return { ok: false, error: "the two names are the same after normalization" };
+    const live = this.liveEntities();
+    const aEntity = findEntityForForm(live, aNorm);
+    const bEntity = findEntityForForm(live, bNorm);
+    if (aEntity && bEntity && aEntity.id !== bEntity.id) {
+      return { ok: false, error: "both names already belong to different live entities; merge them with `ans entity merge <fromId> <toId>` instead" };
+    }
+    // #277: when neither name is known yet, the declaration still has to land.
+    // The rule extraction never produces a Han name (its identifier channel is
+    // Latin-only), so a knowledge base written entirely in Chinese has no entity
+    // row for 甲公司 at all — and refusing here would make the operator's own
+    // mapping unusable in exactly the case the ticket is about.
+    //
+    // The Latin side becomes the entity's name when it is available: it is the
+    // form the identity is usually first asserted with, and it keeps the display
+    // name readable.
+    let target = aEntity ?? bEntity;
+    if (!target) {
+      const display = scriptOf(a) === "latin" ? a : scriptOf(b) === "latin" ? b : a;
+      const norm = normalizeEntityName(display);
+      try {
+        const info = this.db.prepare("INSERT INTO entities (name, name_norm, entity_type) VALUES (?, ?, 'declared')").run(display, norm);
+        target = { id: Number(info.lastInsertRowid), name: display, nameNorm: norm, type: "declared", aliases: [] };
+      } catch {
+        const again = findEntityForForm(this.liveEntities(), norm);
+        if (!again) return { ok: false, error: "could not create the entity for " + display };
+        target = again;
+      }
+    }
+    // Which name becomes the alias: the one that is not already one of this
+    // entity's own forms. Comparing against `nameNorm` alone was wrong the moment
+    // an alias existed — declaring 甲公司/阿克米 on an entity whose name is `acme`
+    // matched neither side and re-appended 甲公司, while 阿克米 was never stored.
+    const targetForms = new Set([target.nameNorm, ...target.aliases]);
+    const aliasNorm = targetForms.has(aNorm) ? bNorm : aNorm;
+    if (targetForms.has(aliasNorm)) {
+      // Both names already resolve here; the declaration is already in force.
+      const logId = logDeclaredAlias(this.db, aliasNorm, target.id, "manual", { declaredAs: [a, b], appended: false });
+      return { ok: true, entityId: target.id, logId };
+    }
+    const appended = appendAlias(this.db, target.id, aliasNorm);
+    const logId = logDeclaredAlias(this.db, aliasNorm, target.id, "manual", { declaredAs: [a, b], appended });
+    return { ok: true, entityId: target.id, logId };
+  }
+
+  /** Every alias and its stated reason; `pendingOnly` is the review queue. */
+  public listEntityAliases(opts: { pendingOnly?: boolean } = {}): AliasRow[] {
+    return listAliasRows(this.db, opts);
+  }
+
+  /**
+   * Apply an operator-declared mapping table (`[entityAliases]` in the Active
+   * Domain TOML).
+   *
+   * Every name on one list is tied to one entity, so the whole list resolves to
+   * a single object. Nothing here calls a model and nothing waits for review:
+   * the operator wrote it down, and that is the evidence. Idempotent — applying
+   * the same table twice writes no second log row.
+   *
+   * Names already owned by two DIFFERENT live entities are skipped and reported:
+   * that is a genuine conflict (the same name claimed by two objects), and
+   * silently merging them would destroy one of them without a snapshot.
+   */
+  public applyDeclaredAliases(
+    table: Record<string, string[]> | undefined,
+  ): { applied: number; skipped: Array<{ group: string; reason: string }> } {
+    const out: { applied: number; skipped: Array<{ group: string; reason: string }> } = { applied: 0, skipped: [] };
+    if (!table) return out;
+    for (const [group, names] of Object.entries(table)) {
+      if (!Array.isArray(names) || names.length < 2) continue;
+      const live = this.liveEntities();
+      const owners = names
+        .map((n) => findEntityForForm(live, normalizeEntityName(n)))
+        .filter((e): e is LiveEntityRow => e !== undefined);
+      const distinct = new Set(owners.map((e) => e.id));
+      if (distinct.size > 1) {
+        out.skipped.push({ group, reason: "the names already belong to different live entities; merge them first with ans entity merge" });
+        continue;
+      }
+      // The entity this list resolves to: the one already known, or a new row
+      // named after the first name in the list (the operator's own ordering is
+      // the display order they chose).
+      let targetId = owners[0]?.id;
+      if (targetId === undefined) {
+        const display = names[0]!.trim();
+        const norm = normalizeEntityName(display);
+        try {
+          const info = this.db.prepare("INSERT INTO entities (name, name_norm, entity_type) VALUES (?, ?, 'declared')").run(display, norm);
+          targetId = Number(info.lastInsertRowid);
+        } catch {
+          const again = findEntityForForm(this.liveEntities(), norm);
+          if (!again) { out.skipped.push({ group, reason: "could not create the entity for " + display }); continue; }
+          targetId = again.id;
+        }
+      }
+      for (const name of names) {
+        const norm = normalizeEntityName(name);
+        if (norm === normalizeEntityName(owners[0]?.nameNorm ?? names[0]!)) continue;
+        if (appendAlias(this.db, targetId, norm)) {
+          logDeclaredAlias(this.db, norm, targetId, "declared-config", { group });
+          out.applied += 1;
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Records whose object could not be determined, with the reason. */
+  public listUnresolvedEntityMemories(): UnresolvedEntityMemory[] {
+    return listUnresolvedEntityMemories(this.db);
+  }
+
+  /**
+   * Resolve an "object undetermined" record by hand: `keep` clears the mark so
+   * the record takes part in recall again, `drop` leaves it out permanently.
+   *
+   * This is the exit the ticket requires for the mark — without it the flag
+   * would only ever accumulate, and a permanently excluded record is a silent
+   * data loss dressed as a safety feature.
+   */
+  public resolveUnresolvedEntityMemory(id: number, action: "keep" | "drop"): { ok: boolean; error?: string } {
+    const row = this.db
+      .prepare("SELECT id FROM retrieval_results WHERE id = ? AND quarantine = ?")
+      .get(id, UNRESOLVED_ENTITY_MARK) as { id: number } | undefined;
+    if (!row) return { ok: false, error: "record is not marked as object-undetermined" };
+    this.db
+      .prepare("UPDATE retrieval_results SET quarantine = ? WHERE id = ?")
+      .run(action === "keep" ? null : "resolved_drop", id);
+    return { ok: true };
+  }
+
+  /**
+   * Which single object a query names, or that it cannot be told (#277).
+   *
+   * Exposed so a caller can report "object undetermined" instead of presenting
+   * whichever row ranked first. `searchMemory` applies the resolved case itself.
+   */
+  public resolveQueryObject(query: string): QueryObjectResolution {
+    return resolveQueryObject(this.liveEntities(), query);
   }
 
   // entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
@@ -2032,13 +2527,15 @@ export class SqliteSessionStore implements SessionStore {
   public async listEntityReview(): Promise<EntityReviewRow[]> {
     const rows = this.db
       .prepare(
-        "SELECT l.id, l.source_name, l.target_entity_id, l.hit_count, l.detail, l.created_at, e.name AS target_name" +
+        "SELECT l.id, l.kind, l.source_name, l.target_entity_id, l.hit_count, l.detail, l.created_at, e.name AS target_name" +
         " FROM entity_merge_log l LEFT JOIN entities e ON e.id = l.target_entity_id" +
-        " WHERE l.kind = 'candidate' AND l.resolved IS NULL AND l.undone = 0 ORDER BY l.hit_count DESC, l.created_at DESC"
+        " WHERE l.kind IN ('candidate', ?) AND l.resolved IS NULL AND l.undone = 0" +
+        " ORDER BY l.hit_count DESC, l.created_at DESC"
       )
-      .all() as Array<{ id: number; source_name: string; target_entity_id: number; hit_count: number; detail: string | null; created_at: string; target_name: string | null }>;
+      .all(ALIAS_KIND_CROSS_SCRIPT) as Array<{ id: number; kind: string; source_name: string; target_entity_id: number; hit_count: number; detail: string | null; created_at: string; target_name: string | null }>;
     return rows.map((r) => ({
-      id: r.id, sourceName: r.source_name, targetEntityId: r.target_entity_id, targetName: r.target_name,
+      id: r.id, kind: r.kind === ALIAS_KIND_CROSS_SCRIPT ? "cross_script" : "candidate",
+      sourceName: r.source_name, targetEntityId: r.target_entity_id, targetName: r.target_name,
       hitCount: r.hit_count, suggested: r.hit_count >= 2, detail: r.detail, createdAt: r.created_at,
     }));
   }
@@ -2047,11 +2544,56 @@ export class SqliteSessionStore implements SessionStore {
   // ('rejected'). Outcomes are written back to the log (report-only telemetry source).
   public async resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }> {
     const row = this.db
-      .prepare("SELECT id, source_name, target_entity_id, detail FROM entity_merge_log WHERE id = ? AND kind = 'candidate' AND resolved IS NULL AND undone = 0")
-      .get(id) as { id: number; source_name: string; target_entity_id: number; detail: string | null } | undefined;
+      .prepare("SELECT id, kind, source_name, target_entity_id, detail FROM entity_merge_log WHERE id = ? AND kind IN ('candidate', ?) AND resolved IS NULL AND undone = 0")
+      .get(id, ALIAS_KIND_CROSS_SCRIPT) as { id: number; kind: string; source_name: string; target_entity_id: number; detail: string | null } | undefined;
     if (!row) return { ok: false, error: "candidate not found (or already resolved)" };
     if (action === "drop") {
       this.db.prepare("UPDATE entity_merge_log SET resolved = 'rejected' WHERE id = ?").run(id);
+      return { ok: true };
+    }
+    // #277: a model-proposed cross-script alias is applied by adding the alias,
+    // not by destroying a row. The entity pair here is "the variant" and "the
+    // object it belongs to", so a redirect merge would be both wrong and
+    // irreversible in the way the ticket warns about.
+    if (row.kind === ALIAS_KIND_CROSS_SCRIPT) {
+      // The target may have been merged away between the proposal and this
+      // confirmation. `appendAlias` matches by id alone, so it would happily
+      // write the alias onto a closed entity — where no read path looks — and
+      // this would report success. Check liveness first.
+      const target = this.db
+        .prepare("SELECT name_norm, aliases FROM entities WHERE id = ? AND valid_until IS NULL")
+        .get(row.target_entity_id) as { name_norm: string; aliases: string } | undefined;
+      if (!target) {
+        return { ok: false, error: "the target entity is no longer live (merged away) — re-run the consolidation or declare the alias with ans entity alias" };
+      }
+      const aliasNorm = normalizeEntityName(row.source_name);
+      // The proposed name may have been claimed by ANOTHER live object while the
+      // proposal waited (a human declaring it elsewhere). Appending it here would
+      // make one name belong to two live entities, and every later query about it
+      // would come back ambiguous. Refuse and let a human merge them.
+      const live = this.liveEntities();
+      const claimedBy = live.find((e) => e.id !== row.target_entity_id && (e.nameNorm === aliasNorm || e.aliases.includes(aliasNorm)));
+      if (claimedBy) {
+        return {
+          ok: false,
+          error: "the name is already bound to entity #" + claimedBy.id + " (" + claimedBy.name + "); merge the two objects first with ans entity merge",
+        };
+      }
+      if (!appendAlias(this.db, row.target_entity_id, aliasNorm)) {
+        // `appendAlias` returns false for two different situations, and they need
+        // different answers: the alias is already in place (a human declared the
+        // same mapping first — confirming is then a no-op, and reporting a fault
+        // would leave the proposal stuck in the queue forever), or it genuinely
+        // could not be written. Check which one this is instead of assuming the
+        // worse.
+        let present: string[] = [];
+        try { present = JSON.parse(target.aliases || "[]") as string[]; } catch { present = []; }
+        const alreadyThere = aliasNorm === target.name_norm || present.includes(aliasNorm);
+        if (!alreadyThere) {
+          return { ok: false, error: "alias could not be applied — resolve manually" };
+        }
+      }
+      this.db.prepare("UPDATE entity_merge_log SET resolved = 'confirmed' WHERE id = ?").run(id);
       return { ok: true };
     }
     const detail = JSON.parse(row.detail ?? "{}") as { newEntityId?: number };

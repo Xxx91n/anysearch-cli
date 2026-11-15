@@ -10,6 +10,7 @@ import type Database from "better-sqlite3";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
+import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
@@ -347,6 +348,17 @@ export interface ConsolidateReport {
   // listed — similarity and shared session are not dependencies.
   summariesSuspended: number;
   suspendedSummaries: ConsolidateSuspendedSummary[];
+  // #277: what the cross-script pass did with the materials this run read.
+  // `declared` mappings were applied (the material stated them); `proposed`
+  // went to the review queue; `undetermined` is the honest third outcome — the
+  // object could not be established and no guess was made.
+  crossScriptDeclared: number;
+  crossScriptProposed: number;
+  crossScriptUndetermined: number;
+  // Pairs the material stated but that cannot be applied by adding an alias:
+  // both names already belong to different live entities, so the fix is an
+  // explicit merge with its snapshot, not a silent rewrite.
+  crossScriptNeedsMerge: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }>;
 }
 
 /** #263: one summary the run suspended, with the knowledge row that triggered it. */
@@ -566,6 +578,137 @@ export function polarityContradiction(candidate: string, liveContent: string): b
   return CONTRADICTION_RE.test(candidate) !== CONTRADICTION_RE.test(liveContent);
 }
 
+// #277: the cross-script pass over a consolidation run's materials.
+//
+// One material at a time, so a mapping one page states helps the rest of the
+// run (the entity table is re-read for each batch). Returns counts for the
+// report; every number here is an outcome, and `undetermined` is a real one —
+// it means no guess was made.
+export async function linkCrossScriptForConsolidation(
+  db: Database.Database,
+  rows: ReadonlyArray<{ id: number; title: string | null; snippet: string | null }>,
+  judge?: AliasJudgeFn,
+): Promise<{
+  declared: number;
+  proposed: number;
+  undetermined: number;
+  /** Pairs whose two names already belong to different live entities. */
+  needsMerge: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }>;
+}> {
+  let declared = 0;
+  let proposed = 0;
+  let undetermined = 0;
+  const mergeNeeded: Array<{ keepId: number; dropId: number; memoryId: number; pair: { latin: string; han: string } }> = [];
+  if (rows.length === 0) return { declared, proposed, undetermined, needsMerge: mergeNeeded };
+
+  // Group the material text by the object it was already linked to, so a run
+  // over many pages makes one judge call per material rather than one per pair.
+  for (const row of rows) {
+    const text = (row.title ?? "") + " " + (row.snippet ?? "");
+    if (!text.trim()) continue;
+    const live = loadLiveEntities(db);
+    if (live.length === 0) continue;
+    const { stated, candidates } = crossScriptPairsInText(text, live);
+
+    // 1) stated in the text itself — applied at once.
+    for (const pair of stated) {
+      const res = applyStatedPairAsAlias(db, live, pair, "declared-parentheses", { memoryId: row.id });
+      if (res.applied) declared += 1;
+      else if (res.needsMerge) {
+        // The two names already belong to different live objects. Merging is a
+        // destructive redirect that needs a snapshot, so it stays an explicit
+        // `ans entity merge`; the pair is reported instead of half-fixed.
+        mergeNeeded.push({ ...res.needsMerge, memoryId: row.id, pair });
+      }
+    }
+    if (candidates.length === 0) continue;
+
+    // 2) the model proposes — queued, never applied.
+    if (!judge) { undetermined += candidates.length; continue; }
+    let verdicts: AliasJudgeVerdict[] = [];
+    try {
+      verdicts = await judge(candidates);
+    } catch (e) {
+      // A budget refusal is not a judgement fault: the caller's cap was reached,
+      // so this run must stop spending instead of reporting every remaining pair
+      // as "undetermined" and looping on. Rethrown for the caller's own
+      // budget-rejection handling, exactly like the summarize seam.
+      if (isBudgetRejection(e)) throw e;
+      // Any other fault is fail-open, but honestly: the pairs stay undetermined.
+      undetermined += candidates.length;
+      continue;
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      const pair = candidates[i]!;
+      const verdict = verdicts[i];
+      if (verdict?.same !== true) { undetermined += 1; continue; }
+      // Reload: an alias applied earlier in this loop changes who the pair's
+      // two names resolve to, and a stale snapshot would queue a proposal for a
+      // pair that is already settled.
+      if (queueProposedAlias(db, loadLiveEntities(db), pair, verdict, { memoryId: row.id })) proposed += 1;
+      else undetermined += 1;
+    }
+  }
+  return { declared, proposed, undetermined, needsMerge: mergeNeeded };
+}
+
+// #277: the object key a material belongs to.
+//
+// Design: cluster by resolved object, not by the `entity` key string — rejected
+// grouping by URL or by declared key, because two pages about one company then
+// never meet and a Chinese page could never correct an English fact.
+// A material is clustered by the entity it is linked to, so a Chinese page and
+// an English page about one company share a cluster even though their `entity`
+// (the source URL) differs. Two sources of that answer, in order:
+//   1. the memory_entity link, when the material has exactly one;
+//   2. the material's own text, matched against the live entity table's surface
+//      forms. This is what makes the fix reach real archives: material written
+//      through the search path carries no entity link, so relying on (1) alone
+//      would leave every material in its own URL cluster and the cross-language
+//      case would never meet the batch threshold.
+//
+// A material naming several objects is deliberately left on its own `entity`
+// key: joining one object's cluster would attribute its text to the other,
+// which is the error this ticket exists to prevent.
+//
+// `e:` prefix keeps these keys from colliding with a raw URL key.
+export function canonicalEntityKeys(
+  db: Database.Database,
+  rows: ReadonlyArray<{ id: number; title: string | null; snippet: string | null }>,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  if (rows.length === 0) return out;
+  const memoryIds = rows.map((r) => r.id);
+  const ph = memoryIds.map(() => "?").join(", ");
+  const linked = db
+    .prepare(
+      "SELECT me.memory_id AS memoryId, e.id AS entityId" +
+      " FROM memory_entity me JOIN entities e ON e.id = me.entity_id" +
+      " WHERE me.memory_id IN (" + ph + ") AND e.valid_until IS NULL",
+    )
+    .all(...memoryIds) as Array<{ memoryId: number; entityId: number }>;
+  const grouped = new Map<number, Set<number>>();
+  for (const r of linked) {
+    const set = grouped.get(r.memoryId) ?? new Set<number>();
+    set.add(r.entityId);
+    grouped.set(r.memoryId, set);
+  }
+  const live = loadLiveEntities(db);
+  for (const row of rows) {
+    const ids = grouped.get(row.id);
+    if (ids && ids.size === 1) { out.set(row.id, "e:" + [...ids][0]); continue; }
+    if (ids && ids.size > 1) continue; // several objects: keep its own cluster
+    // No link: read the object out of the text. Exactly one object may answer —
+    // two candidates means the material talks about more than one thing, and
+    // guessing which one it "mainly" concerns is the mistake to avoid.
+    const text = (row.title ?? "") + " " + (row.snippet ?? "");
+    if (!text.trim()) continue;
+    const resolution = resolveQueryObject(live, text);
+    if (resolution.kind === "resolved") out.set(row.id, "e:" + resolution.entityId);
+  }
+  return out;
+}
+
 // D4/D7 ops-quadruple decision as a pure function so the 0.90 boundary is unit-testable without
 // float32 cosine noise (integration covers the real cosine end-to-end).
 // bestCos === null marks the degraded path — no cosine was computable (embedding
@@ -629,6 +772,8 @@ export async function consolidateMemoryRun(
     classify?: ConsolidateClassifyFn;
     verify?: ConsolidateVerifyFn;
     verifyFinal?: ConsolidateFinalCheckFn;
+    // #277: cross-script entity judge. Proposals only — see entity-alias.ts.
+    judgeEntityAlias?: AliasJudgeFn;
   } = {},
   opts: ConsolidateRunOptions = {},
 ): Promise<ConsolidateReport> {
@@ -663,6 +808,10 @@ export async function consolidateMemoryRun(
     updates: [],
     summariesSuspended: 0,
     suspendedSummaries: [],
+    crossScriptDeclared: 0,
+    crossScriptProposed: 0,
+    crossScriptUndetermined: 0,
+    crossScriptNeedsMerge: [],
   };
 
   // The materials this run read, kept at run scope (#262): the collision
@@ -910,9 +1059,32 @@ export async function consolidateMemoryRun(
     // honest in both directions.
     for (const r of rows) readIds.add(r.id);
 
+    // #277: relate the names these materials write in different scripts BEFORE
+    // clustering, so a mapping the material states takes effect inside this same
+    // run — a Chinese page and an English page about one company then land in
+    // one cluster and can be corrected as one fact.
+    //
+    // Writes are skipped under --dry-run: the run promises "nothing saved", and
+    // an alias is a saved change like any other.
+    if (!dryRun) {
+      const cs = await linkCrossScriptForConsolidation(db, rows, deps.judgeEntityAlias);
+      report.crossScriptDeclared = cs.declared;
+      report.crossScriptProposed = cs.proposed;
+      report.crossScriptUndetermined = cs.undetermined;
+      report.crossScriptNeedsMerge = cs.needsMerge;
+    }
+
+    // #277: cluster by the OBJECT, not by the entity key string.
+    //
+    // `entity` is the URL (or a declared key) the material was written under, so
+    // two materials about one company land in two clusters whenever they came
+    // from different pages — and a Chinese page and an English page could never
+    // be summarized onto one knowledge row, which is exactly the case this
+    // ticket fixes.
+    const canonicalByMemory = canonicalEntityKeys(db, rows);
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
-      const key = r.entity ?? "";
+      const key = canonicalByMemory.get(r.id) ?? r.entity ?? "";
       if (!key) continue;
       const arr = byEntity.get(key) ?? [];
       arr.push(r);

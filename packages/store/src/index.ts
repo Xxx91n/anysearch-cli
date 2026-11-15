@@ -16,6 +16,10 @@ export * from "./fts5";
 // entity-relation edge layer (fifth arm).
 export * from "./relation";
 
+// #277: cross-script entity correspondence — the evidence order, the review
+// queue rows, and the query's "which object is this?" resolution.
+export * from "./entity-alias";
+
 // consolidation + reversible forgetting (sixth arm, Phase-1 shadow).
 export * from "./consolidate";
 
