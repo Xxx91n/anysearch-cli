@@ -1025,6 +1025,30 @@ function userText(db: string, sessionId: string): any[] {
     "R18: what remains is only the user's own text (got " + JSON.stringify(notLastJoined) + ")");
   closeStore(store2);
 
+  // R20: a match only counts as a block when it ends at the message end or at a
+  // blank line. A user who PASTES the session's own summary back and keeps typing
+  // must keep their sentence — the string matches, but it is not a block there.
+  //
+  // CodeRabbit found this on the PR and a probe confirmed it: before the boundary
+  // rule, "Please correct this:\n\n<block> and tell me why" lost " and tell me why".
+  {
+    const ownSummary = "support runs weekdays, except weekends now";
+    const pasted = "Please correct this:\n\n[Session Memory] " + ownSummary + " and tell me why";
+    assert(stripInjectedBlocks(pasted, ["[Session Memory] " + ownSummary], { trustProvenance: true }) === pasted,
+      "R20: a pasted block followed by the user's own words is left whole");
+    assert(stripInjectedBlocks("[Session Memory] " + ownSummary + " please fix", ["[Session Memory] " + ownSummary],
+      { trustProvenance: true }) === "[Session Memory] " + ownSummary + " please fix",
+      "R20: the same applies when the block opens the turn and text follows it");
+
+    // A real block still goes, at the end and mid-message (followed by a blank line).
+    assert(stripInjectedBlocks("q\n\n[Session Memory] " + ownSummary, ["[Session Memory] " + ownSummary],
+      { trustProvenance: true }) === "q",
+      "R20: a block ending the turn is still removed");
+    assert(stripInjectedBlocks("a\n\n[Session Memory] " + ownSummary + "\n\nthen more",
+      ["[Session Memory] " + ownSummary], { trustProvenance: true }) === "a\n\nthen more",
+      "R20: a block followed by a blank line is still removed");
+  }
+
   closeStore(store);
 }
 

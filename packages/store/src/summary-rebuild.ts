@@ -254,20 +254,34 @@ export function stripInjectedBlocks(
 /**
  * Remove whole block strings this caller can name exactly.
  *
- * A named block is removed WHEREVER it sits, because the name IS the evidence: the
- * caller read the session's own anchors, so this exact string is injection output
- * and not something the user typed. Position cannot be the rule here — a tool-call
- * loop re-injects Stage-1 onto a turn that already carries a summary block, so a
- * summary block is NOT always last. An earlier version removed only a trailing
- * run and left a named `[Session Memory]` block in the task records whenever a RAG
- * block came after it (#286 review).
+ * A named block is removed wherever it sits as a BLOCK, because the name IS the
+ * evidence: the caller read the session's own anchors, so this exact string is
+ * injection output and not something the user typed. Position alone cannot be the
+ * rule — a tool-call loop re-injects Stage-1 onto a turn that already carries a
+ * summary block, so a summary block is NOT always last. An earlier version removed
+ * only a trailing run and left a named `[Session Memory]` block in the task records
+ * whenever a RAG block came after it (#286 review).
  *
- * What still protects the user's own words:
+ * What makes a match a block, and not just a matching string: the match must END at
+ * the end of the message or at a blank line. Injection writes whole lines and
+ * separates blocks with a blank line, so a real block never ends mid-sentence.
  *
- * - the match is the WHOLE block string, not a tag prefix, so a sentence that
- *   merely mentions the tag never matches;
- * - a quoted block keeps the user's question, because only the block itself is
- *   cut — the text around it stays, including the "is that still right?" after it.
+ * This rule is not cosmetic. Without it, a user who PASTES the block back and keeps
+ * typing lost their own words: "Please correct this:\n\n[Session Memory] <the
+ * summary> and tell me why" was cut to "Please correct this: and tell me why" —
+ * the exact string matched, but it was not a block, and the trailing " and tell me
+ * why" is the user's. Reported by CodeRabbit on #288 and confirmed by probe.
+ *
+ * What else protects the user's own words: the match is the WHOLE block string, not
+ * a tag prefix, so a sentence that merely mentions the tag never matches; and only
+ * the block is cut, so the text before and after it stays.
+ *
+ * Remaining limit, stated rather than hidden: a user who pastes the block back
+ * followed by a BLANK LINE and then more text still loses the pasted block, because
+ * that is byte-for-byte what a real injected region looks like. A block followed by
+ * a blank line is the shape injection itself writes, so no text-only rule can tell
+ * the two apart. The cost is the user's quoted copy, not the user's own sentence —
+ * the sentence after the blank line survives.
  *
  * Longest first, for the same reason the kernel does it: two summaries can share a
  * prefix, and removing the short one first would cut that prefix out of the longer
@@ -277,19 +291,28 @@ export function stripInjectedBlocks(
  * @param known - Exact block strings that are injection output.
  * @returns The text without any of those blocks.
  */
-export function removeExactBlocks(text: string, known: Iterable<string>): string {  let out = text;
+export function removeExactBlocks(text: string, known: Iterable<string>): string {
+  let out = text;
   const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
   for (const block of ordered) {
     // With the separator injection writes before a block, so removing both leaves
     // no run of blank lines behind.
     const withSeparator = BLANK_LINE + block;
+    // A match only counts as a block when it ends at the message end or at a blank
+    // line; anything else is a fragment of a longer sentence the user wrote.
+    const endsBlock = (end: number): boolean => end === out.length || out.startsWith(BLANK_LINE, end);
     let at = out.indexOf(withSeparator);
     while (at >= 0) {
-      out = out.slice(0, at) + out.slice(at + withSeparator.length);
-      at = out.indexOf(withSeparator);
+      const end = at + withSeparator.length;
+      if (endsBlock(end)) {
+        out = out.slice(0, at) + out.slice(end);
+        at = out.indexOf(withSeparator);
+      } else {
+        at = out.indexOf(withSeparator, at + 1);
+      }
     }
     // A block at the very start of the turn has no separator before it.
-    if (out.startsWith(block)) out = out.slice(block.length);
+    if (out.startsWith(block) && endsBlock(block.length)) out = out.slice(block.length);
   }
   return out;
 }
