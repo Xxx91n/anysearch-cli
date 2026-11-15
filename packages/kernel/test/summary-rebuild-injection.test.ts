@@ -789,6 +789,144 @@ async function seedSuspended(
     "K16: its text is unchanged");
 }
 
+// --- K17: a multi-line RAG block never reaches the task section ------------
+//
+// #286: Stage-1 appends `[RAG Context]` to the latest user turn BEFORE the
+// rebuild dispatch reads that turn. The block's body runs over several lines, so
+// the store's tag-shape pass could not recognise it, and the rebuild prompt
+// printed web content under `=== TASK (the user's own turns) ===`.
+//
+// The fix under test is provenance, not a smarter guess: the pipeline records the
+// exact block it appended and hands that string to the plan.
+{
+  const db = "k17.db";
+  const store = openStore(db);
+  await store.createSession("acme");
+  const sid = "sess-k17";
+  await store.ensureSession(sid, "acme");
+  await store.append(sid, { role: "user", content: USER_TASK });
+
+  // A row the `fts` adapter will recall for this turn's query. Its entity key is
+  // DISTINCT from the fixture rows below on purpose: same-key writes supersede each
+  // other, and a retired row is filtered out of recall, so sharing the key would
+  // make the RAG block silently absent and turn this test into a no-op.
+  const seeded = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/r286", title: "acme notice",
+    snippet: "Acme online support is now 24x7 every day, effective 2026-11-01.",
+    source: "tavily", evidence: 0.9, entity: "acme-notice",
+  }]);
+  const materialId = seeded[0]?.insertedId;
+  assert(typeof materialId === "number", "K17 fixture: a recalled material exists");
+
+  // A summary that records a source, then a correction that suspends it.
+  const mids: number[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const ra = await store.adjudicateMemory(sid, [{
+      url: "https://acme.example/k17-v" + i, title: "k17 v" + i,
+      snippet: "Acme online support runs weekdays 9:00-17:00.", source: "tavily", evidence: 0.9, entity: "acme",
+    }]);
+    if (typeof ra[0]?.insertedId === "number") mids.push(ra[0]!.insertedId!);
+  }
+  const built = await store.consolidateMemory(
+    { scope: { by: "memory", sessionIds: [], memoryIds: mids, sessionIdNotApplied: false } },
+    {
+      summarize: async () => "Acme online support runs weekdays 9:00-17:00.",
+      classify: () => ({ label: "supported" as const, confidence: 0.95 }),
+    },
+  );
+  const knowledgeId = built.semanticIds[0];
+  assert(typeof knowledgeId === "number", "K17 fixture: a knowledge row exists");
+  await store.saveAnchor(sid, "rolling_summary", {
+    summary: "Acme support runs weekdays 9-17",
+    sources: [{ kind: "knowledge", id: knowledgeId! }, { kind: "material", id: materialId! }],
+  });
+  const anchorId = (await store.getAnchors(sid)).filter((a) => a.anchorType === "rolling_summary").pop()!.id;
+  const fresh = await store.adjudicateMemory(sid, [{
+    url: "https://acme.example/k17-notice", title: "notice",
+    snippet: "Acme online support is now 24x7 every day, effective 2026-11-01.",
+    source: "tavily", evidence: 0.9, entity: "acme",
+  }]);
+  const correctionId = fresh[0]?.insertedId;
+  if (typeof correctionId === "number") {
+    const rep = await store.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: [correctionId], sessionIdNotApplied: false }, allowSingleEvidence: true },
+      {
+        summarize: async () => "Acme online support is now 24x7 every day, effective 2026-11-01.",
+        classify: () => ({ label: "supported" as const, confidence: 0.95 }),
+        verify: async () => ({ alreadyCurrent: false, sameFact: true, reliable: true, relation: "correction" as const }),
+        verifyFinal: async () => ({ supported: true, preserved: true, corrected: true, noExtras: true }),
+      },
+    );
+    assert(rep.summariesSuspended === 1, "K17 fixture: the correction suspended the summary");
+  }
+  assert(store.suspendedSummaryAnchorIds(sid).has(anchorId), "K17 fixture: the summary is suspended");
+
+  // The domain that switches Stage-1 on for real.
+  const ragDomain: DomainConfigPort = { ...domain, rag: { adapter: "fts" } };
+  let sentPrompt = "";
+  const streamFn = ((_m: any, ctx: any, _o: any) => {
+    const text = readMessageText(ctx?.messages?.[0])?.text ?? "";
+    if (text.includes("=== TASK")) sentPrompt = text;
+    return (() => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text_delta" as const, delta: "Acme online support is now 24x7 every day, effective 2026-11-01." };
+        yield { type: "done" as const, message: { role: "assistant", content: "", usage: { input: 10, output: 10, totalTokens: 20 } } };
+      },
+    }))();
+  }) as any;
+
+  const pipeline = new MemoryPipeline({
+    store, retriever, domain: ragDomain,
+    model: { id: "test" } as any,
+    streamFn,
+    sessionId: sid,
+  });
+
+  // Capture the live turn the pipeline HANDS the plan. This is the kernel's own
+  // contribution: at this seam the store has not stripped anything yet, so the
+  // assertion below cannot be satisfied by the store's shape pass.
+  let handedLiveTurn: string | undefined;
+  const realPlan = store.planSummaryRebuild.bind(store);
+  (store as any).planSummaryRebuild = (req: any) => {
+    handedLiveTurn = req.currentUserTurn;
+    return realPlan(req);
+  };
+
+  const live = "Change of plan: acme online support 24x7 every day is what I need — the weekend schedule.";
+  const injected = await pipeline.inject([userTurn(live)]);
+  await pipeline.flush();
+
+  // The RAG block really was appended to this turn, or the test proves nothing.
+  const injectedText = promptText(injected);
+  assert(injectedText.includes("[RAG Context]"),
+    "K17 fixture: Stage-1 appended a RAG block to the live turn");
+
+  assert(typeof handedLiveTurn === "string" && handedLiveTurn.length > 0,
+    "K17: the live turn reached the plan (got " + JSON.stringify(handedLiveTurn) + ")");
+  assert(!handedLiveTurn!.includes("[RAG Context]"),
+    "K17: the kernel handed the plan a turn with the RAG block already removed (got " +
+      JSON.stringify(handedLiveTurn) + ")");
+  assert(!handedLiveTurn!.includes("recalled from session memory"),
+    "K17: no recalled-body wording was handed to the plan");
+  assert(handedLiveTurn!.includes("weekend schedule"),
+    "K17: the user's own change survived the kernel-side strip");
+
+  assert(sentPrompt.length > 0, "K17: the rebuild prompt was generated");
+  const taskAt = sentPrompt.indexOf("=== TASK");
+  const materialAt = sentPrompt.indexOf("=== CURRENT MATERIAL");
+  assert(taskAt >= 0 && materialAt > taskAt, "K17: the prompt has both sections");
+  const taskSection = sentPrompt.slice(taskAt, materialAt);
+  assert(!taskSection.includes("[RAG Context]"),
+    "K17: the task section carries no RAG block (got " + JSON.stringify(taskSection) + ")");
+  assert(!taskSection.includes("recalled from session memory"),
+    "K17: no recalled-body wording reaches the task section");
+  assert(taskSection.includes("weekend schedule"),
+    "K17: the user's own change is still the task requirement (got " + JSON.stringify(taskSection) + ")");
+
+  // The temp dir is removed by the file-level cleanup; just drop the handle here.
+  try { store.close(); } catch { /* already closed */ }
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }
