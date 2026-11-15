@@ -93,6 +93,20 @@ their current versions) plus that session's own stored user turns.
   task — ask the user instead of assuming what they wanted.
 - Do not treat "no `[Session Memory]` block" as "this session has nothing" when
   a `summaryRebuilds` entry is present: read its reasons.
+- Old derived summaries without source records are checked only when needed.
+  The original text remains available as a lookup lead. Recovery uses exact
+  source ids in the original tool records (or refs already in the payload),
+  never rows chosen just because they share a URL, wording or session. The NEW
+  summary records what the recovery actually read; it does not invent the old
+  summary's missing history. Missing original user requirements, source versions
+  or a verifiable record order mean `incomplete`, with no recovery model call.
+  Legacy records stored within the same timestamp second may have no provable
+  order and stay incomplete. Ordinary sourced materials remain searchable.
+- A legacy recovery attempt is remembered across restarts. Failed or interrupted
+  attempts report their reason and do not call the model again for unchanged
+  evidence. Restoring original records or changing a referenced current source
+  version permits another attempt. Recovery shares the normal summary usage and
+  cost report; missing provider usage means unknown cost, not free recovery.
 
 ## Anti-patterns
 

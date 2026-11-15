@@ -401,6 +401,19 @@ CREATE TABLE IF NOT EXISTS summary_suspensions (
 );
 CREATE INDEX IF NOT EXISTS idx_summary_suspensions_anchor ON summary_suspensions(anchor_id);
 
+-- #265: per-summary, on-demand recovery. No legacy payload or experiment row is
+-- rewritten. The evidence key prevents a restart from repeating a paid attempt.
+CREATE TABLE IF NOT EXISTS legacy_summary_states (
+  anchor_id INTEGER PRIMARY KEY REFERENCES resume_anchors(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ready', 'incomplete', 'attempted', 'failed', 'rebuilt')),
+  sources TEXT NOT NULL,
+  reasons TEXT NOT NULL,
+  new_anchor_id INTEGER REFERENCES resume_anchors(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- reversible archive ledger (entity_merge_log-style full snapshot). One row per
 -- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.
 CREATE TABLE IF NOT EXISTS archive_log (

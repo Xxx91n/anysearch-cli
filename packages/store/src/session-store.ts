@@ -23,6 +23,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
 import {
+  prepareLegacySummary, legacySummaryState, claimLegacySummary, finishLegacySummary,
+  type LegacySummaryState,
+} from "./legacy-summary.js";
+import {
   isSourceCurrent,
   isSummaryAnchorType,
   parseSummarySourceRefs,
@@ -251,6 +255,10 @@ export interface SessionStore {
   // #263: the dependencies already recorded for one anchor, so the next
   // summary can inherit them (it was generated FROM the previous one).
   summarySourcesForAnchor?(anchorId: number): SummarySourceRef[];
+  prepareLegacySummary?(sessionId: string, anchorId: number): LegacySummaryState | null;
+  claimLegacySummary?(sessionId: string, anchorId: number, evidenceKey: string): boolean;
+  finishLegacySummary?(sessionId: string, anchorId: number, evidenceKey: string,
+    result: { outcome: string; reasons: string[]; newAnchorId: number | null }): void;
   // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -1401,7 +1409,23 @@ export class SqliteSessionStore implements SessionStore {
     taskBudgetChars?: number;
     currentUserTurn?: string;
   }): SummaryRebuildPlan {
-    return planSummaryRebuild(this.db, req);
+    const legacy = legacySummaryState(this.db, req.sessionId, req.anchorId);
+    return planSummaryRebuild(this.db, req, legacy ? { sources: legacy.sources,
+      reasons: legacy.status === "incomplete" ? legacy.reasons : [],
+    } : undefined);
+  }
+
+  prepareLegacySummary(sessionId: string, anchorId: number): LegacySummaryState | null {
+    return prepareLegacySummary(this.db, sessionId, anchorId);
+  }
+
+  claimLegacySummary(sessionId: string, anchorId: number, evidenceKey: string): boolean {
+    return claimLegacySummary(this.db, sessionId, anchorId, evidenceKey);
+  }
+
+  finishLegacySummary(sessionId: string, anchorId: number, evidenceKey: string,
+    result: { outcome: string; reasons: string[]; newAnchorId: number | null }): void {
+    finishLegacySummary(this.db, sessionId, anchorId, evidenceKey, result);
   }
 
   /**

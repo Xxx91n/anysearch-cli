@@ -872,10 +872,11 @@ export function planSummaryRebuild(
      */
     currentUserTurn?: string;
   },
+  legacy?: { sources: SummarySourceRef[]; reasons: string[] },
 ): SummaryRebuildPlan {
   const factBudget = req.factBudgetChars ?? SUMMARY_REBUILD_FACT_BUDGET_CHARS;
   const taskBudget = req.taskBudgetChars ?? SUMMARY_REBUILD_TASK_BUDGET_CHARS;
-  const reasons: string[] = [];
+  const reasons: string[] = [...(legacy?.reasons ?? [])];
   const exclusions: RebuildExclusion[] = [];
 
   const anchor = readAnchor(db, req.sessionId, req.anchorId);
@@ -899,7 +900,7 @@ export function planSummaryRebuild(
   const sourceRows = db
     .prepare("SELECT source_kind AS kind, source_id AS id FROM summary_sources WHERE anchor_id = ? ORDER BY id")
     .all(req.anchorId) as SummarySourceRef[];
-  const recorded = parseSummarySourceRefs(sourceRows);
+  const recorded = parseSummarySourceRefs(legacy?.sources ?? sourceRows);
 
   const facts: RebuildFact[] = [];
   const replaced: RebuildReplacedFact[] = [];
@@ -986,7 +987,9 @@ export function planSummaryRebuild(
     );
   }
 
-  const previousSummary = anchorBody(anchor);
+  // #265: the legacy text remains in the archive. It is not evidence for the
+  // replacement, so do not invite the generator to carry unknown facts forward.
+  const previousSummary = legacy ? null : anchorBody(anchor);
   // The suspended text travels as context (D8: a fact no source recorded but no
   // correction touched must not vanish). Whether it fits the PROMPT budget is the
   // kernel's call, because that cap belongs to the prompt: the kernel checks it
@@ -1149,12 +1152,21 @@ export function writeRebuiltSummaryAnchor(
         reason: "a source was replaced while the summary was being rebuilt; the new version is suspended too",
       };
     }
+    // #265: the old text has no invented source rows or suspension trigger.
+    // Finish its recovery in this transaction, including when a real suspension
+    // also exists (for example an interrupted earlier migration).
+    const recovered = db.prepare(`UPDATE legacy_summary_states SET status = 'rebuilt',
+      new_anchor_id = ?, reasons = '[]', updated_at = datetime('now')
+      WHERE session_id = ? AND anchor_id = ? AND status = 'attempted'`).run(
+      anchorId, req.sessionId, req.rebuildOfAnchorId,
+    );
     const cleared = db
       .prepare(
         "UPDATE summary_suspensions SET cleared_at = datetime('now'), cleared_by_anchor_id = ? WHERE session_id = ? AND anchor_id = ? AND cleared_at IS NULL",
       )
       .run(anchorId, req.sessionId, req.rebuildOfAnchorId);
     if (Number(cleared.changes) === 0) {
+      if (recovered.changes === 1) return { anchorId, cleared: true, status: "cleared", reason: null };
       // No live suspension row: either another writer already cleared it or the
       // anchor was never suspended. The new summary is still current, so this is
       // not a failure — but say what happened instead of implying a clear.
