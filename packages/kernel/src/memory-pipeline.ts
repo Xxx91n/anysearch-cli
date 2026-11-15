@@ -47,12 +47,13 @@ import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-// #286: the block renderer and the recall cap are owned by the store, because the
-// rebuild path rebuilds the very same block strings to strip them by exact match.
-// `SUMMARY_INJECT_MAX_CHARS` is not imported here: every place this file renders a
-// summary block goes through `renderSummaryBlock`, which applies the cap itself.
+// #286: the block renderer, the exact-block remover and the recall cap are owned
+// by the store, because the rebuild path rebuilds the very same block strings to
+// strip them by exact match. `SUMMARY_INJECT_MAX_CHARS` is not imported here: every
+// place this file renders a summary block goes through `renderSummaryBlock`, which
+// applies the cap itself.
 import {
-  isTimeSensitive, isEvergreen, renderSummaryBlock, RECALL_INJECT_MAX_CHARS,
+  isTimeSensitive, isEvergreen, renderSummaryBlock, removeExactBlocks, RECALL_INJECT_MAX_CHARS,
 } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
@@ -686,7 +687,7 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
     // String content: one text channel, so the whole-string removal applies.
     const target = readMessageText(message);
     if (!target) return message;
-    const text = removeKnownBlocks(target.text, known);
+    const text = removeExactBlocks(target.text, known);
     return text === target.text ? message : writeMessageText(message, text, target) ?? message;
   }
   // Block array: remove per TEXT BLOCK, in place. Operating on the joined text
@@ -700,7 +701,7 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
   for (const block of message.content) {
     if (block && typeof block === "object" && (block as any).type === "text" && typeof (block as any).text === "string") {
       const before = (block as any).text as string;
-      const after = removeKnownBlocks(before, known);
+      const after = removeExactBlocks(before, known);
       if (after !== before) {
         changed = true;
         blocks.push({ ...block, text: after });
@@ -712,35 +713,6 @@ function stripSummaryBlocks(message: any, known: Set<string>): any {
   return changed ? { ...message, content: blocks } : message;
 }
 
-/**
- * Remove every known block string from one text channel.
- *
- * Longest first: two summaries can share a prefix (an older short version and a
- * newer one that extends it), and removing the short one first would cut that
- * prefix out of the longer one so it could never match — leaving exactly the
- * stale line the removal exists to delete.
- *
- * @param text - The text channel of one block.
- * @param known - Exact block strings the pipeline may remove.
- * @returns The text with those blocks deleted; unchanged when none matched.
- */
-function removeKnownBlocks(text: string, known: Set<string>): string {
-  let out = text;
-  const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
-  for (const block of ordered) {
-    // The block was appended after a blank line (see inject()); removing the
-    // separator with it keeps the field from leaving a run of blank lines behind.
-    const withSeparator = BLANK_LINE_BEFORE_BLOCK + block;
-    let at = out.indexOf(withSeparator);
-    while (at >= 0) {
-      out = out.slice(0, at) + out.slice(at + withSeparator.length);
-      at = out.indexOf(withSeparator);
-    }
-    // A block sitting at the very start of the channel has no separator before it.
-    if (out.startsWith(block)) out = out.slice(block.length);
-  }
-  return out;
-}
 
 /**
  * Replace the text of the block that carried the removed summary, keeping
@@ -1295,7 +1267,7 @@ export class MemoryPipeline {
           // printed web content under `=== TASK (the user's own turns) ===`.
           const liveKnown = new Set(knownBlocks);
           for (const block of appendedThisTurn) liveKnown.add(block);
-          const liveTurn = liveKnown.size > 0 ? removeKnownBlocks(liveRaw, liveKnown) : liveRaw;
+          const liveTurn = liveKnown.size > 0 ? removeExactBlocks(liveRaw, liveKnown) : liveRaw;
           this.track(
             this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
               .then(() => undefined, () => undefined),

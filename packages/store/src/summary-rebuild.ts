@@ -60,9 +60,13 @@ export const SUMMARY_REBUILD_TASK_BUDGET_CHARS = 4_000;
 // user's own words.
 const INJECTED_BLOCK_TAGS = ["[RAG Context]", "[Recovery Digest]", "[Session Memory]", "[Research Recall]"] as const;
 // The two whose blocks carry a machine-written provenance header, so their shape
-// identifies them without guessing. Kept next to the full list so adding a tag is
-// one edit, and the compiler catches a member missing from either union.
-const SELF_IDENTIFYING_BLOCK_TAGS = ["[RAG Context]", "[Recovery Digest]"] as const;
+// identifies them without guessing. A SUBSET of the list above, not a parallel
+// list: it is written out as a subset of that tuple type so a member that stops
+// being a valid tag fails to compile.
+const SELF_IDENTIFYING_BLOCK_TAGS: readonly (typeof INJECTED_BLOCK_TAGS)[number][] = [
+  "[RAG Context]",
+  "[Recovery Digest]",
+];
 const SESSION_MEMORY_TAG = "[Session Memory]";
 const RESEARCH_RECALL_TAG = "[Research Recall]";
 const PREFS_OPEN_TAG = "<user_preferences";
@@ -91,14 +95,19 @@ export const RECALL_INJECT_MAX_CHARS = 1500;
  *
  * Design: this function is the single place that knows the block's string shape.
  * The kernel renders every injected summary/recall block through it and this
- * module builds the same string back from the anchor payload to strip it. Before
- * #286 the shape was spelled out at six call sites (kernels' Stage-2 append, its
- * provenance keys, its `injectedSummaryAnchorIds`, and this module's strip path),
- * and the copies had already drifted: this one skipped a non-string body while the
- * kernel coerced it with `String(...)`, so a numeric payload rendered in one place
- * and never matched in the other. Rejected alternative: exporting one array of
- * block descriptors — more machinery for the same guarantee, and the caller would
- * still have to pick the right entry.
+ * module builds the same string back from the anchor payload to strip it.
+ *
+ * Why one function: before #286 the kernel spelled the shape out in six render
+ * expressions across three sites (the Stage-2 append, the provenance keys that
+ * strip a stale block, and `injectedSummaryAnchorIds`), and two of those copies had
+ * already drifted from each other — one skipped a payload whose value was not a
+ * string while another coerced it with `String(...)`. A numeric payload therefore
+ * matched on one side and not the other, which is exactly the silent mismatch this
+ * function removes. The store had no renderer of its own to drift from; it needed
+ * one to name a block at all.
+ *
+ * Rejected alternative: exporting one array of block descriptors — more machinery
+ * for the same guarantee, and the caller would still have to pick the right entry.
  *
  * @param anchorType - `rolling_summary` or `l2_recall`.
  * @param body - The anchor's text (a summary, or the recall snippet).
@@ -268,8 +277,7 @@ export function stripInjectedBlocks(
  * @param known - Exact block strings that are injection output.
  * @returns The text without any of those blocks.
  */
-function removeExactBlocks(text: string, known: Iterable<string>): string {
-  let out = text;
+export function removeExactBlocks(text: string, known: Iterable<string>): string {  let out = text;
   const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
   for (const block of ordered) {
     // With the separator injection writes before a block, so removing both leaves
@@ -477,7 +485,10 @@ function isInjectedBlock(block: string, blockCount: number, provenanceMode: bool
     // reverse trade — cutting the user's own sentence — is the failure the ticket
     // exists to prevent, so it is not taken.
     //
-    // Covered by R19 (user sentence kept) and R21 (note form in the fallback path).
+    // Covered by R18 (the plan path keeps a user's tagged sentence verbatim) and
+    // R21 (the note form and the fallback path). R19 is the bare-call test and does
+    // NOT cover this case — it documents the fallback's bias, where a long tagged
+    // line IS cut.
     // A caller with NO provenance still gets the long-standing fallback below.
     if (provenanceMode) return false;
     if (lines.length > 1) return false;
