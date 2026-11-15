@@ -416,7 +416,7 @@ for (const mode of ["complete", "no-source", "no-task"] as const) {
   try {
     await mcp.init();
     const first = await mcp.chat(change, sessionId);
-    assert(first.ok, "legacy " + mode + ": ans_chat completes");
+    assert(first.ok && !first.isError, "legacy " + mode + ": ans_chat completes");
     const reports = first.structured?.summaryRebuilds ?? [];
     const requests = requestLog.filter((r) => r.role === "rebuild");
     if (mode === "complete") {
@@ -441,7 +441,7 @@ for (const mode of ["complete", "no-source", "no-task"] as const) {
     mcp = startMcp(makeEnv(root));
     await mcp.init();
     const second = await mcp.chat(change, sessionId);
-    assert(second.ok, "legacy D " + mode + ": old-format session remains readable after restart");
+    assert(second.ok && !second.isError, "legacy D " + mode + ": old-format session remains readable after restart");
     assert(!requestLog.some((r) => r.role === "rebuild"), "legacy D " + mode + ": unchanged evidence does not repeat recovery calls");
     if (mode === "complete") {
       const chats = requestLog.filter((r) => r.role === "chat").map((r) => bodyText(r.body)).join("\n");

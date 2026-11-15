@@ -1053,6 +1053,7 @@ export function writeRebuiltSummaryAnchor(
   req: {
     sessionId: string;
     rebuildOfAnchorId: number;
+    legacyEvidenceKey?: string;
     text: string;
     sources: SummarySourceRef[];
     taskRecordIds: number[];
@@ -1101,6 +1102,16 @@ export function writeRebuiltSummaryAnchor(
   }
 
   const write = db.transaction((): SummaryRebuildWriteResult => {
+    // Design: the model ran outside this transaction. Its claimed evidence
+    // revision must still own the recovery before ANY new text is inserted;
+    // current source rows alone cannot prove no new evidence was added meanwhile.
+    const legacy = db.prepare("SELECT evidence_key, status FROM legacy_summary_states WHERE session_id = ? AND anchor_id = ?")
+      .get(req.sessionId, req.rebuildOfAnchorId) as { evidence_key: string; status: string } | undefined;
+    if ((legacy && (legacy.status !== "attempted" || legacy.evidence_key !== req.legacyEvidenceKey)) ||
+      (!legacy && req.legacyEvidenceKey !== undefined)) {
+      return { anchorId: null, cleared: false, status: "rejected",
+        reason: "the legacy recovery evidence or its claim changed while the model was running; nothing was inserted" };
+    }
     // Is the version being rebuilt still the newest one? A compression that ran
     // while this rebuild was generating writes a NEWER summary C. Committing R
     // after it would make R the injected summary, and R only knows the sources of
@@ -1157,12 +1168,14 @@ export function writeRebuiltSummaryAnchor(
     // also exists (for example an interrupted earlier migration).
     const recovered = db.prepare(`UPDATE legacy_summary_states SET status = 'rebuilt',
       new_anchor_id = ?, reasons = '[]', retry_after = NULL, updated_at = datetime('now')
-      WHERE session_id = ? AND anchor_id = ? AND status = 'attempted'`).run(
-      anchorId, req.sessionId, req.rebuildOfAnchorId,
+      WHERE session_id = ? AND anchor_id = ? AND evidence_key = ? AND status = 'attempted'`).run(
+      anchorId, req.sessionId, req.rebuildOfAnchorId, req.legacyEvidenceKey ?? null,
     );
     if (recovered.changes === 1) db.prepare(`UPDATE legacy_summary_attempts SET outcome = 'rebuilt',
       new_anchor_id = ?, reasons = '[]', finished_at = datetime('now')
-      WHERE anchor_id = ? AND outcome = 'attempted'`).run(anchorId, req.rebuildOfAnchorId);
+      WHERE anchor_id = ? AND evidence_key = ? AND outcome = 'attempted'`).run(
+      anchorId, req.rebuildOfAnchorId, req.legacyEvidenceKey ?? null,
+    );
     const cleared = db
       .prepare(
         "UPDATE summary_suspensions SET cleared_at = datetime('now'), cleared_by_anchor_id = ? WHERE session_id = ? AND anchor_id = ? AND cleared_at IS NULL",

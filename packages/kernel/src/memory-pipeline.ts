@@ -953,6 +953,7 @@ export class MemoryPipeline {
       attempt = await rebuildSuspendedSummary(this.deps.store, {
         sessionId,
         anchorId,
+        ...(legacy ? { legacyEvidenceKey: legacy.evidenceKey } : {}),
         streamFn: this.deps.streamFn as any,
         model: this.deps.model,
         ...(currentUserTurn ? { currentUserTurn } : {}),
@@ -1436,10 +1437,6 @@ export class MemoryPipeline {
       // Get previous summary from anchor (shell I/O).
       const prevAnchors = await store.getAnchors(sessionId);
       const prevSummaryAnchor = lastAnchorOfType(prevAnchors, "rolling_summary");
-      // #265: passing an unresolved old summary to normal compression would
-      // launder it into a new summary with only the new turn's sources. Leave it
-      // archived until recovery succeeds; L2 recall and the agent still run.
-      const legacyBlocked = !!(prevSummaryAnchor && this.prepareLegacySummary(sessionId, prevSummaryAnchor.id));
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
       const previousSummaryAnchorId = prevSummaryAnchor?.id;
       // #263: which summary anchors the generator will ACTUALLY read.
@@ -1463,6 +1460,10 @@ export class MemoryPipeline {
       // Both cases are covered because the match is per anchor, and an anchor
       // absent from the list is an anchor absent from the sources.
       const inheritedAnchorIds = summaryAnchorsToInherit(messages, prevAnchors, previousSummaryAnchorId);
+      // #265: check EVERY derived block the generator reads, including an older
+      // recall block carried in reused messages. Otherwise it could be laundered
+      // into a new summary backed only by this turn's unrelated valid sources.
+      const legacyBlocked = inheritedAnchorIds.some((id) => !!this.prepareLegacySummary(sessionId, id));
       // D5: fire-and-forget compression helper.
       // #263: set when the source read failed. The state must NOT advance then:
       // this turn's summary was skipped, so the next turn has to retry the same

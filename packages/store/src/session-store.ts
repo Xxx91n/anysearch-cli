@@ -351,6 +351,7 @@ export interface SessionStore {
   writeRebuiltSummaryAnchor?(req: {
     sessionId: string;
     rebuildOfAnchorId: number;
+    legacyEvidenceKey?: string;
     text: string;
     sources: SummarySourceRef[];
     taskRecordIds: number[];

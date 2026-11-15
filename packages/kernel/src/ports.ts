@@ -169,6 +169,7 @@ export interface SummaryRebuildPort {
   writeRebuiltSummaryAnchor(req: {
     sessionId: string;
     rebuildOfAnchorId: number;
+    legacyEvidenceKey?: string;
     text: string;
     sources: Array<{ kind: "material" | "knowledge"; id: number }>;
     taskRecordIds: number[];

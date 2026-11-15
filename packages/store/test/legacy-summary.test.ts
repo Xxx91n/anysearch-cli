@@ -62,6 +62,7 @@ test("failed recovery can retry after its cooldown, preserving each attempt and 
       const plan = reopened.planSummaryRebuild({ sessionId: f.sessionId, anchorId: f.anchorId });
       const write = reopened.writeRebuiltSummaryAnchor({
         sessionId: f.sessionId, rebuildOfAnchorId: f.anchorId, text: OLD,
+        legacyEvidenceKey: retry.evidenceKey,
         sources: plan.facts.map(({ kind, id }) => ({ kind, id })), taskRecordIds: plan.taskRecords.map((r) => r.messageId),
       });
       assert.equal(write.cleared, true);
@@ -100,5 +101,39 @@ test("a partially unreadable old source list is incomplete, even when a valid so
       assert.equal(f.store.planSummaryRebuild({ sessionId: f.sessionId, anchorId: f.anchorId }).complete, false);
       }
     }
+  } finally { f.store.close(); f.db.close(); rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test("a stale recovery cannot insert a summary or clear a newer evidence claim", async () => {
+  const f = await fixture();
+  try {
+    const first = f.store.prepareLegacySummary(f.sessionId, f.anchorId)!;
+    assert.equal(f.store.claimLegacySummary(f.sessionId, f.anchorId, first.evidenceKey), true);
+    const firstPlan = f.store.planSummaryRebuild({ sessionId: f.sessionId, anchorId: f.anchorId });
+    // Same confirmed A input and source version; restoring the raw tool record
+    // with harmless trailing whitespace still creates a new evidence revision.
+    f.db.prepare("UPDATE messages SET content = content || ' ' WHERE session_id = ? AND role = 'tool'").run(f.sessionId);
+    const second = f.store.prepareLegacySummary(f.sessionId, f.anchorId)!;
+    assert.notEqual(second.evidenceKey, first.evidenceKey);
+    assert.equal(f.store.claimLegacySummary(f.sessionId, f.anchorId, second.evidenceKey), true);
+    const before = await f.store.getAnchors(f.sessionId);
+    const write = f.store.writeRebuiltSummaryAnchor({
+      sessionId: f.sessionId, rebuildOfAnchorId: f.anchorId, text: OLD,
+      legacyEvidenceKey: first.evidenceKey,
+      sources: firstPlan.facts.map(({ kind, id }) => ({ kind, id })),
+      taskRecordIds: firstPlan.taskRecords.map((r) => r.messageId),
+    });
+    assert.equal(write.status, "rejected");
+    assert.equal(write.anchorId, null);
+    assert.deepEqual(await f.store.getAnchors(f.sessionId), before);
+    const current = f.store.prepareLegacySummary(f.sessionId, f.anchorId)!;
+    assert.equal(current.evidenceKey, second.evidenceKey);
+    assert.equal(current.status, "attempted");
+    const history = f.db.prepare("SELECT evidence_key, outcome FROM legacy_summary_attempts WHERE anchor_id = ? ORDER BY id")
+      .all(f.anchorId) as Array<{ evidence_key: string; outcome: string }>;
+    assert.deepEqual(history, [
+      { evidence_key: first.evidenceKey, outcome: "attempted" },
+      { evidence_key: second.evidenceKey, outcome: "attempted" },
+    ]);
   } finally { f.store.close(); f.db.close(); rmSync(f.root, { recursive: true, force: true }); }
 });
