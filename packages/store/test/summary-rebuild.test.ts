@@ -1075,6 +1075,25 @@ function userText(db: string, sessionId: string): any[] {
     // With NO provenance the shape pass is all there is, and it keeps its old job.
     assert(stripInjectedBlocks("Please check:\n\n" + rag) === "Please check:",
       "R20b: without provenance a trailing RAG block is still stripped (unchanged)");
+
+    // R20c: a protected block in the MIDDLE, with a real injected block after it.
+    // Both halves matter, and an earlier guard got one or the other wrong (#288
+    // review): the cut must go before the protected block (so the user's sentence
+    // survives) AND the block after it must still be removed (or the digest stays in
+    // the task section as if the user had written it).
+    const digest = "[Recovery Digest] (provenance=search)\nstate: done";
+    const midCase = "q\n\n" + rag + " and explain why\n\n" + digest;
+    const midOut = stripInjectedBlocks(midCase, [rag], { trustProvenance: true });
+    assert(midOut === "q\n\n" + rag + " and explain why",
+      "R20c: a protected block mid-message keeps the user's words and drops the block after it (got " +
+        JSON.stringify(midOut) + ")");
+
+    // The same with an UNNAMED RAG block after the user's sentence: the shape pass
+    // still removes it, because it sits at a boundary.
+    const unnamed = "[RAG Context] (adapter=fts)\n- [notice] B";
+    const midUnnamed = "q\n\n" + rag + " and explain why\n\n" + unnamed;
+    assert(stripInjectedBlocks(midUnnamed, [rag], { trustProvenance: true }) === "q\n\n" + rag + " and explain why",
+      "R20c: an unnamed block after the user's sentence is still removed");
   }
 
   closeStore(store);
