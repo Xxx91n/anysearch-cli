@@ -1396,6 +1396,10 @@ export class MemoryPipeline {
 
     if (!store || !sessionId) return;
 
+    // Pin the input before any asynchronous work so the decision, inherited
+    // anchors, source scans and generator all see the same messages.
+    const snapshot = snapshotMessages(messages);
+
     try {
       // D7: Restore state from anchor for MCP stateless mode (fail-open fallback to in-memory).
       let state = this.consolidationState;
@@ -1415,7 +1419,7 @@ export class MemoryPipeline {
       // still throw (resolveLowWatermark), never silently degrade; domain
       // validation is the primary fail-fast gate.
       const compactionCfg = domain.compaction;
-      const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
+      const result = consolidateState(state, snapshot, totalTokens, hasRetrievalEvidence, {
         lowWatermark: compactionCfg?.lowWatermark,
         contextWindow: this.deps.contextWindow,
         reuseCap: compactionCfg?.reuseCap,
@@ -1459,7 +1463,7 @@ export class MemoryPipeline {
       //   summary.
       // Both cases are covered because the match is per anchor, and an anchor
       // absent from the list is an anchor absent from the sources.
-      const inheritedAnchorIds = summaryAnchorsToInherit(messages, prevAnchors, previousSummaryAnchorId);
+      const inheritedAnchorIds = summaryAnchorsToInherit(snapshot, prevAnchors, previousSummaryAnchorId);
       // #265: check EVERY derived block the generator reads, including an older
       // recall block carried in reused messages. Otherwise it could be laundered
       // into a new summary backed only by this turn's unrelated valid sources.
@@ -1517,13 +1521,8 @@ export class MemoryPipeline {
           // The fix needs no new bookkeeping: run the SAME scan over the whole
           // list, which is what the generator reads.
           //
-          // The scan and the model call must read the SAME list. Two `await`s
-          // separate them (the API key and the SDK load), and the caller hands
-          // in the live agent-state array, so a message appended in that window
-          // would reach the generator while being absent from the scan — a fact
-          // in the summary with no recorded dependency. A shallow copy pins the
-          // membership without copying message contents.
-          const snapshot = snapshotMessages(messages);
+          // Use the same snapshot as the earlier inherited-anchor check and
+          // adjudication, even if the caller appended messages while waiting.
           const scanFromStart = distillGap(snapshot, SOURCE_SCAN_FROM_INDEX);
           const read = readSummarySourcesForWrite(store, {
             gapUrls: scanFromStart.results
@@ -1557,13 +1556,13 @@ export class MemoryPipeline {
           // IS `messages.length` — so no recall hit could be recorded while the
           // summary still used them. Merged with the search-material refs.
           const sources = read.sources;
-          for (const ref of collectRecallSourceRefs(messages, RECALL_SOURCE_SCAN_FROM)) {
+          for (const ref of collectRecallSourceRefs(snapshot, RECALL_SOURCE_SCAN_FROM)) {
             if (!sources.some((r) => r.kind === ref.kind && r.id === ref.id)) sources.push(ref);
           }
           this.consolidationState = {
             version: result.state.version,
             consecutiveReuses: 0,
-            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
+            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || snapshot.length,
           };
           // Tracked: flush() must see this write before the store is closed.
           this.track(
