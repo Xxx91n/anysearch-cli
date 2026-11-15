@@ -1,0 +1,14 @@
+[
+  {"bucket":"zh","query":"客服邮箱","rows":["客服邮箱为 help@sample.example。","每周一更新公告。"],"relevant":[0]},
+  {"bucket":"zh","query":"请问客服邮箱是什么","rows":["客服邮箱为 help@sample.example。","每周一更新公告。"],"relevant":[0]},
+  {"bucket":"zh","query":"负责人","rows":["负责人是王明。","每天发布公告。"],"relevant":[0]},
+  {"bucket":"zh","query":"请帮我确认一下客服邮箱","rows":["客服邮箱为 help@sample.example。","每周一更新公告。"],"relevant":[0]},
+  {"bucket":"en","query":"support email","rows":["Support email is help@sample.example.","Weekly release notes are published on Mondays."],"relevant":[0]},
+  {"bucket":"en","query":"what is the support email","rows":["Support email is help@sample.example.","Weekly release notes are published on Mondays."],"relevant":[0]},
+  {"bucket":"en","query":"billing address","rows":["Billing address is 18 North Road.","Support hours are weekdays."],"relevant":[0]},
+  {"bucket":"en","query":"release schedule","rows":["Release schedule is every Monday.","Support email is help@sample.example."],"relevant":[0]},
+  {"bucket":"mixed","query":"客服邮箱 email","rows":["客服邮箱页面正在维护。","客服邮箱 email 为 help@sample.example。"],"relevant":[1]},
+  {"bucket":"mixed","query":"账单地址 billing address","rows":["账单地址页面正在维护。","账单地址 billing address 是 18 North Road。"],"relevant":[1]},
+  {"bucket":"mixed","query":"发布时间 release schedule","rows":["发布时间页面正在维护。","发布时间 release schedule 为每周一。"],"relevant":[1]},
+  {"bucket":"mixed","query":"联系方法 contact details","rows":["联系方法页面正在维护。","联系方法 contact details 是拨打 400-123-1234。"],"relevant":[1]}
+]

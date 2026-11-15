@@ -4,6 +4,8 @@
 // atomcode research: WAL persistent, single shared connection, module-level prepared statements,
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
+import { rankKnowledge } from "./knowledge-ranking";
+import { knowledgeFtsSql } from "./knowledge-fts";
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
 import {
@@ -1055,9 +1057,8 @@ export class SqliteSessionStore implements SessionStore {
    if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
    const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
-   // Kept at `limit`: the arm allocates slots between its own keyword and vector
-   // lanes, so widening it would change that allocation and let the vector lane
-   // take the slot a keyword hit needed.
+   // Each knowledge lane reads up to `limit`, then relevance decides their
+   // combined order. The Chinese keyword lane stays active without vectors.
    const semHitsRaw = await this.semanticArmRows(query, limit, objectForms);
    // An undetermined object offers no knowledge row: "cannot tell which object"
    // is the answer, not a guess. Materials stay (they carry their own URL).
@@ -1617,15 +1618,6 @@ export class SqliteSessionStore implements SessionStore {
       scored.sort((a, b) => b.s - a.s);
       vector = scored.slice(0, limit).map((x) => x.h);
     }
-    // Merge, don't concatenate. Taking the vector list first and filling the
-    // rest from keywords would let `limit` embedded rows shut out the ONE row
-    // the keyword lane exists to rescue (a corrected row with no embedding) —
-    // the very case this lane is here for. So each lane keeps at least half the
-    // slots when it has candidates, and any spare goes to the vector lane
-    // (the more precise signal):
-    //   reserve = ceil(limit / 2)
-    //   vectorCount = min(vector.length, limit - min(keyword.length, reserve))
-    //   then fill the remainder from keyword, then from leftover vector.
     // Validity recheck: the two SELECTs above are separate statements, so a
     // concurrent correction can still close a row between them. Drop ids that
     // are no longer live before merging, so one answer never carries both a
@@ -1641,21 +1633,7 @@ export class SqliteSessionStore implements SessionStore {
       keyword.splice(0, keyword.length, ...keyword.filter(live));
       vector.splice(0, vector.length, ...vector.filter(live));
     }
-    const reserve = Math.ceil(limit / 2);
-    const keywordQuota = Math.min(keyword.length, reserve);
-    const vectorQuota = Math.min(vector.length, Math.max(0, limit - keywordQuota));
-    const out: MemoryHit[] = [];
-    const seen = new Set<number>();
-    const add = (h: MemoryHit): void => {
-      if (seen.has(h.rowid)) return;
-      seen.add(h.rowid);
-      out.push(h);
-    };
-    for (const h of vector.slice(0, vectorQuota)) add(h);
-    for (const h of keyword.slice(0, keywordQuota)) add(h);
-    // Spare slots: leftover vector first (precise), then leftover keyword.
-    for (const h of vector.slice(vectorQuota)) { if (out.length >= limit) break; add(h); }
-    for (const h of keyword.slice(keywordQuota)) { if (out.length >= limit) break; add(h); }
+    const out = rankKnowledge(query, [keyword, vector]).slice(0, limit);
     this.semTel.hits += out.length;
     if (SEMANTIC_ARM_MODE === "serve") this.semTel.served += out.length;
     return out.slice(0, limit);
@@ -1673,30 +1651,12 @@ export class SqliteSessionStore implements SessionStore {
   //   whole Chinese run into one token, so `"客服邮箱"` could never MATCH it.
   //   The LIKE rung is the only path that finds a Chinese fact without vectors.
   private semanticKeywordRows(query: string, limit: number, objectForms?: readonly string[]): MemoryHit[] {
-    // #277: the object filter runs in SQL, before the LIMIT — not after it.
-    //
-    // Two earlier attempts got this wrong, so the rule is written down here:
-    // filtering the finished `limit` rows drops the answering row whenever the
-    // head of the list belongs to another object; reading a wider fixed window
-    // and filtering that only moves the boundary (100 companies all stating
-    // "客服邮箱为 …" put the right row past any fixed cut). The object condition
-    // is therefore part of the query: `LIMIT limit` then counts rows that can
-    // actually answer.
-    //
-    // `objectForms` are normalized names. Two layers, each doing what it can:
-    //
-    // - SQL does a cheap containment pre-filter (`LIKE '%form%'`) so `LIMIT`
-    //   counts rows that mention the object at all instead of rows from any
-    //   object. A fixed read window was the earlier attempt and only moved the
-    //   boundary: with enough rows about other objects the answering row always
-    //   sat past it.
-    // - Every row that comes back is THEN checked with `formAppearsInText`, the
-    //   one function that also enforces word boundaries for Latin names. `LIKE
-    //   '%acme%'` alone would accept `AcmeCloud`, and the CJK rung pushes rows
-    //   without any further check — so the pre-filter must never be the last
-    //   word. Because the pre-filter is strictly looser, the JS check only ever
-    //   removes rows, and the rungs keep reading while the accepted count is
-    //   still short (bounded, like the relaxed rung).
+    // #277/#283: reject the wrong object before counting accepted rows.
+    // SQL LIKE is a coarse pre-filter: '%acme%' also admits AcmeCloud. Each
+    // cursor therefore applies formAppearsInText before admitting a row, and
+    // keeps reading until enough rows survive or the candidates run out.
+    // Where a relevance scan budget applies, only object-eligible rows count.
+    // `objectForms` contains normalized canonical names and accepted aliases.
     const objectActive = !!objectForms && objectForms.length > 0;
     const objectWhere = objectActive ? " AND (" + objectForms!.map(() => "s.content LIKE ?").join(" OR ") + ")" : "";
     const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
@@ -1706,15 +1666,16 @@ export class SqliteSessionStore implements SessionStore {
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
     const otherScript: Array<{ id: number; content: string; rank: number }> = [];
     // Independent indexed lane for rows matching both query scripts.
-    // Do not share 'seen' with the weaker one-script lanes.
+    // Each lane deduplicates independently so shared hits retain both signals.
     const crossScript: Array<{ id: number; content: string; rank: number }> = [];
-    const seen = new Set<number>();
-    const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
-      (r: { id: number; content: string; rank: number }): void => {
+    const mark = (list: Array<{ id: number; content: string; rank: number }>) => {
+      const seen = new Set<number>();
+      return (r: { id: number; content: string; rank: number }): void => {
         if (seen.has(r.id)) return;
         seen.add(r.id);
         list.push(r);
       };
+    };
     const pushLatin = mark(latin);
     const pushCjk = mark(cjk);
     const pushOtherScript = mark(otherScript);
@@ -1723,17 +1684,11 @@ export class SqliteSessionStore implements SessionStore {
     //    whole query, so no extra relevance filter applies.
     const strict = this.fts5Escape(query);
     if (strict !== '""') {
-      const stmt = this.db.prepare(
-        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank LIMIT ?",
-      );
+      const stmt = this.db.prepare(knowledgeFtsSql(objectWhere));
       // SQL narrows to rows mentioning the object; the JS check applies the
       // exact rule (word boundaries for Latin names), so `LIKE '%acme%'` letting
       // `AcmeCloud` through cannot reach the caller.
-      const strictWindow = objectActive ? Math.max(limit * 4, 40) : limit;
-      for (const r of stmt.all(strict, ...objectParams, strictWindow) as Array<{ id: number; content: string; rank: number }>) {
+      for (const r of stmt.iterate(strict, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>) {
         if (latin.length >= limit) break;
         if (matchesObject(r.content)) pushLatin(r);
       }
@@ -1745,29 +1700,17 @@ export class SqliteSessionStore implements SessionStore {
         const relaxed = fts5RelaxedQuery(query);
         if (relaxed) {
           const terms = relaxedTerms(query);
-          // Fetch relaxed candidates in pages and filter each page as it
-          // arrives, stopping once `limit` survivors are in hand. A fixed
-          // `limit * 2` fetch followed by filtering loses everything when the
-          // head of the list are one-word matches — the row covering the
-          // whole query can sit past the cut (#273 review).
-          // One ordered pass, filtered as it goes. The relaxed rung used to
-          // fetch a fixed `limit * 2` rows and filter afterwards; growing the
-          // LIMIT and slicing off the seen prefix re-reads and re-ranks the whole
-          // prefix every round, which on 10k one-word rows and limit 20 means
-          // ~1.25M rows transferred instead of 10k (#273 review).
-          //
-          // Iterating one cursor over the ranked rows keeps the scan linear and
-          // preserves "keep reading while the filtered count is short". The
-          // iterator is bounded so a pathological table cannot spin forever.
+          // A single ranked cursor avoids repeatedly reading the same
+          // prefix. Keep the existing budget for broad OR queries, but do not
+          // spend it on SQL prefix collisions rejected by the object check.
           const BOUND = Math.max(limit * 20, 200);
           let scanned = 0;
-          // The statement already carries the object condition, so the bound
-          // counts rows that can answer; the JS check below stays as the
-          // cross-language containment test the SQL LIKE cannot express.
-          for (const r of stmt.iterate(relaxed, ...objectParams, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
+          // Exact object checks precede the relevance scan budget.
+          for (const r of stmt.iterate(relaxed, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>) {
             if (latin.length >= limit) break;
+            if (!matchesObject(r.content)) continue;
             if (++scanned > BOUND) break;
-            if (coversMajority(terms, r.content) && matchesObject(r.content)) pushLatin(r);
+            if (coversMajority(terms, r.content)) pushLatin(r);
           }
         }
       }
@@ -1781,9 +1724,8 @@ export class SqliteSessionStore implements SessionStore {
     //    Chinese has no spaces, so a question arrives as one long run
     //    ("请问客服邮箱是什么") that never appears verbatim in a row stating
     //    "客服邮箱为 help@example.com". Each run is therefore split into
-    //    overlapping slices, and the relevance floor is applied IN SQL before
-    //    LIMIT: filtering after the cut would let `limit` weak matches take the
-    //    slots and leave the strong one out.
+    //    overlapping slices. SQL applies the slice relevance floor; the cursor
+    //    checks exact object eligibility before counting accepted results.
     if (/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(query)) {
       const runs = query
         .split(/[\s\p{P}\p{S}]+/u)
@@ -1861,21 +1803,23 @@ export class SqliteSessionStore implements SessionStore {
         const runGran = (list: string[]): void => {
           if (list.length === 0 || cjk.length >= limit) return;
           const where = list.map(() => "s.content LIKE ?").join(" OR ");
-          const remaining = limit - cjk.length;
-          // SQL narrows to rows that mention the object at all; the JS check
-          // below applies the exact rule (word boundaries for Latin names).
-          // Reading a wider window is therefore safe rather than necessary: the
-          // pre-filter is what makes the answering row reachable at all, and the
-          // wider window only covers rows the loose LIKE let in and the exact
-          // check will drop. Without the JS check the CJK rung would serve
-          // `AcmeCloud 客服邮箱…` for the object `acme`.
-          const readWindow = objectActive ? Math.max(remaining * 4, 40) : remaining;
+          // SQL provides the coarse object check; the cursor keeps reading
+          // until exact word-boundary checks admit enough rows. Prefix
+          // collisions must not exhaust a fixed pre-filter window.
+          // Design: full mixed-query coverage wins BEFORE LIMIT (#283).
+          // Otherwise the Han lane can take a weaker Chinese row while the
+          // Latin lane takes a short English row, cutting the bilingual answer
+          // out of BOTH inputs before RRF has a chance to rank it.
+          const pairedOrder = strict !== '""'
+            ? " ORDER BY (s.id IN (SELECT rowid FROM semantic_memories_fts WHERE semantic_memories_fts MATCH ?)) DESC, s.id"
+            : " ORDER BY s.id";
+          const pairedParams = strict !== '""' ? [strict] : [];
           const rows = this.db
             .prepare(
               "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
-              " AND (" + where + ")" + objectWhere + " LIMIT ?",
+              " AND (" + where + ")" + objectWhere + pairedOrder,
             )
-            .all(...list.map((t) => "%" + t + "%"), ...objectParams, readWindow) as Array<{ id: number; content: string }>;
+            .iterate(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams) as Iterable<{ id: number; content: string }>;
           for (const r of rows) {
             if (cjk.length >= limit) break;
             if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
@@ -1889,8 +1833,8 @@ export class SqliteSessionStore implements SessionStore {
     }
     // Keyword fallback for scripts excluded by the ASCII query sanitizer.
     // FTS5's unicode61 tokenizer handles case folding (e.g. почта / Почта)
-    // without scanning the whole table. LIKE is a bounded substring fallback
-    // for scripts or fragments that unicode61 does not tokenize usefully.
+    // without scanning the whole table. LIKE reads substring candidates until
+    // enough object-eligible rows survive or the cursor is exhausted.
     const otherWords = [...new Set(
       (query.match(/[\p{L}\p{N}]+/gu) ?? [])
         .filter((w) => /[^\x00-\x7F]/u.test(w) &&
@@ -1907,16 +1851,15 @@ export class SqliteSessionStore implements SessionStore {
         const asciiMatch = asciiTerms.map((w) => '"' + w + '"*').join(" OR ");
         const unicodeMatch = otherWords.map((w) => '"' + w + '"*').join(" OR ");
         const scanBound = Math.max(limit * 20, 200);
-        const paired = this.db.prepare(
-          "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-          "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-          "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
-        );
+        const paired = this.db.prepare(knowledgeFtsSql(objectWhere));
         const qualified: Array<{ row: { id: number; content: string; rank: number }; coverage: number }> = [];
         const candidates = paired.iterate(
-          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", scanBound,
+          "(" + asciiMatch + ") AND (" + unicodeMatch + ")", ...objectParams,
         ) as Iterable<{ id: number; content: string; rank: number }>;
+        let objectCandidates = 0;
         for (const row of candidates) {
+          if (!matchesObject(row.content)) continue;
+          if (++objectCandidates > scanBound) break;
           if (!coversMajority(asciiTerms, row.content)) continue;
           const tokens = row.content.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
           const coverage = asciiTerms.filter((term) => tokens.some((token) => token.startsWith(term))).length;
@@ -1925,38 +1868,36 @@ export class SqliteSessionStore implements SessionStore {
         qualified.sort((a, b) => b.coverage - a.coverage || a.row.rank - b.row.rank);
         crossScript.push(...qualified.slice(0, limit).map((candidate) => candidate.row));
       }
+      // Design: exact object checks count accepted rows, not a fixed window of
+      // SQL LIKE candidates (#283). Prefix collisions (AcmeCloud) can exhaust
+      // any fixed window, so read one cursor until enough rows survive or EOF.
       const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
-      const indexed = this.db.prepare(
-        "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
-        "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank LIMIT ?",
-      ).all(queryFts, ...objectParams, limit) as Array<{ id: number; content: string; rank: number }>;
-      for (const r of indexed) if (matchesObject(r.content)) pushOtherScript(r);
+      const indexed = this.db.prepare(knowledgeFtsSql(objectWhere))
+        .iterate(queryFts, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>;
+      for (const r of indexed) {
+        if (otherScript.length >= limit) break;
+        if (matchesObject(r.content)) pushOtherScript(r);
+      }
       // Keep a substring rung for languages where an indexed word differs
       // from a useful query fragment; avoid the scan if FTS already filled.
       if (otherScript.length < limit) {
         const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
         const rows = this.db.prepare(
           "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
-          " AND (" + where + ")" + objectWhere + " LIMIT ?",
-        ).all(...otherWords.map((w) => "%" + w + "%"), ...objectParams, limit) as Array<{ id: number; content: string }>;
-        for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+          " AND (" + where + ")" + objectWhere,
+        ).iterate(...otherWords.map((w) => "%" + w + "%"), ...objectParams) as Iterable<{ id: number; content: string }>;
+        for (const r of rows) {
+          if (otherScript.length >= limit) break;
+          if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+        }
       }
     }
-    // A query carrying Chinese is answered by the Chinese rows first: the
-    // ASCII rung only saw half the question, so letting its rows keep every
-    // slot would starve the half the caller actually typed (#273 round 5).
-    // Prefer evidence covering both ASCII and non-Han Unicode terms over
-    // partial matches. The existing Han-first rule is unchanged (#277).
-    const ordered = [...cjk, ...crossScript, ...otherScript, ...latin];
-    const resultSeen = new Set<number>();
-    return ordered.filter((r) => {
-      if (resultSeen.has(r.id)) return false;
-      resultSeen.add(r.id);
-      return true;
-    }).slice(0, limit).map((r) =>
-      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
+    // Keep each recall lane independent: a row found through both scripts has
+    // more evidence than a row matching only one. Raw BM25 and LIKE scores are
+    // not comparable across languages; fuse their ranks instead (#283).
+    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) =>
+      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit));
+    return rankKnowledge(query, lanes).slice(0, limit);
   }
 
 
