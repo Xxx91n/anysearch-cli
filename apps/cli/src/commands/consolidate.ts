@@ -212,6 +212,23 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   });
   const budget = metering.metered ? metering.budget : undefined;
 
+  // #277: the Active Domain's declared cross-script mappings take effect here,
+  // before any material is clustered, so a pair the operator wrote down is in
+  // force for this run. Applied once per run and idempotent.
+  //
+  // A skipped group is a real conflict (one name claimed by two objects) and is
+  // reported by name: silently dropping it would leave the operator believing a
+  // mapping they wrote is active.
+  if (domainForBudget?.entityAliases) {
+    const applied = store.applyDeclaredAliases(domainForBudget.entityAliases);
+    for (const s of applied.skipped) {
+      process.stderr.write("[warn] entityAliases." + s.group + " not applied: " + s.reason + "\n");
+    }
+    if (applied.applied > 0) {
+      process.stdout.write("entity pairs declared: " + applied.applied + " alias(es) applied from the Active Domain\n");
+    }
+  }
+
   let seams: ReturnType<typeof createConsolidationSeams> | undefined;
   if (providerName && modelName) {
     try {

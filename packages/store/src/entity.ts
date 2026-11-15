@@ -95,22 +95,6 @@ export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
   return out;
 }
 
-// Which of these known surface forms actually appear in the text. Used to tie a
-// knowledge row or a query to an object: the alias table is the only thing that
-// can relate `甲公司` to `Acme`, so matching is a plain containment test over
-// the strings that table holds. Forms shorter than 2 characters are skipped —
-// they match almost everything and would attribute unrelated text.
-export function surfaceFormHits(text: string, forms: readonly string[]): string[] {
-  const hay = text.toLowerCase();
-  const out: string[] = [];
-  for (const raw of forms) {
-    const form = raw.trim().toLowerCase();
-    if (form.length < 2) continue;
-    if (hay.includes(form) && !out.includes(form)) out.push(form);
-  }
-  return out;
-}
-
 // Jaccard over character trigram sets. Short strings (<3 chars) degrade to 2-gram/1-gram.
 export function trigramSimilarity(a: string, b: string): number {
   const ngrams = (s: string, n: number): Set<string> => {

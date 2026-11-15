@@ -42,13 +42,14 @@ import {
 
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
-import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, surfaceFormHits, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
+import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import {
   loadLiveEntities,
   findEntityForForm,
   appendAlias,
   logDeclaredAlias,
-  logPendingAlias,
+  applyStatedPairAsAlias,
+  queueProposedAlias,
   listAliasRows,
   undoAliasRow,
   resolveQueryObject,
@@ -278,6 +279,26 @@ export interface SessionStore {
   // candidate review list (list + keep/drop resolution, quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
+  // #277: cross-script entity correspondence. Declaring a pair takes effect at
+  // once; a model's proposal reaches the review list above and is applied only
+  // after `resolveEntityReview(..., "keep")`.
+  //
+  // Optional on the port, like `consolidateMemory`, so hand-built store mocks
+  // stay source-compatible. A caller must treat an absent method as "this store
+  // cannot answer", never as a licence to guess an object.
+  declareEntityAlias?(a: string, b: string): { ok: boolean; entityId?: number; logId?: number; error?: string };
+  // The Active Domain's `[entityAliases]` table. Idempotent; skipped groups are
+  // reported by name so a mistyped mapping never looks active.
+  applyDeclaredAliases?(table: Record<string, string[]> | undefined): { applied: number; skipped: Array<{ group: string; reason: string }> };
+  listEntityAliases?(opts?: { pendingOnly?: boolean }): AliasRow[];
+  // Records whose object could not be established: stored, excluded from every
+  // recall path, and resolvable here.
+  listUnresolvedEntityMemories?(): UnresolvedEntityMemory[];
+  resolveUnresolvedEntityMemory?(id: number, action: "keep" | "drop"): { ok: boolean; error?: string };
+  // Which object a query names, or that it cannot be told. `searchMemory` gates
+  // the knowledge lane on this; callers use it to report "object undetermined"
+  // instead of presenting whichever row ranked first.
+  resolveQueryObject?(query: string): QueryObjectResolution;
   // entity-relation edge layer (fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
@@ -1898,7 +1919,7 @@ export class SqliteSessionStore implements SessionStore {
         // `same` must be an explicit true. A missing answer, a null answer or a
         // thrown call all mean "not established" — never a silent yes.
         if (verdict?.same !== true) continue;
-        this.queueModelAlias(pair, verdict.reason);
+        this.queueModelAlias(pair, verdict);
       }
     }
 
@@ -1923,60 +1944,29 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // A pair the material wrote down (`Acme（甲公司）`). Both sides are linked to
-  // ONE entity: the Latin side if it already exists (it is usually the one the
-  // row was already linked to), otherwise the Han side, otherwise a new row.
+  // A pair the material wrote down (`Acme（甲公司）`). Both sides end up as ONE
+  // entity: the one this material is already linked to when there is such a row,
+  // so a record's object does not hop; otherwise the Latin side wins.
   private applyStatedPair(latin: string, han: string, memoryId: number): void {
     const live = this.liveEntities();
-    const latinNorm = normalizeEntityName(latin);
-    const hanNorm = normalizeEntityName(han);
-    const latinEntity = findEntityForForm(live, latinNorm);
-    const hanEntity = findEntityForForm(live, hanNorm);
-    if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) return; // already one object
-    // Prefer the entity this material is already linked to. Otherwise the Latin
-    // form wins as the survivor: it is the form the identity was first asserted
-    // with in the scenario this ticket fixes, and keeping it avoids re-pointing
-    // rows that already exist.
     const linkedIds = new Set(
       (this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(memoryId) as Array<{ entity_id: number }>)
         .map((r) => r.entity_id),
     );
-    let survivor: number | undefined;
-    if (latinEntity && linkedIds.has(latinEntity.id)) survivor = latinEntity.id;
-    else if (hanEntity && linkedIds.has(hanEntity.id)) survivor = hanEntity.id;
-    else if (latinEntity) survivor = latinEntity.id;
-    else if (hanEntity) survivor = hanEntity.id;
-    if (survivor === undefined) return; // neither side is a known object: nothing to alias yet
-    const survivorRow = live.find((e) => e.id === survivor);
-    if (!survivorRow) return;
-    // The other side becomes an alias of the survivor.
-    const otherNorm = survivor === latinEntity?.id ? hanNorm : latinNorm;
-    if (this.db.prepare("SELECT id FROM entities WHERE id = ? AND valid_until IS NULL").get(survivor) === undefined) return;
-    if (appendAlias(this.db, survivor, otherNorm)) {
-      logDeclaredAlias(this.db, otherNorm, survivor, "declared-parentheses", { pair: { latin, han }, memoryId });
+    const preferred = [latin, han]
+      .map((n) => findEntityForForm(live, normalizeEntityName(n)))
+      .find((e) => e !== undefined && linkedIds.has(e.id))?.id;
+    if (applyStatedPairAsAlias(this.db, live, { latin, han }, "declared-parentheses", { memoryId }, preferred)) {
       this.entityTel.crossScriptDeclared += 1;
     }
   }
 
   // A model said these two names are one object. Record it for review; do NOT
   // touch `entities.aliases` — the ticket requires a human to confirm first.
-  private queueModelAlias(pair: AliasPairRequest, reason?: string): void {
-    const live = this.liveEntities();
-    const leftEntity = findEntityForForm(live, normalizeEntityName(pair.left));
-    const rightEntity = findEntityForForm(live, normalizeEntityName(pair.right));
-    if (leftEntity && rightEntity && leftEntity.id === rightEntity.id) return; // already one object
-    // Need a target to attach the proposal to. When only one side is known, the
-    // unknown side is the proposed alias; when neither is known, nothing can be
-    // resolved yet (the pair has no entity row to land on).
-    const target = leftEntity ?? rightEntity;
-    if (!target) return;
-    const aliasNorm = leftEntity ? normalizeEntityName(pair.right) : normalizeEntityName(pair.left);
-    logPendingAlias(this.db, aliasNorm, target.id, {
-      pair: { left: pair.left, right: pair.right },
-      ...(reason ? { reason } : {}),
-      ...(pair.context ? { context: pair.context.slice(0, 300) } : {}),
-    });
-    this.entityTel.crossScriptProposed += 1;
+  private queueModelAlias(pair: AliasPairRequest, verdict: AliasJudgeVerdict): void {
+    if (queueProposedAlias(this.db, this.liveEntities(), pair, verdict)) {
+      this.entityTel.crossScriptProposed += 1;
+    }
   }
 
   // dedup'd candidate write — a re-hit of the same unresolved (source, target) pair
@@ -2134,6 +2124,63 @@ export class SqliteSessionStore implements SessionStore {
     return listAliasRows(this.db, opts);
   }
 
+  /**
+   * Apply an operator-declared mapping table (`[entityAliases]` in the Active
+   * Domain TOML).
+   *
+   * Every name on one list is tied to one entity, so the whole list resolves to
+   * a single object. Nothing here calls a model and nothing waits for review:
+   * the operator wrote it down, and that is the evidence. Idempotent — applying
+   * the same table twice writes no second log row.
+   *
+   * Names already owned by two DIFFERENT live entities are skipped and reported:
+   * that is a genuine conflict (the same name claimed by two objects), and
+   * silently merging them would destroy one of them without a snapshot.
+   */
+  public applyDeclaredAliases(
+    table: Record<string, string[]> | undefined,
+  ): { applied: number; skipped: Array<{ group: string; reason: string }> } {
+    const out: { applied: number; skipped: Array<{ group: string; reason: string }> } = { applied: 0, skipped: [] };
+    if (!table) return out;
+    for (const [group, names] of Object.entries(table)) {
+      if (!Array.isArray(names) || names.length < 2) continue;
+      const live = this.liveEntities();
+      const owners = names
+        .map((n) => findEntityForForm(live, normalizeEntityName(n)))
+        .filter((e): e is LiveEntityRow => e !== undefined);
+      const distinct = new Set(owners.map((e) => e.id));
+      if (distinct.size > 1) {
+        out.skipped.push({ group, reason: "the names already belong to different live entities; merge them first with ans entity merge" });
+        continue;
+      }
+      // The entity this list resolves to: the one already known, or a new row
+      // named after the first name in the list (the operator's own ordering is
+      // the display order they chose).
+      let targetId = owners[0]?.id;
+      if (targetId === undefined) {
+        const display = names[0]!.trim();
+        const norm = normalizeEntityName(display);
+        try {
+          const info = this.db.prepare("INSERT INTO entities (name, name_norm, entity_type) VALUES (?, ?, 'declared')").run(display, norm);
+          targetId = Number(info.lastInsertRowid);
+        } catch {
+          const again = findEntityForForm(this.liveEntities(), norm);
+          if (!again) { out.skipped.push({ group, reason: "could not create the entity for " + display }); continue; }
+          targetId = again.id;
+        }
+      }
+      for (const name of names) {
+        const norm = normalizeEntityName(name);
+        if (norm === normalizeEntityName(owners[0]?.nameNorm ?? names[0]!)) continue;
+        if (appendAlias(this.db, targetId, norm)) {
+          logDeclaredAlias(this.db, norm, targetId, "declared-config", { group });
+          out.applied += 1;
+        }
+      }
+    }
+    return out;
+  }
+
   /** Records whose object could not be determined, with the reason. */
   public listUnresolvedEntityMemories(): UnresolvedEntityMemory[] {
     return listUnresolvedEntityMemories(this.db);
@@ -2188,7 +2235,6 @@ export class SqliteSessionStore implements SessionStore {
     hits: MemoryHit[],
   ): { hits: MemoryHit[]; resolution: QueryObjectResolution } {
     const resolution = resolveQueryObject(this.liveEntities(), query);
-    this.lastQueryObject = resolution;
     if (resolution.kind === "ambiguous") {
       this.entityTel.crossScriptAmbiguousQueries += 1;
       return { hits: [], resolution };
@@ -2197,9 +2243,6 @@ export class SqliteSessionStore implements SessionStore {
     const kept = hits.filter((h) => objectFormsInText(String(h.content ?? ""), resolution.forms).length > 0);
     return { hits: kept, resolution };
   }
-
-  /** What the last `searchMemory` call decided about the query's object. */
-  public lastQueryObject: QueryObjectResolution = { kind: "none" };
 
   // entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
   // ---- destructive merge execution (combine / unmerge / review list / telemetry) ----

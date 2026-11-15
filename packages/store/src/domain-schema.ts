@@ -21,7 +21,22 @@ export interface DomainSchema {
   // unmetered (pass). Within a declared section, an absent cap means "no cap"
   // for that dimension — only an explicit 0 closes the dimension completely.
   budget?: BudgetConfig;
+  // #277: declared cross-script entity mappings. The operator writes down
+  // "these two names are one object" and it takes effect at once, with no model
+  // call and nothing to review. This is the ticket's 显式映射表.
+  entityAliases?: EntityAliasConfig;
 }
+
+/**
+ * #277: `[entityAliases]` — a table of name lists that mean the same object.
+ *
+ * Example: `[entityAliases]` then `acme = ["Acme", "Acme Inc", "甲公司"]`.
+ * Every name on one list resolves to one entity. The shape is a plain table of
+ * arrays on purpose: the only thing an operator says here is "these names are
+ * one object", and per-pair metadata would be configuration nobody reads. Why
+ * each pair exists is answered by the log row written when it is applied.
+ */
+export type EntityAliasConfig = Record<string, string[]>;
 
 // #187: output-side static reserve default, measured against 43 real runs
 // (output p95=9,309 / max=9,600). Re-measure when the per-call maxTokens grows
@@ -76,6 +91,7 @@ export interface RawDomain {
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
   budget?: BudgetConfig;
+  entityAliases?: EntityAliasConfig;
 }
 
 // Deep-merge two values. Objects merge recursively; everything else replaces.
@@ -145,6 +161,10 @@ export function resolve(
   let hooksWhitelist: string[] = [];
   let compaction: CompactionConfig | undefined;
   let budget: BudgetConfig | undefined;
+  // #277: whole-section replace like [budget]. A derived domain that declares
+  // [entityAliases] restates the full mapping — merging pairs field by field
+  // would make "remove a pair" impossible to express.
+  let entityAliases: EntityAliasConfig | undefined;
   let name = "";
   let description: string | undefined;
 
@@ -174,6 +194,7 @@ export function resolve(
     // so a partial child DOES replace (and can loosen) the parent's caps; this
     // is the explicit-restate contract used by [compaction], not a field merge.
     if (d.budget) budget = d.budget;
+    if (d.entityAliases) entityAliases = d.entityAliases;
     if (d.name) name = d.name;
     if (d.description) description = d.description;
   }
@@ -189,6 +210,7 @@ export function resolve(
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
     budget,
+    ...(entityAliases ? { entityAliases } : {}),
   };
 }
 
@@ -320,6 +342,24 @@ export function validate(schema: DomainSchema): void {
       // config mistake.
       if (key !== "usdCap" && !Number.isInteger(value))
         throw new Error("Domain schema: budget." + key + " must be an integer >= 0");
+    }
+  }
+  // #277: [entityAliases] shape. Every value must be a list of 2+ names: a
+  // one-name list is a declaration with nothing to declare, and accepting it
+  // would let a typo read as a working mapping. Unknown TOML shapes are
+  // fail-fast for the same reason as [budget]: a silently dropped mapping is a
+  // policy that never takes effect, and the user would conclude the feature is
+  // broken rather than misconfigured.
+  const ea = schema.entityAliases;
+  if (ea !== undefined) {
+    if (typeof ea !== "object" || ea === null || Array.isArray(ea))
+      throw new Error("Domain schema: entityAliases must be a table of name lists");
+    for (const [key, names] of Object.entries(ea as Record<string, unknown>)) {
+      if (!Array.isArray(names) || names.length < 2)
+        throw new Error("Domain schema: entityAliases." + JSON.stringify(key) + " must be a list of at least 2 names");
+      const bad = names.filter((n) => typeof n !== "string" || n.trim().length < 2);
+      if (bad.length > 0)
+        throw new Error("Domain schema: entityAliases." + JSON.stringify(key) + " entries must be names of at least 2 characters; invalid: " + JSON.stringify(bad));
     }
   }
 }

@@ -338,6 +338,65 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   console.log("4b a stated pair applies without the model: OK");
 }
 
+// --- 4c. a configured mapping table applies at once ------------------------
+// The ticket asks for an explicit mapping TABLE (configuration), not only a
+// command. `[entityAliases] acme = ["Acme", "Acme Inc", "甲公司"]` must resolve
+// all three names to one object with no model call and nothing to review.
+{
+  const db = "config-table.db";
+  const store = openStore(db);
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://cfg.example/s", title: "甲公司客服邮箱", snippet: "甲公司客服邮箱为 help@cfg.example。",
+    source: "user", evidence: 1, entity: "甲公司",
+  }]);
+  const applied = store.applyDeclaredAliases({ acme: ["Acme", "Acme Inc", "甲公司"] });
+  assert(applied.applied >= 2, "both other names were applied (got " + applied.applied + ")");
+  assert(applied.skipped.length === 0, "no conflict for a fresh table");
+
+  // Every name in the group now resolves to the SAME object.
+  const ids = new Set<number>();
+  for (const q2 of ["Acme", "Acme Inc", "甲公司"]) {
+    const res = store.resolveQueryObject(q2 + " 的客服邮箱");
+    assert(res.kind === "resolved", q2 + " resolves (was " + res.kind + ")");
+    if (res.kind === "resolved") ids.add(res.entityId);
+  }
+  assert(ids.size === 1, "all three names resolve to ONE object (got " + ids.size + ")");
+
+  // The reason is recorded as configuration, and it is not in the review queue.
+  const row = store.listEntityAliases().find((r) => r.sourceName === "acme");
+  assert(!!row, "the declared alias is in the audit view");
+  assert(row!.evidence === "declared-config", "evidence names the config table: " + row?.evidence);
+  assert(store.listEntityAliases({ pendingOnly: true }).length === 0, "a declared mapping never waits for review");
+
+  // Idempotent: applying it again writes nothing new.
+  const again = store.applyDeclaredAliases({ acme: ["Acme", "Acme Inc", "甲公司"] });
+  assert(again.applied === 0, "re-applying the same table changes nothing (got " + again.applied + ")");
+
+  // A group whose names already belong to two different objects is refused by
+  // name, not silently merged.
+  store.dbQuery("SELECT 1");
+  const other = store.declareEntityAlias("Globex", "Globex Inc");
+  assert(other.ok, "second object declared");
+  const conflict = store.applyDeclaredAliases({ clash: ["Acme", "Globex"] });
+  assert(conflict.skipped.length === 1 && conflict.skipped[0]!.group === "clash",
+    "a conflicting group is reported: " + JSON.stringify(conflict.skipped));
+  store.close();
+  // The schema-level shape check lives in domain-schema; assert the two rules
+  // that make a typo visible instead of silently dead.
+  const { validate } = await import("../src/domain-schema");
+  const base = { name: "x", rag: { adapter: "none" }, skills: { active: [] }, sources: { enabled: [] }, hooks: { toolWhitelist: [] }, settings: {}, prompts: [] };
+  let ok = true;
+  try { validate({ ...base, entityAliases: { acme: ["Acme"] } } as never); } catch { ok = false; }
+  assert(!ok, "a one-name list is rejected (nothing to declare)");
+  ok = true;
+  try { validate({ ...base, entityAliases: { acme: ["Acme", ""] } } as never); } catch { ok = false; }
+  assert(!ok, "a blank name is rejected");
+  validate({ ...base, entityAliases: { acme: ["Acme", "甲公司"] } } as never);
+  assert(true, "a well-formed table passes validation");
+  console.log("4c a configured mapping table applies at once: OK");
+}
+
 // --- 5. an undetermined record is stored, marked, and has a review exit -----
 {
   const db = "unresolved.db";

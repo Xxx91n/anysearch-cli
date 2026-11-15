@@ -8,19 +8,24 @@
 // waits for a human instead of silently staying out of recall.
 
 import { createPersistentEngine } from "../db";
-import type { EntityReviewRow, AliasRow, UnresolvedEntityMemory } from "@anysearch-cli/store";
+import type { SqliteSessionStore } from "@anysearch-cli/store";
 
-interface EntityStore {
-  combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }>;
-  unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }>;
-  undoEntityMerge(logId: number): boolean;
-  listEntityReview(): Promise<EntityReviewRow[]>;
-  resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
-  declareEntityAlias(a: string, b: string): { ok: boolean; entityId?: number; logId?: number; error?: string };
-  listEntityAliases(opts?: { pendingOnly?: boolean }): AliasRow[];
-  listUnresolvedEntityMemories(): UnresolvedEntityMemory[];
-  resolveUnresolvedEntityMemory(id: number, action: "keep" | "drop"): { ok: boolean; error?: string };
-}
+// The store surface this command drives. Taken from the concrete store rather
+// than the port: the port marks the #277 methods optional so hand-built mocks
+// stay compatible, while this command only ever runs against the real store.
+type EntityStore = Pick<
+  SqliteSessionStore,
+  | "combineEntities"
+  | "unmergeEntity"
+  | "undoEntityMerge"
+  | "listEntityReview"
+  | "resolveEntityReview"
+  | "declareEntityAlias"
+  | "applyDeclaredAliases"
+  | "listEntityAliases"
+  | "listUnresolvedEntityMemories"
+  | "resolveUnresolvedEntityMemory"
+>;
 
 function printHelp(): void {
   process.stdout.write(

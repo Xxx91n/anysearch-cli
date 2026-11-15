@@ -27,18 +27,20 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
         // #277: which object the query named, and whether that could be told.
         // The store already holds the knowledge lane to the object; this is the
         // honest report the caller needs, because "object undetermined" and
-        // "nothing found" call for different next steps. A store without the
-        // resolver (an older one) simply omits the field.
-        const resolver = (eng.store as { resolveQueryObject?: (q: string) => { kind: string; name?: string; matches?: Array<{ name: string }> } }).resolveQueryObject;
-        const objectResolution = typeof resolver === "function" ? resolver.call(eng.store, query) : undefined;
+        // "nothing found" call for different next steps. Hand-built store mocks
+        // do not implement the resolver, so an absent method means "no object
+        // report" rather than a failed call.
+        const objectResolution = typeof eng.store.resolveQueryObject === "function"
+          ? eng.store.resolveQueryObject(query)
+          : undefined;
         const objectState = objectResolution?.kind === "ambiguous"
           ? {
               status: "undetermined" as const,
               note: "the query names more than one known object in different writing systems, and nothing says whether they are the same one; no knowledge row is offered rather than guessing",
-              candidates: objectResolution.matches?.map((m) => m.name) ?? [],
+              candidates: objectResolution.matches.map((m) => m.name),
             }
           : objectResolution?.kind === "resolved"
-            ? { status: "resolved" as const, name: objectResolution.name ?? "" }
+            ? { status: "resolved" as const, name: objectResolution.name }
             : undefined;
         const ts = isTimeSensitive(query);
         const eg = isEvergreen(query);

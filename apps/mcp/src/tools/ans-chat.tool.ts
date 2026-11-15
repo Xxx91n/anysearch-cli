@@ -259,7 +259,13 @@ export function registerAnsChat(
               scope,
               ...(allowSingleEvidence === true ? { allowSingleEvidence: true } : {}),
             }, seams
-              ? { summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal }
+              ? {
+                  summarize: seams.summarize, classify: seams.classify, verify: seams.verify, verifyFinal: seams.verifyFinal,
+                  // #277: the CLI passes this too. Without it this path would
+                  // never propose a cross-script mapping, and the two entry
+                  // points would answer the same ticket differently.
+                  judgeEntityAlias: seams.judgeEntityAlias,
+                }
               : undefined);
           } catch (e) {
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);

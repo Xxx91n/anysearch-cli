@@ -30,7 +30,7 @@
 // the existing read paths (entity arm, write-path dedup) pick it up unchanged.
 
 import type Database from "better-sqlite3";
-import { normalizeEntityName, scriptOf, isCrossScriptPair, surfaceFormHits, extractCrossScriptPairs } from "./entity.js";
+import { normalizeEntityName, scriptOf, isCrossScriptPair, extractCrossScriptPairs } from "./entity.js";
 
 /** Why two surface forms are treated as the same object. */
 export type AliasEvidence = "declared-config" | "declared-parentheses" | "model" | "manual";
@@ -293,20 +293,18 @@ export function resolveQueryObject(live: readonly LiveEntityRow[], query: string
   return { kind: "none" };
 }
 
-/**
- * Whether a known name could plausibly be an OBJECT name, as opposed to an
- * internal key.
- *
- * The entity table holds two different things. Some rows are objects a reader
- * would recognize (`Acme`, `甲公司`); others are technical keys the write path
- * created from a caller's `entity` field (`a-support-hours`, `buildzone-rd`).
- * Asking "is `a-support-hours` the same object as 甲公司?" is not a question
- * anyone asked, and treating it as one marks perfectly good material
- * undetermined — the exact regression this guard prevents.
- *
- * The test is deliberately crude, matching how the keys are produced: a
- * hyphen, underscore, dot, scheme or slash means "key, not object name".
- */
+// Whether a known name could plausibly be an OBJECT name, as opposed to an
+// internal key.
+//
+// The entity table holds two different things. Some rows are objects a reader
+// would recognize (`Acme`, `甲公司`); others are technical keys the write path
+// created from a caller's `entity` field (`a-support-hours`, `buildzone-rd`).
+// Asking "is `a-support-hours` the same object as 甲公司?" is not a question
+// anyone asked, and treating it as one marks perfectly good material
+// undetermined — the exact regression this guard prevents.
+//
+// The test is deliberately crude, matching how the keys are produced: a hyphen,
+// underscore, dot, scheme or slash means "key, not object name".
 export function isLikelyObjectName(form: string): boolean {
   const f = form.trim();
   if (f.length < 2) return false;
@@ -433,7 +431,73 @@ export function crossScriptPairsInText(
 }
 
 // Re-exported so callers do not import two modules for one concept.
-export { surfaceFormHits };
+
+/**
+ * Apply a mapping the text itself states (`Acme（甲公司）`).
+ *
+ * Both callers (the write-path pass and the consolidation pass) go through this,
+ * so the rule for "which entity survives" exists once. They used to compute it
+ * separately and had already drifted.
+ *
+ * `preferred` names the entity the caller would rather keep — the write path
+ * passes the entity the material is already linked to, so a row's object does
+ * not hop. Otherwise the Latin side wins: it is the form the identity is usually
+ * first asserted with, and keeping it avoids re-pointing rows that already
+ * exist.
+ *
+ * Returns true when an alias was appended.
+ */
+export function applyStatedPairAsAlias(
+  db: Database.Database,
+  live: readonly LiveEntityRow[],
+  pair: { latin: string; han: string },
+  evidence: AliasEvidence,
+  detail: Record<string, unknown>,
+  preferred?: number,
+): boolean {
+  const latinNorm = normalizeEntityName(pair.latin);
+  const hanNorm = normalizeEntityName(pair.han);
+  const latinEntity = findEntityForForm(live, latinNorm);
+  const hanEntity = findEntityForForm(live, hanNorm);
+  if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) return false; // already one object
+  let target: LiveEntityRow | undefined;
+  if (preferred !== undefined) target = [latinEntity, hanEntity].find((e) => e?.id === preferred);
+  target ??= latinEntity ?? hanEntity;
+  if (!target) return false;
+  const aliasNorm = target.id === latinEntity?.id ? hanNorm : latinNorm;
+  if (!appendAlias(db, target.id, aliasNorm)) return false;
+  logDeclaredAlias(db, aliasNorm, target.id, evidence, { pair, ...detail });
+  return true;
+}
+
+/**
+ * Queue a model-proposed mapping. Never touches `entities.aliases` — a human
+ * confirms it first.
+ *
+ * Returns false when there is nothing to queue: the pair is already one object,
+ * or neither side is a known entity (a proposal needs a target row to land on).
+ */
+export function queueProposedAlias(
+  db: Database.Database,
+  live: readonly LiveEntityRow[],
+  pair: AliasPairRequest,
+  verdict: AliasJudgeVerdict,
+  detail: Record<string, unknown> = {},
+): boolean {
+  const leftEntity = findEntityForForm(live, normalizeEntityName(pair.left));
+  const rightEntity = findEntityForForm(live, normalizeEntityName(pair.right));
+  if (leftEntity && rightEntity && leftEntity.id === rightEntity.id) return false;
+  const target = leftEntity ?? rightEntity;
+  if (!target) return false;
+  const aliasNorm = leftEntity ? normalizeEntityName(pair.right) : normalizeEntityName(pair.left);
+  logPendingAlias(db, aliasNorm, target.id, {
+    pair,
+    ...(verdict.reason ? { reason: verdict.reason } : {}),
+    ...(pair.context ? { context: pair.context.slice(0, 300) } : {}),
+    ...detail,
+  });
+  return true;
+}
 
 function extractStatedPairs(text: string): Array<{ latin: string; han: string }> {
   // The parser lives in entity.ts next to the other extraction channels, so

@@ -9,22 +9,8 @@
 import type Database from "better-sqlite3";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
-<<<<<<< New base: feat(store): 暂停的摘要按当前来源重建，保留用户原话 (#264)
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
-||||||| Common ancestor
-import { suspendSummariesForCorrection } from "./summary-sources.js";
-=======
-import { suspendSummariesForCorrection } from "./summary-sources.js";
-import { loadLiveEntities, resolveQueryObject, crossScriptPairsInText, findEntityForForm, appendAlias, logDeclaredAlias, logPendingAlias, type LiveEntityRow, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
-import { normalizeEntityName } from "./entity.js";
-
-// #277: the live entity table, for materials that carry no link. Read once per
-// run and passed down, so a consolidation over a big scope does not reload it
-// per material.
-function loadLiveEntitiesForConsolidate(db: Database.Database): LiveEntityRow[] {
-  return loadLiveEntities(db);
-}
->>>>>>> Current commit: feat(store): 中英文写法认成同一个对象，认不出就说对象未确定 (#277)
+import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
@@ -615,18 +601,7 @@ export async function linkCrossScriptForConsolidation(
 
     // 1) stated in the text itself — applied at once.
     for (const pair of stated) {
-      const latinNorm = normalizeEntityName(pair.latin);
-      const hanNorm = normalizeEntityName(pair.han);
-      const latinEntity = findEntityForForm(live, latinNorm);
-      const hanEntity = findEntityForForm(live, hanNorm);
-      if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) continue;
-      const target = latinEntity ?? hanEntity;
-      if (!target) continue;
-      const aliasNorm = latinEntity ? hanNorm : latinNorm;
-      if (appendAlias(db, target.id, aliasNorm)) {
-        logDeclaredAlias(db, aliasNorm, target.id, "declared-parentheses", { pair, memoryId: row.id });
-        declared += 1;
-      }
+      if (applyStatedPairAsAlias(db, live, pair, "declared-parentheses", { memoryId: row.id })) declared += 1;
     }
     if (candidates.length === 0) continue;
 
@@ -644,18 +619,11 @@ export async function linkCrossScriptForConsolidation(
       const pair = candidates[i]!;
       const verdict = verdicts[i];
       if (verdict?.same !== true) { undetermined += 1; continue; }
-      const leftEntity = findEntityForForm(live, normalizeEntityName(pair.left));
-      const rightEntity = findEntityForForm(live, normalizeEntityName(pair.right));
-      if (leftEntity && rightEntity && leftEntity.id === rightEntity.id) continue;
-      const target = leftEntity ?? rightEntity;
-      if (!target) { undetermined += 1; continue; }
-      const aliasNorm = leftEntity ? normalizeEntityName(pair.right) : normalizeEntityName(pair.left);
-      logPendingAlias(db, aliasNorm, target.id, {
-        pair, memoryId: row.id,
-        ...(verdict.reason ? { reason: verdict.reason } : {}),
-        ...(pair.context ? { context: pair.context.slice(0, 300) } : {}),
-      });
-      proposed += 1;
+      // Reload: an alias applied earlier in this loop changes who the pair's
+      // two names resolve to, and a stale snapshot would queue a proposal for a
+      // pair that is already settled.
+      if (queueProposedAlias(db, loadLiveEntities(db), pair, verdict, { memoryId: row.id })) proposed += 1;
+      else undetermined += 1;
     }
   }
   return { declared, proposed, undetermined };
@@ -699,7 +667,7 @@ export function canonicalEntityKeys(
     set.add(r.entityId);
     grouped.set(r.memoryId, set);
   }
-  const live = loadLiveEntitiesForConsolidate(db);
+  const live = loadLiveEntities(db);
   for (const row of rows) {
     const ids = grouped.get(row.id);
     if (ids && ids.size === 1) { out.set(row.id, "e:" + [...ids][0]); continue; }
