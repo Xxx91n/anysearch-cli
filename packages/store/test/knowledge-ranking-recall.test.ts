@@ -20,7 +20,7 @@ try {
     put.run("乙公司客服邮箱 email 为 wrong@sample.example。");
     for (let i = 0; i < 60; i++) put.run("甲公司客服邮箱页面正在维护 " + i + "。");
     put.run("AcmeCloud 客服邮箱 почта: impostor@sample.example。");
-    for (let i = 0; i < 60; i++) put.run("AcmeCloud почта поддержки " + i + ": impostor@sample.example.");
+    for (let i = 0; i < 260; i++) put.run("AcmeCloud почта поддержки " + i + ": impostor@sample.example.");
     put.run("甲公司 почта: correct@sample.example。");
     put.run("Acme 客服邮箱 email 为 help@sample.example。");
     put.run("Acme support email is support@sample.example.");

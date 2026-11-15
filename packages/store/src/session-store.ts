@@ -1912,16 +1912,16 @@ export class SqliteSessionStore implements SessionStore {
         qualified.sort((a, b) => b.coverage - a.coverage || a.row.rank - b.row.rank);
         crossScript.push(...qualified.slice(0, limit).map((candidate) => candidate.row));
       }
-      // Exact object checks happen before the accepted-result limit in every
-      // script lane. SQL LIKE alone also admits prefix collisions (AcmeCloud).
-      const scriptReadWindow = objectActive ? Math.max(limit * 20, 200) : limit;
+      // Design: exact object checks count accepted rows, not a fixed window of
+      // SQL LIKE candidates (#283). Prefix collisions (AcmeCloud) can exhaust
+      // any fixed window, so read one cursor until enough rows survive or EOF.
       const queryFts = otherWords.map((w) => '"' + w + '"*').join(" OR ");
       const indexed = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
         "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
-        " ORDER BY rank LIMIT ?",
-      ).all(queryFts, ...objectParams, scriptReadWindow) as Array<{ id: number; content: string; rank: number }>;
+        " ORDER BY rank",
+      ).iterate(queryFts, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>;
       for (const r of indexed) {
         if (otherScript.length >= limit) break;
         if (matchesObject(r.content)) pushOtherScript(r);
@@ -1932,8 +1932,8 @@ export class SqliteSessionStore implements SessionStore {
         const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
         const rows = this.db.prepare(
           "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
-          " AND (" + where + ")" + objectWhere + " LIMIT ?",
-        ).all(...otherWords.map((w) => "%" + w + "%"), ...objectParams, scriptReadWindow) as Array<{ id: number; content: string }>;
+          " AND (" + where + ")" + objectWhere,
+        ).iterate(...otherWords.map((w) => "%" + w + "%"), ...objectParams) as Iterable<{ id: number; content: string }>;
         for (const r of rows) {
           if (otherScript.length >= limit) break;
           if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
