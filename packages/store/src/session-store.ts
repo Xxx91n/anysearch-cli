@@ -1242,10 +1242,26 @@ export class SqliteSessionStore implements SessionStore {
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
+        // #277: the cross-script pass runs AFTER this write's verdict, never
+        // before it. Run inside `linkEntities` it could mark the NEW row
+        // "object undetermined" and the supersede below would then close the old
+        // row anyway — leaving the entity with no live version at all, and no way
+        // back even after a human resolves the mark.
+        try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
         if (existing) {
           try {
-            this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
-            out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+            // Only close the old version when the new one will actually be
+            // recallable. A row marked undetermined is not, so closing the old
+            // row would remove the last answerable version of this fact.
+            const newRowUnresolved = this.db
+              .prepare("SELECT 1 AS m FROM retrieval_results WHERE id = ? AND quarantine IS NOT NULL")
+              .get(insertedId) as { m: number } | undefined;
+            if (newRowUnresolved) {
+              out.push({ action: "accept", insertedId });
+            } else {
+              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
+              out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+            }
           } catch {
             out.push({ action: "accept", insertedId });
           }
@@ -1262,6 +1278,11 @@ export class SqliteSessionStore implements SessionStore {
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
+        // #277: after the equal-conflict verdict, not before it — otherwise this
+        // pass's "undetermined" mark is overwritten by the line above, and a
+        // reviewer choosing `keep` on the conflict would clear the quarantine and
+        // put a record with no established object back into recall.
+        try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
         out.push({ action: "quarantine", reason: "equal_conflict", insertedId });
       }
     }
@@ -1652,15 +1673,23 @@ export class SqliteSessionStore implements SessionStore {
   //   whole Chinese run into one token, so `"客服邮箱"` could never MATCH it.
   //   The LIKE rung is the only path that finds a Chinese fact without vectors.
   private semanticKeywordRows(query: string, limit: number, objectForms?: readonly string[]): MemoryHit[] {
-    // #277: the object filter has to run BEFORE the SQL LIMIT, not after.
-    // Filtering the finished `limit` rows would drop the one row that answers a
-    // narrow query whenever the head of the list belongs to another object — the
-    // caller would get an empty answer while the right row sat just past the cut.
-    // So the rungs read a wider candidate set when a filter is active, apply it,
-    // and only then take `limit`.
-    const fetchLimit = objectForms && objectForms.length > 0 ? Math.max(limit * 5, 50) : limit;
+    // #277: the object filter runs in SQL, before the LIMIT — not after it.
+    //
+    // Two earlier attempts got this wrong, so the rule is written down here:
+    // filtering the finished `limit` rows drops the answering row whenever the
+    // head of the list belongs to another object; reading a wider fixed window
+    // and filtering that only moves the boundary (100 companies all stating
+    // "客服邮箱为 …" put the right row past any fixed cut). The object condition
+    // is therefore part of the query: `LIMIT limit` then counts rows that can
+    // actually answer.
+    //
+    // `objectForms` are normalized names; `LIKE '%name%'` is the same containment
+    // test the JS filter used, so behaviour for a small table is unchanged.
+    const objectActive = !!objectForms && objectForms.length > 0;
+    const objectWhere = objectActive ? " AND (" + objectForms!.map(() => "s.content LIKE ?").join(" OR ") + ")" : "";
+    const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
     const matchesObject = (content: string): boolean =>
-      !objectForms || objectForms.length === 0 || objectForms.some((f) => formAppearsInText(content, f));
+      !objectActive || objectForms!.some((f) => formAppearsInText(content, f));
     const latin: Array<{ id: number; content: string; rank: number }> = [];
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
     const otherScript: Array<{ id: number; content: string; rank: number }> = [];
@@ -1685,10 +1714,11 @@ export class SqliteSessionStore implements SessionStore {
       const stmt = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
+        " ORDER BY rank LIMIT ?",
       );
-      for (const r of stmt.all(strict, fetchLimit) as Array<{ id: number; content: string; rank: number }>) {
-        if (matchesObject(r.content)) pushLatin(r);
+      for (const r of stmt.all(strict, ...objectParams, limit) as Array<{ id: number; content: string; rank: number }>) {
+        pushLatin(r);
       }
       // 2) Relaxed rung (OR over content words) only when the strict rung
       //    under-fills, and only for rows covering a strict majority of those
@@ -1714,7 +1744,10 @@ export class SqliteSessionStore implements SessionStore {
           // iterator is bounded so a pathological table cannot spin forever.
           const BOUND = Math.max(limit * 20, 200);
           let scanned = 0;
-          for (const r of stmt.iterate(relaxed, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
+          // The statement already carries the object condition, so the bound
+          // counts rows that can answer; the JS check below stays as the
+          // cross-language containment test the SQL LIKE cannot express.
+          for (const r of stmt.iterate(relaxed, ...objectParams, BOUND) as Iterable<{ id: number; content: string; rank: number }>) {
             if (latin.length >= limit) break;
             if (++scanned > BOUND) break;
             if (coversMajority(terms, r.content) && matchesObject(r.content)) pushLatin(r);
@@ -1812,18 +1845,17 @@ export class SqliteSessionStore implements SessionStore {
           if (list.length === 0 || cjk.length >= limit) return;
           const where = list.map(() => "s.content LIKE ?").join(" OR ");
           const remaining = limit - cjk.length;
-          // Same rule as the latin rungs: read wide when an object filter is
-          // active, filter each row as it arrives, and stop at `limit` survivors.
-          // Reading only `remaining` rows first would let another object's rows
-          // take the slot and leave the answering row unread.
-          const readLimit = matchesObject.length === 0 ? remaining : Math.max(remaining * 5, 50);
+          // The object condition is part of the SQL, so `LIMIT remaining` counts
+          // rows that can answer. Reading a fixed window and filtering in JS was
+          // the previous attempt and only moved the boundary — with enough rows
+          // about other objects the answering row always sat past it.
           const rows = this.db
-            .prepare("SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?")
-            .all(...list.map((t) => "%" + t + "%"), readLimit) as Array<{ id: number; content: string }>;
-          for (const r of rows) {
-            if (cjk.length >= limit) break;
-            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
-          }
+            .prepare(
+              "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
+              " AND (" + where + ")" + objectWhere + " LIMIT ?",
+            )
+            .all(...list.map((t) => "%" + t + "%"), ...objectParams, remaining) as Array<{ id: number; content: string }>;
+          for (const r of rows) pushCjk({ id: r.id, content: r.content, rank: 0 });
         };
         const factGrams = grams.filter((t) => t.length >= 4);
         const objectGrams = grams.filter((t) => t.length < 4);
@@ -1875,14 +1907,15 @@ export class SqliteSessionStore implements SessionStore {
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
         "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
       ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
-      for (const r of indexed) pushOtherScript(r);
+      for (const r of indexed) if (matchesObject(r.content)) pushOtherScript(r);
       // Keep a substring rung for languages where an indexed word differs
       // from a useful query fragment; avoid the scan if FTS already filled.
       if (otherScript.length < limit) {
         const where = otherWords.map(() => "s.content LIKE ?").join(" OR ");
         const rows = this.db.prepare(
-          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL AND (" + where + ") LIMIT ?",
-        ).all(...otherWords.map((w) => "%" + w + "%"), limit) as Array<{ id: number; content: string }>;
+          "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
+          " AND (" + where + ")" + objectWhere + " LIMIT ?",
+        ).all(...otherWords.map((w) => "%" + w + "%"), ...objectParams, limit) as Array<{ id: number; content: string }>;
         for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
       }
     }
@@ -1928,10 +1961,11 @@ export class SqliteSessionStore implements SessionStore {
       linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
     try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // fail-open, same discipline as linkEntities
-    // #277: the cross-script pass. Runs after the character-level linking, which
-    // cannot relate `Acme` to `甲公司` at any threshold. It only ever adds an alias
-    // (declared) or a review proposal (model) — it never merges on a score.
-    try { await this.linkCrossScript(memoryId, text); } catch {} // fail-open, same as the rest of this pass
+    // #277: the cross-script pass is NOT called here. It writes the
+    // "object undetermined" mark, and adjudicateMemory still has to decide this
+    // write's quarantine/supersede verdict — a mark written now would be
+    // overwritten, or would close the old version of a row nobody can recall.
+    // Both write paths call it after their verdict instead.
     // extraction overflow (capped out) enters the candidate review list — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
@@ -2478,13 +2512,25 @@ export class SqliteSessionStore implements SessionStore {
       // write the alias onto a closed entity — where no read path looks — and
       // this would report success. Check liveness first.
       const target = this.db
-        .prepare("SELECT name_norm FROM entities WHERE id = ? AND valid_until IS NULL")
-        .get(row.target_entity_id) as { name_norm: string } | undefined;
+        .prepare("SELECT name_norm, aliases FROM entities WHERE id = ? AND valid_until IS NULL")
+        .get(row.target_entity_id) as { name_norm: string; aliases: string } | undefined;
       if (!target) {
         return { ok: false, error: "the target entity is no longer live (merged away) — re-run the consolidation or declare the alias with ans entity alias" };
       }
-      if (!appendAlias(this.db, row.target_entity_id, normalizeEntityName(row.source_name))) {
-        return { ok: false, error: "alias target missing (entity may have been merged away) — resolve manually" };
+      const aliasNorm = normalizeEntityName(row.source_name);
+      if (!appendAlias(this.db, row.target_entity_id, aliasNorm)) {
+        // `appendAlias` returns false for two different situations, and they need
+        // different answers: the alias is already in place (a human declared the
+        // same mapping first — confirming is then a no-op, and reporting a fault
+        // would leave the proposal stuck in the queue forever), or it genuinely
+        // could not be written. Check which one this is instead of assuming the
+        // worse.
+        let present: string[] = [];
+        try { present = JSON.parse(target.aliases || "[]") as string[]; } catch { present = []; }
+        const alreadyThere = aliasNorm === target.name_norm || present.includes(aliasNorm);
+        if (!alreadyThere) {
+          return { ok: false, error: "alias could not be applied — resolve manually" };
+        }
       }
       this.db.prepare("UPDATE entity_merge_log SET resolved = 'confirmed' WHERE id = ?").run(id);
       return { ok: true };

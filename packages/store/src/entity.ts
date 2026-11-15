@@ -87,6 +87,11 @@ const PAIR_RES = [
 const LEADING_NOISE = new Set([
   "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "by", "with",
   "see", "per", "via", "vs", "our", "your", "their", "its", "this", "that", "these", "those",
+  // Verbs that commonly sit right before a company name. A word list can never be
+  // complete (`Contact Acme` needed this one), which is why the parser also
+  // returns shorter candidates below instead of trusting the list.
+  "contact", "call", "email", "ask", "visit", "join", "meet", "try", "use", "check", "read",
+  "about", "from", "per", "re", "regarding", "thanks", "please", "hello", "hi", "dear",
 ]);
 
 function trimLeadingNoise(name: string): string {
@@ -96,8 +101,34 @@ function trimLeadingNoise(name: string): string {
   return words.slice(start).join(" ");
 }
 
-export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
-  const out: CrossScriptPair[] = [];
+/**
+ * A multi-word match and the shorter names it could be.
+ *
+ * `latin` is the full cleaned match (`Acme Software Ltd`); `latinSuffixes` are its
+ * trailing sub-phrases in decreasing length (`Acme Software Ltd`, `Software Ltd`,
+ * `Ltd`). The caller picks the longest one that is already a known entity, so
+ * `Contact Acme（甲公司）` still resolves to the object named `Acme` instead of a
+ * phrase that exists nowhere.
+ *
+ * Why both: a word list alone cannot know where a sentence ends and a company
+ * name starts, and falling back to the last word alone turns `Acme Corp` into
+ * `Corp`. Returning the whole ladder lets the entity table decide.
+ */
+export interface StatedPair {
+  latin: string;
+  han: string;
+  latinSuffixes: string[];
+}
+
+function latinSuffixesOf(name: string): string[] {
+  const words = name.trim().split(/\s+/);
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) out.push(words.slice(i).join(" "));
+  return out;
+}
+
+export function extractCrossScriptPairs(text: string): StatedPair[] {
+  const out: StatedPair[] = [];
   const seen = new Set<string>();
   for (const re of PAIR_RES) {
     re.lastIndex = 0;
@@ -111,7 +142,7 @@ export function extractCrossScriptPairs(text: string): CrossScriptPair[] {
       const key = normalizeEntityName(latin) + "\u0000" + normalizeEntityName(han);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ latin, han });
+      out.push({ latin, han, latinSuffixes: latinSuffixesOf(latin) });
     }
   }
   return out;

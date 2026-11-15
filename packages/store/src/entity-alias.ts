@@ -538,14 +538,25 @@ export function crossScriptPairsInText(
 export function applyStatedPairAsAlias(
   db: Database.Database,
   live: readonly LiveEntityRow[],
-  pair: { latin: string; han: string },
+  pair: { latin: string; han: string; latinSuffixes?: string[] },
   evidence: AliasEvidence,
   detail: Record<string, unknown>,
   preferred?: number,
 ): { applied: boolean; needsMerge?: { keepId: number; dropId: number } } {
-  const latinNorm = normalizeEntityName(pair.latin);
+  // Which Latin name this pair is about. A multi-word match may run into the
+  // sentence in front of it (`Contact Acme`), and no word list can settle that.
+  // So the longest candidate that is already a known entity wins; when none is
+  // known, the match is taken as written (it is then what gets stored, and the
+  // operator can see it in the audit list). Falling back to the last word alone
+  // would turn `Acme Corp` into `Corp`.
+  const latinForms = (pair.latinSuffixes && pair.latinSuffixes.length > 0 ? pair.latinSuffixes : [pair.latin])
+    .map((s) => normalizeEntityName(s));
+  const knownLatin = latinForms
+    .map((f) => findEntityForForm(live, f))
+    .find((e) => e !== undefined);
+  const latinNorm = knownLatin ? knownLatin.nameNorm : latinForms[0]!;
   const hanNorm = normalizeEntityName(pair.han);
-  const latinEntity = findEntityForForm(live, latinNorm);
+  const latinEntity = knownLatin ?? findEntityForForm(live, latinNorm);
   const hanEntity = findEntityForForm(live, hanNorm);
   if (latinEntity && hanEntity && latinEntity.id === hanEntity.id) return { applied: false }; // already one object
   if (latinEntity && hanEntity) {

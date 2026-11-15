@@ -617,6 +617,115 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   console.log("8e undetermined is decided per pair: OK");
 }
 
+// --- 9. second review round (PR #287) --------------------------------------
+{
+  // 9a. A sentence word in front of the name must not become part of it.
+  //     `Contact Acme（甲公司）` used to parse as `Contact Acme`, which then found
+  //     no entity at all — the declaration was silently dropped.
+  const db = "contact-prefix.db";
+  const store = openStore(db);
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://cp.example/1", title: "Acme 页面", snippet: "Acme 相关内容。",
+    source: "user", evidence: 1, entity: "Acme",
+  }]);
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://cp.example/2", title: "公告", snippet: "Contact Acme（甲公司）获取客服支持。",
+    source: "user", evidence: 1,
+  }]);
+  const acme = store.dbQuery<{ id: number; aliases: string }>("SELECT id, aliases FROM entities WHERE name_norm = 'acme' AND valid_until IS NULL")[0];
+  assert(!!acme, "the Acme entity exists");
+  const aliases = JSON.parse(acme!.aliases) as string[];
+  assert(aliases.includes("甲公司"),
+    "the pair resolved to the known Acme, not to a phrase 'contact acme': " + JSON.stringify(aliases));
+  // And no entity was created for the sentence phrase.
+  const bogus = store.dbQuery<{ n: number }>("SELECT COUNT(*) n FROM entities WHERE name_norm LIKE '%contact%'");
+  assert(bogus[0]!.n === 0, "no entity was created for the sentence prefix");
+  store.close();
+  console.log("9a a sentence word in front of the name is not captured: OK");
+}
+
+{
+  // 9b. The object filter is in the SQL, so it survives a table full of other
+  //     objects: 60 companies all stating the same fact word, target last.
+  const db = "many-objects.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db));
+  for (let i = 0; i < 60; i++) {
+    rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+      .run("第" + i + "公司客服邮箱为 help@x" + i + ".example。");
+  }
+  // The answering row goes in LAST, past any fixed read window.
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("甲公司客服邮箱为 help@jia.example。");
+  rw.close();
+  const kw = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number, forms?: readonly string[]): Array<{ content: string }>;
+  }).semanticKeywordRows("甲公司 客服邮箱", 5, ["甲公司"]);
+  const contents = kw.map((h) => String(h.content));
+  assert(contents.some((c) => c.includes("help@jia.example")),
+    "the answering row is found past 60 other objects (got " + contents.length + " rows)");
+  assert(contents.every((c) => !c.includes("help@x")), "no other object's row passes the filter");
+  store.close();
+  console.log("9b the object filter survives a crowded table: OK");
+}
+
+{
+  // 9c. A row marked undetermined must not close the previous version of its
+  //     fact: the old row is the only thing still answerable.
+  const db = "no-orphan.db";
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => pairs.map(() => ({ same: null })),
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://or.example/1", title: "甲公司公告", snippet: "甲公司客服邮箱为 help@or.example。",
+    source: "user", evidence: 1, entity: "or-key",
+  }]);
+  const first = store.dbQuery<{ id: number }>("SELECT id FROM retrieval_results WHERE entity = 'or-key'")[0]!.id;
+  // Second write, same entity key, with an unresolved cross-script pair.
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://or.example/2", title: "甲公司公告二", snippet: "甲公司公告。合作方 Acme 也转发了。",
+    source: "user", evidence: 1, entity: "or-key",
+  }]);
+  const rows = store.dbQuery<{ id: number; valid_until: string | null; quarantine: string | null }>(
+    "SELECT id, valid_until, quarantine FROM retrieval_results WHERE entity = 'or-key' ORDER BY id",
+  );
+  const live = rows.filter((r) => r.valid_until === null && r.quarantine === null);
+  assert(live.length >= 1,
+    "at least one version of the fact stays live and recallable: " + JSON.stringify(rows));
+  const quarantined = rows.filter((r) => r.quarantine === "entity_unresolved");
+  if (quarantined.length > 0) {
+    assert(quarantined.every((r) => r.id !== first || r.valid_until === null),
+      "the undetermined row did not close its predecessor");
+  }
+  store.close();
+  console.log("9c an undetermined row does not close the old version: OK");
+}
+
+{
+  // 9d. Confirming a proposal whose alias a human already declared must succeed,
+  //     not report "target missing" and strand the proposal in the queue.
+  const db = "confirm-idempotent.db";
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => pairs.map(() => ({ same: true })),
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://ci.example/1", title: "甲公司公告", snippet: "甲公司公告。合作方 Acme 也转发了。",
+    source: "user", evidence: 1, entity: "甲公司",
+  }]);
+  const proposal = store.listEntityAliases({ pendingOnly: true })[0]!;
+  const decl = store.declareEntityAlias("Acme", "甲公司");
+  assert(decl.ok, "the human declared the same mapping first");
+  const confirmed = await store.resolveEntityReview(proposal.id, "keep");
+  assert(confirmed.ok, "confirming an already-applied proposal succeeds: " + JSON.stringify(confirmed));
+  const row = q(db, "SELECT resolved FROM entity_merge_log WHERE id = ?", proposal.id) as { resolved: string | null };
+  assert(row.resolved === "confirmed", "the proposal left the queue as confirmed");
+  store.close();
+  console.log("9d confirming an already-applied proposal succeeds: OK");
+}
+
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }
 rmSync(dir, { recursive: true, force: true });
 console.log("entity-alias.test.ts: " + passed + " passed, " + failed + " failed");
