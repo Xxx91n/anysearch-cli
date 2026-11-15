@@ -1889,8 +1889,8 @@ export class SqliteSessionStore implements SessionStore {
   //   2. the model proposes it — queued for review, NOT applied.
   //
   // A material whose names cannot be tied to any single object is recorded as
-  // "object undetermined" instead of being linked to a guess: the acceptance
-  // rule is "rather missing than wrong".
+  // "object undetermined" instead of being linked to a guess: leaving a fact out
+  // is recoverable, attaching it to the wrong company is not.
   private async linkCrossScript(memoryId: number, text: string, linked: LinkedEntityRef[]): Promise<void> {
     const live = this.liveEntities();
     if (live.length === 0) return;
@@ -2222,8 +2222,9 @@ export class SqliteSessionStore implements SessionStore {
   //              stating another company's support email no longer answers.
   //   ambiguous  return nothing and record why. Two known objects in different
   //              scripts both appear in the query, and nothing says whether they
-  //              are one object — the ticket's rule is "rather missing than
-  //              wrong", so the caller is told instead of served a guess.
+  //              are one object — leaving the fact out is recoverable, serving
+  //              the wrong company's answer is not. So the caller is told
+  //              instead of served a guess.
   //   none       unchanged. The query names no known object, so there is nothing
   //              to constrain by and the previous behaviour stands.
   //

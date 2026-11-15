@@ -631,6 +631,9 @@ export async function linkCrossScriptForConsolidation(
 
 // #277: the object key a material belongs to.
 //
+// Design: cluster by resolved object, not by the `entity` key string — rejected
+// grouping by URL or by declared key, because two pages about one company then
+// never meet and a Chinese page could never correct an English fact.
 // A material is clustered by the entity it is linked to, so a Chinese page and
 // an English page about one company share a cluster even though their `entity`
 // (the source URL) differs. Two sources of that answer, in order:

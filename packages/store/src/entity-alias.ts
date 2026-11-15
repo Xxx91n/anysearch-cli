@@ -25,6 +25,16 @@
 //   be taken back (`undoAliasRow`), so "why does 甲公司 count as Acme?" always
 //   has an answer.
 //
+// Design: `entities.aliases` stays the only place a resolved alias lives, and
+// `entity_merge_log` the only place a decision lives — rejected a parallel
+// alias table, because every existing read path already consults those two, and
+// a second table would be a second thing to keep in step.
+//
+// Design: an undetermined record reuses `retrieval_results.quarantine` instead
+// of a new column — rejected a new flag, because every recall path already
+// filters on that column, so "excluded by default" needs no new filter anywhere
+// and cannot be forgotten at a call site.
+//
 // The row shape is the existing `entity_merge_log`; the kinds are documented in
 // schema.sql. `entities.aliases` stays the one place a resolved alias lives, so
 // the existing read paths (entity arm, write-path dedup) pick it up unchanged.
@@ -234,10 +244,10 @@ export function listAliasRows(db: Database.Database, opts: { pendingOnly?: boole
 /**
  * Take an alias back: remove it from the entity and stamp the log row undone.
  *
- * This is the ticket's "能撤销". It is deliberately available for BOTH kinds: an
- * operator who declared the mapping can retract it, and so can the reviewer who
- * confirmed a model proposal. Reads fall back to the previous state on the next
- * lookup because `entities.aliases` is the only thing they consult.
+ * This is the undo the ticket asks for. It works for both kinds: an operator who
+ * declared the mapping can retract it, and so can the reviewer who confirmed a
+ * model proposal. Reads fall back to the previous state on the next lookup
+ * because `entities.aliases` is the only thing they consult.
  */
 export function undoAliasRow(db: Database.Database, logId: number): boolean {
   const row = db
