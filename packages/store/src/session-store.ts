@@ -1650,30 +1650,12 @@ export class SqliteSessionStore implements SessionStore {
   //   whole Chinese run into one token, so `"客服邮箱"` could never MATCH it.
   //   The LIKE rung is the only path that finds a Chinese fact without vectors.
   private semanticKeywordRows(query: string, limit: number, objectForms?: readonly string[]): MemoryHit[] {
-    // #277: the object filter runs in SQL, before the LIMIT — not after it.
-    //
-    // Two earlier attempts got this wrong, so the rule is written down here:
-    // filtering the finished `limit` rows drops the answering row whenever the
-    // head of the list belongs to another object; reading a wider fixed window
-    // and filtering that only moves the boundary (100 companies all stating
-    // "客服邮箱为 …" put the right row past any fixed cut). The object condition
-    // is therefore part of the query: `LIMIT limit` then counts rows that can
-    // actually answer.
-    //
-    // `objectForms` are normalized names. Two layers, each doing what it can:
-    //
-    // - SQL does a cheap containment pre-filter (`LIKE '%form%'`) so `LIMIT`
-    //   counts rows that mention the object at all instead of rows from any
-    //   object. A fixed read window was the earlier attempt and only moved the
-    //   boundary: with enough rows about other objects the answering row always
-    //   sat past it.
-    // - Every row that comes back is THEN checked with `formAppearsInText`, the
-    //   one function that also enforces word boundaries for Latin names. `LIKE
-    //   '%acme%'` alone would accept `AcmeCloud`, and the CJK rung pushes rows
-    //   without any further check — so the pre-filter must never be the last
-    //   word. Because the pre-filter is strictly looser, the JS check only ever
-    //   removes rows, and the rungs keep reading while the accepted count is
-    //   still short (bounded, like the relaxed rung).
+    // #277/#283: reject the wrong object before counting accepted rows.
+    // SQL LIKE is a coarse pre-filter: '%acme%' also admits AcmeCloud. Each
+    // cursor therefore applies formAppearsInText before admitting a row, and
+    // keeps reading until enough rows survive or the candidates run out.
+    // Where a relevance scan budget applies, only object-eligible rows count.
+    // `objectForms` contains normalized canonical names and accepted aliases.
     const objectActive = !!objectForms && objectForms.length > 0;
     const objectWhere = objectActive ? " AND (" + objectForms!.map(() => "s.content LIKE ?").join(" OR ") + ")" : "";
     const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
@@ -1722,24 +1704,12 @@ export class SqliteSessionStore implements SessionStore {
         const relaxed = fts5RelaxedQuery(query);
         if (relaxed) {
           const terms = relaxedTerms(query);
-          // Fetch relaxed candidates in pages and filter each page as it
-          // arrives, stopping once `limit` survivors are in hand. A fixed
-          // `limit * 2` fetch followed by filtering loses everything when the
-          // head of the list are one-word matches — the row covering the
-          // whole query can sit past the cut (#273 review).
-          // One ordered pass, filtered as it goes. The relaxed rung used to
-          // fetch a fixed `limit * 2` rows and filter afterwards; growing the
-          // LIMIT and slicing off the seen prefix re-reads and re-ranks the whole
-          // prefix every round, which on 10k one-word rows and limit 20 means
-          // ~1.25M rows transferred instead of 10k (#273 review).
-          //
-          // Iterating one cursor over the ranked rows keeps the scan linear and
-          // preserves "keep reading while the filtered count is short". The
-          // iterator is bounded so a pathological table cannot spin forever.
+          // A single ranked cursor avoids repeatedly reading the same
+          // prefix. Keep the existing budget for broad OR queries, but do not
+          // spend it on SQL prefix collisions rejected by the object check.
           const BOUND = Math.max(limit * 20, 200);
           let scanned = 0;
-          // The statement already carries the object condition, so the bound
-          // counts object-eligible rows, not SQL prefix collisions.
+          // Exact object checks precede the relevance scan budget.
           for (const r of stmt.iterate(relaxed, ...objectParams) as Iterable<{ id: number; content: string; rank: number }>) {
             if (latin.length >= limit) break;
             if (!matchesObject(r.content)) continue;
@@ -1758,9 +1728,8 @@ export class SqliteSessionStore implements SessionStore {
     //    Chinese has no spaces, so a question arrives as one long run
     //    ("请问客服邮箱是什么") that never appears verbatim in a row stating
     //    "客服邮箱为 help@example.com". Each run is therefore split into
-    //    overlapping slices, and the relevance floor is applied IN SQL before
-    //    LIMIT: filtering after the cut would let `limit` weak matches take the
-    //    slots and leave the strong one out.
+    //    overlapping slices. SQL applies the slice relevance floor; the cursor
+    //    checks exact object eligibility before counting accepted results.
     if (/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/.test(query)) {
       const runs = query
         .split(/[\s\p{P}\p{S}]+/u)
