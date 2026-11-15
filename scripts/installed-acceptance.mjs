@@ -202,7 +202,7 @@ function sh(cmd, args, opts = {}) {
   const parts = [isPath ? '"' + cmd + '"' : cmd];
   for (const a of args) parts.push(/\s/.test(a) || a === "" ? '"' + a + '"' : a);
   const r = spawnSync(parts.join(" "), { encoding: "utf8", shell: true, ...opts });
-  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
+  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
 function writeDomain(dir, name, body) {
@@ -297,16 +297,29 @@ async function main() {
     check(existsSync(mcpBin), "installed MCP entry exists", mcpBin);
 
     // ================= A. CLI on the installed artifact =================
+    //
+    // Every command runs with HOME/USERPROFILE and ANS_DB_PATH pointed into the
+    // sandbox. `doctor` resolves the durable database path and creates its
+    // directory, so inheriting the real environment would touch the operator's
+    // own ~/.anysearch — a test must not do that.
     console.log("\n== A. CLI ==");
-    const v = sh(ansBin, ["--version"], { cwd: prefix });
+    const cliEnv = {
+      ...process.env,
+      USERPROFILE: work,
+      HOME: work,
+      ANS_DB_PATH: join(work, "cli-probe.db"),
+      ANS_DOMAINS_DIR: join(work, "empty-domains"),
+    };
+    mkdirSync(cliEnv.ANS_DOMAINS_DIR, { recursive: true });
+    const v = sh(ansBin, ["--version"], { cwd: prefix, env: cliEnv });
     check(v.code === 0, "installed ans --version exits 0", v.out);
     check(/\d+\.\d+\.\d+/.test(v.out) && !/\b0\.0\.0\b/.test(v.out), "version is a real release version", v.out);
 
-    const doctor = sh(ansBin, ["doctor"], { cwd: prefix });
+    const doctor = sh(ansBin, ["doctor"], { cwd: prefix, env: cliEnv });
     check(doctor.code === 0, "installed ans doctor exits 0", doctor.out);
     check(/vector arm/.test(doctor.out), "doctor reports the vector arm status", doctor.out.slice(-400));
 
-    const noScope = sh(ansBin, ["consolidate"], { cwd: prefix });
+    const noScope = sh(ansBin, ["consolidate"], { cwd: prefix, env: cliEnv });
     check(noScope.code === 2, "consolidate with no scope exits 2 instead of consolidating everything", noScope.out);
     check(/explicit scope is required/.test(noScope.out), "the no-scope refusal says what is missing", noScope.out);
 
@@ -359,7 +372,14 @@ async function main() {
 
     const usage1 = turn1.result?.structuredContent?.usage?.run;
     check(!!usage1 && usage1.assistantCalls >= 1, "turn 1 reports run usage", JSON.stringify(usage1));
-    check(!!usage1 && typeof usage1.costSource === "string", "turn 1 names where its cost figure came from", JSON.stringify(usage1));
+    // The stub is a custom endpoint with no price table and no server-sent
+    // price, so the honest label is "estimated"/"unknown" — never "provider".
+    // Asserting the actual value keeps a later regression toward
+    // "provider-reported" visible instead of merely "a string was present".
+    check(usage1?.costSource === "estimated" || usage1?.costSource === "unknown",
+      "an unpriced stub endpoint does not report a provider-sent cost", JSON.stringify(usage1?.costSource));
+    check(Array.isArray(usage1?.missing) && usage1.missing.some((m) => /cost/.test(m)),
+      "the missing cost dimension is named, not rendered as free", JSON.stringify(usage1?.missing));
     const ctx1 = turn1.result?.structuredContent?.context;
     check(!!ctx1 && typeof ctx1.window === "number" && ctx1.window > 0, "turn 1 reports the context window it used", JSON.stringify(ctx1));
 
@@ -410,10 +430,22 @@ async function main() {
         "both processes serve all five tools after the concurrent cold start",
         JSON.stringify([(listA.result?.tools ?? []).length, (listB.result?.tools ?? []).length]));
       const coldCheck = new Database(coldDb, { readonly: true });
-      let tableCount = 0;
-      try { tableCount = coldCheck.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c; }
-      finally { coldCheck.close(); }
-      check(tableCount >= 30, "the cold-started database has the complete schema (" + tableCount + " tables)");
+      let coldTables = [];
+      try {
+        coldTables = coldCheck.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+      } finally { coldCheck.close(); }
+      // Name the tables each layer depends on instead of asserting a count
+      // floor: "at least 30" also passes when one whole later-layer table is
+      // missing, which is exactly the partial schema this lane exists to catch.
+      const requiredTables = [
+        "sessions", "messages", "retrieval_results", "resume_anchors", "budget_ledger",
+        "semantic_memories", "summary_sources", "summary_suspensions",
+        "legacy_summary_states", "legacy_summary_attempts", "entities", "edges",
+      ];
+      const missingTables = requiredTables.filter((t) => !coldTables.includes(t));
+      check(missingTables.length === 0,
+        "the cold-started database carries every layer's table (" + coldTables.length + " tables)",
+        "missing: " + missingTables.join(","));
       await coldA.kill();
       await coldB.kill();
     }
@@ -425,13 +457,10 @@ async function main() {
     check(noScopeCall.result?.isError === true, "consolidate through MCP with no scope is a tool error", textOf(noScopeCall).slice(0, 200));
     check(/explicit scope is required/.test(textOf(noScopeCall)), "the MCP no-scope error names the missing scope", textOf(noScopeCall).slice(0, 200));
 
-    const dry = await prober.rpc("tools/call", { name: "ans_chat", arguments: { operation: "consolidate", sessionId: sid, dryRun: true } });
-    check(dry.result?.isError !== true, "consolidate dry-run completes", textOf(dry).slice(0, 200));
-    const dryScope = dry.result?.structuredContent?.scope;
-    check(!!dryScope, "consolidate dry-run echoes the scope it actually read", JSON.stringify(dryScope));
-
-    // Seed three materials straight into the installed schema, so the apply lane
-    // has something to work on without spending a provider call.
+    // Seed three materials straight into the installed schema FIRST, so the
+    // dry-run below reads a real, non-empty scope. Called before the dry-run on
+    // purpose: a preview over an empty session would pass whether or not it
+    // wrote anything, which is the assertion that proves nothing.
     const seedSession = "acc267-seed";
     let seededIds = [];
     {
@@ -446,6 +475,23 @@ async function main() {
       } finally { db.close(); }
     }
     check(seededIds.length === 3, "seeded three materials for the apply lane", seededIds.join(","));
+
+    const dry = await prober.rpc("tools/call", { name: "ans_chat", arguments: { operation: "consolidate", memoryIds: seededIds, dryRun: true } });
+    check(dry.result?.isError !== true, "consolidate dry-run completes", textOf(dry).slice(0, 200));
+    const dryScope = dry.result?.structuredContent?.scope;
+    check(dryScope?.by === "memory", "consolidate dry-run echoes the scope kind it actually read", JSON.stringify(dryScope));
+    check((dry.result?.structuredContent?.report?.clustersScanned ?? 0) > 0,
+      "the dry-run really scanned the seeded materials", JSON.stringify(dry.result?.structuredContent?.report?.clustersScanned));
+    check((dry.result?.structuredContent?.report?.add ?? 0) === 1,
+      "the dry-run reports what an apply would add", JSON.stringify(dry.result?.structuredContent?.counts));
+    {
+      // "Nothing saved" is the promise. Check the database, not the wording.
+      const db = new Database(baseEnv.ANS_DB_PATH, { readonly: true });
+      let rows;
+      try { rows = db.prepare("SELECT count(*) c FROM semantic_memories").get().c; }
+      finally { db.close(); }
+      check(rows === 0, "the dry-run wrote no knowledge row", "semantic_memories rows=" + rows);
+    }
 
     const applyCall = await prober.rpc("tools/call", {
       name: "ans_chat",
@@ -561,7 +607,6 @@ async function main() {
           for (const t of laterTables) db.exec("DROP TABLE IF EXISTS " + t);
           before = {
             tables: db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c,
-            messages: db.prepare("SELECT count(*) c FROM messages").get().c,
             rows: db.prepare("SELECT count(*) c FROM retrieval_results").get().c,
           };
         } finally { db.close(); }
