@@ -104,27 +104,42 @@ function trimLeadingNoise(name: string): string {
 /**
  * A multi-word match and the shorter names it could be.
  *
- * `latin` is the full cleaned match (`Acme Software Ltd`); `latinSuffixes` are its
- * trailing sub-phrases in decreasing length (`Acme Software Ltd`, `Software Ltd`,
- * `Ltd`). The caller picks the longest one that is already a known entity, so
- * `Contact Acme（甲公司）` still resolves to the object named `Acme` instead of a
- * phrase that exists nowhere.
+ * `latin` is the full match; `latinSuffixes` are the names to try, longest
+ * first — starting with the UNCLEANED match and then every trailing sub-phrase
+ * of the cleaned one (`Hello Labs` → `Hello Labs`, `Labs`; `Contact Acme` →
+ * `Contact Acme`, `Acme`).
  *
- * Why both: a word list alone cannot know where a sentence ends and a company
- * name starts, and falling back to the last word alone turns `Acme Corp` into
- * `Corp`. Returning the whole ladder lets the entity table decide.
+ * Why uncleaned first: a company can legitimately start with a word that also
+ * opens sentences, and trimming before looking it up would turn `Hello Labs
+ * （甲公司）` into `Labs/甲公司` — binding 甲公司 to whatever object happens to be
+ * called "Labs". Trying the full match first means a real `Hello Labs` entity
+ * wins; the trimmed suffix is only reached when the full name is not a known
+ * object. The caller picks the longest known candidate.
  */
 export interface StatedPair {
   latin: string;
   han: string;
+  /** Candidate Latin names, longest first. `latin` is the first entry. */
   latinSuffixes: string[];
 }
 
-function latinSuffixesOf(name: string): string[] {
-  const words = name.trim().split(/\s+/);
-  const out: string[] = [];
-  for (let i = 0; i < words.length; i++) out.push(words.slice(i).join(" "));
-  return out;
+function latinNameLadder(rawMatch: string): { primary: string; ladder: string[] } {
+  const untrimmed = rawMatch.trim().replace(/\s+/g, " ");
+  const cleaned = trimLeadingNoise(untrimmed);
+  const ladder: string[] = [];
+  const push = (n: string): void => {
+    const v = n.trim();
+    if (v && !ladder.includes(v)) ladder.push(v);
+  };
+  // Longest first: the full match, then the cleaned form, then every trailing
+  // sub-phrase of the cleaned form. A real multi-word name is tried before any
+  // trimmed variant, so `Hello Labs` is never mistaken for the prose prefix
+  // `Hello` plus an object called `Labs`.
+  push(untrimmed);
+  push(cleaned);
+  const words = cleaned.split(/\s+/);
+  for (let i = 1; i < words.length; i++) push(words.slice(i).join(" "));
+  return { primary: untrimmed, ladder };
 }
 
 export function extractCrossScriptPairs(text: string): StatedPair[] {
@@ -137,12 +152,12 @@ export function extractCrossScriptPairs(text: string): StatedPair[] {
       const rawB = (m[2] ?? "").trim();
       const latinRaw = scriptOf(rawA) === "latin" ? rawA : rawB;
       const han = scriptOf(rawA) === "han" ? rawA : rawB;
-      const latin = trimLeadingNoise(latinRaw);
-      if (!latin || !han) continue;
-      const key = normalizeEntityName(latin) + "\u0000" + normalizeEntityName(han);
+      const { primary, ladder } = latinNameLadder(latinRaw);
+      if (!primary || !han) continue;
+      const key = normalizeEntityName(primary) + "\u0000" + normalizeEntityName(han);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ latin, han, latinSuffixes: latinSuffixesOf(latin) });
+      out.push({ latin: primary, han, latinSuffixes: ladder });
     }
   }
   return out;

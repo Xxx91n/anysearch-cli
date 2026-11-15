@@ -527,9 +527,19 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   const pairs = extractCrossScriptPairs("Acme Corp（甲公司）发布公告");
   assert(pairs.length === 1 && pairs[0]!.latin === "Acme Corp",
     "multi-word Latin name kept whole: " + JSON.stringify(pairs));
+  // A leading sentence word stays on the ladder as the full match, but the
+  // cleaned form is right behind it, so the caller can still resolve to the
+  // real object. `latin` is the uncleaned match on purpose: a company may
+  // legitimately start with a word that also opens sentences (`Hello Labs`).
   const withNoise = extractCrossScriptPairs("see Acme Corp（甲公司）");
-  assert(withNoise.length === 1 && withNoise[0]!.latin === "Acme Corp",
-    "a leading sentence word is trimmed: " + JSON.stringify(withNoise));
+  assert(withNoise.length === 1 && withNoise[0]!.latin === "see Acme Corp",
+    "the full match is kept: " + JSON.stringify(withNoise));
+  assert(withNoise[0]!.latinSuffixes.includes("Acme Corp"),
+    "the cleaned form is on the ladder: " + JSON.stringify(withNoise[0]!.latinSuffixes));
+  // A real name starting with a prose word must be tried before its tail.
+  const hello = extractCrossScriptPairs("Hello Labs（甲公司）");
+  assert(hello[0]!.latinSuffixes[0] === "Hello Labs",
+    "a name that starts with a prose word is tried whole first: " + JSON.stringify(hello[0]!.latinSuffixes));
   console.log("8b multi-word names parse whole: OK");
 }
 
@@ -724,6 +734,63 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   assert(row.resolved === "confirmed", "the proposal left the queue as confirmed");
   store.close();
   console.log("9d confirming an already-applied proposal succeeds: OK");
+}
+
+{
+  // 10a. A Latin object name must match on word boundaries in the SQL path too.
+  //      `LIKE '%acme%'` alone would also accept `AcmeCloud`, and the CJK rung
+  //      pushes rows without a second check — so the loose pre-filter must not be
+  //      the last word.
+  const db = "word-boundary.db";
+  const store = openStore(db);
+  const rw = new Database(join(dir, db));
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("AcmeCloud 客服邮箱为 help@cloud.example。");
+  rw.prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, '[]', 0.5, 0.9, NULL)")
+    .run("Acme 客服邮箱为 help@acme.example。");
+  rw.close();
+  await store.adjudicateMemory(await store.createSession("eval").then((s) => s.id), [
+    { url: "https://wb.example/1", title: "Acme 页面", snippet: "Acme 相关内容。", source: "user", evidence: 1, entity: "Acme" },
+  ]);
+  const kw = (store as unknown as {
+    semanticKeywordRows(q: string, limit: number, forms?: readonly string[]): Array<{ content: string }>;
+  }).semanticKeywordRows("Acme 客服邮箱", 5, ["acme"]);
+  const contents = kw.map((h) => String(h.content));
+  assert(contents.some((c) => c.includes("help@acme.example")), "the real Acme row is found");
+  assert(!contents.some((c) => c.includes("help@cloud.example")),
+    "AcmeCloud is not treated as Acme: " + JSON.stringify(contents));
+  store.close();
+  console.log("10a Latin names keep word boundaries in the SQL path: OK");
+}
+
+{
+  // 10b. Confirming a proposal must not create the same alias on two live
+  //      objects: if a human already declared that name elsewhere, refuse.
+  const db = "confirm-conflict.db";
+  const store = openStore(db, {
+    entityAliasJudge: async (pairs) => pairs.map(() => ({ same: true })),
+  });
+  const sess = await store.createSession("eval");
+  await store.adjudicateMemory(sess.id, [
+    { url: "https://cc.example/1", title: "甲公司页面", snippet: "甲公司相关内容。", source: "user", evidence: 1, entity: "甲公司" },
+    { url: "https://cc.example/2", title: "阿克米页面", snippet: "阿克米相关内容。", source: "user", evidence: 1, entity: "阿克米" },
+  ]);
+  await store.adjudicateMemory(sess.id, [{
+    url: "https://cc.example/3", title: "甲公司公告", snippet: "甲公司公告。合作方 Acme 也转发了。",
+    source: "user", evidence: 1, entity: "甲公司",
+  }]);
+  const proposal = store.listEntityAliases({ pendingOnly: true })[0];
+  if (proposal) {
+    // A human binds Acme to a DIFFERENT object first.
+    const decl = store.declareEntityAlias("Acme", "阿克米");
+    assert(decl.ok, "the human bound Acme to 阿克米");
+    const confirmed = await store.resolveEntityReview(proposal.id, "keep");
+    assert(!confirmed.ok, "confirming onto a second live object is refused: " + JSON.stringify(confirmed));
+    const row = q(db, "SELECT resolved FROM entity_merge_log WHERE id = ?", proposal.id) as { resolved: string | null };
+    assert(row.resolved === null, "the proposal stays pending instead of claiming a false success");
+  }
+  store.close();
+  console.log("10b confirming cannot alias one name to two live objects: OK");
 }
 
 for (const s of stores) { try { s.close(); } catch { /* already closed */ } }

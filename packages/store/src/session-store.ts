@@ -1683,8 +1683,20 @@ export class SqliteSessionStore implements SessionStore {
     // is therefore part of the query: `LIMIT limit` then counts rows that can
     // actually answer.
     //
-    // `objectForms` are normalized names; `LIKE '%name%'` is the same containment
-    // test the JS filter used, so behaviour for a small table is unchanged.
+    // `objectForms` are normalized names. Two layers, each doing what it can:
+    //
+    // - SQL does a cheap containment pre-filter (`LIKE '%form%'`) so `LIMIT`
+    //   counts rows that mention the object at all instead of rows from any
+    //   object. A fixed read window was the earlier attempt and only moved the
+    //   boundary: with enough rows about other objects the answering row always
+    //   sat past it.
+    // - Every row that comes back is THEN checked with `formAppearsInText`, the
+    //   one function that also enforces word boundaries for Latin names. `LIKE
+    //   '%acme%'` alone would accept `AcmeCloud`, and the CJK rung pushes rows
+    //   without any further check — so the pre-filter must never be the last
+    //   word. Because the pre-filter is strictly looser, the JS check only ever
+    //   removes rows, and the rungs keep reading while the accepted count is
+    //   still short (bounded, like the relaxed rung).
     const objectActive = !!objectForms && objectForms.length > 0;
     const objectWhere = objectActive ? " AND (" + objectForms!.map(() => "s.content LIKE ?").join(" OR ") + ")" : "";
     const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
@@ -1717,8 +1729,13 @@ export class SqliteSessionStore implements SessionStore {
         "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
         " ORDER BY rank LIMIT ?",
       );
-      for (const r of stmt.all(strict, ...objectParams, limit) as Array<{ id: number; content: string; rank: number }>) {
-        pushLatin(r);
+      // SQL narrows to rows mentioning the object; the JS check applies the
+      // exact rule (word boundaries for Latin names), so `LIKE '%acme%'` letting
+      // `AcmeCloud` through cannot reach the caller.
+      const strictWindow = objectActive ? Math.max(limit * 4, 40) : limit;
+      for (const r of stmt.all(strict, ...objectParams, strictWindow) as Array<{ id: number; content: string; rank: number }>) {
+        if (latin.length >= limit) break;
+        if (matchesObject(r.content)) pushLatin(r);
       }
       // 2) Relaxed rung (OR over content words) only when the strict rung
       //    under-fills, and only for rows covering a strict majority of those
@@ -1845,17 +1862,24 @@ export class SqliteSessionStore implements SessionStore {
           if (list.length === 0 || cjk.length >= limit) return;
           const where = list.map(() => "s.content LIKE ?").join(" OR ");
           const remaining = limit - cjk.length;
-          // The object condition is part of the SQL, so `LIMIT remaining` counts
-          // rows that can answer. Reading a fixed window and filtering in JS was
-          // the previous attempt and only moved the boundary — with enough rows
-          // about other objects the answering row always sat past it.
+          // SQL narrows to rows that mention the object at all; the JS check
+          // below applies the exact rule (word boundaries for Latin names).
+          // Reading a wider window is therefore safe rather than necessary: the
+          // pre-filter is what makes the answering row reachable at all, and the
+          // wider window only covers rows the loose LIKE let in and the exact
+          // check will drop. Without the JS check the CJK rung would serve
+          // `AcmeCloud 客服邮箱…` for the object `acme`.
+          const readWindow = objectActive ? Math.max(remaining * 4, 40) : remaining;
           const rows = this.db
             .prepare(
               "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
               " AND (" + where + ")" + objectWhere + " LIMIT ?",
             )
-            .all(...list.map((t) => "%" + t + "%"), ...objectParams, remaining) as Array<{ id: number; content: string }>;
-          for (const r of rows) pushCjk({ id: r.id, content: r.content, rank: 0 });
+            .all(...list.map((t) => "%" + t + "%"), ...objectParams, readWindow) as Array<{ id: number; content: string }>;
+          for (const r of rows) {
+            if (cjk.length >= limit) break;
+            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
+          }
         };
         const factGrams = grams.filter((t) => t.length >= 4);
         const objectGrams = grams.filter((t) => t.length < 4);
@@ -1905,8 +1929,9 @@ export class SqliteSessionStore implements SessionStore {
       const indexed = this.db.prepare(
         "SELECT s.id as id, s.content as content, bm25(semantic_memories_fts) as rank " +
         "FROM semantic_memories_fts JOIN semantic_memories s ON s.id = semantic_memories_fts.rowid " +
-        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL ORDER BY rank LIMIT ?",
-      ).all(queryFts, limit) as Array<{ id: number; content: string; rank: number }>;
+        "WHERE semantic_memories_fts MATCH ? AND s.valid_until IS NULL" + objectWhere +
+        " ORDER BY rank LIMIT ?",
+      ).all(queryFts, ...objectParams, limit) as Array<{ id: number; content: string; rank: number }>;
       for (const r of indexed) if (matchesObject(r.content)) pushOtherScript(r);
       // Keep a substring rung for languages where an indexed word differs
       // from a useful query fragment; avoid the scan if FTS already filled.
@@ -1988,7 +2013,7 @@ export class SqliteSessionStore implements SessionStore {
 
     // 1) stated pairs: the material itself says these two names are one object.
     for (const pair of stated) {
-      this.applyStatedPair(pair.latin, pair.han, memoryId);
+      this.applyStatedPair(pair, memoryId);
     }
 
     // 2) model proposals, only when something is actually unresolved.
@@ -2057,16 +2082,16 @@ export class SqliteSessionStore implements SessionStore {
   // When the two names already belong to different live entities this writes
   // nothing and counts it as "needs merge": appending an alias there would leave
   // both objects live and make every later query about them ambiguous.
-  private applyStatedPair(latin: string, han: string, memoryId: number): void {
+  private applyStatedPair(pair: { latin: string; han: string; latinSuffixes?: string[] }, memoryId: number): void {
     const live = this.liveEntities();
     const linkedIds = new Set(
       (this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(memoryId) as Array<{ entity_id: number }>)
         .map((r) => r.entity_id),
     );
-    const preferred = [latin, han]
+    const preferred = [pair.latin, ...(pair.latinSuffixes ?? []), pair.han]
       .map((n) => findEntityForForm(live, normalizeEntityName(n)))
       .find((e) => e !== undefined && linkedIds.has(e.id))?.id;
-    const res = applyStatedPairAsAlias(this.db, live, { latin, han }, "declared-parentheses", { memoryId }, preferred);
+    const res = applyStatedPairAsAlias(this.db, live, pair, "declared-parentheses", { memoryId }, preferred);
     if (res.applied) this.entityTel.crossScriptDeclared += 1;
     else if (res.needsMerge) this.entityTel.crossScriptNeedsMerge += 1;
   }
@@ -2518,6 +2543,18 @@ export class SqliteSessionStore implements SessionStore {
         return { ok: false, error: "the target entity is no longer live (merged away) — re-run the consolidation or declare the alias with ans entity alias" };
       }
       const aliasNorm = normalizeEntityName(row.source_name);
+      // The proposed name may have been claimed by ANOTHER live object while the
+      // proposal waited (a human declaring it elsewhere). Appending it here would
+      // make one name belong to two live entities, and every later query about it
+      // would come back ambiguous. Refuse and let a human merge them.
+      const live = this.liveEntities();
+      const claimedBy = live.find((e) => e.id !== row.target_entity_id && (e.nameNorm === aliasNorm || e.aliases.includes(aliasNorm)));
+      if (claimedBy) {
+        return {
+          ok: false,
+          error: "the name is already bound to entity #" + claimedBy.id + " (" + claimedBy.name + "); merge the two objects first with ans entity merge",
+        };
+      }
       if (!appendAlias(this.db, row.target_entity_id, aliasNorm)) {
         // `appendAlias` returns false for two different situations, and they need
         // different answers: the alias is already in place (a human declared the
