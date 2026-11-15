@@ -86,7 +86,10 @@ test("a partially unreadable old source list is incomplete, even when a valid so
     // inputs, not new task text or a new semantic migration story.
     const malformed = [{ kind: "material", id: 0 }, { kind: "material", id: -3 },
       { kind: "material", id: 1.5 }, { kind: "material", id: "9" }, { kind: "wrong", id: 4 }, null];
-    for (const invalid of malformed) {
+    for (const hasStoredSubset of [false, true]) {
+      if (hasStoredSubset) f.db.prepare(`INSERT INTO summary_sources (session_id, anchor_type, anchor_id, source_kind, source_id)
+        VALUES (?, 'rolling_summary', ?, 'material', ?)`).run(f.sessionId, f.anchorId, f.sourceId);
+      for (const invalid of malformed) {
       f.db.prepare("UPDATE resume_anchors SET payload = ? WHERE id = ?").run(JSON.stringify({
         summary: OLD, sources: [{ kind: "material", id: f.sourceId }, invalid],
       }), f.anchorId);
@@ -95,6 +98,7 @@ test("a partially unreadable old source list is incomplete, even when a valid so
       assert.ok(state.reasons.some((r) => r.includes("unreadable references")));
       assert.equal(f.store.claimLegacySummary(f.sessionId, f.anchorId, state.evidenceKey), false);
       assert.equal(f.store.planSummaryRebuild({ sessionId: f.sessionId, anchorId: f.anchorId }).complete, false);
+      }
     }
   } finally { f.store.close(); f.db.close(); rmSync(f.root, { recursive: true, force: true }); }
 });

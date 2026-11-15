@@ -93,19 +93,24 @@ export function prepareLegacySummary(db: Database.Database, sessionId: string, a
       "SELECT anchor_type, payload, created_at FROM resume_anchors WHERE session_id = ? AND id = ?",
     ).get(sessionId, anchorId) as { anchor_type: string; payload: string; created_at: string } | undefined;
     if (!anchor || (anchor.anchor_type !== "rolling_summary" && anchor.anchor_type !== "l2_recall")) return null;
-    const sourced = db.prepare("SELECT 1 FROM summary_sources WHERE anchor_id = ? LIMIT 1").get(anchorId);
-    if (sourced) return null;
     let payload: { sources?: unknown } = {};
     try { payload = JSON.parse(anchor.payload) as typeof payload; } catch { /* malformed legacy text stays a lead */ }
+    const embedded = parseSummarySourceRefs(payload?.sources);
+    const malformed = !!payload && Object.hasOwn(payload, "sources") &&
+      (!Array.isArray(payload.sources) || payload.sources.some((ref) => parseSummarySourceRefs([ref]).length !== 1));
+    const stored = db.prepare("SELECT source_kind AS kind, source_id AS id FROM summary_sources WHERE anchor_id = ?")
+      .all(anchorId) as SummarySourceRef[];
+    // Existing writers kept the raw payload but filtered malformed refs before
+    // inserting provenance. A nonempty table can therefore still be incomplete.
+    const missingDeclared = embedded.some((ref) => !stored.some((row) => row.kind === ref.kind && row.id === ref.id));
+    if (stored.length > 0 && !malformed && !missingDeclared) return null;
     // New writers explicitly say sources: [] when they read no addressable
     // material. Absence, not a deliberately empty new-format list, is legacy.
     if (Array.isArray(payload?.sources) && payload.sources.length === 0) return null;
-    const embedded = parseSummarySourceRefs(payload?.sources);
     const transcript = transcriptSources(db, sessionId, anchor.created_at);
     const sources = embedded.length > 0 ? embedded : transcript.sources;
     const reasons = embedded.length > 0 ? [] : [...transcript.reasons];
-    if (payload && Object.hasOwn(payload, "sources") &&
-      (!Array.isArray(payload.sources) || payload.sources.some((ref) => parseSummarySourceRefs([ref]).length !== 1))) {
+    if (malformed) {
       reasons.push("the old source list contains unreadable references; the valid subset cannot stand in for the complete list");
     }
     if (anchor.anchor_type !== "rolling_summary") reasons.push("an old recall snippet cannot be rebuilt without its original query and source records");

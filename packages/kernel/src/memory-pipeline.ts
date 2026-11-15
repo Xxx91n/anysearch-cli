@@ -1173,7 +1173,7 @@ export class MemoryPipeline {
         if (!legacy || legacy.status === "ready" || this.rebuildAttempts.has(legacy.anchorId)) continue;
         this.rebuildAttempts.set(legacy.anchorId, {
           anchorId: legacy.anchorId, outcome: "incomplete", newAnchorId: legacy.newAnchorId, cleared: false,
-          reasons: ["legacy summary sources are incomplete; the original is kept as a lookup lead, not injected as a verified conclusion",
+          reasons: ["legacy summary recovery is incomplete or on hold; the original is kept as a lookup lead, not injected as a verified conclusion",
             ...legacy.reasons],
         });
       }
