@@ -4,6 +4,26 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #267: 发布包安装后真的能用（对话、续聊、整理、召回、旧库）
+
+### Added
+
+- `scripts/installed-acceptance.mjs`：拿**打好的 tarball 装出来的产品**跑一遍，不再只跑源码测试。它做六件事：①安装后的 `ans --version/doctor`、`consolidate` 无范围时报错退出 2；②启动安装后的 MCP，`initialize` + 五个工具都在；③用本地受控端点跑一轮真 `ans_chat`，再把返回的 `sessionId` 传回去续聊，并检查第二轮请求里确实带着第一轮的问题和回答（证明会话记录真的接上了）；④按选定的材料跑整理，先 dry-run（不落库）再 apply（写一条知识行），并检查用量和费用口径；⑤真的调一次内部搜索，让另一个会话用 `query_knowledge` 把那条资料召回（需要至少一个搜索 key，没有就明写 SKIPPED）；⑥造一个"更旧的库"（把当前产品刚建好的库里后来才加的表删掉），验证它能打开、能迁移回来、原来的行没丢、再开一次也不报错，并且安装后的 MCP 也能读它。
+- 接进 `.github/workflows/ci.yml` 的 `install-smoke` job，跑在刚打好的产物上。
+- `ANS_ACC_TARBALLS=<dir>`：直接装指定目录里的 tarball，不本地打包。用来在没有本地编译的情况下核对这条车道本身（CI 里不设这个变量，自己打包）。
+
+### Verification
+
+- 用 main 的 CI 产物（`51f3aec7` 那次 run 的 `tarballs-windows-latest`）本地真装过：`ans 0.1.2` 能启动，安装后的 MCP 能 `initialize`、能对话、能续聊、能整理、能召回；旧库能打开并迁移，原行仍在。
+- 新脚本用同一批 CI 产物跑：58 项断言全过，退出码 0，零跳过。
+- `node scripts/check-workflows.mjs`：8 个 workflow 全过，退出码 0。
+
+### Known limits (recorded, not hidden)
+
+- 这条车道的模型是本地假端点，证明的是接线、请求形状、记忆入库和记账路径；不证明真实模型的判断力、真实账单金额或真实缓存命中率。
+- 那条"旧库"是拿当前产品建的库删掉后加的表，不是真从旧版本发布包里存下来的生产库；没有碰 r19 或任何正式实验数据。
+- 本窗没有本地编译：类型检查、全量测试、构建、离线记忆评测都交给远端 CI。推送后再把 CI 结论补进这里。
+
 ## Unreleased — #259: 搜索资料入库，跨会话能召回
 
 ### Fixed

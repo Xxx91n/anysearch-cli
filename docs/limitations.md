@@ -137,6 +137,22 @@
   defect, not the F-16 family. Fixed by #121 (`working-directory:
   packages/store`). The promotion clock linked to it fired (PR #174) and was
   reversed by the first full-gate run. See the prune entry above.
+- **The installed-artifact lane proves wiring, not model judgement (#267)**
+  — `scripts/installed-acceptance.mjs` runs the packed, npm-installed product:
+  it starts the installed MCP server, makes an `ans_chat` call and its resumed
+  continuation, consolidates selected materials, checks that an internal
+  search's rows are recallable from another session, and opens an older
+  database. Its model is a local OpenAI-compatible SSE stub. What that proves
+  is the transport, the request shape, the memory wiring and the accounting
+  path on the shipped bytes. What it does NOT prove: how a real model judges,
+  what a real provider bills, or a real cache hit rate. The consolidation
+  verification branches still rely on the controlled-checker tests plus the
+  real-model A1—A4 run; this lane adds no real-model evidence.
+  Its "older database" is made by taking a database the current build just
+  created and dropping the tables a later release added. That is an honest
+  stand-in for a file written by an earlier version, but it is not a captured
+  production database from an old release, and no r19 or real experiment data
+  is involved.
 - **Page-level assertions use page families, not exact pages** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants). So live golden entries assert

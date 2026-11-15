@@ -116,6 +116,20 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
+      # #267 (T6): the pack-then-install claim above only drove CLI commands.
+      # This lane goes one step further on the SAME packed artifacts: it starts
+      # the INSTALLED MCP server, runs a real ans_chat turn and its resumed
+      # continuation against a local SSE stub, consolidates selected materials,
+      # checks the internal search's rows are recallable by another session, and
+      # proves an older database still opens, migrates and keeps its rows. A
+      # missing provider key prints SKIPPED for that one lane instead of a pass.
+      - name: installed acceptance lane (#267)
+        run: node scripts/installed-acceptance.mjs
+        env:
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          NODE_OPTIONS: "--test-reporter=spec"
+
   # round-59 audit R-2 / + r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage
   # with network access, so the anti-downgrade clause has automated support.
