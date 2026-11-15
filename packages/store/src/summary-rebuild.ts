@@ -237,66 +237,72 @@ export function stripInjectedBlocks(
     const end = body.indexOf(PREFS_CLOSE_TAG);
     if (end >= 0) body = body.slice(end + PREFS_CLOSE_TAG.length);
   }
-  // Positions the user's own words run on from. Computed BEFORE the shape pass and
-  // re-checked after it: a named block the exact pass refused must not be removed by
-  // the shape pass instead, or the boundary rule protects a sentence from one pass
-  // and loses it to the other (#288 review).
-  let kept = new Set<string>();
+  // Pass 1: remove the blocks this caller can NAME exactly.
+  //
+  // The name is the evidence, so shape stops mattering. A match only counts when it
+  // ends at a block boundary (message end or a blank line); a match that runs on into
+  // the user's own words is a quotation, not injection, and is left alone.
+  //
+  // The refusals are remembered: the shape pass must not take what this pass just
+  // protected (#288 review).
+  let protectedBlocks = new Set<string>();
   if (provenBlocks) {
     const exact = removeExactBlocksReporting(body, provenBlocks);
     body = exact.text;
-    kept = exact.keptUserContinuations;
+    protectedBlocks = exact.keptUserContinuations;
   }
-  // Only a TRAILING run of injected blocks is removed.
+  // Pass 2: remove a TRAILING run of shape-recognised blocks.
   //
-  // Injection appends its blocks after the user's text and leaves nothing after
-  // them, so a genuine injected region always reaches the end of the message.
-  // Cutting at the first tag seen anywhere was wrong: a user writing a log check
-  // followed by an example [RAG Context] line and then a real instruction lost
-  // everything after that tag — including the instruction — and the plan still
-  // reported itself complete.
+  // Injection appends its blocks and leaves nothing after them, so a genuine
+  // injected region reaches the end of the message. This pass only ever cuts a
+  // suffix, which is what keeps a user's own tag in the middle of their text safe.
+  //
+  // A protected block inside that suffix is the user's text, not injection. So the
+  // rule is: take the LAST protected block in the suffix, keep everything up to the
+  // end of that block, and strip only what follows it. Two things follow from that,
+  // and both were review findings when an earlier guard got them wrong (#288):
+  //
+  // - the user's sentence after a protected block survives, and so does a second
+  //   protected block later in the message;
+  // - a real injected block arriving AFTER the user's last protected block is still
+  //   removed, instead of staying in the task section as if the user had written it.
   const cut = trailingInjectionStart(body, opts?.trustProvenance === true);
   if (cut >= 0) {
-    // Where does the user's own writing resume inside the region the shape pass
-    // wants to remove? A kept block is a named block the exact pass refused BECAUSE
-    // the user kept typing after it, so that position starts the user's text, not
-    // injection.
-    //
-    // The cut goes BEFORE the earliest such block, and everything from there stays —
-    // including the block itself, because the user wrote around it. An earlier
-    // version stood down entirely when the region STARTED with a kept block, which
-    // got both ends wrong (#288 review):
-    //  - a kept block in the MIDDLE was ignored (the guard only looked at the
-    //    start), so the user's sentence was deleted after all;
-    //  - a real injected block arriving AFTER the user's text was left in place.
-    let stopAt = -1;
-    for (const block of kept) {
-      let at = body.indexOf(block, cut);
-      while (at >= 0) {
-        // Only a block the user's words run on from counts; one that ends at a
-        // boundary is ordinary injection and the shape pass may take it.
-        if (!endsAtBlockBoundary(body.slice(at), block)) {
-          stopAt = stopAt < 0 ? at : Math.min(stopAt, at);
-          break;
-        }
-        at = body.indexOf(block, at + 1);
-      }
-    }
-    // Nothing protected: the whole trailing run goes.
-    if (stopAt < 0) {
+    const last = lastProtectedEnd(body, protectedBlocks, cut);
+    if (last < 0) {
       body = body.slice(0, cut);
     } else {
-      // Keep the user's text from the protected block onward, but still remove any
-      // injected block that appears AFTER it — a tool-call loop can append one there,
-      // and leaving it would put that text back in the task section.
-      const head = body.slice(0, cut);
-      let tail = body.slice(stopAt);
-      const afterCut = trailingInjectionStart(tail, opts?.trustProvenance === true);
-      if (afterCut > 0) tail = tail.slice(0, afterCut);
-      body = head + tail;
+      const after = body.slice(last);
+      const trailing = trailingInjectionStart(after, opts?.trustProvenance === true);
+      body = body.slice(0, last) + (trailing >= 0 ? after.slice(0, trailing) : after);
     }
   }
   return body.trim();
+}
+
+/**
+ * End offset of the LAST protected block at or after `from`, or -1 when none.
+ *
+ * @param text - Text to scan.
+ * @param protectedBlocks - Blocks pass 1 refused because the user kept typing.
+ * @param from - First offset to consider.
+ * @returns The offset just past the last matching block, or -1.
+ */
+function lastProtectedEnd(text: string, protectedBlocks: Set<string>, from: number): number {
+  let best = -1;
+  for (const block of protectedBlocks) {
+    let at = text.indexOf(block, from);
+    while (at >= from) {
+      // A block the user's words run on from is their text; one that ends at a
+      // boundary was ordinary injection and pass 1 would have removed it.
+      if (!endsAtBlockBoundary(text.slice(at), block)) {
+        best = Math.max(best, at + block.length);
+        break;
+      }
+      at = text.indexOf(block, at + 1);
+    }
+  }
+  return best;
 }
 
 /**

@@ -1094,6 +1094,20 @@ function userText(db: string, sessionId: string): any[] {
     const midUnnamed = "q\n\n" + rag + " and explain why\n\n" + unnamed;
     assert(stripInjectedBlocks(midUnnamed, [rag], { trustProvenance: true }) === "q\n\n" + rag + " and explain why",
       "R20c: an unnamed block after the user's sentence is still removed");
+
+    // R20d: TWO protected blocks. Both are the user's text, so both must survive,
+    // and a real block after the last one must still go. A guard that handled only
+    // the first protected block deleted the second one plus the sentence after it
+    // (#288 review).
+    const second = "[RAG Context] (adapter=fts)\n- [notice] B";
+    const twoKept = "q\n\n" + rag + " explain A\n\n" + second + " explain B";
+    assert(stripInjectedBlocks(twoKept, [rag, second], { trustProvenance: true }) === twoKept,
+      "R20d: two protected blocks both survive (got " +
+        JSON.stringify(stripInjectedBlocks(twoKept, [rag, second], { trustProvenance: true })) + ")");
+
+    const twoKeptThenReal = "q\n\n" + rag + " explain A\n\n" + second + " explain B\n\n" + digest;
+    assert(stripInjectedBlocks(twoKeptThenReal, [rag, second], { trustProvenance: true }) === twoKept,
+      "R20d: a real block after the LAST protected one is still removed");
   }
 
   closeStore(store);
