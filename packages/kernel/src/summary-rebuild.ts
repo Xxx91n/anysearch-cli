@@ -323,6 +323,8 @@ export async function rebuildSuspendedSummary(
     signal?: AbortSignal;
     /** The user turn being handled now, when it is not stored yet. */
     currentUserTurn?: string;
+    /** Evidence revision claimed for a legacy recovery; checked at commit. */
+    legacyEvidenceKey?: string;
   },
 ): Promise<SummaryRebuildAttempt> {
   const s = store as Partial<SummaryRebuildPort>;
@@ -432,6 +434,7 @@ export async function rebuildSuspendedSummary(
     written = writeRebuilt.call(s, {
       sessionId: req.sessionId,
       rebuildOfAnchorId: req.anchorId,
+      ...(req.legacyEvidenceKey ? { legacyEvidenceKey: req.legacyEvidenceKey } : {}),
       text: generated.text,
       sources: plan.facts.map((f) => ({ kind: f.kind, id: f.id })),
       taskRecordIds: plan.taskRecords.map((r) => r.messageId),

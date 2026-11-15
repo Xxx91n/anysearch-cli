@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -219,7 +220,10 @@ function startMcp(env: Record<string, string>): McpClient {
  * the knowledge they built, and the correction suspends the summary. Done in
  * this process against the same temp DB file the MCP server will open.
  */
-async function seedSuspendedSummary(dbPath: string, sessionId: string): Promise<{ anchorId: number }> {
+async function seedSuspendedSummary(
+  dbPath: string, sessionId: string,
+  legacy?: "complete" | "no-source" | "no-task",
+): Promise<{ anchorId: number }> {
   const { SqliteSessionStore } = await import("@anysearch-cli/store");
   const store = new SqliteSessionStore(dbPath);
   try {
@@ -265,6 +269,33 @@ async function seedSuspendedSummary(dbPath: string, sessionId: string): Promise<
     );
     if (rep.summariesSuspended !== 1) {
       throw new Error("fixture: the correction suspended " + rep.summariesSuspended + " summaries, expected 1");
+    }
+    if (legacy) {
+      // Confirmed #265 samples A-C. This is an old-format database fixture, not a
+      // migration performed by the product. The explicit old knowledge id is
+      // retained in the original tool record only in A/C. Second-level dates
+      // are distinct so the record order is verifiable without inventing it.
+      if (legacy !== "no-source") {
+        await store.append(sessionId, { role: "tool", content: JSON.stringify({
+          internal: [{ rowid: -knowledgeId, content: OLD_FACT }],
+        }) });
+      }
+      const db = new Database(dbPath);
+      try {
+        db.prepare("DELETE FROM summary_sources WHERE anchor_id = ?").run(anchorId);
+        db.prepare("DELETE FROM summary_suspensions WHERE anchor_id = ?").run(anchorId);
+        db.prepare("UPDATE resume_anchors SET payload = ?, created_at = '2026-10-01 00:00:02' WHERE id = ?").run(
+          JSON.stringify({ summary: "Acme support runs weekdays 9:00-17:00." }), anchorId,
+        );
+        db.prepare("UPDATE messages SET created_at = '2026-10-01 00:00:00' WHERE session_id = ? AND role = 'user'").run(sessionId);
+        db.prepare("UPDATE messages SET created_at = '2026-10-01 00:00:01' WHERE session_id = ? AND role = 'tool'").run(sessionId);
+        if (legacy === "no-task") db.prepare("DELETE FROM messages WHERE session_id = ? AND role = 'user'").run(sessionId);
+      } finally { db.close(); }
+      // Opening another old session must not make it a migration target.
+      await store.ensureSession(sessionId + "-untouched", "acme");
+      await store.saveAnchor(sessionId + "-untouched", "rolling_summary", {
+        summary: "Acme support runs weekdays 9:00-17:00.",
+      });
     }
     return { anchorId };
   } finally {
@@ -371,6 +402,69 @@ await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", () => resolve()
 const addr = fake.address();
 if (!addr || typeof addr === "string") throw new Error("fake endpoint did not bind");
 endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
+
+// #265 A-D: the user confirmed these inputs before their first run.
+// The normal suite exercises them from ans_chat, including a restarted server.
+for (const mode of ["complete", "no-source", "no-task"] as const) {
+  const root = makeRoot("legacy-" + mode);
+  const sessionId = "mcp-legacy-" + mode;
+  const dbPath = join(root, "anysearch.db");
+  const { anchorId } = await seedSuspendedSummary(dbPath, sessionId, mode);
+  const change = "Correction to what I asked: I need the weekEND schedule specifically, not the weekday one.";
+  requestLog = [];
+  let mcp = startMcp(makeEnv(root));
+  try {
+    await mcp.init();
+    const first = await mcp.chat(change, sessionId);
+    assert(first.ok && !first.isError, "legacy " + mode + ": ans_chat completes");
+    const reports = first.structured?.summaryRebuilds ?? [];
+    const requests = requestLog.filter((r) => r.role === "rebuild");
+    if (mode === "complete") {
+      assert(requests.length === 1, "legacy A: one recovery call for exact recorded sources");
+      const prompt = bodyText(requests[0]?.body ?? "{}");
+      assert(prompt.includes(TASK_1) && prompt.includes(change), "legacy A: original request and live change reach the recovery model");
+      assert(prompt.includes(NEW_FACT), "legacy A: the actual source resolves to its current version");
+      assert(reports.some((r: any) => r.anchorId === anchorId && r.outcome === "rebuilt" && r.cleared),
+        "legacy A: the caller gets a successful recovery report");
+    } else {
+      assert(requests.length === 0, "legacy " + mode + ": incomplete evidence makes no recovery model call");
+      assert(reports.some((r: any) => r.anchorId === anchorId && r.outcome === "incomplete" && !r.cleared),
+        "legacy " + mode + ": the caller sees the missing evidence");
+    }
+    const firstChats = requestLog.filter((r) => r.role === "chat").map((r) => bodyText(r.body)).join("\n");
+    assert(!firstChats.includes("[Session Memory] Acme support runs weekdays 9:00-17:00."),
+      "legacy " + mode + ": old text is not injected as a current conclusion");
+
+    mcp.kill();
+    await new Promise<void>((resolve) => mcp.child.exitCode !== null ? resolve() : mcp.child.once("exit", () => resolve()));
+    requestLog = [];
+    mcp = startMcp(makeEnv(root));
+    await mcp.init();
+    const second = await mcp.chat(change, sessionId);
+    assert(second.ok && !second.isError, "legacy D " + mode + ": old-format session remains readable after restart");
+    assert(!requestLog.some((r) => r.role === "rebuild"), "legacy D " + mode + ": unchanged evidence does not repeat recovery calls");
+    if (mode === "complete") {
+      const chats = requestLog.filter((r) => r.role === "chat").map((r) => bodyText(r.body)).join("\n");
+      assert(chats.includes(REBUILT_MARK), "legacy A: the recovered summary actually reaches the model");
+    }
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const old = db.prepare("SELECT payload FROM resume_anchors WHERE id = ?").get(anchorId) as { payload: string };
+      assert(JSON.parse(old.payload).summary === "Acme support runs weekdays 9:00-17:00.", "legacy D: original summary text is unchanged");
+      assert(!db.prepare("SELECT 1 FROM summary_sources WHERE anchor_id = ?").get(anchorId), "legacy D: no historical source relationship is fabricated");
+      assert(!db.prepare("SELECT 1 FROM legacy_summary_states WHERE session_id = ?").get(sessionId + "-untouched"), "legacy D: an unused old session is untouched");
+      const state = db.prepare("SELECT status, new_anchor_id FROM legacy_summary_states WHERE anchor_id = ?").get(anchorId) as { status: string; new_anchor_id: number | null };
+      assert(state.status === (mode === "complete" ? "rebuilt" : "incomplete"), "legacy D: the recovery result survives reopening");
+      if (mode === "complete") assert(!!db.prepare("SELECT 1 FROM summary_sources WHERE anchor_id = ?").get(state.new_anchor_id), "legacy A: only the new summary records the sources it actually read");
+    } finally { db.close(); }
+    const { SqliteSessionStore } = await import("@anysearch-cli/store");
+    const store = new SqliteSessionStore(dbPath);
+    try {
+      const hits = await store.searchMemory("Acme", 20);
+      assert(hits.some((h) => h.content.includes("24x7")), "legacy D: sourced current material remains searchable");
+    } finally { store.close(); }
+  } finally { mcp.kill(); }
+}
 
 // ---- M1-M3: the rebuilt summary reaches the model, the old fact does not ----
 {

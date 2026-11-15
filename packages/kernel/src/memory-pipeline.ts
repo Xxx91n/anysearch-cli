@@ -54,6 +54,7 @@ import { rewriteQuery, classifyQdf } from "./query-rewrite";
 // applies the cap itself.
 import {
   isTimeSensitive, isEvergreen, renderSummaryBlock, removeExactBlocks, RECALL_INJECT_MAX_CHARS,
+  type LegacySummaryState,
 } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
@@ -868,6 +869,14 @@ export class MemoryPipeline {
   // waiting on the provider.
   private readonly rebuildStarted = new Set<number>();
   private readonly rebuildAttempts = new Map<number, SummaryRebuildAttempt>();
+  private readonly legacySummaries = new Map<number, LegacySummaryState | null>();
+
+  private prepareLegacySummary(sessionId: string, anchorId: number): LegacySummaryState | null {
+    if (!this.legacySummaries.has(anchorId)) {
+      this.legacySummaries.set(anchorId, this.deps.store?.prepareLegacySummary?.(sessionId, anchorId) ?? null);
+    }
+    return this.legacySummaries.get(anchorId) ?? null;
+  }
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
@@ -928,8 +937,14 @@ export class MemoryPipeline {
     if (!this.hasRebuildSeam()) return undefined;
     let attempt: SummaryRebuildAttempt;
     let called = false;
+    const legacy = this.legacySummaries.get(anchorId);
+    let legacyClaimed = false;
     try {
       const apiKey = await this.deps.getApiKey?.();
+      if (legacy) {
+        legacyClaimed = this.deps.store?.claimLegacySummary?.(sessionId, anchorId, legacy.evidenceKey) ?? false;
+        if (!legacyClaimed) throw new Error("this source revision already has a recovery attempt; the old text remains a lookup lead");
+      }
       // A rebuild that got past the plan makes exactly one model call, whether or
       // not the provider answers with usage. `called` is what lets the ledger
       // count it even then — the same rule #273 applied to adjudication: a sent
@@ -938,6 +953,7 @@ export class MemoryPipeline {
       attempt = await rebuildSuspendedSummary(this.deps.store, {
         sessionId,
         anchorId,
+        ...(legacy ? { legacyEvidenceKey: legacy.evidenceKey } : {}),
         streamFn: this.deps.streamFn as any,
         model: this.deps.model,
         ...(currentUserTurn ? { currentUserTurn } : {}),
@@ -963,6 +979,15 @@ export class MemoryPipeline {
       called = false;
     }
     this.rebuildAttempts.set(anchorId, attempt);
+    if (legacy && legacyClaimed) {
+      try {
+        this.deps.store?.finishLegacySummary?.(sessionId, anchorId, legacy.evidenceKey, attempt);
+      } catch {
+        // The durable attempted state still blocks a blind paid retry. Report
+        // the gap, but continue below so this call's usage is never lost.
+        attempt.reasons.push("the recovery result could not be recorded; the previous attempt remains visible");
+      }
+    }
     if (attempt.usage) {
       // The rebuild is a real provider call on this session's behalf, so it books
       // to the same summary ledger the run reports (D4: nothing hidden outside
@@ -1134,8 +1159,25 @@ export class MemoryPipeline {
       }
       const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
-      const summarySuspended = suspensionUnknown || (!!summaryAnchor && suspended.has(summaryAnchor.id));
-      const recallSuspended = suspensionUnknown || (!!recallAnchor && suspended.has(recallAnchor.id));
+      let legacySummary: LegacySummaryState | null = null;
+      let legacyRecall: LegacySummaryState | null = null;
+      try {
+        if (summaryAnchor) legacySummary = this.prepareLegacySummary(sessionId, summaryAnchor.id);
+        if (recallAnchor) legacyRecall = this.prepareLegacySummary(sessionId, recallAnchor.id);
+      } catch {
+        // Unknown provenance must not turn the legacy text into a current fact.
+        suspensionUnknown = true;
+      }
+      const summarySuspended = suspensionUnknown || !!legacySummary || (!!summaryAnchor && suspended.has(summaryAnchor.id));
+      const recallSuspended = suspensionUnknown || !!legacyRecall || (!!recallAnchor && suspended.has(recallAnchor.id));
+      for (const legacy of [legacySummary, legacyRecall]) {
+        if (!legacy || legacy.status === "ready" || this.rebuildAttempts.has(legacy.anchorId)) continue;
+        this.rebuildAttempts.set(legacy.anchorId, {
+          anchorId: legacy.anchorId, outcome: "incomplete", newAnchorId: legacy.newAnchorId, cleared: false,
+          reasons: ["legacy summary recovery is incomplete or on hold; the original is kept as a lookup lead, not injected as a verified conclusion",
+            ...legacy.reasons],
+        });
+      }
 
       // #263 (D9): a caller may hand back the messages a PREVIOUS inject() call
       // returned. Those still carry the old `[Session Memory]` and
@@ -1239,7 +1281,7 @@ export class MemoryPipeline {
       // regenerating it means running that recall again, which the next search
       // turn does on its own. Inventing text for it is the fabrication D10
       // forbids.
-      if (summarySuspended && !suspensionUnknown && summaryAnchor) {
+      if (summarySuspended && !suspensionUnknown && summaryAnchor && (!legacySummary || legacySummary.status === "ready")) {
         const anchorId = summaryAnchor.id;
         if (!this.rebuildStarted.has(anchorId) && this.hasRebuildSeam()) {
           // Marked SYNCHRONOUSLY, before the async body runs: `inject` is awaited
@@ -1354,6 +1396,10 @@ export class MemoryPipeline {
 
     if (!store || !sessionId) return;
 
+    // Pin the input before any asynchronous work so the decision, inherited
+    // anchors, source scans and generator all see the same messages.
+    const snapshot = snapshotMessages(messages);
+
     try {
       // D7: Restore state from anchor for MCP stateless mode (fail-open fallback to in-memory).
       let state = this.consolidationState;
@@ -1373,7 +1419,7 @@ export class MemoryPipeline {
       // still throw (resolveLowWatermark), never silently degrade; domain
       // validation is the primary fail-fast gate.
       const compactionCfg = domain.compaction;
-      const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
+      const result = consolidateState(state, snapshot, totalTokens, hasRetrievalEvidence, {
         lowWatermark: compactionCfg?.lowWatermark,
         contextWindow: this.deps.contextWindow,
         reuseCap: compactionCfg?.reuseCap,
@@ -1417,13 +1463,18 @@ export class MemoryPipeline {
       //   summary.
       // Both cases are covered because the match is per anchor, and an anchor
       // absent from the list is an anchor absent from the sources.
-      const inheritedAnchorIds = summaryAnchorsToInherit(messages, prevAnchors, previousSummaryAnchorId);
+      const inheritedAnchorIds = summaryAnchorsToInherit(snapshot, prevAnchors, previousSummaryAnchorId);
+      // #265: check EVERY derived block the generator reads, including an older
+      // recall block carried in reused messages. Otherwise it could be laundered
+      // into a new summary backed only by this turn's unrelated valid sources.
+      const legacyBlocked = inheritedAnchorIds.some((id) => !!this.prepareLegacySummary(sessionId, id));
       // D5: fire-and-forget compression helper.
       // #263: set when the source read failed. The state must NOT advance then:
       // this turn's summary was skipped, so the next turn has to retry the same
       // gap instead of believing it was compressed.
-      let summaryWriteSkipped = false;
+      let summaryWriteSkipped = legacyBlocked;
       const fireCompress = (deadline?: AbortSignal) => {
+        if (legacyBlocked) return;
         // A shared deadline that already expired means this turn's background
         // budget is spent; do not start a call that can only fail.
         if (deadline?.aborted) return;
@@ -1470,13 +1521,8 @@ export class MemoryPipeline {
           // The fix needs no new bookkeeping: run the SAME scan over the whole
           // list, which is what the generator reads.
           //
-          // The scan and the model call must read the SAME list. Two `await`s
-          // separate them (the API key and the SDK load), and the caller hands
-          // in the live agent-state array, so a message appended in that window
-          // would reach the generator while being absent from the scan — a fact
-          // in the summary with no recorded dependency. A shallow copy pins the
-          // membership without copying message contents.
-          const snapshot = snapshotMessages(messages);
+          // Use the same snapshot as the earlier inherited-anchor check and
+          // adjudication, even if the caller appended messages while waiting.
           const scanFromStart = distillGap(snapshot, SOURCE_SCAN_FROM_INDEX);
           const read = readSummarySourcesForWrite(store, {
             gapUrls: scanFromStart.results
@@ -1510,13 +1556,13 @@ export class MemoryPipeline {
           // IS `messages.length` — so no recall hit could be recorded while the
           // summary still used them. Merged with the search-material refs.
           const sources = read.sources;
-          for (const ref of collectRecallSourceRefs(messages, RECALL_SOURCE_SCAN_FROM)) {
+          for (const ref of collectRecallSourceRefs(snapshot, RECALL_SOURCE_SCAN_FROM)) {
             if (!sources.some((r) => r.kind === ref.kind && r.id === ref.id)) sources.push(ref);
           }
           this.consolidationState = {
             version: result.state.version,
             consecutiveReuses: 0,
-            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
+            lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || snapshot.length,
           };
           // Tracked: flush() must see this write before the store is closed.
           this.track(
@@ -1569,7 +1615,7 @@ export class MemoryPipeline {
 
       if (result.decision === "compress") {
         fireCompress();
-      } else if (result.decision === "reuse") {
+      } else if (result.decision === "reuse" && !legacyBlocked) {
         // Adjudication: fire-and-forget LLM call to decide reuse vs compress.
         const gapDistillation = result.summaryRequest?.gap.text || "";
         // judgment-input assertion boundary 2/5 — NOOP adjudication pre-call.

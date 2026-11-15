@@ -29,6 +29,7 @@ export * from "./summary-sources";
 // #264: rebuilding a suspended summary from current sources, keeping the task
 // the user actually stated (D9).
 export * from "./summary-rebuild";
+export * from "./legacy-summary";
 
 // access_events tamper-evidence chain (writer side; verifier is independent).
 export * from "./access-chain";

@@ -238,7 +238,9 @@ async function main() {
       const first = await resolveAnsChatSession(engineWith(store));
       assert(!!first.sessionId, "real store: first call mints a handle");
       const handle = first.sessionId!;
-      await store.saveAnchor(handle, "rolling_summary", { summary: "remember the checkpoint" });
+      // This case checks session routing, not old-summary recovery. New writers
+      // explicitly record an empty list when no addressable material was read.
+      await store.saveAnchor(handle, "rolling_summary", { summary: "remember the checkpoint", sources: [] });
 
       const second = await resolveAnsChatSession(engineWith(store), handle);
       assert(second.sessionId === handle, "real store: threaded handle resumes the same session");

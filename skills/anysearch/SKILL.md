@@ -93,6 +93,23 @@ their current versions) plus that session's own stored user turns.
   task — ask the user instead of assuming what they wanted.
 - Do not treat "no `[Session Memory]` block" as "this session has nothing" when
   a `summaryRebuilds` entry is present: read its reasons.
+- Old derived summaries without source records are checked only when needed.
+  The original text remains available as a lookup lead. Recovery uses exact
+  source ids in the original tool records (or refs already in the payload),
+  never rows chosen just because they share a URL, wording or session. The NEW
+  summary records what the recovery actually read; it does not invent the old
+  summary's missing history. Missing original user requirements, source versions
+  or a verifiable record order mean `incomplete`, with no recovery model call.
+  Legacy records stored within the same timestamp second may have no provable
+  order and stay incomplete. Ordinary sourced materials remain searchable.
+- Legacy recovery results and each attempt are kept across restarts, with reasons
+  and any provider usage. Successful or incomplete recoveries do not repeat paid
+  calls for unchanged evidence. A generation/write failure or interrupted attempt
+  can retry after five minutes, only when a NEW ans_chat call or ans chat process
+  needs it; no timer starts background work. A new call/process also rechecks
+  restored original records or a changed current source version. Recovery shares
+  the normal summary usage and cost report; missing provider usage means unknown
+  cost, not free recovery.
 
 ## Anti-patterns
 
