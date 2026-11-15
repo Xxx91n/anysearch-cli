@@ -59,9 +59,39 @@ export const SUMMARY_REBUILD_TASK_BUDGET_CHARS = 4_000;
 // is added there, add it here too or rebuild will inherit that block as the
 // user's own words.
 const INJECTED_BLOCK_TAGS = ["[RAG Context]", "[Recovery Digest]", "[Session Memory]", "[Research Recall]"] as const;
+const SESSION_MEMORY_TAG = "[Session Memory]";
+const RESEARCH_RECALL_TAG = "[Research Recall]";
 const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
 const BLANK_LINE = String.fromCharCode(10, 10);
+
+/**
+ * How much of a summary / recall body injection renders (#286).
+ *
+ * Defined HERE, not in the kernel, because both sides must agree exactly: the
+ * kernel renders the block it appends, and this module has to rebuild the SAME
+ * string from the anchor payload to remove it. A longer or shorter number on
+ * either side means the two strings never match, the exact removal finds
+ * nothing, and the summary silently falls back to tag-shape guessing — which is
+ * the failure this ticket is about. The kernel imports these two from here.
+ */
+export const SUMMARY_INJECT_MAX_CHARS = 4000;
+
+/** How much of an l2_recall body injection renders. */
+export const RECALL_INJECT_MAX_CHARS = 1500;
+
+/**
+ * Header markers that only injection writes, never a person.
+ *
+ * The fts adapter and the recovery digest both put a parenthesised provenance
+ * header on the block's first line (see kernel's rag-adapter `formatBlock` and
+ * recovery-digest `assemble`). A user who pastes a block out of a prompt gets
+ * the same header, which is the case handled below by keeping the cut to a
+ * trailing run — but a header is not something a person types as their own
+ * sentence.
+ */
+const RAG_ADAPTER_HEADER = "(adapter=";
+const DIGEST_HEADER = "(provenance=";
 
 /** One user turn that the rebuild may quote as the task requirement. */
 export interface RebuildTaskRecord {
@@ -124,16 +154,30 @@ export interface SummaryRebuildPlan {
 /**
  * Strip the blocks injection appends to a user turn.
  *
- * Only injection output is removed: everything the user typed stays verbatim.
- * The same separator rule injection uses (a blank line before the tag) keeps a
- * question that merely mentions a tag from being cut.
+ * Two passes, in this order:
+ *
+ * 1. Blocks named EXACTLY by `known` are removed by string match. This is the
+ *    provenance pass: a caller (or this module, from the session's own anchors)
+ *    can say "this is the block I wrote", and shape stops mattering — a summary
+ *    body with blank lines in it comes out whole.
+ * 2. What is left is removed only when a TRAILING run of blocks matches the
+ *    shape injection actually writes for each tag (see `isInjectedBlock`).
+ *
+ * Everything the user typed stays verbatim either way: a tag in the middle of
+ * their text is never cut, and a tag followed by the user's own continuation is
+ * not mistaken for a block.
+ *
+ * @param text - One stored or live user turn.
+ * @param known - Exact block strings this caller can prove it wrote.
+ * @returns The turn's own text, without injected blocks.
  */
-export function stripInjectedBlocks(text: string): string {
+export function stripInjectedBlocks(text: string, known?: Iterable<string>): string {
   let body = text;
   if (body.startsWith(PREFS_OPEN_TAG)) {
     const end = body.indexOf(PREFS_CLOSE_TAG);
     if (end >= 0) body = body.slice(end + PREFS_CLOSE_TAG.length);
   }
+  if (known) body = removeExactBlocks(body, known);
   // Only a TRAILING run of injected blocks is removed.
   //
   // Injection appends its blocks after the user's text and leaves nothing after
@@ -142,82 +186,203 @@ export function stripInjectedBlocks(text: string): string {
   // followed by an example [RAG Context] line and then a real instruction lost
   // everything after that tag — including the instruction — and the plan still
   // reported itself complete.
-  //
-  // So a candidate cut only counts when every blank-line-separated segment from
-  // that point to the end begins with one of the known tags. Otherwise the tag is
-  // the user's own text and the message is left whole.
   const cut = trailingInjectionStart(body);
   if (cut >= 0) body = body.slice(0, cut);
   return body.trim();
 }
 
 /**
+ * Remove whole block strings this caller can name exactly.
+ *
+ * Longest first, for the same reason the kernel does it: two summaries can share
+ * a prefix, and removing the short one first would cut that prefix out of the
+ * longer one so it could never match.
+ *
+ * @param text - The turn text.
+ * @param known - Exact block strings that are injection output.
+ * @returns The text without those blocks.
+ */
+function removeExactBlocks(text: string, known: Iterable<string>): string {
+  let out = text;
+  const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
+  for (const block of ordered) {
+    const withSeparator = BLANK_LINE + block;
+    let at = out.indexOf(withSeparator);
+    while (at >= 0) {
+      out = out.slice(0, at) + out.slice(at + withSeparator.length);
+      at = out.indexOf(withSeparator);
+    }
+    if (out.startsWith(block)) out = out.slice(block.length);
+  }
+  return out;
+}
+
+/**
+ * Every summary / recall block this session has stored, rendered exactly as
+ * injection renders it.
+ *
+ * This is the provenance the rebuild path can afford without a kernel round
+ * trip: the store owns the anchors, so a `[Session Memory]` body containing a
+ * blank line is one exact string here rather than an ambiguous shape to guess
+ * at (#286). Older versions are included on purpose — a reused history may
+ * still carry a block a correction has since replaced.
+ *
+ * @param db - Store connection.
+ * @param sessionId - Session whose anchors to render.
+ * @returns Exact block strings; empty when the session has no summary anchor.
+ */
+function sessionSummaryBlocks(db: Database.Database, sessionId: string): string[] {
+  const rows = db
+    .prepare(
+      "SELECT anchor_type AS anchorType, payload FROM resume_anchors " +
+        "WHERE session_id = ? AND anchor_type IN ('rolling_summary', 'l2_recall')",
+    )
+    .all(sessionId) as Array<{ anchorType: string; payload: string }>;
+  const out: string[] = [];
+  for (const row of rows) {
+    let payload: any;
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    const body = row.anchorType === "l2_recall" ? payload?.hits : payload?.summary;
+    if (typeof body !== "string" || body.length === 0) continue;
+    out.push(
+      row.anchorType === "l2_recall"
+        ? RESEARCH_RECALL_TAG + " " + body.slice(0, RECALL_INJECT_MAX_CHARS)
+        : SESSION_MEMORY_TAG + " " + body.slice(0, SUMMARY_INJECT_MAX_CHARS),
+    );
+  }
+  return out;
+}
+
+/**
  * Where a trailing run of injected blocks starts, or -1 when there is none.
+ *
+ * A candidate is an occurrence of a known tag right after the blank line
+ * injection always writes. Requiring that separator is what keeps a turn that
+ * STARTS with a tag — a user opening with "[Session Memory] here is my note" —
+ * from being mistaken for an injected region: injection never replaces the
+ * user's text, it appends to it.
  *
  * @param body - The message text, after any leading preferences block is removed.
  */
 function trailingInjectionStart(body: string): number {
+  const candidates: number[] = [];
   for (const tag of INJECTED_BLOCK_TAGS) {
     let at = body.indexOf(BLANK_LINE + tag);
     while (at >= 0) {
-      const candidate = at + BLANK_LINE.length;
-      if (isAllInjectedBlocks(body.slice(candidate))) return at;
+      candidates.push(at + BLANK_LINE.length);
       at = body.indexOf(BLANK_LINE + tag, at + 1);
     }
+  }
+  candidates.sort((a, b) => a - b);
+  for (const at of candidates) {
+    if (isInjectedRun(body.slice(at))) return at;
   }
   return -1;
 }
 
+/** Index of the next block boundary (`\n\n` + a known tag) at or after `from`. */
+function nextBlockStart(tail: string, from: number): number {
+  let best = -1;
+  for (const tag of INJECTED_BLOCK_TAGS) {
+    const at = tail.indexOf(BLANK_LINE + tag, from);
+    if (at >= 0 && (best < 0 || at < best)) best = at;
+  }
+  return best;
+}
+
 /**
- * Could this whole tail be a run of injected blocks?
+ * Does this whole tail consist of injection blocks, start to end?
  *
- * Injection writes "TAG <body>" — a tag, one space, then real content — and joins
- * blocks with a blank line. Three conditions follow, and each one closes a way a
- * user's own text got eaten:
+ * A block continues until the next block boundary, so a `[Session Memory]` body
+ * that itself contains a blank line stays ONE block here instead of being split
+ * into two segments — the split is what made every multi-paragraph body look
+ * like foreign text (#286).
  *
- * 1. every blank-line-separated segment starts with a known tag;
- * 2. inside a segment, no line after the first is non-blank and untagged —
- *    injection never continues a block on a bare newline;
- * 3. every segment carries actual body text after its tag, not just the tag and a
- *    word.
- *
- * Condition 3 is what separates "a" + tag + "b" + tag + "c" (a user talking about
- * the tags) from two real injected blocks. Without it, the user's "b" was treated
- * as the body of an injected block and their text vanished.
- *
- * Known limit, stated rather than hidden: a SINGLE very short block
- * ("[Session Memory] 24x7") is not stripped, because it is indistinguishable from
- * a person writing about the tag. The bias is deliberate — a leftover noise line
- * is visible to whoever reads the prompt, a dropped instruction is not. Fixing
- * this properly needs the injection site to record which block it wrote, which is
- * a kernel change and out of scope here.
+ * @param tail - Text from a candidate block start to the end of the message.
  */
-function isAllInjectedBlocks(tail: string): boolean {
+function isInjectedRun(tail: string): boolean {
   if (tail.length === 0) return false;
-  const segments = tail.split(BLANK_LINE);
-  if (segments.length === 0) return false;
-  return segments.every((seg) => {
-    const t = seg.trimStart();
-    const tag = INJECTED_BLOCK_TAGS.find((candidate) => t.startsWith(candidate));
+  const starts: number[] = [];
+  let pos = 0;
+  for (;;) {
+    const tag = INJECTED_BLOCK_TAGS.find((candidate) => tail.startsWith(candidate, pos));
     if (!tag) return false;
-    // A short body is ambiguous: "[Session Memory] 24x7" can be a real (very
-    // short) summary OR a person writing about the tag. It is accepted only when
-    // the tail has MORE than one block, because a real injection tail of several
-    // blocks is already improbable in user text — while a single short
-    // tag-plus-word is exactly how someone talks about tags.
-    //
-    // Deliberate bias: a leftover noise line is visible, a dropped instruction is
-    // not. When in doubt, keep the text.
-    const body = t.slice(tag.length).trim();
-    if (body.length < 20 && segments.length === 1) return false;
-    for (const line of seg.split("\n").slice(1)) {
-      const trimmed = line.trimStart();
-      if (trimmed.length === 0) continue;
-      if (INJECTED_BLOCK_TAGS.some((candidate) => trimmed.startsWith(candidate))) continue;
-      return false;
+    starts.push(pos);
+    const next = nextBlockStart(tail, pos + tag.length);
+    if (next < 0) {
+      break;
     }
-    return true;
-  });
+    pos = next + BLANK_LINE.length;
+    if (pos >= tail.length) return false;
+  }
+  const blockCount = starts.length;
+  for (let i = 0; i < blockCount; i++) {
+    const from = starts[i]!;
+    const to = i + 1 < blockCount ? starts[i + 1]! - BLANK_LINE.length : tail.length;
+    if (!isInjectedBlock(tail.slice(from, to), blockCount)) return false;
+  }
+  return true;
+}
+
+/** Field labels the recovery digest writes, one per line after its header. */
+const DIGEST_FIELD_LABELS = ["state: ", "last search: query=", "providers: ", "unique: "] as const;
+
+/**
+ * Is this one block written by injection, or could it be the user's own text?
+ *
+ * The tags are not equally ambiguous, so each is judged by the shape its
+ * producer actually emits:
+ *
+ * - `[RAG Context]` from the `fts` adapter is a provenance header line followed
+ *   by `- [role] …` hit lines; the legacy `note` form is a single line.
+ * - `[Recovery Digest]` is a provenance header followed by its four fixed field
+ *   lines.
+ * - `[Session Memory]` / `[Research Recall]` are one tag-plus-body line. A body
+ *   with a blank line in it is NOT accepted here: from the outside it is
+ *   indistinguishable from a person writing a tag and then two paragraphs. It
+ *   is removed by the exact-string pass instead, where the session's own anchor
+ *   supplies the provenance.
+ *
+ * The short-body guard is kept from the earlier version: "TAG a" alone is how a
+ * person talks about tags. A run of several blocks is improbable in user text,
+ * so a short body is accepted there.
+ *
+ * @param block - One block, from its tag to just before the next block.
+ * @param blockCount - How many blocks the whole run has.
+ */
+function isInjectedBlock(block: string, blockCount: number): boolean {
+  const tag = INJECTED_BLOCK_TAGS.find((candidate) => block.startsWith(candidate));
+  if (!tag) return false;
+  const rawBody = block.slice(tag.length);
+  const body = rawBody.trim();
+  if (body.length === 0) return false;
+  const lines = body.split("\n");
+  const first = lines[0] ?? "";
+
+  if (tag === "[RAG Context]") {
+    if (first.includes(RAG_ADAPTER_HEADER)) {
+      // Provider-shaped header: every following non-empty line is a hit bullet.
+      const hits = lines.slice(1).filter((l) => l.trim().length > 0);
+      return hits.length > 0 && hits.every((l) => l.startsWith("- "));
+    }
+    if (lines.length > 1) return false;
+    return body.length >= 20 || blockCount > 1;
+  }
+
+  if (tag === "[Recovery Digest]") {
+    if (!first.includes(DIGEST_HEADER)) return false;
+    const fields = lines.slice(1).filter((l) => l.trim().length > 0);
+    return fields.length > 0 && fields.every((l) => DIGEST_FIELD_LABELS.some((label) => l.startsWith(label)));
+  }
+
+  // [Session Memory] / [Research Recall]: one line, unless the exact pass
+  // already claimed this text.
+  if (lines.length > 1) return false;
+  return body.length >= 20 || blockCount > 1;
 }
 
 interface MaterialRow {
@@ -398,9 +563,14 @@ export function collectTaskRecords(db: Database.Database, sessionId: string): Re
   const rows = db
     .prepare("SELECT id, content, created_at AS createdAt FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id")
     .all(sessionId) as Array<{ id: number; content: string; createdAt: string }>;
+  // #286: the session's own summary/recall blocks are known exactly, so a body
+  // with blank lines in it is removed whole instead of being left in the task
+  // section as if the user had written it. A stored turn only ever carries THIS
+  // session's blocks, so the session's own anchors are the right provenance.
+  const known = sessionSummaryBlocks(db, sessionId);
   const out: RebuildTaskRecord[] = [];
   for (const row of rows) {
-    const text = stripInjectedBlocks(readStoredMessageText(row.content));
+    const text = stripInjectedBlocks(readStoredMessageText(row.content), known);
     if (text.length === 0) continue;
     out.push({ messageId: row.id, text, createdAt: row.createdAt });
   }
@@ -524,7 +694,7 @@ export function planSummaryRebuild(
   // and the live one carry no shared id, so dropping either could drop the real
   // change. The budget below is what bounds the list.
   const liveTurn = typeof req.currentUserTurn === "string"
-    ? stripInjectedBlocks(req.currentUserTurn)
+    ? stripInjectedBlocks(req.currentUserTurn, sessionSummaryBlocks(db, req.sessionId))
     : "";
   if (liveTurn.length > 0) {
     allRecords.push({ messageId: 0, text: liveTurn, createdAt: "" });

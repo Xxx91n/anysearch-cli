@@ -41,13 +41,15 @@ const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensionPort } from "./ports";
-import { rebuildSuspendedSummary, SUMMARY_INJECT_MAX_CHARS, type SummaryRebuildAttempt } from "./summary-rebuild";
+import { rebuildSuspendedSummary, type SummaryRebuildAttempt } from "./summary-rebuild";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
+// #286: the two render caps are owned by the store, because the rebuild path
+// rebuilds the very same block strings to strip them by exact match.
+import { isTimeSensitive, isEvergreen, RECALL_INJECT_MAX_CHARS, SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
@@ -633,10 +635,9 @@ const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
 // sources. When they drift the write side records a hit whose text no prompt
 // ever carried, and a later correction then suspends a recall block that never
 // used it.
-// SUMMARY_INJECT_MAX_CHARS lives in ./summary-rebuild (exported from there) so the
-// generator that must respect it and the injection that renders it share ONE
-// number; see the import below.
-const RECALL_INJECT_MAX_CHARS = 1500;
+// #286: both caps live in the STORE now (imported at the top), because the
+// rebuild path rebuilds the block string from the anchor payload to strip it by
+// exact match. One number on both sides is what makes that match possible.
 
 /**
  * Remove previously injected summary blocks from one message.
@@ -844,6 +845,18 @@ export class MemoryPipeline {
   // blocks before the snapshot replaces them.
   private readonly injectedSummaryBlocks = new Set<string>();
 
+  // #286: every other block THIS runtime appended (Stage-1 `[RAG Context]`, the
+  // `[Recovery Digest]`). The store-side rebuild used to guess these by tag shape,
+  // which cannot work for a block whose body runs over several lines — a
+  // multi-line RAG block or digest was left in the turn and then quoted in the
+  // rebuild prompt as if the user had said it. Recording the exact strings here
+  // hands the store provenance instead of a guess.
+  //
+  // Bounded by the same reasoning as `injectedSummaryBlocks`: a session appends a
+  // handful of distinct blocks per run, and Stage-1 content changes every turn, so
+  // the set is capped to the most recent few.
+  private readonly injectedBlocks = new Set<string>();
+
   // Usage of the pipeline's own summary requests, kept apart from the main run
   // so the caller can report both without double counting. Same ledger type as
   // the run, so cost provenance follows the same rule.
@@ -1005,6 +1018,9 @@ export class MemoryPipeline {
   async inject(messages: any[]): Promise<any[]> {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
+    // #286: blocks appended by THIS call, recorded so the rebuild dispatch below
+    // (and the next turn) can name them exactly instead of guessing by tag.
+    const appendedThisTurn: string[] = [];
 
     // Design: Stage-1 splits RAG placement by volatility (#131, implemented by
     // #154) — static operator text (`note`, and `none` + leftover `config.note`)
@@ -1059,6 +1075,10 @@ export class MemoryPipeline {
           // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
           const next = appendMessageText(result[ragIdx], ragInstruction, ragTarget);
           if (next) {
+            // #286: record the exact block, so the rebuild path can strip it by
+            // string instead of trying to recognise a multi-line RAG body by
+            // shape (which it never could).
+            appendedThisTurn.push(ragInstruction.slice(BLANK_LINE_BEFORE_BLOCK.length));
             result = [
               ...result.slice(0, ragIdx),
               next,
@@ -1139,7 +1159,10 @@ export class MemoryPipeline {
       //  - every summary/l2 anchor text the STORE holds for this session (any
       //    version, including ones a correction replaced), rendered exactly as
       //    injection renders it;
-      //  - every block THIS runtime appended in an earlier turn.
+      //  - every block THIS runtime appended in an earlier turn, including the
+      //    Stage-1 `[RAG Context]` and `[Recovery Digest]` blocks (#286) — their
+      //    bodies run over several lines, so tag-shape guessing could never
+      //    recognise them.
       // A user or assistant sentence that merely mentions the tag matches neither,
       // so it survives. A summary body with a blank line is still one exact string,
       // so it is matched whole instead of split on "\n\n".
@@ -1154,9 +1177,21 @@ export class MemoryPipeline {
         }
       }
       for (const block of this.injectedSummaryBlocks) knownBlocks.add(block);
+      for (const block of this.injectedBlocks) {
+        // #286: never strip a block this very call just appended. A static note
+        // block is byte-identical every turn, so without this guard the strip pass
+        // would delete the injection Stage-1 made moments earlier and the turn
+        // would reach the model with no RAG context at all.
+        if (!appendedThisTurn.includes(block)) knownBlocks.add(block);
+      }
       if (knownBlocks.size > 0) {
         result = result.map((message: any) => stripSummaryBlocks(message, knownBlocks));
       }
+      // NOTE: blocks appended by THIS turn are NOT in `knownBlocks` on purpose.
+      // Stage-1 appends the RAG block a few lines above; stripping it here would
+      // delete the injection it just made. They are added to the live-turn set
+      // below instead, which is read after this point, and registered for later
+      // turns at the end of this block.
 
       const injections: string[] = [];
       // Keep the digest in every model prompt of the resumed conversation. The
@@ -1176,6 +1211,9 @@ export class MemoryPipeline {
           this.recoveryDigestInjected = true;
         } else {
           injections.push(this.recoveryDigest!);
+          // #286: the digest is a multi-line block (header + four fixed field
+          // lines), so tag-shape guessing could never recognise it later.
+          appendedThisTurn.push(this.recoveryDigest!);
         }
       }
       // A suspended summary is SILENTLY skipped, not replaced with a
@@ -1232,7 +1270,14 @@ export class MemoryPipeline {
           // and recall bodies, plus every block this runtime appended). Those are
           // known strings, not tag guesses, so a summary body containing blank
           // lines is removed whole while a user who writes a tag keeps their text.
-          const liveTurn = knownBlocks.size > 0 ? removeKnownBlocks(liveRaw, knownBlocks) : liveRaw;
+          //
+          // #286: this includes the blocks appended by THIS turn (the Stage-1 RAG
+          // block, the digest). Without them the live text handed to the plan still
+          // carried a multi-line `[RAG Context]` body, and the rebuild prompt then
+          // printed web content under `=== TASK (the user's own turns) ===`.
+          const liveKnown = new Set(knownBlocks);
+          for (const block of appendedThisTurn) liveKnown.add(block);
+          const liveTurn = liveKnown.size > 0 ? removeKnownBlocks(liveRaw, liveKnown) : liveRaw;
           this.track(
             this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
               .then(() => undefined, () => undefined),
@@ -1289,6 +1334,10 @@ export class MemoryPipeline {
           if (injectRecovery) this.recoveryDigestInjected = true;
         }
       }
+      // #286: register this turn's appended blocks (RAG, digest) so the NEXT turn
+      // can remove them by exact string. Registered here, not at append time, so
+      // the strip above never sees them and cannot delete what was just injected.
+      for (const block of appendedThisTurn) this.rememberInjectedBlock(block);
     } catch {
       // A failed anchor read must not be retried later in the same runtime: by
       // then this runtime's own search could have written an anchor and been
@@ -1695,6 +1744,29 @@ export class MemoryPipeline {
   // Get current consolidation state (for testing/debugging).
   getConsolidationState(): ConsolidationState {
     return this.consolidationState;
+  }
+
+  /**
+   * Remember one block this runtime appended, so a later turn can strip it by
+   * exact string (#286).
+   *
+   * Oldest out first: a Stage-1 RAG block changes whenever the recalled rows
+   * change, so an unbounded set would grow for the life of a session. Keeping the
+   * last few is enough — a history handed back more turns late than that is
+   * already outside what this runtime can claim provenance for, and the store's
+   * shape-based pass is the conservative fallback for it.
+   *
+   * @param block - The block text exactly as appended (no leading separator).
+   */
+  private rememberInjectedBlock(block: string): void {
+    if (!block) return;
+    this.injectedBlocks.add(block);
+    const LIMIT = 12;
+    while (this.injectedBlocks.size > LIMIT) {
+      const oldest = this.injectedBlocks.values().next();
+      if (oldest.done) break;
+      this.injectedBlocks.delete(oldest.value);
+    }
   }
 
   /**

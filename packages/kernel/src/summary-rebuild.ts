@@ -112,13 +112,14 @@ function replacedSection(plan: SummaryRebuildPlanShape): string {
 /**
  * How much of a summary `inject` actually renders.
  *
- * Defined here, not in memory-pipeline, because BOTH need it and the pipeline
- * already imports this module: the generator must refuse a text longer than the
- * slot, and the injection side renders exactly this many characters. One
- * constant means the two cannot drift apart.
+ * Defined in the STORE, because both sides must agree to the character: the
+ * injection renders exactly this much, and the store rebuilds the same string
+ * from the anchor payload to strip the block by exact match (#286). Two numbers
+ * would mean the strings never match and the removal silently degrades to
+ * guessing by tag shape. Re-exported here so kernel callers keep one import.
  */
-export const SUMMARY_INJECT_MAX_CHARS = 4000;
-
+import { SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store";
+export { SUMMARY_INJECT_MAX_CHARS };
 /** How much of the suspended summary's own text the prompt carries. */
 export const PREVIOUS_SUMMARY_PROMPT_MAX_CHARS = 4000;
 

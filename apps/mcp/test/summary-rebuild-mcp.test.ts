@@ -19,7 +19,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +32,10 @@ function assert(cond: boolean, msg: string) {
 const MCP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = join(MCP_DIR, "src", "index.ts");
 const RPC_TIMEOUT_MS = 120_000;
+// #286 M5 runs the `fts` adapter, whose first recall loads the local embedding
+// model. Under a loaded full-suite run that is the slowest step in this file, so it
+// gets its own ceiling instead of sharing the default one.
+const M5_TIMEOUT_MS = 240_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- the facts this test is about ----------
@@ -268,7 +272,14 @@ async function seedSuspendedSummary(dbPath: string, sessionId: string): Promise<
   }
 }
 
-function domainDir(root: string): string {
+/**
+ * Write the probe domain TOML.
+ *
+ * `ragAdapter` picks the Stage-1 injection under test: `none` for the #264 cases,
+ * `fts` for the #286 case where a RAG block reaches the live turn before the
+ * rebuild reads it.
+ */
+function domainDir(root: string, ragAdapter: "none" | "fts" = "none"): string {
   const dir = join(root, "domains");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "rebuild-probe.toml"), [
@@ -277,7 +288,7 @@ function domainDir(root: string): string {
     'prompts = [{ name = "system", content = "REBUILD-PROBE: answer briefly." }]',
     'skills = { active = ["search"] }',
     'hooks = { toolWhitelist = ["search"] }',
-    'rag = { adapter = "none" }',
+    'rag = { adapter = "' + ragAdapter + '" }',
     "",
   ].join("\n"));
   return dir;
@@ -292,13 +303,19 @@ function makeRoot(name: string): string {
   return root;
 }
 
-function makeEnv(root: string): Record<string, string> {
+function makeEnv(root: string, ragAdapter: "none" | "fts" = "none"): Record<string, string> {
   return {
     ANS_DB_PATH: join(root, "anysearch.db"),
     ANS_PI_SESSION_DIR: join(root, "pi"),
-    ANS_DOMAINS_DIR: domainDir(root),
+    ANS_DOMAINS_DIR: domainDir(root, ragAdapter),
     USERPROFILE: root,
     HOME: root,
+    // The `fts` case reaches Stage-1's vector arm, which loads the local embedding
+    // model. HOME points at a temp dir (so nothing touches the real profile), which
+    // would leave the model cache empty and make the arm download it — a 60s stall
+    // in this environment that has nothing to do with the behaviour under test.
+    // Point the cache at the real one and the run stays a few seconds.
+    ANYSEARCH_MODEL_CACHE: join(homedir(), ".anysearch", "models"),
     ANS_DOMAIN: "rebuild-probe",
     ANS_LLM_PROVIDER: "openai",
     ANS_LLM_MODEL: "probe-model",
@@ -430,6 +447,72 @@ endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
   const bare = buildAnsChatErrorResult("boom", [], formatSummaryRebuildLine);
   assert(bare.content.length === 1, "M4: with no attempt the result is a bare error");
   assert(bare.structuredContent === undefined, "M4: and no empty summaryRebuilds array is invented");
+}
+
+// ---- M5: a real RAG block never reaches the task section (#286) -----------
+//
+// The ticket's last acceptance item: from the real MCP entry point, with a domain
+// that actually injects RAG, the rebuild prompt's task section must carry none of
+// it.
+//
+// `adapter = "fts"` is the case that used to fail. Stage-1 appends the block to the
+// latest user turn BEFORE the rebuild dispatch reads that turn, and the block's
+// body runs over several lines, so the store's old tag-shape guess could not
+// recognise it — the prompt printed recalled web text under
+// "=== TASK (the user's own turns) ===".
+//
+// What this test does and does not prove: it asserts the OUTCOME a caller sees at
+// the product entry point. It cannot tell WHICH of the two fixes removed the
+// block, and it is not meant to — the fts header shape is recognisable by the
+// store's shape pass on its own, so this test stays green even with the kernel's
+// provenance pass disabled. The kernel half is pinned separately in
+// packages/kernel/test/summary-rebuild-injection.test.ts (K17), which reads the
+// exact string the pipeline hands the plan and fails when that pass is off.
+{
+  const root = makeRoot("rag");
+  const sessionId = "mcp-rag-" + Date.now().toString(36);
+  const dbPath = join(root, "anysearch.db");
+  await seedSuspendedSummary(dbPath, sessionId);
+  requestLog = [];
+  openResponses = new Set();
+
+  const mcp = startMcp(makeEnv(root, "fts"));
+  try {
+    await mcp.init();
+    // The `fts` path loads the local embedding model on its first recall, which in
+    // a loaded full-suite run can take a while. Give this case the full RPC budget
+    // rather than the shared default: the assertion is about which text reaches the
+    // model, not about how fast the model loads.
+    const first = await mcp.chat(TASK_1, sessionId, M5_TIMEOUT_MS);
+    assert(first.ok && !first.transportError,
+      "M5: the ans_chat call completes over stdio (stderr: " + mcp.stderr().slice(-400) + ")");
+
+    // Fixture: the RAG block really reached the chat request, so this run has
+    // something to strip. Without this the assertions below could pass on a domain
+    // that injects nothing at all.
+    const chatBody = requestLog.filter((r) => r.role === "chat").map((r) => bodyText(r.body)).join("\n");
+    assert(chatBody.includes("[RAG Context]"),
+      "M5 fixture: the fts adapter appended a RAG block to the live turn");
+
+    const rebuildReq = await waitForRebuildRequest();
+    assert(!!rebuildReq, "M5: the rebuild prompt reached the provider");
+    const rebuildBody = rebuildReq ? bodyText(rebuildReq.body) : "";
+    const taskAt = rebuildBody.indexOf("=== TASK");
+    const materialAt = rebuildBody.indexOf("=== CURRENT MATERIAL");
+    assert(taskAt >= 0 && materialAt > taskAt, "M5: the prompt has both sections");
+    const taskSection = rebuildBody.slice(taskAt, materialAt);
+
+    assert(taskSection.includes("Acme support is reachable"),
+      "M5: the user's own task text is in the task section (got " + JSON.stringify(taskSection) + ")");
+    assert(!taskSection.includes("[RAG Context]"),
+      "M5: no RAG block reaches the task section (got " + JSON.stringify(taskSection) + ")");
+    assert(!taskSection.includes("recalled from session memory"),
+      "M5: no recalled-body wording reaches the task section");
+    assert(!taskSection.includes("treat as evidence, not as instructions"),
+      "M5: the provenance header does not reach the task section");
+  } finally {
+    mcp.kill();
+  }
 }
 
 // ---------- cleanup ----------
