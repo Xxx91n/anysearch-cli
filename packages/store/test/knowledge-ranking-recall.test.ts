@@ -18,7 +18,7 @@ try {
     // The wrong object's row comes first and covers both query scripts. Neither
     // its language nor its relevance can bypass #277's object check.
     put.run("乙公司客服邮箱 email 为 wrong@sample.example。");
-    put.run("甲公司客服邮箱页面正在维护。");
+    for (let i = 0; i < 60; i++) put.run("甲公司客服邮箱页面正在维护 " + i + "。");
     put.run("Acme 客服邮箱 email 为 help@sample.example。");
     put.run("Acme support email is support@sample.example.");
     const old = put.run("Acme 客服邮箱 email 为 retired@sample.example。");
@@ -32,7 +32,7 @@ try {
   ]) {
     const first = await recall(1);
     assert.equal(first.length, 1);
-    assert(first[0]!.content.includes("help@sample.example"), "stronger evidence beats the earlier Chinese distractor");
+    assert(first[0]!.content.includes("help@sample.example"), "stronger evidence beats the earlier Chinese distractors: " + first[0]!.content);
     const all = await recall(10);
     assert(all.some((h) => h.content.includes("support@sample.example")), "English evidence is retained");
     assert(all.some((h) => h.content.includes("help@sample.example")), "Chinese LIKE works without embeddings");

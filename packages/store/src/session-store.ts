@@ -1848,12 +1848,20 @@ export class SqliteSessionStore implements SessionStore {
           // check will drop. Without the JS check the CJK rung would serve
           // `AcmeCloud 客服邮箱…` for the object `acme`.
           const readWindow = objectActive ? Math.max(remaining * 4, 40) : remaining;
+          // Design: full mixed-query coverage wins BEFORE LIMIT (#283).
+          // Otherwise the Han lane can take a weaker Chinese row while the
+          // Latin lane takes a short English row, cutting the bilingual answer
+          // out of BOTH inputs before RRF has a chance to rank it.
+          const pairedOrder = strict !== '""'
+            ? " ORDER BY (s.id IN (SELECT rowid FROM semantic_memories_fts WHERE semantic_memories_fts MATCH ?)) DESC, s.id"
+            : " ORDER BY s.id";
+          const pairedParams = strict !== '""' ? [strict] : [];
           const rows = this.db
             .prepare(
               "SELECT s.id as id, s.content as content FROM semantic_memories s WHERE s.valid_until IS NULL" +
-              " AND (" + where + ")" + objectWhere + " LIMIT ?",
+              " AND (" + where + ")" + objectWhere + pairedOrder + " LIMIT ?",
             )
-            .all(...list.map((t) => "%" + t + "%"), ...objectParams, readWindow) as Array<{ id: number; content: string }>;
+            .all(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams, readWindow) as Array<{ id: number; content: string }>;
           for (const r of rows) {
             if (cjk.length >= limit) break;
             if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
