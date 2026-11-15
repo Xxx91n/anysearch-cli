@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -197,6 +197,11 @@ export async function runChat(argv: string[]): Promise<number> {
     // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
     // returning here without waiting loses the rolling_summary / l2_recall write.
     await runtime.flushMemory();
+    // #264 (D9): a suspended summary was either rebuilt from current sources or
+    // it was not. Read AFTER the drain (a rebuild is background work the drain
+    // waits for) and say it in plain words, so an empty memory block is not read
+    // as "there was never a summary".
+    for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
     // Summary calls are a separate, real cost; report them apart from the run.
     // The reuse/compress adjudication is its own book (D4 重判): one judgment
     // call must not read as a summary the summarizer never made.

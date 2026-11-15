@@ -141,6 +141,11 @@ async function buildKnowledge(
 ): Promise<{ materialIds: number[]; knowledgeId: number }> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
+    // One entity key (that is what the cluster groups on) with a distinct URL.
+    // Writing the next row of the same key closes the previous one by temporal
+    // supersede, so only the LAST row stays valid — and only a valid row may be
+    // cited as a summary's source (isSourceCurrent checks valid_until as well as
+    // superseded_by; a row retired by an ordinary re-fetch is history).
     ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
@@ -151,7 +156,7 @@ async function buildKnowledge(
   const knowledgeId = rep.semanticIds[0];
   if (typeof knowledgeId !== "number") throw new Error("fixture: no knowledge id");
   void store;
-  return { materialIds: ids, knowledgeId };
+  return { materialIds: [ids[ids.length - 1]!], knowledgeId };
 }
 
 // --- S1: a summary records exactly the rows it read ------------------------

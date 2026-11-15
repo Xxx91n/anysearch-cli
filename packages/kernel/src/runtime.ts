@@ -13,8 +13,54 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }
   | { type: "search_result"; envelope: unknown }
-  | { type: "done"; summary: string; recovery?: string; usage?: RunUsage; context?: RunContextUsage }
+  | {
+      type: "done";
+      summary: string;
+      recovery?: string;
+      usage?: RunUsage;
+      context?: RunContextUsage;
+    }
   | { type: "error"; message: string };
+
+/**
+ * #264 (D9): one rebuild attempt as the caller sees it.
+ *
+ * Deliberately NOT part of the `done` event: rebuilds are background work that
+ * `flushMemory()` drains, and the `done` event is emitted before that drain. A
+ * caller reports these after flushing, so the answer never says "nothing was
+ * suspended" about an attempt that had not finished yet.
+ */
+export interface SummaryRebuildReport {
+  anchorId: number;
+  outcome: SummaryRebuildOutcome;
+  reasons: string[];
+  newAnchorId: number | null;
+  cleared: boolean;
+  /** Usage of the generation call, when one ran. Absent when no call was made. */
+  usage?: unknown;
+}
+
+/**
+ * How one rebuild attempt ended (the store and the kernel share this list).
+ *
+ * - `rebuilt`: the new version is current and this call cleared the suspension.
+ * - `already-current`: the new version is current, but there was no open
+ *   suspension row left to clear (another writer cleared it first). The summary
+ *   IS injectable; only the clearing act did not happen here.
+ * - `stored-not-current`: the text was written but is itself suspended, because a
+ *   source was replaced while it was being rebuilt.
+ * - `rejected-write`: the store refused the write (empty text, secret guard, a
+ *   non-rolling anchor).
+ */
+export type SummaryRebuildOutcome =
+  | "rebuilt"
+  | "incomplete"
+  | "no-model"
+  | "generation-failed"
+  | "write-failed"
+  | "stored-not-current"
+  | "already-current"
+  | "rejected-write";
 
 /** One run's complete accounting; `missing` names the dimensions the provider did not report. */
 export interface RunUsage {

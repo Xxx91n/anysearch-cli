@@ -88,8 +88,18 @@ export interface DependentSummary {
 /**
  * Is this ref still a current fact?
  *
- * The rule matches the rest of the store: a material is current while
- * `superseded_by` is NULL, a knowledge row while `valid_until` is NULL.
+ * The rule matches the rest of the store: a material is current while BOTH
+ * `superseded_by` and `valid_until` are NULL, a knowledge row while `valid_until`
+ * is NULL.
+ *
+ * Why the material checks `valid_until` too: there are two ways a material stops
+ * being the current version. A correction sets `superseded_by` (a knowledge row
+ * replaced its fact); an ordinary re-fetch of the same URL sets `valid_until` with
+ * no successor. Checking only the first let a rebuild commit against a row the
+ * planner had already rejected as stale, and then clear the suspension — a
+ * rebuilt summary built on an invalidated source, marked current. The planner and
+ * the commit have to use the same rule or they can disagree about the same row.
+ *
  * Archiving is deliberately NOT checked — archiving is not a correction, and
  * treating it as one would suspend summaries the ticket says must keep
  * working. A row missing entirely reads as "not current": the thing the
@@ -98,9 +108,9 @@ export interface DependentSummary {
 export function isSourceCurrent(db: Database.Database, ref: SummarySourceRef): boolean {
   if (ref.kind === "material") {
     const row = db
-      .prepare("SELECT superseded_by FROM retrieval_results WHERE id = ?")
-      .get(ref.id) as { superseded_by: number | null } | undefined;
-    return !!row && row.superseded_by === null;
+      .prepare("SELECT superseded_by, valid_until FROM retrieval_results WHERE id = ?")
+      .get(ref.id) as { superseded_by: number | null; valid_until: string | null } | undefined;
+    return !!row && row.superseded_by === null && row.valid_until === null;
   }
   const row = db
     .prepare("SELECT valid_until FROM semantic_memories WHERE id = ?")
@@ -275,6 +285,49 @@ export function suspendedSummaryAnchorIds(db: Database.Database, sessionId: stri
     )
     .all(sessionId) as Array<{ anchorId: number }>;
   return new Set(rows.map((r) => r.anchorId));
+}
+
+/** How many hops a supersede chain may take before the line is treated as dead. */
+export const MAX_SUPERSEDE_CHAIN_HOPS = 64;
+
+/**
+ * One row of a knowledge line while walking it to its live head.
+ *
+ * `source_episode_ids` is included because consolidation's collision path needs
+ * the live row's own material list right after the walk. Selecting it here costs
+ * nothing (same row, same read) and saves that caller a second SELECT of the row
+ * it just received.
+ */
+export interface SupersedeChainRow {
+  id: number;
+  content: string;
+  source_episode_ids: string;
+  valid_until: string | null;
+  superseded_by: number | null;
+}
+
+/**
+ * Walk a supersede chain to the version that is live now.
+ *
+ * Design: one walker shared by consolidation and the summary rebuild — a chain
+ * longer than 64 hops, or one ending in a closed row with no successor, means
+ * the line has no current version, and both callers must reach that verdict the
+ * same way. A second copy of this loop is how the two would drift.
+ *
+ * @returns The live head, or null when the line has no current version.
+ */
+export function liveHeadOf(db: Database.Database, fromId: number): SupersedeChainRow | null {
+  let id = fromId;
+  for (let hop = 0; hop < MAX_SUPERSEDE_CHAIN_HOPS; hop++) {
+    const row = db
+      .prepare("SELECT id, content, source_episode_ids, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
+      .get(id) as SupersedeChainRow | undefined;
+    if (!row) return null;
+    if (row.valid_until === null) return row;
+    if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
+    id = row.superseded_by;
+  }
+  return null;
 }
 
 /** One thing the summarizer read: the URL it saw, and the archive row when known. */

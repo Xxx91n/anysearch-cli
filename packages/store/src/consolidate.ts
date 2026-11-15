@@ -9,7 +9,7 @@
 import type Database from "better-sqlite3";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
-import { suspendSummariesForCorrection } from "./summary-sources.js";
+import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
@@ -743,23 +743,13 @@ export async function consolidateMemoryRun(
     });
   };
 
-  // Walk a supersede chain to its live head (#262). Calm guard: chains longer
-  // than 64 hops (or ending in a closed row with no successor) mean the line
-  // has no current version left; the collision is then reported unresolved
-  // instead of guessed at.
-  const liveHeadOf = (fromId: number): ChainRow | null => {
-    let id = fromId;
-    for (let hop = 0; hop < 64; hop++) {
-      const row = db
-        .prepare("SELECT id, content, source_episode_ids, valid_until, superseded_by FROM semantic_memories WHERE id = ?")
-        .get(id) as ChainRow | undefined;
-      if (!row) return null;
-      if (row.valid_until === null) return row;
-      if (typeof row.superseded_by !== "number" || !Number.isInteger(row.superseded_by)) return null;
-      id = row.superseded_by;
-    }
-    return null;
-  };
+  // Walk a supersede chain to its live head (#262). The walk itself lives in
+  // summary-sources.ts: the rebuild must reach the same verdict for the same
+  // chain, and two copies of the loop is how they would drift. Calm guard:
+  // chains longer than the hop limit (or ending in a closed row with no
+  // successor) mean the line has no current version left; the collision is then
+  // reported unresolved instead of guessed at.
+  const liveHead = (fromId: number): ChainRow | null => liveHeadOf(db, fromId);
 
   // The materials behind a knowledge row — snippets ARE the row's evidence
   // text; a conflict must hand the caller both sides' materials, not just
@@ -1468,7 +1458,7 @@ export async function consolidateMemoryRun(
         pushIncompleteRejudge(pending.planned, pending, "rejudge-budget", "the session budget was already exhausted before this collision could be re-judged");
         continue;
       }
-      const head = liveHeadOf(pending.planned.id);
+      const head = liveHead(pending.planned.id);
       if (!head) {
         pushConflict(pending, {
           current: null, retries: 0,
@@ -1537,7 +1527,7 @@ export async function consolidateMemoryRun(
         });
         if (wrote === null) {
           pushConflict(pending, {
-            current: liveHeadOf(pending.planned.id), verdict, retries: 1,
+            current: liveHead(pending.planned.id), verdict, retries: 1,
             reason: "the current version was replaced again while the collision was being resolved; no third judgment runs",
             followUp: "重读后的版本在落地前又被别的会话更新，本次到此为止；请查看当前生效内容后重新决定。",
           });
@@ -1554,7 +1544,7 @@ export async function consolidateMemoryRun(
         // moved, the reason says so instead of presenting a closed row as
         // "current".
         const relation = verdict.relation;
-        const reportedHead = liveHeadOf(pending.planned.id) ?? head;
+        const reportedHead = liveHead(pending.planned.id) ?? head;
         const movedNote = reportedHead.id === head.id
           ? ""
           : " (the live version was replaced again while the re-judge ran; the current content shown is the newest version)";
@@ -1704,7 +1694,7 @@ export async function consolidateMemoryRun(
       });
       if (wrote === null) {
         pushConflict(pending, {
-          current: liveHeadOf(pending.planned.id), verdict, retries: 1,
+          current: liveHead(pending.planned.id), verdict, retries: 1,
           reason: "the current version was replaced again before the re-judged correction could commit; no third judgment runs",
           followUp: "重判后的版本在提交前又被别的会话更新，不做第三次重判；请查看当前生效内容后重新决定。",
         });
