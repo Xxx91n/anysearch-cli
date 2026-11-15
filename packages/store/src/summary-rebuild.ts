@@ -59,6 +59,10 @@ export const SUMMARY_REBUILD_TASK_BUDGET_CHARS = 4_000;
 // is added there, add it here too or rebuild will inherit that block as the
 // user's own words.
 const INJECTED_BLOCK_TAGS = ["[RAG Context]", "[Recovery Digest]", "[Session Memory]", "[Research Recall]"] as const;
+// The two whose blocks carry a machine-written provenance header, so their shape
+// identifies them without guessing. Kept next to the full list so adding a tag is
+// one edit, and the compiler catches a member missing from either union.
+const SELF_IDENTIFYING_BLOCK_TAGS = ["[RAG Context]", "[Recovery Digest]"] as const;
 const SESSION_MEMORY_TAG = "[Session Memory]";
 const RESEARCH_RECALL_TAG = "[Research Recall]";
 const PREFS_OPEN_TAG = "<user_preferences";
@@ -195,15 +199,30 @@ export interface SummaryRebuildPlan {
  * 2. What is left is removed only when a TRAILING run of blocks matches the
  *    shape injection actually writes for each tag (see `isInjectedBlock`).
  *
- * Everything the user typed stays verbatim either way: a tag in the middle of
- * their text is never cut, and a tag followed by the user's own continuation is
- * not mistaken for a block.
+ * The second pass is a fallback for callers with NO provenance. The rebuild plan
+ * always has provenance (it reads the session's own anchors), so it passes
+ * `provenBlocksOnly` and drops the guesswork for the two AMBIGUOUS tags:
+ * `[Session Memory]` and `[Research Recall]`, whose bodies are free-form text, are
+ * removed only when the caller named them. The other two still go, because
+ * `[RAG Context]` and `[Recovery Digest]` carry a machine-written provenance
+ * header (`adapter=` / `provenance=`) that no person types into a sentence — shape
+ * identifies those without guessing.
+ *
+ * Everything the user typed stays verbatim in the plan path. In the fallback path
+ * the long-standing bias applies: a tag in the middle of their text is never cut,
+ * but a long single line after a tag is treated as a block (see `isInjectedBlock`).
  *
  * @param text - One stored or live user turn.
  * @param provenBlocks - Exact block strings this caller can prove it wrote.
+ * @param opts.provenBlocksOnly - For the two ambiguous tags, trust ONLY named
+ *   blocks. Blocks that identify themselves (RAG, digest) are still recognized.
  * @returns The turn's own text, without injected blocks.
  */
-export function stripInjectedBlocks(text: string, provenBlocks?: Iterable<string>): string {
+export function stripInjectedBlocks(
+  text: string,
+  provenBlocks?: Iterable<string>,
+  opts?: { provenBlocksOnly?: boolean },
+): string {
   let body = text;
   if (body.startsWith(PREFS_OPEN_TAG)) {
     const end = body.indexOf(PREFS_CLOSE_TAG);
@@ -218,7 +237,7 @@ export function stripInjectedBlocks(text: string, provenBlocks?: Iterable<string
   // followed by an example [RAG Context] line and then a real instruction lost
   // everything after that tag — including the instruction — and the plan still
   // reported itself complete.
-  const cut = trailingInjectionStart(body);
+  const cut = trailingInjectionStart(body, opts?.provenBlocksOnly === true);
   if (cut >= 0) body = body.slice(0, cut);
   return body.trim();
 }
@@ -308,10 +327,14 @@ function sessionSummaryBlocks(db: Database.Database, sessionId: string): string[
  * user's text, it appends to it.
  *
  * @param body - The message text, after any leading preferences block is removed.
+ * @param selfIdentifyingOnly - Only accept tags whose block carries a
+ *   machine-written header (RAG, digest). Set by callers that hold provenance for
+ *   the other tags and must not let a shape guess cut a user's sentence.
  */
-function trailingInjectionStart(body: string): number {
+function trailingInjectionStart(body: string, selfIdentifyingOnly: boolean): number {
+  const tags = selfIdentifyingOnly ? SELF_IDENTIFYING_BLOCK_TAGS : INJECTED_BLOCK_TAGS;
   const candidates: number[] = [];
-  for (const tag of INJECTED_BLOCK_TAGS) {
+  for (const tag of tags) {
     let at = body.indexOf(BLANK_LINE + tag);
     while (at >= 0) {
       candidates.push(at + BLANK_LINE.length);
@@ -320,7 +343,7 @@ function trailingInjectionStart(body: string): number {
   }
   candidates.sort((a, b) => a - b);
   for (const at of candidates) {
-    if (isInjectedRun(body.slice(at))) return at;
+    if (isInjectedRun(body.slice(at), tags, selfIdentifyingOnly)) return at;
   }
   return -1;
 }
@@ -333,9 +356,9 @@ function trailingInjectionStart(body: string): number {
  * called `nextBlockStart`, which claimed to return a block start and made every
  * caller's `+ BLANK_LINE.length` look like an off-by-one.)
  */
-function nextBlockSeparator(tail: string, from: number): number {
+function nextBlockSeparator(tail: string, from: number, tags: readonly string[]): number {
   let best = -1;
-  for (const tag of INJECTED_BLOCK_TAGS) {
+  for (const tag of tags) {
     const at = tail.indexOf(BLANK_LINE + tag, from);
     if (at >= 0 && (best < 0 || at < best)) best = at;
   }
@@ -351,16 +374,18 @@ function nextBlockSeparator(tail: string, from: number): number {
  * like foreign text (#286).
  *
  * @param tail - Text from a candidate block start to the end of the message.
+ * @param tags - Which tags may appear in the run. The self-identifying subset
+ *   keeps a provenance-holding caller from cutting an ambiguous tag's line.
  */
-function isInjectedRun(tail: string): boolean {
+function isInjectedRun(tail: string, tags: readonly string[], provenanceMode: boolean): boolean {
   if (tail.length === 0) return false;
   const starts: number[] = [];
   let pos = 0;
   for (;;) {
-    const tag = INJECTED_BLOCK_TAGS.find((candidate) => tail.startsWith(candidate, pos));
+    const tag = tags.find((candidate) => tail.startsWith(candidate, pos));
     if (!tag) return false;
     starts.push(pos);
-    const next = nextBlockSeparator(tail, pos + tag.length);
+    const next = nextBlockSeparator(tail, pos + tag.length, tags);
     if (next < 0) {
       break;
     }
@@ -371,7 +396,7 @@ function isInjectedRun(tail: string): boolean {
   for (let i = 0; i < blockCount; i++) {
     const from = starts[i]!;
     const to = i + 1 < blockCount ? starts[i + 1]! - BLANK_LINE.length : tail.length;
-    if (!isInjectedBlock(tail.slice(from, to), blockCount)) return false;
+    if (!isInjectedBlock(tail.slice(from, to), blockCount, provenanceMode)) return false;
   }
   return true;
 }
@@ -394,24 +419,25 @@ const RAG_HIT_LINE = /^- \[[^\]]*\] /;
  * The tags are not equally ambiguous, so each is judged by the shape its
  * producer actually emits:
  *
- * - `[RAG Context]` from the `fts` adapter is a provenance header line followed
- *   by `- [role] …` hit lines; the legacy `note` form is a single line.
+ * - `[RAG Context]` from the `fts` adapter is a provenance header line carrying
+ *   `adapter=`, `traceId=` and the rest, followed by `- [role] …` hit lines. That
+ *   header is machine output: nobody types a real adapter id and trace id into a
+ *   sentence. The legacy `note` form is a single line.
  * - `[Recovery Digest]` is a provenance header followed by its four fixed field
- *   lines.
- * - `[Session Memory]` / `[Research Recall]` are one tag-plus-body line. A body
- *   with a blank line in it is NOT accepted here: from the outside it is
- *   indistinguishable from a person writing a tag and then two paragraphs. It
- *   is removed by the exact-string pass instead, where the session's own anchor
- *   supplies the provenance.
- *
- * The short-body guard is kept from the earlier version: "TAG a" alone is how a
- * person talks about tags. A run of several blocks is improbable in user text,
- * so a short body is accepted there.
+ *   lines, all of them written by `assemble`.
+ * - `[Session Memory]` / `[Research Recall]` are a tag plus free-form text. THIS
+ *   is the ambiguous pair: "[Session Memory] the weekend schedule changed" is
+ *   equally a real summary and a person talking about the tag. Shape cannot tell
+ *   them apart, so the long-standing bias is kept here: a single line of at least
+ *   20 characters counts as a block, because a leftover noise line is visible to
+ *   whoever reads the prompt while a dropped instruction is not. Callers that need
+ *   the user's own sentence guaranteed (the rebuild plan) use `provenBlocksOnly`
+ *   instead and never reach this guess.
  *
  * @param block - One block, from its tag to just before the next block.
  * @param blockCount - How many blocks the whole run has.
  */
-function isInjectedBlock(block: string, blockCount: number): boolean {
+function isInjectedBlock(block: string, blockCount: number, provenanceMode: boolean): boolean {
   const tag = INJECTED_BLOCK_TAGS.find((candidate) => block.startsWith(candidate));
   if (!tag) return false;
   const rawBody = block.slice(tag.length);
@@ -421,27 +447,37 @@ function isInjectedBlock(block: string, blockCount: number): boolean {
   const first = lines[0] ?? "";
 
   if (tag === "[RAG Context]") {
+    // The machine-written header is the provenance here: a real block always
+    // carries it, and a person never does. A hit bullet is "- [role] content",
+    // not any line starting with "- ".
     if (first.includes(RAG_ADAPTER_HEADER)) {
-      // Provider-shaped header: every following non-empty line is a hit bullet.
-      // A hit bullet is "- [role] content", not any line starting with "- ": a user
-      // who pastes an injected block and then adds their own "- and I still need
-      // the weekend schedule" would otherwise have that sentence swallowed as a
-      // hit. Requiring the bracket is what the producer actually writes.
       const hits = lines.slice(1).filter((l) => l.trim().length > 0);
       return hits.length > 0 && hits.every((l) => RAG_HIT_LINE.test(l));
     }
+    // No header. In the provenance-holding path this is NOT a block: a caller that
+    // read the session's anchors can name every real block, so an unheaded
+    // single-line tag with text after it is a person writing about the tag.
+    if (provenanceMode) return false;
+    // Fallback path: the legacy single-line `note` form is accepted, with the same
+    // long-line bias as the summary tags. A note block is operator text the caller
+    // has to read either way, and this is the only signal available without
+    // provenance.
     if (lines.length > 1) return false;
     return body.length >= 20 || blockCount > 1;
   }
 
   if (tag === "[Recovery Digest]") {
+    // Every line here is written by `assemble`; a person cannot produce it.
     if (!first.includes(DIGEST_HEADER)) return false;
     const fields = lines.slice(1).filter((l) => l.trim().length > 0);
     return fields.length > 0 && fields.every((l) => DIGEST_FIELD_LABELS.some((label) => l.startsWith(label)));
   }
 
-  // [Session Memory] / [Research Recall]: one line, unless the exact pass
-  // already claimed this text.
+  // [Session Memory] / [Research Recall]: the ambiguous pair, judged by the
+  // long-standing bias explained in the docstring. A named block never reaches
+  // this function (the exact pass removed it), so the only arrival here is either
+  // a real injected block or a person writing about the tag — and the bias keeps
+  // one over the other in that impossible-to-separate case.
   if (lines.length > 1) return false;
   return body.length >= 20 || blockCount > 1;
 }
@@ -645,7 +681,12 @@ function collectTaskRecordsWithKnown(
     .all(sessionId) as Array<{ id: number; content: string; createdAt: string }>;
   const out: RebuildTaskRecord[] = [];
   for (const row of rows) {
-    const text = stripInjectedBlocks(readStoredMessageText(row.content), known);
+    // Provenance-only: this path read the session's own anchors, so the blocks are
+    // named exactly and nothing has to be guessed. That is what keeps a user
+    // sentence that starts with a tag verbatim — the fallback's long-line bias
+    // would otherwise cut it, and the ticket requires the user's own words to
+    // survive.
+    const text = stripInjectedBlocks(readStoredMessageText(row.content), known, { provenBlocksOnly: true });
     if (text.length === 0) continue;
     out.push({ messageId: row.id, text, createdAt: row.createdAt });
   }
@@ -774,7 +815,7 @@ export function planSummaryRebuild(
   // and the live one carry no shared id, so dropping either could drop the real
   // change. The budget below is what bounds the list.
   const liveTurn = typeof req.currentUserTurn === "string"
-    ? stripInjectedBlocks(req.currentUserTurn, knownBlocks)
+    ? stripInjectedBlocks(req.currentUserTurn, knownBlocks, { provenBlocksOnly: true })
     : "";
   if (liveTurn.length > 0) {
     allRecords.push({ messageId: 0, text: liveTurn, createdAt: "" });

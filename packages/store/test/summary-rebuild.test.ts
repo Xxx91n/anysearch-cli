@@ -646,14 +646,32 @@ function userText(db: string, sessionId: string): any[] {
     "R11: the live turn carries id 0, not a fabricated message id");
 
   // An injected block in the live text must not become the user's words either.
+  // The block is the session's OWN summary, so the plan knows it by exact string
+  // and removes it without guessing (#286). That is the real path: the runtime
+  // hands the plan the text it just injected, and the store re-renders that same
+  // anchor text.
+  const ownBlock = "[Session Memory] an earlier summary";
   const injected = store.planSummaryRebuild({
     sessionId: owner,
     anchorId,
-    currentUserTurn: "real change\n\n[Session Memory] support runs weekdays 9-17 and answers email",
+    currentUserTurn: "real change\n\n" + ownBlock,
   });
   const lastText = injected.taskRecords[injected.taskRecords.length - 1]!.text;
   assert(lastText === "real change",
-    "R11: a real injected block is stripped from the live turn too (got " + JSON.stringify(lastText) + ")");
+    "R11: the session's own injected block is stripped from the live turn too (got " + JSON.stringify(lastText) + ")");
+
+  // A block the session never recorded is NOT removed by shape in this path: a
+  // sentence a user writes that merely starts with a tag has the same shape, and
+  // the ticket requires the user's own words to survive verbatim.
+  const unknownBlock = "[Session Memory] support runs weekdays 9-17 and answers email";
+  const unknown = store.planSummaryRebuild({
+    sessionId: owner, anchorId,
+    currentUserTurn: "real change\n\n" + unknownBlock,
+  });
+  const unknownText = unknown.taskRecords[unknown.taskRecords.length - 1]!.text;
+  assert(unknownText === "real change\n\n" + unknownBlock,
+    "R11: a tag block the session never recorded is left as the user wrote it (got " +
+      JSON.stringify(unknownText) + ")");
 
   // The documented limit: a SINGLE very short block is kept, because it cannot be
   // told apart from a user writing about the tag. Keeping it is the safe choice.
@@ -965,6 +983,21 @@ function userText(db: string, sessionId: string): any[] {
   assert(!blocksJoined.includes("recalled from session memory"),
     "R18: no recalled-body wording reaches the task records");
 
+  // Acceptance 3, the case a shape guess cannot get right: the user writes their
+  // OWN sentence that starts with a tag. The plan holds provenance, so it must not
+  // guess — the sentence stays word for word.
+  const ownTagSentence = "my notes\n\n[RAG Context] is the tag I mean, keep going";
+  await store.append(owner, { role: "user", content: ownTagSentence });
+  const ownTagSentence2 = "note this down\n\n[Research Recall] the weekend schedule changed again";
+  await store.append(owner, { role: "user", content: ownTagSentence2 });
+  const ownTags = store.planSummaryRebuild({ sessionId: owner, anchorId });
+  const ownTagsJoined = ownTags.taskRecords.map((r) => r.text).join("\n");
+  assert(ownTagsJoined.includes(ownTagSentence),
+    "R18: the user's own sentence starting with a tag stays verbatim (got " +
+      JSON.stringify(ownTagsJoined) + ")");
+  assert(ownTagsJoined.includes(ownTagSentence2),
+    "R18: likewise for a [Research Recall] sentence the user wrote");
+
   closeStore(store);
 }
 
@@ -1002,14 +1035,28 @@ function userText(db: string, sessionId: string): any[] {
   assert(stripInjectedBlocks(both) === "where were we",
     "R19: a run of RAG + digest blocks is removed together (got " + JSON.stringify(stripInjectedBlocks(both)) + ")");
 
-  // The user's own tag use is untouched: a tag mid-message, and a tag followed by
-  // their own continuation, are both user text.
+  // The user's own tag use is untouched: a tag mid-message is user text.
   const midTag = "check this log:\n\n[RAG Context] example\nchange: weekends only";
   assert(stripInjectedBlocks(midTag) === midTag,
     "R19: a tag the user wrote mid-message does not cut their text");
-  const ownContinuation = "my notes\n\n[RAG Context] (adapter=fts) is the tag I mean, keep going";
-  assert(stripInjectedBlocks(ownContinuation) === ownContinuation,
-    "R19: a tag with the user's own sentence after it is not mistaken for a block");
+
+  // A SHORT single-line tag plus a word is kept — the documented bias, unchanged
+  // from before this ticket. This is the case the fallback exists for: "TAG a word"
+  // is how a person talks about a tag.
+  const shortTagLine = "my notes\n\n[RAG Context] is the tag I mean";
+  assert(stripInjectedBlocks(shortTagLine) === shortTagLine,
+    "R19: a short single-line tag mention is not mistaken for a block (got " +
+      JSON.stringify(stripInjectedBlocks(shortTagLine)) + ")");
+
+  // Known bias, shared with the pre-#286 behaviour (verified against the old
+  // module): a LONGER single-line body after a tag IS stripped even when a person
+  // wrote it, because it is byte-indistinguishable from a real block. Stated here
+  // so nobody reads the test above as a general guarantee. Provenance is what
+  // fixes it properly — a named block is removed, an unnamed long line is the
+  // trade this function has always made.
+  const longSingleLine = "my notes\n\n[RAG Context] is the tag I mean, keep going";
+  assert(stripInjectedBlocks(longSingleLine) === "my notes",
+    "R19: a long single-line tag body is stripped (documented bias, pre-existing)");
 
   // A user who QUOTES a real block and then keeps talking keeps the whole turn:
   // injection appends at the end and the user's own sentence is still there, so
