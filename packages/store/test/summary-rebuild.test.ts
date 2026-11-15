@@ -844,6 +844,32 @@ function userText(db: string, sessionId: string): any[] {
   closeStore(store);
 }
 
+// --- R17: the documented limit of text-only stripping ----------------------
+//
+// A summary body may contain a blank line: injection writes the body verbatim, so
+// "[Session Memory] para one\n\npara two" is a real block shape. From the OUTSIDE
+// this is indistinguishable from a user who wrote a tag line, a paragraph, and
+// then more text — so `stripInjectedBlocks` keeps it.
+//
+// That is a real limit, and it is deliberate: the runtime that WROTE the block
+// strips it by exact string match before handing the turn over, and this store-side
+// function only has to catch what comes from outside. Recording the behaviour here
+// keeps a future change from silently "fixing" it by deleting user text.
+{
+  const body = "first paragraph about support hours\n\nsecond paragraph about the email";
+  const turn = "my question\n\n[Session Memory] " + body;
+  const stripped = stripInjectedBlocks(turn);
+
+  assert(stripped.includes("my question"),
+    "R17: the user's own question is never removed");
+  assert(stripped.includes("second paragraph about the email"),
+    "R17: a multi-line tagged body is KEPT by text-only stripping (documented limit)");
+
+  // The single-line case IS removed, so the common path still works.
+  assert(stripInjectedBlocks("q\n\n[Session Memory] a full single-line summary body") === "q",
+    "R17: a single-line tagged block is still stripped");
+}
+
 // --- cleanup ---------------------------------------------------------------
 
 for (const s of stores.splice(0)) { try { s.close(); } catch { /* closed */ } }

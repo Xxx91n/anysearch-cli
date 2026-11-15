@@ -1227,7 +1227,12 @@ export class MemoryPipeline {
           // instruction. The store's stripper only removes a TRAILING run of
           // blocks, so user-authored tags survive.
           const liveTarget = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx]) : null;
-          const liveTurn = liveTarget ? liveTarget.text : "";
+          const liveRaw = liveTarget ? liveTarget.text : "";
+          // Strip the blocks THIS runtime can name exactly (the store-held summary
+          // and recall bodies, plus every block this runtime appended). Those are
+          // known strings, not tag guesses, so a summary body containing blank
+          // lines is removed whole while a user who writes a tag keeps their text.
+          const liveTurn = knownBlocks.size > 0 ? removeKnownBlocks(liveRaw, knownBlocks) : liveRaw;
           this.track(
             this.maybeRebuildSummary(sessionId, anchorId, liveTurn || undefined)
               .then(() => undefined, () => undefined),
