@@ -411,8 +411,21 @@ CREATE TABLE IF NOT EXISTS legacy_summary_states (
   sources TEXT NOT NULL,
   reasons TEXT NOT NULL,
   new_anchor_id INTEGER REFERENCES resume_anchors(id),
+  retry_after INTEGER,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS legacy_summary_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  anchor_id INTEGER NOT NULL REFERENCES resume_anchors(id) ON DELETE CASCADE,
+  evidence_key TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  reasons TEXT NOT NULL,
+  new_anchor_id INTEGER REFERENCES resume_anchors(id),
+  usage TEXT, -- NULL is unknown/not reported, never a claim of zero cost.
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_legacy_summary_attempts_anchor ON legacy_summary_attempts(anchor_id);
 
 -- reversible archive ledger (entity_merge_log-style full snapshot). One row per
 -- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.

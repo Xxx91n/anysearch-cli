@@ -1156,10 +1156,13 @@ export function writeRebuiltSummaryAnchor(
     // Finish its recovery in this transaction, including when a real suspension
     // also exists (for example an interrupted earlier migration).
     const recovered = db.prepare(`UPDATE legacy_summary_states SET status = 'rebuilt',
-      new_anchor_id = ?, reasons = '[]', updated_at = datetime('now')
+      new_anchor_id = ?, reasons = '[]', retry_after = NULL, updated_at = datetime('now')
       WHERE session_id = ? AND anchor_id = ? AND status = 'attempted'`).run(
       anchorId, req.sessionId, req.rebuildOfAnchorId,
     );
+    if (recovered.changes === 1) db.prepare(`UPDATE legacy_summary_attempts SET outcome = 'rebuilt',
+      new_anchor_id = ?, reasons = '[]', finished_at = datetime('now')
+      WHERE anchor_id = ? AND outcome = 'attempted'`).run(anchorId, req.rebuildOfAnchorId);
     const cleared = db
       .prepare(
         "UPDATE summary_suspensions SET cleared_at = datetime('now'), cleared_by_anchor_id = ? WHERE session_id = ? AND anchor_id = ? AND cleared_at IS NULL",

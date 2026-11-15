@@ -102,11 +102,14 @@ their current versions) plus that session's own stored user turns.
   or a verifiable record order mean `incomplete`, with no recovery model call.
   Legacy records stored within the same timestamp second may have no provable
   order and stay incomplete. Ordinary sourced materials remain searchable.
-- A legacy recovery attempt is remembered across restarts. Failed or interrupted
-  attempts report their reason and do not call the model again for unchanged
-  evidence. Restoring original records or changing a referenced current source
-  version permits another attempt. Recovery shares the normal summary usage and
-  cost report; missing provider usage means unknown cost, not free recovery.
+- Legacy recovery results and each attempt are kept across restarts, with reasons
+  and any provider usage. Successful or incomplete recoveries do not repeat paid
+  calls for unchanged evidence. A generation/write failure or interrupted attempt
+  can retry after five minutes, only when a NEW ans_chat call or ans chat process
+  needs it; no timer starts background work. A new call/process also rechecks
+  restored original records or a changed current source version. Recovery shares
+  the normal summary usage and cost report; missing provider usage means unknown
+  cost, not free recovery.
 
 ## Anti-patterns
 

@@ -271,7 +271,7 @@ async function seedSuspendedSummary(
       throw new Error("fixture: the correction suspended " + rep.summariesSuspended + " summaries, expected 1");
     }
     if (legacy) {
-      // Draft #265 samples A-C. This is an old-format database fixture, not a
+      // Confirmed #265 samples A-C. This is an old-format database fixture, not a
       // migration performed by the product. The explicit old knowledge id is
       // retained in the original tool record only in A/C. Second-level dates
       // are distinct so the record order is verifiable without inventing it.
@@ -403,7 +403,7 @@ const addr = fake.address();
 if (!addr || typeof addr === "string") throw new Error("fake endpoint did not bind");
 endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
 
-// #265 A-D: draft cases; run only after the user confirms the sample inputs.
+// #265 A-D: the user confirmed these inputs before their first run.
 // The normal suite exercises them from ans_chat, including a restarted server.
 for (const mode of ["complete", "no-source", "no-task"] as const) {
   const root = makeRoot("legacy-" + mode);

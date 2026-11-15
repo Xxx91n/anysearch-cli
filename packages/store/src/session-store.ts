@@ -258,7 +258,7 @@ export interface SessionStore {
   prepareLegacySummary?(sessionId: string, anchorId: number): LegacySummaryState | null;
   claimLegacySummary?(sessionId: string, anchorId: number, evidenceKey: string): boolean;
   finishLegacySummary?(sessionId: string, anchorId: number, evidenceKey: string,
-    result: { outcome: string; reasons: string[]; newAnchorId: number | null }): void;
+    result: { outcome: string; reasons: string[]; newAnchorId: number | null; usage?: unknown }): void;
   // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -1424,7 +1424,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   finishLegacySummary(sessionId: string, anchorId: number, evidenceKey: string,
-    result: { outcome: string; reasons: string[]; newAnchorId: number | null }): void {
+    result: { outcome: string; reasons: string[]; newAnchorId: number | null; usage?: unknown }): void {
     finishLegacySummary(this.db, sessionId, anchorId, evidenceKey, result);
   }
 

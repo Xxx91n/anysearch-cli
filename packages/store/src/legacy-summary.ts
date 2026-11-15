@@ -12,19 +12,25 @@ export interface LegacySummaryState {
   sources: SummarySourceRef[];
   reasons: string[];
   newAnchorId: number | null;
+  retryAfter: number | null;
 }
+
+// Design: only another user-triggered run can retry a failed call, after five
+// minutes — this gives a repaired provider a way forward without billing every
+// chat turn. It also outlasts the kernel's 90-second background call timeout.
+export const LEGACY_SUMMARY_RETRY_DELAY_MS = 5 * 60 * 1000;
 
 /** Read the durable result without starting work or changing the original text. */
 export function legacySummaryState(db: Database.Database, sessionId: string, anchorId: number): LegacySummaryState | null {
   const row = db.prepare(
-    "SELECT evidence_key, status, sources, reasons, new_anchor_id FROM legacy_summary_states WHERE session_id = ? AND anchor_id = ?",
+    "SELECT evidence_key, status, sources, reasons, new_anchor_id, retry_after FROM legacy_summary_states WHERE session_id = ? AND anchor_id = ?",
   ).get(sessionId, anchorId) as {
-    evidence_key: string; status: LegacySummaryState["status"]; sources: string; reasons: string; new_anchor_id: number | null;
+    evidence_key: string; status: LegacySummaryState["status"]; sources: string; reasons: string; new_anchor_id: number | null; retry_after: number | null;
   } | undefined;
   return row ? {
     anchorId, evidenceKey: row.evidence_key, status: row.status,
     sources: parseSummarySourceRefs(JSON.parse(row.sources)), reasons: JSON.parse(row.reasons) as string[],
-    newAnchorId: row.new_anchor_id,
+    newAnchorId: row.new_anchor_id, retryAfter: row.retry_after,
   } : null;
 }
 
@@ -98,6 +104,10 @@ export function prepareLegacySummary(db: Database.Database, sessionId: string, a
     const transcript = transcriptSources(db, sessionId, anchor.created_at);
     const sources = embedded.length > 0 ? embedded : transcript.sources;
     const reasons = embedded.length > 0 ? [] : [...transcript.reasons];
+    if (payload && Object.hasOwn(payload, "sources") &&
+      (!Array.isArray(payload.sources) || payload.sources.some((ref) => parseSummarySourceRefs([ref]).length !== 1))) {
+      reasons.push("the old source list contains unreadable references; the valid subset cannot stand in for the complete list");
+    }
     if (anchor.anchor_type !== "rolling_summary") reasons.push("an old recall snippet cannot be rebuilt without its original query and source records");
     // A new question must not stand in for a missing original requirement. Only
     // user records that unambiguously predate this summary qualify as evidence.
@@ -112,15 +122,24 @@ export function prepareLegacySummary(db: Database.Database, sessionId: string, a
     const existing = legacySummaryState(db, sessionId, anchorId);
     // A restart or another turn does not justify another model call. A changed
     // original record/current source version does; the evidence key records why.
-    if (existing?.evidenceKey === evidenceKey) return existing;
+    if (existing?.evidenceKey === evidenceKey) {
+      if ((existing.status !== "failed" && existing.status !== "attempted") ||
+        existing.retryAfter === null || existing.retryAfter > Date.now()) return existing;
+      // A killed process left an attempted row behind. Its spend is still
+      // unknown, and the audit row stays available when a later run retries.
+      db.prepare(`UPDATE legacy_summary_attempts SET outcome = 'interrupted', finished_at = datetime('now')
+        WHERE anchor_id = ? AND outcome = 'attempted'`).run(anchorId);
+      db.prepare("UPDATE legacy_summary_states SET status = 'ready', reasons = '[]', retry_after = NULL WHERE anchor_id = ?").run(anchorId);
+      return { ...existing, status: "ready", reasons: [], retryAfter: null };
+    }
     const state: LegacySummaryState = {
       anchorId, evidenceKey, status: plan.complete ? "ready" : "incomplete",
-      sources, reasons: plan.reasons, newAnchorId: null,
+      sources, reasons: plan.reasons, newAnchorId: null, retryAfter: null,
     };
     db.prepare(`INSERT INTO legacy_summary_states (session_id, anchor_id, evidence_key, status, sources, reasons)
       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(anchor_id) DO UPDATE SET
       evidence_key = excluded.evidence_key, status = excluded.status, sources = excluded.sources,
-      reasons = excluded.reasons, new_anchor_id = NULL, updated_at = datetime('now')`).run(
+      reasons = excluded.reasons, new_anchor_id = NULL, retry_after = NULL, updated_at = datetime('now')`).run(
       sessionId, anchorId, evidenceKey, state.status, JSON.stringify(sources), JSON.stringify(state.reasons),
     );
     return state;
@@ -130,22 +149,39 @@ export function prepareLegacySummary(db: Database.Database, sessionId: string, a
 
 /** Claim one evidence revision before a model call; an interrupted call stays visible. */
 export function claimLegacySummary(db: Database.Database, sessionId: string, anchorId: number, evidenceKey: string): boolean {
-  return db.prepare(`UPDATE legacy_summary_states SET status = 'attempted',
-    reasons = ?, updated_at = datetime('now')
-    WHERE session_id = ? AND anchor_id = ? AND evidence_key = ? AND status = 'ready'`).run(
-    JSON.stringify(["the previous recovery attempt has not completed; its model cost may be unknown"]),
-    sessionId, anchorId, evidenceKey,
-  ).changes === 1;
+  return db.transaction(() => {
+    const reasons = JSON.stringify(["the previous recovery attempt has not completed; its model cost may be unknown"]);
+    const claimed = db.prepare(`UPDATE legacy_summary_states SET status = 'attempted',
+      reasons = ?, retry_after = ?, updated_at = datetime('now')
+      WHERE session_id = ? AND anchor_id = ? AND evidence_key = ? AND status = 'ready'`).run(
+      reasons, Date.now() + LEGACY_SUMMARY_RETRY_DELAY_MS, sessionId, anchorId, evidenceKey,
+    ).changes === 1;
+    if (claimed) db.prepare(`INSERT INTO legacy_summary_attempts (anchor_id, evidence_key, outcome, reasons)
+      VALUES (?, ?, 'attempted', ?)`).run(anchorId, evidenceKey, reasons);
+    return claimed;
+  }).immediate();
 }
 
 /** Keep the failure reason across restarts, without discarding evidence or the old text. */
 export function finishLegacySummary(
   db: Database.Database, sessionId: string, anchorId: number, evidenceKey: string,
-  result: { outcome: string; reasons: string[]; newAnchorId: number | null },
+  result: { outcome: string; reasons: string[]; newAnchorId: number | null; usage?: unknown },
 ): void {
-  db.prepare(`UPDATE legacy_summary_states SET status = ?, reasons = ?, new_anchor_id = ?, updated_at = datetime('now')
-    WHERE session_id = ? AND anchor_id = ? AND evidence_key = ? AND status = 'attempted'`).run(
-    result.outcome === "no-model" ? "ready" : "failed", JSON.stringify(result.reasons), result.newAnchorId,
-    sessionId, anchorId, evidenceKey,
-  );
+  const retryable = result.outcome === "generation-failed" || result.outcome === "write-failed";
+  const retryAfter = retryable ? Date.now() + LEGACY_SUMMARY_RETRY_DELAY_MS : null;
+  const reasons = [...result.reasons];
+  if (retryAfter) reasons.push("a new request can retry recovery after " + new Date(retryAfter).toISOString());
+  db.transaction(() => {
+    db.prepare(`UPDATE legacy_summary_states SET status = ?, reasons = ?, new_anchor_id = ?, retry_after = ?, updated_at = datetime('now')
+      WHERE session_id = ? AND anchor_id = ? AND evidence_key = ? AND status = 'attempted'`).run(
+      result.outcome === "no-model" ? "ready" : "failed", JSON.stringify(reasons), result.newAnchorId, retryAfter,
+      sessionId, anchorId, evidenceKey,
+    );
+    db.prepare(`UPDATE legacy_summary_attempts SET outcome = ?, reasons = ?, new_anchor_id = ?, usage = ?, finished_at = datetime('now')
+      WHERE id = (SELECT id FROM legacy_summary_attempts WHERE anchor_id = ? AND evidence_key = ?
+        AND outcome IN ('attempted', 'rebuilt') ORDER BY id DESC LIMIT 1)`).run(
+      result.outcome, JSON.stringify(reasons), result.newAnchorId,
+      result.usage === undefined ? null : JSON.stringify(result.usage), anchorId, evidenceKey,
+    );
+  }).immediate();
 }
