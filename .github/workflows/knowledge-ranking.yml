@@ -1,0 +1,45 @@
+name: knowledge-ranking
+on:
+  pull_request:
+    paths:
+      - 'packages/store/**'
+      - 'packages/retriever/**'
+      - 'scripts/compare-knowledge-ranking.mjs'
+      - '.github/workflows/knowledge-ranking.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-comparison:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          path: baseline
+          # #283 starting point; do not move this to the latest main.
+          ref: 51a9ec9c9c95c6a9a1bee0966843ca2a150d0086
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: candidate/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install both revisions without build scripts
+        run: |
+          (cd candidate && node scripts/ci-dep-age-override.mjs && pnpm install --ignore-scripts)
+          (cd baseline && node scripts/ci-dep-age-override.mjs && pnpm install --ignore-scripts)
+      - name: Run identical offline cases against both revisions
+        run: |
+          mkdir -p baseline/packages/store/test/fixtures
+          cp candidate/packages/store/test/fixtures/{eval-knowledge-ranking.ts,knowledge-ranking-cases.json} baseline/packages/store/test/fixtures/
+          (cd baseline/packages/store && pnpm exec tsx test/fixtures/eval-knowledge-ranking.ts "$RUNNER_TEMP/ranking-base.json")
+          (cd candidate/packages/store && pnpm exec tsx test/fixtures/eval-knowledge-ranking.ts "$RUNNER_TEMP/ranking-head.json")
+          node candidate/scripts/compare-knowledge-ranking.mjs "$RUNNER_TEMP/ranking-base.json" "$RUNNER_TEMP/ranking-head.json" | tee "$RUNNER_TEMP/ranking-comparison.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: knowledge-ranking-by-language
+          path: ${{ runner.temp }}/ranking-*

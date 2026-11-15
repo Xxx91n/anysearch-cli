@@ -4,6 +4,7 @@
 // atomcode research: WAL persistent, single shared connection, module-level prepared statements,
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
+import { rankKnowledge } from "./knowledge-ranking";
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
 import {
@@ -1055,9 +1056,8 @@ export class SqliteSessionStore implements SessionStore {
    if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
    const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
-   // Kept at `limit`: the arm allocates slots between its own keyword and vector
-   // lanes, so widening it would change that allocation and let the vector lane
-   // take the slot a keyword hit needed.
+   // Each knowledge lane reads up to `limit`, then relevance decides their
+   // combined order. The Chinese keyword lane stays active without vectors.
    const semHitsRaw = await this.semanticArmRows(query, limit, objectForms);
    // An undetermined object offers no knowledge row: "cannot tell which object"
    // is the answer, not a guess. Materials stay (they carry their own URL).
@@ -1617,15 +1617,6 @@ export class SqliteSessionStore implements SessionStore {
       scored.sort((a, b) => b.s - a.s);
       vector = scored.slice(0, limit).map((x) => x.h);
     }
-    // Merge, don't concatenate. Taking the vector list first and filling the
-    // rest from keywords would let `limit` embedded rows shut out the ONE row
-    // the keyword lane exists to rescue (a corrected row with no embedding) —
-    // the very case this lane is here for. So each lane keeps at least half the
-    // slots when it has candidates, and any spare goes to the vector lane
-    // (the more precise signal):
-    //   reserve = ceil(limit / 2)
-    //   vectorCount = min(vector.length, limit - min(keyword.length, reserve))
-    //   then fill the remainder from keyword, then from leftover vector.
     // Validity recheck: the two SELECTs above are separate statements, so a
     // concurrent correction can still close a row between them. Drop ids that
     // are no longer live before merging, so one answer never carries both a
@@ -1641,21 +1632,7 @@ export class SqliteSessionStore implements SessionStore {
       keyword.splice(0, keyword.length, ...keyword.filter(live));
       vector.splice(0, vector.length, ...vector.filter(live));
     }
-    const reserve = Math.ceil(limit / 2);
-    const keywordQuota = Math.min(keyword.length, reserve);
-    const vectorQuota = Math.min(vector.length, Math.max(0, limit - keywordQuota));
-    const out: MemoryHit[] = [];
-    const seen = new Set<number>();
-    const add = (h: MemoryHit): void => {
-      if (seen.has(h.rowid)) return;
-      seen.add(h.rowid);
-      out.push(h);
-    };
-    for (const h of vector.slice(0, vectorQuota)) add(h);
-    for (const h of keyword.slice(0, keywordQuota)) add(h);
-    // Spare slots: leftover vector first (precise), then leftover keyword.
-    for (const h of vector.slice(vectorQuota)) { if (out.length >= limit) break; add(h); }
-    for (const h of keyword.slice(keywordQuota)) { if (out.length >= limit) break; add(h); }
+    const out = rankKnowledge(query, [keyword, vector]).slice(0, limit);
     this.semTel.hits += out.length;
     if (SEMANTIC_ARM_MODE === "serve") this.semTel.served += out.length;
     return out.slice(0, limit);
@@ -1706,15 +1683,16 @@ export class SqliteSessionStore implements SessionStore {
     const cjk: Array<{ id: number; content: string; rank: number }> = [];
     const otherScript: Array<{ id: number; content: string; rank: number }> = [];
     // Independent indexed lane for rows matching both query scripts.
-    // Do not share 'seen' with the weaker one-script lanes.
+    // Each lane deduplicates independently so shared hits retain both signals.
     const crossScript: Array<{ id: number; content: string; rank: number }> = [];
-    const seen = new Set<number>();
-    const mark = (list: Array<{ id: number; content: string; rank: number }>) =>
-      (r: { id: number; content: string; rank: number }): void => {
+    const mark = (list: Array<{ id: number; content: string; rank: number }>) => {
+      const seen = new Set<number>();
+      return (r: { id: number; content: string; rank: number }): void => {
         if (seen.has(r.id)) return;
         seen.add(r.id);
         list.push(r);
       };
+    };
     const pushLatin = mark(latin);
     const pushCjk = mark(cjk);
     const pushOtherScript = mark(otherScript);
@@ -1944,19 +1922,12 @@ export class SqliteSessionStore implements SessionStore {
         for (const r of rows) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
       }
     }
-    // A query carrying Chinese is answered by the Chinese rows first: the
-    // ASCII rung only saw half the question, so letting its rows keep every
-    // slot would starve the half the caller actually typed (#273 round 5).
-    // Prefer evidence covering both ASCII and non-Han Unicode terms over
-    // partial matches. The existing Han-first rule is unchanged (#277).
-    const ordered = [...cjk, ...crossScript, ...otherScript, ...latin];
-    const resultSeen = new Set<number>();
-    return ordered.filter((r) => {
-      if (resultSeen.has(r.id)) return false;
-      resultSeen.add(r.id);
-      return true;
-    }).slice(0, limit).map((r) =>
-      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit);
+    // Keep each recall lane independent: a row found through both scripts has
+    // more evidence than a row matching only one. Raw BM25 and LIKE scores are
+    // not comparable across languages; fuse their ranks instead (#283).
+    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) =>
+      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit));
+    return rankKnowledge(query, lanes).slice(0, limit);
   }
 
 
