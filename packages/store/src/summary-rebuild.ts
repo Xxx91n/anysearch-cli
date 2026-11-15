@@ -237,7 +237,16 @@ export function stripInjectedBlocks(
     const end = body.indexOf(PREFS_CLOSE_TAG);
     if (end >= 0) body = body.slice(end + PREFS_CLOSE_TAG.length);
   }
-  if (provenBlocks) body = removeExactBlocks(body, provenBlocks);
+  // Positions the user's own words run on from. Computed BEFORE the shape pass and
+  // re-checked after it: a named block the exact pass refused must not be removed by
+  // the shape pass instead, or the boundary rule protects a sentence from one pass
+  // and loses it to the other (#288 review).
+  let kept: string[] = [];
+  if (provenBlocks) {
+    const exact = removeExactBlocksReporting(body, provenBlocks);
+    body = exact.text;
+    kept = exact.keptUserContinuations;
+  }
   // Only a TRAILING run of injected blocks is removed.
   //
   // Injection appends its blocks after the user's text and leaves nothing after
@@ -247,8 +256,27 @@ export function stripInjectedBlocks(
   // everything after that tag — including the instruction — and the plan still
   // reported itself complete.
   const cut = trailingInjectionStart(body, opts?.trustProvenance === true);
-  if (cut >= 0) body = body.slice(0, cut);
+  if (cut >= 0) {
+    // Does the region the shape pass wants to remove run into a kept block? Then
+    // the run is the user writing on, not injection: leave the text whole.
+    const region = body.slice(cut);
+    if (!kept.some((block) => region.startsWith(block) && !endsAtBlockBoundary(region, block))) {
+      body = body.slice(0, cut);
+    }
+  }
   return body.trim();
+}
+
+/**
+ * Does `block` end at a block boundary inside `region`?
+ *
+ * @param region - Text starting with the block.
+ * @param block - The block string.
+ * @returns True when only a blank line (or nothing) follows.
+ */
+function endsAtBlockBoundary(region: string, block: string): boolean {
+  const end = block.length;
+  return end === region.length || region.startsWith(BLANK_LINE, end);
 }
 
 /**
@@ -292,7 +320,29 @@ export function stripInjectedBlocks(
  * @returns The text without any of those blocks.
  */
 export function removeExactBlocks(text: string, known: Iterable<string>): string {
+  return removeExactBlocksReporting(text, known).text;
+}
+
+/**
+ * The same removal, plus the positions it REFUSED because the user kept typing.
+ *
+ * The refusal matters to the caller: the shape pass runs next, and if it accepted
+ * one of those positions it would delete the very sentence the boundary rule just
+ * protected. A named RAG block followed by " and explain why" is the case — the
+ * exact pass refuses, and `RAG_HIT_LINE` only checks the line prefix, so the shape
+ * pass swallowed the whole tail including the user's sentence (#288 review).
+ *
+ * @param text - The turn text.
+ * @param known - Exact block strings that are injection output.
+ * @returns The stripped text, and the tag offsets where a known block was left in
+ *   place because the user's own words run on after it.
+ */
+function removeExactBlocksReporting(
+  text: string,
+  known: Iterable<string>,
+): { text: string; keptUserContinuations: string[] } {
   let out = text;
+  const keptUserContinuations: string[] = [];
   const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
   for (const block of ordered) {
     // With the separator injection writes before a block, so removing both leaves
@@ -308,13 +358,18 @@ export function removeExactBlocks(text: string, known: Iterable<string>): string
         out = out.slice(0, at) + out.slice(end);
         at = out.indexOf(withSeparator);
       } else {
+        // Remember the block itself: the shape pass must not take it either.
+        keptUserContinuations.push(block);
         at = out.indexOf(withSeparator, at + 1);
       }
     }
     // A block at the very start of the turn has no separator before it.
-    if (out.startsWith(block) && endsBlock(block.length)) out = out.slice(block.length);
+    if (out.startsWith(block)) {
+      if (endsBlock(block.length)) out = out.slice(block.length);
+      else keptUserContinuations.push(block);
+    }
   }
-  return out;
+  return { text: out, keptUserContinuations };
 }
 
 /**
