@@ -47,10 +47,12 @@ import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-// #286: the block renderer and its two caps are owned by the store, because the
+// #286: the block renderer and the recall cap are owned by the store, because the
 // rebuild path rebuilds the very same block strings to strip them by exact match.
+// `SUMMARY_INJECT_MAX_CHARS` is not imported here: every place this file renders a
+// summary block goes through `renderSummaryBlock`, which applies the cap itself.
 import {
-  isTimeSensitive, isEvergreen, renderSummaryBlock, RECALL_INJECT_MAX_CHARS, SUMMARY_INJECT_MAX_CHARS,
+  isTimeSensitive, isEvergreen, renderSummaryBlock, RECALL_INJECT_MAX_CHARS,
 } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";

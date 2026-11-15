@@ -201,7 +201,7 @@ export interface SummaryRebuildPlan {
  *
  * The second pass is a fallback for callers with NO provenance. The rebuild plan
  * always has provenance (it reads the session's own anchors), so it passes
- * `provenBlocksOnly` and drops the guesswork for the two AMBIGUOUS tags:
+ * `trustProvenance` and drops the guesswork for the two AMBIGUOUS tags:
  * `[Session Memory]` and `[Research Recall]`, whose bodies are free-form text, are
  * removed only when the caller named them. The other two still go, because
  * `[RAG Context]` and `[Recovery Digest]` carry a machine-written provenance
@@ -214,14 +214,14 @@ export interface SummaryRebuildPlan {
  *
  * @param text - One stored or live user turn.
  * @param provenBlocks - Exact block strings this caller can prove it wrote.
- * @param opts.provenBlocksOnly - For the two ambiguous tags, trust ONLY named
+ * @param opts.trustProvenance - For the two ambiguous tags, trust ONLY named
  *   blocks. Blocks that identify themselves (RAG, digest) are still recognized.
  * @returns The turn's own text, without injected blocks.
  */
 export function stripInjectedBlocks(
   text: string,
   provenBlocks?: Iterable<string>,
-  opts?: { provenBlocksOnly?: boolean },
+  opts?: { trustProvenance?: boolean },
 ): string {
   let body = text;
   if (body.startsWith(PREFS_OPEN_TAG)) {
@@ -237,7 +237,7 @@ export function stripInjectedBlocks(
   // followed by an example [RAG Context] line and then a real instruction lost
   // everything after that tag — including the instruction — and the plan still
   // reported itself complete.
-  const cut = trailingInjectionStart(body, opts?.provenBlocksOnly === true);
+  const cut = trailingInjectionStart(body, opts?.trustProvenance === true);
   if (cut >= 0) body = body.slice(0, cut);
   return body.trim();
 }
@@ -436,7 +436,7 @@ const RAG_HIT_LINE = /^- \[[^\]]*\] /;
  *   them apart, so the long-standing bias is kept here: a single line of at least
  *   20 characters counts as a block, because a leftover noise line is visible to
  *   whoever reads the prompt while a dropped instruction is not. Callers that need
- *   the user's own sentence guaranteed (the rebuild plan) use `provenBlocksOnly`
+ *   the user's own sentence guaranteed (the rebuild plan) use `trustProvenance`
  *   instead and never reach this guess.
  *
  * @param block - One block, from its tag to just before the next block.
@@ -698,7 +698,7 @@ function collectTaskRecordsWithKnown(
     // sentence that starts with a tag verbatim — the fallback's long-line bias
     // would otherwise cut it, and the ticket requires the user's own words to
     // survive.
-    const text = stripInjectedBlocks(readStoredMessageText(row.content), known, { provenBlocksOnly: true });
+    const text = stripInjectedBlocks(readStoredMessageText(row.content), known, { trustProvenance: true });
     if (text.length === 0) continue;
     out.push({ messageId: row.id, text, createdAt: row.createdAt });
   }
@@ -827,7 +827,7 @@ export function planSummaryRebuild(
   // and the live one carry no shared id, so dropping either could drop the real
   // change. The budget below is what bounds the list.
   const liveTurn = typeof req.currentUserTurn === "string"
-    ? stripInjectedBlocks(req.currentUserTurn, knownBlocks, { provenBlocksOnly: true })
+    ? stripInjectedBlocks(req.currentUserTurn, knownBlocks, { trustProvenance: true })
     : "";
   if (liveTurn.length > 0) {
     allRecords.push({ messageId: 0, text: liveTurn, createdAt: "" });
