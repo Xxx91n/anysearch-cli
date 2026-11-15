@@ -116,12 +116,14 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
-      # #267 (T6): the pack-then-install claim above only drove CLI commands.
-      # This lane goes one step further on the SAME packed artifacts: it starts
-      # the INSTALLED MCP server, runs a real ans_chat turn and its resumed
-      # continuation against a local SSE stub, consolidates selected materials,
-      # checks the internal search's rows are recallable by another session, and
-      # proves an older database still opens, migrates and keeps its rows. A
+      # #267 (T6): install-smoke above only drove CLI commands. This lane packs
+      # and installs its OWN copy of the same app packages, then proves that
+      # install can be used as a product: start the INSTALLED MCP server, run a
+      # real ans_chat turn and its resumed continuation against a local SSE stub,
+      # consolidate selected materials, check the internal search's rows are
+      # recallable by another session, and open an older database (migrate, keep
+      # rows, migrate again). It packs separately because install-smoke deletes
+      # its tarballs on exit; the artifact is the same source tree either way. A
       # missing provider key prints SKIPPED for that one lane instead of a pass.
       - name: installed acceptance lane (#267)
         run: node scripts/installed-acceptance.mjs

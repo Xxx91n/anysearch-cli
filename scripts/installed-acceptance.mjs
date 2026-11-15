@@ -160,7 +160,6 @@ function mcpClient(bin, env, tag) {
   return {
     rpc,
     ready,
-    stderr: () => stderr,
     /**
      * Stop the server and resolve once it is really gone.
      *
@@ -168,6 +167,9 @@ function mcpClient(bin, env, tag) {
      * the process object is reaped, so deleting the sandbox before that lands
      * throws EPERM. Awaiting the exit event is what makes cleanup deterministic
      * instead of a race; the timeout keeps a wedged child from hanging the run.
+     *
+     * `stderr` is captured only for the timeout message above: a hung RPC is
+     * almost always the child failing to boot, and that reason lands on stderr.
      */
     kill: () => new Promise((res) => {
       if (child.exitCode !== null || child.signalCode !== null) return res();
@@ -180,8 +182,26 @@ function mcpClient(bin, env, tag) {
 const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join("\n");
 
 // ---------- environment helpers ----------
+
+/**
+ * Run a command through a shell.
+ *
+ * The shell is ALWAYS on, matching scripts/install-smoke.mjs. On Windows the
+ * installed bin is `ans.cmd`, which only a shell can launch; on POSIX a quoted
+ * command with `shell: false` keeps the quotes inside argv[0] and dies with
+ * ENOENT. One code path for both is what makes the ubuntu leg of the CI matrix
+ * run the same assertions as the windows leg.
+ */
 function sh(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { encoding: "utf8", shell: process.platform === "win32", ...opts });
+  // A command carrying a separator is a path and may contain spaces, so it gets
+  // quoted. A bare name like `npm` must stay unquoted: cmd.exe resolves `"npm"`
+  // to a different shim and the install step dies with MODULE_NOT_FOUND. Both
+  // separators are checked because this script runs on windows-latest and
+  // ubuntu-latest. scripts/install-smoke.mjs uses the same unquoted-name shape.
+  const isPath = cmd.includes("/") || cmd.includes("\\");
+  const parts = [isPath ? '"' + cmd + '"' : cmd];
+  for (const a of args) parts.push(/\s/.test(a) || a === "" ? '"' + a + '"' : a);
+  const r = spawnSync(parts.join(" "), { encoding: "utf8", shell: true, ...opts });
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
 }
 
@@ -278,15 +298,15 @@ async function main() {
 
     // ================= A. CLI on the installed artifact =================
     console.log("\n== A. CLI ==");
-    const v = sh("\"" + ansBin + "\"", ["--version"], { cwd: prefix });
+    const v = sh(ansBin, ["--version"], { cwd: prefix });
     check(v.code === 0, "installed ans --version exits 0", v.out);
     check(/\d+\.\d+\.\d+/.test(v.out) && !/\b0\.0\.0\b/.test(v.out), "version is a real release version", v.out);
 
-    const doctor = sh("\"" + ansBin + "\"", ["doctor"], { cwd: prefix });
+    const doctor = sh(ansBin, ["doctor"], { cwd: prefix });
     check(doctor.code === 0, "installed ans doctor exits 0", doctor.out);
     check(/vector arm/.test(doctor.out), "doctor reports the vector arm status", doctor.out.slice(-400));
 
-    const noScope = sh("\"" + ansBin + "\"", ["consolidate"], { cwd: prefix });
+    const noScope = sh(ansBin, ["consolidate"], { cwd: prefix });
     check(noScope.code === 2, "consolidate with no scope exits 2 instead of consolidating everything", noScope.out);
     check(/explicit scope is required/.test(noScope.out), "the no-scope refusal says what is missing", noScope.out);
 
@@ -515,13 +535,22 @@ async function main() {
       // looks like a database written by an earlier release. Stripping tables the
       // product shipped later is the closest honest stand-in for an old file: no
       // invented rows, no rewritten history.
-      const warm = sh("\"" + ansBin + "\"", ["consolidate", "--session", "warm-session"], {
+      //
+      // `consolidate` is the opener because it opens the DURABLE store at
+      // ANS_DB_PATH. `doctor`'s store check runs in memory, so it would report
+      // green while writing no schema file at all — the wrong probe for this
+      // lane. The exit code must be 0: the stub endpoint is up and the scope has
+      // no materials, so a non-zero code is a real failure, not "LLM absent".
+      const warm = sh(ansBin, ["consolidate", "--session", "warm-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
-      check(warm.code === 0 || warm.code === 1, "a fresh database opens through the installed CLI", warm.out.slice(0, 300));
+      check(warm.code === 0, "a fresh database opens through the installed CLI (consolidate exits 0)", warm.out.slice(0, 400));
+      check(/scanned \d+ cluster/.test(warm.out), "the fresh-database run reports what it scanned", warm.out.slice(0, 300));
 
-      const later = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts"];
+      // The add-on tables a later release introduced. Dropping them makes this
+      // file look like one an earlier version wrote.
+      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts"];
       let before = null;
       {
         const db = new Database(legacyPath);
@@ -529,7 +558,7 @@ async function main() {
           db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run("older-session", "probe");
           db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source) VALUES (?,?,?,?,?)")
             .run("older-session", "https://older.example/x", "OLDER-ROW-TITLE", "OLDER-ROW-SNIPPET orphanword", "exa");
-          for (const t of later) db.exec("DROP TABLE IF EXISTS " + t);
+          for (const t of laterTables) db.exec("DROP TABLE IF EXISTS " + t);
           before = {
             tables: db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c,
             messages: db.prepare("SELECT count(*) c FROM messages").get().c,
@@ -539,12 +568,12 @@ async function main() {
       }
       check(before.rows >= 1, "the older database carries a row before migration", JSON.stringify(before));
 
-      const open1 = sh("\"" + ansBin + "\"", ["consolidate", "--session", "older-session"], {
+      const open1 = sh(ansBin, ["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
       check(open1.code === 0, "the older database opens and migrates (first open)", open1.out.slice(0, 400));
-      const open2 = sh("\"" + ansBin + "\"", ["consolidate", "--session", "older-session"], {
+      const open2 = sh(ansBin, ["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
@@ -559,7 +588,7 @@ async function main() {
           tables: db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c,
           rows: db.prepare("SELECT count(*) c FROM retrieval_results").get().c,
         };
-        restored = later.map((t) => [t, db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name=?").get(t).c > 0]);
+        restored = laterTables.map((t) => [t, db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name=?").get(t).c > 0]);
         keptRow = db.prepare("SELECT title, snippet FROM retrieval_results WHERE url = ?").get("https://older.example/x");
       } finally { db.close(); }
       check(after.tables > before.tables, "the migration restored the newer tables", JSON.stringify({ before: before.tables, after: after.tables }));
