@@ -243,14 +243,22 @@ export function stripInjectedBlocks(
 }
 
 /**
- * Remove whole block strings this caller can name exactly, from the END only.
+ * Remove whole block strings this caller can name exactly.
  *
- * Injection APPENDS its blocks and never replaces the user's text, so a genuine
- * block always sits at the end of the turn. Removing a named block from anywhere
- * in the message was wrong: a user who quotes the session's own summary back
- * ("you said: <the summary> — is that still right?") lost their question, and the
- * plan still called itself complete. That is the same mistake the shape pass was
- * fixed for, so both passes now obey one rule.
+ * A named block is removed WHEREVER it sits, because the name IS the evidence: the
+ * caller read the session's own anchors, so this exact string is injection output
+ * and not something the user typed. Position cannot be the rule here — a tool-call
+ * loop re-injects Stage-1 onto a turn that already carries a summary block, so a
+ * summary block is NOT always last. An earlier version removed only a trailing
+ * run and left a named `[Session Memory]` block in the task records whenever a RAG
+ * block came after it (#286 review).
+ *
+ * What still protects the user's own words:
+ *
+ * - the match is the WHOLE block string, not a tag prefix, so a sentence that
+ *   merely mentions the tag never matches;
+ * - a quoted block keeps the user's question, because only the block itself is
+ *   cut — the text around it stays, including the "is that still right?" after it.
  *
  * Longest first, for the same reason the kernel does it: two summaries can share a
  * prefix, and removing the short one first would cut that prefix out of the longer
@@ -258,25 +266,22 @@ export function stripInjectedBlocks(
  *
  * @param text - The turn text.
  * @param known - Exact block strings that are injection output.
- * @returns The text without any trailing run of those blocks.
+ * @returns The text without any of those blocks.
  */
 function removeExactBlocks(text: string, known: Iterable<string>): string {
-  let out = text.trimEnd();
+  let out = text;
   const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
-  // Repeat while the TAIL is one of the named blocks: injection joins blocks with
-  // a blank line, so the last one is followed by nothing.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const block of ordered) {
-      if (out.endsWith(block)) {
-        out = out.slice(0, out.length - block.length);
-        // Drop the separator that belonged to that block, not the user's text.
-        if (out.endsWith(BLANK_LINE)) out = out.slice(0, out.length - BLANK_LINE.length);
-        changed = true;
-        break;
-      }
+  for (const block of ordered) {
+    // With the separator injection writes before a block, so removing both leaves
+    // no run of blank lines behind.
+    const withSeparator = BLANK_LINE + block;
+    let at = out.indexOf(withSeparator);
+    while (at >= 0) {
+      out = out.slice(0, at) + out.slice(at + withSeparator.length);
+      at = out.indexOf(withSeparator);
     }
+    // A block at the very start of the turn has no separator before it.
+    if (out.startsWith(block)) out = out.slice(block.length);
   }
   return out;
 }
@@ -454,14 +459,21 @@ function isInjectedBlock(block: string, blockCount: number, provenanceMode: bool
       const hits = lines.slice(1).filter((l) => l.trim().length > 0);
       return hits.length > 0 && hits.every((l) => RAG_HIT_LINE.test(l));
     }
-    // No header. In the provenance-holding path this is NOT a block: a caller that
-    // read the session's anchors can name every real block, so an unheaded
-    // single-line tag with text after it is a person writing about the tag.
+    // No header: the legacy `note` adapter writes `TAG + " " + note`, and a person
+    // writes "TAG is the tag I mean, keep going". The two are byte-identical, so
+    // this cannot be settled by shape.
+    //
+    // Resolution, and why it goes this way: the ticket's acceptance item 3 says a
+    // sentence the user wrote that contains a tag must be kept verbatim, and the
+    // plan path is the one where the user's words become a task requirement. A
+    // legacy note block that is NOT last (the only case the shape pass sees here)
+    // is therefore kept, and the cost is a leftover operator line. The reverse
+    // trade deletes part of a user's instruction, which is the failure the whole
+    // ticket exists to prevent.
+    //
+    // Covered by R19/R20. When a caller passes NO provenance (bare
+    // `stripInjectedBlocks`), the long-standing fallback below still removes it.
     if (provenanceMode) return false;
-    // Fallback path: the legacy single-line `note` form is accepted, with the same
-    // long-line bias as the summary tags. A note block is operator text the caller
-    // has to read either way, and this is the only signal available without
-    // provenance.
     if (lines.length > 1) return false;
     return body.length >= 20 || blockCount > 1;
   }
