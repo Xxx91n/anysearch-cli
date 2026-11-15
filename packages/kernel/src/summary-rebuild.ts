@@ -23,6 +23,8 @@ import type {
   SummaryRebuildWriteResult,
 } from "./ports";
 import type { SummaryRebuildReport } from "./runtime";
+// #286: the store owns the injection cap; see the re-export below.
+import { SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store";
 
 /**
  * The rebuild prompt.
@@ -110,18 +112,20 @@ function replacedSection(plan: SummaryRebuildPlanShape): string {
  * not evidence, so the model cannot promote it to a current fact.
  */
 /**
- * How much of a summary `inject` actually renders.
+ * The injection caps are owned by the store (#286).
  *
- * Design: the constant is defined in the STORE and re-exported here so kernel
- * callers keep one import. The store owns it because the store must rebuild the
- * same block string from the anchor payload to remove it by exact match (#286);
- * two numbers would mean the strings never match and the removal silently
+ * Design: `SUMMARY_INJECT_MAX_CHARS` lives in the STORE and is re-exported here so
+ * existing kernel imports keep working. The store owns it because the store must
+ * rebuild the same block string from the anchor payload to remove it by exact
+ * match; two numbers would mean the strings never match and the removal silently
  * degrades to guessing by tag shape. Rejected alternative: re-exporting straight
  * from `@anysearch-cli/store` at every kernel call site — more import churn for the
  * same single source of truth.
+ *
+ * The import itself sits at the top with the others; this line only re-exports.
  */
-import { SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store";
 export { SUMMARY_INJECT_MAX_CHARS };
+
 /** How much of the suspended summary's own text the prompt carries. */
 export const PREVIOUS_SUMMARY_PROMPT_MAX_CHARS = 4000;
 

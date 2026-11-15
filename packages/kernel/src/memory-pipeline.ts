@@ -631,14 +631,23 @@ const PREFS_CLOSE_TAG = "</user_preferences>";
 // The separator inject() puts before each injected block (a blank line). Named
 // once so the write side and the strip side cannot disagree about it.
 const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
-// #263: how much of each summary body injection renders. Named constants because
-// three places must agree: the render itself, the provenance key used to strip a
-// stale block, and the WRITE side that decides which recall hits count as
-// sources. When they drift the write side records a hit whose text no prompt
-// ever carried, and a later correction then suspends a recall block that never
-// used it.
-// #286: both caps and the block renderer live in the STORE now (imported at the
-// top). Design: one renderer shared by both packages — injection and the store's
+/**
+ * How many appended block strings this runtime keeps for exact-match removal.
+ *
+ * Design: a fixed ceiling, because a Stage-1 RAG block changes whenever the
+ * recalled rows change — an unbounded set would grow for the whole session. Twelve
+ * covers every turn a caller realistically hands back; past that, the store's
+ * shape pass is the conservative fallback. Rejected alternative: keying by block
+ * KIND instead of by string — a kind cannot distinguish a still-current RAG block
+ * from the one it replaced, and removing by kind would delete the live injection.
+ */
+const INJECTED_BLOCK_MEMORY = 12;
+// #263 kept the two render caps here so the render, the provenance key and the
+// recall-source write side could not drift apart. #286: both caps AND the block
+// renderer now live in the STORE (imported at the top), because the store must
+// rebuild the very same block string to strip it by exact match.
+//
+// Design: one renderer shared by both packages — injection and the store's
 // exact-string strip must produce byte-identical text, and the pre-#286 copies had
 // already drifted (kernel coerced a non-string body with String(...), the store
 // skipped it), so a payload could render on one side and never match on the
@@ -859,9 +868,9 @@ export class MemoryPipeline {
   // rebuild prompt as if the user had said it. Recording the exact strings here
   // hands the store provenance instead of a guess.
   //
-  // Bounded by the same reasoning as `injectedSummaryBlocks`: a session appends a
-  // handful of distinct blocks per run, and Stage-1 content changes every turn, so
-  // the set is capped to the most recent few.
+  // Unlike `injectedSummaryBlocks` (a handful of distinct summaries per session),
+  // Stage-1 content changes every turn, so this set IS capped: see
+  // `rememberInjectedBlock`, which drops the oldest past INJECTED_BLOCK_MEMORY.
   private readonly injectedBlocks = new Set<string>();
 
   // Usage of the pipeline's own summary requests, kept apart from the main run
@@ -1768,8 +1777,7 @@ export class MemoryPipeline {
   private rememberInjectedBlock(block: string): void {
     if (!block) return;
     this.injectedBlocks.add(block);
-    const LIMIT = 12;
-    while (this.injectedBlocks.size > LIMIT) {
+    while (this.injectedBlocks.size > INJECTED_BLOCK_MEMORY) {
       const oldest = this.injectedBlocks.values().next();
       if (oldest.done) break;
       this.injectedBlocks.delete(oldest.value);
