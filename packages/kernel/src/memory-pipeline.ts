@@ -47,9 +47,11 @@ import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-// #286: the two render caps are owned by the store, because the rebuild path
-// rebuilds the very same block strings to strip them by exact match.
-import { isTimeSensitive, isEvergreen, RECALL_INJECT_MAX_CHARS, SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store"; // no inline regex copies
+// #286: the block renderer and its two caps are owned by the store, because the
+// rebuild path rebuilds the very same block strings to strip them by exact match.
+import {
+  isTimeSensitive, isEvergreen, renderSummaryBlock, RECALL_INJECT_MAX_CHARS, SUMMARY_INJECT_MAX_CHARS,
+} from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
@@ -320,12 +322,12 @@ export function injectedSummaryAnchorIds(messages: any[], anchors: Array<{ id: n
   for (const anchor of anchors ?? []) {
     if (anchor?.anchorType !== "rolling_summary" && anchor?.anchorType !== "l2_recall") continue;
     const payload = anchor.payload as any;
-    // Same truncation as injection, so the compared string IS the injected one.
-    const body = anchor.anchorType === "rolling_summary" ? payload?.summary : payload?.hits;
-    if (typeof body !== "string" || body.length === 0) continue;
-    const block = anchor.anchorType === "rolling_summary"
-      ? SESSION_MEMORY_TAG + " " + body.slice(0, SUMMARY_INJECT_MAX_CHARS)
-      : RESEARCH_RECALL_TAG + " " + body.slice(0, RECALL_INJECT_MAX_CHARS);
+    // Same renderer as injection, so the compared string IS the injected one.
+    const block = renderSummaryBlock(
+      anchor.anchorType,
+      anchor.anchorType === "rolling_summary" ? payload?.summary : payload?.hits,
+    );
+    if (block.length === 0) continue;
     const marker = BLANK_LINE_BEFORE_BLOCK + block;
     if (texts.some((t) => carriesBlock(t, marker))) out.push(anchor.id);
   }
@@ -635,9 +637,14 @@ const BLANK_LINE_BEFORE_BLOCK = String.fromCharCode(10, 10);
 // sources. When they drift the write side records a hit whose text no prompt
 // ever carried, and a later correction then suspends a recall block that never
 // used it.
-// #286: both caps live in the STORE now (imported at the top), because the
-// rebuild path rebuilds the block string from the anchor payload to strip it by
-// exact match. One number on both sides is what makes that match possible.
+// #286: both caps and the block renderer live in the STORE now (imported at the
+// top). Design: one renderer shared by both packages — injection and the store's
+// exact-string strip must produce byte-identical text, and the pre-#286 copies had
+// already drifted (kernel coerced a non-string body with String(...), the store
+// skipped it), so a payload could render on one side and never match on the
+// other. Rejected alternative: passing the caps through the plan call — every
+// caller would have to remember, and the one that forgot reintroduced the silent
+// mismatch.
 
 /**
  * Remove previously injected summary blocks from one message.
@@ -1170,10 +1177,10 @@ export class MemoryPipeline {
       for (const anchor of anchors) {
         const payload = anchor.payload as any;
         if (anchor.anchorType === "rolling_summary" && payload?.summary) {
-          knownBlocks.add(SESSION_MEMORY_TAG + " " + String(payload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS));
+          knownBlocks.add(renderSummaryBlock("rolling_summary", payload.summary));
         }
         if (anchor.anchorType === "l2_recall" && payload?.hits) {
-          knownBlocks.add(RESEARCH_RECALL_TAG + " " + String(payload.hits).slice(0, RECALL_INJECT_MAX_CHARS));
+          knownBlocks.add(renderSummaryBlock("l2_recall", payload.hits));
         }
       }
       for (const block of this.injectedSummaryBlocks) knownBlocks.add(block);
@@ -1303,7 +1310,7 @@ export class MemoryPipeline {
       }
       const summaryPayload = summaryAnchor?.payload as any;
       if (!summarySuspended && summaryPayload?.summary) {
-        const block = SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, SUMMARY_INJECT_MAX_CHARS);
+        const block = renderSummaryBlock("rolling_summary", summaryPayload.summary);
         injections.push(block);
         this.injectedSummaryBlocks.add(block);
       }
@@ -1311,7 +1318,7 @@ export class MemoryPipeline {
       if (!recallSuspended && recallPayload?.hits) {
         // The l2_recall payload stores an already-truncated snippet, so the
         // rendered block is the same string every turn — a stable provenance key.
-        const block = RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, RECALL_INJECT_MAX_CHARS);
+        const block = renderSummaryBlock("l2_recall", recallPayload.hits);
         injections.push(block);
         this.injectedSummaryBlocks.add(block);
       }

@@ -112,11 +112,13 @@ function replacedSection(plan: SummaryRebuildPlanShape): string {
 /**
  * How much of a summary `inject` actually renders.
  *
- * Defined in the STORE, because both sides must agree to the character: the
- * injection renders exactly this much, and the store rebuilds the same string
- * from the anchor payload to strip the block by exact match (#286). Two numbers
- * would mean the strings never match and the removal silently degrades to
- * guessing by tag shape. Re-exported here so kernel callers keep one import.
+ * Design: the constant is defined in the STORE and re-exported here so kernel
+ * callers keep one import. The store owns it because the store must rebuild the
+ * same block string from the anchor payload to remove it by exact match (#286);
+ * two numbers would mean the strings never match and the removal silently
+ * degrades to guessing by tag shape. Rejected alternative: re-exporting straight
+ * from `@anysearch-cli/store` at every kernel call site — more import churn for the
+ * same single source of truth.
  */
 import { SUMMARY_INJECT_MAX_CHARS } from "@anysearch-cli/store";
 export { SUMMARY_INJECT_MAX_CHARS };

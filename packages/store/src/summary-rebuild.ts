@@ -68,17 +68,49 @@ const BLANK_LINE = String.fromCharCode(10, 10);
 /**
  * How much of a summary / recall body injection renders (#286).
  *
- * Defined HERE, not in the kernel, because both sides must agree exactly: the
- * kernel renders the block it appends, and this module has to rebuild the SAME
- * string from the anchor payload to remove it. A longer or shorter number on
- * either side means the two strings never match, the exact removal finds
- * nothing, and the summary silently falls back to tag-shape guessing — which is
- * the failure this ticket is about. The kernel imports these two from here.
+ * Design: the caps live in the STORE, not the kernel — the kernel renders the
+ * block it appends and this module rebuilds the SAME string from the anchor
+ * payload to remove it. A different number on either side means the two strings
+ * never match, the exact removal finds nothing, and the summary silently falls
+ * back to guessing by tag shape, which is the failure #286 is about. Rejected
+ * alternative: keeping the numbers in kernel and passing them into the store via
+ * the plan call — it works, but every caller would have to remember to pass them,
+ * and the one that forgot would reintroduce the silent mismatch.
  */
 export const SUMMARY_INJECT_MAX_CHARS = 4000;
 
 /** How much of an l2_recall body injection renders. */
 export const RECALL_INJECT_MAX_CHARS = 1500;
+
+/**
+ * Render one summary / recall block exactly as injection appends it.
+ *
+ * Design: this function is the single place that knows the block's string shape.
+ * The kernel renders every injected summary/recall block through it and this
+ * module builds the same string back from the anchor payload to strip it. Before
+ * #286 the shape was spelled out at six call sites (kernels' Stage-2 append, its
+ * provenance keys, its `injectedSummaryAnchorIds`, and this module's strip path),
+ * and the copies had already drifted: this one skipped a non-string body while the
+ * kernel coerced it with `String(...)`, so a numeric payload rendered in one place
+ * and never matched in the other. Rejected alternative: exporting one array of
+ * block descriptors — more machinery for the same guarantee, and the caller would
+ * still have to pick the right entry.
+ *
+ * @param anchorType - `rolling_summary` or `l2_recall`.
+ * @param body - The anchor's text (a summary, or the recall snippet).
+ * @returns The block string, truncated exactly as injection truncates it.
+ */
+export function renderSummaryBlock(anchorType: "rolling_summary" | "l2_recall", body: unknown): string {
+  // One coercion rule for both sides: injection writes `String(payload.x)`, so the
+  // strip path must read the same value the same way. `null`/`undefined` render as
+  // nothing and the caller skips the block.
+  if (body === null || body === undefined) return "";
+  const text = String(body);
+  if (text.length === 0) return "";
+  return anchorType === "rolling_summary"
+    ? SESSION_MEMORY_TAG + " " + text.slice(0, SUMMARY_INJECT_MAX_CHARS)
+    : RESEARCH_RECALL_TAG + " " + text.slice(0, RECALL_INJECT_MAX_CHARS);
+}
 
 /**
  * Header markers that only injection writes, never a person.
@@ -156,7 +188,7 @@ export interface SummaryRebuildPlan {
  *
  * Two passes, in this order:
  *
- * 1. Blocks named EXACTLY by `known` are removed by string match. This is the
+ * 1. Blocks named EXACTLY by `provenBlocks` are removed by string match. This is the
  *    provenance pass: a caller (or this module, from the session's own anchors)
  *    can say "this is the block I wrote", and shape stops mattering — a summary
  *    body with blank lines in it comes out whole.
@@ -168,16 +200,16 @@ export interface SummaryRebuildPlan {
  * not mistaken for a block.
  *
  * @param text - One stored or live user turn.
- * @param known - Exact block strings this caller can prove it wrote.
+ * @param provenBlocks - Exact block strings this caller can prove it wrote.
  * @returns The turn's own text, without injected blocks.
  */
-export function stripInjectedBlocks(text: string, known?: Iterable<string>): string {
+export function stripInjectedBlocks(text: string, provenBlocks?: Iterable<string>): string {
   let body = text;
   if (body.startsWith(PREFS_OPEN_TAG)) {
     const end = body.indexOf(PREFS_CLOSE_TAG);
     if (end >= 0) body = body.slice(end + PREFS_CLOSE_TAG.length);
   }
-  if (known) body = removeExactBlocks(body, known);
+  if (provenBlocks) body = removeExactBlocks(body, provenBlocks);
   // Only a TRAILING run of injected blocks is removed.
   //
   // Injection appends its blocks after the user's text and leaves nothing after
@@ -192,27 +224,40 @@ export function stripInjectedBlocks(text: string, known?: Iterable<string>): str
 }
 
 /**
- * Remove whole block strings this caller can name exactly.
+ * Remove whole block strings this caller can name exactly, from the END only.
  *
- * Longest first, for the same reason the kernel does it: two summaries can share
- * a prefix, and removing the short one first would cut that prefix out of the
- * longer one so it could never match.
+ * Injection APPENDS its blocks and never replaces the user's text, so a genuine
+ * block always sits at the end of the turn. Removing a named block from anywhere
+ * in the message was wrong: a user who quotes the session's own summary back
+ * ("you said: <the summary> — is that still right?") lost their question, and the
+ * plan still called itself complete. That is the same mistake the shape pass was
+ * fixed for, so both passes now obey one rule.
+ *
+ * Longest first, for the same reason the kernel does it: two summaries can share a
+ * prefix, and removing the short one first would cut that prefix out of the longer
+ * one so it could never match.
  *
  * @param text - The turn text.
  * @param known - Exact block strings that are injection output.
- * @returns The text without those blocks.
+ * @returns The text without any trailing run of those blocks.
  */
 function removeExactBlocks(text: string, known: Iterable<string>): string {
-  let out = text;
+  let out = text.trimEnd();
   const ordered = [...known].filter((b) => b.length > 0).sort((a, b) => b.length - a.length);
-  for (const block of ordered) {
-    const withSeparator = BLANK_LINE + block;
-    let at = out.indexOf(withSeparator);
-    while (at >= 0) {
-      out = out.slice(0, at) + out.slice(at + withSeparator.length);
-      at = out.indexOf(withSeparator);
+  // Repeat while the TAIL is one of the named blocks: injection joins blocks with
+  // a blank line, so the last one is followed by nothing.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const block of ordered) {
+      if (out.endsWith(block)) {
+        out = out.slice(0, out.length - block.length);
+        // Drop the separator that belonged to that block, not the user's text.
+        if (out.endsWith(BLANK_LINE)) out = out.slice(0, out.length - BLANK_LINE.length);
+        changed = true;
+        break;
+      }
     }
-    if (out.startsWith(block)) out = out.slice(block.length);
   }
   return out;
 }
@@ -246,13 +291,9 @@ function sessionSummaryBlocks(db: Database.Database, sessionId: string): string[
     } catch {
       continue;
     }
-    const body = row.anchorType === "l2_recall" ? payload?.hits : payload?.summary;
-    if (typeof body !== "string" || body.length === 0) continue;
-    out.push(
-      row.anchorType === "l2_recall"
-        ? RESEARCH_RECALL_TAG + " " + body.slice(0, RECALL_INJECT_MAX_CHARS)
-        : SESSION_MEMORY_TAG + " " + body.slice(0, SUMMARY_INJECT_MAX_CHARS),
-    );
+    const anchorType = row.anchorType === "l2_recall" ? "l2_recall" : "rolling_summary";
+    const block = renderSummaryBlock(anchorType, anchorType === "l2_recall" ? payload?.hits : payload?.summary);
+    if (block.length > 0) out.push(block);
   }
   return out;
 }
@@ -284,8 +325,15 @@ function trailingInjectionStart(body: string): number {
   return -1;
 }
 
-/** Index of the next block boundary (`\n\n` + a known tag) at or after `from`. */
-function nextBlockStart(tail: string, from: number): number {
+/**
+ * Index of the separator that ends the current block, or -1 when it runs to the end.
+ *
+ * Named for what it returns: the position of the blank line before the NEXT block,
+ * so callers add `BLANK_LINE.length` to reach that block's tag. (It used to be
+ * called `nextBlockStart`, which claimed to return a block start and made every
+ * caller's `+ BLANK_LINE.length` look like an off-by-one.)
+ */
+function nextBlockSeparator(tail: string, from: number): number {
   let best = -1;
   for (const tag of INJECTED_BLOCK_TAGS) {
     const at = tail.indexOf(BLANK_LINE + tag, from);
@@ -312,7 +360,7 @@ function isInjectedRun(tail: string): boolean {
     const tag = INJECTED_BLOCK_TAGS.find((candidate) => tail.startsWith(candidate, pos));
     if (!tag) return false;
     starts.push(pos);
-    const next = nextBlockStart(tail, pos + tag.length);
+    const next = nextBlockSeparator(tail, pos + tag.length);
     if (next < 0) {
       break;
     }
@@ -330,6 +378,15 @@ function isInjectedRun(tail: string): boolean {
 
 /** Field labels the recovery digest writes, one per line after its header. */
 const DIGEST_FIELD_LABELS = ["state: ", "last search: query=", "providers: ", "unique: "] as const;
+
+/**
+ * One recalled-hit line, exactly as the `fts` adapter renders it.
+ *
+ * `formatBlock` writes `- [role] content` for every hit (see kernel's
+ * rag-adapter). Requiring the bracketed role keeps the recognition honest: a user
+ * who writes a plain "- something" bullet after quoting a block is not a hit.
+ */
+const RAG_HIT_LINE = /^- \[[^\]]*\] /;
 
 /**
  * Is this one block written by injection, or could it be the user's own text?
@@ -366,8 +423,12 @@ function isInjectedBlock(block: string, blockCount: number): boolean {
   if (tag === "[RAG Context]") {
     if (first.includes(RAG_ADAPTER_HEADER)) {
       // Provider-shaped header: every following non-empty line is a hit bullet.
+      // A hit bullet is "- [role] content", not any line starting with "- ": a user
+      // who pastes an injected block and then adds their own "- and I still need
+      // the weekend schedule" would otherwise have that sentence swallowed as a
+      // hit. Requiring the bracket is what the producer actually writes.
       const hits = lines.slice(1).filter((l) => l.trim().length > 0);
-      return hits.length > 0 && hits.every((l) => l.startsWith("- "));
+      return hits.length > 0 && hits.every((l) => RAG_HIT_LINE.test(l));
     }
     if (lines.length > 1) return false;
     return body.length >= 20 || blockCount > 1;
@@ -560,14 +621,28 @@ export function readStoredMessageText(content: unknown): string {
  *   its own (a new session inherits no other session's task).
  */
 export function collectTaskRecords(db: Database.Database, sessionId: string): RebuildTaskRecord[] {
+  return collectTaskRecordsWithKnown(db, sessionId, sessionSummaryBlocks(db, sessionId));
+}
+
+/**
+ * The same collection, with the session's block list supplied by the caller.
+ *
+ * `planSummaryRebuild` needs the identical list for the live turn, so passing it in
+ * keeps one query for both halves instead of reading the anchors twice per plan.
+ *
+ * @param db - Store connection.
+ * @param sessionId - Session whose user turns to collect.
+ * @param known - Exact block strings that count as injection output.
+ * @returns Records in message order.
+ */
+function collectTaskRecordsWithKnown(
+  db: Database.Database,
+  sessionId: string,
+  known: string[],
+): RebuildTaskRecord[] {
   const rows = db
     .prepare("SELECT id, content, created_at AS createdAt FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id")
     .all(sessionId) as Array<{ id: number; content: string; createdAt: string }>;
-  // #286: the session's own summary/recall blocks are known exactly, so a body
-  // with blank lines in it is removed whole instead of being left in the task
-  // section as if the user had written it. A stored turn only ever carries THIS
-  // session's blocks, so the session's own anchors are the right provenance.
-  const known = sessionSummaryBlocks(db, sessionId);
   const out: RebuildTaskRecord[] = [];
   for (const row of rows) {
     const text = stripInjectedBlocks(readStoredMessageText(row.content), known);
@@ -686,7 +761,12 @@ export function planSummaryRebuild(
 
   // Task requirements: the user's own turns, oldest first. The first turn is the
   // original request; later turns are the explicit changes the user asked for.
-  const allRecords = collectTaskRecords(db, req.sessionId);
+  //
+  // One read of the session's own blocks serves both halves: the stored turns and
+  // the live turn must be stripped by the same provenance, and asking twice per
+  // plan was a needless second query.
+  const knownBlocks = sessionSummaryBlocks(db, req.sessionId);
+  const allRecords = collectTaskRecordsWithKnown(db, req.sessionId, knownBlocks);
   // The live turn goes LAST: it is the newest instruction, and a later explicit
   // change must win over an earlier one in a reader's mind.
   //
@@ -694,7 +774,7 @@ export function planSummaryRebuild(
   // and the live one carry no shared id, so dropping either could drop the real
   // change. The budget below is what bounds the list.
   const liveTurn = typeof req.currentUserTurn === "string"
-    ? stripInjectedBlocks(req.currentUserTurn, sessionSummaryBlocks(db, req.sessionId))
+    ? stripInjectedBlocks(req.currentUserTurn, knownBlocks)
     : "";
   if (liveTurn.length > 0) {
     allRecords.push({ messageId: 0, text: liveTurn, createdAt: "" });

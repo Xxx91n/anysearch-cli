@@ -18,7 +18,7 @@
 // Run: pnpm --filter @anysearch-cli/mcp run test
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -297,6 +297,16 @@ function domainDir(root: string, ragAdapter: "none" | "fts" = "none"): string {
 let endpointUrl = "";
 const roots: string[] = [];
 
+// Where the local embedding model lives, if this host has it at all.
+//
+// M5 is the only case that needs a real `fts` recall, and that recall's vector arm
+// loads the model. Its FTS arm does not — so the test still proves what it claims
+// without the model — but the arm is consulted on every recall, and with an empty
+// cache it tries to download one. Honour ANYSEARCH_MODEL_CACHE when the operator
+// set it; otherwise look in the default location.
+const MODEL_CACHE_DIR = process.env.ANYSEARCH_MODEL_CACHE ?? join(homedir(), ".anysearch", "models");
+const MODEL_CACHE_AVAILABLE = existsSync(join(MODEL_CACHE_DIR, "Xenova"));
+
 function makeRoot(name: string): string {
   const root = mkdtempSync(join(tmpdir(), "ans-264-mcp-" + name + "-"));
   roots.push(root);
@@ -304,18 +314,12 @@ function makeRoot(name: string): string {
 }
 
 function makeEnv(root: string, ragAdapter: "none" | "fts" = "none"): Record<string, string> {
-  return {
+  const env: Record<string, string> = {
     ANS_DB_PATH: join(root, "anysearch.db"),
     ANS_PI_SESSION_DIR: join(root, "pi"),
     ANS_DOMAINS_DIR: domainDir(root, ragAdapter),
     USERPROFILE: root,
     HOME: root,
-    // The `fts` case reaches Stage-1's vector arm, which loads the local embedding
-    // model. HOME points at a temp dir (so nothing touches the real profile), which
-    // would leave the model cache empty and make the arm download it — a 60s stall
-    // in this environment that has nothing to do with the behaviour under test.
-    // Point the cache at the real one and the run stays a few seconds.
-    ANYSEARCH_MODEL_CACHE: join(homedir(), ".anysearch", "models"),
     ANS_DOMAIN: "rebuild-probe",
     ANS_LLM_PROVIDER: "openai",
     ANS_LLM_MODEL: "probe-model",
@@ -324,6 +328,17 @@ function makeEnv(root: string, ragAdapter: "none" | "fts" = "none"): Record<stri
     ANS_LLM_API_KEY: "rebuild-test-key-not-real",
     ANS_LLM_CONTEXT_WINDOW: "100000",
   };
+  // The `fts` case reaches Stage-1's vector arm, which loads the local embedding
+  // model. HOME points at a temp dir (so nothing touches the real profile), which
+  // would leave the cache empty and make the arm DOWNLOAD the model — a 60s stall
+  // in this environment that has nothing to do with the behaviour under test.
+  //
+  // Point the cache at whatever the host already has. When there is none (a clean
+  // CI runner caches pnpm only, not this model) the M5 case is skipped LOUDLY by
+  // the caller instead of quietly passing, because a test that needs a network
+  // download to run is not a test that ran.
+  if (MODEL_CACHE_AVAILABLE) env.ANYSEARCH_MODEL_CACHE = MODEL_CACHE_DIR;
+  return env;
 }
 
 async function waitForRebuildRequest(timeoutMs = 20_000): Promise<ProviderRequest | undefined> {
@@ -468,7 +483,20 @@ endpointUrl = "http://127.0.0.1:" + addr.port + "/v1";
 // provenance pass disabled. The kernel half is pinned separately in
 // packages/kernel/test/summary-rebuild-injection.test.ts (K17), which reads the
 // exact string the pipeline hands the plan and fails when that pass is off.
-{
+//
+// Why it may not run: the `fts` adapter consults its vector arm on every recall,
+// and that arm loads a local embedding model. With no model on the host it tries
+// to download one, which turns a correctness test into a network test. When the
+// cache is absent this case is SKIPPED LOUDLY (a line on stderr, not a silent
+// pass); the store-level R18 case and the kernel-level K17 case pin the same
+// behaviour without needing the model at all.
+if (!MODEL_CACHE_AVAILABLE) {
+  console.error(
+    "[summary-rebuild-mcp] SKIP M5: no local embedding model under " + MODEL_CACHE_DIR +
+    " — the fts RAG case needs one to run without a download. " +
+    "The same behaviour is covered by R18 (store) and K17 (kernel).",
+  );
+} else {
   const root = makeRoot("rag");
   const sessionId = "mcp-rag-" + Date.now().toString(36);
   const dbPath = join(root, "anysearch.db");
