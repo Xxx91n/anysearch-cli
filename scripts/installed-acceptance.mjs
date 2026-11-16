@@ -133,6 +133,39 @@ function latestUserMarker(body) {
   return undefined;
 }
 
+/**
+ * 从最近一次发给模型的请求里，读那条 search 工具结果：搜到几条、哪些源失败了。
+ *
+ * 为什么要读这里而不是直接查库：库里有没有行，可能是"搜到 0 条所以没写"，也
+ * 可能是"搜到了却没写"。前者是外部的事，后者才是产品的问题。工具结果里同时
+ * 带着 results 和 providersFailed，能把这两种分开。
+ */
+function lastToolResultResults() {
+  for (let i = requestLog.length - 1; i >= 0; i--) {
+    let messages = [];
+    try { messages = JSON.parse(requestLog[i].body)?.messages ?? []; } catch { continue; }
+    for (let j = messages.length - 1; j >= 0; j--) {
+      const m = messages[j];
+      if (!m || m.role !== "tool") continue;
+      let payload = null;
+      const raw = typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
+          : "";
+      try { payload = JSON.parse(raw); } catch { continue; }
+      // 检索结果可能裹在信封里，尽量往里找一找。
+      const body = payload?.results ? payload : (payload?.content?.results ? payload.content : null);
+      if (!body) continue;
+      return {
+        count: Array.isArray(body.results) ? body.results.length : 0,
+        failed: Array.isArray(body.metadata?.providersFailed) ? body.metadata.providersFailed : [],
+      };
+    }
+  }
+  return { count: 0, failed: [] };
+}
+
 // ---------- 小 MCP 客户端：一行一条 JSON-RPC，走 stdio ----------
 function mcpClient(bin, env, tag) {
   const child = spawn(process.execPath, [bin, "--transport", "stdio"], { env, stdio: ["pipe", "pipe", "pipe"] });
@@ -586,12 +619,25 @@ async function main() {
       const toolCalls = asked.result?.structuredContent?.toolCalls ?? {};
       check((toolCalls.search ?? 0) >= 1, "模型那次搜索工具调用真的执行了", JSON.stringify(toolCalls));
 
+      // 这次搜索到底搜到东西没有，从发给模型的请求里读那条工具结果。
+      // 搜到 0 条是外部的事（额度、当天索引、网络），搜到了却没写进库才是产品
+      // 的问题。两种要分开判，否则外部抖一下就把整条车道染红。
+      const searched = lastToolResultResults();
       const ingestDb = new Database(ingestEnv.ANS_DB_PATH, { readonly: true });
       let rows = [];
       try {
         rows = ingestDb.prepare("SELECT session_id, url, title, snippet FROM retrieval_results ORDER BY id DESC LIMIT 20").all();
       } finally { ingestDb.close(); }
-      check(rows.length > 0, "内部搜索往库里写了 " + rows.length + " 行", JSON.stringify(rows.slice(0, 2)));
+
+      if (searched.count === 0) {
+        skip("内部搜索入库 + 跨会话召回", "搜索源这次回了 0 条" +
+          (searched.failed.length ? "（失败的源：" + searched.failed.join(",") + "）" : "") +
+          "，没东西可入库");
+      } else {
+        check(rows.length > 0,
+          "内部搜索往库里写了 " + rows.length + " 行（搜索源回了 " + searched.count + " 条）",
+          JSON.stringify(rows.slice(0, 2)));
+      }
 
       // 召回那条严格档要求查询里的词全中，所以挑一个长一点的词。
       //
@@ -599,14 +645,14 @@ async function main() {
       // 前 600 字（RAG_HIT_MAX_CHARS）。从 600 之后挑词，库里能命中但返回的
       // 文本里没有它，于是明明召回对了也会被判失败。
       const ADAPTER_HIT_CHARS = 600;
-      const token = rows
+      const token = searched.count === 0 ? undefined : rows
         .map((r) => (String(r.snippet ?? "")
           .replace(/\s+/g, " ").trim().slice(0, ADAPTER_HIT_CHARS)
           .toLowerCase().match(/[a-z0-9]{7,}/g) ?? [])[0])
         .find(Boolean);
-      if (!token) {
+      if (searched.count > 0 && !token) {
         skip("跨会话召回", "库里没有哪行带着足够长的词，严格档匹配不上");
-      } else {
+      } else if (token) {
         const reader = mcpClient(mcpBin, { ...ingestEnv, ANS_DOMAIN: "recall" }, "recall");
         clients.push(reader);
         await reader.ready();
