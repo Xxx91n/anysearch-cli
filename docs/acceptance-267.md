@@ -72,13 +72,22 @@ These rows exist so nobody reads this page as a full green board.
 
 - **The standard gates ran in remote CI and passed; they were not run locally.**
   The window's instruction was remote-only, so `pnpm -r check`, `pnpm -r test`,
-  `pnpm -r build`, the offline memory eval and `ship-gate` were proved by the
-  PR's CI run, not by this machine. Every check on PR #291 reported `pass`:
-  `check-build` (ubuntu, windows), `install-smoke` (ubuntu, windows),
-  `ship-gate` (ubuntu, macos, windows), `memory-eval`, `test:online`,
-  `coverage`, `native smoke` (4 legs) and `semgrep`. The lane itself printed
-  `71 passed, 0 failed, 0 skipped` inside `install-smoke` on both ubuntu and
-  windows.
+  `pnpm -r build`, the offline memory eval and `ship-gate` were proved by CI,
+  not by this machine.
+
+  The result below is pinned to one commit, because a gate list is a snapshot
+  and reading it against a later head is how a still-running check gets written
+  down as green. **Commit `ede9b72b`** (PR #291): all 18 check-runs report
+  `success` — `check-build` (ubuntu, windows), `install-smoke` (ubuntu,
+  windows), `ship-gate` (ubuntu, macos, windows), `memory-eval`, `test:online`,
+  `test:online anysearch` (non-blocking), `coverage`, `native smoke` (4 legs),
+  `macos-spillover-probe` (non-blocking) and `semgrep`. The lane printed
+  `76 passed, 0 failed, 0 skipped` inside `install-smoke` on both ubuntu
+  (job 133083813486) and windows (job 133083813692).
+
+  A later head is a different snapshot: this paragraph is correct for
+  `ede9b72b` and says nothing about commits after it.
+
   Local runs in this window were narrower: `node --check` on the new script,
   `node scripts/check-workflows.mjs` (8 files, exit 0), `git diff --check`
   (exit 0), and the lane against the main CI artifacts.

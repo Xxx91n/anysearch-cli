@@ -23,7 +23,7 @@
 
 - 这条车道的模型是本地假端点，证明的是接线、请求形状、记忆入库和记账路径；不证明真实模型的判断力、真实账单金额或真实缓存命中率。
 - 那条"旧库"是拿当前产品建的库删掉后加的表，不是真从旧版本发布包里存下来的生产库；没有碰 r19 或任何正式实验数据。
-- **标准门禁在远端 CI 跑过、全绿；本地没跑**（本窗按要求不编译）。PR #291 上 `check-build`（两平台）、`install-smoke`（两平台）、`ship-gate`（三平台）、`memory-eval`、`test:online`、`coverage`、`native smoke`（四腿）、`semgrep` 全部 `pass`；新车道在 ubuntu 和 windows 的 `install-smoke` 里都打出 `76 passed, 0 failed, 0 skipped`。
+- **标准门禁在远端 CI 跑过、全绿；本地没跑**（本窗按要求不编译）。结果钉在 PR #291 的 `ede9b72b` 这一次提交上：18 个 check-run 全部 `success`（`check-build` 两平台、`install-smoke` 两平台、`ship-gate` 三平台、`memory-eval`、`test:online`、`coverage`、`native smoke` 四腿、`semgrep`，另有两个非阻塞项）。新车道在 ubuntu（job 133083813486）和 windows（job 133083813692）的 `install-smoke` 里都打出 `76 passed, 0 failed, 0 skipped`。之后的新提交是另一份快照，这段只对 `ede9b72b` 成立。
 - 逐项对照（D1—D14 / T1—T6 哪些真跑过、哪些沿用旧结果、哪些没跑）见 `docs/acceptance-267.md`。那份表把"没跑"直接写成没跑，不拿"审查已运行"当"审查通过"。
 
 ## Unreleased — #259: 搜索资料入库，跨会话能召回
