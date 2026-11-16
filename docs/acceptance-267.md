@@ -25,7 +25,7 @@ therefore observed on the same product code that main ships.
 | D1 full PI 1.5.1 + ESM, real entry | Installed CLI/MCP run through the real SDK entry, versions pinned | Installed `ans 0.1.2` and the installed `@anysearch-cli/mcp` both start and answer (lanes A and B), which is only possible through the real ESM/SDK entry. The 1.5.1 pin is a literal in `packages/kernel`, `apps/cli` and `apps/mcp` `package.json` and in `pnpm-lock.yaml`; no gate asserts that number — ship-gate's version-pin step checks the workspace packages at `0.1.2` only. | Entry covered; the 1.5.1 pin is read, not asserted by any gate |
 | D2 real context window, two summary kinds | Declared window used for run/budget/compaction; bad config fails loudly; not a blanket 1M | Manual probe on the installed build: `ANS_LLM_CONTEXT_WINDOW=1048000` produced `window=1048000`; `1e3` exited 3 with "must be a positive integer token count". The lane asserts a window is reported and > 0, but does **not** set 1048000, so D2's target value is still proved by hand only. | Covered by a manual probe, not by CI |
 | D3 memory wiring | Internal search results land in the archive and are recallable by other sessions | Lane E on the installed MCP: the stub makes the model call `search`, the archive gains rows, and a second session recalls one through `query_knowledge`. Regression suite: `packages/kernel/test/memory-archive-recall.test.ts`. | Covered (lane E skips without a provider key) |
-| D4 cache/usage/budget accounting | Calls and tokens split per activity; four cost states; searches counted separately | Lane B checks run usage + a named cost source; lane D checks consolidation usage and its call count; both the run and the consolidation must label an unpriced endpoint as `estimated`/`unknown` (never `provider-reported`) and must name the missing cost dimension. `packages/kernel/test/consolidation-usage.test.ts`, `packages/store/test/budget-ledger.test.ts`. Not covered here: per-activity split (main / compaction / summary / adjudication / merge) as an automated assertion on the installed build. | Partial |
+| D4 cache/usage/budget accounting | Calls and tokens split per activity; four cost states; searches counted separately | Lane B checks run usage + a named cost source; lane D checks consolidation usage and its call count; both the run and the consolidation must label an unpriced endpoint as `estimated`/`unknown` (never `provider-reported`) and must name the missing cost dimension. `packages/kernel/test/consolidation-usage.test.ts`, `packages/store/test/budget-ledger.test.ts`. **Not covered:** the per-activity split (main run / compaction / memory summary / consolidation / re-judge / extra merge) as separate asserted counters on the installed build. The stub can trigger the main run, the consolidation call and the compaction/adjudication prompts, but the lane asserts only the run's and the consolidation's totals — it does not read a per-activity breakdown, because the installed result shape does not expose one. Also unreachable from a stub: the `provider-reported` and `not-called` cost labels. | Uncovered — per-activity split and two of the four cost labels |
 | D5 explicit consolidation + scope | No scope = refuse; memoryIds is a complete scope; dryRun saves nothing | Lane D on the installed MCP and lane A on the installed CLI (exit 2). `apps/cli/test/consolidate-scope.test.ts`, `packages/store/test/scoped-consolidate.test.ts`. | Covered |
 | D6 single-evidence correction + doubts | One material may correct existing knowledge only; refusals return evidence | Not exercised by the new lane (it uses the batch path). Coverage: `packages/store/test/single-evidence-correction.test.ts`, and the real-model run `packages/kernel/test/correction-a1-a4.online.ts` (A1, A4 accept; A2, A3 refuse). | Covered by existing tests; not re-run here |
 | D7 relationship + final content check | Both checks run; no fixed 0.85, no bypass | Existing tests only: `packages/store/test/concurrent-correction.test.ts`, `packages/kernel/test/consolidation-correction-seams.test.ts`. The new lane does not touch this path. | Not re-run here |
@@ -64,6 +64,7 @@ T-entry table so a reader cannot mistake "covered by an older unit test" for
 | Summary dependency + task requirement | No | `summary-rebuild.test.ts`, `summary-sources.test.ts`, `summary-rebuild-mcp.test.ts` | Unrun here — unit tests only |
 | Legacy summary handling | No | `legacy-summary.test.ts`, `summary-rebuild-mcp.test.ts` (A—D) | Unrun here — unit tests only |
 | Long task / crash recovery | No | `session-lock-recovery.test.ts` C1—C3 (#266) | Unrun here — recorded prior run |
+| Cancel / budget refusal / tool whitelist / URL policy | No | `apps/mcp/test/ans-chat-cancellation.test.ts`, `cancellation.test.ts`, `vertical-guard.test.ts`, `packages/kernel/test/content-trust.test.ts` | Unrun here — unit tests only |
 | Cost accounting (four labels) | Partly | Lane B checks the run's `costSource === "estimated"`; lane D checks consolidation's `costBasis === "unknown"`, both with a zero placeholder and a named missing dimension | Two of four labels asserted; `provider-reported` and `not-called` are not reachable from a stub |
 
 ## Part 3 — What is not proved
@@ -77,16 +78,18 @@ These rows exist so nobody reads this page as a full green board.
 
   The result below is pinned to one commit, because a gate list is a snapshot
   and reading it against a later head is how a still-running check gets written
-  down as green. **Commit `ede9b72b`** (PR #291): all 18 check-runs report
+  down as green. **Commit `6772393e`** (PR #291, current head): all 18 check-runs report
   `success` — `check-build` (ubuntu, windows), `install-smoke` (ubuntu,
   windows), `ship-gate` (ubuntu, macos, windows), `memory-eval`, `test:online`,
   `test:online anysearch` (non-blocking), `coverage`, `native smoke` (4 legs),
   `macos-spillover-probe` (non-blocking) and `semgrep`. The lane printed
   `76 passed, 0 failed, 0 skipped` inside `install-smoke` on both ubuntu
-  (job 133083813486) and windows (job 133083813692).
+  and windows legs of that run (`install-smoke` ubuntu + windows: `pass`).
 
   A later head is a different snapshot: this paragraph is correct for
-  `ede9b72b` and says nothing about commits after it.
+  `6772393e` and says nothing about commits after it. The same claim was
+  checked on `ede9b72b` (all 18 green) and on the five earlier heads of this
+  branch; each was green on its own run.
 
   Local runs in this window were narrower: `node --check` on the new script,
   `node scripts/check-workflows.mjs` (8 files, exit 0), `git diff --check`
