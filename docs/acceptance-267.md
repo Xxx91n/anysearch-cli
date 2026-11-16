@@ -46,21 +46,42 @@ therefore observed on the same product code that main ships.
 | T3 multi-process + durable state | Two MCP processes, same-session serial / cross-session parallel, long-task protection, post-kill recovery, cold start | Lane C2 covers concurrent cold start on one new database. Long-task protection and post-SIGKILL recovery were covered by #266 (`session-lock-recovery.test.ts` C1—C3) and are not repeated here. | Partial |
 | T4 consolidation interfaces + controlled answers | Stable trigger of version races, B2 conflict, re-merge, merge failure, unsupported final content | `packages/store/test/concurrent-correction.test.ts`, `consolidate-race-processes.test.ts`, `scoped-consolidate.test.ts`, `single-evidence-correction.test.ts`. Not part of the installed lane. | Covered by unit tests |
 | T5 real model with confirmed inputs | Real model judgement on confirmed samples, with model/params/cost recorded | `packages/kernel/test/correction-a1-a4.online.ts` (excluded from the default suite; run explicitly). Result recorded on PR #273: A1—A4 single runs passed, no accuracy claim — and the same PR records one real fluctuation where A1 hit `merge-empty` on a second run. The B2 real-model retry branch stayed uncovered. This ticket did not re-run it. | Not re-run; historical result stands |
-| T6 packaging, install, standard checks, data compatibility | `pnpm -r check`, `pnpm -r test`, `pnpm -r build`, offline memory eval, ship-gate, plus real pack → install → start → call; old data readable; migration repeatable | The new lane covers pack → install → start → call on the installed CLI and MCP (chat, resume, cold start, consolidate, recall, older database). The five standard gates have **no result** yet: this branch was never pushed, so no CI run exists, and the window's instruction was remote-only. | Partial — the install half is proved, the gate half is not run |
+| T6 packaging, install, standard checks, data compatibility | `pnpm -r check`, `pnpm -r test`, `pnpm -r build`, offline memory eval, ship-gate, plus real pack → install → start → call; old data readable; migration repeatable | The new lane covers pack → install → start → call on the installed CLI and MCP (chat, resume, cold start, consolidate, recall, older database). The five standard gates ran in remote CI on PR #291 and all reported `pass` (`check-build`, `install-smoke`, `ship-gate` ×3 OS, `memory-eval`, `test:online`). | Covered remotely; not run on this machine |
+
+## Part 2b — The seven behaviours the ticket names, one row each
+
+CodeRabbit's pre-merge check asked for each of these to be either asserted or
+explicitly marked unrun/unknown. This table is that marking, kept apart from the
+T-entry table so a reader cannot mistake "covered by an older unit test" for
+"checked on the installed build in this ticket".
+
+| Path | Asserted in this lane? | Where it is covered | Status |
+|---|---|---|---|
+| Ingest + shared recall | Yes | Lane E on the installed MCP (needs a provider key) | Asserted here |
+| Scope isolation | Yes | Lane A (CLI exit 2) and lane D (MCP tool error, echoed scope) | Asserted here |
+| Reliable correction + keeping valid facts | No | `single-evidence-correction.test.ts`, `knowledge-fts.test.ts` | Unrun here — unit tests only |
+| Concurrent latest merge | No | `concurrent-correction.test.ts`, `consolidate-race-processes.test.ts` | Unrun here — unit tests only |
+| Summary dependency + task requirement | No | `summary-rebuild.test.ts`, `summary-sources.test.ts`, `summary-rebuild-mcp.test.ts` | Unrun here — unit tests only |
+| Legacy summary handling | No | `legacy-summary.test.ts`, `summary-rebuild-mcp.test.ts` (A—D) | Unrun here — unit tests only |
+| Long task / crash recovery | No | `session-lock-recovery.test.ts` C1—C3 (#266) | Unrun here — recorded prior run |
+| Cost accounting (four labels) | Partly | Lane B checks the run's `costSource === "estimated"`; lane D checks consolidation's `costBasis === "unknown"`, both with a zero placeholder and a named missing dimension | Two of four labels asserted; `provider-reported` and `not-called` are not reachable from a stub |
 
 ## Part 3 — What is not proved
 
 These rows exist so nobody reads this page as a full green board.
 
-- **The standard gates have not run anywhere yet.** The user's instruction for
-  this window was to use remote CI and not compile locally, and this branch has
-  no remote run: it was never pushed. So `pnpm -r check`, `pnpm -r test`,
-  `pnpm -r build`, the offline memory eval and `ship-gate` have **no result at
-  all** — not local, not remote. The local runs that do exist are
-  `node --check` on the new script, `node scripts/check-workflows.mjs` (8 files,
-  exit 0), `git diff --check` (exit 0), and the lane itself against the main
-  CI artifacts (68 checks, 0 failed, 0 skipped). Until the gates run green,
-  this ticket is not verified regardless of the lane passing.
+- **The standard gates ran in remote CI and passed; they were not run locally.**
+  The window's instruction was remote-only, so `pnpm -r check`, `pnpm -r test`,
+  `pnpm -r build`, the offline memory eval and `ship-gate` were proved by the
+  PR's CI run, not by this machine. Every check on PR #291 reported `pass`:
+  `check-build` (ubuntu, windows), `install-smoke` (ubuntu, windows),
+  `ship-gate` (ubuntu, macos, windows), `memory-eval`, `test:online`,
+  `coverage`, `native smoke` (4 legs) and `semgrep`. The lane itself printed
+  `71 passed, 0 failed, 0 skipped` inside `install-smoke` on both ubuntu and
+  windows.
+  Local runs in this window were narrower: `node --check` on the new script,
+  `node scripts/check-workflows.mjs` (8 files, exit 0), `git diff --check`
+  (exit 0), and the lane against the main CI artifacts.
 - **The lane's model is a stub.** It proves transport, request shape, memory
   wiring and the accounting path. It proves nothing about a real model's
   judgement, a real bill, or a real cache hit rate.

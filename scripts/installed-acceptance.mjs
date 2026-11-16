@@ -409,10 +409,15 @@ async function main() {
     // price, so the honest label is "estimated"/"unknown" — never "provider".
     // Asserting the actual value keeps a later regression toward
     // "provider-reported" visible instead of merely "a string was present".
-    check(usage1?.costSource === "estimated" || usage1?.costSource === "unknown",
-      "an unpriced stub endpoint does not report a provider-sent cost", JSON.stringify(usage1?.costSource));
-    check(Array.isArray(usage1?.missing) && usage1.missing.some((m) => /cost/.test(m)),
-      "the missing cost dimension is named, not rendered as free", JSON.stringify(usage1?.missing));
+    // The exact label, not a list of acceptable ones. This stub sends no price,
+    // so pi-ai fills the figure from its own rate card: "estimated". A run that
+    // ever started claiming "provider" (a server-sent bill) has changed behaviour
+    // and must be caught here, not read as "a string was present".
+    check(usage1?.costSource === "estimated",
+      "the run labels its cost as a rate-card estimate, not a server-sent price", JSON.stringify(usage1?.costSource));
+    check(usage1?.costUsd === 0, "the run's cost figure is the estimator's zero, not a bill", JSON.stringify(usage1?.costUsd));
+    check(Array.isArray(usage1?.missing) && usage1.missing.some((m) => m === "cost (estimated)"),
+      "the run names the estimated cost gap instead of rendering it as free", JSON.stringify(usage1?.missing));
     const ctx1 = turn1.result?.structuredContent?.context;
     check(!!ctx1 && typeof ctx1.window === "number" && ctx1.window > 0, "turn 1 reports the context window it used", JSON.stringify(ctx1));
 
@@ -544,8 +549,15 @@ async function main() {
     check(!!applyCall.result?.structuredContent?.usage, "consolidate reports its own model usage", JSON.stringify(applyCall.result?.structuredContent?.usage));
     const usageApply = applyCall.result?.structuredContent?.usage;
     check(usageApply?.calls >= 1, "consolidate counted the model call it made", JSON.stringify(usageApply));
-    check(typeof usageApply?.costBasis === "string" && usageApply.costBasis !== "provider-reported",
-      "an unpriced endpoint is not reported as a server-sent price", JSON.stringify(usageApply));
+    // Consolidation answers differently from the run, and for a real reason: its
+    // seams read the session's price table, a custom endpoint declares none, so
+    // the honest label is "unknown" rather than the run's rate-card "estimated".
+    // Asserting each surface's own value is what makes a swap between them fail.
+    check(usageApply?.costBasis === "unknown",
+      "consolidation labels an unpriced endpoint as unknown, not as a server-sent price", JSON.stringify(usageApply?.costBasis));
+    check(usageApply?.costUsd === 0, "consolidation's unknown cost is a placeholder, not a zero bill", JSON.stringify(usageApply?.costUsd));
+    check(Array.isArray(usageApply?.missing) && usageApply.missing.some((m) => /consolidation cost/.test(m)),
+      "consolidation names the unknown cost dimension", JSON.stringify(usageApply?.missing));
     {
       const db = new Database(baseEnv.ANS_DB_PATH, { readonly: true });
       try {
