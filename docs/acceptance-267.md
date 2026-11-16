@@ -23,7 +23,7 @@
 | D9 摘要来源 + 任务要求 | 摘要记下读过什么；受影响的先停、再按当前资料重建 | `summary-rebuild.test.ts`、`summary-sources.test.ts`、`summary-rebuild-mcp.test.ts`（#264 M1—M4）。 | 本窗没重跑 |
 | D10 旧摘要按需补来源 | 需要时才重建；找不到就标不完整，不许编 | `legacy-summary.test.ts`、`summary-rebuild-mcp.test.ts` 里的 A—D 旧格式用例、PR #290。 | 本窗没重跑 |
 | D11 并发：最多重判一次、按最新版合并 | 同会话排队、不同会话并行；最多重判一次；不许静默覆盖 | 重判次数和按最新版重合并看 `concurrent-correction.test.ts`（逐个用例断言调用次数）和 `consolidate-race-processes.test.ts`。同会话排队看 `session-lock-recovery.test.ts` 的 C1—C3（#266）——那三条测的是活任务不被抢、被杀后恢复、等待上限，**不是**重判次数。 | 本窗没重跑；真实模型的重试分支仍未覆盖 |
-| D12 会话锁、崩溃恢复、空库启动 | 活任务不许被抢；确认进程死了就尽快恢复；新库别随机丢进程 | 车道 C2：两个进程同时开一个全新库，各自都能出五个工具，库里每一层的代表表都在（`sessions`、`messages`、`retrieval_results`、`resume_anchors`、`budget_ledger`、`semantic_memories`、`summary_sources`、`summary_suspensions`、`legacy_summary_states`、`legacy_summary_attempts`、`entities`、`edges`）。另有 `session-lock.test.ts`、`coldstart-locks.test.ts`、`session-lock-recovery.test.ts`。 | 安装产物上验过 |
+| D12 会话锁、崩溃恢复、空库启动 | 活任务不许被抢；确认进程死了就尽快恢复；新库别随机丢进程 | 车道 C2：两个进程同时开一个全新库，各自都能出五个工具，库里每一层的代表表都在（`sessions`、`messages`、`retrieval_results`、`resume_anchors`、`budget_ledger`、`semantic_memories`、`summary_sources`、`summary_suspensions`、`legacy_summary_states`、`legacy_summary_attempts`、`entities`、`edges`）。另有 `session-lock.test.ts`、`coldstart-locks.test.ts`、`session-lock-recovery.test.ts`。 | 部分——C2 只验了"并发开新库"这一项；会话锁和崩溃恢复没在安装产物上重跑，只有 `session-lock-recovery.test.ts` 的记录 |
 | D13 数据结构、发布链、标准检查 | 迁移能重复跑；装出来的东西是真的；标准门禁照原样跑 | 车道 F：旧一点的库能打开、能迁移、原来的行还在、再开一次不报错，装好的 MCP 也能读它。标准门禁不在本机跑，看远端 CI（见第四节）。 | 部分——迁移验过，门禁在远端 |
 | D14 论文数据边界 | 不碰 r19 和正式实验数据 | 车道里每个库都建在临时目录、跑完删掉，每次调用都通过 `ANS_DB_PATH`、`USERPROFILE`、`HOME` 指进沙箱——`doctor` 会自己解析并创建库目录，不隔离就会碰到你自己的 `~/.anysearch`。本窗有一次手工探针（验 D2 那次）用了真实 HOME，但 `ANS_DB_PATH` 指到临时目录、搜索源是空的，没读写任何实验库。 | 守住了 |
 
@@ -61,9 +61,10 @@
 - **标准门禁没在本机跑，跑在远端 CI。** 这个窗口的要求是只走远端，所以 `pnpm -r check`、`pnpm -r test`、`pnpm -r build`、离线记忆评测、`ship-gate` 都是 CI 给的结论，不是这台机器。
   门禁列表是一张快照。拿它对着后来的提交读，就会把还在跑的东西写成绿的。所以这份文件写清"读过哪几次提交"，不写"这个 PR 绿了"；任何一次提交的真实状态，看 PR 的 checks 页。
   18 个检查是：`check-build`（两个系统）、`install-smoke`（两个系统）、`ship-gate`（三个系统）、`memory-eval`、`test:online`、`test:online anysearch`（非阻塞）、`coverage`、`native smoke`（四条腿）、`macos-spillover-probe`（非阻塞）、`semgrep`。
-  - `38abcdb5`、`224dc364`、`75fb18f9`、`ede9b72b`、`6772393e`、`b705b992`、`217ba781`、`5792f45d`、`<合并前的最后一次提交>`：各自那次跑，18 个全绿。
+  - `38abcdb5`、`224dc364`、`75fb18f9`、`ede9b72b`、`6772393e`、`b705b992`、`217ba781`、`5792f45d`：各自那次跑，18 个全绿。
+  - `da02d626`（最后一版）：17 项 CI 全绿；CodeRabbit 那次是 `skipped`（当月额度用完），不是通过也不是失败。
   - `dd600357`：17 绿，`ship-gate (windows-latest)` 第一次是红的（跟本票无关的 `coldstart-race` 超时，下面单独记）。定点重跑才绿。第一次的红留着，没抹。
-  新车道自己的结论：两条腿的 `install-smoke` 里都打出 `76 passed, 0 failed, 0 skipped`。
+  新车道自己的结论：两条腿的 `install-smoke` 里都打出「过了 76 项，挂了 0 项，跳了 0 项」。
   本机跑过的只有：`node --check`、`node scripts/check-workflows.mjs`（8 个文件，退出码 0）、`git diff --check`（退出码 0），以及拿 CI 产物跑这条车道。
 - **有一次门禁红跟本票无关，重跑才绿。** `dd600357` 上第一次 `ship-gate (windows-latest)` 挂在 `pnpm turbo run test`：`apps/mcp/test/coldstart-race.test.ts` 超时 71.8 秒（`duration_ms 84556`）。那个文件属于 #257（空库同时启动），这次 diff 里只有一个脚本、一个 CI 步骤和三份文档，没碰它。同分支另外四条腿都绿，定点重跑（`gh run rerun --failed`，run 43803814296）回来是 `success`。按"2 路并发 + Windows 慢盘下的时序抖动"记下来，**不**当成"这个测试健康"——超时是真的，没有断言失败，但它再红一次就该去看 #257 的时间预算了。
 - **车道的模型是假的。** 它证明传输、请求形状、记忆入库、记账路径。它不证明真实模型的判断力、真实账单、真实缓存命中率。
