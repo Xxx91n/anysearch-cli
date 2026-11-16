@@ -32,7 +32,7 @@
 //   - otherwise: point ANS_RECALL_MCP_DIST at an installed dist, e.g. the tarball
 //     downloaded from the CI artifact `tarballs-<os>`:
 //       gh run download <run-id> --name tarballs-ubuntu-latest
-//       npm install ./anysearch-cli-mcp-0.1.2.tgz    # in a throwaway prefix
+//       npm install ./anysearch-cli-mcp-0.2.0.tgz    # in a throwaway prefix
 //       ANS_RECALL_MCP_DIST=<prefix>/node_modules/@anysearch-cli/mcp/dist/index.js \
 //       ANS_RECALL_MCP_DOMAINS=<prefix>/node_modules/@anysearch-cli/mcp/domains \
 //       node scripts/recall-acceptance.mjs

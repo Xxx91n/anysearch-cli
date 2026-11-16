@@ -234,11 +234,11 @@ function stepStaticAssertions() {
     // due-chore: hard pin — every workspace package must be exactly the
     // release version (the release candidate), not merely "not 0.0.0".
     // Bump this pin in the same commit as the package version bump.
-    if (pkg.version !== "0.1.2") {
-      fail(`${rel}/package.json not pinned at 0.1.2 (got ${pkg.version}) — release pin`);
+    if (pkg.version !== "0.2.0") {
+      fail(`${rel}/package.json not pinned at 0.2.0 (got ${pkg.version}) — release pin`);
     }
   }
-  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.1.2`);
+  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.2.0`);
 
   // 1b. dual-era: kernel and retriever must both export
   const kernelExports = JSON.parse(fs.readFileSync(path.join(ROOT, "packages/kernel/package.json"), "utf8")
