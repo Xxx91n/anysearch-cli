@@ -314,10 +314,12 @@
   `@tavily/core` rethrows it as a plain `Error` with no status attached).
   `classifyProviderError` matches the body text (`exceeds your plan` /
   `usage limit` / `quota exceeded` / `insufficient credits` /
-  `out of credits`) and reports `quota-exhausted` instead of `unknown`. The
-  key is valid, so changing it or retrying does nothing; the account owner
-  must top up or upgrade. `rate limit` stays `transient`, and a 429/5xx body
-  that also says `usage limit` stays `transient` too (r19 T2). Pinned by
+  `out of credits`) and reports `quota-exhausted`. Before this, the real
+  SDK rethrow (no status) landed in `unknown`, and a copy that still carried
+  an HTTP 4xx status landed in `permanent-protocol`. The key is valid, so
+  changing it or retrying does nothing; the account owner must top up or
+  upgrade. `rate limit` stays `transient`, and a 429/5xx body that also says
+  `usage limit` stays `transient` too (r19 T2). Pinned by
   `packages/retriever/test/provider-error-class.test.ts`.
 - **Exa's result package always has `usage` set to `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()` is
