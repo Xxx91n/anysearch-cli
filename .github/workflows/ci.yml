@@ -116,6 +116,28 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
+      # #267 (T6): install-smoke above only drove CLI commands. This lane packs
+      # and installs its OWN copy of the same app packages, then proves that
+      # install can be used as a product: start the INSTALLED MCP server, run a
+      # real ans_chat turn and its resumed continuation against a local SSE stub,
+      # consolidate selected materials, check the internal search's rows are
+      # recallable by another session, and open an older database (migrate, keep
+      # rows, migrate again). It packs separately because install-smoke deletes
+      # its tarballs on exit; the artifact is the same source tree either way. A
+      # missing provider key prints SKIPPED for that one lane instead of a pass.
+      - name: installed acceptance lane (#267)
+        run: node scripts/installed-acceptance.mjs
+        env:
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+
+      # 解析器自测：不需要搜索 key，也不用装包，几秒跑完。
+      # 它喂一个 RetrievalContent 形状（results 藏在 snippet 的 JSON 里）给 E 车道
+      # 那个解析函数。真实搜索大多走裸 envelope，那条分支靠真跑碰不到，所以单独在
+      # 这里钉住；改坏了立刻红。
+      - name: acceptance parser self-test (#267)
+        run: node scripts/installed-acceptance.mjs --self-test-parser
+
   # round-59 audit R-2 / + r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage
   # with network access, so the anti-downgrade clause has automated support.

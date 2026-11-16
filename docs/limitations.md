@@ -137,6 +137,14 @@
   defect, not the F-16 family. Fixed by #121 (`working-directory:
   packages/store`). The promotion clock linked to it fired (PR #174) and was
   reversed by the first full-gate run. See the prune entry above.
+- **装了包能跑通，但没证明模型判断得好不好 (#267)** — `scripts/installed-acceptance.mjs`
+  跑的是真正 npm 装出来的产品：启动装好的 MCP、跑一轮 `ans_chat` 再续一轮、
+  整理选定的材料、查内部搜索写进去的行能不能被别的会话召回、打开一个旧库。
+  它的模型是本地假端点，验的是传输、请求形状、记忆接线和记账，不验真实模型
+  的判断、真实账单和缓存命中率。整理那几条验证分支还是靠受控检查器测试加上
+  真实模型 A1—A4 那一次，这条车道没增加真实模型证据。
+  说的那个"旧库"是当前版本建好、再把后加的表删掉做出来的，不是旧版本真存下的
+  文件；没有碰 r19，也没碰任何正式实验数据。
 - **Page-level assertions use page families, not exact pages** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants). So live golden entries assert
