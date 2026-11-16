@@ -30,6 +30,10 @@ const cases: Array<[string, string]> = [
   ["Error: Tavily API HTTP 432: quota exceeded for this billing period", "quota-exhausted"],
   ["Error: insufficient credits remaining on this account", "quota-exhausted"],
   ["Error: you are out of credits", "quota-exhausted"],
+  // Retryable shapes win over the quota word list: a throttle that also says
+  // "usage limit" is still transient, not an exhausted plan.
+  ["Error: HTTP 429 Too Many Requests: usage limit exceeded, retry after 30s", "transient"],
+  ["Error: HTTP 503 Service Unavailable: usage limit temporarily exceeded", "transient"],
   ["SessionExpiredError: AnySearch MCP tools/call HTTP 404 (session terminated)", "session-expired"],
   ["Error: AnySearch MCP tools/call malformed text (no '## Search Results' header)", "permanent-protocol"],
   ["Error: AnySearch MCP initialize malformed reply (no result object)", "permanent-protocol"],

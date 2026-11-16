@@ -294,10 +294,10 @@
   tool calls do. Failed replies throw before extraction, so no id is recorded
   for them. The id never enters query results and is never an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`**
-  — upstream answers quota-exhausted anonymous calls with an auto-provisioning
-  payload (HTTP 200, `isError:null`, no result body) instead of an error. The
-  provider names this `quota/auth nudge` → `permanent-auth`. The fix is on the
-  user side: set `ANYSEARCH_API_KEY`.
+  — upstream answers anonymous calls past their allowance with an
+  auto-provisioning payload (HTTP 200, `isError:null`, no result body) instead
+  of an error. The provider names this `quota/auth nudge` → `permanent-auth`.
+  The fix is on the user side: set `ANYSEARCH_API_KEY`.
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.
@@ -316,8 +316,9 @@
   `usage limit` / `quota exceeded` / `insufficient credits` /
   `out of credits`) and reports `quota-exhausted` instead of `unknown`. The
   key is valid, so changing it or retrying does nothing; the account owner
-  must top up or upgrade. `rate limit` deliberately stays `transient`
-  (r19 T2). Pinned by `packages/retriever/test/provider-error-class.test.ts`.
+  must top up or upgrade. `rate limit` stays `transient`, and a 429/5xx body
+  that also says `usage limit` stays `transient` too (r19 T2). Pinned by
+  `packages/retriever/test/provider-error-class.test.ts`.
 - **Exa's result package always has `usage` set to `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()` is
   unimplemented (the contract field is optional).

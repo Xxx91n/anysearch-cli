@@ -240,14 +240,15 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const t = String(errText);
   const http = (code: string) => t.includes("HTTP " + code);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  // #294: an exhausted plan arrives as a plain-text 4xx body from some SDKs
-  // (Tavily 432 "This request exceeds your plan's set usage limit", rethrown
-  // with no status attached). The key is valid, so this must not land in
-  // permanent-auth; retrying does nothing either. "rate limit" is left out on
-  // purpose — that stays transient (r19 T2).
-  if (/exceeds your plan|usage limit|quota exceeded|insufficient credits|out of credits/i.test(t)) return "quota-exhausted";
   if (http("401") || http("403") || t.includes("quota/auth nudge") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
+  // Design: an exhausted plan gets its own class, not permanent-auth — the key
+  // is valid, so rotating it or retrying does nothing; the account owner must
+  // top up. Checked after the retryable shapes so a 429/5xx that also says
+  // "usage limit" stays transient (r19 T2); "rate limit" alone never matches
+  // this list. Tavily's shape is a plain-text HTTP 432 body rethrown by
+  // @tavily/core with no status attached (#294).
+  if (/exceeds your plan|usage limit|quota exceeded|insufficient credits|out of credits/i.test(t)) return "quota-exhausted";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
   return "unknown";
