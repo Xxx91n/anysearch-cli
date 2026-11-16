@@ -78,8 +78,9 @@
 gh run download <run-id> --repo Xxx91n/anysearch-cli -n tarballs-windows-latest
 ANS_ACC_TARBALLS=<那个目录> node scripts/installed-acceptance.mjs
 
-# 在 CI 里，作为 install-smoke 的一步
+# 在 CI 里，作为 install-smoke 的两步
 node scripts/installed-acceptance.mjs
+node scripts/installed-acceptance.mjs --self-test-parser   # 不需要 key，几秒跑完
 
 # 把沙箱挪到指定目录（比如路径里带 & 的目录），验证脚本自己扛得住
 ANS_ACC_TMPDIR='C:\Temp\acc&test' node scripts/installed-acceptance.mjs

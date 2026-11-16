@@ -839,4 +839,58 @@ async function main() {
   process.exit(failed === 0 ? 0 : 1);
 }
 
+/**
+ * 用造出来的工具结果自测解析器，不需要真实搜索。
+ *
+ * 为什么要这个：E 车道靠 lastToolResultResults 判断"搜到几条"。它认三种形状，
+ * 其中 RetrievalContent（results 藏在 snippet 那段 JSON 里）是产品在门控没改写
+ * 时真正发出来的形状。只靠真实搜索去碰这个分支不行——真实请求大多数时候走的
+ * 是裸 envelope，那条分支一辈子可能都跑不到，错了也发现不了。
+ *
+ * 用法：node scripts/installed-acceptance.mjs --self-test-parser
+ * 退出码 0 = 四种输入都判对了。
+ */
+function selfTestParser() {
+  const bare = { results: [{ url: "a" }, { url: "b" }], metadata: { providersFailed: [] } };
+  const wrapped = { content: { results: [{ url: "a" }], metadata: { providersFailed: ["exa"] } } };
+  const tagged = {
+    schema: "anysearch://schemas/retrieval-content/1",
+    version: 1,
+    url: "search://envelope/x",
+    title: "q",
+    // 关键形状：外层是 RetrievalContent，真正的 results 在 snippet 的 JSON 里。
+    snippet: JSON.stringify(bare),
+    source: "engine",
+    label: { source: "retrieved", traceId: "search-x" },
+    disposal: "accepted",
+  };
+  const unknown = { something: "else" };
+
+  const cases = [
+    ["裸 envelope（未被包装）", bare, { parsed: true, count: 2, failed: [] }],
+    ["content.results 包装", wrapped, { parsed: true, count: 1, failed: ["exa"] }],
+    ["RetrievalContent：results 在 snippet 里", tagged, { parsed: true, count: 2, failed: [] }],
+    ["认不出的形状", unknown, { parsed: false, count: 0, failed: [] }],
+  ];
+
+  let bad = 0;
+  for (const [label, value, want] of cases) {
+    // 走真正的入口：把这段结果伪装成一次 requestLog 记录。
+    requestLog.push({ role: "chat", body: JSON.stringify({ messages: [{ role: "tool", content: JSON.stringify(value) }] }) });
+    const got = lastToolResultResults();
+    requestLog.pop();
+
+    const ok = got.parsed === want.parsed && got.count === want.count
+      && JSON.stringify(got.failed) === JSON.stringify(want.failed);
+    console.log((ok ? "[OK]   " : "[FAIL] ") + label + " → " + JSON.stringify(got));
+    if (!ok) bad++;
+  }
+  console.log(bad === 0 ? "\n解析器自测：4 个用例全对。" : "\n解析器自测：挂了 " + bad + " 个。");
+  return bad === 0 ? 0 : 1;
+}
+
+if (process.argv.includes("--self-test-parser")) {
+  process.exit(selfTestParser());
+}
+
 await main();
