@@ -76,20 +76,30 @@ These rows exist so nobody reads this page as a full green board.
   `pnpm -r build`, the offline memory eval and `ship-gate` were proved by CI,
   not by this machine.
 
-  The result below is pinned to one commit, because a gate list is a snapshot
-  and reading it against a later head is how a still-running check gets written
-  down as green. **Commit `6772393e`** (PR #291, current head): all 18 check-runs report
-  `success` — `check-build` (ubuntu, windows), `install-smoke` (ubuntu,
-  windows), `ship-gate` (ubuntu, macos, windows), `memory-eval`, `test:online`,
-  `test:online anysearch` (non-blocking), `coverage`, `native smoke` (4 legs),
-  `macos-spillover-probe` (non-blocking) and `semgrep`. The lane printed
-  `76 passed, 0 failed, 0 skipped` inside `install-smoke` on both ubuntu
-  and windows legs of that run (`install-smoke` ubuntu + windows: `pass`).
+  A gate list is a snapshot, and reading it against a later head is how a
+  still-running check gets written down as green. So this section names the
+  commits it actually read instead of saying "the PR is green", and the
+  authoritative answer for any head is the PR's checks tab, not this file.
 
-  A later head is a different snapshot: this paragraph is correct for
-  `6772393e` and says nothing about commits after it. The same claim was
-  checked on `ede9b72b` (all 18 green) and on the five earlier heads of this
-  branch; each was green on its own run.
+  The 18 check-runs are `check-build` (ubuntu, windows), `install-smoke`
+  (ubuntu, windows), `ship-gate` (ubuntu, macos, windows), `memory-eval`,
+  `test:online`, `test:online anysearch` (non-blocking), `coverage`,
+  `native smoke` (4 legs), `macos-spillover-probe` (non-blocking) and
+  `semgrep`.
+
+  - `38abcdb5`, `224dc364`, `75fb18f9`, `ede9b72b`, `6772393e`: all 18 green
+    on their own run.
+  - `dd600357`: 17 green, `ship-gate (windows-latest)` red on its first run
+    (unrelated `coldstart-race` timeout — see the entry below). After a
+    targeted rerun it was green, but the first red is recorded, not erased.
+
+  On the lane's own line: `install-smoke` printed
+  `76 passed, 0 failed, 0 skipped` on both the ubuntu and windows legs.
+
+  That list is what was read, not a prediction. A head newer than the last one
+  named here has not been checked by this section; read its own run. One of
+  those runs did go red and is recorded below rather than dropped from the
+  list.
 
   Local runs in this window were narrower: `node --check` on the new script,
   `node scripts/check-workflows.mjs` (8 files, exit 0), `git diff --check`
