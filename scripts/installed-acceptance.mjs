@@ -68,6 +68,9 @@ function skip(name, why) { skipped++; console.log("[SKIP] " + name + " — " + w
 //   - a consolidation     -> the fact text
 //   - anything else       -> a plain answer naming its own turn
 const FACT = "Acme online support runs weekdays 9:00-17:00.";
+// A fact only the out-of-scope material carries, so its absence from the
+// knowledge row is checkable.
+const OUTSIDE_FACT = "UNRELATEDPARKING policy applies to the Berlin office only.";
 const requestLog = [];
 
 function sseChunk(delta, finish, usage) {
@@ -506,8 +509,18 @@ async function main() {
     // dry-run below reads a real, non-empty scope. Called before the dry-run on
     // purpose: a preview over an empty session would pass whether or not it
     // wrote anything, which is the assertion that proves nothing.
+    // The out-of-scope rows live in the SAME session as the selected three, and
+    // carry a different entity and fact.
+    //
+    // There are THREE of them on purpose. One out-of-scope row proves nothing:
+    // the batch threshold will not build knowledge from a single material, so a
+    // session-scoped run would look identical to a list-scoped one. Three makes
+    // the two scopes drift apart — a widened run would add a second knowledge
+    // row — which is what the assertions below can actually catch. Verified by
+    // mutation: swapping memoryIds for sessionId turns them red.
     const seedSession = "acc267-seed";
     let seededIds = [];
+    let outsideIds = [];
     {
       const db = new Database(baseEnv.ANS_DB_PATH);
       try {
@@ -517,9 +530,15 @@ async function main() {
             .run(seedSession, "https://acme.example/hours-v" + i, "acme hours v" + i, FACT, "exa", "acme-hours");
           seededIds.push(Number(r.lastInsertRowid));
         }
+        for (let i = 1; i <= 3; i++) {
+          const r = db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?,?,?,?,?,?)")
+            .run(seedSession, "https://outside.example/untouched-v" + i, "outside material v" + i, OUTSIDE_FACT, "exa", "outside-entity");
+          outsideIds.push(Number(r.lastInsertRowid));
+        }
       } finally { db.close(); }
     }
     check(seededIds.length === 3, "seeded three materials for the apply lane", seededIds.join(","));
+    check(outsideIds.length === 3, "seeded three materials deliberately outside the scope (enough to pass the batch threshold)", outsideIds.join(","));
 
     const dry = await prober.rpc("tools/call", { name: "ans_chat", arguments: { operation: "consolidate", memoryIds: seededIds, dryRun: true } });
     check(dry.result?.isError !== true, "consolidate dry-run completes", textOf(dry).slice(0, 200));
@@ -565,6 +584,18 @@ async function main() {
         check(rows.length === 1, "the knowledge row is really in the database", JSON.stringify(rows));
         check(rows.length === 1 && rows[0].valid_until === null, "the written row is live", JSON.stringify(rows));
         check(rows.length === 1 && String(rows[0].content).includes("Acme"), "the written row carries the summarised fact", JSON.stringify(rows).slice(0, 200));
+
+        // Scope did not widen. Two independent signals, because either alone can
+        // pass for the wrong reason: no second knowledge row was built from the
+        // outside entity, and those rows are still live and un-superseded.
+        check(rows.length === 1, "no knowledge row was built from the out-of-scope entity", JSON.stringify(rows.map((r) => r.content).slice(0, 2)));
+        const outsideRows = db.prepare("SELECT id, valid_until, superseded_by FROM retrieval_results WHERE id IN (?,?,?)").all(...outsideIds);
+        check(outsideRows.length === 3 && outsideRows.every((r) => r.valid_until === null && r.superseded_by === null),
+          "the materials outside the scope were left alone", JSON.stringify(outsideRows));
+        const inScope = db.prepare("SELECT count(*) c FROM retrieval_results WHERE id IN (?,?,?) AND (valid_until IS NULL AND superseded_by IS NULL)").get(...seededIds).c;
+        check(inScope === 3, "the selected materials are still live after the run", "live=" + inScope);
+        check(!String(rows[0]?.content ?? "").includes("UNRELATEDPARKING"),
+          "the knowledge row does not contain the out-of-scope fact", String(rows[0]?.content ?? "").slice(0, 120));
       } finally { db.close(); }
     }
 
