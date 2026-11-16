@@ -221,12 +221,14 @@ export interface FusionProvenance {
 // carried by FusedEnvelope.metadata.providerErrorClasses so eval artifacts
 // record an error CATEGORY next to the flag, never the flag alone.
 // 5xx/429/rate-limit notice/network-level → transient; 401/403/invalid_api_key → permanent-auth;
+// exhausted plan text (the key is valid, retrying does not help) → quota-exhausted;
 // malformed/drifted reply shape → permanent-protocol; HTTP 404 on a
 // session-id'd request → session-expired (semi-permanent — the spec-MUST
 // re-initialize retry already fired once).
 export type ProviderErrorClass =
   | "transient"
   | "permanent-auth"
+  | "quota-exhausted"
   | "permanent-protocol"
   | "session-expired"
   | "unknown";
@@ -238,6 +240,12 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const t = String(errText);
   const http = (code: string) => t.includes("HTTP " + code);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
+  // #294: an exhausted plan arrives as a plain-text 4xx body from some SDKs
+  // (Tavily 432 "This request exceeds your plan's set usage limit", rethrown
+  // with no status attached). The key is valid, so this must not land in
+  // permanent-auth; retrying does nothing either. "rate limit" is left out on
+  // purpose — that stays transient (r19 T2).
+  if (/exceeds your plan|usage limit|quota exceeded|insufficient credits|out of credits/i.test(t)) return "quota-exhausted";
   if (http("401") || http("403") || t.includes("quota/auth nudge") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";

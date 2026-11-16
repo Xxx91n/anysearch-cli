@@ -307,6 +307,17 @@
 - **Tavily's result package always has `usage` set to `undefined`** — `@tavily/core` returns
   credits only per-call (`response.usage.credits`) and offers no standalone
   usage API, so `usage()` is unimplemented (the contract field is optional).
+- **An exhausted provider plan is its own error class (`quota-exhausted`)** —
+  some upstreams answer a used-up plan with a plain 4xx body instead of a
+  typed error (Tavily: HTTP 432,
+  `{"detail":{"error":"This request exceeds your plan's set usage limit…"}}`;
+  `@tavily/core` rethrows it as a plain `Error` with no status attached).
+  `classifyProviderError` matches the body text (`exceeds your plan` /
+  `usage limit` / `quota exceeded` / `insufficient credits` /
+  `out of credits`) and reports `quota-exhausted` instead of `unknown`. The
+  key is valid, so changing it or retrying does nothing; the account owner
+  must top up or upgrade. `rate limit` deliberately stays `transient`
+  (r19 T2). Pinned by `packages/retriever/test/provider-error-class.test.ts`.
 - **Exa's result package always has `usage` set to `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()` is
   unimplemented (the contract field is optional).
