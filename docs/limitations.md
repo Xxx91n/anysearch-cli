@@ -137,22 +137,14 @@
   defect, not the F-16 family. Fixed by #121 (`working-directory:
   packages/store`). The promotion clock linked to it fired (PR #174) and was
   reversed by the first full-gate run. See the prune entry above.
-- **The installed-artifact lane proves wiring, not model judgement (#267)**
-  — `scripts/installed-acceptance.mjs` runs the packed, npm-installed product:
-  it starts the installed MCP server, makes an `ans_chat` call and its resumed
-  continuation, consolidates selected materials, checks that an internal
-  search's rows are recallable from another session, and opens an older
-  database. Its model is a local OpenAI-compatible SSE stub. What that proves
-  is the transport, the request shape, the memory wiring and the accounting
-  path on the shipped bytes. What it does NOT prove: how a real model judges,
-  what a real provider bills, or a real cache hit rate. The consolidation
-  verification branches still rely on the controlled-checker tests plus the
-  real-model A1—A4 run; this lane adds no real-model evidence.
-  Its "older database" is made by taking a database the current build just
-  created and dropping the tables a later release added. That is an honest
-  stand-in for a file written by an earlier version, but it is not a captured
-  production database from an old release, and no r19 or real experiment data
-  is involved.
+- **装了包能跑通，但没证明模型判断得好不好 (#267)** — `scripts/installed-acceptance.mjs`
+  跑的是真正 npm 装出来的产品：启动装好的 MCP、跑一轮 `ans_chat` 再续一轮、
+  整理选定的材料、查内部搜索写进去的行能不能被别的会话召回、打开一个旧库。
+  它的模型是本地假端点，验的是传输、请求形状、记忆接线和记账，不验真实模型
+  的判断、真实账单和缓存命中率。整理那几条验证分支还是靠受控检查器测试加上
+  真实模型 A1—A4 那一次，这条车道没增加真实模型证据。
+  说的那个"旧库"是当前版本建好、再把后加的表删掉做出来的，不是旧版本真存下的
+  文件；没有碰 r19，也没碰任何正式实验数据。
 - **Page-level assertions use page families, not exact pages** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants). So live golden entries assert

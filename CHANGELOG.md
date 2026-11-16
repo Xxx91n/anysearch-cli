@@ -4,27 +4,38 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
-## Unreleased — #267: 发布包安装后真的能用（对话、续聊、整理、召回、旧库）
+## Unreleased — #267: 包装好以后真能用（对话、续聊、整理、召回、旧库）
 
 ### Added
 
-- `scripts/installed-acceptance.mjs`：拿**打好的 tarball 装出来的产品**跑一遍，不再只跑源码测试。它做七件事：①安装后的 `ans --version/doctor`、`consolidate` 无范围时报错退出 2；②启动安装后的 MCP，`initialize` + 五个工具都在；③用本地受控端点跑一轮真 `ans_chat`，再把返回的 `sessionId` 传回去续聊，并检查第二轮请求里确实带着第一轮的问题和回答（证明会话记录真的接上了）；④两个进程同时开同一个全新库，各自都能出五个工具，且每一层的代表表都在（不是数张数）；⑤按选定的材料跑整理：先 dry-run 并直接查库确认真的没写，再 apply 写一条知识行，并检查用量和费用口径；⑥真的调一次内部搜索，让另一个会话用 `query_knowledge` 把那条资料召回（需要至少一个搜索 key，没有就明写 SKIPPED）；⑦造一个"更旧的库"（把当前产品刚建好的库里后来才加的表删掉），验证它能打开、能迁移回来、原来的行没丢、再开一次也不报错，并且安装后的 MCP 也能读它。
-- 接进 `.github/workflows/ci.yml` 的 `install-smoke` job。它自己打一次包并安装（`install-smoke` 那份 tarball 退出时就删了），所以两处各打一次、装的是同一套 app 包。
-- `ANS_ACC_TARBALLS=<dir>`：直接装指定目录里的 tarball，不本地打包。用来在没有本地编译的情况下核对这条车道本身（CI 里不设这个变量，自己打包）。
-- `docs/acceptance-267.md`：本票要求的 D1—D14 / T1—T6 证据对照表。逐项写清哪条是这次真跑、哪条沿用前面票的结果、哪条没跑，以及为什么不能算通过。
+- `scripts/installed-acceptance.mjs`：拿打好的包装出来，再跑一遍。以前只有 `install-smoke` 管"包能装"，装出来的 MCP 从来没被启动过。这条车道查七件事：
+  - 装出来的 `ans --version` / `doctor` 正常，整理不带范围时退出码 2；
+  - 装出来的 MCP 能 `initialize`，五个工具都在；
+  - 真跑一轮 `ans_chat`，再把 `sessionId` 传回去续聊，查第二轮请求里是不是真带着第一轮的问答；
+  - 两个进程同时开一个全新库，各自都出五个工具，每一层的代表表都在；
+  - 按选定的材料整理：先 dry-run 并查库确认真没写，再 apply 写一条知识行；
+  - 真调一次内部搜索，让另一个会话用 `query_knowledge` 把那行捞回来；
+  - 造一个"旧一点的库"，验证能打开、能迁移、原来的行还在、再开一次不报错。
+- 接进 `.github/workflows/ci.yml` 的 `install-smoke` job。它自己打一次包，因为 `install-smoke` 那份包退出时就删了。
+- `ANS_ACC_TARBALLS=<目录>`：直接装那个目录里的包，不本地打包。没编译时用它核对脚本本身。
+- `docs/acceptance-267.md`：D1—D14 / T1—T6 逐条对照，写清哪条这次真跑了、哪条沿用旧结果、哪条没跑。
 
 ### Verification
 
-- 用 main 的 CI 产物（`51f3aec7` 那次 run 的 `tarballs-windows-latest`）本地真装过：`ans 0.1.2` 能启动，安装后的 MCP 能 `initialize`、能对话、能续聊、能整理、能召回；旧库能打开并迁移，原行仍在。
-- 新脚本用同一批 CI 产物跑：76 项断言全过，退出码 0，零跳过。
+- 用 main 的 CI 产物（`51f3aec7` 那次 run 的 `tarballs-windows-latest`）装了一遍：`ans 0.1.2` 能起，MCP 能初始化、能对话、能续聊、能整理、能召回，旧库能打开并迁移。
+- 新脚本对同一批产物跑：过了 76 项，挂了 0 项，跳了 0 项，退出码 0。
 - `node scripts/check-workflows.mjs`：8 个 workflow 全过，退出码 0。
+- 远端 CI 上 18 项检查全过（`check-build` 两系统、`install-smoke` 两系统、`ship-gate` 三系统、`memory-eval`、`test:online`、`coverage`、`native smoke` 四腿、`semgrep`）。两次具体过程：
+  - `dd600357` 第一次跑时 `ship-gate (windows-latest)` 红了一次，原因是无关的 `coldstart-race` 超时 71.8 秒（那个文件属于 #257），定点重跑后转绿；
+  - 其余几次提交各自那次都全绿。
 
-### Known limits (recorded, not hidden)
+### Known limits
 
-- 这条车道的模型是本地假端点，证明的是接线、请求形状、记忆入库和记账路径；不证明真实模型的判断力、真实账单金额或真实缓存命中率。
-- 那条"旧库"是拿当前产品建的库删掉后加的表，不是真从旧版本发布包里存下来的生产库；没有碰 r19 或任何正式实验数据。
-- **标准门禁在远端 CI 跑过、全绿；本地没跑**（本窗按要求不编译）。门禁列表是快照，所以这里写清读了哪几次提交，而不是笼统说"这个 PR 绿了"：`38abcdb5`、`224dc364`、`75fb18f9`、`ede9b72b`、`6772393e`、`b705b992`、`217ba781` 各自那次 run 的 18 个 check-run 全绿；`dd600357` 第一次跑时 `ship-gate (windows-latest)` 红在无关的 `coldstart-race` 超时，定向重跑后转绿——这个红如实记着，没抹掉。新车道在 ubuntu 和 windows 两条腿的 `install-smoke` 里都打出 `76 passed, 0 failed, 0 skipped`。任何时候以 PR 的 checks 页为准。
-- 逐项对照（D1—D14 / T1—T6 哪些真跑过、哪些沿用旧结果、哪些没跑）见 `docs/acceptance-267.md`。那份表把"没跑"直接写成没跑，不拿"审查已运行"当"审查通过"。
+- 车道的模型是本地假端点。它能证明接线、请求形状、入库、记账；证明不了真实模型判断得好不好、真实账单多少、真实缓存命中多少。
+- "旧库"是当前版本建好再把后加的表删掉，不是旧版本真存下来的文件。它证明迁移语句能重复跑、行不会丢；证明不了旧版本写出来的每种数据形状都能读。
+- 标准门禁跑在远端 CI，本机没跑（这个窗口要求不本地编译）。
+- 按活动拆分的用量（主运行/压缩/摘要/整理/重判/额外合并）没有断言——装出来的产品返回结构里没有这份明细，硬写等于编字段。费用四种口径里只有 `estimated` 和 `unknown` 能由假端点触发。
+- 取消、预算拒绝、工具白名单、网址策略、并发重判、摘要依赖、旧摘要、长任务/崩溃、可靠纠错：这些只有既有单测，这个窗口没在装出来的产品上重跑。
 
 ## Unreleased — #259: 搜索资料入库，跨会话能召回
 

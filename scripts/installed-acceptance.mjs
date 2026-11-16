@@ -1,44 +1,35 @@
 #!/usr/bin/env node
-// #267 acceptance — the release plan's last ticket: prove the PACKED, INSTALLED
-// product can actually be used, not just that the source tree passes tests.
+// #267：包打出来装好以后，到底能不能用。
 //
-// Why this lane exists
+// 为什么要有这条车道
+// ------------------
+// install-smoke.mjs 已经在打包和安装了，但它只驱动安装后的
+// `ans --version / doctor / domain / search`。装出来的 MCP 从来没被启动过，
+// ans_chat 没跑过一轮，会话没续过，材料没整理过，旧库能不能打开也没查过。
+// 于是"包能装上"和"人能拿它干活"是两句话，而只有前一句被自动检查了
+// （这是 #255 里的 T6）。
+//
+// 这条车道查什么（全部对着这次刚打出来的包）
+// ------------------------------------------
+//   A. 装出来的 CLI：--version / doctor / consolidate 没范围要拒绝
+//   B. 装出来的 MCP：initialize + tools/list，然后真跑一轮 ans_chat
+//   C. 会话续接：第二轮请求里必须带着第一轮的问答
+//   D. 整理：dry-run 不落库，apply 写一条知识行，用量和费用如实报
+//   E. 内部搜索入库 → 另一个会话用 query_knowledge 把那行捞回来
+//   F. 旧一点的库：能打开、能迁移、原来的行还在、再开一次不报错
+//
+// 这条车道守的三条规矩
 // --------------------
-// `scripts/install-smoke.mjs` already packs and installs, but it only drives
-// `ans --version / doctor / domain / search`. Nothing ever started the INSTALLED
-// MCP server, ran an `ans_chat` turn, resumed a session, consolidated materials,
-// or proved an older database still opens. So "the tarballs install" and "a user
-// can research with them" were two different claims, and only the first was
-// checked automatically (T6 in spec #255).
+// - 没配置模型端点就打 SKIPPED 并标成"这轮没跑全"，绝不把没跑的写成通过。
+// - 模型是本地假端点。它只能证明接线、请求形状、记账路径，不能证明真实
+//   模型判断得好不好。
+// - 不碰 r19，也不碰任何正式实验库；所有东西都在临时目录里，跑完删掉。
 //
-// What this lane proves, all against the tarballs this job just built
-// -------------------------------------------------------------------
-//   A. CLI on the installed artifact: --version / doctor / consolidate scope guard
-//   B. MCP on the installed artifact: initialize + tools/list, then a real
-//      ans_chat turn against a controlled OpenAI-compatible endpoint
-//   C. Explicit session resume: the second turn carries the first turn's answer
-//   D. Consolidate on the installed artifact: a dry-run saves nothing, an apply
-//      writes one knowledge row and is metered/reported honestly
-//   E. Internal search ingest -> another session recalls the row through
-//      query_knowledge (needs one provider key; SKIPPED loudly otherwise)
-//   F. An older database opens, is migrated, keeps its rows, and survives a
-//      second migration (the schema script is idempotent in practice)
-//
-// Honesty rules this file follows
-// -------------------------------
-// - A missing model endpoint prints SKIPPED and marks the run partial; it never
-//   prints a pass for a lane that did not run.
-// - The model is a local SSE stub. It proves the wiring, the request shape and
-//   the accounting path — NOT the quality of a real model's judgement.
-// - Nothing points at r19 or any real experiment database; everything is a temp
-//   directory deleted on exit.
-//
-// Run: node scripts/installed-acceptance.mjs
-// Env: EXA_API_KEY / TAVILY_API_KEY (lane E; skipped when absent)
-//      ANS_ACC_TARBALLS=<dir>   install the tarballs in that directory instead of
-//                               packing. Used to check this script against a
-//                               CI-built artifact without compiling locally.
-// Exit 0 = every lane that could run passed. Exit 1 = a real failure.
+// 用法：node scripts/installed-acceptance.mjs
+// 环境：EXA_API_KEY / TAVILY_API_KEY（车道 E 用，没有就跳）
+//      ANS_ACC_TARBALLS=<目录>  直接装这个目录里的包，不本地打包。
+//                               用来在没编译的情况下核对脚本本身。
+// 退出码 0 = 能跑的几条都过了；1 = 真的有失败。
 
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -61,15 +52,13 @@ function skip(name, why) { skipped++; console.log("[SKIP] " + name + " — " + w
 
 // ---------- the controlled model endpoint ----------
 //
-// One local SSE server. It answers three kinds of request differently, keyed on
-// the prompt text rather than arrival order, because consolidation calls and
-// agent turns really do interleave:
-//   - a search intent     -> a tool_call frame, so the internal search runs
-//   - a consolidation     -> the fact text
-//   - anything else       -> a plain answer naming its own turn
+// 一个本地 SSE 端点，按请求内容分三类回话。不按到达顺序分，因为整理调用
+// 和对话轮次真的会交错：
+//   - 要搜索的     -> 回一个 tool_call，让内部搜索真跑起来
+//   - 整理         -> 回那句事实文本
+//   - 其他         -> 回一句带着轮次标记的话
 const FACT = "Acme online support runs weekdays 9:00-17:00.";
-// A fact only the out-of-scope material carries, so its absence from the
-// knowledge row is checkable.
+// 只有"范围外"那份材料才带的事实。这样它有没有混进知识行，可以查。
 const OUTSIDE_FACT = "UNRELATEDPARKING policy applies to the Berlin office only.";
 const requestLog = [];
 
@@ -97,12 +86,11 @@ function sseToolCall(name, args) {
 }
 
 function classify(body) {
-  // Consolidation prompts carry these headings; an agent turn does not.
+  // 整理用的提示词带这些标题，普通对话请求不带。
   if (body.includes("Summarize these episodic memories") || body.includes("You are a memory adjudicator")
     || body.includes("You are a context summarization assistant")) return "consolidate";
-  // A turn that already carries a tool result must NOT ask for the search
-  // again: the request history still contains the original wording, so keying
-  // on the text alone would loop forever.
+  // 已经拿到过工具结果的轮次，不能再要搜索：请求历史里还留着原来那句话，
+  // 只看文字就会一直循环下去。
   let messages = [];
   try { messages = JSON.parse(body)?.messages ?? []; } catch { /* not JSON */ }
   if (messages.some((m) => m?.role === "tool")) return "chat";
@@ -118,18 +106,16 @@ const endpoint = createServer(async (req, res) => {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   if (role === "toolcall") return res.end(sseToolCall("search", JSON.stringify({ query: "anysearch-cli GitHub repository" })));
   if (role === "consolidate") return res.end(sseText(FACT));
-  // Echo a token from the LATEST user turn. A later request that carries this
-  // answer proves the session record resumed; a fixed "answer" would not,
-  // because the same constant would appear even on a fresh session.
+  // 回最新一轮的问题。后面那次请求如果带着这句话，就说明会话记录真的接上了；
+  // 写死一句固定回答不行，因为全新会话也会出现同一个常量。
   //
-  // The last user message is what matters, not the first match in the body: on a
-  // resumed turn the body still contains turn 1's question, so matching the raw
-  // text returned `REPLY-TO-FIRST-TURN-QUESTION` again and repeated first turns
-  // would have passed the resume checks.
+  // 要取最后一条用户消息，不能取整段文字里第一个匹配：续接时请求里还留着
+  // 第一轮的问题，按原文匹配会一直回第一轮的标记，于是"重复问第一轮"也能
+  // 通过续接检查。
   res.end(sseText("REPLY-TO-" + (latestUserMarker(body) ?? "UNKNOWN-TURN")));
 });
 
-/** The marker in the newest user message, or undefined when there is none. */
+/** 取最新一条用户消息里的轮次标记；没有就返回 undefined。 */
 function latestUserMarker(body) {
   let messages = [];
   try { messages = JSON.parse(body)?.messages ?? []; } catch { return undefined; }
@@ -147,7 +133,7 @@ function latestUserMarker(body) {
   return undefined;
 }
 
-// ---------- tiny MCP stdio client (newline-delimited JSON-RPC) ----------
+// ---------- 小 MCP 客户端：一行一条 JSON-RPC，走 stdio ----------
 function mcpClient(bin, env, tag) {
   const child = spawn(process.execPath, [bin, "--transport", "stdio"], { env, stdio: ["pipe", "pipe", "pipe"] });
   let stderr = "";
@@ -186,15 +172,14 @@ function mcpClient(bin, env, tag) {
     rpc,
     ready,
     /**
-     * Stop the server and resolve once it is really gone.
+     * 停掉子进程，等它真的退出了才算完。
      *
-     * Windows keeps an open handle on a killed child's database/WAL files until
-     * the process object is reaped, so deleting the sandbox before that lands
-     * throws EPERM. Awaiting the exit event is what makes cleanup deterministic
-     * instead of a race; the timeout keeps a wedged child from hanging the run.
+     * Windows 上，被杀的子进程对库文件和 WAL 还握着句柄，要等进程对象被回收
+     * 才松手。在那之前删沙箱会报 EPERM。所以这里等 exit 事件，删目录才稳定，
+     * 不是碰运气；那个超时是为了防止卡死的子进程把整轮拖住。
      *
-     * `stderr` is captured only for the timeout message above: a hung RPC is
-     * almost always the child failing to boot, and that reason lands on stderr.
+     * stderr 只给上面那条超时信息用：RPC 卡住基本都是子进程没起来，原因在
+     * stderr 里。
      */
     kill: () => new Promise((res) => {
       if (child.exitCode !== null || child.signalCode !== null) return res();
@@ -206,24 +191,21 @@ function mcpClient(bin, env, tag) {
 }
 const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join("\n");
 
-// ---------- environment helpers ----------
+// ---------- 环境和小工具 ----------
 
 /**
- * Run a command and capture its combined output.
+ * 跑一条命令，把 stdout 和 stderr 一起收回来。
  *
- * Two platforms, two mechanisms, because one string cannot be safe on both:
+ * 两个系统两种走法，因为同一行命令不可能在两边都安全：
  *
- * - POSIX: pass the argv array straight to spawnSync with `shell: false`. The
- *   temporary directory name comes from mkdtemp, and a path containing `&`, `;`,
- *   `$` or a backtick would be reinterpreted by a shell. argv passing has no
- *   parser to fool, so those characters stay literal.
- * - Windows: the installed bin is `ans.cmd`, a batch shim that only starts
- *   through cmd.exe. So the command line is built here and quoted explicitly —
- *   a path with spaces needs quotes, and a bare name like `npm` must stay
- *   unquoted (cmd.exe resolves `"npm"` to another shim and the install dies with
- *   MODULE_NOT_FOUND). Anything else is refused rather than guessed at: an
- *   argument carrying a quote, `%`, `&`, `|`, `<`, `>` or `^` has no escaping
- *   rule this file can trust through cmd.exe.
+ * - POSIX：直接把参数数组交给 spawnSync，`shell: false`。临时目录名来自
+ *   mkdtemp，路径里如果有 `&`、`;`、`$` 或反引号，经过 shell 会被当成别的
+ *   意思。直接传参数就没有解析器可以骗，这些字符原样进去。
+ * - Windows：装出来的 bin 是 `ans.cmd`，一个批处理壳子，只能通过 cmd.exe
+ *   启动。所以这里自己拼命令行、自己加引号：带空格的路径要引号，裸名字像
+ *   `npm` 不能加引号（cmd.exe 会把 `"npm"` 解析成另一个壳子，安装直接
+ *   MODULE_NOT_FOUND）。除此之外的字符一律拒绝，不猜：参数里带引号、`%`、
+ *   `&`、`|`、`<`、`>`、`^` 时，这个文件没有一条敢信任的转义规则。
  */
 function sh(cmd, args, opts = {}) {
   if (process.platform !== "win32") {
@@ -232,7 +214,7 @@ function sh(cmd, args, opts = {}) {
   }
   const UNSAFE = /["%&|<>^]/;
   if (UNSAFE.test(cmd) || args.some((a) => UNSAFE.test(a))) {
-    throw new Error("sh(): refusing a command line cmd.exe cannot be trusted to quote safely: " + cmd);
+    throw new Error("sh()：这条命令行 cmd.exe 没法安全加引号，拒绝执行：" + cmd);
   }
   const isPath = cmd.includes("/") || cmd.includes("\\");
   const parts = [isPath ? '"' + cmd + '"' : cmd];
@@ -256,14 +238,13 @@ const DOMAIN_MIN = (name, system, rag = "none") => [
 ];
 
 /**
- * Remove the sandbox, with a bounded retry.
+ * 删掉沙箱，最多重试几次。
  *
- * The real fix for Windows EPERM here was loading `better-sqlite3` from this
- * repo instead of from the install prefix: a loaded native module keeps its
- * file handle until the process exits, and the sandbox lives under that prefix.
- * This retry is only the backstop for a killed child whose handles have not been
- * released yet. A leftover temp directory is a hygiene note, not a product
- * failure, so this never throws — the verdict must come from the checks above.
+ * Windows 上真正解决 EPERM 的办法不是重试，是把 better-sqlite3 从这个仓库
+ * 加载，而不是从安装目录加载：原生模块一旦加载就握住文件句柄直到进程退出，
+ * 而沙箱正好在那棵安装目录下面。这里的重试只是给"子进程刚被杀、句柄还没
+ * 松"兜底。临时目录删不干净属于卫生问题，不是产品失败，所以这里从不抛错
+ * ——结论只从上面那些检查来。
  */
 function rmTempWithRetry(dir) {
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -275,7 +256,7 @@ function rmTempWithRetry(dir) {
         console.error("[WARN] could not delete the temp sandbox " + dir + " (" + (e?.code ?? e?.message) + "); it is a temp directory, not a product failure");
         return;
       }
-      // Synchronous backoff: the caller is the process's final step.
+      // 调用方是进程最后一步，所以这里同步等一会儿再试。
       const until = Date.now() + 200 * (attempt + 1);
       while (Date.now() < until) { /* wait */ }
     }
@@ -292,52 +273,48 @@ async function main() {
 
   const clients = [];
   try {
-    // ================= pack + install =================
+    // ================= 打包 + 安装 =================
     //
-    // `ANS_ACC_TARBALLS` exists so this script can be checked against a CI-built
-    // artifact without a local compile; CI leaves it unset and packs its own.
+    // 设了 ANS_ACC_TARBALLS 就直接装那个目录里的包，用来在没编译的情况下核对
+    // 这个脚本本身。CI 里不设它，自己打包。
     const preset = process.env.ANS_ACC_TARBALLS?.trim();
     const PACK_DIRS = ["apps/cli", "apps/mcp", "apps/plugin"];
     if (preset) {
-      console.log("== clean install (prebuilt tarballs from " + preset + ") ==");
+      console.log("== 干净安装（用 " + preset + " 里现成的包）==");
       for (const f of readdirSync(preset)) {
         if (f.endsWith(".tgz")) writeFileSync(join(outDir, f), readFileSync(join(preset, f)));
       }
     } else {
-      console.log("== pack + clean install ==");
+      console.log("== 打包 + 干净安装 ==");
       for (const d of PACK_DIRS) {
         const r = sh("pnpm", ["-C", join(ROOT, d), "pack", "--pack-destination", outDir], { cwd: ROOT });
-        if (r.code !== 0) check(false, "pack " + d, r.out);
+        if (r.code !== 0) check(false, "打包 " + d, r.out);
       }
     }
 
     const tgz = readdirSync(outDir).filter((f) => f.endsWith(".tgz"));
-    check(tgz.length === PACK_DIRS.length, "the install set has " + PACK_DIRS.length + " app tarballs", tgz.join(","));
-    check(tgz.every((f) => !f.includes("0.0.0")), "no 0.0.0 placeholder version in the packed set", tgz.join(","));
+    check(tgz.length === PACK_DIRS.length, "安装集合里有 " + PACK_DIRS.length + " 个 app 包", tgz.join(","));
+    check(tgz.every((f) => !f.includes("0.0.0")), "打出来的包里没有 0.0.0 这种占位版本号", tgz.join(","));
 
     const appTgz = tgz.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
     const inst = sh("npm", ["install", ...appTgz.map((f) => join(outDir, f))], { cwd: prefix });
-    check(inst.code === 0, "npm install into a clean prefix", inst.out);
+    check(inst.code === 0, "包能装进一个干净的目录", inst.out);
 
-    // Load better-sqlite3 from THIS repo, not from the installed prefix.
-    // On Windows a loaded native module keeps its file handle until this process
-    // exits, and the sandbox lives inside the install prefix — deleting it would
-    // then fail with EPERM. The repo pins the same version, so it reads the
-    // installed product's database faithfully without holding the sandbox.
+    // better-sqlite3 从这个仓库加载，不从安装目录加载。Windows 上原生模块一
+    // 加载就握住文件句柄到进程退出，而沙箱就在安装目录下面，那样删不掉。
+    // 仓库钉的是同一个版本，读装好的产品建的库结果一样。
     const Database = createRequire(join(ROOT, "apps", "mcp", "package.json"))("better-sqlite3");
 
     const nm = join(prefix, "node_modules");
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
     const mcpBin = join(nm, "@anysearch-cli", "mcp", "dist", "index.js");
-    check(existsSync(ansBin), "installed ans bin exists", ansBin);
-    check(existsSync(mcpBin), "installed MCP entry exists", mcpBin);
+    check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);
+    check(existsSync(mcpBin), "装出来的 MCP 入口在", mcpBin);
 
-    // ================= A. CLI on the installed artifact =================
+    // ================= A. 装出来的 CLI =================
     //
-    // Every command runs with HOME/USERPROFILE and ANS_DB_PATH pointed into the
-    // sandbox. `doctor` resolves the durable database path and creates its
-    // directory, so inheriting the real environment would touch the operator's
-    // own ~/.anysearch — a test must not do that.
+    // 每条命令都把 HOME/USERPROFILE 和 ANS_DB_PATH 指进沙箱。doctor 会自己解析
+    // 持久库的路径并建目录，继承真实环境就会动到操作者自己的 ~/.anysearch。
     console.log("\n== A. CLI ==");
     const cliEnv = {
       ...process.env,
@@ -348,18 +325,18 @@ async function main() {
     };
     mkdirSync(cliEnv.ANS_DOMAINS_DIR, { recursive: true });
     const v = sh(ansBin, ["--version"], { cwd: prefix, env: cliEnv });
-    check(v.code === 0, "installed ans --version exits 0", v.out);
-    check(/\d+\.\d+\.\d+/.test(v.out) && !/\b0\.0\.0\b/.test(v.out), "version is a real release version", v.out);
+    check(v.code === 0, "装出来的 ans --version 退出码 0", v.out);
+    check(/\d+\.\d+\.\d+/.test(v.out) && !/\b0\.0\.0\b/.test(v.out), "版本号是真实发布版本，不是 0.0.0", v.out);
 
     const doctor = sh(ansBin, ["doctor"], { cwd: prefix, env: cliEnv });
-    check(doctor.code === 0, "installed ans doctor exits 0", doctor.out);
-    check(/vector arm/.test(doctor.out), "doctor reports the vector arm status", doctor.out.slice(-400));
+    check(doctor.code === 0, "装出来的 ans doctor 退出码 0", doctor.out);
+    check(/vector arm/.test(doctor.out), "doctor 报了向量臂的状态", doctor.out.slice(-400));
 
     const noScope = sh(ansBin, ["consolidate"], { cwd: prefix, env: cliEnv });
-    check(noScope.code === 2, "consolidate with no scope exits 2 instead of consolidating everything", noScope.out);
-    check(/explicit scope is required/.test(noScope.out), "the no-scope refusal says what is missing", noScope.out);
+    check(noScope.code === 2, "整理不带范围时退出码 2，不会去整理全库", noScope.out);
+    check(/explicit scope is required/.test(noScope.out), "拒绝整理时说明了缺什么", noScope.out);
 
-    // ================= the model stub =================
+    // ================= 假模型端点 =================
     await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
     const port = endpoint.address().port;
     const llmEnv = {
@@ -381,68 +358,60 @@ async function main() {
       ANS_DB_PATH: join(work, "anysearch.db"),
       ANS_PI_SESSION_DIR: join(work, "pi"),
       ANS_NO_INTERACTIVE: "1",
-      // Keep the install's own config out of the run: HOME/USERPROFILE point at
-      // the sandbox so a developer's real ~/.anysearch-cli never leaks in.
+      // HOME/USERPROFILE 指到沙箱，开发机自己的 ~/.anysearch-cli 不会混进来。
       USERPROFILE: work,
       HOME: work,
     };
 
-    // ================= B/C. MCP: initialize, chat, explicit resume =================
+    // ================= B/C. MCP：初始化、对话、显式续接 =================
     console.log("\n== B/C. installed MCP: initialize -> chat -> resume ==");
     const prober = mcpClient(mcpBin, { ...baseEnv, ANS_DOMAIN: "probe" }, "probe");
     clients.push(prober);
     const init = await prober.ready();
-    check(!!init.result?.serverInfo?.name, "installed MCP answers initialize", JSON.stringify(init).slice(0, 200));
+    check(!!init.result?.serverInfo?.name, "装出来的 MCP 能回 initialize", JSON.stringify(init).slice(0, 200));
     check(init.result?.serverInfo?.version && init.result.serverInfo.version !== "0.0.0",
-      "initialize reports a real server version", JSON.stringify(init.result?.serverInfo));
+      "initialize 报了真实的版本号", JSON.stringify(init.result?.serverInfo));
 
     const list = await prober.rpc("tools/list", {});
     const tools = (list.result?.tools ?? []).map((t) => t.name);
     check(["search_web", "research_web", "recall_memory", "query_knowledge", "ans_chat"].every((n) => tools.includes(n)),
-      "installed MCP lists all five tools", tools.join(","));
+      "装出来的 MCP 五个工具都在", tools.join(","));
 
     const turn1 = await prober.rpc("tools/call", { name: "ans_chat", arguments: { message: "FIRST-TURN-QUESTION" } });
     const t1text = textOf(turn1);
-    check(turn1.result?.isError !== true, "turn 1 completes without a tool error", t1text.slice(0, 200));
-    check(/REPLY-TO-FIRST-TURN-QUESTION/.test(t1text), "turn 1 carries the model's answer", t1text.slice(0, 200));
+    check(turn1.result?.isError !== true, "第一轮对话完成，没有工具报错", t1text.slice(0, 200));
+    check(/REPLY-TO-FIRST-TURN-QUESTION/.test(t1text), "第一轮带着模型的回答", t1text.slice(0, 200));
 
     const usage1 = turn1.result?.structuredContent?.usage?.run;
-    check(!!usage1 && usage1.assistantCalls >= 1, "turn 1 reports run usage", JSON.stringify(usage1));
-    // The stub is a custom endpoint with no price table and no server-sent
-    // price, so the honest label is "estimated"/"unknown" — never "provider".
-    // Asserting the actual value keeps a later regression toward
-    // "provider-reported" visible instead of merely "a string was present".
-    // The exact label, not a list of acceptable ones. This stub sends no price,
-    // so pi-ai fills the figure from its own rate card: "estimated". A run that
-    // ever started claiming "provider" (a server-sent bill) has changed behaviour
-    // and must be caught here, not read as "a string was present".
+    check(!!usage1 && usage1.assistantCalls >= 1, "第一轮报了这次运行的用量", JSON.stringify(usage1));
+    // 断言具体值，不是"能接受的一组值"。这个假端点不报价，pi-ai 用自己那张
+    // 价目表补一个数，所以标签是 estimated。哪天它开始说 provider（服务端
+    // 真给了价），那是行为变了，要在这里挡住。
     check(usage1?.costSource === "estimated",
-      "the run labels its cost as a rate-card estimate, not a server-sent price", JSON.stringify(usage1?.costSource));
-    check(usage1?.costUsd === 0, "the run's cost figure is the estimator's zero, not a bill", JSON.stringify(usage1?.costUsd));
+      "主运行的费用标成「按价目表估的」，不是服务端给的价", JSON.stringify(usage1?.costSource));
+    check(usage1?.costUsd === 0, "主运行的金额是估算出来的零，不是账单", JSON.stringify(usage1?.costUsd));
     check(Array.isArray(usage1?.missing) && usage1.missing.some((m) => m === "cost (estimated)"),
-      "the run names the estimated cost gap instead of rendering it as free", JSON.stringify(usage1?.missing));
+      "主运行点明了费用是估的，没有当成免费", JSON.stringify(usage1?.missing));
     const ctx1 = turn1.result?.structuredContent?.context;
-    check(!!ctx1 && typeof ctx1.window === "number" && ctx1.window > 0, "turn 1 reports the context window it used", JSON.stringify(ctx1));
+    check(!!ctx1 && typeof ctx1.window === "number" && ctx1.window > 0, "第一轮报了这次用的上下文窗口", JSON.stringify(ctx1));
 
     const sid = turn1.result?.structuredContent?.sessionId;
-    check(typeof sid === "string" && sid.length > 0, "turn 1 returns a resumable session handle", String(sid));
+    check(typeof sid === "string" && sid.length > 0, "第一轮返回了能续接的会话句柄", String(sid));
 
     const turn2 = await prober.rpc("tools/call", { name: "ans_chat", arguments: { message: "SECOND-TURN-QUESTION", sessionId: sid } });
-    check(turn2.result?.isError !== true, "turn 2 with the handle completes", textOf(turn2).slice(0, 200));
+    check(turn2.result?.isError !== true, "拿着句柄问第二轮，完成", textOf(turn2).slice(0, 200));
     const t2text = textOf(turn2);
-    // The answer must be to turn 2's question. Without this, repeating turn 1
-    // passes the resume check: the body still contains turn 1's question and its
-    // answer either way, so only the NEW turn proves the run moved forward.
+    // 答复必须是第二轮那个问题的。不查这条，重复问第一轮也能过续接检查：
+    // 不管怎样请求里都带着第一轮的问题和回答，只有新的一轮能证明它真的往前走了。
     check(/REPLY-TO-SECOND-TURN-QUESTION/.test(t2text),
-      "turn 2's answer is to turn 2's question, not a repeat of turn 1", t2text.slice(0, 200));
-    check(turn2.result?.structuredContent?.sessionId === sid, "turn 2 keeps the same session handle", String(turn2.result?.structuredContent?.sessionId));
+      "第二轮的答复对应第二轮的问题，不是重复第一轮", t2text.slice(0, 200));
+    check(turn2.result?.structuredContent?.sessionId === sid, "第二轮还是同一个会话句柄", String(turn2.result?.structuredContent?.sessionId));
     const turn2Body = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
-    check(turn2Body.includes("FIRST-TURN-QUESTION"), "turn 2 request carries turn 1's question (the record resumed)");
-    check(turn2Body.includes("REPLY-TO-FIRST-TURN-QUESTION"), "turn 2 request carries turn 1's answer (the record resumed)");
-    check(turn2Body.includes("SECOND-TURN-QUESTION"), "turn 2 request carries its own question too", turn2Body.slice(-300));
+    check(turn2Body.includes("FIRST-TURN-QUESTION"), "第二轮的请求里带着第一轮的问题，说明记录接上了");
+    check(turn2Body.includes("REPLY-TO-FIRST-TURN-QUESTION"), "第二轮的请求里带着第一轮的回答，说明记录接上了");
+    check(turn2Body.includes("SECOND-TURN-QUESTION"), "第二轮的请求里也有它自己的问题", turn2Body.slice(-300));
 
-    // The fixed prompt must not be re-invented per turn: compare the system
-    // message of two requests in the same session.
+    // 固定提示词不该每轮重新拼一遍：比同一会话两次请求里的 system 消息。
     const systemOf = (body) => {
       try {
         const j = JSON.parse(body);
@@ -453,16 +422,14 @@ async function main() {
     };
     const chatBodies = requestLog.filter((r) => r.role === "chat").map((r) => r.body);
     const sameSystem = chatBodies.length >= 2 && systemOf(chatBodies[chatBodies.length - 1]) === systemOf(chatBodies[chatBodies.length - 2]);
-    check(sameSystem, "the system prompt is byte-identical across the two turns (stable cacheable prefix)",
+    check(sameSystem, "两轮的固定提示词逐字节相同，缓存前缀是稳的",
       systemOf(chatBodies[chatBodies.length - 1])?.slice(0, 200));
 
-    // ================= C2. cold start: two servers, one brand-new database =================
+    // ================= C2. 冷启动：两个服务，一个全新的库 =================
     //
-    // Spec D12 / T3: a brand-new file must not lose a process to SQLITE_BUSY. The
-    // store's bounded retry is what makes that true; this checks it through the
-    // installed servers instead of trusting the unit test alone. Two processes
-    // initialize at once and each must serve tools/list afterwards — answering
-    // initialize only proves the transport opened, not that the schema landed.
+    // 规格 D12 / T3：全新的库不能因为 SQLITE_BUSY 丢一个进程。store 那边有限
+    // 重试，这里用装出来的服务再验一遍，不只信单测。两个进程同时初始化，之后
+    // 各自都要能出 tools/list —— 只回 initialize 只说明通道开了，不说明表建好了。
     console.log("\n== C2. cold start: two installed servers on a brand-new database ==");
     {
       const coldDb = join(work, "cold.db");
@@ -471,20 +438,19 @@ async function main() {
       clients.push(coldA, coldB);
       const [initA, initB] = await Promise.all([coldA.ready(), coldB.ready()]);
       check(!!initA.result?.serverInfo?.name && !!initB.result?.serverInfo?.name,
-        "both processes initialize against the same brand-new database",
+        "两个进程对着同一个全新库都能初始化",
         JSON.stringify([initA.error, initB.error]).slice(0, 300));
       const [listA, listB] = await Promise.all([coldA.rpc("tools/list", {}), coldB.rpc("tools/list", {})]);
       check((listA.result?.tools ?? []).length === 5 && (listB.result?.tools ?? []).length === 5,
-        "both processes serve all five tools after the concurrent cold start",
+        "同时冷启动之后，两个进程都出五个工具",
         JSON.stringify([(listA.result?.tools ?? []).length, (listB.result?.tools ?? []).length]));
       const coldCheck = new Database(coldDb, { readonly: true });
       let coldTables = [];
       try {
         coldTables = coldCheck.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
       } finally { coldCheck.close(); }
-      // Name the tables each layer depends on instead of asserting a count
-      // floor: "at least 30" also passes when one whole later-layer table is
-      // missing, which is exactly the partial schema this lane exists to catch.
+      // 点名每一层要用的表，不数张数下限："至少 30 张"在后加的一整张表缺失时
+      // 照样过，而那种残缺正是这条车道要抓的。
       const requiredTables = [
         "sessions", "messages", "retrieval_results", "resume_anchors", "budget_ledger",
         "semantic_memories", "summary_sources", "summary_suspensions",
@@ -492,32 +458,26 @@ async function main() {
       ];
       const missingTables = requiredTables.filter((t) => !coldTables.includes(t));
       check(missingTables.length === 0,
-        "the cold-started database carries every layer's table (" + coldTables.length + " tables)",
+        "冷启动建出来的库每一层的表都在 (" + coldTables.length + " tables)",
         "missing: " + missingTables.join(","));
       await coldA.kill();
       await coldB.kill();
     }
 
-    // ================= D. consolidate on the installed artifact =================
+    // ================= D. 装出来的整理 =================
     console.log("\n== D. consolidate: scope guard, dry-run, apply ==");
 
     const noScopeCall = await prober.rpc("tools/call", { name: "ans_chat", arguments: { operation: "consolidate" } });
-    check(noScopeCall.result?.isError === true, "consolidate through MCP with no scope is a tool error", textOf(noScopeCall).slice(0, 200));
-    check(/explicit scope is required/.test(textOf(noScopeCall)), "the MCP no-scope error names the missing scope", textOf(noScopeCall).slice(0, 200));
+    check(noScopeCall.result?.isError === true, "通过 MCP 整理不带范围，工具报错", textOf(noScopeCall).slice(0, 200));
+    check(/explicit scope is required/.test(textOf(noScopeCall)), "MCP 的报错点明了缺范围", textOf(noScopeCall).slice(0, 200));
 
-    // Seed three materials straight into the installed schema FIRST, so the
-    // dry-run below reads a real, non-empty scope. Called before the dry-run on
-    // purpose: a preview over an empty session would pass whether or not it
-    // wrote anything, which is the assertion that proves nothing.
-    // The out-of-scope rows live in the SAME session as the selected three, and
-    // carry a different entity and fact.
+    // 先往装好的库里塞三条材料，这样下面的 dry-run 读到的是真范围，不是空的。
+    // 顺序是故意的：在空会话上预览，写不写都过，那种断言什么也证明不了。
+    // 范围外的材料跟选中的三条在同一个会话里，但实体和事实都不一样。
     //
-    // There are THREE of them on purpose. One out-of-scope row proves nothing:
-    // the batch threshold will not build knowledge from a single material, so a
-    // session-scoped run would look identical to a list-scoped one. Three makes
-    // the two scopes drift apart — a widened run would add a second knowledge
-    // row — which is what the assertions below can actually catch. Verified by
-    // mutation: swapping memoryIds for sessionId turns them red.
+    // 故意放三条。只放一条什么也证明不了：批量门槛不让单条材料建知识，按会话跑
+    // 和按列表跑结果一模一样。放三条，两种范围才会分开——范围被放大就会多出
+    // 一条知识行，下面的断言才抓得住。把 memoryIds 换成 sessionId 验过会红。
     const seedSession = "acc267-seed";
     let seededIds = [];
     let outsideIds = [];
@@ -537,24 +497,24 @@ async function main() {
         }
       } finally { db.close(); }
     }
-    check(seededIds.length === 3, "seeded three materials for the apply lane", seededIds.join(","));
-    check(outsideIds.length === 3, "seeded three materials deliberately outside the scope (enough to pass the batch threshold)", outsideIds.join(","));
+    check(seededIds.length === 3, "为 apply 那条路塞了三条材料", seededIds.join(","));
+    check(outsideIds.length === 3, "另塞了三条范围外的材料，数量够过批量门槛", outsideIds.join(","));
 
     const dry = await prober.rpc("tools/call", { name: "ans_chat", arguments: { operation: "consolidate", memoryIds: seededIds, dryRun: true } });
-    check(dry.result?.isError !== true, "consolidate dry-run completes", textOf(dry).slice(0, 200));
+    check(dry.result?.isError !== true, "整理 dry-run 跑完", textOf(dry).slice(0, 200));
     const dryScope = dry.result?.structuredContent?.scope;
-    check(dryScope?.by === "memory", "consolidate dry-run echoes the scope kind it actually read", JSON.stringify(dryScope));
+    check(dryScope?.by === "memory", "dry-run 回显了它实际读的范围类型", JSON.stringify(dryScope));
     check((dry.result?.structuredContent?.report?.clustersScanned ?? 0) > 0,
-      "the dry-run really scanned the seeded materials", JSON.stringify(dry.result?.structuredContent?.report?.clustersScanned));
+      "dry-run 真的扫到了塞进去的材料", JSON.stringify(dry.result?.structuredContent?.report?.clustersScanned));
     check((dry.result?.structuredContent?.report?.add ?? 0) === 1,
-      "the dry-run reports what an apply would add", JSON.stringify(dry.result?.structuredContent?.counts));
+      "dry-run 报了 apply 会新增什么", JSON.stringify(dry.result?.structuredContent?.counts));
     {
-      // "Nothing saved" is the promise. Check the database, not the wording.
+      // dry-run 答应的是"什么都没存"。查数据库，不看它自己怎么说。
       const db = new Database(baseEnv.ANS_DB_PATH, { readonly: true });
       let rows;
       try { rows = db.prepare("SELECT count(*) c FROM semantic_memories").get().c; }
       finally { db.close(); }
-      check(rows === 0, "the dry-run wrote no knowledge row", "semantic_memories rows=" + rows);
+      check(rows === 0, "dry-run 一条知识行都没写", "semantic_memories rows=" + rows);
     }
 
     const applyCall = await prober.rpc("tools/call", {
@@ -562,50 +522,48 @@ async function main() {
       arguments: { operation: "consolidate", memoryIds: seededIds },
     });
     const applyText = textOf(applyCall);
-    check(applyCall.result?.isError !== true, "consolidate apply completes", applyText.slice(0, 300));
+    check(applyCall.result?.isError !== true, "整理 apply 跑完", applyText.slice(0, 300));
     const counts = applyCall.result?.structuredContent?.counts;
-    check(counts?.add === 1, "consolidate apply wrote exactly one knowledge row", JSON.stringify(counts));
-    check(!!applyCall.result?.structuredContent?.usage, "consolidate reports its own model usage", JSON.stringify(applyCall.result?.structuredContent?.usage));
+    check(counts?.add === 1, "apply 只写出一条知识行", JSON.stringify(counts));
+    check(!!applyCall.result?.structuredContent?.usage, "整理报了自己的模型用量", JSON.stringify(applyCall.result?.structuredContent?.usage));
     const usageApply = applyCall.result?.structuredContent?.usage;
-    check(usageApply?.calls >= 1, "consolidate counted the model call it made", JSON.stringify(usageApply));
-    // Consolidation answers differently from the run, and for a real reason: its
-    // seams read the session's price table, a custom endpoint declares none, so
-    // the honest label is "unknown" rather than the run's rate-card "estimated".
-    // Asserting each surface's own value is what makes a swap between them fail.
+    check(usageApply?.calls >= 1, "整理把它那次模型调用记上了账", JSON.stringify(usageApply));
+    // 整理这边跟主运行不一样，原因是真的：整理读会话的价目表，自定义端点没报
+    // 价，所以标签是 unknown，不是主运行那个价目表估出来的 estimated。两边各
+    // 断言自己的值，谁被换成对方就会红。
     check(usageApply?.costBasis === "unknown",
-      "consolidation labels an unpriced endpoint as unknown, not as a server-sent price", JSON.stringify(usageApply?.costBasis));
-    check(usageApply?.costUsd === 0, "consolidation's unknown cost is a placeholder, not a zero bill", JSON.stringify(usageApply?.costUsd));
+      "整理的标签是 unknown，没把没报的价说成服务端的价", JSON.stringify(usageApply?.costBasis));
+    check(usageApply?.costUsd === 0, "整理的未知费用是占位，不是零账单", JSON.stringify(usageApply?.costUsd));
     check(Array.isArray(usageApply?.missing) && usageApply.missing.some((m) => /consolidation cost/.test(m)),
-      "consolidation names the unknown cost dimension", JSON.stringify(usageApply?.missing));
+      "整理点名了费用这一项未知", JSON.stringify(usageApply?.missing));
     {
       const db = new Database(baseEnv.ANS_DB_PATH, { readonly: true });
       try {
         const rows = db.prepare("SELECT content, valid_until FROM semantic_memories").all();
-        check(rows.length === 1, "the knowledge row is really in the database", JSON.stringify(rows));
-        check(rows.length === 1 && rows[0].valid_until === null, "the written row is live", JSON.stringify(rows));
-        check(rows.length === 1 && String(rows[0].content).includes("Acme"), "the written row carries the summarised fact", JSON.stringify(rows).slice(0, 200));
+        check(rows.length === 1, "知识行真的在库里", JSON.stringify(rows));
+        check(rows.length === 1 && rows[0].valid_until === null, "写进去的那行是有效的", JSON.stringify(rows));
+        check(rows.length === 1 && String(rows[0].content).includes("Acme"), "那行带着总结出来的事实", JSON.stringify(rows).slice(0, 200));
 
-        // Scope did not widen. Two independent signals, because either alone can
-        // pass for the wrong reason: no second knowledge row was built from the
-        // outside entity, and those rows are still live and un-superseded.
-        check(rows.length === 1, "no knowledge row was built from the out-of-scope entity", JSON.stringify(rows.map((r) => r.content).slice(0, 2)));
+        // 范围没被放大。看两个独立信号，因为单看一个可能因为别的原因通过：范围
+        // 外的实体没建出第二行知识，那些材料也还活着、没被标成被替代。
+        check(rows.length === 1, "范围外的实体没有建出知识行", JSON.stringify(rows.map((r) => r.content).slice(0, 2)));
         const outsideRows = db.prepare("SELECT id, valid_until, superseded_by FROM retrieval_results WHERE id IN (?,?,?)").all(...outsideIds);
         check(outsideRows.length === 3 && outsideRows.every((r) => r.valid_until === null && r.superseded_by === null),
-          "the materials outside the scope were left alone", JSON.stringify(outsideRows));
+          "范围外的材料没被动过", JSON.stringify(outsideRows));
         const inScope = db.prepare("SELECT count(*) c FROM retrieval_results WHERE id IN (?,?,?) AND (valid_until IS NULL AND superseded_by IS NULL)").get(...seededIds).c;
-        check(inScope === 3, "the selected materials are still live after the run", "live=" + inScope);
+        check(inScope === 3, "选中的材料跑完还是有效的", "live=" + inScope);
         check(!String(rows[0]?.content ?? "").includes("UNRELATEDPARKING"),
-          "the knowledge row does not contain the out-of-scope fact", String(rows[0]?.content ?? "").slice(0, 120));
+          "知识行里没有范围外那条事实", String(rows[0]?.content ?? "").slice(0, 120));
       } finally { db.close(); }
     }
 
-    // ================= E. internal search ingest -> cross-session recall =================
+    // ================= E. 内部搜索入库 → 另一个会话召回 =================
     console.log("\n== E. internal search ingest -> another session recalls ==");
     const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
     if (!online) {
-      skip("internal search ingest + cross-session recall", "EXA_API_KEY / TAVILY_API_KEY not set");
+      skip("内部搜索入库 + 跨会话召回", "没设 EXA_API_KEY / TAVILY_API_KEY");
     } else {
-      // A domain with one real provider, so the internal search has an arm.
+      // 一个只开一个真搜索源的域，让内部搜索有可用的臂。
       const providerName = process.env.EXA_API_KEY ? "exa" : "tavily";
       writeDomain(domainsDir, "ingest", [
         'name = "ingest"',
@@ -615,7 +573,7 @@ async function main() {
         'hooks = { toolWhitelist = ["search"] }',
         'rag = { adapter = "none" }',
       ]);
-      // The stub answers the tool-call intent with a real `search` call.
+      // 假端点对着「请调工具」的请求，真回一个 search 调用。
       const ingestEnv = { ...baseEnv, ANS_DOMAIN: "ingest", ANS_DB_PATH: join(work, "ingest.db") };
       const writer = mcpClient(mcpBin, ingestEnv, "ingest");
       clients.push(writer);
@@ -624,24 +582,22 @@ async function main() {
         name: "ans_chat",
         arguments: { message: "TOOL-CALL-PLEASE find the anysearch-cli GitHub repository and report its URL." },
       });
-      check(asked.result?.isError !== true, "the ingest turn completes", textOf(asked).slice(0, 200));
+      check(asked.result?.isError !== true, "入库那一轮跑完", textOf(asked).slice(0, 200));
       const toolCalls = asked.result?.structuredContent?.toolCalls ?? {};
-      check((toolCalls.search ?? 0) >= 1, "the model's search tool call really ran", JSON.stringify(toolCalls));
+      check((toolCalls.search ?? 0) >= 1, "模型那次搜索工具调用真的执行了", JSON.stringify(toolCalls));
 
       const ingestDb = new Database(ingestEnv.ANS_DB_PATH, { readonly: true });
       let rows = [];
       try {
         rows = ingestDb.prepare("SELECT session_id, url, title, snippet FROM retrieval_results ORDER BY id DESC LIMIT 20").all();
       } finally { ingestDb.close(); }
-      check(rows.length > 0, "the internal search wrote " + rows.length + " row(s) into the archive", JSON.stringify(rows.slice(0, 2)));
+      check(rows.length > 0, "内部搜索往库里写了 " + rows.length + " 行", JSON.stringify(rows.slice(0, 2)));
 
-      // Recall's strict FTS rung ANDs every query term, so pick one long token.
+      // 召回那条严格档要求查询里的词全中，所以挑一个长一点的词。
       //
-      // Take it from the part of the row the adapter will actually hand back:
-      // `query_knowledge` collapses whitespace and keeps only the first
-      // RAG_HIT_MAX_CHARS (600) characters of each hit. A token picked from
-      // beyond that point hits in the database but never appears in the returned
-      // block, so the assertion would fail on a row that was recalled correctly.
+      // 只在适配器真会返回的那段里挑：query_knowledge 会合并空白，每条命中只留
+      // 前 600 字（RAG_HIT_MAX_CHARS）。从 600 之后挑词，库里能命中但返回的
+      // 文本里没有它，于是明明召回对了也会被判失败。
       const ADAPTER_HIT_CHARS = 600;
       const token = rows
         .map((r) => (String(r.snippet ?? "")
@@ -649,45 +605,40 @@ async function main() {
           .toLowerCase().match(/[a-z0-9]{7,}/g) ?? [])[0])
         .find(Boolean);
       if (!token) {
-        skip("cross-session recall", "no archived row carried a token long enough for the strict recall rung");
+        skip("跨会话召回", "库里没有哪行带着足够长的词，严格档匹配不上");
       } else {
         const reader = mcpClient(mcpBin, { ...ingestEnv, ANS_DOMAIN: "recall" }, "recall");
         clients.push(reader);
         await reader.ready();
         const qk = await reader.rpc("tools/call", { name: "query_knowledge", arguments: { query: token } });
         const block = textOf(qk);
-        check(qk.result?.isError !== true, "query_knowledge in the second session does not error", block.slice(0, 200));
-        check(/provenance=memory/.test(block), "the recalled block names its trust tier", block.slice(0, 300));
-        check(block.toLowerCase().includes(token), "the second session recalls a row the first session's search wrote", token);
+        check(qk.result?.isError !== true, "另一个会话 query_knowledge 没报错", block.slice(0, 200));
+        check(/provenance=memory/.test(block), "召回块标了自己的可信层级", block.slice(0, 300));
+        check(block.toLowerCase().includes(token), "第二个会话召回到了第一个会话搜索写进去的那行", token);
         await reader.kill();
       }
       await writer.kill();
     }
     await prober.kill();
 
-    // ================= F. older database: opens, migrates, keeps rows =================
+    // ================= F. 旧一点的库：能开、能迁移、行还在 =================
     console.log("\n== F. older database: read, migrate, migrate again ==");
     {
       const legacyPath = join(work, "older.db");
-      // Build it with the installed product, then strip the newest add-ons so it
-      // looks like a database written by an earlier release. Stripping tables the
-      // product shipped later is the closest honest stand-in for an old file: no
-      // invented rows, no rewritten history.
+      // 先用装好的产品建一个库，再把后加的表删掉，假装是旧版本写的。删掉后来才
+      // 有的表，是手边最接近的替身：不用编数据，也不改历史。
       //
-      // `consolidate` is the opener because it opens the DURABLE store at
-      // ANS_DB_PATH. `doctor`'s store check runs in memory, so it would report
-      // green while writing no schema file at all — the wrong probe for this
-      // lane. The exit code must be 0: the stub endpoint is up and the scope has
-      // no materials, so a non-zero code is a real failure, not "LLM absent".
+      // 用它打开而不是 doctor：consolidate 会打开 ANS_DB_PATH 上那个持久库，而
+      // doctor 的 store 检查跑在内存里，报绿但一个 schema 文件都没写。退出码必须
+      // 是 0：假端点起着、范围里也没材料，非 0 就是真失败，不是「没有模型」。
       const warm = sh(ansBin, ["consolidate", "--session", "warm-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
-      check(warm.code === 0, "a fresh database opens through the installed CLI (consolidate exits 0)", warm.out.slice(0, 400));
-      check(/scanned \d+ cluster/.test(warm.out), "the fresh-database run reports what it scanned", warm.out.slice(0, 300));
+      check(warm.code === 0, "全新的库能被装出来的 CLI 打开，consolidate 退出码 0", warm.out.slice(0, 400));
+      check(/scanned \d+ cluster/.test(warm.out), "新库那次报了扫描到几个簇", warm.out.slice(0, 300));
 
-      // The add-on tables a later release introduced. Dropping them makes this
-      // file look like one an earlier version wrote.
+      // 后来的版本才加的表。删掉它们，这个文件就像是旧版本写的了。
       const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts"];
       let before = null;
       {
@@ -703,18 +654,18 @@ async function main() {
           };
         } finally { db.close(); }
       }
-      check(before.rows >= 1, "the older database carries a row before migration", JSON.stringify(before));
+      check(before.rows >= 1, "旧库在迁移前就有一条数据", JSON.stringify(before));
 
       const open1 = sh(ansBin, ["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
-      check(open1.code === 0, "the older database opens and migrates (first open)", open1.out.slice(0, 400));
+      check(open1.code === 0, "旧库第一次打开就迁移好了", open1.out.slice(0, 400));
       const open2 = sh(ansBin, ["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
-      check(open2.code === 0, "opening the same database again is a no-op, not a failure (repeatable migration)", open2.out.slice(0, 400));
+      check(open2.code === 0, "再打开一次也不报错，迁移能重复跑", open2.out.slice(0, 400));
 
       const db = new Database(legacyPath, { readonly: true });
       let after;
@@ -728,9 +679,9 @@ async function main() {
         restored = laterTables.map((t) => [t, db.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name=?").get(t).c > 0]);
         keptRow = db.prepare("SELECT title, snippet FROM retrieval_results WHERE url = ?").get("https://older.example/x");
       } finally { db.close(); }
-      check(after.tables > before.tables, "the migration restored the newer tables", JSON.stringify({ before: before.tables, after: after.tables }));
-      for (const [t, present] of restored) check(present, "migration restored table " + t);
-      check(keptRow && keptRow.title === "OLDER-ROW-TITLE", "the old row survived the migration unchanged", JSON.stringify(keptRow));
+      check(after.tables > before.tables, "迁移把后来加的表补回来了", JSON.stringify({ before: before.tables, after: after.tables }));
+      for (const [t, present] of restored) check(present, "迁移补回了表 " + t);
+      check(keptRow && keptRow.title === "OLDER-ROW-TITLE", "旧数据迁移后原样还在", JSON.stringify(keptRow));
 
       // The installed MCP must read the migrated file too — the CLI passing is
       // not the same claim as the server that serves tools.
@@ -739,23 +690,22 @@ async function main() {
       await legacyReader.ready();
       const recall = await legacyReader.rpc("tools/call", { name: "recall_memory", arguments: { query: "OLDER-ROW-SNIPPET" } });
       const recallText = textOf(recall);
-      check(recall.result?.isError !== true, "the installed MCP opens the migrated database", recallText.slice(0, 200));
-      check(/"hitsCount":\s*[1-9]/.test(recallText), "the migrated database still answers a recall for the old row", recallText.slice(0, 300));
+      check(recall.result?.isError !== true, "装出来的 MCP 也能打开迁移后的库", recallText.slice(0, 200));
+      check(/"hitsCount":\s*[1-9]/.test(recallText), "迁移后的库还能召回到旧那条数据", recallText.slice(0, 300));
       await legacyReader.kill();
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));
     endpoint.close();
-    // Windows keeps a handle on a just-killed child's files for a moment, so a
-    // plain rmSync races the OS and throws EPERM. The sandbox is a temp dir; a
-    // few bounded retries is the fix, and a failure here must never turn a green
-    // acceptance run into a crash (the run's verdict is about the product).
+    // Windows 上刚被杀的子进程还会握着文件一小会儿，直接 rmSync 会跟系统抢
+    // 输，报 EPERM。沙箱是临时目录，重试几次就够；这里失败也不能把一轮本来
+    // 是绿的验收变成崩溃（结论是看产品的）。
     rmTempWithRetry(work);
   }
 
-  console.log("\ninstalled-acceptance: " + passed + " passed, " + failed + " failed, " + skipped + " skipped");
+  console.log("\ninstalled-acceptance: 过了 " + passed + " 项，挂了 " + failed + " 项，跳了 " + skipped + " 项");
   if (skipped > 0) {
-    console.log("NOTE: skipped lanes did not run. This run proves the rest, not the skipped part.");
+    console.log("注意：跳掉的那几条没跑，这轮只证明了跑过的那部分。");
   }
   process.exit(failed === 0 ? 0 : 1);
 }
