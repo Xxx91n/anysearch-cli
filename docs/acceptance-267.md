@@ -82,7 +82,7 @@ ANS_ACC_TARBALLS=<那个目录> node scripts/installed-acceptance.mjs
 node scripts/installed-acceptance.mjs
 
 # 把沙箱挪到指定目录（比如路径里带 & 的目录），验证脚本自己扛得住
-ANS_ACC_TMPDIR='C:\Tempcc&test' node scripts/installed-acceptance.mjs
+ANS_ACC_TMPDIR='C:\Temp\acc&test' node scripts/installed-acceptance.mjs
 ```
 
 车道 E（内部搜索入库 → 另一个会话召回）需要 `EXA_API_KEY` 或 `TAVILY_API_KEY`。一个都没有时它会打 SKIPPED，整轮按"部分完成"报，不会装成通过。

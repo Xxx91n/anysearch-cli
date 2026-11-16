@@ -137,8 +137,15 @@ function latestUserMarker(body) {
  * 从最近一次发给模型的请求里，读那条 search 工具结果：搜到几条、哪些源失败了。
  *
  * 为什么要读这里而不是直接查库：库里有没有行，可能是"搜到 0 条所以没写"，也
- * 可能是"搜到了却没写"。前者是外部的事，后者才是产品的问题。工具结果里同时
- * 带着 results 和 providersFailed，能把这两种分开。
+ * 可能是"搜到了却没写"。前者是外部的事，后者才是产品的问题。
+ *
+ * 结果的实际形状是 RetrievalContent：`{schema, url, title, snippet, ...}`，
+ * 真正的 envelope（里面有 results / metadata.providersFailed）是
+ * `snippet` 里的一段 JSON 字符串。这个包装层一开始漏了，于是有结果也会被读成
+ * 0 条。三种形状都认：裸 envelope、`content.results`、以及 snippet 里那段。
+ *
+ * 返回 parsed=false 表示这段内容根本没解开（读不懂），跟"真搜到 0 条"是两件
+ * 事，调用方要分开处理，不能把读不懂也算成没搜到。
  */
 function lastToolResultResults() {
   for (let i = requestLog.length - 1; i >= 0; i--) {
@@ -147,23 +154,47 @@ function lastToolResultResults() {
     for (let j = messages.length - 1; j >= 0; j--) {
       const m = messages[j];
       if (!m || m.role !== "tool") continue;
-      let payload = null;
       const raw = typeof m.content === "string"
         ? m.content
         : Array.isArray(m.content)
           ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
           : "";
-      try { payload = JSON.parse(raw); } catch { continue; }
-      // 检索结果可能裹在信封里，尽量往里找一找。
-      const body = payload?.results ? payload : (payload?.content?.results ? payload.content : null);
-      if (!body) continue;
+      const env = findRetrievalEnvelope(raw);
+      if (!env) return { parsed: false, count: 0, failed: [] };
       return {
-        count: Array.isArray(body.results) ? body.results.length : 0,
-        failed: Array.isArray(body.metadata?.providersFailed) ? body.metadata.providersFailed : [],
+        parsed: true,
+        count: Array.isArray(env.results) ? env.results.length : 0,
+        failed: Array.isArray(env.metadata?.providersFailed) ? env.metadata.providersFailed : [],
       };
     }
   }
-  return { count: 0, failed: [] };
+  return { parsed: false, count: 0, failed: [] };
+}
+
+/**
+ * 在一段工具输出里找检索 envelope。找不到返回 null。
+ *
+ * 依次试：整段就是 envelope；`content.results`；RetrievalContent 的 snippet
+ * 字段里那段 JSON（这是产品实际发出来的形状）。
+ */
+function findRetrievalEnvelope(raw) {
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch { /* 不是 JSON */ }
+  if (!parsed || typeof parsed !== "object") return null;
+
+  if (Array.isArray(parsed.results)) return parsed;
+  if (Array.isArray(parsed.content?.results)) return parsed.content;
+
+  // RetrievalContent：snippet 里装着真正的 envelope。
+  const snippet = parsed.snippet;
+  if (typeof snippet === "string") {
+    try {
+      const inner = JSON.parse(snippet);
+      if (Array.isArray(inner?.results)) return inner;
+      if (Array.isArray(inner?.content?.results)) return inner.content;
+    } catch { /* snippet 不是 JSON */ }
+  }
+  return null;
 }
 
 // ---------- 小 MCP 客户端：一行一条 JSON-RPC，走 stdio ----------
@@ -479,18 +510,30 @@ async function main() {
     check(turn2Body.includes("SECOND-TURN-QUESTION"), "第二轮的请求里也有它自己的问题", turn2Body.slice(-300));
 
     // 固定提示词不该每轮重新拼一遍：比同一会话两次请求里的 system 消息。
+    //
+    // 先确认两轮都真的有提示词再比。只比"两轮相同"不够：两轮都丢了系统消息
+    // 时，两边都是 null，比较下来也"相同"，这条就白过了。所以既查存在、也查
+    // 内容就是配置里那句。
     const systemOf = (body) => {
       try {
         const j = JSON.parse(body);
         const msgs = j.messages ?? [];
         const sys = msgs.find((m) => m.role === "system" || m.role === "developer");
-        return JSON.stringify(sys ?? null);
+        if (!sys) return null;
+        return typeof sys.content === "string" ? sys.content : JSON.stringify(sys.content);
       } catch { return null; }
     };
     const chatBodies = requestLog.filter((r) => r.role === "chat").map((r) => r.body);
-    const sameSystem = chatBodies.length >= 2 && systemOf(chatBodies[chatBodies.length - 1]) === systemOf(chatBodies[chatBodies.length - 2]);
-    check(sameSystem, "两轮的固定提示词逐字节相同，缓存前缀是稳的",
-      systemOf(chatBodies[chatBodies.length - 1])?.slice(0, 200));
+    const lastSys = chatBodies.length >= 1 ? systemOf(chatBodies[chatBodies.length - 1]) : null;
+    const prevSys = chatBodies.length >= 2 ? systemOf(chatBodies[chatBodies.length - 2]) : null;
+
+    check(prevSys !== null && lastSys !== null,
+      "两轮请求里都带着系统提示词", JSON.stringify({ prev: prevSys, last: lastSys }));
+    check(lastSys !== null && lastSys.includes("PROBE-SYSTEM-PROMPT."),
+      "系统提示词里就是配置里那句", String(lastSys).slice(0, 200));
+    check(prevSys !== null && lastSys !== null && prevSys === lastSys,
+      "两轮的固定提示词逐字节相同，缓存前缀是稳的",
+      JSON.stringify({ prev: String(prevSys).slice(0, 120), last: String(lastSys).slice(0, 120) }));
 
     // ================= C2. 冷启动：两个服务，一个全新的库 =================
     //
@@ -663,7 +706,13 @@ async function main() {
         rows = ingestDb.prepare("SELECT session_id, url, title, snippet FROM retrieval_results ORDER BY id DESC LIMIT 20").all();
       } finally { ingestDb.close(); }
 
-      if (searched.count === 0) {
+      if (!searched.parsed) {
+        // 读不懂工具结果和"真没搜到"是两件事。读不懂说明这个脚本跟不上产品的
+        // 输出形状了，要报红让人看见，不能默默跳过。
+        check(false, "能读懂 search 工具返回的结果格式",
+          "工具结果里没找到检索 envelope（results / content.results / snippet 三种形状都没匹配上）");
+        skip("内部搜索入库 + 跨会话召回", "结果格式没读懂，无法判断入库与否");
+      } else if (searched.count === 0) {
         skip("内部搜索入库 + 跨会话召回", "搜索源这次回了 0 条" +
           (searched.failed.length ? "（失败的源：" + searched.failed.join(",") + "）" : "") +
           "，没东西可入库");
@@ -679,12 +728,12 @@ async function main() {
       // 前 600 字（RAG_HIT_MAX_CHARS）。从 600 之后挑词，库里能命中但返回的
       // 文本里没有它，于是明明召回对了也会被判失败。
       const ADAPTER_HIT_CHARS = 600;
-      const token = searched.count === 0 ? undefined : rows
+      const token = !searched.parsed || searched.count === 0 ? undefined : rows
         .map((r) => (String(r.snippet ?? "")
           .replace(/\s+/g, " ").trim().slice(0, ADAPTER_HIT_CHARS)
           .toLowerCase().match(/[a-z0-9]{7,}/g) ?? [])[0])
         .find(Boolean);
-      if (searched.count > 0 && !token) {
+      if (searched.parsed && searched.count > 0 && !token) {
         skip("跨会话召回", "库里没有哪行带着足够长的词，严格档匹配不上");
       } else if (token) {
         const reader = mcpClient(mcpBin, { ...ingestEnv, ANS_DOMAIN: "recall" }, "recall");
