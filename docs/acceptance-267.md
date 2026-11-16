@@ -59,7 +59,7 @@ These rows exist so nobody reads this page as a full green board.
   all** — not local, not remote. The local runs that do exist are
   `node --check` on the new script, `node scripts/check-workflows.mjs` (8 files,
   exit 0), `git diff --check` (exit 0), and the lane itself against the main
-  CI artifacts (66 checks, 0 failed, 0 skipped). Until the gates run green,
+  CI artifacts (68 checks, 0 failed, 0 skipped). Until the gates run green,
   this ticket is not verified regardless of the lane passing.
 - **The lane's model is a stub.** It proves transport, request shape, memory
   wiring and the accounting path. It proves nothing about a real model's

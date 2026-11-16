@@ -16,7 +16,7 @@
 ### Verification
 
 - 用 main 的 CI 产物（`51f3aec7` 那次 run 的 `tarballs-windows-latest`）本地真装过：`ans 0.1.2` 能启动，安装后的 MCP 能 `initialize`、能对话、能续聊、能整理、能召回；旧库能打开并迁移，原行仍在。
-- 新脚本用同一批 CI 产物跑：66 项断言全过，退出码 0，零跳过。
+- 新脚本用同一批 CI 产物跑：68 项断言全过，退出码 0，零跳过。
 - `node scripts/check-workflows.mjs`：8 个 workflow 全过，退出码 0。
 
 ### Known limits (recorded, not hidden)

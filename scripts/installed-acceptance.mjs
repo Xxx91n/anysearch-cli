@@ -115,12 +115,34 @@ const endpoint = createServer(async (req, res) => {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   if (role === "toolcall") return res.end(sseToolCall("search", JSON.stringify({ query: "anysearch-cli GitHub repository" })));
   if (role === "consolidate") return res.end(sseText(FACT));
-  // Echo a token from the user's turn. A later request that carries this answer
-  // proves the session record resumed; a fixed "answer" would not, because the
-  // same constant would appear even on a fresh session.
-  const marker = (body.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION)/) ?? [])[1];
-  res.end(sseText(marker ? "REPLY-TO-" + marker : "PLAIN-ANSWER"));
+  // Echo a token from the LATEST user turn. A later request that carries this
+  // answer proves the session record resumed; a fixed "answer" would not,
+  // because the same constant would appear even on a fresh session.
+  //
+  // The last user message is what matters, not the first match in the body: on a
+  // resumed turn the body still contains turn 1's question, so matching the raw
+  // text returned `REPLY-TO-FIRST-TURN-QUESTION` again and repeated first turns
+  // would have passed the resume checks.
+  res.end(sseText("REPLY-TO-" + (latestUserMarker(body) ?? "UNKNOWN-TURN")));
 });
+
+/** The marker in the newest user message, or undefined when there is none. */
+function latestUserMarker(body) {
+  let messages = [];
+  try { messages = JSON.parse(body)?.messages ?? []; } catch { return undefined; }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== "user") continue;
+    const text = typeof m.content === "string"
+      ? m.content
+      : Array.isArray(m.content)
+        ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
+        : "";
+    const marker = (text.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION)/) ?? [])[1];
+    if (marker) return marker;
+  }
+  return undefined;
+}
 
 // ---------- tiny MCP stdio client (newline-delimited JSON-RPC) ----------
 function mcpClient(bin, env, tag) {
@@ -184,20 +206,31 @@ const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join(
 // ---------- environment helpers ----------
 
 /**
- * Run a command through a shell.
+ * Run a command and capture its combined output.
  *
- * The shell is ALWAYS on, matching scripts/install-smoke.mjs. On Windows the
- * installed bin is `ans.cmd`, which only a shell can launch; on POSIX a quoted
- * command with `shell: false` keeps the quotes inside argv[0] and dies with
- * ENOENT. One code path for both is what makes the ubuntu leg of the CI matrix
- * run the same assertions as the windows leg.
+ * Two platforms, two mechanisms, because one string cannot be safe on both:
+ *
+ * - POSIX: pass the argv array straight to spawnSync with `shell: false`. The
+ *   temporary directory name comes from mkdtemp, and a path containing `&`, `;`,
+ *   `$` or a backtick would be reinterpreted by a shell. argv passing has no
+ *   parser to fool, so those characters stay literal.
+ * - Windows: the installed bin is `ans.cmd`, a batch shim that only starts
+ *   through cmd.exe. So the command line is built here and quoted explicitly —
+ *   a path with spaces needs quotes, and a bare name like `npm` must stay
+ *   unquoted (cmd.exe resolves `"npm"` to another shim and the install dies with
+ *   MODULE_NOT_FOUND). Anything else is refused rather than guessed at: an
+ *   argument carrying a quote, `%`, `&`, `|`, `<`, `>` or `^` has no escaping
+ *   rule this file can trust through cmd.exe.
  */
 function sh(cmd, args, opts = {}) {
-  // A command carrying a separator is a path and may contain spaces, so it gets
-  // quoted. A bare name like `npm` must stay unquoted: cmd.exe resolves `"npm"`
-  // to a different shim and the install step dies with MODULE_NOT_FOUND. Both
-  // separators are checked because this script runs on windows-latest and
-  // ubuntu-latest. scripts/install-smoke.mjs uses the same unquoted-name shape.
+  if (process.platform !== "win32") {
+    const r = spawnSync(cmd, args, { encoding: "utf8", shell: false, ...opts });
+    return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  }
+  const UNSAFE = /["%&|<>^]/;
+  if (UNSAFE.test(cmd) || args.some((a) => UNSAFE.test(a))) {
+    throw new Error("sh(): refusing a command line cmd.exe cannot be trusted to quote safely: " + cmd);
+  }
   const isPath = cmd.includes("/") || cmd.includes("\\");
   const parts = [isPath ? '"' + cmd + '"' : cmd];
   for (const a of args) parts.push(/\s/.test(a) || a === "" ? '"' + a + '"' : a);
@@ -388,10 +421,17 @@ async function main() {
 
     const turn2 = await prober.rpc("tools/call", { name: "ans_chat", arguments: { message: "SECOND-TURN-QUESTION", sessionId: sid } });
     check(turn2.result?.isError !== true, "turn 2 with the handle completes", textOf(turn2).slice(0, 200));
+    const t2text = textOf(turn2);
+    // The answer must be to turn 2's question. Without this, repeating turn 1
+    // passes the resume check: the body still contains turn 1's question and its
+    // answer either way, so only the NEW turn proves the run moved forward.
+    check(/REPLY-TO-SECOND-TURN-QUESTION/.test(t2text),
+      "turn 2's answer is to turn 2's question, not a repeat of turn 1", t2text.slice(0, 200));
     check(turn2.result?.structuredContent?.sessionId === sid, "turn 2 keeps the same session handle", String(turn2.result?.structuredContent?.sessionId));
     const turn2Body = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
     check(turn2Body.includes("FIRST-TURN-QUESTION"), "turn 2 request carries turn 1's question (the record resumed)");
     check(turn2Body.includes("REPLY-TO-FIRST-TURN-QUESTION"), "turn 2 request carries turn 1's answer (the record resumed)");
+    check(turn2Body.includes("SECOND-TURN-QUESTION"), "turn 2 request carries its own question too", turn2Body.slice(-300));
 
     // The fixed prompt must not be re-invented per turn: compare the system
     // message of two requests in the same session.
@@ -553,8 +593,17 @@ async function main() {
       check(rows.length > 0, "the internal search wrote " + rows.length + " row(s) into the archive", JSON.stringify(rows.slice(0, 2)));
 
       // Recall's strict FTS rung ANDs every query term, so pick one long token.
+      //
+      // Take it from the part of the row the adapter will actually hand back:
+      // `query_knowledge` collapses whitespace and keeps only the first
+      // RAG_HIT_MAX_CHARS (600) characters of each hit. A token picked from
+      // beyond that point hits in the database but never appears in the returned
+      // block, so the assertion would fail on a row that was recalled correctly.
+      const ADAPTER_HIT_CHARS = 600;
       const token = rows
-        .map((r) => (String(r.snippet ?? "").toLowerCase().match(/[a-z0-9]{7,}/g) ?? [])[0])
+        .map((r) => (String(r.snippet ?? "")
+          .replace(/\s+/g, " ").trim().slice(0, ADAPTER_HIT_CHARS)
+          .toLowerCase().match(/[a-z0-9]{7,}/g) ?? [])[0])
         .find(Boolean);
       if (!token) {
         skip("cross-session recall", "no archived row carried a token long enough for the strict recall rung");
