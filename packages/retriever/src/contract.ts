@@ -221,12 +221,14 @@ export interface FusionProvenance {
 // carried by FusedEnvelope.metadata.providerErrorClasses so eval artifacts
 // record an error CATEGORY next to the flag, never the flag alone.
 // 5xx/429/rate-limit notice/network-level → transient; 401/403/invalid_api_key → permanent-auth;
+// exhausted plan text (the key is valid, retrying does not help) → quota-exhausted;
 // malformed/drifted reply shape → permanent-protocol; HTTP 404 on a
 // session-id'd request → session-expired (semi-permanent — the spec-MUST
 // re-initialize retry already fired once).
 export type ProviderErrorClass =
   | "transient"
   | "permanent-auth"
+  | "quota-exhausted"
   | "permanent-protocol"
   | "session-expired"
   | "unknown";
@@ -240,6 +242,13 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
   if (http("401") || http("403") || t.includes("quota/auth nudge") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
+  // Design: an exhausted plan gets its own class, not permanent-auth — the key
+  // is valid, so rotating it or retrying does nothing; the account owner must
+  // top up. Checked after the retryable shapes so a 429/5xx that also says
+  // "usage limit" stays transient (r19 T2); "rate limit" alone never matches
+  // this list. Tavily's shape is a plain-text HTTP 432 body rethrown by
+  // @tavily/core with no status attached (#294).
+  if (/exceeds your plan|usage limit|quota exceeded|insufficient credits|out of credits/i.test(t)) return "quota-exhausted";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
   return "unknown";

@@ -23,6 +23,17 @@ const cases: Array<[string, string]> = [
   // transient — the key is valid; retry later. Only the provisioning reply is auth.
   ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later)", "transient"],
   ["Error: AnySearch MCP tools/call isError: rate limit exceeded, please slow down", "transient"],
+  // #294: Tavily answers an exhausted plan with HTTP 432 and a plain-text
+  // body; @tavily/core rethrows it with no status, so only the text is left.
+  // The key is valid — top up or upgrade, do not rotate the key or retry.
+  ["Error: This request exceeds your plan's set usage limit. Please upgrade your plan or contact support@tavily.com", "quota-exhausted"],
+  ["Error: Tavily API HTTP 432: quota exceeded for this billing period", "quota-exhausted"],
+  ["Error: insufficient credits remaining on this account", "quota-exhausted"],
+  ["Error: you are out of credits", "quota-exhausted"],
+  // Retryable shapes win over the quota word list: a throttle that also says
+  // "usage limit" is still transient, not an exhausted plan.
+  ["Error: HTTP 429 Too Many Requests: usage limit exceeded, retry after 30s", "transient"],
+  ["Error: HTTP 503 Service Unavailable: usage limit temporarily exceeded", "transient"],
   ["SessionExpiredError: AnySearch MCP tools/call HTTP 404 (session terminated)", "session-expired"],
   ["Error: AnySearch MCP tools/call malformed text (no '## Search Results' header)", "permanent-protocol"],
   ["Error: AnySearch MCP initialize malformed reply (no result object)", "permanent-protocol"],

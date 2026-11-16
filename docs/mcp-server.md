@@ -207,9 +207,9 @@ Rules behind the table:
   outage. A cancelled provider never counts as an answered one.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
-  `permanent-protocol` / `session-expired` / `unknown`) and construction-time
-  `providerBuildErrors` appear in both the content JSON and
-  `structuredContent`.
+  `quota-exhausted` / `permanent-protocol` / `session-expired` / `unknown`)
+  and construction-time `providerBuildErrors` appear in both the content JSON
+  and `structuredContent`.
 - **Abstain is a successful policy outcome.** It leaves `isError` absent and
   exposes the marker in `structuredContent.abstain`. For `research_web`, the
   marker describes the **last round only**. Results merged from earlier
