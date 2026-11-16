@@ -237,21 +237,39 @@ const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join(
  * - Windows：装出来的 bin 是 `ans.cmd`，一个批处理壳子，只能通过 cmd.exe
  *   启动。所以这里自己拼命令行、自己加引号：带空格的路径要引号，裸名字像
  *   `npm` 不能加引号（cmd.exe 会把 `"npm"` 解析成另一个壳子，安装直接
- *   MODULE_NOT_FOUND）。除此之外的字符一律拒绝，不猜：参数里带引号、`%`、
- *   `&`、`|`、`<`、`>`、`^` 时，这个文件没有一条敢信任的转义规则。
+ *   MODULE_NOT_FOUND）。
+ *
+ * 这里踩过两个坑，都记下来：
+ *
+ * 1. 一开始我把 `& | < > ^ %` 全拦了，理由是"cmd.exe 不可信"。实测这是错的：
+ *    被引号包住的路径里，`&`、`!`、`^`、单个 `%` 都能正常跑，拦掉只会让合法
+ *    目录（比如 `…\Tempcc&test`）跑不了。真正会坏的只有成对的 `%NAME%`，
+ *    cmd.exe 即使有引号也会把它展开。现在只拦这一种。
+ * 2. 参数也必须一律加引号，不能只给带空格的加。`&` 在 cmd.exe 里是命令
+ *    分隔符，跟有没有空格无关；裸着进去会在 `&` 处截断。
  */
 function sh(cmd, args, opts = {}) {
   if (process.platform !== "win32") {
     const r = spawnSync(cmd, args, { encoding: "utf8", shell: false, ...opts });
     return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
   }
-  const UNSAFE = /["%&|<>^]/;
-  if (UNSAFE.test(cmd) || args.some((a) => UNSAFE.test(a))) {
-    throw new Error("sh()：这条命令行 cmd.exe 没法安全加引号，拒绝执行：" + cmd);
+  // cmd.exe 只在一种情况下会篡改被引号包住的内容：成对的 %NAME%。它会被
+  // 展开成环境变量，路径随之变成别的东西。
+  const EXPANDS = /%[^%]+%/;
+  if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
+    throw new Error("sh()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
   }
+  // 命令本身：路径要引号（可能带空格）；裸名字像 `npm` 不能加引号，否则
+  // cmd.exe 会去解析另一个壳子。
   const isPath = cmd.includes("/") || cmd.includes("\\");
   const parts = [isPath ? '"' + cmd + '"' : cmd];
-  for (const a of args) parts.push(/\s/.test(a) || a === "" ? '"' + a + '"' : a);
+  // 参数一律加引号，不只是带空格的。
+  //
+  // 这里踩过坑：一开始只给带空格的参数加引号，于是像
+  // …\Temp\acc&267\x.tgz 这种"没空格但带 &"的参数裸着进去，cmd.exe 在 &
+  // 处截断，npm 转去读 …\Temp\acc\package.json，报 ENOENT。& 在 cmd.exe 里
+  // 是命令分隔符，跟有没有空格无关。引号包住之后它就只是普通字符。
+  for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
   const r = spawnSync(parts.join(" "), { encoding: "utf8", shell: true, ...opts });
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
@@ -297,7 +315,9 @@ function rmTempWithRetry(dir) {
 }
 
 async function main() {
-  const work = mkdtempSync(join(tmpdir(), "ans-installed-acc-"));
+  // ANS_ACC_TMPDIR 只挪沙箱的位置，不动 TEMP。改 TEMP 会连带影响子进程找
+  // npm，那不是这条车道想测的东西。
+  const work = mkdtempSync(join(process.env.ANS_ACC_TMPDIR?.trim() || tmpdir(), "ans-installed-acc-"));
   const outDir = join(work, "out");
   const prefix = join(work, "prefix");
   mkdirSync(outDir, { recursive: true });
@@ -344,6 +364,20 @@ async function main() {
     check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);
     check(existsSync(mcpBin), "装出来的 MCP 入口在", mcpBin);
 
+    // 真正要跑的是这个入口文件。
+    //
+    // Windows 上不能靠 .bin\ans.cmd：那是 npm 生成的批处理壳子，里面自己就有
+    // `&` 和 `||`（`endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & ...`）。
+    // 一旦安装路径里带 `&`（比如 …\Temp\acc&267\…），cmd.exe 会把壳子内部那些
+    // 符号和路径里的 `&` 混在一起解析，报 "…\node_modules\.bin\ is not recognized"。
+    // 这是 shim 自己的毛病：同一路径下 `node <入口>` 跑得好好的。
+    // 所以 Windows 走 node + 入口，POSIX 仍然用 .bin/ans（那边没这问题，也更接近
+    // 用户实际敲的命令）。
+    const cliEntry = join(nm, "@anysearch-cli", "cli", "dist", "index.js");
+    const runAns = process.platform === "win32"
+      ? (args, opts = {}) => sh(process.execPath, [cliEntry, ...args], opts)
+      : (args, opts = {}) => sh(ansBin, args, opts);
+
     // ================= A. 装出来的 CLI =================
     //
     // 每条命令都把 HOME/USERPROFILE 和 ANS_DB_PATH 指进沙箱。doctor 会自己解析
@@ -357,15 +391,15 @@ async function main() {
       ANS_DOMAINS_DIR: join(work, "empty-domains"),
     };
     mkdirSync(cliEnv.ANS_DOMAINS_DIR, { recursive: true });
-    const v = sh(ansBin, ["--version"], { cwd: prefix, env: cliEnv });
+    const v = runAns(["--version"], { cwd: prefix, env: cliEnv });
     check(v.code === 0, "装出来的 ans --version 退出码 0", v.out);
     check(/\d+\.\d+\.\d+/.test(v.out) && !/\b0\.0\.0\b/.test(v.out), "版本号是真实发布版本，不是 0.0.0", v.out);
 
-    const doctor = sh(ansBin, ["doctor"], { cwd: prefix, env: cliEnv });
+    const doctor = runAns(["doctor"], { cwd: prefix, env: cliEnv });
     check(doctor.code === 0, "装出来的 ans doctor 退出码 0", doctor.out);
     check(/vector arm/.test(doctor.out), "doctor 报了向量臂的状态", doctor.out.slice(-400));
 
-    const noScope = sh(ansBin, ["consolidate"], { cwd: prefix, env: cliEnv });
+    const noScope = runAns(["consolidate"], { cwd: prefix, env: cliEnv });
     check(noScope.code === 2, "整理不带范围时退出码 2，不会去整理全库", noScope.out);
     check(/explicit scope is required/.test(noScope.out), "拒绝整理时说明了缺什么", noScope.out);
 
@@ -677,7 +711,7 @@ async function main() {
       // 用它打开而不是 doctor：consolidate 会打开 ANS_DB_PATH 上那个持久库，而
       // doctor 的 store 检查跑在内存里，报绿但一个 schema 文件都没写。退出码必须
       // 是 0：假端点起着、范围里也没材料，非 0 就是真失败，不是「没有模型」。
-      const warm = sh(ansBin, ["consolidate", "--session", "warm-session"], {
+      const warm = runAns(["consolidate", "--session", "warm-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
@@ -702,12 +736,12 @@ async function main() {
       }
       check(before.rows >= 1, "旧库在迁移前就有一条数据", JSON.stringify(before));
 
-      const open1 = sh(ansBin, ["consolidate", "--session", "older-session"], {
+      const open1 = runAns(["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
       check(open1.code === 0, "旧库第一次打开就迁移好了", open1.out.slice(0, 400));
-      const open2 = sh(ansBin, ["consolidate", "--session", "older-session"], {
+      const open2 = runAns(["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
