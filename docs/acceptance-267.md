@@ -91,6 +91,18 @@ These rows exist so nobody reads this page as a full green board.
   Local runs in this window were narrower: `node --check` on the new script,
   `node scripts/check-workflows.mjs` (8 files, exit 0), `git diff --check`
   (exit 0), and the lane against the main CI artifacts.
+
+- **One gate run went red for an unrelated reason, and the rerun passed.**
+  On `dd600357` the first `ship-gate (windows-latest)` leg failed inside
+  `pnpm turbo run test`: `apps/mcp/test/coldstart-race.test.ts` hit a
+  71.8 s timeout (`duration_ms 84556`). That file belongs to #257 (the
+  empty-database concurrent-start test) and this PR does not touch it — the
+  diff is one script, one CI step and three docs. The other four legs on this
+  branch were green, and a targeted rerun of the failed leg (`gh run rerun
+  --failed`, run 43803814296) came back `success`. Recorded as a timing flake
+  under the 2-way turbo concurrency on a slow Windows runner, **not** as proof
+  that the test is healthy: the timeout was real, no assertion failed, and a
+  repeat failure would be a real signal to look at #257's timing budget.
 - **The lane's model is a stub.** It proves transport, request shape, memory
   wiring and the accounting path. It proves nothing about a real model's
   judgement, a real bill, or a real cache hit rate.
