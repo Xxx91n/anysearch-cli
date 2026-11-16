@@ -87,8 +87,8 @@ These rows exist so nobody reads this page as a full green board.
   `native smoke` (4 legs), `macos-spillover-probe` (non-blocking) and
   `semgrep`.
 
-  - `38abcdb5`, `224dc364`, `75fb18f9`, `ede9b72b`, `6772393e`: all 18 green
-    on their own run.
+  - `38abcdb5`, `224dc364`, `75fb18f9`, `ede9b72b`, `6772393e`, `b705b992`,
+    `217ba781`: all 18 green on their own run.
   - `dd600357`: 17 green, `ship-gate (windows-latest)` red on its first run
     (unrelated `coldstart-race` timeout — see the entry below). After a
     targeted rerun it was green, but the first red is recorded, not erased.
