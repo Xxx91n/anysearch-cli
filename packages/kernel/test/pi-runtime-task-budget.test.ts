@@ -121,7 +121,7 @@ async function main() {
     const events: any[] = [];
     for await (const ev of runtime.run("hello")) events.push(ev);
     assert(events.filter(e => e.type === "error").length === 0, "task-budgeted run completes without error");
-    const taskScopes = new Set(taskLedger.reserves.concat(taskLedger.settles).map(r => r.scope));
+    const taskScopes = new Set<string>([...taskLedger.reserves, ...taskLedger.settles].map(r => r.scope));
     assert(taskScopes.size === 1 && taskScopes.has("t-302-a"),
       "every reserve/settle bills the task id (got " + JSON.stringify([...taskScopes]) + ")");
     const tokenSettle = taskLedger.settles.find(s => s.dim === "tokens");
