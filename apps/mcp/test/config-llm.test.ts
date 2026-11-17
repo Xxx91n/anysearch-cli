@@ -18,7 +18,7 @@ import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/
 import { resolveLlmConfig } from "@anysearch-cli/store";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -39,10 +39,14 @@ const ENV_KEYS = [
   "ANS_LLM_API_KEY", "ANS_LLM_CONTEXT_WINDOW", "ANS_DB_PATH", "ANS_PI_SESSION_DIR",
 ];
 
+// Every temp root this suite creates, removed in main()'s finally (#322/greptile P2).
+const createdRoots: string[] = [];
+
 /** A temp home/cwd pair, each with an isolated config root. */
 function fixture(userToml?: string, projectToml?: string) {
   const home = mkdtempSync(join(tmpdir(), "ans-300-home-"));
   const cwd = mkdtempSync(join(tmpdir(), "ans-300-proj-"));
+  createdRoots.push(home, cwd);
   // #322: chat runs write PI records + a DB; keep both off the operator's home.
   process.env.ANS_PI_SESSION_DIR = join(cwd, "pi-sessions");
   process.env.ANS_DB_PATH = join(cwd, "anysearch.db");
@@ -204,6 +208,21 @@ async function main() {
         "bad TOML + env: source shows the value came from env, not the broken file");
     }
 
+    // 5b. an unreadable config (config.toml is a directory) is reported, not a
+    //     crash before observation (#300/greptile P2).
+    {
+      const fix = fixture();
+      mkdirSync(join(fix.home, ".anysearch-cli"), { recursive: true });
+      mkdirSync(join(fix.home, ".anysearch-cli", "config.toml")); // a directory, not a file
+      const h = harness(fix, { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" });
+      await h.call();
+      assert(h.seen.length === 1, "unreadable config: env model still runs, no crash");
+      assert(fix.warnings.some((w) => w.includes("could not read config file")),
+        "unreadable config: the read failure was reported as a warning");
+      assert((h.attrs[0]?.["anysearch.llm.configWarnings"] ?? 0) >= 1,
+        "unreadable config: warning count visible in observation");
+    }
+
     // 6. project whitelist: a repo cannot redirect endpoint/protocol/secret
     {
       const fix = fixture(undefined,
@@ -227,19 +246,34 @@ async function main() {
       const h = harness(fix, { ANTHROPIC_API_KEY: "sk-ant" });
       await h.call();
       assert(h.seen[0]?.provider === "openai", "binding: project provider wins");
-      // custom endpoint not set, so apiKey is not passed to buildSession —
-      // assert the guard at the resolver instead (same shared rules).
+      // The API key is now passed unconditionally (#300/greptile P1). The guard
+      // must keep it undefined here, so no secret reaches the new provider.
+      assert(h.seen[0]?.apiKey === undefined, "binding: blocked secret never reaches the model session");
       const cfg = resolveLlmConfig({ home: fix.home, cwd: fix.cwd,
         env: { ANTHROPIC_API_KEY: "sk-ant" }, warn: (m) => fix.warnings.push(m) });
       assert(cfg.apiKey === undefined, "binding: cross-provider secret blocked by shared resolver");
       assert(fix.warnings.some((w) => w.includes("refusing to send that secret")),
         "binding: refusal was reported");
     }
+
+    // 8. a legitimate user-file env_key reaches a CATALOG model on MCP too —
+    //    the exact CLI/MCP gap greptile P1 flagged (was dropped without baseUrl).
+    {
+      const fix = fixture('[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "MY_OPENAI_KEY"\n');
+      const h = harness(fix, { MY_OPENAI_KEY: "sk-user-envkey" });
+      await h.call();
+      assert(h.seen[0]?.provider === "openai", "env_key catalog: provider from user file");
+      assert(h.seen[0]?.apiKey === "sk-user-envkey",
+        "env_key catalog: the user-file key reaches a catalog model session (no baseUrl needed)");
+      assert(h.attrs[0]?.["anysearch.llm.provider.source"] === "user",
+        "env_key catalog: source reported as user");
+    }
   } finally {
     for (const k of Object.keys(saved)) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    for (const root of createdRoots) rmSync(root, { recursive: true, force: true });
   }
 
   console.log("--- mcp config-resolution tests (#300): " + passed + " passed, " + failed + " failed ---");

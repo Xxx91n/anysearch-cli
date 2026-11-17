@@ -159,9 +159,11 @@ export function registerAnsChat(
       keyHash,
       session: buildSession({
         provider: providerName, model: modelName, baseUrl, api, contextWindow,
-        // CLI chat.ts passes cfg.apiKey (env or env_key indirection). Same here:
-        // a user-file env_key must reach a custom endpoint on the MCP path too.
-        apiKey: baseUrl ? apiKey : undefined,
+        // Design: pass the resolved key for catalog providers AND custom
+        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers ANS_LLM_API_KEY
+        // and a user-file env_key indirection; gating it on baseUrl would make
+        // a working CLI config fail auth only on the MCP path (#300, greptile P1).
+        apiKey,
       }),
     };
     sessionCache.set(key, entry);

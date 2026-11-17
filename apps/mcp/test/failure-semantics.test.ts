@@ -20,9 +20,13 @@ import { registerResearchWeb } from "../src/tools/research-web.tool.js";
 import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
+import { createMcpToolState } from "../src/tool-state.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
-import type { SessionStore } from "@anysearch-cli/store";
+import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { httpStateless } from "./helpers/mcp-harness.js";
 
 let passed = 0;
@@ -57,7 +61,14 @@ function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   registerSearchWeb(fakeServer as any, eng);
   registerResearchWeb(fakeServer as any, eng);
   registerRecallMemory(fakeServer as any, eng);
-  registerAnsChat(fakeServer as any, eng);
+  // #300/greptile P1: the "missing config" case must not depend on the
+  // operator's real ~/.anysearch-cli/config.toml. Point the shared resolver at
+  // an empty temp root so only this suite's env decides the outcome.
+  const emptyRoot = mkdtempSync(join(tmpdir(), "ans-300-failure-"));
+  const isolatedState = createMcpToolState({
+    resolveLlmConfig: (opts = {}) => resolveLlmConfig({ ...opts, home: emptyRoot, cwd: emptyRoot }),
+  });
+  registerAnsChat(fakeServer as any, eng, isolatedState);
   registerQueryKnowledge(fakeServer as any, eng);
   return handlers;
 }

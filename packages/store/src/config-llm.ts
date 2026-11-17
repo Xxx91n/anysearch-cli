@@ -119,7 +119,19 @@ function loadFile(
   warn: (msg: string) => void,
 ): LlmFileConfig {
   if (!existsSync(path)) return {};
-  return parseLlmToml(readFileSync(path, "utf8"), level, path, warn);
+  // Design: an unreadable file (a directory at config.toml, a permission error)
+  // is a config fault, not an absent config — report it and carry on with the
+  // lower layers instead of throwing out of the composition root before the
+  // caller can observe or return a clean error (#300, greptile P2). Never
+  // mistake the file's *existence* for "model connected".
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (e) {
+    warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
+    return {};
+  }
+  return parseLlmToml(raw, level, path, warn);
 }
 
 /**
