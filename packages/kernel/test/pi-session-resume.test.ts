@@ -180,6 +180,9 @@ async function main() {
     // would then silently start a new conversation, which is exactly the
     // "restart lost my progress" failure this ticket is about.
     {
+      // This scenario owns its record directory; earlier forks must not change
+      // its assertion that two working directories keep one conversation file.
+      const piDir = join(workDir, "cwd-resume");
       const session = await store.createSession("chat");
       const firstProvider = provider("FIRST-ANSWER");
       const r1 = new PiAgentRuntime({
@@ -204,7 +207,7 @@ async function main() {
       assert(textOf(secondProvider.calls[0]?.context).includes("QUESTION-FROM-DIR-A"),
         "R1b: the same handle resumes its record when run from another directory");
       const files = readdirSync(piDir).filter((f) => f.endsWith(".jsonl"));
-      assert(files.length === 3,
+      assert(files.length === 1,
         "R1b: a new cwd does not create a second record for the same handle (files=" + files.length + ")");
     }
 
