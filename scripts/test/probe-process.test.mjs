@@ -46,31 +46,32 @@ function assertExited(owned) {
   assert.deepEqual(alive, [], "probe left processes running: " + alive.join(", "));
 }
 
-for (const status of [0, 7]) {
-  test("probe exit " + status + " removes a descendant whose stdio is closed", { timeout: 30000 }, async () => {
-    await withScript(`
-      import { spawn } from "node:child_process";
-      import { fileURLToPath } from "node:url";
-      if (process.argv[2] === "child") {
-        process.on("SIGTERM", () => {});
-        setInterval(() => {}, 1000);
-        process.send("ready");
-      } else {
-        const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "child"], {
-          stdio: ["ignore", "ignore", "ignore", "ipc"],
-        });
-        child.on("message", () => {
-          console.log(JSON.stringify({ probe: process.pid, descendant: child.pid }));
-          process.exit(${status});
-        });
-      }
-    `, async (file) => {
-      const result = await runProbeProcess(file);
-      assert.equal(result.status, status);
-      assert.equal(result.timedOut, false);
-      assertExited(JSON.parse(result.stdout.trim()));
+for (const stdio of ["ignore", "inherit"]) {
+  for (const status of [0, 7]) {
+    test("probe exit " + status + " removes a descendant with " + stdio + " stdio", { timeout: 30000 }, async () => {
+      await withScript(`
+        import { spawn } from "node:child_process";
+        import { fileURLToPath } from "node:url";
+        if (process.argv[2] === "child") {
+          process.on("SIGTERM", () => {});
+          setInterval(() => {}, 1000);
+          process.send("ready");
+        } else {
+          const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "child"], {
+            stdio: ["ignore", "${stdio}", "${stdio}", "ipc"],
+          });
+          child.on("message", () => {
+            process.stdout.write(JSON.stringify({ probe: process.pid, descendant: child.pid }) + "\\n", () => process.exit(${status}));
+          });
+        }
+      `, async (file) => {
+        const result = await runProbeProcess(file);
+        assert.equal(result.status, status);
+        assert.equal(result.timedOut, false);
+        assertExited(JSON.parse(result.stdout.trim()));
+      });
     });
-  });
+  }
 }
 
 test("timeout removes the probe and its ready descendant, including a stopped POSIX child", { timeout: 45000 }, async () => {

@@ -64,8 +64,8 @@ async function stopTree(child, closed) {
 /** Capture a probe result and finish tree cleanup before returning to its caller. */
 export async function runProbeProcess(file, args = [], { cwd, env = process.env, timeoutMs = 90000 } = {}) {
   const windows = process.platform === "win32";
-  // Windows taskkill cannot rediscover descendants after their parent exits.
-  // A job object instead owns the whole tree from before the probe is resumed.
+  // Design: Windows probes use an owned job — taskkill loses descendants
+  // after their parent exits; job ownership starts before the probe resumes.
   const executable = windows ? "powershell.exe" : process.execPath;
   const argv = windows ? [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
@@ -81,15 +81,17 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const closed = new Promise((resolve) => {
+  const exited = new Promise((resolve) => {
     child.once("error", (error) => resolve({ status: null, error }));
-    child.once("close", (status, signal) => resolve({ status, signal }));
+    child.once("exit", (status, signal) => resolve({ status, signal }));
   });
+  const closed = new Promise((resolve) => child.once("close", resolve));
   let timer;
   let timedOut = false;
   try {
     await Promise.race([
-      closed,
+      // Exit starts cleanup; it is not proof the descendants or pipes closed.
+      exited,
       new Promise((resolve) => {
         // The job enforces the probe deadline. Allow time to start PowerShell
         // and drain the job; an unresponsive supervisor is a cleanup failure.
@@ -106,7 +108,7 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
       });
     }
   }
-  let result = await closed;
+  let result = await exited;
   if (windows) {
     const marker = stderr.match(/^ANS_PROBE_RESULT:(.+)\r?$/m);
     // No success receipt means the supervisor could not confirm an empty job.
