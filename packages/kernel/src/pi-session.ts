@@ -65,26 +65,29 @@ function readPiSessionId(file: string): string {
   } finally { closeSync(fd); }
 }
 
-/** Find existing PI records without filtering by the creating process's cwd. */
-export async function listPiSessionRecords(dir: string): Promise<Array<{ id: string; path: string }>> {
+/** Find one PI record without filtering by the creating process's cwd. */
+export function findPiSessionRecord(dir: string, key: string): string | undefined {
   let files: string[];
   try { files = readdirSync(dir); }
   catch (error: any) {
-    if (error?.code === "ENOENT") return [];
+    if (error?.code === "ENOENT") return undefined;
     throw error;
   }
-  const records = files.filter((file) => file.endsWith(".jsonl")).map((file) => {
+  const matches: string[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".jsonl")) continue;
+    // PI names its files with the session id. Ignore other recognizable keys:
+    // another process can be writing its header while this session starts.
+    // Still inspect renamed files to preserve the old discovery contract.
+    const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
+    if (namedKey && namedKey !== key) continue;
     const path = join(dir, file);
-    return { id: readPiSessionId(path), path };
-  });
+    if (readPiSessionId(path) === key) matches.push(path);
+  }
   // Older releases could create duplicate keys after a cross-directory run.
   // Do not guess which copy is complete or discard either record.
-  const seen = new Set<string>();
-  for (const record of records) {
-    if (seen.has(record.id)) throw new Error("同一个会话有多份对话记录，请先核对：" + record.id);
-    seen.add(record.id);
-  }
-  return records;
+  if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
+  return matches[0];
 }
 
 /**

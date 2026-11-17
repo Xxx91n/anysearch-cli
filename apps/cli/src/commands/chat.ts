@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, listPiSessionRecords, resolvePiSessionDir } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, resolvePiSessionDir } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -85,17 +85,16 @@ export async function runChat(argv: string[]): Promise<number> {
   try {
     // PI owns full transcripts. A store row alone may only be a search or a
     // memory anchor, and is not proof that a conversation can be resumed.
-    const records = options.list || options.continueLatest || options.sessionId
-      ? await listPiSessionRecords(resolvePiSessionDir())
-      : [];
-    const recordIds = new Set(records.map((record) => record.id));
-    const canResume = (id: string) => recordIds.has(piSessionKey(id));
+    const canResume = (id: string) => !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(id));
     if (options.list) {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       const root = options.unassigned ? null : project.root;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
       for (const entry of store.listChatSessions(root)) {
-        console.log(entry.id + "\t" + entry.updatedAt + (canResume(entry.id) ? "" : "\t没有完整对话记录"));
+        let note = "";
+        try { if (!canResume(entry.id)) note = "\t没有完整对话记录"; }
+        catch { note = "\t对话记录无法确认，请单独检查"; }
+        console.log(entry.id + "\t" + entry.updatedAt + note);
       }
       return 0;
     }
@@ -145,17 +144,7 @@ export async function runChat(argv: string[]): Promise<number> {
     process.stderr.write("会话恢复失败，本次没有发送问题。\n");
     return 1;
   }
-  if (memory.sessionId) {
-    // A cross-directory resume keeps its original project; legacy records stay
-    // unassigned. Only a genuinely new handle inherits the current project.
-    try {
-      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root);
-    } catch (error: any) {
-      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
-      return 1;
-    }
-    console.log("[session] " + memory.sessionId);
-  }
+  if (memory.sessionId) console.log("[session] " + memory.sessionId);
   if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
   // Construct PiAgentRuntime and run.
@@ -190,6 +179,7 @@ export async function runChat(argv: string[]): Promise<number> {
   console.log("ans chat: " + query);
   console.log("---");
 
+  let completed = false;
   try {
     for await (const event of runtime.run(query)) {
       switch (event.type) {
@@ -209,6 +199,7 @@ export async function runChat(argv: string[]): Promise<number> {
           console.log("[search done]");
           break;
         case "done":
+          completed = true;
           console.log("\n---");
           console.log(event.summary);
           if (event.recovery) console.log("\n" + event.recovery);
@@ -268,5 +259,14 @@ export async function runChat(argv: string[]): Promise<number> {
     }
   }
 
+  // A failed launch is not the project's most recent conversation.
+  if (completed && memory.sessionId) {
+    try {
+      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root);
+    } catch (error: any) {
+      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
+      return 1;
+    }
+  }
   return 0;
 }

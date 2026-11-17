@@ -19,7 +19,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
-import { listPiSessionRecords } from "./pi-session";
+import { findPiSessionRecord } from "./pi-session";
 import {
   acquireSessionLock,
   resolveSessionLockWindows,
@@ -877,7 +877,7 @@ export class PiAgentRuntime {
       const piKey = piSessionKey(sessionId!);
       // PI resolves the old relative header cwd against the creating process.
       // Search the record directory by key so another process can resume it.
-      const found = (await listPiSessionRecords(persistentDir)).find((record) => record.id === piKey)?.path;
+      const found = findPiSessionRecord(persistentDir, piKey);
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
         : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });
