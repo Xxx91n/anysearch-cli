@@ -9,10 +9,10 @@
 // Design: no handle means a fresh single-shot session; a threaded handle is
 // ensureSession()-ed and reused — that is the only path to L1/L2 continuity.
 //
-// Design: memory wiring fails open — a malformed or unregisterable handle
-// returns no wiring (the call still answers, no fake handle) and a failed mint
-// is not cached, so a later call retries. Memory is an enhancement, not a
-// precondition for chat.
+// Design: the resolver returns no wiring for malformed or unregisterable
+// handles — a failed mint is not cached, so a later call retries. The tool
+// stops when a known conversation cannot be wired (#299); otherwise the
+// original fail-open behavior remains available for new and unknown handles.
 //
 // Design: callers that deliberately thread one handle share its anchors; the
 // last write wins. Isolation is a different handle, and the store (not the
@@ -166,7 +166,7 @@ export async function resolveAnsChatSession(
       return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      warnOnce("register:" + msg, "session row registration failed (" + msg + ") — continuing without memory");
+      warnOnce("register:" + msg, "session row registration failed (" + msg + ") — memory wiring unavailable");
       return {};
     }
   }

@@ -510,7 +510,8 @@ export function registerAnsChat(
             if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
               try {
                 const entry = memory.store.getChatSession(memory.sessionId);
-                if (entry) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
+                const hasRecord = mustResume || !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(memory.sessionId));
+                if (entry && hasRecord) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
               } catch (error) {
                 process.stderr.write("[warn] 无法登记会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
               }
