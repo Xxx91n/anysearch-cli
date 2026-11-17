@@ -13,7 +13,10 @@
 // (never-resolving stream) plus the real createHttpApp() transport. No test
 // framework (repo convention: assert-based, run via `node --import tsx --test`).
 
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
 import { createHttpApp } from "../src/http.js";
@@ -28,6 +31,15 @@ function assert(cond: boolean, msg: string) {
   } else {
     failed++;
     console.error("FAIL: " + msg);
+  }
+}
+
+// #322 regression guard: PI session records under a dir (empty if absent).
+function piRecords(dir: string): string[] {
+  try {
+    return readdirSync(dir).filter((f) => f.endsWith(".jsonl")).sort();
+  } catch {
+    return [];
   }
 }
 
@@ -140,11 +152,37 @@ function captureAnsChat(eng: CompositionResult, state: ReturnType<typeof createM
   return handler;
 }
 
+// #322: every env that can steer a chat's writes into the operator's real home.
+const ENV_KEYS = [
+  "ANS_LLM_PROVIDER",
+  "ANS_LLM_MODEL",
+  "ANS_DB_PATH",
+  "ANS_PI_SESSION_DIR",
+  "HOME",
+  "USERPROFILE",
+];
+
 async function main() {
+  // Snapshot the operator's real PI dir BEFORE touching HOME/USERPROFILE —
+  // homedir() derives from those, so reading it after redirecting would make
+  // the guard below watch the temp dir instead of the real one.
+  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realBefore = piRecords(realPiDir);
+
   const saved: Record<string, string | undefined> = {};
-  for (const key of ["ANS_LLM_PROVIDER", "ANS_LLM_MODEL"]) {
+  for (const key of ENV_KEYS) {
     saved[key] = process.env[key];
+    delete process.env[key];
   }
+
+  // A chat that mints a session handle writes a PI record. Until #322 this
+  // suite had no isolation and appended that record to ~/.anysearch/pi-sessions.
+  const tempRoot = mkdtempSync(join(tmpdir(), "ans-322-cancellation-"));
+
+  process.env.HOME = tempRoot;
+  process.env.USERPROFILE = tempRoot;
+  process.env.ANS_DB_PATH = join(tempRoot, "anysearch.db");
+  process.env.ANS_PI_SESSION_DIR = join(tempRoot, "pi-sessions");
   process.env.ANS_LLM_PROVIDER = "cancel-provider";
   process.env.ANS_LLM_MODEL = "cancel-model";
 
@@ -263,11 +301,20 @@ async function main() {
         });
       }
     }
+
+    // ---- #322: no PI record reached the operator's real home ----
+    const realAfter = piRecords(realPiDir);
+    assert(
+      realBefore.join("|") === realAfter.join("|"),
+      "#322: the operator's real ~/.anysearch/pi-sessions gained no record (before=" +
+        realBefore.length + ", after=" + realAfter.length + ")",
+    );
   } finally {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+    for (const key of ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
     }
+    try { rmSync(tempRoot, { recursive: true, force: true }); } catch { /* OS temp */ }
   }
 
   console.log("--- ans_chat cancellation tests: " + passed + " passed, " + failed + " failed ---");
