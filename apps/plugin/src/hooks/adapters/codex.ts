@@ -6,10 +6,9 @@
 // PreToolUse and PostToolUse supported; SessionStart is session-start.ts with
 // the --envelope flag (generated codex config passes it).
 
-import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the installation token + published server address.
-import { resolveServerEndpoint } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
 import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -82,12 +81,7 @@ async function main(): Promise<void> {
         sessionId: stdin.session_id || "",
       });
 
-      if (decision.shouldIndex && decision.indexEntries && projectRoot) {
-        const endpoint = resolveServerEndpoint();
-        await callServer(endpoint.url + "/index", endpoint.token, {
-          projectPath: projectRoot, toolName, entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // PostToolUse context injection requires the envelope too —
       // bare { additionalContext } was dropped on the real host.

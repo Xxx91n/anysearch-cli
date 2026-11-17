@@ -34,9 +34,13 @@ export interface ProjectIndexHit {
   createdAt: string;
 }
 
-/** The projects a read may use. Empty is a caller bug, not "everything". */
-export interface ProjectIndexScope {
-  projects: readonly string[];
+function scopeProjects(scope: readonly string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of scope) {
+    const project = typeof value === "string" ? value.trim() : "";
+    if (project) unique.add(project);
+  }
+  return [...unique];
 }
 
 const SCHEMA_SQL = `
@@ -87,16 +91,6 @@ CREATE INDEX IF NOT EXISTS idx_project_path ON project_index(project_path);
 CREATE INDEX IF NOT EXISTS idx_content_hash ON project_index(content_hash);
 `;
 
-function scopeProjects(scope: ProjectIndexScope | readonly string[]): string[] {
-  const raw: readonly string[] = Array.isArray(scope) ? scope : (scope as ProjectIndexScope).projects;
-  const unique = new Set<string>();
-  for (const value of raw) {
-    const project = typeof value === "string" ? value.trim() : "";
-    if (project) unique.add(project);
-  }
-  return [...unique];
-}
-
 function requireProject(projectPath: string): string {
   const project = typeof projectPath === "string" ? projectPath.trim() : "";
   if (!project) throw new Error("projectPath required: refusing to use a project-unscoped row");
@@ -134,10 +128,10 @@ export class ProjectIndexStore {
    * Search only the named projects. A single root is the default scoped read;
    * two or more roots are the explicit cross-project read (N2 / S3).
    */
-  search(query: string, scope: ProjectIndexScope | readonly string[], limit = 10): ProjectIndexHit[] {
-    const projects = scopeProjects(scope);
-    if (projects.length === 0) throw new Error("project scope required: refusing an unscoped project-index read");
-    const searchStmt = this.readStatement(projects.length);
+  search(query: string, projects: readonly string[], limit = 10): ProjectIndexHit[] {
+    const scopedProjects = scopeProjects(projects);
+    if (scopedProjects.length === 0) throw new Error("project scope required: refusing an unscoped project-index read");
+    const searchStmt = this.readStatement(scopedProjects.length);
     const safeQuery = this.fts5Escape(query);
     const strict = searchStmt.all(safeQuery, ...projects, limit) as ProjectIndexHit[];
     // host recall questions are natural language — relax when the strict rung under-fills.
@@ -187,7 +181,8 @@ export class ProjectIndexStore {
     if (!stmt) {
       const placeholders = new Array(scopeSize).fill("?").join(", ");
       stmt = this.db.prepare(
-        `SELECT p.rowid, p.project_path, p.title, p.url, p.snippet, p.source, p.created_at,
+        `SELECT p.rowid, p.project_path AS projectPath, p.title, p.url, p.snippet, p.source,
+                p.created_at AS createdAt,
                 f.rank,
                 bm25(project_index_fts, 0, 0, 10.0, 1.0, 5.0, 1.0) as weighted_rank
          FROM project_index_fts f

@@ -79,7 +79,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
       if (!project.root) {
         return {
           permission: "ask",
-          permissionReason: "URL policy unavailable: project identity unknown (" + project.reason + ")",
+          permissionReason: "URL policy unavailable: project identity unknown (" + (project.reason ?? "no Git root or .anysearch/config.toml") + ")",
         };
       }
       const endpoint = resolveServerEndpoint();
@@ -116,7 +116,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   // reading another project's rows or this process's start directory.
   if (!project.root) {
     return {
-      additionalContext: "[anysearch] project index unavailable: " + project.reason +
+      additionalContext: "[anysearch] project index unavailable: " + (project.reason ?? "no Git root or .anysearch/config.toml") +
         " (run from a project root, or add .anysearch/config.toml)",
     };
   }

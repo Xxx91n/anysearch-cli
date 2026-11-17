@@ -9,10 +9,9 @@
 // Q5: only intercept ans_* tools.: fail-open — exit 0 on any error.
 // `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
-import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the installation token + published server address.
-import { resolveServerEndpoint } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
 import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 // routing card imported from the shared module (one source, two outputs).
@@ -104,14 +103,7 @@ async function main(): Promise<void> {
       });
 
       // Send to server for indexing (fail-open). A project-less hook does not index.
-      if (decision.shouldIndex && decision.indexEntries && decision.indexEntries.length > 0 && projectRoot) {
-        const endpoint = resolveServerEndpoint();
-        await callServer(endpoint.url + "/index", endpoint.token, {
-          projectPath: projectRoot,
-          toolName,
-          entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Return distilled output inside the envelope.
       if (decision.distilledOutput) {

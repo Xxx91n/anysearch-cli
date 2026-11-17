@@ -9,10 +9,9 @@
 // block, top-level permissionDecision executes anyway).
 // Q5: only intercept ans_* tools.
 
-import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
-// resolve the installation token + published server address.
-import { resolveServerEndpoint } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse, type HookDecision } from "../core.js";
 import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -97,14 +96,7 @@ async function main(): Promise<void> {
       });
 
       // Send to server for indexing (fail-open). A project-less hook does not index.
-      if (decision.shouldIndex && decision.indexEntries && decision.indexEntries.length > 0 && projectRoot) {
-        const endpoint = resolveServerEndpoint();
-        await callServer(endpoint.url + "/index", endpoint.token, {
-          projectPath: projectRoot,
-          toolName,
-          entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Return distilled output to Claude. PostToolUse has no output-rewrite
       // field on Claude — the only honored channel is

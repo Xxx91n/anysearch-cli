@@ -37,8 +37,9 @@ import { isAnsTool, callServer, unwrapToolResponse, type HookDecision, type Hook
 import { makePreToolUseDecision } from '@anysearch-cli/plugin/hooks/preheat';
 import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
 import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
-import { resolveServerToken, resolveServerEndpoint } from '@anysearch-cli/plugin/hooks/server-token';
+import { resolveServerToken } from '@anysearch-cli/plugin/hooks/server-token';
 import { resolveHookProject } from '@anysearch-cli/plugin/hooks/project-identity';
+import { indexToProject } from '@anysearch-cli/plugin/hooks/index-entries';
 
 /**
  * anysearch plugin producer kind for injected user messages (0.2.2 contract:
@@ -292,15 +293,7 @@ export function apply(ctx: Context): void {
     if (!isAnsTool(exec.name) || result.isError) return;
     try {
       const d = makePostToolUseDecision(postHookInput(exec, result));
-      const root = projectRoot();
-      if (d.shouldIndex && d.indexEntries && d.indexEntries.length > 0 && root) {
-        const endpoint = resolveServerEndpoint();
-        void callServer(endpoint.url + '/index', endpoint.token, {
-          projectPath: root,
-          toolName: exec.name,
-          entries: d.indexEntries,
-        }, { sessionId: sessionIdOf(exec.agent) });
-      }
+      void indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent));
     } catch { /* fail-open: indexing must never disturb the pipeline */ }
   });
 }

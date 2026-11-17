@@ -1,157 +1,22 @@
-// Server token and endpoint discovery.
-//
-// Both belong to the installation, not to a project directory. The server,
-// the host hooks and the dsh adapter share one token file and one address
-// record under the user's config root, so a hook started in project B finds
-// the server started in project A instead of minting a second token nobody
-// reads. The server publishes the address it really bound (the default port
-// falls back to an ephemeral one when 33333 is taken), and callers read that
-// record instead of guessing a port.
-//
-// ANS_SERVER_URL and ANS_SERVER_TOKEN stay the explicit override channel.
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-
-export const DEFAULT_SERVER_URL = "http://127.0.0.1:33333";
-
-/** User config root: ~/.anysearch-cli (USERPROFILE on Windows, HOME elsewhere). */
-export function installConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.USERPROFILE || env.HOME || ".";
-  return join(home, ".anysearch-cli");
-}
-
-/** User data root: ~/.anysearch, where the databases live. */
-export function installDataDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.USERPROFILE || env.HOME || ".";
-  return join(home, ".anysearch");
-}
-
-/** One token for this installation; every project's hooks read the same file. */
-export function serverTokenPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(installConfigDir(env), "server-token");
-}
-
-/** The address record the running server writes; ANS_SERVER_REGISTRY overrides (tests). */
-export function serverRegistryPath(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.ANS_SERVER_REGISTRY?.trim();
-  return override ? override : join(installConfigDir(env), "server.json");
-}
-
-/**
- * The project index lives in the user data root, so the server, the CLI and
- * every project's hooks read and write the same table. Per-project isolation
- * comes from the project_path column, not from a per-directory database.
- * ANS_PROJECT_DB stays the explicit override channel.
- */
-export function projectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.ANS_PROJECT_DB?.trim();
-  return override ? override : join(installDataDir(env), "project-index.db");
-}
-
-export interface ResolvedToken {
-  token: string;
-  generated: boolean;
-  path: string;
-}
-
-export function resolveServerToken(env: NodeJS.ProcessEnv = process.env): ResolvedToken {
-  const path = serverTokenPath(env);
-  const fromEnv = env.ANS_SERVER_TOKEN;
-  if (fromEnv && fromEnv.trim()) return { token: fromEnv.trim(), generated: false, path };
-  if (existsSync(path)) {
-    const existing = readFileSync(path, "utf8").trim();
-    if (existing) return { token: existing, generated: false, path };
-  }
-  const token = randomBytes(32).toString("hex"); // 256-bit
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, token + "\n", { encoding: "utf8", mode: 0o600 });
-  return { token, generated: true, path };
-}
-
-export interface ServerRegistryEntry {
-  url: string;
-  pid?: number;
-  startedAt?: string;
-}
-
-const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-
-function loopbackUrl(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!LOOPBACK_HOSTNAMES.has(url.hostname.toLowerCase())) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error: any) {
-    // EPERM means the process exists but belongs to someone else.
-    return error?.code === "EPERM";
-  }
-}
-
-/** Read the published address, ignoring a record whose process is gone. */
-export function readServerRegistry(env: NodeJS.ProcessEnv = process.env): ServerRegistryEntry | null {
-  try {
-    const raw = JSON.parse(readFileSync(serverRegistryPath(env), "utf8")) as Partial<ServerRegistryEntry>;
-    const url = typeof raw.url === "string" ? loopbackUrl(raw.url) : null;
-    if (!url) return null;
-    if (typeof raw.pid === "number" && !pidAlive(raw.pid)) return null;
-    return {
-      url,
-      ...(typeof raw.pid === "number" ? { pid: raw.pid } : {}),
-      ...(typeof raw.startedAt === "string" ? { startedAt: raw.startedAt } : {}),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Publish the address the server actually bound. Returns the file path. */
-export function writeServerRegistry(url: string, env: NodeJS.ProcessEnv = process.env): string {
-  const origin = loopbackUrl(url);
-  if (!origin) throw new Error("server registry only accepts a loopback http(s) URL");
-  const path = serverRegistryPath(env);
-  const entry: ServerRegistryEntry = { url: origin, pid: process.pid, startedAt: new Date().toISOString() };
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(entry) + "\n", { encoding: "utf8", mode: 0o600 });
-  renameSync(tmp, path);
-  return path;
-}
-
-/** Remove our own record; leave a record another process published. */
-export function clearServerRegistry(env: NodeJS.ProcessEnv = process.env): void {
-  const path = serverRegistryPath(env);
-  try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ServerRegistryEntry>;
-    if (typeof raw.pid === "number" && raw.pid !== process.pid) return;
-    unlinkSync(path);
-  } catch {
-    // Already gone or unreadable: nothing to clean up.
-  }
-}
-
-export interface ServerEndpoint {
-  url: string;
-  token: string;
-  source: "env" | "registry" | "default";
-}
-
-/** Explicit env wins, then the published address, then the documented default. */
-export function resolveServerEndpoint(env: NodeJS.ProcessEnv = process.env): ServerEndpoint {
-  const { token } = resolveServerToken(env);
-  const fromEnv = env.ANS_SERVER_URL?.trim();
-  if (fromEnv) return { url: fromEnv.replace(/\/+$/, ""), token, source: "env" };
-  const registry = readServerRegistry(env);
-  if (registry) return { url: registry.url, token, source: "registry" };
-  return { url: DEFAULT_SERVER_URL, token, source: "default" };
-}
+// Server token and address discovery are shared with the MCP recall fallback,
+// so the implementation lives in @anysearch-cli/store/local-service (node
+// builtins only, safe for the hook bundles). This module keeps the plugin-side
+// import path stable.
+export {
+  DEFAULT_SERVER_URL,
+  installConfigDir,
+  installDataDir,
+  serverTokenPath,
+  serverRegistryPath,
+  projectIndexDbPath,
+  resolveServerToken,
+  readServerToken,
+  readPublishedServerUrl,
+  readServerRegistry,
+  writeServerRegistry,
+  clearServerRegistry,
+  resolveServerEndpoint,
+  type ResolvedToken,
+  type ServerRegistryEntry,
+  type ServerEndpoint,
+} from "@anysearch-cli/store/local-service";

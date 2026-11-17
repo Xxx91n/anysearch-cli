@@ -63,10 +63,10 @@ test("recall fallback sends the current project and parses the hits", async () =
     const cross = await recallProjectIndex("Knicks Finals", 3, [other]);
     assert.deepEqual(
       server.bodies[1]!.projects,
-      [realpathSync(current), realpathSync(other)],
-      "only an explicit projectPaths list widens the scope",
+      [realpathSync(other)],
+      "an explicit projectPaths list replaces the current project instead of adding to it",
     );
-    assert.equal(cross.projects.length, 2);
+    assert.equal(cross.projects.length, 1);
   } finally {
     process.chdir(previous.cwd);
     if (previous.url === undefined) delete process.env.ANS_SERVER_URL; else process.env.ANS_SERVER_URL = previous.url;

@@ -18,7 +18,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { clearServerRegistry, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
+import { clearServerRegistry, installDataDir, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
@@ -39,8 +39,7 @@ import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFro
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-const OBS_DB = process.env.ANS_DB_PATH ||
-  join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db");
 
 // CWE-732: tighten OBS_DB to owner-only before emitConfigChangeAudit opens it.
 // Lazy: only needed when /policy writes an audit row, not for /recall or /index.
@@ -147,38 +146,40 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-type ProjectResolution = { root: string } | { error: string };
+type ProjectResolution = { ok: true; root: string } | { ok: false; error: string };
 
 // A client-supplied string is a project only after it resolves to a real
 // project root on this machine. An unknown identity is reported, never
 // replaced with "some other project" or with this process's start directory.
+// The bearer token is the authorization boundary; this check stops accidental
+// cross-project use, not a local process that already holds the token.
 function resolveProject(raw: unknown): ProjectResolution {
   const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) return { error: "project identity required" };
-  if (!isAbsolute(value)) return { error: "project path must be absolute: " + value };
+  if (!value) return { ok: false, error: "project identity required" };
+  if (!isAbsolute(value)) return { ok: false, error: "project path must be absolute: " + value };
   const context = resolveProjectContext(value);
-  if (!context.root) return { error: "project identity unavailable: " + context.reason };
-  return { root: context.root };
+  if ("reason" in context) return { ok: false, error: "project identity unavailable: " + context.reason };
+  return { ok: true, root: context.root };
 }
 
 // /recall accepts one project (the normal scoped read) or an explicit list
 // (the cross-project read the caller asked for). Both at once is ambiguous.
-function resolveRecallScope(body: Record<string, unknown>): { roots: string[] } | { error: string } {
+function resolveRecallScope(body: Record<string, unknown>): { ok: true; roots: string[] } | { ok: false; error: string } {
   const singleRaw = body.projectPath;
   const single = typeof singleRaw === "string" ? singleRaw.trim() : "";
   const many: unknown[] = Array.isArray(body.projects) ? body.projects : [];
-  if (single && many.length > 0) return { error: "pass either projectPath or projects, not both" };
-  if (!single && many.length === 0) return { error: "project identity required: pass projectPath (or an explicit projects list)" };
+  if (single && many.length > 0) return { ok: false, error: "pass either projectPath or projects, not both" };
+  if (!single && many.length === 0) return { ok: false, error: "project identity required: pass projectPath (or an explicit projects list)" };
   const raw: unknown[] = single ? [single] : many;
   const roots: string[] = [];
   for (const item of raw) {
     const resolved = resolveProject(item);
-    if ("error" in resolved) return { error: resolved.error };
+    if (!resolved.ok) return { ok: false, error: resolved.error };
     if (!roots.includes(resolved.root)) roots.push(resolved.root);
   }
-  if (roots.length === 0) return { error: "project identity required" };
-  if (roots.length > 10) return { error: "too many projects in one recall (max 10)" };
-  return { roots };
+  if (roots.length === 0) return { ok: false, error: "project identity required" };
+  if (roots.length > 10) return { ok: false, error: "too many projects in one recall (max 10)" };
+  return { ok: true, roots };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -222,7 +223,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // The policy belongs to the project the caller names, not to this
       // process's start directory. No project = no policy answer.
       const project = resolveProject(url.searchParams.get("project"));
-      if ("error" in project) { sendJson(res, 400, { error: project.error }); return; }
+      if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
       const { policy, tomlPath, cachePath } = readProjectPolicy(project.root);
       // Ensure OBS_DB permissions before any audit write (best-effort, once).
       if (!obsDbEnsured) {
@@ -276,7 +277,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const limit = Number(body.limit) || 10;
       if (!query) { sendJson(res, 400, { error: "query required" }); return; }
       const scope = resolveRecallScope(body);
-      if ("error" in scope) { sendJson(res, 400, { error: scope.error }); return; }
+      if (!scope.ok) { sendJson(res, 400, { error: scope.error }); return; }
       const hits = store.search(query, scope.roots, limit);
       sendJson(res, 200, { hits, provenance: "project-index", projects: scope.roots });
       return;
@@ -285,7 +286,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (url.pathname === "/index" && req.method === "POST") {
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       const project = resolveProject(body.projectPath);
-      if ("error" in project) { sendJson(res, 400, { error: project.error }); return; }
+      if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
       const toolName = String(body.toolName || "");
       const entries: Array<Record<string, unknown>> = Array.isArray(body.entries)
         ? (body.entries as Array<Record<string, unknown>>)
@@ -294,17 +295,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       for (const entry of entries) {
         try {
           const title = String(entry.title || "");
-          const url = String(entry.url || "");
+          const entryUrl = String(entry.url || "");
           store.indexEntry({
             projectPath: project.root,
             toolName,
             title,
-            url,
+            url: entryUrl,
             snippet: String(entry.snippet || ""),
             source: String(entry.source || "unknown"),
             contentHash: typeof entry.contentHash === "string"
               ? entry.contentHash
-              : createHash("sha256").update(url + title).digest("hex").slice(0, 16),
+              : createHash("sha256").update(entryUrl + title).digest("hex").slice(0, 16),
           });
           indexed++;
         } catch { /* fail-open per entry */ }
@@ -316,7 +317,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (url.pathname === "/purge" && req.method === "POST") {
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       const project = resolveProject(body.projectPath);
-      if ("error" in project) { sendJson(res, 400, { error: project.error }); return; }
+      if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
       const deleted = store.purgeProject(project.root);
       sendJson(res, 200, { deleted, project: project.root });
       return;

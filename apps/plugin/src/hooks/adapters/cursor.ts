@@ -9,10 +9,9 @@
 // Cursor hook stdin/stdout contract: JSON in, JSON out, exit 0/2/other (fail-open default).
 // Cursor postToolUse supports updated_mcp_tool_output for MCP tools.
 
-import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the installation token + published server address.
-import { resolveServerEndpoint } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
 import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -86,12 +85,7 @@ async function main(): Promise<void> {
         sessionId: stdin.session_id || "",
       });
 
-      if (decision.shouldIndex && decision.indexEntries && projectRoot) {
-        const endpoint = resolveServerEndpoint();
-        await callServer(endpoint.url + "/index", endpoint.token, {
-          projectPath: projectRoot, toolName, entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Cursor: updated_mcp_tool_output (MCP tools only).
       if (decision.distilledOutput) {

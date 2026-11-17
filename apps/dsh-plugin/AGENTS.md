@@ -20,7 +20,7 @@ This package is a small Cordis bundle. It plugs DeepSeek Harness (dsh) into anys
 
 ## When something breaks
 
-If the server cannot be reached, hooks allow the call, IPC calls disappear silently, and tool calls return empty results (`{content:[]}` when ans-mcp is down). The URL policy is the one exception, and that is on purpose: when it cannot check the URL, it must not silently allow the call (0055). If no policy can be reached and the arguments contain a URL, the answer is `ask` (which becomes deny when there is no approval channel, as in headless runs). If the upstream tool returns `isError` or an RPC error, the tool call fails. That is also on purpose: errors at the tool-result level stay errors, so never turn them into empty results.
+If the server cannot be reached, hooks allow the call, IPC calls disappear silently, and tool calls return empty results (`{content:[]}` when ans-mcp is down). The URL policy is the one exception, and that is on purpose: when it cannot check the URL, it must not silently allow the call (0055). If no policy can be reached and the arguments contain a URL, the answer is `ask` (which becomes deny when there is no approval channel, as in headless runs). The same `ask` applies when the working tree is not a project (no Git root, no `.anysearch/config.toml`): the policy and the project index belong to a project, so an unknown project means those capabilities are unavailable rather than borrowed from somewhere else. If the upstream tool returns `isError` or an RPC error, the tool call fails. That is also on purpose: errors at the tool-result level stay errors, so never turn them into empty results.
 
 ## Tests
 

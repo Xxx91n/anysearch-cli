@@ -3,8 +3,9 @@
 // The authoritative resolver lives in packages/store/src/project-context.ts.
 // Hook bundles are built with esbuild --bundle and must stay free of the store
 // (its native dependencies do not bundle), so this file mirrors that resolver
-// for the hook processes. project-identity-drift.test.ts compares both
-// implementations on real directories, so the copy cannot quietly diverge.
+// for the hook processes. The drift check lives in
+// apps/plugin/test/project-scope.test.ts ("the hook copy matches the store
+// resolver"), so the copy cannot quietly diverge.
 //
 // A hook only ever runs inside a host's working tree. If that tree is not a
 // project (no Git root, no .anysearch/config.toml), the hook must say the
@@ -13,9 +14,12 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type HookProject =
-  | { root: string; source: "git" | "config" }
-  | { root: null; source: "unknown"; reason: string };
+export interface HookProject {
+  root: string | null;
+  source: "git" | "config" | "unknown";
+  /** Why the project is unknown; absent when root is a real project. */
+  reason?: string;
+}
 
 export function resolveHookProject(cwd: string = process.cwd()): HookProject {
   try {

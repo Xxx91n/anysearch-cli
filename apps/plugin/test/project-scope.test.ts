@@ -62,6 +62,7 @@ test("project index: default scope is this project only (N2)", () => {
     assert.equal(strict.length, 1);
     assert.match(strict[0]!.title, /Brunson/);
     assert.equal(strict[0]!.projectPath, a, "a hit names the project it came from");
+    assert.ok(strict[0]!.createdAt, "a hit carries its create time (column alias)");
   } finally {
     store.close();
     rmSync(a, { recursive: true, force: true });
@@ -215,6 +216,11 @@ test("plugin server: recall, index and policy require the explicit project", asy
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assert.ok(ready, "plugin server did not become ready");
+
+    // The server publishes the address it really bound, for hooks in any project.
+    const published = JSON.parse(readFileSync(join(home, "server.json"), "utf8")) as { url?: string; pid?: number };
+    assert.equal(published.url, base, "the published address is the listening address");
+    assert.equal(published.pid, proc.pid, "the record names the live process");
 
     const indexedA = await call("/index", {
       projectPath: a, toolName: "search_web",
