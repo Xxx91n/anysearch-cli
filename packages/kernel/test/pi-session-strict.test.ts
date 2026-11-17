@@ -31,6 +31,7 @@ import {
   findPiSessionRecord,
   indexPiSessionRecords,
   judgePiSessionRecord,
+  judgeIndexedSession,
   lookupPiSessionRecord,
   repairPiSessionTornTail,
   type PiSessionRecordVerdict,
@@ -270,6 +271,31 @@ try {
     const missing = lookupPiSessionRecord(join(dir, "nowhere"), KEY);
     assert.equal(refusal(missing.verdict).problem, "missing", "R8: a missing record is a verdict");
     assert.equal(missing.path, undefined, "R8: an absent record has no path");
+  }
+
+  // ---------- R9: two files for one handle is an ambiguity, never a pick ----------
+  // The index refuses it. The lookup and the list must refuse it the same way:
+  // picking one file would hide part of the chat, and a list that said "fine"
+  // would disagree with the run, which refuses.
+  {
+    const dupDir = join(dir, "duplicate");
+    record(dupDir, `2026-01-01T00-00-21_${KEY}.jsonl`, [HEADER(), USER]);
+    record(dupDir, `2026-01-01T00-00-22_${KEY}.jsonl`, [HEADER(), ASSISTANT]);
+
+    assert.throws(() => indexPiSessionRecords(dupDir)(KEY), /有多份对话记录/,
+      "R9: the index refuses two records for one handle");
+
+    const looked = lookupPiSessionRecord(dupDir, KEY);
+    assert.equal(refusal(looked.verdict).problem, "ambiguous",
+      "R9: the single-record lookup reports the ambiguity (got " + JSON.stringify(looked.verdict) + ")");
+    assert.equal(looked.path, undefined, "R9: it does not pick a file");
+
+    const indexed = judgeIndexedSession(indexPiSessionRecords(dupDir), KEY);
+    assert.equal(refusal(indexed).problem, "ambiguous",
+      "R9: the list path reports the same ambiguity it would refuse at resume");
+
+    assert.match(describePiSessionVerdict(looked.verdict), /多份/,
+      "R9: the list line says there are several records to check");
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });

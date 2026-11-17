@@ -112,9 +112,24 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
     // One path can claim the key both ways; that is one record, not two.
     const matches = [...new Set([...(byHeader.get(key) ?? []), ...(byName.get(key) ?? [])])];
     // Design: reject duplicate claims — choosing one can hide part of a chat.
-    if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
+    if (matches.length > 1) throw new AmbiguousSessionRecordError(key, matches);
     return matches[0];
   };
+}
+
+/**
+ * More than one file claims the same session handle.
+ *
+ * A distinct type because this is not "one file could not be read": no amount of
+ * retrying settles which record is the real one, and the user has to look. The
+ * lookup below must report it rather than fall back to picking a file — a list
+ * that said "fine" here would disagree with the run, which refuses.
+ */
+export class AmbiguousSessionRecordError extends Error {
+  constructor(readonly key: string, readonly paths: string[]) {
+    super("同一个会话有多份对话记录，请先核对：" + key);
+    this.name = "AmbiguousSessionRecordError";
+  }
 }
 
 /** Find one PI record; check again under the caller's session lock before use. */
@@ -160,7 +175,9 @@ export type PiSessionRecordProblem =
   | "bad-line"
   | "newer-format"
   | "unknown-event"
-  | "identity-mismatch";
+  | "identity-mismatch"
+  /** Several files claim this handle; a person has to decide which is real. */
+  | "ambiguous";
 
 /**
  * What one record says about itself, as a verdict.
@@ -247,7 +264,7 @@ export function judgePiSessionRecord(path: string, expectedKey: string): PiSessi
   // A file that ends without a newline has an unfinished last line. Judge the
   // complete lines only; the fragment is reported so the caller can cut it.
   // The byte count comes from the raw bytes, never from the decoded string —
-  // see tornTailBytes below.
+  // see tornTailBytes above.
   const segments = text.split("\n");
   const complete = text.endsWith("\n") ? segments.slice(0, -1) : segments;
   let tornTail: { line: number; bytes: number } | undefined;
@@ -330,6 +347,7 @@ export function describePiSessionVerdict(verdict: PiSessionRecordVerdict): strin
     case "newer-format": return "对话记录比本程序新，不能打开";
     case "unknown-event": return "对话记录里有本程序不认识的内容（第 " + (verdict.line ?? 0) + " 行）";
     case "identity-mismatch": return "对话记录的身份对不上";
+    case "ambiguous": return "同一个会话有多份对话记录，要人工核对";
   }
 }
 
@@ -337,16 +355,17 @@ export function describePiSessionVerdict(verdict: PiSessionRecordVerdict): strin
  * Cut off the unfinished last line, and nothing else.
  *
  * Called only after `judgePiSessionRecord` returned a torn tail, and only while
- * holding the session's write lock — otherwise another writer could append
- * between the judgment and the cut and lose a complete entry. Repair is a
- * separate step on purpose: judging must stay a pure function that never
- * modifies the file.
+ * holding the session's write lock. That lock is the whole reason this is safe:
+ * it is what guarantees no entry was appended between the judgment and this cut.
+ * Without it, cutting "the bytes after the last newline" would delete whatever a
+ * writer just added. Repair is a separate step on purpose — judging must stay a
+ * pure function that never modifies the file.
  *
- * The cut point is found again on the current bytes rather than from the byte
- * count in the verdict: that count describes the file at judgment time, and
- * re-measuring keeps the cut on the last real newline even if a byte moved. It
- * is the same rule the judgment uses, so the two can never disagree about where
- * the fragment ends.
+ * The cut point is measured again here instead of trusting the verdict's byte
+ * count: the count describes the file at judgment time, and re-measuring keeps
+ * the cut on the last real newline. It is the same rule the judgment uses, so the
+ * two cannot disagree about where the fragment ends. The verdict's number stays
+ * for diagnostics and for the list, which shows the line the tail broke on.
  *
  * Returns whether bytes were removed.
  */
@@ -355,8 +374,8 @@ export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVe
   let raw: Buffer;
   try { raw = readFileSync(path); }
   catch { return false; }
-  // Nothing to cut if the file now ends with a newline: a later writer finished
-  // the line, so the fragment the verdict named no longer exists.
+  // Nothing to cut if the file now ends with a newline: the line was finished,
+  // so the fragment the verdict named no longer exists.
   const lastNewline = raw.lastIndexOf(0x0a);
   if (lastNewline === -1 || lastNewline === raw.length - 1) return false;
   truncateSync(path, lastNewline + 1);
@@ -364,16 +383,34 @@ export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVe
 }
 
 /**
+ * Judge one session's record using an index that is already built.
+ *
+ * `lookupPiSessionRecord` per row of the session list would list the directory
+ * again for every conversation — the cost grows with the square of the session
+ * count. The list builds the index once (`indexPiSessionRecords`) and asks this
+ * for each row, so the verdict still comes from the same rules a resume uses.
+ *
+ * Never throws: a row that cannot be judged must still appear in the list.
+ */
+export function judgeIndexedSession(lookup: (key: string) => string | undefined, key: string): PiSessionRecordVerdict {
+  let path: string | undefined;
+  try {
+    path = lookup(key);
+  } catch (error: any) {
+    if (error instanceof AmbiguousSessionRecordError) return refuse("ambiguous", error.message);
+    return refuse("unreadable", error?.message || String(error));
+  }
+  if (!path) return refuse("missing", "没有这段会话的对话记录：" + key);
+  return judgePiSessionRecord(path, key);
+}
+
+/**
  * Locate one session's record and judge it, without throwing.
  *
- * The index can fail hard on a file that is unreadable AND names this key. That
- * file may well be this session's record, so the lookup still reports the path
- * it found: a caller that asks "does this session have a transcript?" must see
- * "yes, and it is damaged", not "no", or it would mint a fresh empty
- * conversation under a handle that already has one (#316).
- *
- * A record found by its header but named after another id is judged like any
- * other: the identity check refuses it.
+ * A damaged record still yields its path: a caller that asks "does this session
+ * have a transcript?" must see "yes, and it is damaged", not "no", or it would
+ * mint a fresh empty conversation under a handle that already has one (#316).
+ * Two files claiming the handle is its own refusal, never a pick.
  */
 export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecordLookup {
   let indexed: string | undefined;
@@ -381,10 +418,17 @@ export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecord
   try { indexed = indexPiSessionRecords(dir)(key); }
   catch (error) { indexError = error; }
 
-  // The index is authoritative when it answers: it also rejects a key claimed by
-  // more than one file. When it fails or finds nothing, fall back to the handle
-  // written in the FILE NAME, because that file may be this session's damaged
-  // record — reporting "no transcript" would let the caller mint a fresh empty
+  // Two records for one handle is not a damaged file: it is an ambiguity only a
+  // person can settle, and picking one would hide part of a chat. Report it as
+  // its own refusal so the list and a resume both say the same thing.
+  if (indexError instanceof AmbiguousSessionRecordError) {
+    return { verdict: refuse("ambiguous", indexError.message) };
+  }
+
+  // The index is authoritative when it answers: it also rejects ambiguity.
+  // When it fails on a single unreadable file, fall back to the handle written
+  // in the FILE NAME, because that file may be this session's damaged record —
+  // reporting "no transcript" would let the caller mint a fresh empty
   // conversation under a handle that already has one (#316).
   let path = indexed;
   if (!path) {
@@ -403,16 +447,7 @@ export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecord
     // unreadable rather than absent.
     return { verdict: refuse("unreadable", (indexError as any)?.message || String(indexError)) };
   }
-  if (!readdirSafe(dir)) {
-    return { verdict: refuse("unreadable", "会话记录目录读不出来：" + dir) };
-  }
   return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
-}
-
-/** Whether the record directory can be listed at all; a missing one counts as readable. */
-function readdirSafe(dir: string): boolean {
-  try { readdirSync(dir); return true; }
-  catch (error: any) { return error?.code === "ENOENT"; }
 }
 
 /**
