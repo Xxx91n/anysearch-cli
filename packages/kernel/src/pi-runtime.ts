@@ -19,7 +19,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
-import { findPiSessionRecord, readPiSessionRecord } from "./pi-session";
+import { findPiSessionRecord, judgePiSessionRecord, repairPiSessionTornTail } from "./pi-session";
 import {
   acquireSessionLock,
   resolveSessionLockWindows,
@@ -955,14 +955,20 @@ export class PiAgentRuntime {
       if (!found && this.opts.requirePiSessionRecord) {
         throw new Error("找不到这段会话的对话记录，本次没有发送问题。");
       }
-      // Design: a record whose header is fine but whose later lines are not
-      // would be loaded by PI with the bad lines silently skipped, and the
-      // model would answer as if those turns never happened. Resuming a
-      // shorter history is worse than refusing, so the whole file is checked
-      // before PI opens it. Only a RESUME pays this: a first run has no file.
+      // Design: PI's loader skips a malformed line and keeps going, so a broken
+      // record would be resumed as a shorter history than the user remembers.
+      // The whole file is judged before PI opens it (#316): parse every line,
+      // check the format version, check identity three ways, and refuse an
+      // event kind this build does not know. The run lock is already held here,
+      // so the torn-tail repair below cannot race another writer.
       if (found) {
-        const readable = readPiSessionRecord(found);
-        if (!readable.ok) throw new Error(readable.reason + "。本次没有发送问题，原文件未改动。");
+        const verdict = judgePiSessionRecord(found, piKey);
+        if (!verdict.ok) throw new Error(verdict.message + "。本次没有发送问题，原文件未改动。");
+        // A last line with no newline is the tail of an append that died. It
+        // carries no fact, so it is cut off before PI appends behind it —
+        // otherwise every later line lands after a fragment no reader can
+        // parse and one failed write locks the conversation forever.
+        if (verdict.tornTail) repairPiSessionTornTail(found, verdict);
       }
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)

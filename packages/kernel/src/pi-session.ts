@@ -3,8 +3,8 @@
 //
 // The kernel reads no env, so each host (CLI, MCP) passes its own env in. The
 // contract lives here once instead of being copied into both roots.
-import { dirname, join } from "node:path";
-import { closeSync, openSync, readFileSync, readSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { resolveDbPath } from "./composition";
 import type { SessionLockWindows } from "./session-lock";
@@ -73,8 +73,19 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
     if (error?.code === "ENOENT") return () => undefined;
     throw error;
   }
-  const records = new Map<string, string[]>();
+  // Two claims, kept apart on purpose. A file claims a session by its header id
+  // and by the id in its name, and they can disagree. Indexing both is what lets
+  // a mismatched file be FOUND and then refused by the identity check, instead
+  // of vanishing from the lookup and reading as "this session never existed"
+  // (#316) — the difference between "wrong" and "absent" matters to the user.
+  const byHeader = new Map<string, string[]>();
+  const byName = new Map<string, string[]>();
   const failures: Array<{ namedKey?: string; error: unknown }> = [];
+  const push = (map: Map<string, string[]>, key: string, path: string): void => {
+    const matches = map.get(key) ?? [];
+    matches.push(path);
+    map.set(key, matches);
+  };
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
     // Design: inspect headers even when filenames name another key — users may
@@ -82,11 +93,9 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
     // ignored for this lookup, as another process may be creating it.
     const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
     const path = join(dir, file);
+    if (namedKey) push(byName, namedKey, path);
     try {
-      const id = readPiSessionId(path);
-      const matches = records.get(id) ?? [];
-      matches.push(path);
-      records.set(id, matches);
+      push(byHeader, readPiSessionId(path), path);
     } catch (error) { failures.push({ namedKey, error }); }
   }
   return (key: string) => {
@@ -97,8 +106,9 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
     // same question for a first run.
     const failure = failures.find((item) => item.namedKey === key);
     if (failure) throw failure.error;
-    const matches = records.get(key) ?? [];
-    // Design: reject duplicate keys — choosing one can hide part of a chat.
+    // One path can claim the key both ways; that is one record, not two.
+    const matches = [...new Set([...(byHeader.get(key) ?? []), ...(byName.get(key) ?? [])])];
+    // Design: reject duplicate claims — choosing one can hide part of a chat.
     if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
     return matches[0];
   };
@@ -110,41 +120,245 @@ export function findPiSessionRecord(dir: string, key: string): string | undefine
 }
 
 /**
- * Whether a record's message lines all parse, so a resume does not silently
- * become a resume of a shorter history.
+ * The newest session-record format this build understands (#316).
  *
- * PI's own loader skips a malformed line and keeps the rest, which is the right
- * behaviour for reading an append-only log and the wrong behaviour for
- * RESURRECTING a conversation: the model would answer as if the missing turn
- * never happened. This check is deliberately narrow — one question, "is the
- * whole file readable as JSON lines?" — and does not judge versions, identity,
- * or a torn tail; that fuller judgment is #316's job and reads this same file.
- *
- * A trailing line without its newline is the tail of an interrupted append. PI
- * itself repairs that with a newline rather than truncating, and the entry it
- * carries is incomplete, so it is reported as a problem here: the safe answer
- * for "can I resume this?" is no.
+ * PI's own `CURRENT_SESSION_VERSION` is 3 for the 1.5.1 release we run. The
+ * constant is copied rather than imported because importing the SDK at module
+ * load would pay its multi-second evaluation for every command (#258); the
+ * test suite pins the two values together so a PI bump shows up as a failure
+ * instead of a silently wrong answer.
  */
-export function readPiSessionRecord(path: string): { ok: true } | { ok: false; reason: string } {
+export const PI_SESSION_FORMAT_VERSION = 3;
+
+/**
+ * Entry kinds this build knows how to read. Anything else means the file was
+ * written by a newer version that added an event we would have to guess the
+ * meaning of — the record is refused instead of half-understood.
+ */
+const PI_SESSION_KNOWN_ENTRY_TYPES = new Set([
+  "message",
+  "thinking_level_change",
+  "model_change",
+  "usage",
+  "compaction",
+  "branch_summary",
+  "custom",
+  "custom_message",
+  "context_edit",
+  "label",
+  "session_info",
+]);
+
+/** Why a record cannot be used. Each one gets its own sentence for the user. */
+export type PiSessionRecordProblem =
+  | "missing"
+  | "unreadable"
+  | "empty"
+  | "bad-line"
+  | "newer-format"
+  | "unknown-event"
+  | "identity-mismatch";
+
+/**
+ * What one record says about itself, as a verdict.
+ *
+ * A torn tail is NOT a failure: it is the half-written last line of an append
+ * that died, so it carries no fact. The verdict still names it, because the
+ * caller must cut it off before the next append — otherwise every later line
+ * lands behind a fragment that no reader can parse, and one failed write locks
+ * the conversation for good.
+ */
+export type PiSessionRecordVerdict =
+  | { ok: true; tornTail?: { line: number; bytes: number } }
+  | { ok: false; problem: PiSessionRecordProblem; message: string; line?: number };
+
+/** A record's location and what it says. Never throws: a broken one is a verdict. */
+export interface PiSessionRecordLookup {
+  /** Where the record is, when one was found at all. */
+  path?: string;
+  verdict: PiSessionRecordVerdict;
+}
+
+function refuse(problem: PiSessionRecordProblem, message: string, line?: number): PiSessionRecordVerdict {
+  return line === undefined ? { ok: false, problem, message } : { ok: false, problem, message, line };
+}
+
+/**
+ * The id a record's file name claims. PI writes `<timestamp>_<sessionId>.jsonl`,
+ * so the id is the part after the last underscore; a name with no underscore
+ * claims the whole stem, which will not match a real handle.
+ */
+function idFromFileName(path: string): string {
+  const stem = basename(path).replace(/\.jsonl$/i, "");
+  const cut = stem.lastIndexOf("_");
+  return cut === -1 ? stem : stem.slice(cut + 1);
+}
+
+/**
+ * Read one whole session record and say what it is, without touching the file.
+ *
+ * This is the one place that decides whether a conversation can be handed to
+ * PI. PI's own loader skips a malformed line and keeps going, which is right
+ * for an append-only log and wrong for RESURRECTING a conversation: the model
+ * would answer as if the lost turn never happened. So the whole file is judged
+ * here, in this order, and the first problem stops it:
+ *
+ *   1. can the file be read at all;
+ *   2. is it empty;
+ *   3. is the header the first complete line, with a version we know;
+ *   4. do the header id, the file-name id and the requested handle all agree;
+ *   5. does every remaining complete line parse, and is every event kind known.
+ *
+ * A last segment with no terminating newline is the torn tail of an interrupted
+ * append: it is dropped from the judgment and reported for repair, never
+ * treated as a fact.
+ */
+export function judgePiSessionRecord(path: string, expectedKey: string): PiSessionRecordVerdict {
   let text: string;
   try { text = readFileSync(path, "utf8"); }
-  catch (e: any) { return { ok: false, reason: "会话记录读不出来：" + (e?.message || String(e)) }; }
-  if (!text.trim()) return { ok: false, reason: "会话记录是空的，没有可以续的内容" };
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
-    // Check the torn tail BEFORE parsing it: a half-written last line is a
-    // half-written line whether or not the bytes happen to parse as JSON, and
-    // "last line was not finished" is the accurate thing to say about it.
-    // A non-empty last segment with no terminating newline is exactly that.
-    if (i === lines.length - 1 && !text.endsWith("\n")) {
-      return { ok: false, reason: "会话记录最后一行没有写完（第 " + (i + 1) + " 行）" };
+  catch (e: any) { return refuse("unreadable", "会话记录读不出来：" + (e?.message || String(e))); }
+  if (!text.trim()) return refuse("empty", "会话记录是空的，没有可以续的内容");
+
+  // A file that ends without a newline has an unfinished last line. Judge the
+  // complete lines only; the fragment is reported so the caller can cut it.
+  const segments = text.split("\n");
+  const complete = text.endsWith("\n") ? segments.slice(0, -1) : segments;
+  let tornTail: { line: number; bytes: number } | undefined;
+  if (!text.endsWith("\n")) {
+    const tail = complete[complete.length - 1] ?? "";
+    if (tail.trim()) {
+      tornTail = { line: complete.length, bytes: Buffer.byteLength(tail, "utf8") };
+      complete.pop();
+    } else {
+      complete.pop();
     }
-    try { JSON.parse(line); }
-    catch { return { ok: false, reason: "会话记录第 " + (i + 1) + " 行无法解析" }; }
   }
-  return { ok: true };
+
+  const nonBlank = complete
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter((entry) => entry.line.trim());
+
+  const headerLine = nonBlank[0];
+  if (!headerLine) return refuse("empty", "会话记录是空的，没有可以续的内容");
+
+  let header: any;
+  try { header = JSON.parse(headerLine.line); }
+  catch {
+    return refuse("unreadable",
+      "会话记录第 " + headerLine.number + " 行写的是文件开头，但读不懂。这个文件不是可用的会话记录：" + path);
+  }
+  if (!header || typeof header !== "object" || header.type !== "session" || typeof header.id !== "string") {
+    return refuse("unreadable", "会话记录的开头不是有效的会话信息：" + path);
+  }
+
+  // PI treats a missing version as 1; anything above ours was written by a
+  // newer program whose events we would have to guess.
+  const version = typeof header.version === "number" ? header.version : 1;
+  if (version > PI_SESSION_FORMAT_VERSION) {
+    return refuse("newer-format",
+      "会话记录的格式版本是 " + version + "，本程序只认到 " + PI_SESSION_FORMAT_VERSION +
+      "。旧程序不猜新格式的内容，拒绝打开：" + path);
+  }
+
+  const namedId = idFromFileName(path);
+  if (header.id !== expectedKey || namedId !== expectedKey) {
+    return refuse("identity-mismatch",
+      "会话记录的身份对不上：记录里写的是 " + header.id + "，文件名里写的是 " + namedId +
+      "，要打开的是 " + expectedKey + "。拒绝打开，原文件未改动：" + path);
+  }
+
+  for (const { line, number } of nonBlank.slice(1)) {
+    let entry: any;
+    try { entry = JSON.parse(line); }
+    catch { return refuse("bad-line", "会话记录第 " + number + " 行坏了，读不出一条完整记录：" + path, number); }
+    const type = entry && typeof entry === "object" ? (entry as { type?: unknown }).type : undefined;
+    if (typeof type !== "string" || !PI_SESSION_KNOWN_ENTRY_TYPES.has(type)) {
+      return refuse("unknown-event",
+        "会话记录第 " + number + " 行是一种本程序不认识的事件（" + String(type) +
+        "），不猜它的意思，拒绝打开：" + path, number);
+    }
+  }
+
+  return tornTail ? { ok: true, tornTail } : { ok: true };
+}
+
+/**
+ * One short sentence for a verdict, for places that list many records and
+ * cannot print a full paragraph for each (the session list).
+ */
+export function describePiSessionVerdict(verdict: PiSessionRecordVerdict): string {
+  if (verdict.ok) return verdict.tornTail ? "尾行断在第 " + verdict.tornTail.line + " 行，下次写入前会切掉" : "正常";
+  switch (verdict.problem) {
+    case "missing": return "没有对话记录";
+    case "unreadable": return "对话记录读不出来";
+    case "empty": return "对话记录是空的";
+    case "bad-line": return "对话记录坏了（第 " + (verdict.line ?? 0) + " 行）";
+    case "newer-format": return "对话记录比本程序新，不能打开";
+    case "unknown-event": return "对话记录里有本程序不认识的内容（第 " + (verdict.line ?? 0) + " 行）";
+    case "identity-mismatch": return "对话记录的身份对不上";
+  }
+}
+
+/**
+ * Whether one record is usable as a resume source, as a sentence.
+ *
+ * Kept for callers that only have a path and want the old yes/no answer. It
+ * judges with the file's own header id as the expected key, so it checks
+ * parsing and format but cannot check the requested handle — use
+ * `judgePiSessionRecord` when the handle is known, which is what the runtime
+ * does.
+ */
+export function readPiSessionRecord(path: string): { ok: true } | { ok: false; reason: string } {
+  let headerId: string;
+  try {
+    const first = readFileSync(path, "utf8").split("\n").find((line) => line.trim());
+    headerId = String(JSON.parse(first ?? "").id ?? "");
+  } catch (e: any) {
+    return { ok: false, reason: "会话记录读不出来：" + (e?.message || String(e)) };
+  }
+  if (!headerId) return { ok: false, reason: "会话记录没有有效的会话信息：" + path };
+  const verdict = judgePiSessionRecord(path, headerId);
+  return verdict.ok ? { ok: true } : { ok: false, reason: verdict.message };
+}
+
+/**
+ * Cut off the unfinished last line, and nothing else.
+ *
+ * Called only after `judgePiSessionRecord` returned a torn tail, and only while
+ * holding the session's write lock — otherwise another writer could append
+ * between the judgment and the cut and lose a complete entry. Repair is a
+ * separate step on purpose: judging must stay a pure function that never
+ * modifies the file.
+ *
+ * Returns whether bytes were removed.
+ */
+export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVerdict): boolean {
+  if (!verdict.ok || !verdict.tornTail) return false;
+  let size: number;
+  try { size = statSync(path).size; }
+  catch { return false; }
+  const keep = size - verdict.tornTail.bytes;
+  if (keep < 0) return false;
+  truncateSync(path, keep);
+  return true;
+}
+
+/**
+ * Locate one session's record and judge it, without throwing.
+ *
+ * The index is the only thing that can fail hard (an unreadable file that
+ * names THIS key), and that failure is itself a verdict about this session, so
+ * it is reported instead of escaping. A record found by its header but named
+ * after another id is judged like any other: the identity check refuses it.
+ */
+export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecordLookup {
+  let path: string | undefined;
+  try { path = indexPiSessionRecords(dir)(key); }
+  catch (error: any) {
+    return { verdict: refuse("unreadable", error?.message || String(error)) };
+  }
+  if (!path) return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
+  return { path, verdict: judgePiSessionRecord(path, key) };
 }
 
 /**

@@ -15,7 +15,7 @@ import {
   parseContextWindow,
   piSessionOptions,
   piSessionKey,
-  findPiSessionRecord,
+  lookupPiSessionRecord,
   resolvePiSessionDir,
   runChatAttempt,
   ChatAttemptBusyError,
@@ -405,8 +405,14 @@ export function registerAnsChat(
           // An already tracked chat must never silently create a fresh record.
           const previousChat = typeof requestedSessionId === "string"
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
-          const hasPreviousRecord = isValidSessionHandle(requestedSessionId) &&
-            !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId));
+          // A record that exists but is damaged still counts as "this session
+          // has a transcript": treating it as absent would quietly mint a fresh
+          // empty conversation under the same handle (#316). The runtime judges
+          // the file again under its lock and refuses it with the exact reason.
+          const recordLookup = isValidSessionHandle(requestedSessionId)
+            ? lookupPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId))
+            : undefined;
+          const hasPreviousRecord = !!recordLookup?.path;
           // Design: only a tracked chat or an existing PI record makes this a
           // continuation. A session row that has neither is an old database
           // conversation whose transcript lives in the research store, and

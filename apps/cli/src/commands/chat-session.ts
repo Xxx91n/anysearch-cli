@@ -1,4 +1,5 @@
-import type { SessionStorePort } from "@anysearch-cli/kernel";
+import type { PiSessionRecordVerdict, SessionStorePort } from "@anysearch-cli/kernel";
+import { describePiSessionVerdict } from "@anysearch-cli/kernel";
 import { parseLlmFlags } from "../config-llm";
 
 export interface ChatOptions {
@@ -39,19 +40,56 @@ export function parseChatOptions(args: string[]): ChatOptions {
   return options;
 }
 
-export function selectChatSession(store: SessionStorePort, options: ChatOptions, projectRoot: string | null, hasRecord: (id: string) => boolean): string | undefined {
+/**
+ * Pick the conversation this run belongs to, and refuse one whose record cannot
+ * be used.
+ *
+ * The record judgment is passed in as a function so this stays a pure decision:
+ * the caller owns the filesystem. A broken record is refused with its own
+ * sentence — the line number, the format version, the identity mismatch — so
+ * the user can tell "the file is damaged" from "this handle never had a record"
+ * and neither is mistaken for a fresh conversation.
+ */
+export function selectChatSession(store: SessionStorePort, options: ChatOptions, projectRoot: string | null, readRecord: (id: string) => PiSessionRecordVerdict): string | undefined {
   if (options.continueLatest) {
     if (!projectRoot) throw new Error("无法确定当前项目。请用 --list --unassigned 查看旧会话，再用 --session ID 续聊。");
     if (!store.listChatSessions) throw new Error("当前存储不支持查看会话。");
     const latest = store.listChatSessions(projectRoot)[0];
     if (!latest) throw new Error("当前项目还没有会话。直接提问就会新建对话。");
-    if (!hasRecord(latest.id)) throw new Error("最近会话没有完整对话记录，不能自动续聊：" + latest.id);
+    const verdict = readRecord(latest.id);
+    if (!verdict.ok) throw new Error("最近会话不能续聊（" + latest.id + "）：" + verdict.message);
     return latest.id;
   }
   if (options.sessionId) {
     if (!store.getChatSession?.(options.sessionId)) throw new Error("找不到这个会话：" + options.sessionId);
-    if (!hasRecord(options.sessionId)) throw new Error("找不到这段会话的完整对话记录：" + options.sessionId);
+    const verdict = readRecord(options.sessionId);
+    if (!verdict.ok) throw new Error("这段会话不能续聊（" + options.sessionId + "）：" + verdict.message);
     return options.sessionId;
   }
   return undefined;
+}
+
+/**
+ * One line of `ans chat --list`.
+ *
+ * Every conversation the store knows is listed, including the ones whose record
+ * cannot be opened: a user needs to see that the conversation exists and what is
+ * wrong with it, so they can inspect or repair it by hand. The reason comes from
+ * the verdict, so a broken middle line, a newer format and a mismatched identity
+ * each read differently. A record problem never removes the row — one bad file
+ * must not make the list look like the conversation never existed.
+ */
+export function formatChatListLine(
+  entry: { id: string; updatedAt?: string; isCompleted?: number | boolean | null },
+  readRecord: (id: string) => PiSessionRecordVerdict,
+): string {
+  let note = entry.isCompleted ? "" : "\t未完成";
+  try {
+    const verdict = readRecord(entry.id);
+    if (!verdict.ok) note += "\t" + describePiSessionVerdict(verdict);
+  } catch (error: any) {
+    // The judgment itself must not take the whole list down.
+    note += "\t对话记录无法确认，请单独检查";
+  }
+  return entry.id + "\t" + entry.updatedAt + note;
 }
