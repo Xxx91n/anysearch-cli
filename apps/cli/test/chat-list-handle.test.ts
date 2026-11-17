@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { piSessionKey } from "@anysearch-cli/kernel";
-import { chatRecordReader, formatChatListLine } from "../src/commands/chat-session";
+import { chatRecordReader, formatChatList, formatChatListLine } from "../src/commands/chat-session";
 
 const STORE_ID = "chat-session-abc";
 const HANDLE = piSessionKey(STORE_ID);
@@ -110,4 +110,48 @@ test("two records for one row are marked ambiguous on the list and refused at re
     readRecord,
   );
   assert.match(row, /多份/, "the row says there are several records to check (got " + JSON.stringify(row) + ")");
+});
+
+// The command's own rendering path, end to end: real directory, real rows, the
+// production reader. A break anywhere in that chain shows up here — including
+// the store-id→handle mapping, which a test that rebuilt it would miss.
+test("the whole --list rendering agrees with what a resume would decide", () => {
+  const rows = [
+    { id: "chat-session-abc", updatedAt: "2026-01-01T00:00:00Z", isCompleted: 1 },
+    { id: "chat-session-broken", updatedAt: "2026-01-02T00:00:00Z", isCompleted: 1 },
+    { id: "chat-session-torn", updatedAt: "2026-01-03T00:00:00Z", isCompleted: 1 },
+    { id: "chat-session-dup", updatedAt: "2026-01-05T00:00:00Z", isCompleted: 1 },
+    { id: "chat-session-never-ran", updatedAt: "2026-01-06T00:00:00Z", isCompleted: 0 },
+  ];
+  const lines = formatChatList(dir, rows);
+  assert.equal(lines.length, rows.length, "one line per conversation, none dropped");
+
+  const [healthy, broken, torn, dup, neverRan] = lines as [string, string, string, string, string];
+
+  // The decisive assertion for the bug this ticket hit: a store id WITH a
+  // record must not be listed as having none.
+  assert.match(healthy, /^chat-session-abc\t/, "the healthy row is the healthy conversation");
+  assert.doesNotMatch(healthy, /没有对话记录/, "a conversation with a record is not listed as missing");
+
+  assert.match(broken, /第 2 行/, "the broken record names its line");
+  assert.match(torn, /尾行断在第 3 行/, "the torn record says where the tail broke");
+  assert.match(dup, /多份/, "the duplicated record says it is ambiguous");
+  assert.match(neverRan, /未完成/, "an unfinished attempt is still marked unfinished");
+  assert.match(neverRan, /没有对话记录/, "an id with no record says so");
+
+  // And every row's verdict is the one a resume of the same id would act on.
+  const readRecord = chatRecordReader(dir);
+  for (const row of rows) {
+    const verdict = readRecord(row.id);
+    const listed = lines[rows.indexOf(row)]!;
+    if (!verdict.ok) {
+      assert.match(listed, /对话记录|尾行|第 \d+ 行|多份|没有对话记录/,
+        "a refused record is explained on its line: " + listed);
+    } else if (verdict.tornTail) {
+      assert.match(listed, /尾行断在第/, "a torn tail is explained on its line: " + listed);
+    } else {
+      assert.doesNotMatch(listed, /没有对话记录|坏了|对不上|多份/,
+        "a usable record shows no complaint: " + listed);
+    }
+  }
 });

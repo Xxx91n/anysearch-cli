@@ -109,3 +109,19 @@ export function chatRecordReader(sessionDir: string): (storeSessionId: string) =
   const verdictsByHandle = sessionVerdictsForDir(sessionDir);
   return (storeSessionId: string) => verdictsByHandle(piSessionKey(storeSessionId));
 }
+
+/**
+ * Every line `ans chat --list` prints, from a session dir and a list of rows.
+ *
+ * The rendering is here rather than in the command so the reader BELOW and the
+ * rows it feeds are exercised together: a test can hand in a real directory and
+ * real rows, and any break in the id→handle mapping shows up as a wrong line
+ * instead of passing because the test rebuilt the mapping itself (#316).
+ */
+export function formatChatList(
+  sessionDir: string,
+  entries: ReadonlyArray<{ id: string; updatedAt?: string; isCompleted?: number | boolean | null }>,
+): string[] {
+  const readRecord = chatRecordReader(sessionDir);
+  return entries.map((entry) => formatChatListLine(entry, readRecord));
+}
