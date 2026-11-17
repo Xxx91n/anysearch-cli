@@ -4,7 +4,7 @@
 // The kernel reads no env, so each host (CLI, MCP) passes its own env in. The
 // contract lives here once instead of being copied into both roots.
 import { basename, dirname, join } from "node:path";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync, truncateSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, readdirSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { resolveDbPath } from "./composition";
 import type { SessionLockWindows } from "./session-lock";
@@ -88,9 +88,12 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
   };
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
-    // Design: inspect headers even when filenames name another key — users may
-    // have renamed records. An unreadable file bearing another PI key is
-    // ignored for this lookup, as another process may be creating it.
+    // Design: index the header id AND the id in the name. They can disagree
+    // (a renamed file, a copy), and keeping both claims is what lets such a
+    // file be FOUND and then refused by the identity check instead of reading
+    // as "this session never existed" (#316). An unreadable file bearing
+    // another PI key is ignored for this lookup, as another process may be
+    // creating it.
     const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
     const path = join(dir, file);
     if (namedKey) push(byName, namedKey, path);
@@ -195,6 +198,27 @@ function idFromFileName(path: string): string {
 }
 
 /**
+ * How many raw bytes the unfinished last line occupies.
+ *
+ * This must be counted on the FILE, not on the decoded text. An append killed in
+ * the middle of a multi-byte character decodes that partial character to U+FFFD,
+ * and re-encoding the decoded string gives 3 bytes for a fragment that really
+ * holds 1 or 2. Cutting the larger number slices into the PREVIOUS complete
+ * line's terminating newline, so the next read would treat that whole complete
+ * line as the new torn tail and drop a real turn — data loss from a repair that
+ * was supposed to save the file.
+ *
+ * The fragment is everything after the last 0x0A, so its length is the bytes
+ * after that offset. Undefined means the file has no newline at all, which the
+ * caller treats as unreadable rather than guessing.
+ */
+function tornTailBytes(raw: Buffer): number | undefined {
+  const lastNewline = raw.lastIndexOf(0x0a);
+  if (lastNewline === -1) return undefined;
+  return raw.length - lastNewline - 1;
+}
+
+/**
  * Read one whole session record and say what it is, without touching the file.
  *
  * This is the one place that decides whether a conversation can be handed to
@@ -214,20 +238,30 @@ function idFromFileName(path: string): string {
  * treated as a fact.
  */
 export function judgePiSessionRecord(path: string, expectedKey: string): PiSessionRecordVerdict {
-  let text: string;
-  try { text = readFileSync(path, "utf8"); }
+  let raw: Buffer;
+  try { raw = readFileSync(path); }
   catch (e: any) { return refuse("unreadable", "会话记录读不出来：" + (e?.message || String(e))); }
+  const text = raw.toString("utf8");
   if (!text.trim()) return refuse("empty", "会话记录是空的，没有可以续的内容");
 
   // A file that ends without a newline has an unfinished last line. Judge the
   // complete lines only; the fragment is reported so the caller can cut it.
+  // The byte count comes from the raw bytes, never from the decoded string —
+  // see tornTailBytes below.
   const segments = text.split("\n");
   const complete = text.endsWith("\n") ? segments.slice(0, -1) : segments;
   let tornTail: { line: number; bytes: number } | undefined;
   if (!text.endsWith("\n")) {
     const tail = complete[complete.length - 1] ?? "";
     if (tail.trim()) {
-      tornTail = { line: complete.length, bytes: Buffer.byteLength(tail, "utf8") };
+      const bytes = tornTailBytes(raw);
+      // No newline anywhere: not one complete line exists, so there is nothing
+      // to cut back to and nothing to read. Say that instead of trimming the
+      // file to zero and calling it either empty or repaired.
+      if (bytes === undefined) {
+        return refuse("unreadable", "会话记录里没有一行是写完的，读不出任何内容：" + path);
+      }
+      tornTail = { line: complete.length, bytes };
       complete.pop();
     } else {
       complete.pop();
@@ -300,28 +334,6 @@ export function describePiSessionVerdict(verdict: PiSessionRecordVerdict): strin
 }
 
 /**
- * Whether one record is usable as a resume source, as a sentence.
- *
- * Kept for callers that only have a path and want the old yes/no answer. It
- * judges with the file's own header id as the expected key, so it checks
- * parsing and format but cannot check the requested handle — use
- * `judgePiSessionRecord` when the handle is known, which is what the runtime
- * does.
- */
-export function readPiSessionRecord(path: string): { ok: true } | { ok: false; reason: string } {
-  let headerId: string;
-  try {
-    const first = readFileSync(path, "utf8").split("\n").find((line) => line.trim());
-    headerId = String(JSON.parse(first ?? "").id ?? "");
-  } catch (e: any) {
-    return { ok: false, reason: "会话记录读不出来：" + (e?.message || String(e)) };
-  }
-  if (!headerId) return { ok: false, reason: "会话记录没有有效的会话信息：" + path };
-  const verdict = judgePiSessionRecord(path, headerId);
-  return verdict.ok ? { ok: true } : { ok: false, reason: verdict.message };
-}
-
-/**
  * Cut off the unfinished last line, and nothing else.
  *
  * Called only after `judgePiSessionRecord` returned a torn tail, and only while
@@ -330,35 +342,77 @@ export function readPiSessionRecord(path: string): { ok: true } | { ok: false; r
  * separate step on purpose: judging must stay a pure function that never
  * modifies the file.
  *
+ * The cut point is found again on the current bytes rather than from the byte
+ * count in the verdict: that count describes the file at judgment time, and
+ * re-measuring keeps the cut on the last real newline even if a byte moved. It
+ * is the same rule the judgment uses, so the two can never disagree about where
+ * the fragment ends.
+ *
  * Returns whether bytes were removed.
  */
 export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVerdict): boolean {
   if (!verdict.ok || !verdict.tornTail) return false;
-  let size: number;
-  try { size = statSync(path).size; }
+  let raw: Buffer;
+  try { raw = readFileSync(path); }
   catch { return false; }
-  const keep = size - verdict.tornTail.bytes;
-  if (keep < 0) return false;
-  truncateSync(path, keep);
+  // Nothing to cut if the file now ends with a newline: a later writer finished
+  // the line, so the fragment the verdict named no longer exists.
+  const lastNewline = raw.lastIndexOf(0x0a);
+  if (lastNewline === -1 || lastNewline === raw.length - 1) return false;
+  truncateSync(path, lastNewline + 1);
   return true;
 }
 
 /**
  * Locate one session's record and judge it, without throwing.
  *
- * The index is the only thing that can fail hard (an unreadable file that
- * names THIS key), and that failure is itself a verdict about this session, so
- * it is reported instead of escaping. A record found by its header but named
- * after another id is judged like any other: the identity check refuses it.
+ * The index can fail hard on a file that is unreadable AND names this key. That
+ * file may well be this session's record, so the lookup still reports the path
+ * it found: a caller that asks "does this session have a transcript?" must see
+ * "yes, and it is damaged", not "no", or it would mint a fresh empty
+ * conversation under a handle that already has one (#316).
+ *
+ * A record found by its header but named after another id is judged like any
+ * other: the identity check refuses it.
  */
 export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecordLookup {
-  let path: string | undefined;
-  try { path = indexPiSessionRecords(dir)(key); }
-  catch (error: any) {
-    return { verdict: refuse("unreadable", error?.message || String(error)) };
+  let indexed: string | undefined;
+  let indexError: unknown;
+  try { indexed = indexPiSessionRecords(dir)(key); }
+  catch (error) { indexError = error; }
+
+  // The index is authoritative when it answers: it also rejects a key claimed by
+  // more than one file. When it fails or finds nothing, fall back to the handle
+  // written in the FILE NAME, because that file may be this session's damaged
+  // record — reporting "no transcript" would let the caller mint a fresh empty
+  // conversation under a handle that already has one (#316).
+  let path = indexed;
+  if (!path) {
+    try {
+      const named = readdirSync(dir)
+        .filter((file) => file.endsWith(".jsonl"))
+        .find((file) => idFromFileName(join(dir, file)) === key);
+      if (named) path = join(dir, named);
+    } catch { /* the directory itself is unreadable; reported below */ }
   }
-  if (!path) return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
-  return { path, verdict: judgePiSessionRecord(path, key) };
+
+  if (path) return { path, verdict: judgePiSessionRecord(path, key) };
+  if (indexError) {
+    // A file claims this key by its header while its name does not match, and
+    // the header could not be read. The claim is real, so say the record is
+    // unreadable rather than absent.
+    return { verdict: refuse("unreadable", (indexError as any)?.message || String(indexError)) };
+  }
+  if (!readdirSafe(dir)) {
+    return { verdict: refuse("unreadable", "会话记录目录读不出来：" + dir) };
+  }
+  return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
+}
+
+/** Whether the record directory can be listed at all; a missing one counts as readable. */
+function readdirSafe(dir: string): boolean {
+  try { readdirSync(dir); return true; }
+  catch (error: any) { return error?.code === "ENOENT"; }
 }
 
 /**

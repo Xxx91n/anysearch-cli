@@ -32,7 +32,6 @@ import {
   indexPiSessionRecords,
   judgePiSessionRecord,
   lookupPiSessionRecord,
-  readPiSessionRecord,
   repairPiSessionTornTail,
   type PiSessionRecordVerdict,
 } from "../src/pi-session";
@@ -84,7 +83,8 @@ try {
     const verdict = judgmentIsReadOnly(healthy, KEY);
     assert.deepEqual(verdict, { ok: true }, "R1: a well-formed record is accepted with no torn tail");
     assert.equal(findPiSessionRecord(dir, KEY), healthy, "R1: the healthy record is found by its handle");
-    assert.equal(readPiSessionRecord(healthy).ok, true, "R1: the compatibility answer agrees");
+    assert.deepEqual(lookupPiSessionRecord(dir, KEY), { path: healthy, verdict: { ok: true } },
+      "R1: the lookup the resume path uses agrees");
   }
 
   // ---------- R2: a malformed middle line, and its line number ----------
@@ -128,6 +128,38 @@ try {
     const complete = readFileSync(untouched, "utf8");
     assert.equal(repairPiSessionTornTail(untouched, { ok: true }), false, "R3: nothing to cut, nothing cut");
     assert.equal(readFileSync(untouched, "utf8"), complete, "R3: a healthy file is never shortened");
+  }
+
+  // ---------- R3b: a fragment cut mid-character does not eat the line before it ----------
+  // The byte count must come from the raw file. An append killed inside a
+  // multi-byte character decodes that partial character to U+FFFD, and counting
+  // the decoded string would over-measure by 1-2 bytes. Cutting that larger
+  // number slices the previous line's newline, and the NEXT read then treats a
+  // real, complete message as the new torn tail — losing a turn from a repair
+  // that was supposed to save the file.
+  {
+    const prefix = [HEADER(), USER, ASSISTANT].join("\n") + "\n";
+    const prefixBytes = Buffer.byteLength(prefix, "utf8");
+    // "中" is 3 bytes; keep only its first one.
+    const fullFragment = Buffer.from('{"type":"message","text":"中', "utf8");
+    const fragment = fullFragment.subarray(0, fullFragment.length - 2);
+    const midChar = record(join(dir, "torn-midchar"), `2026-01-01T00-00-20_${KEY}.jsonl`, [""], false);
+    writeFileSync(midChar, Buffer.concat([Buffer.from(prefix, "utf8"), fragment]));
+
+    const verdict = judgmentIsReadOnly(midChar, KEY);
+    assert.equal(verdict.ok, true, "R3b: a fragment cut mid-character is still just an unfinished tail");
+    assert.equal(verdict.ok && verdict.tornTail?.bytes, fragment.length,
+      "R3b: the fragment is measured in REAL bytes, not decoded-string bytes (got " +
+      JSON.stringify(verdict.ok && verdict.tornTail) + ", real=" + fragment.length + ")");
+
+    const completeBefore = readFileSync(midChar).subarray(0, prefixBytes);
+    assert.equal(repairPiSessionTornTail(midChar, verdict), true, "R3b: the repair cuts the fragment");
+    const after = readFileSync(midChar);
+    assert.deepEqual(after, completeBefore,
+      "R3b: the cut leaves exactly the complete lines — the line before is not eaten");
+    // The real proof: re-judging finds a whole record, not a new torn tail.
+    assert.deepEqual(judgePiSessionRecord(midChar, KEY), { ok: true },
+      "R3b: after repair the earlier complete lines are all still there");
   }
 
   // ---------- R4: blank lines are fine; an empty record is not ----------
@@ -224,16 +256,20 @@ try {
     // A broken file that DOES name this handle is reported as this session's
     // problem, in words, rather than thrown at the caller.
     const namedBroken = join(dir, "named-broken");
-    record(namedBroken, `2026-01-01T00-00-18_${KEY}.jsonl`, ["{ not json"]);
+    const namedBrokenPath = record(namedBroken, `2026-01-01T00-00-18_${KEY}.jsonl`, ["{ not json"]);
     assert.throws(() => indexPiSessionRecords(namedBroken)(KEY),
       "R8: the raw index still refuses a record naming this handle");
     const found = lookupPiSessionRecord(namedBroken, KEY);
-    assert.equal(found.path, undefined, "R8: an unreadable record yields no path");
+    // The path is kept on purpose: a caller asking "does this session have a
+    // transcript?" must answer yes-and-damaged, not "no". Answering "no" is what
+    // would mint a fresh empty conversation under a handle that already has one.
+    assert.equal(found.path, namedBrokenPath, "R8: the damaged record's path is still reported");
     assert.equal(refusal(found.verdict).problem, "unreadable", "R8: it is a stated problem, not a thrown error");
 
     // No record at all is its own answer, not an exception.
     const missing = lookupPiSessionRecord(join(dir, "nowhere"), KEY);
     assert.equal(refusal(missing.verdict).problem, "missing", "R8: a missing record is a verdict");
+    assert.equal(missing.path, undefined, "R8: an absent record has no path");
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });

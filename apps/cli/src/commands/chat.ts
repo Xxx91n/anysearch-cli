@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, lookupPiSessionRecord, indexPiSessionRecords, judgePiSessionRecord, describePiSessionVerdict, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, lookupPiSessionRecord, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult, PiSessionRecordVerdict } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -93,22 +93,15 @@ export async function runChat(argv: string[]): Promise<number> {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
       const root = options.unassigned ? null : project.root;
-      // One index for the whole list: scanning the directory once per row would
-      // read every record again for every conversation listed.
-      const dir = resolvePiSessionDir();
-      const index = indexPiSessionRecords(dir);
-      const readListedRecord = (id: string): PiSessionRecordVerdict => {
-        const path = index(piSessionKey(id));
-        // Absent is its own answer, distinct from damaged — the row is listed
-        // either way, and only the wording differs.
-        return path
-          ? judgePiSessionRecord(path, piSessionKey(id))
-          : { ok: false, problem: "missing", message: "没有这段会话的对话记录" };
-      };
+      // The list judges each record through the SAME lookup the resume path
+      // uses, so the list can never say "fine" about a record a resume would
+      // refuse. A damaged record is still listed: the user may want to inspect
+      // or repair it by hand, and one bad file must not fail the whole list.
+      const sessionDir = resolvePiSessionDir();
+      const readListedRecord = (id: string): PiSessionRecordVerdict =>
+        lookupPiSessionRecord(sessionDir, piSessionKey(id)).verdict;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
       for (const entry of store.listChatSessions(root)) {
-        // A damaged record is still listed: the user may want to inspect or
-        // repair it by hand, and one bad file must not fail the whole list.
         console.log(formatChatListLine(entry, readListedRecord));
       }
       return 0;
