@@ -186,6 +186,94 @@ CREATE TABLE IF NOT EXISTS budget_reservations (
   UNIQUE (session_id, dim, owner_pid, owner_host)
 );
 
+-- #302: per-execution task registration. One row per business task a main
+-- program runs (one `ans chat` invocation, later one MCP ans_chat call, one
+-- consolidate...). The row records the task's identity, who ran it, and when it
+-- finished; upgrade admission (#309) reads "unfinished business tasks" from
+-- here. Rows are append-only history — a task that crashed without finishing
+-- keeps its NULL ended_at and its owner pid, so a later reader can tell
+-- "still running" (owner alive) from "unknown leftovers" (owner gone) instead
+-- of quietly assuming either.
+--
+-- session_id is a best-effort context link, deliberately NOT a foreign key:
+-- the task is registered before the command decides whether it even has a
+-- session, and registration must not depend on the sessions row existing.
+CREATE TABLE IF NOT EXISTS task_records (
+  task_id TEXT PRIMARY KEY,
+  -- e.g. "cli.chat" — the entry and the command, one flat readable label.
+  kind TEXT NOT NULL,
+  -- 'business' = does real work an upgrade must wait out; 'management' =
+  -- status/diagnostic/config operations that stay usable while admission is
+  -- paused (#309 decides policy, this column is the fact it reads).
+  role TEXT NOT NULL CHECK (role IN ('business', 'management')),
+  -- Which entry process ran it: 'cli' today, 'mcp' once #303 migrates it.
+  entry TEXT NOT NULL,
+  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
+  owner_host TEXT NOT NULL,
+  -- Context handle the task ran under, attached best-effort while running.
+  session_id TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- NULL = still running (or crashed before finishing); non-NULL = the task
+  -- reached its end (success or failure alike — the exit_code says which).
+  ended_at TEXT,
+  exit_code INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_task_records_open ON task_records(ended_at) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_task_records_session ON task_records(session_id);
+
+-- #302: process records, kept separate from task_records on purpose. A running
+-- process is a fact about a machine; an active task is a fact about work. A
+-- resident MCP server therefore shows up here as one long-lived process row
+-- and never as one permanently-unfinished "task" — its business work is the
+-- per-request task rows (#303), which DO finish. Collapsing the two tables
+-- would make admission (#309) wait on a server that is simply serving.
+CREATE TABLE IF NOT EXISTS process_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pid INTEGER NOT NULL CHECK (pid > 0),
+  owner_host TEXT NOT NULL,
+  -- 'cli' | 'mcp' — the entry whose lifetime this row records.
+  entry TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- NULL = still running; set when the process reports its own exit. A
+  -- crashed process keeps NULL — a later reader probes the pid instead of
+  -- trusting silence, the same rule task_records applies.
+  ended_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_process_records_open ON process_records(ended_at) WHERE ended_at IS NULL;
+
+-- #302: the per-execution budget row — the compatible new accounting form.
+-- Same reserve/settle shape and the same non-negative counters as
+-- budget_ledger, but keyed by task_id: one chat execution gets its own
+-- budget, so resuming a conversation does not consume the history's quota
+-- and the history's own row (budget_ledger) is left untouched for callers
+-- that have not migrated yet (MCP ans_chat, consolidate — #303/#304).
+--
+-- No budget_reservations twin and no dead-owner reclaim on purpose: a task's
+-- budget is created fresh for that execution and nothing ever reserves
+-- against it again afterwards, so a killed task's leftover reservation costs
+-- no future run anything. It stays recorded — honest history, not a phantom
+-- cap eater. The owner identity for diagnostics lives in task_records.
+CREATE TABLE IF NOT EXISTS task_budgets (
+  task_id TEXT PRIMARY KEY REFERENCES task_records(task_id) ON DELETE CASCADE,
+  token_cap INTEGER NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
+  usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
+  time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
+  call_cap INTEGER NOT NULL DEFAULT 0 CHECK (call_cap >= 0),
+  -- #187 semantics carried over: 1 = the declared [budget] established and this
+  -- row enforces; 0 = the section was dropped, reserve records but passes.
+  configured INTEGER NOT NULL DEFAULT 1 CHECK (configured IN (0, 1)),
+  reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
+  spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
+  reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
+  spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
+  reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
+  billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- G019 migration: add time-decay columns to existing retrieval_results table.
 -- ALTER TABLE ADD COLUMN is idempotent-safe: "duplicate column name" means the column is
 -- already there and SessionStore absorbs exactly that; every other error fails the start (#257).

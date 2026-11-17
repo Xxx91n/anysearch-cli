@@ -92,6 +92,7 @@ import type {
 } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
+import { TaskBudgetLedger } from "./task-budget.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
@@ -241,6 +242,12 @@ export interface SessionStore {
   // (configured=0) so getBalance()/reserve treat the session as unmetered,
   // without deleting its spend history. No row is a no-op.
   clearBudgetCaps?(sessionId: string): void;
+  // #302: the per-execution task ledger over this store's connection, cached
+  // per store instance. Optional on the port for the same reason as initBudget
+  // — hand-built/embedded stores stay source-compatible, and the chat wiring
+  // treats "declared [budget] but no seam / failed creation" as a fault the run
+  // stops on, never a silent fall-back to the session form.
+  createTaskBudgetLedger?(): TaskBudgetLedger;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -506,6 +513,10 @@ export class SqliteSessionStore implements SessionStore {
   // T2 #177: the same instance is exposed to the wiring so the engine
   // and registration share one connection and one set of prepared statements.
   private budgetLedgerInstance?: BudgetLedger;
+  // #302: the per-execution task ledger over the same single connection. One
+  // instance per store, cached the same way, so the engine's per-call routing
+  // and the runtime's settle path share one set of prepared statements.
+  private taskBudgetLedgerInstance?: TaskBudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
   // #277: the cross-script judge (optional, fail-open). It answers "are these
@@ -804,6 +815,20 @@ export class SqliteSessionStore implements SessionStore {
    */
   createBudgetLedger(): BudgetLedger {
     return (this.budgetLedgerInstance ??= new BudgetLedger(this.db));
+  }
+
+  /**
+   * #302: the task-budget ledger over this store's single connection.
+   *
+   * Same caching rule as createBudgetLedger: the chat wiring, the runtime's
+   * settle path, and the engine's per-call routing all see one object, so a
+   * task's reserve and settle hit one row through one set of prepared
+   * statements. Rows live in task_budgets (keyed by task id) and never touch
+   * budget_ledger — the session form and its history stay as they were for
+   * callers that have not migrated (#303/#304).
+   */
+  createTaskBudgetLedger(): TaskBudgetLedger {
+    return (this.taskBudgetLedgerInstance ??= new TaskBudgetLedger(this.db));
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).

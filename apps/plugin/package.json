@@ -112,6 +112,6 @@
     "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.19.0"
   }
 }

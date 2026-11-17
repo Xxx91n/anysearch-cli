@@ -2,6 +2,10 @@
 export * from "./domain-schema";
 export * from "./session-store";
 export * from "./budget-ledger";
+// #302: the per-execution task budget (chat's new accounting form) and the
+// process/task lifecycle registry the main program writes into.
+export * from "./task-budget";
+export * from "./task-registry";
 export * from "./domain-loader";
 // `ans recommend` engine: BM25 (FTS5) over domain metadata, the #125 CJK substring stage behind it,
 // + peer-optional embedding arm (#110).

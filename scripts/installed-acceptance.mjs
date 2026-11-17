@@ -305,6 +305,52 @@ function sh(cmd, args, opts = {}) {
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
+/**
+ * 异步版 sh：同样的引号纪律，换成 spawn + 等待退出。
+ *
+ * 为什么要一个异步版：假模型端点就跑在当前进程里，spawnSync 会把整个事件
+ * 循环冻住——聊天子进程发来的模型请求永远等不到回答，这条验收只能等超时。
+ * 异步 spawn 让事件循环活着，端点照常应答。只有「要跟进程内端点说话的子进
+ * 程」需要走这条路；纯本地的命令（--version、consolidate）继续用同步 sh，
+ * 免去等待样板。
+ *
+ * 超时上限 240 秒，跟 MCP 车道同款：一轮真实（假端点的）对话不值得无限等，
+ * 卡住就是发现了问题，该红就红。
+ */
+async function shAsync(cmd, args, opts = {}) {
+  if (process.platform !== "win32") {
+    const r = await new Promise((resolve) => {
+      const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d.toString()));
+      child.stderr.on("data", (d) => (out += d.toString()));
+      const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
+      child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
+      child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+    });
+    return r;
+  }
+  // cmd.exe 的引号纪律与 sh() 完全一致（同款两坑：成对 %NAME% 拦下、参数一律
+  // 加引号），只是换成异步 spawn。
+  const EXPANDS = /%[^%]+%/;
+  if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
+    throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
+  }
+  const isPath = cmd.includes("/") || cmd.includes("\\");
+  const parts = [isPath ? '"' + cmd + '"' : cmd];
+  for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
+  const r = await new Promise((resolve) => {
+    const child = spawn(parts.join(" "), { ...opts, stdio: ["ignore", "pipe", "pipe"], shell: true });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.stderr.on("data", (d) => (out += d.toString()));
+    const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
+    child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+  });
+  return r;
+}
+
 function writeDomain(dir, name, body) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, name + ".toml"), body.join("\n") + "\n", "utf8");
@@ -362,11 +408,11 @@ async function main() {
     // 设了 ANS_ACC_TARBALLS 就直接装那个目录里的包，用来在没编译的情况下核对
     // 这个脚本本身。CI 里不设它，自己打包。
     const preset = process.env.ANS_ACC_TARBALLS?.trim();
-    const PACK_DIRS = ["apps/cli", "apps/mcp", "apps/plugin"];
+    const PACK_DIRS = ["apps/cli"];
     if (preset) {
       console.log("== 干净安装（用 " + preset + " 里现成的包）==");
       for (const f of readdirSync(preset)) {
-        if (f.endsWith(".tgz")) writeFileSync(join(outDir, f), readFileSync(join(preset, f)));
+        if (/^anysearch-cli-cli-.*\.tgz$/.test(f)) writeFileSync(join(outDir, f), readFileSync(join(preset, f)));
       }
     } else {
       console.log("== 打包 + 干净安装 ==");
@@ -380,7 +426,7 @@ async function main() {
     check(tgz.length === PACK_DIRS.length, "安装集合里有 " + PACK_DIRS.length + " 个 app 包", tgz.join(","));
     check(tgz.every((f) => !f.includes("0.0.0")), "打出来的包里没有 0.0.0 这种占位版本号", tgz.join(","));
 
-    const appTgz = tgz.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
+    const appTgz = tgz.filter((f) => /anysearch-cli-cli-/.test(f));
     const inst = sh("npm", ["install", ...appTgz.map((f) => join(outDir, f))], { cwd: prefix });
     check(inst.code === 0, "包能装进一个干净的目录", inst.out);
 
@@ -391,7 +437,7 @@ async function main() {
 
     const nm = join(prefix, "node_modules");
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
-    const mcpBin = join(nm, "@anysearch-cli", "mcp", "dist", "index.js");
+    const mcpBin = join(nm, "@anysearch-cli", "cli", "bin", "ans-mcp.cjs");
     check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);
     check(existsSync(mcpBin), "装出来的 MCP 入口在", mcpBin);
 
@@ -404,10 +450,15 @@ async function main() {
     // 这是 shim 自己的毛病：同一路径下 `node <入口>` 跑得好好的。
     // 所以 Windows 走 node + 入口，POSIX 仍然用 .bin/ans（那边没这问题，也更接近
     // 用户实际敲的命令）。
-    const cliEntry = join(nm, "@anysearch-cli", "cli", "dist", "index.js");
+    const cliEntry = join(nm, "@anysearch-cli", "cli", "bin", "ans.cjs");
     const runAns = process.platform === "win32"
       ? (args, opts = {}) => sh(process.execPath, [cliEntry, ...args], opts)
       : (args, opts = {}) => sh(ansBin, args, opts);
+    // 要跟模型端点说话的子进程必须走异步版：端点在本进程里，spawnSync 冻住
+    // 事件循环就没人应答了（见 shAsync 的注释）。C3 的两轮 chat 用它。
+    const runAnsAsync = process.platform === "win32"
+      ? (args, opts = {}) => shAsync(process.execPath, [cliEntry, ...args], opts)
+      : (args, opts = {}) => shAsync(ansBin, args, opts);
 
     // ================= A. 装出来的 CLI =================
     //
@@ -620,6 +671,8 @@ async function main() {
         "sessions", "messages", "retrieval_results", "resume_anchors", "budget_ledger",
         "semantic_memories", "summary_sources", "summary_suspensions",
         "legacy_summary_states", "legacy_summary_attempts", "entities", "edges",
+        // #302：任务/进程/任务预算三张表也在同一处点名。
+        "task_records", "process_records", "task_budgets",
       ];
       const missingTables = requiredTables.filter((t) => !coldTables.includes(t));
       check(missingTables.length === 0,
@@ -627,6 +680,73 @@ async function main() {
         "missing: " + missingTables.join(","));
       await coldA.kill();
       await coldB.kill();
+    }
+
+    // ================= C3. CLI 聊天：一次执行一份预算 =================
+    //
+    // #302：CLI 的一次 chat 是一个任务，账记在这次执行自己的预算行上；
+    // 会话的 budget_ledger 不再被 CLI 聊天动过（历史账不动），任务登记随主
+    // 程序统一进行（进程登记与任务登记分表）。两轮同会话各自开新账——
+    // 续聊不扣历史额度的结构性事实就在这三张表里。
+    console.log("\n== C3. CLI chat: one execution, one budget ==");
+    {
+      const chatDb = join(work, "chat-budget.db");
+      writeDomain(domainsDir, "chatbudget", [
+        ...DOMAIN_MIN("chatbudget", "BUDGETED-SYSTEM-PROMPT."),
+        "[budget]",
+        "tokenCap = 100000",
+        "callCap = 20",
+      ]);
+      const chatEnv = {
+        ...baseEnv,
+        ANS_DOMAIN: "chatbudget",
+        ANS_DB_PATH: chatDb,
+        ANS_SESSION_ID: "acc302-chat",
+      };
+      const r1 = await runAnsAsync(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      check(r1.code === 0, "带预算域的 CLI chat 退出码 0", r1.out.slice(-500));
+      check(/REPLY-TO-FIRST-TURN-QUESTION/.test(r1.out), "第一轮带回了模型的回答", r1.out.slice(-300));
+      check(/\[task-budget\] this execution:/.test(r1.out), "收尾时报了这次执行自己的预算", r1.out.slice(-500));
+      check(/\[session-budget\] conversation history:/.test(r1.out) && /CLI chats no longer spend this account/.test(r1.out),
+        "同屏把会话历史账（累计）单独报出来，和本次执行的两行不混", r1.out.slice(-500));
+
+      // 同一会话再来一轮：任务预算是新的，会话的账从头到尾没被 CLI 聊天碰过。
+      const r2 = await runAnsAsync(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      check(r2.code === 0, "同会话第二轮退出码 0（续聊不受历史额度牵制）", r2.out.slice(-500));
+
+      const chatCheck = new Database(chatDb, { readonly: true });
+      try {
+        const tasks = chatCheck.prepare(
+          "SELECT task_id as id, session_id as session, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.chat' ORDER BY started_at"
+        ).all();
+        check(tasks.length === 2 && tasks.every((t) => t.ended && t.code === 0),
+          "两次 CLI chat 各登记为一条任务，跑完即结束（两条都收尾）",
+          JSON.stringify(tasks));
+        check(tasks.every((t) => t.session === "acc302-chat"),
+          "两条任务都关联到同一个会话句柄（上下文挂钩会话，额度挂任务）",
+          JSON.stringify(tasks));
+        const budgets = chatCheck.prepare(
+          "SELECT spent_tokens as spent, billable_calls as calls FROM task_budgets ORDER BY rowid"
+        ).all();
+        check(budgets.length === 2 && budgets.every((b) => b.spent > 0),
+          "两次执行各有自己的一份预算行，各自记了真实花费（不共享会话账）",
+          JSON.stringify(budgets));
+        // 会话账的行还在（wireChatMemory 照旧登记会话预算，这是保留给未迁移
+        // 调用方的旧形式），但 CLI 聊天一次都不能让它动过一个计数器——额度
+        // 记在任务账上，会话的历史账不被这轮执行花掉。
+        const sessionBilled = chatCheck.prepare(
+          "SELECT COALESCE(SUM(reserved_tokens + spent_tokens + reserved_usd + spent_usd + reserved_calls + billable_calls), 0) as n FROM budget_ledger WHERE session_id = ?"
+        ).get("acc302-chat");
+        check(sessionBilled.n === 0,
+          "两轮 CLI 聊天后，会话预算行的一个计数器都没动过（额度记在任务账上）",
+          JSON.stringify(sessionBilled));
+        const processes = chatCheck.prepare(
+          "SELECT COUNT(*) as n FROM process_records WHERE entry = 'cli' AND ended_at IS NOT NULL"
+        ).get();
+        check(processes.n >= 2, "每次 CLI 执行登记了一条进程记录且已收尾", JSON.stringify(processes));
+      } finally {
+        chatCheck.close();
+      }
     }
 
     // ================= D. 装出来的整理 =================

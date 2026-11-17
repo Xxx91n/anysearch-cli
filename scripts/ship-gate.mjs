@@ -23,6 +23,8 @@
 //
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
+import { PROBE_CLEANUP_FAILED } from "./probe-process.mjs";
+import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
@@ -1011,9 +1013,9 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       // dsh-plugin joins the publish set (license/repo/access/workspace:/bundled-deps
       // asserted on its packed manifest too); the peer-optional embedding contract applies only to
       // the three consumers — dsh-plugin carries zero runtime deps by invariant (1s leg).
-      const PUBLISH_SET = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding", "@anysearch-cli/dsh-plugin"];
+      const PACKAGED_APPS_AND_EXTENSIONS = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding", "@anysearch-cli/dsh-plugin"];
       const EMBEDDING_CONSUMERS = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin"];
-      if (PUBLISH_SET.includes(pkg.name)) {
+      if (PACKAGED_APPS_AND_EXTENSIONS.includes(pkg.name)) {
         const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch-cli/"));
         if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (bundled internals are devDependencies)`);
         if ((pkg.optionalDependencies ?? {})["@anysearch-cli/embedding"]) fail(`${file}: @anysearch-cli/embedding in optionalDependencies — must be peer+optional (bomb-prevention)`);
@@ -1040,7 +1042,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
         const distDir = ["dist", "lib"].map((d) => path.join(pkgDir, d)).find((d) => fs.existsSync(d));
         if (distDir) {
           const bare = /(?:(?:require|import)\s*\(\s*|(?:import|export)\b[^'";]*?\bfrom\s*|import\s*)["']@anysearch-cli\/(kernel|store|retriever|plugin)["'/]/;
-          const stack = [distDir];
+          const stack = [distDir, ...["mcp/dist", "plugin/dist"].map((d) => path.join(pkgDir, d)).filter((d) => fs.existsSync(d))];
           while (stack.length) {
             const cur = stack.pop();
             for (const e of fs.readdirSync(cur, { withFileTypes: true })) {
@@ -1057,9 +1059,10 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       }
     }
     if (pkg.bin && Object.keys(pkg.bin).length > 0) {
-      const first = String(Object.values(pkg.bin)[0]);
-      const bin = path.join(pkgDir, first);
-      if (!fs.existsSync(bin)) fail(`${file}: bin target missing at ${bin}`);
+      for (const target of Object.values(pkg.bin)) {
+        const bin = path.join(pkgDir, String(target));
+        if (!fs.existsSync(bin)) fail(`${file}: bin target missing at ${bin}`);
+      }
       report("pass", `${pkg.name}@${pkg.version} tarball shape + bin target ok`);
     } else {
       report("pass", `${pkg.name}@${pkg.version} tarball shape ok (no bin)`);
@@ -1067,7 +1070,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   }
 
   // 4b. pnpm verify-ts-release pattern (PR #13061): REAL clean-prefix npm install,
-  // consumer-real shape — only the three APP tarballs go in.
+  // Consumer installation: only the complete product tarball goes in.
   // Bundled internals are not on npm at all; @anysearch-cli/embedding is an
   // optional peer (peerDependenciesMeta.optional) so npm must NOT auto-install
   // it — its absence here is the assertion, not a defect.
@@ -1081,9 +1084,9 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     .readdirSync(tgzDir)
     .filter((f) => f.endsWith(".tgz"))
     .map((f) => path.join(tgzDir, f));
-  const tgzApps = tgzAll.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
+  const tgzApps = tgzAll.filter((f) => /anysearch-cli-cli-/.test(f));
   const tgzEmb = tgzAll.find((f) => /anysearch-cli-embedding-/.test(f));
-  if (tgzApps.length !== 3) fail(`install-prefix: expected 3 app tarballs, got ${tgzApps.length}`);
+  if (tgzApps.length !== 1) fail(`install-prefix: expected one complete product tarball, got ${tgzApps.length}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   await run(npmCmd,
     [
@@ -1101,12 +1104,12 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   // Consumer-real install closure: apps present, bundled internals + the
   // optional peer ABSENT (proof the bundling and peer-optional shape hold).
   const nmDir = path.join(installPrefix, "node_modules");
-  for (const sub of ["@anysearch-cli/mcp", "@anysearch-cli/cli", "@anysearch-cli/plugin"]) {
+  for (const sub of ["@anysearch-cli/cli"]) {
     if (!fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} missing after npm install`);
     }
   }
-  for (const sub of ["@anysearch-cli/kernel", "@anysearch-cli/store", "@anysearch-cli/retriever", "@anysearch-cli/embedding"]) {
+  for (const sub of ["@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/kernel", "@anysearch-cli/store", "@anysearch-cli/retriever", "@anysearch-cli/embedding"]) {
     if (fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} present — bundled internals must not be install-closure members`);
     }
@@ -1119,7 +1122,12 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       fail(`install-prefix: bin ${b} missing after npm install`);
     }
   }
-  report("pass", "npm install --prefix smoke ok (3 apps resolvable, bundled internals + optional peer correctly absent, bins linked)");
+  await verifyInstalledProduct(installPrefix, (name, cond, detail) => {
+    // Throw so the verifier and this gate can run their cleanup in finally.
+    if (!cond) throw new Error(name + (detail ? ": " + detail : ""));
+    report("pass", name);
+  });
+  report("pass", "one complete product installed; internal libraries and optional embedding absent; bins linked");
 
   // 4c.: peer-optional dual-install — npm install of the embedding
   // tarball alongside the apps lands it at the shared node_modules root and
@@ -1589,6 +1597,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
+  let preserveInstall = false;
   try {
     reportStep("step_3_pack");
     const tgzDir = await stepPack(tmpDir);
@@ -1607,8 +1616,14 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
     report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix");
     report("pass", "ship gate green — ready to tag the next release");
     flushReportEntries("pass");
+  } catch (error) {
+    if (error.code === PROBE_CLEANUP_FAILED) {
+      preserveInstall = true;
+      report("fail", "probe cleanup incomplete; kept temporary installation: " + tmpDir);
+    }
+    throw error;
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (!preserveInstall) fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 })().catch((err) => {
   report("fail", err.message);

@@ -1,0 +1,234 @@
+// #302: the task registry — process records and business-task records for a
+// main program, kept in the shared durable DB so a later upgrade coordinator
+// (#309) can ask "who is still working?" across processes.
+//
+// Two tables, two lifetimes, on purpose. A running process (task_records'
+// owner, or a resident MCP server) is a fact about a machine; an active task
+// is a fact about work that must finish before an upgrade replaces files.
+// Registering them separately is what stops a resident MCP server's whole
+// lifetime from reading as one permanently-unfinished "task": the server is a
+// process row, and its business work (per-request tasks, #303) is what
+// finishes.
+//
+// Honesty rules carried over from the budget layer:
+// - a task that never wrote its end is NOT cleaned up here. It stays as an
+//   open row with its owner pid; the reader probes the pid and says
+//   "running" / "owner gone, outcome unknown" instead of guessing. Unknown
+//   leftovers are upgrade blockers to report (#309), not rows to sweep.
+// - only a provably dead owner (ESRCH, same host) reads as dead — the rule
+//   pidIsAlive states and the session lock applies.
+// - management/diagnostic commands register too, with role='management', so
+//   an admission pause can keep them usable (#309 reads the role; this layer
+//   only records it).
+
+import type Database from "better-sqlite3";
+import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { openDatabase } from "./db";
+import { beginInit, endInit, execDdlAtomically, withInitBusyRetry } from "./sqlite-init";
+import { pidIsAlive } from "./budget-ledger";
+import { SCHEMA_SQL } from "./schema-content";
+
+/** What the task row says about the work it names. */
+export type TaskRole = "business" | "management";
+
+export interface TaskRegistryOptions {
+  /** Owner identity for rows this registry writes. Defaults to this process. */
+  owner?: { pid: number; host: string };
+  /** Liveness probe for a same-host owner; injected so tests need no real kill. */
+  isOwnerAlive?: (pid: number) => boolean;
+}
+
+export interface TaskRecordRow {
+  taskId: string;
+  kind: string;
+  role: TaskRole;
+  entry: string;
+  ownerPid: number;
+  ownerHost: string;
+  /** Best-effort context handle, attached while the task was running. */
+  sessionId: string | null;
+  startedAt: string;
+  /** NULL = still running, or crashed before finishing. */
+  endedAt: string | null;
+  exitCode: number | null;
+}
+
+export interface ProcessRecordRow {
+  id: number;
+  pid: number;
+  ownerHost: string;
+  entry: string;
+  startedAt: string;
+  /** NULL = still running. */
+  endedAt: string | null;
+}
+
+/** An open task and how to end it. `finish` is idempotent (a second call is a no-op). */
+export interface RegisteredTask {
+  taskId: string;
+  /** Attach the context handle (session id) the task ran under, best-effort. */
+  attachSession(sessionId: string): void;
+  /** Record the task's end. Success and failure both end a task; the code says which. */
+  finish(opts?: { exitCode?: number }): void;
+}
+
+/** An open process record and how to close it. */
+export interface RegisteredProcess {
+  end(): void;
+}
+
+export class TaskRegistry {
+  private stmts: {
+    insertTask: Database.Statement;
+    finishTask: Database.Statement;
+    attachSession: Database.Statement;
+    taskById: Database.Statement;
+    openTasks: Database.Statement;
+    insertProcess: Database.Statement;
+    endProcess: Database.Statement;
+    openProcesses: Database.Statement;
+  };
+  private readonly owner: { pid: number; host: string };
+  private readonly isOwnerAlive: (pid: number) => boolean;
+
+  constructor(private db: Database.Database, opts: TaskRegistryOptions = {}) {
+    this.owner = opts.owner ?? { pid: process.pid, host: hostname() };
+    this.isOwnerAlive = opts.isOwnerAlive ?? pidIsAlive;
+    this.stmts = {
+      // ended_at IS NULL in the WHERE keeps `finish` from rewriting history:
+      // a task that already reported its end keeps the code it ended with.
+      insertTask: db.prepare(
+        "INSERT INTO task_records (task_id, kind, role, entry, owner_pid, owner_host) VALUES (?, ?, ?, ?, ?, ?)",
+      ),
+      finishTask: db.prepare(
+        "UPDATE task_records SET ended_at = datetime('now'), exit_code = ? WHERE task_id = ? AND ended_at IS NULL",
+      ),
+      // Only while running: attaching to finished history would silently
+      // rewrite what the task was recorded against.
+      attachSession: db.prepare(
+        "UPDATE task_records SET session_id = ? WHERE task_id = ? AND ended_at IS NULL",
+      ),
+      taskById: db.prepare(
+        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE task_id = ?"
+      ),
+      openTasks: db.prepare(
+        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE ended_at IS NULL ORDER BY started_at"
+      ),
+      insertProcess: db.prepare(
+        "INSERT INTO process_records (pid, owner_host, entry) VALUES (?, ?, ?)",
+      ),
+      endProcess: db.prepare(
+        "UPDATE process_records SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL",
+      ),
+      openProcesses: db.prepare(
+        "SELECT id, pid, owner_host as ownerHost, entry, started_at as startedAt, ended_at as endedAt FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
+      ),
+    };
+  }
+
+  /**
+   * Register one business/management task of this process.
+   *
+   * The id is minted here so the caller cannot invent one the registry never
+   * wrote (task_budgets' foreign key depends on exactly that: a budget row
+   * names a task that exists).
+   */
+  registerTask(req: { kind: string; role: TaskRole; entry: string; sessionId?: string }): RegisteredTask {
+    const taskId = req.entry + "-" + randomUUID();
+    this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host);
+    if (req.sessionId) this.stmts.attachSession.run(req.sessionId, taskId);
+    let finished = false;
+    return {
+      taskId,
+      attachSession: (sessionId: string): void => {
+        this.stmts.attachSession.run(sessionId, taskId);
+      },
+      finish: (opts?: { exitCode?: number }): void => {
+        if (finished) return;
+        finished = true;
+        this.stmts.finishTask.run(opts?.exitCode ?? 0, taskId);
+      },
+    };
+  }
+
+  /** Register this process's own lifetime as a process record. */
+  registerProcess(req: { entry: string }): RegisteredProcess {
+    const info = this.stmts.insertProcess.run(this.owner.pid, this.owner.host, req.entry);
+    const id = Number(info.lastInsertRowid);
+    let ended = false;
+    return {
+      end: (): void => {
+        if (ended) return;
+        ended = true;
+        this.stmts.endProcess.run(id);
+      },
+    };
+  }
+
+  taskById(taskId: string): TaskRecordRow | null {
+    return (this.stmts.taskById.get(taskId) as TaskRecordRow | undefined) ?? null;
+  }
+
+  /** The owner probe both open-lists share: alive / dead / unknown, no guess. */
+  private probeOwnerState(host: string, pid: number): "alive" | "dead" | "unknown" {
+    if (host !== this.owner.host) return "unknown";
+    return this.isOwnerAlive(pid) ? "alive" : "dead";
+  }
+
+  /**
+   * Unfinished tasks, with the owner probe folded in: `ownerState` is
+   * 'alive' (same host, running), 'dead' (same host, provably gone) or
+   * 'unknown' (another host — this machine cannot confirm). A dead-owner row
+   * is left as-is on purpose: clearing it would assert "the task ended" on no
+   * evidence; reporting it is the honest reading an upgrade can block on.
+   */
+  openTasks(): Array<TaskRecordRow & { ownerState: "alive" | "dead" | "unknown" }> {
+    const rows = this.stmts.openTasks.all() as TaskRecordRow[];
+    return rows.map((row) => ({ ...row, ownerState: this.probeOwnerState(row.ownerHost, row.ownerPid) }));
+  }
+
+  /** Unfinished process records, same owner-probe annotation as openTasks. */
+  openProcesses(): Array<ProcessRecordRow & { ownerState: "alive" | "dead" | "unknown" }> {
+    const rows = this.stmts.openProcesses.all() as ProcessRecordRow[];
+    return rows.map((row) => ({ ...row, ownerState: this.probeOwnerState(row.ownerHost, row.pid) }));
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
+/**
+ * Open the shared registry on its own connection.
+ *
+ * Same cold-start discipline as the session store (bounded busy retry, WAL,
+ * foreign keys, the one-transaction schema application): the registry can be
+ * the FIRST opener of a brand-new database — the main program registers a
+ * task before any command builds its engine — so it must be able to create
+ * every table the schema owns, not just its own three. Running the whole
+ * idempotent script keeps the two openers from drifting apart.
+ */
+export function openTaskRegistry(dbPath: string, opts: TaskRegistryOptions = {}): TaskRegistry {
+  const db = openDatabase(dbPath, { timeout: 5000 });
+  const initDeadline = beginInit(db);
+  withInitBusyRetry("journal_mode", () => db.pragma("journal_mode = WAL"), initDeadline);
+  db.pragma("synchronous = NORMAL");
+  db.pragma("foreign_keys = ON");
+  let schema: string;
+  try {
+    // ESM dev mode: schema.sql sits next to the compiled module; CJS bundled
+    // mode has no import.meta and uses the inlined copy (same source as the
+    // session store).
+    const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "schema.sql");
+    schema = readFileSync(schemaPath, "utf8");
+  } catch {
+    schema = SCHEMA_SQL;
+  }
+  withInitBusyRetry("schema", () => execDdlAtomically(db, schema), initDeadline);
+  endInit(db);
+  return new TaskRegistry(db, opts);
+}

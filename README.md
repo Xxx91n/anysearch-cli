@@ -32,6 +32,13 @@ ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # search inside the docs dom
 npm i -g @anysearch-cli/embedding
 ```
 
+The complete product includes `ans`, `ans-mcp`, `ans-plugin-server`, and the
+`ans-hook-*` commands, plus domain and host configuration resources. Use
+`ans --installation` (or any of those commands with `--installation`) to see
+the build commit, version, installed path and entry role. `ans mcp` starts the
+MCP entry from this same installation; each entry runs in its own process.
+Vector search remains optional.
+
 ## Post-install: Optional Vector Search
 
 `@anysearch-cli/embedding` is an optional peer dependency (peer-optional). Without it, the CLI runs FTS-only.
@@ -48,7 +55,7 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 
 ## Requirements
 
-- Node.js >= 22
+- Node.js >= 22.19.0
 - pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
 - Searching needs at least one reachable provider (`ans recommend` only reads local domain configs and needs no key):
   - `EXA_API_KEY`: Exa, supports domain filtering; Exa needs a key.
@@ -154,7 +161,7 @@ For the full vocabulary and live upstream test results, see [docs/vertical-domai
 ## MCP Server
 
 ```bash
-npm i -g @anysearch-cli/mcp                     # provides the ans-mcp command
+npm i -g @anysearch-cli/cli                     # includes ans, MCP and hook commands
 ans-mcp                                         # stdio transport (default)
 ans-mcp --transport http --port 3001            # Streamable HTTP (localhost-only)
 ```
@@ -242,6 +249,13 @@ ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
 
 # machine-readable output (includes sufficiency check, source tags, and abstain)
 node apps/cli/dist/index.js search "..." --json
+```
+
+The source MCP command uses the complete product's build outputs. Before its first run, and after changing MCP or hook sources, build the product before starting it:
+
+```bash
+pnpm -C apps/cli build
+pnpm -C apps/cli dev mcp --help
 ```
 
 The CLI resolves to `ans` when installed globally or linked. Inside the repository, `node apps/cli/dist/index.js` is the exact same entry point.

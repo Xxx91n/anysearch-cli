@@ -22,6 +22,19 @@
       ],
       "cache": false
     },
-    "check": {}
+    "check": {},
+    "@anysearch-cli/cli#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "mcp/**",
+        "plugin/**",
+        "domains/**",
+        ".build-stamp.json"
+      ]
+    }
   }
 }
