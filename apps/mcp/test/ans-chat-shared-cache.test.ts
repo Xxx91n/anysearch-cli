@@ -208,6 +208,12 @@ function sessionIdOf(res: any): string | undefined {
 }
 
 async function main() {
+  // #322 regression guard: snapshot the operator's real PI-session dir before
+  // touching any env — homedir() derives from HOME/USERPROFILE. If a future
+  // edit drops the isolation, a chat record lands there and the guard fails.
+  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realBefore = piRecords(realPiDir);
+
   const saved: Record<string, string | undefined> = {};
   for (const key of ENV_KEYS) {
     saved[key] = process.env[key];
@@ -219,12 +225,6 @@ async function main() {
       else process.env[key] = saved[key];
     }
   };
-
-  // #322 regression guard: snapshot the operator's real PI-session dir before
-  // redirecting. If any future edit drops the env isolation, a chat record
-  // lands there and the assertion at the end fails — no human has to notice.
-  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
-  const realBefore = piRecords(realPiDir);
 
   const piDir = mkdtempSync(join(tmpdir(), "ans-mcp-cache-pi-"));
   try {

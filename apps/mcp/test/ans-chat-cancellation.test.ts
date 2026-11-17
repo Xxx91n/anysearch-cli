@@ -163,6 +163,12 @@ const ENV_KEYS = [
 ];
 
 async function main() {
+  // Snapshot the operator's real PI dir BEFORE touching HOME/USERPROFILE —
+  // homedir() derives from those, so reading it after redirecting would make
+  // the guard below watch the temp dir instead of the real one.
+  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realBefore = piRecords(realPiDir);
+
   const saved: Record<string, string | undefined> = {};
   for (const key of ENV_KEYS) {
     saved[key] = process.env[key];
@@ -172,8 +178,6 @@ async function main() {
   // A chat that mints a session handle writes a PI record. Until #322 this
   // suite had no isolation and appended that record to ~/.anysearch/pi-sessions.
   const tempRoot = mkdtempSync(join(tmpdir(), "ans-322-cancellation-"));
-  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
-  const realBefore = piRecords(realPiDir);
 
   process.env.HOME = tempRoot;
   process.env.USERPROFILE = tempRoot;
