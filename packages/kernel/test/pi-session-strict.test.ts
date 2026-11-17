@@ -74,6 +74,13 @@ try {
   ]);
   assert.deepEqual(readPiSessionRecord(blank), { ok: true }, "R4: a blank line does not break the read");
 
+  // ---------- R4b: an empty record has nothing to resume ----------
+  const emptyDir = join(dir, "empty");
+  const empty = record(emptyDir, `2026-01-01T00-00-06_${KEY}.jsonl`, [""]);
+  const emptyVerdict = readPiSessionRecord(empty);
+  assert.equal(emptyVerdict.ok, false, "R4b: an empty record is not resumable");
+  assert.match((emptyVerdict as any).reason, /空/, "R4b: the reason says the record is empty");
+
   // ---------- R5: an unrelated broken file blocks nothing ----------
   const mixedDir = join(dir, "mixed");
   const healthy = record(mixedDir, `2026-01-01T00-00-04_${KEY}.jsonl`, [

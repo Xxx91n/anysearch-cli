@@ -129,16 +129,20 @@ export function readPiSessionRecord(path: string): { ok: true } | { ok: false; r
   let text: string;
   try { text = readFileSync(path, "utf8"); }
   catch (e: any) { return { ok: false, reason: "会话记录读不出来：" + (e?.message || String(e)) }; }
+  if (!text.trim()) return { ok: false, reason: "会话记录是空的，没有可以续的内容" };
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
-    try { JSON.parse(line); }
-    catch { return { ok: false, reason: "会话记录第 " + (i + 1) + " 行无法解析" }; }
-    // A non-empty last segment with no terminating newline is half a write.
+    // Check the torn tail BEFORE parsing it: a half-written last line is a
+    // half-written line whether or not the bytes happen to parse as JSON, and
+    // "last line was not finished" is the accurate thing to say about it.
+    // A non-empty last segment with no terminating newline is exactly that.
     if (i === lines.length - 1 && !text.endsWith("\n")) {
       return { ok: false, reason: "会话记录最后一行没有写完（第 " + (i + 1) + " 行）" };
     }
+    try { JSON.parse(line); }
+    catch { return { ok: false, reason: "会话记录第 " + (i + 1) + " 行无法解析" }; }
   }
   return { ok: true };
 }
