@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChatOptions, selectChatSession } from "../src/commands/chat-session";
+import { parseChatArgv, parseChatOptions, selectChatSession } from "../src/commands/chat-session";
 
 test("explicit continuation selects only the current project; unknown and missing handles fail", () => {
   const store = {
@@ -20,4 +20,7 @@ test("explicit continuation selects only the current project; unknown and missin
     assert.throws(() => parseChatOptions(args));
   }
   assert.equal(parseChatOptions(["--", "--continue"]).query, "--continue");
+  const literal = parseChatArgv(["--", "--llm.provider=openai", "hello"]);
+  assert.equal(literal.flags.provider, undefined);
+  assert.equal(literal.options.query, "--llm.provider=openai hello");
 });

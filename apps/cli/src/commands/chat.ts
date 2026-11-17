@@ -10,15 +10,14 @@ import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions,
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
-import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
+import { resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext } from "@anysearch-cli/store";
-import { parseChatOptions, selectChatSession } from "./chat-session";
+import { parseChatArgv, selectChatSession } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 
 export async function runChat(argv: string[]): Promise<number> {
-  const { flags, argv: args } = parseLlmFlags(argv);
-  let options;
-  try { options = parseChatOptions(args); }
+  let flags, options;
+  try { ({ flags, options } = parseChatArgv(argv)); }
   catch (error: any) { process.stderr.write(error.message + "\n"); return 2; }
   const query = options.query;
   if (!query && !options.list) {

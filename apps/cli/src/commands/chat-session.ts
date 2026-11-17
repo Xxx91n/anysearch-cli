@@ -1,4 +1,5 @@
 import type { SessionStorePort } from "@anysearch-cli/kernel";
+import { parseLlmFlags } from "../config-llm";
 
 export interface ChatOptions {
   query: string;
@@ -6,6 +7,13 @@ export interface ChatOptions {
   sessionId?: string;
   list: boolean;
   unassigned: boolean;
+}
+
+export function parseChatArgv(argv: string[]) {
+  const separator = argv.indexOf("--");
+  const parsed = parseLlmFlags(separator < 0 ? argv : argv.slice(0, separator));
+  if (separator >= 0) parsed.argv.push("--", ...argv.slice(separator + 1));
+  return { flags: parsed.flags, options: parseChatOptions(parsed.argv) };
 }
 
 export function parseChatOptions(args: string[]): ChatOptions {

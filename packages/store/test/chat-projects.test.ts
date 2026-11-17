@@ -15,6 +15,7 @@ test("project sessions survive reopening; legacy rows stay unassigned and resear
     await store.ensureSession("a", "default");
     store.recordChatProject("a", "/project/a", false);
     assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
+    assert.equal(store.getChatSession("a")?.chatTracked, 1);
     assert.deepEqual(store.listChatSessions("/project/a"), []);
     store.recordChatProject("a", "/project/b", false);
     assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
@@ -23,6 +24,7 @@ test("project sessions survive reopening; legacy rows stay unassigned and resear
     store.recordChatProject("b", "/project/b");
     store.recordChatProject("a", "/project/b");
     assert.deepEqual(store.listChatSessions(null).map((s) => s.id), ["legacy"]);
+    assert.equal(store.getChatSession("legacy")?.chatTracked, 0);
     store.recordChatProject("legacy", null);
     store.close();
     store = new SqliteSessionStore(path);

@@ -394,6 +394,10 @@ export function registerAnsChat(
           // #178: the resolver also returns the engine's ledger on success —
           // the same connection that holds the session's [budget] row — so the
           // agent loop's token/USD usage settles on the production path.
+          // Capture the old state before the resolver can register a new handle.
+          // An already tracked chat must never silently create a fresh record.
+          const previousChat = typeof requestedSessionId === "string"
+            ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({
@@ -417,6 +421,7 @@ export function registerAnsChat(
             // PI's own session record resumes the conversation; the same handle
             // keys both the record and the SQLite anchors (#258).
             ...piSessionOptions(memory.sessionId, session.apiKey),
+            requirePiSessionRecord: !!previousChat?.chatTracked,
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -499,12 +504,12 @@ export function registerAnsChat(
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
             });
           }
-          // A known project session may also continue through MCP. Update its
-          // recent-use time without assigning unowned sessions to this process's cwd.
+          // Remember completed MCP chats and update known projects without
+          // assigning an unowned session to the server's working directory.
           if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
             try {
               const entry = memory.store.getChatSession(memory.sessionId);
-              if (entry?.projectRoot) memory.store.recordChatProject(memory.sessionId, entry.projectRoot);
+              if (entry) memory.store.recordChatProject(memory.sessionId, entry.projectRoot);
             } catch (error) {
               process.stderr.write("[warn] 无法更新最近会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
             }
