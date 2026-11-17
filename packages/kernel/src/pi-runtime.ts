@@ -41,7 +41,7 @@ import {
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
-import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
+import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
@@ -391,6 +391,24 @@ export interface PiAgentRuntimeOptions {
   // completion-shaped budget settlement. An already-aborted signal starts no
   // provider call and reserves no budget.
   signal?: AbortSignal;
+  /**
+   * #302: the per-execution task budget this runtime's runs bill to (the chat
+   * run's own task). Present: every reserve/settle in the run — the agent
+   * loop's calls, compaction, the memory pipeline's summary/adjudication and
+   * the late settlement — lands on the task's budget row, and internal
+   * searches carry the scope so they stop accumulating on the session
+   * ledger. Absent: the session form, unchanged, for callers that have not
+   * migrated (#303/#304).
+   */
+  taskBudget?: TaskBudgetScope;
+  /**
+   * #302: the domain declared [budget] but the task budget could not be
+   * established (task registration or row creation failed). S9's third
+   * state — not "undeclared, run unmetered" and not "established, enforce":
+   * the run must not start any controlled call. The wiring hands the reason
+   * here so both hosts (CLI now, MCP in #303) get the same stop.
+   */
+  taskBudgetFault?: string;
 }
 
 // pure event mapping extracted for tests — pi-ai's
@@ -609,6 +627,13 @@ export class PiAgentRuntime {
   // repeated flushMemory adds only the new delta instead of billing twice.
   private settledMemoryTokens = 0;
   private settledMemoryCostUsd = 0;
+  // #302: the scope every budget reserve/settle in this runtime bills to — the
+  // task's own budget when one is wired, the session form otherwise. Defined
+  // once here: the run gate, the cap-refresh seam and the memory settlement
+  // all read this same rule instead of re-deriving it, because drift between
+  // three derivations is exactly how one ledger ends up holding a reservation
+  // another ledger settles.
+  private readonly billingScope: TaskBudgetScope | undefined;
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, opts.domainsDirs, { forceFirst: true }) : null;
@@ -625,8 +650,21 @@ export class PiAgentRuntime {
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
     this.archive = wiredSessionId ? { store: opts.store!, sessionId: wiredSessionId } : undefined;
     this.scopedRetriever = wiredSessionId
-      ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId }) }
-      : opts.retriever;
+      ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId, taskBudget: opts.taskBudget ?? q.taskBudget }) }
+      : opts.taskBudget
+        // A task-wired runtime without a session still routes its internal
+        // searches to the task's budget — the execution owns that spend even
+        // when the context wiring is absent.
+        ? { search: (q) => opts.retriever.search({ ...q, taskBudget: opts.taskBudget ?? q.taskBudget }) }
+        : opts.retriever;
+    // #302: the session half of the routing keeps the old three-part gate
+    // (#178: store + sessionId + ledger) — a half-wired runtime cannot bill the
+    // conversation; a task scope needs no session because its rows live in
+    // task_budgets, not the session's FK tree.
+    this.billingScope = opts.taskBudget
+      ?? (opts.store && opts.sessionId && opts.ledger
+        ? { taskId: opts.sessionId, ledger: opts.ledger }
+        : undefined);
 
     // constructor internally creates pipeline + gate instances.
     // The caller supplies the wiring; caller opts unchanged.
@@ -761,7 +799,27 @@ export class PiAgentRuntime {
     const reloadedDomain = this.domainReloader ? this.domainReloader() : null;
     if (reloadedDomain) (this.opts as { domain: DomainConfigPort }).domain = reloadedDomain as DomainConfigPort;
 
-    const { domain, model, streamFn, store, ledger, sessionId } = this.opts;
+    // `store` is not destructured: the billing gate reads the constructor's
+    // billingScope (#302) and the FTS sync reads this.opts.store directly, so
+    // the local would be an unused binding.
+    const { domain, model, streamFn, ledger, sessionId } = this.opts;
+
+    // #302: a declared task budget that could not be established stops the run
+    // before any controlled call. S9 keeps three states apart — undeclared
+    // (run unmetered), established (enforce), declared-but-failed (stop) — and
+    // failing open here would turn a broken registry into an unmetered chat,
+    // exactly the hole this ticket closes. No session work has happened yet at
+    // this point, so there is nothing to dispose or settle.
+    if (this.opts.taskBudgetFault) {
+      yield {
+        type: "error",
+        message:
+          "Task budget not established: " + this.opts.taskBudgetFault +
+          ". The run was not started; no provider call was made.",
+      };
+      stopRunScope("task budget fault");
+      return;
+    }
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
@@ -1139,7 +1197,16 @@ export class PiAgentRuntime {
     // gate MemoryPipeline uses — a half-wired runtime cannot touch
     // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
-    const billingWired = !!(store && sessionId && ledger);
+    //
+    // #302: a task-scoped budget is the new accounting form. The run bills its
+    // task — the scope is the task id and the ledger is the task's own — so
+    // resuming a conversation spends none of the history's quota. Callers
+    // without one (MCP ans_chat, consolidate) keep the session form and its
+    // old semantics untouched (#303/#304 migrate separately).
+    const taskBudget = this.opts.taskBudget;
+    const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
+    const billingId = this.billingScope?.taskId;
+    const billingWired = !!this.billingScope;
 
     // #275: release reservations whose owner this machine can prove is gone
     // before this run reserves anything. A run killed by SIGKILL never reaches
@@ -1161,7 +1228,7 @@ export class PiAgentRuntime {
     // session lock either, so holding the lock cannot prove the writer is gone
     // — clearing it would let a still-running old process and this run both
     // spend against the cap. That upgrade window is tracked separately (#279).
-    if (billingWired) {
+    if (billingWired && !taskBudget) {
       try {
         ledger!.reclaimDeadReservations?.(sessionId!);
       } catch (e) {
@@ -1183,9 +1250,9 @@ export class PiAgentRuntime {
     if (budgetChanged && billingWired) {
       try {
         if (domain.budget) {
-          ledger!.initBudget?.(sessionId!, toBudgetCaps(domain.budget));
+          billingLedger!.initBudget?.(billingId!, toBudgetCaps(domain.budget));
         } else {
-          ledger!.clearBudgetCaps?.(sessionId!);
+          billingLedger!.clearBudgetCaps?.(billingId!);
         }
       } catch (e) {
         // fail-open: keep the previously registered caps and name the fault.
@@ -1221,7 +1288,7 @@ export class PiAgentRuntime {
       const outputReserve = resolveOutputReserveTokens(domain.budget);
       const reserveAmount = resolveTokenReserve(inputOccupancy.tokens, outputReserve);
       try {
-        if (!ledger!.reserveTokens(sessionId!, reserveAmount)) {
+        if (!billingLedger!.reserveTokens(billingId!, reserveAmount)) {
           // #279: when the session holds reserved tokens that no owner row
           // claims, the cap is being eaten by a pre-#275 build's leftover. That
           // residue is deliberately not cleared (clearing it cannot prove the
@@ -1230,7 +1297,7 @@ export class PiAgentRuntime {
           // hint and the rejection above still stands on its own.
           let unownedHint = "";
           try {
-            if (ledger!.hasUnownedReservedTokens?.(sessionId!)) {
+            if (billingLedger!.hasUnownedReservedTokens?.(billingId!)) {
               unownedHint = " Part of the reserved tokens is claimed by no owner row — likely a leftover from a pre-#275 build; start a new session to get a clean budget.";
             }
           } catch { /* read-only probe; omit the hint */ }
@@ -1239,7 +1306,9 @@ export class PiAgentRuntime {
             message:
               "Token budget exhausted: this run needs " + reserveAmount +
               " tokens reserved (input " + inputOccupancy.tokens +
-              " + output limit " + outputReserve + ") but the session cap cannot cover it. " +
+              " + output limit " + outputReserve + ") but " +
+              (taskBudget ? "this task's budget" : "the session cap") +
+              " cannot cover it. " +
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML)." + unownedHint,
           };
           try { session.dispose(); } catch { /* already disposed */ }
@@ -1249,18 +1318,6 @@ export class PiAgentRuntime {
         tokenReserved = reserveAmount;
       } catch (e) {
         reportBudgetFault("token reserve", e);
-      }
-    }
-
-    // Per-call reserve stays a soft gate (#178): a rejection lets the run
-    // continue and the call is simply not billed. The token dimension above is
-    // the hard stop.
-    let callReserved = false;
-    if (billingWired) {
-      try {
-        callReserved = ledger!.reserveCalls(sessionId!, 1);
-      } catch (e) {
-        reportBudgetFault("reserve", e);
       }
     }
 
@@ -1284,7 +1341,7 @@ export class PiAgentRuntime {
       const delta = Math.round((amount - settledUsd) * 1e9) / 1e9;
       if (!(delta > 0)) return;
       try {
-        ledger!.settleUsd(sessionId!, 0, delta);
+        billingLedger!.settleUsd(billingId!, 0, delta);
         settledUsd = amount;
       } catch (e) {
         reportBudgetFault("usd settlement", e);
@@ -1295,7 +1352,7 @@ export class PiAgentRuntime {
       tokenSettled = true;
       if (tokenReserved <= 0 && actual <= 0) return;
       try {
-        ledger!.settleTokens(sessionId!, tokenReserved, actual);
+        billingLedger!.settleTokens(billingId!, tokenReserved, actual);
         settledTokens = actual;
       } catch (e) {
         // A failed settle leaves the reservation behind; let the finally
@@ -1319,12 +1376,44 @@ export class PiAgentRuntime {
       const delta = Math.max(0, finalActual - settledTokens);
       if (delta <= 0) return;
       try {
-        ledger!.settleTokens(sessionId!, 0, delta);
+        billingLedger!.settleTokens(billingId!, 0, delta);
         settledTokens = finalActual;
       } catch (e) {
         reportBudgetFault("token settlement", e);
       }
     };
+
+    // Per-call reserve, two forms (#178 / #302):
+    // - session form: a soft gate — a rejection lets the run continue and the
+    //   call is simply not billed (the token dimension is the hard stop there).
+    //   Kept unchanged for the callers that have not migrated (#303/#304).
+    // - task form: a declared call quota is enforced consistently (S5) — a
+    //   rejection stops this run before its first controlled call. The wiring
+    //   established a budget for exactly this execution, so "unbilled but
+    //   running" is not an honest state for it; raising [budget] callCap lets
+    //   the NEXT task through, since every task starts with a fresh budget.
+    let callReserved = false;
+    if (billingWired) {
+      try {
+        callReserved = billingLedger!.reserveCalls(billingId!, 1);
+        if (!callReserved && taskBudget) {
+          yield {
+            type: "error",
+            message:
+              "Call budget exhausted: this run needs 1 call reserved but the task's call quota is used up. " +
+              "The run was not started; raise [budget] callCap and retry (the next run re-reads the domain TOML).",
+          };
+          // The token reservation taken above is released with zero spend —
+          // the run never started, so no provider call exists to settle.
+          settleTokenReserve(0);
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget rejected");
+          return;
+        }
+      } catch (e) {
+        reportBudgetFault("reserve", e);
+      }
+    }
 
     let promptPromise: Promise<void> | null = null;
     try {
@@ -1379,7 +1468,7 @@ export class PiAgentRuntime {
         // skip message synchronization and the final event (CodeRabbit #200).
         if (callReserved) {
           try {
-            ledger!.settleCalls(sessionId!, 1, 1);
+            billingLedger!.settleCalls(billingId!, 1, 1);
             callSettled = true;
           } catch (e) {
             reportBudgetFault("call settlement", e);
@@ -1503,7 +1592,7 @@ export class PiAgentRuntime {
           // before the final chunk arrived.
           const actualCalls = usageReported || abortedEarly ? 1 : 0;
           try {
-            ledger!.settleCalls(sessionId!, 1, actualCalls);
+            billingLedger!.settleCalls(billingId!, 1, actualCalls);
           } catch (e) {
             reportBudgetFault("call settlement", e);
           }
@@ -1565,8 +1654,15 @@ export class PiAgentRuntime {
    * a second call after another summary call adds only the delta.
    */
   private async settleMemoryUsage(): Promise<void> {
-    const { ledger, sessionId } = this.opts;
-    if (!this.pipeline || !ledger || !sessionId) return;
+    // #302: the memory pipeline's spend settles on the same scope the run
+    // billed — the task's budget when the runtime is task-wired, the session
+    // ledger otherwise. The summary/re-judge calls are this execution's own
+    // work; leaving them on the session row would bill the conversation's
+    // history for a run it did not cause.
+    const billingScope = this.billingScope;
+    if (!this.pipeline || !billingScope) return;
+    const billingLedger = billingScope.ledger;
+    const billingId = billingScope.taskId;
     const report = this.pipeline.getSummaryUsage();
     // The adjudication slice is the pipeline's own spend too (D4: never hidden
     // outside the budget), so the settled watermark covers both books. Both
@@ -1578,7 +1674,7 @@ export class PiAgentRuntime {
     // flush would bill the same tokens again.
     if (pipelineTokens > this.settledMemoryTokens) {
       try {
-        ledger.settleTokens(sessionId, 0, pipelineTokens - this.settledMemoryTokens);
+        billingLedger.settleTokens(billingId, 0, pipelineTokens - this.settledMemoryTokens);
         this.settledMemoryTokens = pipelineTokens;
       } catch (e) {
         reportBudgetFault("memory summary token settlement", e);
@@ -1586,7 +1682,7 @@ export class PiAgentRuntime {
     }
     if (pipelineCost > this.settledMemoryCostUsd) {
       try {
-        ledger.settleUsd(sessionId, 0, pipelineCost - this.settledMemoryCostUsd);
+        billingLedger.settleUsd(billingId, 0, pipelineCost - this.settledMemoryCostUsd);
         this.settledMemoryCostUsd = pipelineCost;
       } catch (e) {
         reportBudgetFault("memory summary usd settlement", e);

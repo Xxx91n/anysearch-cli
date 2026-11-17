@@ -72,8 +72,13 @@ export interface ReservationOwner {
  * that may still be going, which is the harm this file exists to prevent.
  * Keeping one only costs headroom until a later run can confirm the owner is
  * gone.
+ *
+ * Exported since #302: task_records carries the same owner pair and needs the
+ * same "only a provably dead owner is dead" rule for its open-task
+ * diagnostics; two copies of this judgment would drift exactly where honesty
+ * matters.
  */
-function pidIsAlive(pid: number): boolean {
+export function pidIsAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

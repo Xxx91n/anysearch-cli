@@ -565,6 +565,8 @@ async function main() {
         "sessions", "messages", "retrieval_results", "resume_anchors", "budget_ledger",
         "semantic_memories", "summary_sources", "summary_suspensions",
         "legacy_summary_states", "legacy_summary_attempts", "entities", "edges",
+        // #302：任务/进程/任务预算三张表也在同一处点名。
+        "task_records", "process_records", "task_budgets",
       ];
       const missingTables = requiredTables.filter((t) => !coldTables.includes(t));
       check(missingTables.length === 0,
@@ -572,6 +574,73 @@ async function main() {
         "missing: " + missingTables.join(","));
       await coldA.kill();
       await coldB.kill();
+    }
+
+    // ================= C3. CLI 聊天：一次执行一份预算 =================
+    //
+    // #302：CLI 的一次 chat 是一个任务，账记在这次执行自己的预算行上；
+    // 会话的 budget_ledger 不再被 CLI 聊天动过（历史账不动），任务登记随主
+    // 程序统一进行（进程登记与任务登记分表）。两轮同会话各自开新账——
+    // 续聊不扣历史额度的结构性事实就在这三张表里。
+    console.log("\n== C3. CLI chat: one execution, one budget ==");
+    {
+      const chatDb = join(work, "chat-budget.db");
+      writeDomain(domainsDir, "chatbudget", [
+        ...DOMAIN_MIN("chatbudget", "BUDGETED-SYSTEM-PROMPT."),
+        "[budget]",
+        "tokenCap = 100000",
+        "callCap = 20",
+      ]);
+      const chatEnv = {
+        ...baseEnv,
+        ANS_DOMAIN: "chatbudget",
+        ANS_DB_PATH: chatDb,
+        ANS_SESSION_ID: "acc302-chat",
+      };
+      const r1 = runAns(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      check(r1.code === 0, "带预算域的 CLI chat 退出码 0", r1.out.slice(-500));
+      check(/REPLY-TO-FIRST-TURN-QUESTION/.test(r1.out), "第一轮带回了模型的回答", r1.out.slice(-300));
+      check(/\[task-budget\] this execution:/.test(r1.out), "收尾时报了这次执行自己的预算", r1.out.slice(-500));
+      check(/\[session-budget\] conversation history:/.test(r1.out) && /CLI chats no longer spend this account/.test(r1.out),
+        "同屏把会话历史账（累计）单独报出来，和本次执行的两行不混", r1.out.slice(-500));
+
+      // 同一会话再来一轮：任务预算是新的，会话的账从头到尾没被 CLI 聊天碰过。
+      const r2 = runAns(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      check(r2.code === 0, "同会话第二轮退出码 0（续聊不受历史额度牵制）", r2.out.slice(-500));
+
+      const chatCheck = new Database(chatDb, { readonly: true });
+      try {
+        const tasks = chatCheck.prepare(
+          "SELECT task_id as id, session_id as session, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.chat' ORDER BY started_at"
+        ).all();
+        check(tasks.length === 2 && tasks.every((t) => t.ended && t.code === 0),
+          "两次 CLI chat 各登记为一条任务，跑完即结束（两条都收尾）",
+          JSON.stringify(tasks));
+        check(tasks.every((t) => t.session === "acc302-chat"),
+          "两条任务都关联到同一个会话句柄（上下文挂钩会话，额度挂任务）",
+          JSON.stringify(tasks));
+        const budgets = chatCheck.prepare(
+          "SELECT spent_tokens as spent, billable_calls as calls FROM task_budgets ORDER BY rowid"
+        ).all();
+        check(budgets.length === 2 && budgets.every((b) => b.spent > 0),
+          "两次执行各有自己的一份预算行，各自记了真实花费（不共享会话账）",
+          JSON.stringify(budgets));
+        // 会话账的行还在（wireChatMemory 照旧登记会话预算，这是保留给未迁移
+        // 调用方的旧形式），但 CLI 聊天一次都不能让它动过一个计数器——额度
+        // 记在任务账上，会话的历史账不被这轮执行花掉。
+        const sessionBilled = chatCheck.prepare(
+          "SELECT COALESCE(SUM(reserved_tokens + spent_tokens + reserved_usd + spent_usd + reserved_calls + billable_calls), 0) as n FROM budget_ledger WHERE session_id = ?"
+        ).get("acc302-chat");
+        check(sessionBilled.n === 0,
+          "两轮 CLI 聊天后，会话预算行的一个计数器都没动过（额度记在任务账上）",
+          JSON.stringify(sessionBilled));
+        const processes = chatCheck.prepare(
+          "SELECT COUNT(*) as n FROM process_records WHERE entry = 'cli' AND ended_at IS NOT NULL"
+        ).get();
+        check(processes.n >= 2, "每次 CLI 执行登记了一条进程记录且已收尾", JSON.stringify(processes));
+      } finally {
+        chatCheck.close();
+      }
     }
 
     // ================= D. 装出来的整理 =================

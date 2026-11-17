@@ -22,6 +22,7 @@ import { runSwitchState } from "./commands/switch-state";
 import { runHitl } from "./commands/hitl";
 import { rehydrateConfigEnv } from "./config-env";
 import { runTeardown, unrefPendingHandles } from "./teardown";
+import { trackCliCommand } from "./cli-task-tracking";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 //. tsup injects __PACKAGE_VERSION__ at build time.
@@ -116,6 +117,17 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
 };
 
 const handler = handlers[cmd];
+
+// #302: the main program registers this invocation — a process record for the
+// CLI process, and (unless the command is itself a host process, e.g. `mcp`)
+// a task record with a role, so a command added to the dispatch table tomorrow
+// is automatically visible to upgrade admission (#309). A broken registry
+// warns on stderr and the command still runs; the one place that then stops is
+// a chat whose domain declares [budget] (a declared budget that cannot be
+// established must not turn into uncontrolled calls — see
+// commands/chat-task-budget.ts).
+const tracking = trackCliCommand(cmd);
+
 // Exit path — explicit native teardown BEFORE exit. The old
 // process.exit(code) raced libuv teardown against live sqlite/onnx handles
 // (F1 macOS libc++abi abort family). close() first, then let the loop drain;
@@ -123,15 +135,28 @@ const handler = handlers[cmd];
 // the watchdog preserves the old guaranteed-exit semantics if anything still
 // keeps the loop alive.
 const exit = (code: number): void => {
+  // The process record ends before teardown closes the registry's connection:
+  // the write needs that connection still open.
+  try { tracking.endProcess(); } catch { /* best-effort record */ }
   try { runTeardown(); } finally {
     process.exitCode = code;
     unrefPendingHandles();
     setTimeout(() => process.exit(code), 5000).unref();
   }
 };
-handler(cmdArgs)
-  .then(exit)
+// The handler runs inside the task context when one was registered, so the
+// command (chat today) can read the task id it bills to.
+const runCommand = (): Promise<number> =>
+  tracking.task ? tracking.task.run(() => handler(cmdArgs)) : handler(cmdArgs);
+runCommand()
+  .then((code) => {
+    // Success and failure both end a task; the exit code says which. Written
+    // before exit closes the registry connection.
+    tracking.task?.finish(code);
+    exit(code);
+  })
   .catch((e) => {
     process.stderr.write("ans: " + cmd + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
+    tracking.task?.finish(1);
     exit(1);
   });
