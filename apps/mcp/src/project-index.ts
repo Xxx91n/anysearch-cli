@@ -48,9 +48,11 @@ export interface ProjectIndexRecall {
  * index unavailable.
  */
 export function resolveRecallProjects(explicit: readonly string[] = []): { projects: string[]; notes: string[] } {
-  const requested = explicit
-    .map((value) => (typeof value === "string" ? value.trim() : ""))
-    .filter((value) => value.length > 0);
+  const requested = [...new Set(
+    explicit
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter((value) => value.length > 0),
+  )];
   if (requested.length > 0) {
     if (requested.length > 10) {
       return { projects: [], notes: ["project index unavailable: too many project paths (max 10)"] };

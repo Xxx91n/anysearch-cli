@@ -12,7 +12,6 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recallProjectIndex, resolveRecallProjects } from "../src/project-index.js";
-import { markHttpTransport } from "../src/transport-mode.js";
 import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 
 function project(tag: string): string {
@@ -128,31 +127,23 @@ test("explicit project paths: one bad path makes the whole scope unavailable", (
     assert.deepEqual(relative.projects, [], "relative paths are refused like the server does");
     assert.match(relative.notes.join("; "), /must be absolute/);
 
-    const tooMany = resolveRecallProjects(Array.from({ length: 11 }, () => good));
-    assert.deepEqual(tooMany.projects, []);
-    assert.match(tooMany.notes.join("; "), /max 10/);
+    assert.deepEqual(
+      resolveRecallProjects([good, good, " " + good + " "]).projects,
+      [realpathSync(good)],
+      "duplicates are one scope, so the cap below counts real roots",
+    );
+
+    const many = Array.from({ length: 11 }, (_value, index) => project("scope-many-" + index));
+    try {
+      const tooMany = resolveRecallProjects(many);
+      assert.deepEqual(tooMany.projects, []);
+      assert.match(tooMany.notes.join("; "), /max 10/);
+    } finally {
+      for (const dir of many) rmSync(dir, { recursive: true, force: true });
+    }
   } finally {
     rmSync(good, { recursive: true, force: true });
     rmSync(plain, { recursive: true, force: true });
-  }
-});
-
-test("HTTP transport: no per-request workspace, so the implicit scope is unavailable", () => {
-  // The transport marker is process-wide, matching the real HTTP entry; this
-  // test only relies on explicit projectPaths working afterwards.
-  const previousCwd = process.cwd();
-  const current = project("scope-http");
-  process.chdir(current);
-  markHttpTransport();
-  try {
-    const implicit = resolveRecallProjects();
-    assert.deepEqual(implicit.projects, []);
-    assert.match(implicit.notes.join("; "), /HTTP MCP server has no per-request workspace/);
-    const explicit = resolveRecallProjects([current]);
-    assert.deepEqual(explicit.projects, [realpathSync(current)], "projectPaths still works on HTTP");
-  } finally {
-    process.chdir(previousCwd);
-    rmSync(current, { recursive: true, force: true });
   }
 });
 

@@ -43,10 +43,11 @@ import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFro
 // parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
-mkdirSync(dirname(DB_PATH), { recursive: true });
+// The index holds retrieved snippets; keep its directory and file owner-only
+// before the store creates them, then pass again after WAL turns on so the
+// sidecars get the same treatment.
+try { ensureOwnerOnlyDb(DB_PATH); } catch { mkdirSync(dirname(DB_PATH), { recursive: true }); }
 const store = new ProjectIndexStore(DB_PATH);
-// The index holds retrieved snippets; keep it owner-only like the observation
-// DB. Run after the store opens so the WAL sidecars exist and get the same pass.
 try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
 const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db");
