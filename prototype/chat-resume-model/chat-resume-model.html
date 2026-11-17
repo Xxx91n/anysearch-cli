@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型：旧会话没有对话文件，续还是不续</title>
+<style>
+  :root {
+    --accent: #2563eb;
+    --ink: #1f2328;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f7f7f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 44px 24px 90px; }
+  h1 { font-size: 26px; line-height: 1.35; margin: 0 0 8px; }
+  h2 { font-size: 18px; margin: 0 0 14px; }
+  h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .lede { margin: 0 0 26px; color: var(--muted); }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .card p { margin: 0 0 10px; }
+  .card p:last-child { margin-bottom: 0; }
+  .fine { color: var(--muted); font-size: 13px; }
+  ul { margin: 0 0 10px; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+  .cmd {
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: #f3f4f6;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 9px 12px;
+    margin: 0 0 18px;
+    overflow-x: auto;
+  }
+  .path { border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .path-head { font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--ink); color: #fff; font-size: 12px; flex: none;
+  }
+  .btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 7px 13px;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.3;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn[aria-expanded="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .panel { margin-top: 12px; font-size: 14px; }
+  .panel[hidden] { display: none; }
+  pre {
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: #f3f4f6;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 0 0 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .panel table, .case table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .panel th, .panel td, .case th, .case td {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top;
+  }
+  .panel th, .case th { color: var(--muted); font-weight: 600; width: 108px; }
+  .panel tr:last-child td, .case tr:last-child td { border-bottom: none; }
+  .diff { border-left: 3px solid var(--accent); padding-left: 14px; margin-top: 20px; }
+  .case { border-top: 1px solid var(--line); padding: 16px 0; }
+  .case:first-of-type { border-top: none; padding-top: 0; }
+  .case-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .case-title { font-weight: 700; }
+  .case-body { margin-top: 12px; }
+  .case-body[hidden] { display: none; }
+  .case p { margin: 0 0 8px; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 30px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>旧会话没有对话文件，续还是不续？</h1>
+    <p class="lede">PR #314 现在选的是“不续”。评论里问你要不要改成“续一半”。这一页把同一件事按两条路各走一遍，再看五种出错情况现在会怎样。</p>
+  </header>
+
+  <section class="card">
+    <h2>先说清楚：这种旧会话里有什么</h2>
+    <div class="two">
+      <div>
+        <h3>有</h3>
+        <ul>
+          <li>数据库里的问答记录</li>
+          <li>记忆摘要：它记得你说过的要点</li>
+          <li>以前搜过的资料</li>
+          <li>预算和用量的账</li>
+        </ul>
+      </div>
+      <div>
+        <h3>没有</h3>
+        <ul>
+          <li>模型自己的完整对话文件</li>
+          <li>所以完整的问答历史拼不回来</li>
+        </ul>
+      </div>
+    </div>
+    <p class="fine">早期版本只把消息写进数据库，没写对话文件。这样的人不算多，但确实有。下面的“旧会话-甲”就是其中一段。</p>
+  </section>
+
+  <section class="card">
+    <h2>同一句命令，两条路的区别</h2>
+    <p>你在终端里敲这句，明确要用那个旧句柄：</p>
+    <p class="cmd">ans chat --session 旧会话-甲 "上次那个报价再算一次"</p>
+    <div class="two">
+      <div class="path">
+        <div class="path-head"><span class="badge">A</span> 允许有限恢复</div>
+        <button class="btn" id="btnA">按 A 走</button>
+        <div class="panel" id="panelA" hidden></div>
+      </div>
+      <div class="path">
+        <div class="path-head"><span class="badge">B</span> 要求完整文件（现在的代码）</div>
+        <button class="btn" id="btnB">按 B 走</button>
+        <div class="panel" id="panelB" hidden></div>
+      </div>
+    </div>
+    <div class="diff" id="diff">
+      <p class="fine">两边都走一遍，区别会写在这里。</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>五种出错情况，现在会怎样</h2>
+    <p class="fine">这些结论是读 PR #314 的代码得出的，不是跑出来的。每条点开看：用户看到什么、数据留没留。</p>
+    <div id="cases"></div>
+  </section>
+
+  <section class="card">
+    <h2>一句话结论</h2>
+    <ul>
+      <li>现在的代码选的是 B：找不到完整对话文件就停下，问题不发送，旧数据原样保留。</li>
+      <li>五种出错里，登记失败和“改名后读不出”已经有明确处理；并发收尾会被后结束的那轮盖掉；文件后面坏了检测不到；MCP 被杀不丢数据，但最近会话不会自动选到它。</li>
+      <li>A 只该开在“用户明确报出旧句柄”这条路上。<span class="fine">--continue</span> 还是按完整文件挑，不然它可能自动挑到一段残缺的会话。</li>
+    </ul>
+  </section>
+
+  <footer>原型分支 prototype/chat-resume-model，不合并。看完就扔。</footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var A_TEXT =
+    '续上了。完整对话找不到了，先用记忆接着聊。\n' +
+    '旧消息、记忆、资料都还在。';
+  var A_ROWS = [
+    ['模型这次知道', '记忆摘要、搜过的资料；上次的完整问答读不到'],
+    ['对话文件', '这次新开一个，旧文件不动'],
+    ['项目归属', '仍然算“未归属”，不按今天的目录猜'],
+    ['问题发了吗', '发了']
+  ];
+
+  var B_TEXT =
+    '找不到这段会话的完整对话记录：旧会话-甲';
+  var B_ROWS = [
+    ['模型这次知道', '什么也没有，因为根本没开始'],
+    ['对话文件', '没有新建'],
+    ['项目归属', '仍然算“未归属”'],
+    ['问题发了吗', '没发，退出码 1']
+  ];
+
+  var CASES = [
+    {
+      title: '同一会话，两轮一起收尾',
+      story: '你在一个终端里提问，还没跑完；另一个终端用同一个句柄又提了一个问题。先开的那轮最后才结束。',
+      result: '后结束的那轮把自己的“完成”写进去，把另一轮还没跑完这件事盖掉。列表显示“已完成”，其实还有一轮在跑。',
+      rows: [
+        ['用户看到', '没有任何提示'],
+        ['项目记录', '有，标成“已完成”'],
+        ['对话文件', '两轮的都在，没有丢'],
+        ['列表里', '这一条显示“已完成”'],
+        ['验证', '读代码得出，没跑过']
+      ]
+    },
+    {
+      title: 'MCP 跑到一半被结束',
+      story: 'MCP 已经把这一轮的对话写进文件，但还没来得及登记“最近用了哪个会话”，进程被结束。',
+      result: '会话行和对话文件都在，但没有项目记录。它只会出现在“未归属”列表里，--continue 不会自动选到它。数据不丢。',
+      rows: [
+        ['用户看到', '重启后就像没跑过这段，但记录还在'],
+        ['项目记录', '没有'],
+        ['对话文件', '在'],
+        ['列表里', '出现在“未归属”，没有完成标记'],
+        ['验证', '读代码得出；真把进程杀掉没跑过']
+      ]
+    },
+    {
+      title: '会话登记写不进去',
+      story: '数据库写登记那一步失败，比如磁盘满了或者没权限。',
+      result: '新对话照常回答，但没接上记忆和账目。明确要续的旧会话直接停下，问题不发送。',
+      rows: [
+        ['用户看到', '新对话：一条警告；续聊：“会话恢复失败，本次没有发送问题”'],
+        ['项目记录', '新对话没有；续聊不动原来的'],
+        ['对话文件', '新对话不落盘，只在内存里'],
+        ['列表里', '新对话可能出现在“未归属”，也可能完全不出现，看会话行写没写进去'],
+        ['验证', '读代码得出；现场故障没造过']
+      ]
+    },
+    {
+      title: '对话文件被改名，而且读不出来',
+      story: '有人把这段会话的文件改成另一个句柄的名字，文件本身又坏了。',
+      result: '只改名不会丢，代码看文件头里的句柄，不看文件名。改名之后又读不出来，才找不到。找不到就当没有：明确续聊直接停，不会在旧句柄下新建一段空对话。',
+      rows: [
+        ['用户看到', '“找不到这段会话的完整对话记录”'],
+        ['项目记录', '不动'],
+        ['对话文件', '读不出来，原文件还在'],
+        ['列表里', '标“没有完整对话记录”或“无法确认”，看文件名'],
+        ['验证', '改名加读失败的真实组合没跑过']
+      ]
+    },
+    {
+      title: '文件开头好好的，后面坏了',
+      story: '文件第一行是有效的会话信息，中间的消息行损坏。',
+      result: '现在的检查只读开头，所以把它当成完整记录。打开以后坏行会怎样，还没验证。用户可能以为自己续上了完整历史。',
+      rows: [
+        ['用户看到', '可能什么提示都没有'],
+        ['项目记录', '正常更新'],
+        ['对话文件', '坏文件原样保留'],
+        ['列表里', '看不出问题'],
+        ['验证', '没跑过']
+      ]
+    }
+  ];
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(text) {
+    return String(text).replace(/[&<>"]/g, function (ch) {
+      return ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : '&quot;';
+    });
+  }
+
+  function renderPanel(panelId, output, rows) {
+    var html = '<pre>' + esc(output) + '</pre><table>';
+    rows.forEach(function (row) {
+      html += '<tr><th>' + esc(row[0]) + '</th><td>' + esc(row[1]) + '</td></tr>';
+    });
+    html += '</table>';
+    $(panelId).innerHTML = html;
+  }
+
+  var ranA = false;
+  var ranB = false;
+
+  $('btnA').addEventListener('click', function () {
+    renderPanel('panelA', A_TEXT, A_ROWS);
+    $('panelA').hidden = false;
+    $('btnA').setAttribute('aria-expanded', 'true');
+    ranA = true;
+    updateDiff();
+  });
+
+  $('btnB').addEventListener('click', function () {
+    renderPanel('panelB', B_TEXT, B_ROWS);
+    $('panelB').hidden = false;
+    $('btnB').setAttribute('aria-expanded', 'true');
+    ranB = true;
+    updateDiff();
+  });
+
+  function updateDiff() {
+    if (!ranA || !ranB) {
+      $('diff').innerHTML = '<p class="fine">两边都走一遍，区别会写在这里。</p>';
+      return;
+    }
+    $('diff').innerHTML =
+      '<p><strong>区别就一句话：</strong>A 让你接着用旧记忆，但它给不了完整历史，界面必须说清楚；B 不会假装有历史，但这段旧会话从 --session 这个入口就进不去了。</p>' +
+      '<p>A 只该开在“用户明确报出旧句柄”这条路上。--continue 还是按完整文件挑，不然它可能自动挑到一段残缺的会话。</p>';
+  }
+
+  function renderCases() {
+    var html = '';
+    CASES.forEach(function (item, i) {
+      html += '<div class="case">' +
+        '<div class="case-head"><span class="case-title">' + (i + 1) + '. ' + esc(item.title) + '</span>' +
+        '<button class="btn" data-case="' + i + '" aria-expanded="false">看结果</button></div>' +
+        '<p class="fine" style="margin-top:6px">' + esc(item.story) + '</p>' +
+        '<div class="case-body" id="case' + i + '" hidden>' +
+        '<p>' + esc(item.result) + '</p><table>';
+      item.rows.forEach(function (row) {
+        html += '<tr><th>' + esc(row[0]) + '</th><td>' + esc(row[1]) + '</td></tr>';
+      });
+      html += '</table></div></div>';
+    });
+    $('cases').innerHTML = html;
+  }
+
+  $('cases').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-case]');
+    if (!button) return;
+    var body = $('case' + button.getAttribute('data-case'));
+    var open = body.hidden;
+    body.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    button.textContent = open ? '收起' : '看结果';
+  });
+
+  renderCases();
+})();
+</script>
+</body>
+</html>
