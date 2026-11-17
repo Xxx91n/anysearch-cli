@@ -11,7 +11,8 @@ import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recallProjectIndex } from "../src/project-index.js";
+import { recallProjectIndex, resolveRecallProjects } from "../src/project-index.js";
+import { markHttpTransport } from "../src/transport-mode.js";
 import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 
 function project(tag: string): string {
@@ -112,6 +113,46 @@ test("recall fallback reports an unknown project instead of borrowing one", asyn
     }
     rmSync(plain, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("explicit project paths: one bad path makes the whole scope unavailable", () => {
+  const good = project("scope-good");
+  const plain = mkdtempSync(join(tmpdir(), "ans-mcp-scope-plain-"));
+  try {
+    const mixed = resolveRecallProjects([good, plain]);
+    assert.deepEqual(mixed.projects, [], "a bad path must not produce partial results");
+    assert.match(mixed.notes.join("; "), /project index unavailable/);
+
+    const relative = resolveRecallProjects(["."]);
+    assert.deepEqual(relative.projects, [], "relative paths are refused like the server does");
+    assert.match(relative.notes.join("; "), /must be absolute/);
+
+    const tooMany = resolveRecallProjects(Array.from({ length: 11 }, () => good));
+    assert.deepEqual(tooMany.projects, []);
+    assert.match(tooMany.notes.join("; "), /max 10/);
+  } finally {
+    rmSync(good, { recursive: true, force: true });
+    rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("HTTP transport: no per-request workspace, so the implicit scope is unavailable", () => {
+  // The transport marker is process-wide, matching the real HTTP entry; this
+  // test only relies on explicit projectPaths working afterwards.
+  const previousCwd = process.cwd();
+  const current = project("scope-http");
+  process.chdir(current);
+  markHttpTransport();
+  try {
+    const implicit = resolveRecallProjects();
+    assert.deepEqual(implicit.projects, []);
+    assert.match(implicit.notes.join("; "), /HTTP MCP server has no per-request workspace/);
+    const explicit = resolveRecallProjects([current]);
+    assert.deepEqual(explicit.projects, [realpathSync(current)], "projectPaths still works on HTTP");
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(current, { recursive: true, force: true });
   }
 });
 

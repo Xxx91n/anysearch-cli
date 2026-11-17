@@ -18,9 +18,9 @@
 
 - **项目索引读写范围一致**：`ProjectIndexStore.search` 必须带项目范围，一个项目是默认，多个项目才是明确的跨项目读；去重和清除本来就按项目，现在查询也跟上了。服务端 `/recall`、`/index`、`/purge` 都要求请求里写明项目，找不到项目根（Git 根或 `.anysearch/config.toml`）就直接 400，不再写进空项目桶或读别的项目。
 - **一个用户级索引库**：项目索引默认放在 `~/.anysearch/project-index.db`（`ANS_PROJECT_DB` 仍可覆盖），服务端、CLI 和钩子写读同一个库，靠 `project_path` 列分项目。
-- **网址规则按项目解析**：`GET /policy?project=<根>` 读那个项目自己的 `domains/default.toml`，缓存写到该项目的 `.anysearch-cli/policy.json`；没有项目就不给规则，钩子按拿不准就 `ask` 处理。服务进程启动目录不再代表所有请求。
+- **网址规则按项目解析**：`GET /policy?project=<根>` 读那个项目自己的 `domains/default.toml`，缓存写到该项目的 `.anysearch-cli/policy.json`；没有项目就不给规则，钩子按拿不准就 `ask` 处理。服务进程启动目录不再代表所有请求。服务启动也不再因为启动目录的 TOML 坏了拒绝启动：策略在请求时解析，解析失败返回 500，钩子照样按 `ask` 处理。
 - **安装级服务发现**：令牌固定到 `~/.anysearch-cli/server-token`，服务启动后把实际监听地址写进 `~/.anysearch-cli/server.json`；默认端口被占就换空闲端口并照常发布。钩子、dsh 和 MCP 的召回回退都读这两样，不再每目录生成令牌、也不再猜端口。
-- **项目身份不明就说不可用**：钩子在找不到项目根时不预热、不索引，PostToolUse 的摘要里标明 `indexNote`；Antigravity 给多个工作区且没有明确 cwd 时，项目身份记为未知、不再拿第一个工作区代表全部（`.mdc` 和待注入文件仍写到宿主给的第一个工作区，那是宿主自己的文件位置，不冒充项目身份）。MCP `recall_memory` 新增可选 `projectPaths`，明确列出项目根时只读这些项目（`projectIndexNote` 说明读不到的原因）。
+- **项目身份不明就说不可用**：钩子在找不到项目根时不预热、不索引，PostToolUse 的摘要里标明 `indexNote`；Antigravity 给多个工作区且没有明确 cwd 时，项目身份记为未知、不再拿第一个工作区代表全部（`.mdc` 和待注入文件仍写到宿主给的第一个工作区，那是宿主自己的文件位置，不冒充项目身份）。MCP `recall_memory` 新增可选 `projectPaths`，明确列出项目根时只读这些项目（`projectIndexNote` 说明读不到的原因）；stdio 用宿主工作目录，HTTP 服务没有每次请求的工作区，默认不发项目，dsh 会把自己的工作区显式带上。
 - **发现逻辑只有一份**：令牌、数据目录、`server.json` 读取和 `resolveServerEndpoint` 放进 `@anysearch-cli/store/local-service`，插件服务端、钩子、dsh 和 MCP 共用，避免两边各写一套端口/令牌规则。
 
 ### 迁移说明

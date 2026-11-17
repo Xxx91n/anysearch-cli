@@ -18,8 +18,10 @@
 // All of it is optional. No plugin server, no project identity, or a refused
 // request means "project index unavailable", said plainly in the tool result;
 // the shared research archive in the store is unaffected.
+import { isAbsolute } from "node:path";
 import { resolveProjectContext } from "@anysearch-cli/store";
 import { readPublishedServerUrl, readServerToken } from "@anysearch-cli/store/local-service";
+import { hasPerConnectionWorkspace } from "./transport-mode.js";
 
 export interface ProjectIndexHit {
   title: string;
@@ -38,19 +40,26 @@ export interface ProjectIndexRecall {
 }
 
 /**
- * Resolve the projects this recall may read. Without an explicit list the
- * current working directory is the project. An explicit list replaces it:
- * the caller named exactly the roots it wants, each one is validated, and one
- * bad path makes the whole scope unknown (the same answer the server gives)
- * rather than returning partial results.
+ * Resolve the projects this recall may read. An explicit list is the whole
+ * scope: the caller named exactly the roots it wants, each one is validated,
+ * and one bad path makes the scope unknown (the same answer the server gives)
+ * rather than returning partial results. Without a list, stdio uses its host
+ * workspace; the HTTP transport has no per-request workspace and reports the
+ * index unavailable.
  */
 export function resolveRecallProjects(explicit: readonly string[] = []): { projects: string[]; notes: string[] } {
   const requested = explicit
     .map((value) => (typeof value === "string" ? value.trim() : ""))
     .filter((value) => value.length > 0);
   if (requested.length > 0) {
+    if (requested.length > 10) {
+      return { projects: [], notes: ["project index unavailable: too many project paths (max 10)"] };
+    }
     const projects: string[] = [];
     for (const candidate of requested) {
+      if (!isAbsolute(candidate)) {
+        return { projects: [], notes: ["project index unavailable: project path must be absolute: " + candidate] };
+      }
       const resolved = resolveProjectContext(candidate);
       if ("reason" in resolved) {
         return { projects: [], notes: ["project index unavailable: " + candidate + ": " + resolved.reason] };
@@ -60,6 +69,12 @@ export function resolveRecallProjects(explicit: readonly string[] = []): { proje
     return { projects, notes: [] };
   }
 
+  if (!hasPerConnectionWorkspace()) {
+    return {
+      projects: [],
+      notes: ["project index unavailable: the HTTP MCP server has no per-request workspace; pass projectPaths"],
+    };
+  }
   const current = resolveProjectContext();
   if ("reason" in current) {
     return { projects: [], notes: ["project index unavailable: " + current.reason] };

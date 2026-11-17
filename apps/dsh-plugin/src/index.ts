@@ -167,13 +167,20 @@ function mcpChannel(base: string, token: string): Promise<McpChannel | null> {
 async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, exec: ToolRunContext, timeoutMs: number): Promise<{ content: ContentBlock[] }> {
   const base = mcpBaseUrl();
   const token = mcpBearer();
+  // The MCP HTTP transport has no per-request workspace, so this host passes
+  // its own explicit project for the project-index fallback. A model-supplied
+  // projectPaths list wins.
+  const root = projectRoot();
+  const callArgs = wire === 'recall_memory' && !('projectPaths' in args) && root
+    ? { ...args, projectPaths: [root] }
+    : args;
   const key = base + '|' + token;
   for (let attempt = 0; attempt < 2; attempt++) {
     const ch = await mcpChannel(base, token);
     if (!ch) return { content: [] }; // fail-open: endpoint down/misconfigured
     const resp = await callServer(base + '/mcp', token, {
       jsonrpc: '2.0', id: ++rpcSeq, method: 'tools/call',
-      params: { name: wire, arguments: args },
+      params: { name: wire, arguments: callArgs },
     }, {
       sessionId: sessionIdOf(exec.agent),
       headers: { Accept: MCP_ACCEPT, 'MCP-Protocol-Version': ch.version },

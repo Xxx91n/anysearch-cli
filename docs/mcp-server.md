@@ -56,10 +56,11 @@ Five tools are registered by name, with input schemas sourced from the kernel
 | `query_knowledge` | `query` (required) | Dispatches through the current domain's `rag.adapter`. Only `fts` retrieves. `none` and `note` return an explicit empty result. An unknown adapter id falls back to `none` with a stderr warning (deduped within the server instance, so stateless HTTP can repeat it once per request). |
 | `ans_chat` | `message` (required for chat); `sessionId` (optional); `operation` = `chat` (default) \| `consolidate`; `memoryIds`, `allowSingleEvidence`, `dryRun` (consolidate only) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). With `operation = "consolidate"` it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge. See [Consolidation](#consolidation). |
 
-The project the `recall_memory` fallback reads is the MCP process's working
-directory (a stdio host inherits its workspace there). When one HTTP server
-serves several workspaces, pass `projectPaths` explicitly; the project index is
-never widened on its own.
+The project the `recall_memory` fallback reads comes from the transport. stdio
+inherits the host's workspace working directory; a long-running HTTP server has
+no per-request workspace, so it reports the project index as unavailable unless
+`projectPaths` names the roots. The dsh adapter passes its own workspace
+explicitly. The project index is never widened on its own.
 
 Vertical routing (`verticalDomain` / `verticalSubDomain` / `verticalParams`)
 replaces the domain TOML `sources.vertical` default wholesale. It is never

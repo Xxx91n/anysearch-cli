@@ -44,7 +44,9 @@ import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFro
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
-// The index holds retrieved snippets; keep it owner-only like the observation DB.
+const store = new ProjectIndexStore(DB_PATH);
+// The index holds retrieved snippets; keep it owner-only like the observation
+// DB. Run after the store opens so the WAL sidecars exist and get the same pass.
 try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
 const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db");
@@ -99,7 +101,6 @@ let envIgnoredAudited = false; // D7: config:env_override_ignored once per sessi
 // resume anchor on. Not injecting sessionId/BudgetLedger is therefore the
 // declared fail-open path (the engine gates stay closed), not an oversight.
 // The wired-session paths are `ans chat` (CLI) and `ans_chat` (MCP).
-const store = new ProjectIndexStore(DB_PATH);
 
 // constant-time bearer compare. A wrong-length token is rejected without
 // walking the bytes, so a caller cannot learn a prefix from response timing.
@@ -313,7 +314,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             url: entryUrl,
             snippet: String(entry.snippet || ""),
             source: String(entry.source || "unknown"),
-            contentHash: typeof entry.contentHash === "string"
+            contentHash: typeof entry.contentHash === "string" && entry.contentHash.trim()
               ? entry.contentHash
               : createHash("sha256").update(entryUrl + title).digest("hex").slice(0, 16),
           });
