@@ -1,3 +1,27 @@
+## Unreleased — #310: 旧库先备份再迁移，失败不丢数据
+
+一句话说清：**以前打开旧布局的库直接在原地改结构，中途出问题没有回头路；现在动库之前先用 SQLite 自己的一致快照拍一份完整备份，迁移做到可重复、可核对、可诊断，备份做不出来就拒绝动库。**
+
+### Added
+
+- **迁移前备份**：打开旧库（缺新布局标记的库）之前，先用 `VACUUM INTO` 做一份一致快照，落在 `<数据库>.pre-migration.db`。快照走 SQLite 的备份通道，活着的 WAL 里已提交的数据全部收进来——直接复制主文件那种「备份」过不了这条。旁边配一份 JSON 记录：时间、字节数、sha256、来源布局、兼容声明，恢复前可以核对。备份闸按会话表判：只有带着会话表、又缺新布局标记的库才需要快照；纯观测这类没有会话结构的库重复打开不会被当成旧布局整份复制。
+- **库布局标记**：`store_meta` 表里的 `store_layout` 行。会话 store 等全部结构改动落盘之后才写，写入在初始化重试窗口内——瞬时的库锁竞争不会再把启动打断；任务登记器若是库的创建者，标记随 schema 同一事务原子写入。创建者按「打开时库里没有任何会话表」判定——新装首命令里权限脚本先建出的 0 字节占位文件、纯观测库都算在内，不会把空壳库误判成旧布局再拍无用的快照。有这行，重复打开就不用再动；没有它，下次打开先备份再装配。三个开库入口（会话 store、观测 store、任务登记器）都走同一道备份闸。
+- **doctor 的数据库迁移状态节**（新的第 5 节）：只读探测，不装配不迁移。报当前是哪种（新布局/旧布局/还没建库/纯观测），备份放在哪、何时做的、校验值是什么，并附带明确警告——回退旧程序前要手动恢复备份，先把库文件连同 -wal、-shm 伴生文件一起挪走再放备份（只覆盖主库、留着旧 -wal 会把库弄坏），恢复会丢迁移之后新写入的数据，旧版本程序没对这个布局做兼容确认，先别拿它打开迁移后的库。探测用只读连接打开库，改不了任何文件。Domains 节顺延为第 6 节。
+- **测试**：`packages/store/test/pre-migration-backup.test.ts`（快照先于装配、备份是迁移前状态、WAL-only 数据进快照、幂等、备份失败拒启动、诊断只读）；安装后验收 F 段扩充（装好的产品打开模拟旧库，断言备份文件、JSON 记录、重复打开不动备份、doctor 报告）。
+
+### Changed
+
+- **打开旧库的顺序变了**：先备份、再装配。以前构造器一上来就切 WAL 改库；现在 WAL pragma 之前先过备份这道闸。备份失败（磁盘满、没写权限、库文件损坏）的启动会明确失败并给修复方向，不再继续迁移。
+- **备份的发布在源库的跨进程写锁里做**：快照先写进只有自己知道名字的临时文件（用收紧的 umask 创建，从第一个字节起仅属主可读），发布时在源库写锁（BEGIN IMMEDIATE）内检查 canonical 名字还不存在，再转正（文件系统支持硬链接时用硬链接，不支持时用锁保护下的改名），随后提交。别人发布过就绝不覆盖，拍晚的一方把自己的快照整个弃用；锁竞争超过有界重试窗口就拒绝启动，不带保险动库。遗留 -wal 无法只读打开时，doctor 如实报「打不开」而不是偷偷用可写连接去看。
+- **验收 F 段的模拟旧库造假方式更新**：要把 `store_meta`、`task_records`、`task_budgets`、`process_records` 一起删掉，模拟才成立——不删的话库会被当成已是新布局，备份永远不触发，那段验收就名存实亡。
+
+### Known limits
+
+- 兼容声明只覆盖已知样本：仓库内的模拟旧库材料，加上 #295 原型阶段核实的 npm 0.2.0 发布包布局。拿真实 0.2 包装库再升级的端到端组合（规格 N1 场景）还没执行，声明里如实写着「pending」，不冒充验证过全部历史版本。
+- 备份失败即启动失败：这是拿可用性换数据安全——修好磁盘空间或权限之后重试就行，库本身没有被动过。
+- 恢复只能手动做：怎么挪文件（先停进程，当前库文件和 -wal、-shm 伴生文件一起挪走，再把备份放到原位）、会丢什么，都写在 doctor 输出和记录文件里，工具自己永远不会把备份写回去。
+- 并发场景下两份备份的竞争这样处理：谁先在源库写锁内把 canonical 名字占住，那份就永远不被换掉——不管文件系统支不支持硬链接，改名路径同样在锁保护下，不存在无锁覆盖的窗口；拍晚的一方把快照整个弃用，宁可少一份也不换掉权威那份。跨进程的端到端并发备份不单独设测试，跟随冷启动家族的既有覆盖；写锁争用走有界重试，耗尽即拒绝启动。
+
 ## Unreleased — #298
 
 - `@anysearch-cli/cli` now builds and carries CLI, MCP, hook service and hook commands together, with domain and host resources. `ans mcp` uses this installation rather than a sibling repository directory.
@@ -1416,3 +1440,5 @@ T1 检查只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 ### Changed
 
 - (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE transaction per batch (was one whole-run transaction), retries SQLITE_BUSY with exponential backoff (50ms base, 5s cap, <=8 tries, aligned with busy_timeout=5000), fails fast on SQLITE_BUSY_SNAPSHOT, and runs a passive WAL checkpoint after each committed batch. The dry-run path keeps the single rolled-back transaction, so counters remain exact predictions (r87). The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended, not required; CLI help and wording updated. Regression coverage: per-batch exact parity and live-writer contention in relation-edges.test.ts.
+
+> AI生成

@@ -6,6 +6,10 @@ export * from "./budget-ledger";
 // process/task lifecycle registry the main program writes into.
 export * from "./task-budget";
 export * from "./task-registry";
+// #310: pre-migration consistent snapshot + layout marker + read-side
+// migration diagnostics (doctor). Backup happens inside the store
+// constructors; this export is the seam tests and doctor consume.
+export * from "./migration-backup";
 export * from "./domain-loader";
 // `ans recommend` engine: BM25 (FTS5) over domain metadata, the #125 CJK substring stage behind it,
 // + peer-optional embedding arm (#110).

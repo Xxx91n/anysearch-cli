@@ -104,7 +104,9 @@ try {
   check("installed doctor exit 0", d1.code === 0, d1.out);
   // arm-absent telemetry is a doctor-visible SKIP, not a failure.
   check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
-  check("doctor shows [5] Domains", d1.out.includes("[5] Domains"), d1.out.slice(-400));
+  // #310: the migration-state section sits between the config block and Domains.
+  check("doctor shows [5] Database migration state", d1.out.includes("[5] Database migration state"), d1.out.slice(-600));
+  check("doctor shows [6] Domains", d1.out.includes("[6] Domains"), d1.out.slice(-400));
   check("doctor lists docs domain", d1.out.includes("docs"), d1.out.slice(-400));
 
   const dom = ans("domain docs");

@@ -5,6 +5,13 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
 import { beginInit, endInit, execDdlAtomically, withInitBusyRetry } from "./sqlite-init.js";
+// #310: the same pre-migration snapshot the session store takes, so a caller
+// that opens this store on its own (createEngine opens it second) still cannot
+// migrate a physical database without a recovery point. On the shared
+// createEngine path this call probes, finds the layout current (the session
+// store's assembly already finished), and returns instantly — two calls are
+// two cheap SELECTs, never two snapshots.
+import { ensurePreMigrationBackup } from "./migration-backup.js";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
@@ -671,6 +678,10 @@ export class SqliteObservationStore {
   private readonly db: Database.Database;
 
   constructor(dbPath: string) {
+    // #310: snapshot-before-assembly, same rule as the session store (see the
+    // import comment). Runs before the WAL pragma below, which is the first
+    // physical write this constructor performs.
+    ensurePreMigrationBackup(dbPath);
     // tracked opener: registered with the store teardown registry so an exit
     // path that drains it cannot leave a live native handle behind (#183).
     this.db = openDatabase(dbPath, { timeout: 5000 });

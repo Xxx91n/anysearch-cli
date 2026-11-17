@@ -93,6 +93,10 @@ import type {
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 import { TaskBudgetLedger } from "./task-budget.js";
+// #310: the pre-migration snapshot runs before this constructor opens its
+// handle — the very first statement below (journal_mode = WAL) already rewrites
+// the physical file, so "back up before assembly" must precede openDatabase.
+import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
@@ -599,6 +603,12 @@ export class SqliteSessionStore implements SessionStore {
     this.consolidateVerifyFinal = opts?.consolidateVerifyFinal;
     // tracked opener: the teardown registry closes it on any store-side exit
     // path that drains it (eval runner, test processes) — F-16 fix, #183.
+    //
+    // #310: first a consistent snapshot of an outdated physical database, so
+    // the schema rewriting below always has a recovery point. A failure throws
+    // and this constructor never assembles — no backup, no migration. Fresh
+    // files, :memory:, and already-current layouts all return instantly.
+    ensurePreMigrationBackup(dbPath);
     this.db = openDatabase(dbPath, { timeout: 5000 });
     // #257 cold start: initialization gets its own bounded retry policy
     // (attempt count, backoff and wall-clock window live in sqlite-init.ts). The
@@ -749,6 +759,16 @@ export class SqliteSessionStore implements SessionStore {
       if (!isBusyRetryExhausted(e)) this.accessEventTel.bootstrapFailed = true;
       this.warnOrRefuseWhenContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
     }
+    // #310: the assembly above has committed (schema, column migrations, chain
+    // bootstrap); only now may the layout marker claim "current". A crash
+    // before this point leaves the marker absent, so the next open re-runs this
+    // constructor against the already-published backup — the idempotent-replay
+    // path the fixture tests pin. The write is an init step like the others
+    // (greptile review): transient busy/IO contention retries inside the same
+    // bounded window as the schema step, and a real failure still propagates —
+    // swallowing it would re-backup on every start without ever converging.
+    withInitBusyRetry("layout marker", () => writeStoreLayout(this.db), initDeadline);
+
     // Startup contract restored: ordinary reads and writes wait on row locks for
     // the pre-#257 5s instead of the short initialization timeout.
     endInit(this.db);

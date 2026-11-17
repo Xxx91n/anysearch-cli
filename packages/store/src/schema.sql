@@ -9,6 +9,21 @@
 -- store sets WAL explicitly on the connection before this script runs.
 PRAGMA journal_mode = WAL;
 
+-- #310: layout marker. Its presence with store_layout='1' is what
+-- migration-backup.ts probes to tell "this build line already opened this
+-- file" from "opening will rewrite the schema — snapshot first". The row is
+-- written by whoever completes the full structure: the session store after its
+-- schema/ALTER assembly, or openTaskRegistry when it is the file's CREATOR
+-- (the schema it just applied atomically is the whole current structure). A
+-- file where the table exists without the row was schema-upgraded part-way —
+-- a legacy file mid-migration, or the registry having upgraded an old file
+-- ahead of the engine; either way the next full assembly still needs the
+-- recovery point (which the registry's pre-schema snapshot already put there).
+CREATE TABLE IF NOT EXISTS store_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Sessions table: one row per research session.
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,

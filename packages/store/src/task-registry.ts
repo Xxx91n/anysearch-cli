@@ -31,6 +31,17 @@ import { openDatabase } from "./db";
 import { beginInit, endInit, execDdlAtomically, withInitBusyRetry } from "./sqlite-init";
 import { pidIsAlive } from "./budget-ledger";
 import { SCHEMA_SQL } from "./schema-content";
+// #310: the registry can be the FIRST opener of a durable database (the main
+// program registers its task before any command builds an engine), so the
+// same snapshot-before-assembly rule applies here when the file already
+// exists. A registry that CREATES the file instead writes the layout marker
+// itself: the database it just built IS the current schema, full stop. That
+// is what stops a brand-new install's first `ans chat` from snapshotting a
+// table-only shell the engine would otherwise (correctly but uselessly) see
+// as "structure without a marker — snapshot before altering". A file opened
+// by an older build keeps the no-marker rule: the later session-store open
+// finds the backup the registry took and skips its own.
+import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup";
 
 /** What the task row says about the work it names. */
 export type TaskRole = "business" | "management";
@@ -213,6 +224,18 @@ export class TaskRegistry {
  * idempotent script keeps the two openers from drifting apart.
  */
 export function openTaskRegistry(dbPath: string, opts: TaskRegistryOptions = {}): TaskRegistry {
+  // #310: a pre-existing legacy file gets the snapshot-before-assembly rule
+  // (see the import comment); a fresh/absent one takes no snapshot. The
+  // outcome is ALSO the creator signal: "skipped-fresh" means the database
+  // held no user tables when probed — absent, 0-byte, header-only, whatever.
+  // That is exactly "every table that will exist after this call is mine",
+  // which is what earning the layout marker means. existsSync alone was
+  // wrong for this: the CLI's permission hygiene (ensureOwnerOnlyDb) creates
+  // a 0-byte placeholder file BEFORE the registry opens, so "file exists" is
+  // not "someone else owns its structure" (CI-caught on ubuntu, lane F).
+  const pre = ensurePreMigrationBackup(dbPath);
+  const isCreator = dbPath !== ":memory:"
+    && (pre.status === "skipped-fresh" || pre.status === "skipped-no-session-data");
   const db = openDatabase(dbPath, { timeout: 5000 });
   const initDeadline = beginInit(db);
   withInitBusyRetry("journal_mode", () => db.pragma("journal_mode = WAL"), initDeadline);
@@ -228,7 +251,22 @@ export function openTaskRegistry(dbPath: string, opts: TaskRegistryOptions = {})
   } catch {
     schema = SCHEMA_SQL;
   }
-  withInitBusyRetry("schema", () => execDdlAtomically(db, schema), initDeadline);
+  if (isCreator) {
+    // The creator just builds the complete current schema — the marker is not
+    // a claim about column migrations that ran, it is a claim about structure,
+    // and the structure is current. Schema AND marker commit in ONE immediate
+    // transaction on purpose: a concurrent prober never observes a created
+    // database with tables but no marker (that shape — if it could occur — is
+    // what the snapshot rule treats as legacy, i.e. a bogus shell backup).
+    withInitBusyRetry("schema", () => {
+      db.transaction((): void => {
+        db.exec(schema);
+        writeStoreLayout(db);
+      }).immediate();
+    }, initDeadline);
+  } else {
+    withInitBusyRetry("schema", () => execDdlAtomically(db, schema), initDeadline);
+  }
   endInit(db);
   return new TaskRegistry(db, opts);
 }
