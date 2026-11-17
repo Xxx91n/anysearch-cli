@@ -17,9 +17,9 @@ import {
   type LlmSession,
   type LlmSessionOptions,
 } from "@anysearch-cli/kernel";
-// #300: the config resolver is a seam so tests can point it at a temp
-// home/cwd instead of the operator's real ones. Production uses the shared
-// store resolver unchanged.
+// Design: the config resolver is an injected seam so tests can point it at a
+// temp home/cwd instead of the operator's real ones; production uses the shared
+// store resolver unchanged (#300).
 import { resolveLlmConfig, type ResolvedLlmConfig, type ResolveLlmOpts } from "@anysearch-cli/store";
 
 export type LlmConfigResolver = (opts?: ResolveLlmOpts) => ResolvedLlmConfig;

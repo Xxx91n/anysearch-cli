@@ -104,12 +104,11 @@ export function registerAnsChat(
     return JSON.stringify(tuple);
   }
 
-  // #300: `cfg` is the shared layered resolution (flag > env > project > user).
-  // The model settings (provider/model/baseUrl/api/secret) no longer come from
-  // direct ANS_LLM_* reads — the CLI and both MCP start paths now go through the
-  // same resolver, so a user/project TOML is seen by all three and the per-field
-  // `sources` are available to report back. ANS_LLM_CONTEXT_WINDOW stays an env
-  // only input (#113): it is a request-budget window, not a TOML model setting.
+  // Design: `cfg` carries the shared layered resolution (flag > env > project >
+  // user) from the CLI's resolver — one implementation for the CLI and both MCP
+  // start paths, so a user/project TOML is seen by all three and `sources` can
+  // be reported back (#300). ANS_LLM_CONTEXT_WINDOW stays an env-only input
+  // (#113): it is a request-budget window, not a TOML model setting.
   async function getLlmSession(cfg: ResolvedLlmConfig, modelOverride?: string): Promise<LlmSession> {
     const providerName = cfg.provider ?? "";
     const modelName = cfg.model ?? "";
@@ -183,13 +182,17 @@ export function registerAnsChat(
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
     async (args: unknown, ctx?: ServerContext) => {
-      // #300: one layered resolution per call — flag/env/project/user — shared
-      // with the CLI. Resolving here (not once at registration) means a host that
-      // edits its user/project TOML is picked up by the next call, and both the
-      // standalone MCP and `ans mcp` take the same path into this resolver.
-      // resolveLlmConfig warns to stderr on bad TOML or a dropped key, so a
-      // broken file is reported instead of being mistaken for "model connected".
-      const cfg = resolveConfig();
+      // Design: resolve once per CALL, not once at registration — a host that
+      // edits its user/project TOML is picked up next call, and the standalone
+      // MCP and `ans mcp` take the same path into this one shared resolver (#300).
+      // Collect the resolver's warnings and surface them on the observation as
+      // well as stderr, so a broken TOML or a dropped key is never invisible —
+      // an otherwise-valid env config must not make a bad file read as "fine".
+      const configWarnings: string[] = [];
+      const cfg = resolveConfig({ warn: (m) => {
+        configWarnings.push(m);
+        process.stderr.write(m + "\n");
+      } });
       const providerName = cfg.provider;
       const modelName = cfg.model;
       // #211: the same seam as the search tools (#209) — the SDK context
@@ -602,13 +605,15 @@ export function registerAnsChat(
       }, {
         "anysearch.provider": providerName ?? "",
         "anysearch.model": modelName ?? "",
-        // #300: which layer supplied each effective value, so a host can tell
-        // whether a setting came from env, the project file or the user file.
-        // Labels only — key material never enters observation attributes.
+        // Design: report WHERE each effective value came from (env/project/user
+        // layer labels) and HOW MANY config problems the resolver saw, so a bad
+        // TOML is visible even when env still supplied a usable model (#300).
+        // Warning text never carries secret values — only key NAMES and file paths.
         "anysearch.llm.provider.source": cfg.sources.provider ?? "",
         "anysearch.llm.model.source": cfg.sources.model ?? "",
         "anysearch.llm.baseUrl.source": cfg.sources.baseUrl ?? "",
         "anysearch.llm.api.source": cfg.sources.api ?? "",
+        "anysearch.llm.configWarnings": configWarnings.length,
       });
     }
   );

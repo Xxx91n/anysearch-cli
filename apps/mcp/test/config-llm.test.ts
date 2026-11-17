@@ -66,6 +66,7 @@ type SessionOpts = {
 /** Build a handler plus a recorder of the LlmSessionOptions it constructs. */
 function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
   const seen: SessionOpts[] = [];
+  const attrs: Record<string, any>[] = [];
   const factory: AnsChatSessionFactory = async (opts) => {
     seen.push({ ...opts });
     // Faux pi-ai core: a well-formed session the runtime actually drives, so a
@@ -84,15 +85,25 @@ function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
     createAnsChatSession: factory,
     // The production resolver with injected roots — no env leakage from the
     // operator shell, so each case is fully controlled by `env` + TOML files.
-    resolveLlmConfig: (opts = {}) => resolveLlmConfig({
-      home: fix.home, cwd: fix.cwd, env,
-      warn: (m) => fix.warnings.push(m),
-      ...opts,
-    }),
+    resolveLlmConfig: (opts = {}) => {
+      // Both sides get every warning: the tool's observation collector (opts.warn)
+      // and this fixture's assertion recorder.
+      const upstreamWarn = opts.warn;
+      return resolveLlmConfig({
+        ...opts,
+        home: fix.home, cwd: fix.cwd, env,
+        warn: (m) => { fix.warnings.push(m); upstreamWarn?.(m); },
+      });
+    },
   });
   const engine = {
     retriever: { search: async () => ({ results: [], answers: [], metadata: {} }) },
-    observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+    observation: {
+      recordOperation: async (op: any, cb: any) => {
+        if (op?.attributes) attrs.push(op.attributes);
+        return cb(fakeSpan);
+      },
+    },
   } as unknown as CompositionResult;
   let handler: ((args: unknown) => Promise<any>) | undefined;
   const server = {
@@ -102,7 +113,7 @@ function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
   } as unknown as McpServer;
   registerAnsChat(server, engine, state);
   if (!handler) throw new Error("ans_chat handler not registered");
-  return { call: (message = "hi") => handler!({ message }), seen };
+  return { call: (message = "hi") => handler!({ message }), seen, attrs };
 }
 
 function textOf(result: any): string {
@@ -151,6 +162,9 @@ async function main() {
       await h.call();
       assert(h.seen[0]?.provider === "google" && h.seen[0]?.model === "gpt-5-mini",
         "env override of project file reaches the MCP session");
+      assert(h.attrs[0]?.["anysearch.llm.provider.source"] === "project" &&
+        h.attrs[0]?.["anysearch.llm.model.source"] === "env",
+        "MCP observation reports each value's source layer");
     }
 
     // 4. missing model config is an error, not a successful-looking chat
@@ -172,6 +186,17 @@ async function main() {
       assert(fix.warnings.some((w) => w.includes("TOML parse failed")),
         "bad TOML: the parse failure was reported on stderr channel");
       assert(h.seen.length === 0, "bad TOML: no LLM session was built");
+
+      // A bad file must never read as "clean", even when env still supplies a
+      // usable model: the call may succeed but the warning count is visible.
+      const fix2 = fixture("[llm\nprovider = broken");
+      const h2 = harness(fix2, { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" });
+      await h2.call();
+      assert(h2.seen.length === 1, "bad TOML + env: the env-supplied model still runs");
+      assert((h2.attrs[0]?.["anysearch.llm.configWarnings"] ?? 0) >= 1,
+        "bad TOML + env: the broken file stays visible as a config warning in observation");
+      assert(h2.attrs[0]?.["anysearch.llm.provider.source"] === "env",
+        "bad TOML + env: source shows the value came from env, not the broken file");
     }
 
     // 6. project whitelist: a repo cannot redirect endpoint/protocol/secret
