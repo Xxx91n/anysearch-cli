@@ -37,3 +37,34 @@ test("project sessions survive reopening; legacy rows stay unassigned and resear
     assert.ok((await store.searchMemory("internal wiki port", 5)).some((h) => h.content?.includes("port 8080")));
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("same-millisecond registrations keep their real order", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-chat-order-"));
+  const store = new SqliteSessionStore(join(dir, "data.db"));
+  try {
+    // `b` is registered first, then `a` — both inside one clock tick, which is
+    // what a fast CLI invocation or a test does. Sorting by `id DESC` would put
+    // `b` first and `--continue` would pick the conversation that was used
+    // second-to-last.
+    const realNow = Date.now;
+    let frozen = realNow();
+    Date.now = () => frozen;
+    try {
+      await store.ensureSession("b", "default");
+      await store.ensureSession("a", "default");
+      store.recordChatProject("b", "/p", true);
+      store.recordChatProject("a", "/p", true);
+      assert.deepEqual(store.listChatSessions("/p").map((s) => s.id), ["a", "b"],
+        "the last registration wins the order even inside one millisecond");
+
+      // A third write in the same tick still advances past both.
+      await store.ensureSession("c", "default");
+      store.recordChatProject("c", "/p", true);
+      assert.deepEqual(store.listChatSessions("/p").map((s) => s.id), ["c", "a", "b"],
+        "a later registration is still later, in the same frozen millisecond");
+    } finally {
+      frozen = realNow;
+      Date.now = realNow;
+    }
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});

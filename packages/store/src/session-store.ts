@@ -944,8 +944,17 @@ export class SqliteSessionStore implements SessionStore {
     // would make another project’s history appear in its recent-session list.
     // Record each attempt separately from completion: the latest conversation
     // may have been interrupted and must not be replaced by an older one.
+    //
+    // Design: `last_used` is kept strictly increasing per database, not just
+    // "the clock now". Two sessions registered in the same millisecond would
+    // otherwise tie, and the list would fall through to `s.id DESC` — a
+    // stable-looking order that is about the handle text, not about which
+    // conversation was used last. Bumping past the current maximum costs at
+    // most a few milliseconds of displayed drift when several writes land in
+    // one tick, and buys an exact answer to "which one is most recent".
     this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used, is_complete)
-      VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
+      VALUES (?, ?, max(?, coalesce((SELECT max(last_used) FROM chat_projects), 0) + 1), ?)
+      ON CONFLICT(session_id) DO UPDATE SET
       last_used = excluded.last_used, is_complete = excluded.is_complete`)
       .run(sessionId, projectRoot, Date.now(), completed ? 1 : 0);
   }

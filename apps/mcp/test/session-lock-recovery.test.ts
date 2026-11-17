@@ -28,7 +28,11 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 // The lock's on-disk layout and busy wording come from the product, so the
 // test fails when they change instead of drifting alongside them.
-import { SESSION_BUSY_MESSAGE, SESSION_LOCKS_DIRNAME } from "@anysearch-cli/kernel";
+// The lock's on-disk layout comes from the product, so the test fails when it
+// changes instead of drifting alongside it. The busy wording is deliberately
+// NOT imported any more: #299 replaced the waiting path these cases used to
+// assert, and the refusal text now belongs to the attempt module's own test.
+import { SESSION_LOCKS_DIRNAME } from "@anysearch-cli/kernel";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -371,29 +375,35 @@ async function main() {
       assert(entries[0].heartbeatAgeMs !== null && entries[0].heartbeatAgeMs! < 1_600,
         "C1: the heartbeat is fresh while the holder runs (age " + entries[0].heartbeatAgeMs + " ms)");
 
-      const bCall = b.chat("LOCK-B-CONTINUE. Restate the previous answer, then add LOCK-B-ANSWER-" + NONCE + ".", shared);
-      const [aRes, bRes] = await Promise.all([aCall, bCall]);
+      // #299: a second attempt on a live session is refused at once instead of
+      // queueing behind it. The run lock's own guarantee (a healthy long run is
+      // not stolen) is still observable: the refusal names the handle and A's
+      // record comes out intact.
+      const bStart = Date.now();
+      const bRes = await b.chat("LOCK-B-CONTINUE. This second attempt must be refused.", shared);
+      const refusedMs = Date.now() - bStart;
       const bEntry = requestLog.find((r) => r.key === "LOCK-B-CONTINUE");
 
-      assert(aRes.ok && bRes.ok, "C1: both runs succeed (A " + aRes.ok + ", B " + bRes.ok + " — " + bRes.text.slice(0, 200) + ")");
-      assert(bRes.structured?.sessionId === shared,
-        "C1: B continues the same session (got " + JSON.stringify(bRes.structured?.sessionId) + ")");
-      assert(aEntry?.end != null && bEntry != null && aEntry.end <= bEntry.start,
-        "C1: provider calls do not overlap (A end " + aEntry?.end + ", B start " + bEntry?.start + ")");
-      assert(bEntry?.body.includes("LOCK-A-ANSWER-" + NONCE),
-        "C1: B's request carries A's answer — the resumed record reached the model");
+      assert(bRes.isError === true && /正在别处运行/.test(bRes.text),
+        "C1: a second attempt on a live session is refused with the running-elsewhere wording (got "
+        + JSON.stringify(bRes.text.slice(0, 200)) + ")");
+      assert(bRes.text.includes(shared), "C1: the refusal names the session handle");
+      assert(refusedMs < 1_500, "C1: the refusal is immediate, not a queue (took " + refusedMs + " ms)");
+      assert(bEntry === undefined, "C1: the refused attempt never reaches the provider");
+
+      const aRes = await aCall;
+      assert(aRes.ok, "C1: the run that held the session still completes (got " + aRes.text.slice(0, 200) + ")");
 
       const files = fileContaining(join(root, "pi"), "LOCK-A-ANSWER-" + NONCE);
       const lines = files.length === 1 ? readJsonl(files[0]) : [];
       const { users, assistants } = conversationText(lines);
       assert(files.length === 1, "C1: one session, one PI record (got " + files.length + ")");
       assert(lines.every((l) => !l.unparsable), "C1: every JSONL line parses");
-      assert(users.length === 2 && assistants.length === 2,
-        "C1: the record holds both turns (got " + users.length + " user / " + assistants.length + " assistant)");
-      assert(assistants[0]?.includes("LOCK-A-ANSWER-" + NONCE) && !assistants[0]?.includes("LOCK-B-ANSWER-" + NONCE)
-        && assistants[1]?.includes("LOCK-B-ANSWER-" + NONCE),
-        "C1: the turns are in order — B continues A's record instead of replacing it");
-      assert(lockEntries(join(root, "pi")).length === 0, "C1: the lock directory is empty after both runs");
+      assert(users.length === 1 && assistants.length === 1,
+        "C1: the refused attempt left no turn in the record (got " + users.length + " user / " + assistants.length + " assistant)");
+      assert(assistants[0]?.includes("LOCK-A-ANSWER-" + NONCE),
+        "C1: the completed run's answer is the one in the record");
+      assert(lockEntries(join(root, "pi")).length === 0, "C1: the lock directory is empty after the run");
 
       a.child.kill("SIGKILL"); b.child.kill("SIGKILL");
       await Promise.all([a.exited, b.exited]);
@@ -420,7 +430,13 @@ async function main() {
         "C2: the hanging run reached the provider (A stderr: " + a.stderr().slice(-500) + ")");
 
       const bStart = Date.now();
-      const bCall = b.chat("LOCK-B-AFTER-CRASH. The previous process died; continue the same session.", shared);
+      // #299: B tries while A holds the session, is refused at once, and only
+      // reaches the provider after the kill. The waiting-then-taking-over shape
+      // this case originally used no longer exists.
+      const refused = await b.chat("LOCK-B-EARLY. This attempt is too early.", shared);
+      assert(refused.isError === true && /正在别处运行/.test(refused.text),
+        "C2/#299: an attempt while the holder is alive is refused (got "
+        + JSON.stringify(refused.text.slice(0, 160)) + ")");
       await sleep(600);
       const beforeKill = lockEntries(join(root, "pi"));
       assert(beforeKill.length === 1 && beforeKill[0].owner?.pid === a.child.pid,
@@ -467,7 +483,7 @@ async function main() {
       assert(ledgerMid.length === 1 && Number(ledgerMid[0].spent_tokens) === 0,
         "C2: the killed request settled no spend on a real row (ledger " + JSON.stringify(ledgerMid) + ")");
 
-      const bRes = await bCall;
+      const bRes = await b.chat("LOCK-B-AFTER-CRASH. The previous process died; continue the same session.", shared);
       const recoveryMs = Date.now() - bStart;
       const hangRes = await hangCall;
 
@@ -526,7 +542,11 @@ async function main() {
       await b.exited;
     }
 
-    // ================= C3: the wait cap says "session busy" =================
+    // ===== C3: a live session refuses the second attempt at once =====
+    // #299 replaced the old "wait two minutes, then say busy" rule. The test
+    // value stays small so the case is still cheap, but nothing in the product
+    // waits any more: the window now belongs to the run lock only, which this
+    // attempt never reaches because the lease is refused first.
     {
       resetEndpointState();
       const root = join(base, "c3");
@@ -541,16 +561,16 @@ async function main() {
       const hangCall = a.chat("LOCK-HANG. Hold the session open.", shared).catch(() => ({ ok: false }));
       await waitForKey("LOCK-HANG");
       const bStart = Date.now();
-      const bRes = await b.chat("LOCK-BUSY-B. This request should hit the wait cap.", shared);
+      const bRes = await b.chat("LOCK-BUSY-B. This request must be refused at once.", shared);
       const waitedMs = Date.now() - bStart;
 
-      assert(bRes.isError === true && bRes.text.includes(SESSION_BUSY_MESSAGE.slice(0, 20)),
-        "C3: a contender past the wait cap gets an explicit session-busy error (got "
+      assert(bRes.isError === true && /正在别处运行/.test(bRes.text),
+        "C3: a second attempt on a live session is refused (got "
         + JSON.stringify(bRes.text.slice(0, 200)) + ")");
-      assert(waitedMs >= 2_500 && waitedMs < 15_000,
-        "C3: the cap fires at the configured window, not earlier (waited " + waitedMs + " ms)");
+      assert(waitedMs < 1_500,
+        "C3: the refusal is immediate — no wait, so no window can be observed (waited " + waitedMs + " ms)");
       assert(!requestLog.some((r) => r.key === "LOCK-BUSY-B"),
-        "C3: the busy contender never reaches the provider");
+        "C3: the refused attempt never reaches the provider");
 
       a.child.kill("SIGKILL");
       await a.exited;

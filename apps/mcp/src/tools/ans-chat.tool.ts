@@ -17,6 +17,9 @@ import {
   piSessionKey,
   findPiSessionRecord,
   resolvePiSessionDir,
+  runChatAttempt,
+  ChatAttemptBusyError,
+  type ChatAttemptOutcome,
   emptyRunUsage,
   createConsolidationSeams,
   isConsolidationBudgetError,
@@ -404,7 +407,12 @@ export function registerAnsChat(
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
           const hasPreviousRecord = isValidSessionHandle(requestedSessionId) &&
             !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId));
-          const mustResume = !!previousChat?.chatTracked || hasPreviousRecord;
+          // Design: an explicit handle that already exists in `sessions` must
+          // also be recoverable. A legacy row carrying only database messages
+          // has no PI record and no chat_projects row, so checking only those
+          // two let the runtime mint an empty record under an existing handle
+          // and answer from nothing — the CLI refuses exactly this input.
+          const mustResume = previousChat !== undefined || hasPreviousRecord;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
@@ -455,20 +463,56 @@ export function registerAnsChat(
           // Retrieval/tool work is counted separately from LLM usage: a search
           // spends provider quota, not model tokens.
           const toolCalls: Record<string, number> = {};
-          for await (const event of runtime.run(chatMessage)) {
-            if (event.type === "text") output += event.content;
-            else if (event.type === "tool_call") {
-              toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
-            } else if (event.type === "done") {
-              completed = true;
-              output += "\n" + event.summary;
-              runUsage = event.usage ?? null;
-              runContext = event.context ?? null;
-              // #189: the one-shot recovery summary stays visible to the caller.
-              if (event.recovery) output += "\n" + event.recovery;
-            } else if (event.type === "error") {
-              runtimeError = event.message;
+          // #299: the whole attempt runs under this session's lease, so the
+          // "began" and "finished" writes cannot interleave with another attempt
+          // on the same session. The runtime still takes its own run lock
+          // inside; this wraps it rather than moving it.
+          // Design: a resumed session keeps the project it already belongs to;
+          // only a session without one takes the server's directory (which is
+          // why an unowned session is never assigned here).
+          const attemptProject = previousChat?.projectRoot ?? null;
+          let attemptResult: ChatAttemptOutcome;
+          try {
+            attemptResult = await runChatAttempt({
+              store: memory.store,
+              sessionId: memory.sessionId,
+              projectRoot: attemptProject,
+              piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
+            }, async (attempt) => {
+              for await (const event of runtime.run(chatMessage)) {
+                if (event.type === "text") {
+                  // The provider answered, so this attempt really ran.
+                  attempt.markStarted();
+                  output += event.content;
+                } else if (event.type === "tool_call") {
+                  attempt.markStarted();
+                  toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
+                } else if (event.type === "done") {
+                  // A finished run certainly happened, even one that produced
+                  // no text; record it so the row exists and ends up complete.
+                  attempt.markStarted();
+                  completed = true;
+                  output += "\n" + event.summary;
+                  runUsage = event.usage ?? null;
+                  runContext = event.context ?? null;
+                  // #189: the one-shot recovery summary stays visible to the caller.
+                  if (event.recovery) output += "\n" + event.recovery;
+                } else if (event.type === "error") {
+                  runtimeError = event.message;
+                }
+              }
+              // A run that ended before the provider was ever called (a
+              // cancellation during setup) has nothing to record: markStarted
+              // was never reached, so this attempt leaves the row untouched.
+              return { completed };
+            });
+          } catch (error) {
+            if (error instanceof ChatAttemptBusyError) {
+              return toolFailure(
+                "ans_chat: 这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。",
+              );
             }
+            throw error;
           }
           // Background summary calls already ran on this session's behalf, so
           // their spend belongs on the ledger whatever ended the turn. Drain
@@ -485,26 +529,14 @@ export function registerAnsChat(
           // memory block is missing because a rebuild failed, not because the
           // session never had a summary.
           for (const r of summaryRebuilds) output += "\n" + formatSummaryRebuildLine(r);
-          // Keep a known or created record registered on any incomplete run.
-          // A cancellation before a new file exists may still be retried as new.
-          const rememberIncomplete = () => {
-            if (!memory.sessionId || !memory.store?.getChatSession || !memory.store.recordChatProject) return;
-            try {
-              const entry = memory.store.getChatSession(memory.sessionId);
-              const hasRecord = mustResume || !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(memory.sessionId));
-              if (entry && hasRecord) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
-            } catch (error) {
-              process.stderr.write("[warn] 无法登记会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
-            }
-          };
           // An error is a failure even when background summary work completed.
+          // The attempt already recorded itself as unfinished on the way out, so
+          // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
-            rememberIncomplete();
             return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
           }
           // An interrupted request keeps its handle and reports unknown usage.
-          if (!completed) {
-            rememberIncomplete();
+          if (!attemptResult.completed) {
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
@@ -515,16 +547,6 @@ export function registerAnsChat(
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
             });
-          }
-          // Remember completed MCP chats and update known projects without
-          // assigning an unowned session to the server's working directory.
-          if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
-            try {
-              const entry = memory.store.getChatSession(memory.sessionId);
-              if (entry) memory.store.recordChatProject(memory.sessionId, entry.projectRoot);
-            } catch (error) {
-              process.stderr.write("[warn] 无法更新最近会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
-            }
           }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,

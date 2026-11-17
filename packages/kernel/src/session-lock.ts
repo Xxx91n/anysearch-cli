@@ -64,6 +64,13 @@ export const SESSION_LOCK_STALE_MS = 10 * 60_000;
 export const SESSION_LOCK_WAIT_MS = 120_000;
 /** Subdirectory of the PI session dir holding the per-session lock dirs. */
 export const SESSION_LOCKS_DIRNAME = "locks";
+/**
+ * Subdirectory holding the chat-attempt leases (#299). A separate directory
+ * from `locks`: the run lock serializes the JSONL append, while this lease
+ * covers the whole attempt including the two chat_projects writes. Same
+ * session, two different questions — one path each, so they never nest.
+ */
+export const SESSION_LEASE_DIRNAME = "leases";
 
 const POLL_MS = 50;
 const HEARTBEAT_MIN_MS = 100;
@@ -117,6 +124,13 @@ interface LockOwner {
 
 const OWNER_FILE = "owner.json";
 const HEARTBEAT_FILE = "heartbeat";
+
+/**
+ * The directory already belongs to a reachable holder. Separate from other
+ * failures so the waiting path can poll and the one-shot path can answer
+ * "busy" instead of retrying: only this one means "someone else has it".
+ */
+class LockHeldError extends Error {}
 
 /**
  * The holder's identity, or undefined when there is none to read.
@@ -239,6 +253,138 @@ function sweepStaleLock(lockPath: string, staleMs: number): boolean {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Try to take the directory at `lockPath`, allowing one immediate sweep of a
+ * holder this machine can prove is gone. Never sleeps.
+ *
+ * Returns the release function on success, or null when a reachable holder has
+ * it right now. Filesystem faults still throw: "I could not even try" is a
+ * different answer from "someone else has it", and merging them would report a
+ * permissions problem as a busy session.
+ */
+function takeLockDir(lockPath: string, staleMs: number): (() => void) | null {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      mkdirSync(lockPath);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
+      // One sweep, no poll. A live local holder is never reclaimable, so this
+      // cannot take a running session away from someone.
+      if (!sweepStaleLock(lockPath, staleMs)) return null;
+      // The directory is gone: loop once to race on mkdir like anyone else.
+      continue;
+    }
+    return publishOwnership(lockPath, staleMs);
+  }
+  // Someone else won the mkdir race after our sweep.
+  return null;
+}
+
+/**
+ * Mark the directory we just created as ours and start its heartbeat.
+ *
+ * The identity write is not best-effort: a lock without a readable owner.json
+ * cannot be verified on release, so the holder must give the directory back
+ * instead of running with a lock anyone could delete.
+ */
+function publishOwnership(lockPath: string, staleMs: number): () => void {
+  try {
+    writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify({
+      pid: process.pid,
+      host: hostname(),
+      startedAt: Date.now(),
+    }));
+  } catch (e) {
+    // ENOENT here means the directory we created is already gone — another
+    // waiter swept it (its stale window elapsed while we were between mkdir
+    // and this write) and may already have put its own lock in its place.
+    // Deleting `lockPath` then would delete that new holder's lock, so leave
+    // it alone and just fail this attempt.
+    const gone = (e as NodeJS.ErrnoException)?.code === "ENOENT";
+    if (!gone) {
+      try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept */ }
+    }
+    throw new Error("Session lock could not record its owner; refusing to run without a verifiable lock.");
+  }
+  let beating = true;
+  const beat = () => {
+    if (!beating) return;
+    let stillOurs: boolean;
+    try {
+      stillOurs = ownsLockDir(lockPath);
+    } catch {
+      // A transient read failure (a competing process rewriting the file,
+      // a filesystem hiccup) says nothing about ownership. Stopping the
+      // heartbeat here would be the worst possible reaction: the lock would
+      // age out while its holder is still running, and the next waiter would
+      // reclaim a live run. Skip this beat and try again on the next tick.
+      return;
+    }
+    // Stop touching files that belong to a new holder: a directory that no
+    // longer names us was reclaimed while we ran.
+    if (!stillOurs) {
+      beating = false;
+      return;
+    }
+    try {
+      writeFileSync(join(lockPath, HEARTBEAT_FILE), String(Date.now()));
+    } catch {
+      beating = false;
+    }
+  };
+  beat();
+  const timer = setInterval(beat, heartbeatIntervalMs(staleMs));
+  timer.unref?.();
+  return () => {
+    beating = false;
+    clearInterval(timer);
+    // Delete only a lock we still own: a directory that now names someone
+    // else was reclaimed while we ran and must survive. A read failure means
+    // we cannot prove ownership, so the safe action is to leave it alone —
+    // an unreleased lock ages out, a wrongly deleted one hands the session
+    // to two writers.
+    let stillOurs: boolean;
+    try {
+      stillOurs = ownsLockDir(lockPath);
+    } catch {
+      return;
+    }
+    if (!stillOurs) return;
+    try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* already swept */ }
+  };
+}
+
+/**
+ * Acquire a lease that is refused the moment it is held — no waiting, no
+ * polling (#299).
+ *
+ * Two chat attempts on one session must not both believe they own the
+ * session's completion state. The waiting form below is right for a turn that
+ * queues behind a running one; this form is right for an attempt that has not
+ * started yet, because a caller that cannot start has nothing to wait for.
+ *
+ * A holder this machine can prove is gone is still swept at once, so a killed
+ * process does not lock its session out until someone restarts something.
+ */
+export async function acquireSessionLease(
+  leasePath: string,
+  windows: ResolvedSessionLockWindows,
+): Promise<() => void> {
+  mkdirSync(dirname(leasePath), { recursive: true });
+  const release = takeLockDir(leasePath, windows.staleMs);
+  if (!release) throw new LockHeldError(SESSION_BUSY_MESSAGE);
+  return release;
+}
+
+/**
+ * True when the error came from a lease that someone else is holding right
+ * now (as opposed to a filesystem fault). The caller decides the wording; this
+ * only answers "was it contention?".
+ */
+export function isSessionBusy(error: unknown): boolean {
+  return error instanceof LockHeldError;
+}
+
+/**
  * Acquire the session lock at `lockPath`, giving up after `windows.waitMs` with
  * a "session busy" error. `windows` is already resolved (see
  * resolveSessionLockWindows). The returned function releases the lock; it is
@@ -256,89 +402,9 @@ export async function acquireSessionLock(
     // a live holder, a reclaim sweep, or a sweep that keeps failing — ends at
     // "session busy" instead of spinning forever (#266: the wait has a cap).
     if (Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
-    try {
-      mkdirSync(lockPath);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      // Sweep a dead/unconfirmable holder; a live local holder is never
-      // touched here, so the loop simply waits for it.
-      if (!sweepStaleLock(lockPath, staleMs)) {
-        await sleep(POLL_MS);
-        continue;
-      }
-      // The directory is gone: try to take its place immediately.
-      continue;
-    }
-    // We hold it: publish our identity, then start the heartbeat. The identity
-    // write is not best-effort: a lock without a readable owner.json cannot be
-    // verified on release, so the holder must give the directory back instead
-    // of running with a lock anyone could delete (#266: release and reclaim
-    // only ever target the rightful holder).
-    try {
-      writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify({
-        pid: process.pid,
-        host: hostname(),
-        startedAt: Date.now(),
-      }));
-    } catch (e) {
-      // ENOENT here means the directory we created is already gone — another
-      // waiter swept it (its stale window elapsed while we were between mkdir
-      // and this write) and may already have put its own lock in its place.
-      // Deleting `lockPath` then would delete that new holder's lock, so leave
-      // it alone and just fail this attempt: the caller retries and races on
-      // mkdir like anyone else.
-      const gone = (e as NodeJS.ErrnoException)?.code === "ENOENT";
-      if (!gone) {
-        try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept */ }
-      }
-      throw new Error("Session lock could not record its owner; refusing to run without a verifiable lock.");
-    }
-    let beating = true;
-    const beat = () => {
-      if (!beating) return;
-      let stillOurs: boolean;
-      try {
-        stillOurs = ownsLockDir(lockPath);
-      } catch {
-        // A transient read failure (a competing process rewriting the file,
-        // a filesystem hiccup) says nothing about ownership. Stopping the
-        // heartbeat here would be the worst possible reaction: the lock would
-        // age out while its holder is still running, and the next waiter would
-        // reclaim a live run. Skip this beat and try again on the next tick.
-        return;
-      }
-      // Stop touching files that belong to a new holder: a directory that no
-      // longer names us was reclaimed while we ran.
-      if (!stillOurs) {
-        beating = false;
-        return;
-      }
-      try {
-        writeFileSync(join(lockPath, HEARTBEAT_FILE), String(Date.now()));
-      } catch {
-        beating = false;
-      }
-    };
-    beat();
-    const timer = setInterval(beat, heartbeatIntervalMs(staleMs));
-    timer.unref?.();
-    return () => {
-      beating = false;
-      clearInterval(timer);
-      // Delete only a lock we still own: a directory that now names someone
-      // else was reclaimed while we ran and must survive. A read failure means
-      // we cannot prove ownership, so the safe action is to leave it alone —
-      // an unreleased lock ages out, a wrongly deleted one hands the session
-      // to two writers.
-      let stillOurs: boolean;
-      try {
-        stillOurs = ownsLockDir(lockPath);
-      } catch {
-        return;
-      }
-      if (!stillOurs) return;
-      try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* already swept */ }
-    };
+    const release = takeLockDir(lockPath, staleMs);
+    if (release) return release;
+    await sleep(POLL_MS);
   }
 }
 

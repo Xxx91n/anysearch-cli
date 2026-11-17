@@ -19,7 +19,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
-import { findPiSessionRecord } from "./pi-session";
+import { findPiSessionRecord, readPiSessionRecord } from "./pi-session";
 import {
   acquireSessionLock,
   resolveSessionLockWindows,
@@ -882,6 +882,15 @@ export class PiAgentRuntime {
       const found = findPiSessionRecord(persistentDir, piKey);
       if (!found && this.opts.requirePiSessionRecord) {
         throw new Error("找不到这段会话的对话记录，本次没有发送问题。");
+      }
+      // Design: a record whose header is fine but whose later lines are not
+      // would be loaded by PI with the bad lines silently skipped, and the
+      // model would answer as if those turns never happened. Resuming a
+      // shorter history is worse than refusing, so the whole file is checked
+      // before PI opens it. Only a RESUME pays this: a first run has no file.
+      if (found) {
+        const readable = readPiSessionRecord(found);
+        if (!readable.ok) throw new Error(readable.reason + "。本次没有发送问题，原文件未改动。");
       }
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)

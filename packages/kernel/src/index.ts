@@ -9,6 +9,9 @@ export * from "./usage";
 export * from "./pi-session";
 // Cross-process session lock: one PI record, one writer (#266).
 export * from "./session-lock";
+// #299: one chat attempt = lease -> record start -> run -> record result. Both
+// hosts call this instead of writing completion state themselves.
+export * from "./chat-attempt";
 export * from "./memory-pipeline";
 // #264 (D9): rebuild a suspended summary from current sources plus the user's
 // own stored turns.

@@ -4,7 +4,7 @@
 // The kernel reads no env, so each host (CLI, MCP) passes its own env in. The
 // contract lives here once instead of being copied into both roots.
 import { dirname, join } from "node:path";
-import { closeSync, openSync, readSync, readdirSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, readdirSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { resolveDbPath } from "./composition";
 import type { SessionLockWindows } from "./session-lock";
@@ -90,7 +90,12 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
     } catch (error) { failures.push({ namedKey, error }); }
   }
   return (key: string) => {
-    const failure = failures.find((item) => !item.namedKey || item.namedKey === key);
+    // Design: only a failure that could BE this key blocks the lookup. A
+    // stray unreadable file with no name (or another session's name) says
+    // nothing about this session, and letting it fail every lookup would stop
+    // brand-new chats over a file they never touch — the runtime asks this
+    // same question for a first run.
+    const failure = failures.find((item) => item.namedKey === key);
     if (failure) throw failure.error;
     const matches = records.get(key) ?? [];
     // Design: reject duplicate keys — choosing one can hide part of a chat.
@@ -102,6 +107,40 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
 /** Find one PI record; check again under the caller's session lock before use. */
 export function findPiSessionRecord(dir: string, key: string): string | undefined {
   return indexPiSessionRecords(dir)(key);
+}
+
+/**
+ * Whether a record's message lines all parse, so a resume does not silently
+ * become a resume of a shorter history.
+ *
+ * PI's own loader skips a malformed line and keeps the rest, which is the right
+ * behaviour for reading an append-only log and the wrong behaviour for
+ * RESURRECTING a conversation: the model would answer as if the missing turn
+ * never happened. This check is deliberately narrow — one question, "is the
+ * whole file readable as JSON lines?" — and does not judge versions, identity,
+ * or a torn tail; that fuller judgment is #316's job and reads this same file.
+ *
+ * A trailing line without its newline is the tail of an interrupted append. PI
+ * itself repairs that with a newline rather than truncating, and the entry it
+ * carries is incomplete, so it is reported as a problem here: the safe answer
+ * for "can I resume this?" is no.
+ */
+export function readPiSessionRecord(path: string): { ok: true } | { ok: false; reason: string } {
+  let text: string;
+  try { text = readFileSync(path, "utf8"); }
+  catch (e: any) { return { ok: false, reason: "会话记录读不出来：" + (e?.message || String(e)) }; }
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    try { JSON.parse(line); }
+    catch { return { ok: false, reason: "会话记录第 " + (i + 1) + " 行无法解析" }; }
+    // A non-empty last segment with no terminating newline is half a write.
+    if (i === lines.length - 1 && !text.endsWith("\n")) {
+      return { ok: false, reason: "会话记录最后一行没有写完（第 " + (i + 1) + " 行）" };
+    }
+  }
+  return { ok: true };
 }
 
 /**

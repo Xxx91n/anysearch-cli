@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, indexPiSessionRecords, resolvePiSessionDir } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, indexPiSessionRecords, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -145,15 +145,10 @@ export async function runChat(argv: string[]): Promise<number> {
     process.stderr.write("会话恢复失败，本次没有发送问题。\n");
     return 1;
   }
-  if (memory.sessionId) {
-    try {
-      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root, false);
-    } catch (error: any) {
-      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
-      return 1;
-    }
-    console.log("[session] " + memory.sessionId);
-  }
+  // The attempt's project. A resumed conversation keeps the project it already
+  // belongs to; a new one takes the directory it started in.
+  const attemptProject = previousSession ? previousSession.projectRoot : project.root;
+  if (memory.sessionId) console.log("[session] " + memory.sessionId);
   if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
   // Construct PiAgentRuntime and run.
@@ -186,97 +181,132 @@ export async function runChat(argv: string[]): Promise<number> {
     requirePiSessionRecord: !!requestedSessionId,
   });
 
-  console.log("ans chat: " + query);
-  console.log("---");
-
-  let completed = false;
+  // #299: the whole attempt runs under the lease, so its two chat_projects
+  // writes cannot interleave with another attempt on the same session. The
+  // runtime still takes its own run lock inside; this wraps it rather than
+  // moving it, so the JSONL append keeps the guarantee it already had.
+  let attemptFailed = false;
   try {
-    for await (const event of runtime.run(query)) {
-      switch (event.type) {
-        case "text":
-          process.stdout.write(event.content);
-          break;
-        case "tool_call":
-          console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
-          break;
-        case "tool_result":
-          console.log("[result: " + event.name + "]");
-          break;
-        case "search":
-          console.log("\n[search: " + event.query + "]");
-          break;
-        case "search_result":
-          console.log("[search done]");
-          break;
-        case "done":
-          completed = true;
-          console.log("\n---");
-          console.log(event.summary);
-          if (event.recovery) console.log("\n" + event.recovery);
-          // Report the run's own accounting; a dimension the provider
-          // never reported is named instead of zero-filled into "free".
-          if (event.usage) {
-            const u = event.usage;
-            console.log(
-              "[usage] calls=" + u.assistantCalls +
-              " in=" + u.inputTokens + " out=" + u.outputTokens +
-              " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
-              " total=" + u.totalTokens + " costUsd=" + u.costUsd + "(" + u.costSource + ")" +
-              " compaction=" + u.compactionCalls + "/" + u.compactionTokens + "tok/" + u.compactionCostUsd + "usd" +
-              (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
-              (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
-            );
-          }
-          break;
-        case "error":
-          console.error("\n[error] " + event.message);
-          return 1;
-      }
-    }
-  } catch (e: any) {
-    console.error("[error] " + (e?.message || String(e)));
-    return 1;
-  } finally {
-    // Design: drain background anchor writes before the CLI closes this store
-    // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
-    // returning here without waiting loses the rolling_summary / l2_recall write.
-    await runtime.flushMemory();
-    // #264 (D9): a suspended summary was either rebuilt from current sources or
-    // it was not. Read AFTER the drain (a rebuild is background work the drain
-    // waits for) and say it in plain words, so an empty memory block is not read
-    // as "there was never a summary".
-    for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
-    // Summary calls are a separate, real cost; report them apart from the run.
-    // The reuse/compress adjudication is its own book (D4 重判): one judgment
-    // call must not read as a summary the summarizer never made.
-    const memoryUsage = runtime.getMemoryUsage();
-    if (memoryUsage && memoryUsage.calls > 0) {
-      console.log(
-        "[usage] memory-summary calls=" + memoryUsage.calls +
-        " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
-        " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
-        (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
-      );
-    }
-    const adjudicationUsage = memoryUsage?.adjudication;
-    if (adjudicationUsage && adjudicationUsage.calls > 0) {
-      console.log(
-        "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
-        " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
-        " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
-        (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
-      );
-    }
-  }
+    await runChatAttempt({
+      store: durableStore ? store : undefined,
+      sessionId: memory.sessionId,
+      projectRoot: attemptProject,
+      piSessionDir: durableStore && memory.sessionId ? resolvePiSessionDir() : undefined,
+    }, async (attempt) => {
+      console.log("ans chat: " + query);
+      console.log("---");
 
-  // Only a completed run is marked complete; unfinished sessions stay listed.
-  if (completed && memory.sessionId) {
-    try {
-      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root);
-    } catch (error: any) {
-      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
+      let completed = false;
+      // The body returns the attempt's outcome, not the process exit code: a
+      // run error is still an attempt that must be recorded as unfinished, and
+      // the code is applied after the lease is handed back.
+      let failed = false;
+      try {
+        for await (const event of runtime.run(query)) {
+          switch (event.type) {
+            case "text":
+              // Answer text only exists once the provider was called, so this
+              // is a real "started" signal, not merely "the command launched".
+              attempt.markStarted();
+              process.stdout.write(event.content);
+              break;
+            case "tool_call":
+              // The turn is really under way: a tool ran, so this attempt has
+              // state worth recording as unfinished if it stops here.
+              attempt.markStarted();
+              console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
+              break;
+            case "tool_result":
+              console.log("[result: " + event.name + "]");
+              break;
+            case "search":
+              attempt.markStarted();
+              console.log("\n[search: " + event.query + "]");
+              break;
+            case "search_result":
+              console.log("[search done]");
+              break;
+            case "done":
+              // A finished run certainly happened, even one that produced no
+              // text; record it so the row exists and ends up complete.
+              attempt.markStarted();
+              completed = true;
+              console.log("\n---");
+              console.log(event.summary);
+              if (event.recovery) console.log("\n" + event.recovery);
+              // Report the run's own accounting; a dimension the provider
+              // never reported is named instead of zero-filled into "free".
+              if (event.usage) {
+                const u = event.usage;
+                console.log(
+                  "[usage] calls=" + u.assistantCalls +
+                  " in=" + u.inputTokens + " out=" + u.outputTokens +
+                  " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
+                  " total=" + u.totalTokens + " costUsd=" + u.costUsd + "(" + u.costSource + ")" +
+                  " compaction=" + u.compactionCalls + "/" + u.compactionTokens + "tok/" + u.compactionCostUsd + "usd" +
+                  (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
+                  (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
+                );
+              }
+              break;
+            case "error":
+              console.error("\n[error] " + event.message);
+              failed = true;
+              break;
+          }
+          if (failed) break;
+        }
+      } catch (e: any) {
+        console.error("[error] " + (e?.message || String(e)));
+        failed = true;
+      } finally {
+        // Design: drain background anchor writes before the CLI closes this store
+        // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
+        // returning here without waiting loses the rolling_summary / l2_recall write.
+        await runtime.flushMemory();
+        // #264 (D9): a suspended summary was either rebuilt from current sources or
+        // it was not. Read AFTER the drain (a rebuild is background work the drain
+        // waits for) and say it in plain words, so an empty memory block is not read
+        // as "there was never a summary".
+        for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
+        // Summary calls are a separate, real cost; report them apart from the run.
+        // The reuse/compress adjudication is its own book (D4 重判): one judgment
+        // call must not read as a summary the summarizer never made.
+        const memoryUsage = runtime.getMemoryUsage();
+        if (memoryUsage && memoryUsage.calls > 0) {
+          console.log(
+            "[usage] memory-summary calls=" + memoryUsage.calls +
+            " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
+            " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
+            (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
+          );
+        }
+        const adjudicationUsage = memoryUsage?.adjudication;
+        if (adjudicationUsage && adjudicationUsage.calls > 0) {
+          console.log(
+            "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
+            " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
+            " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
+            (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
+          );
+        }
+      }
+      // The attempt's own record now says finished only when the run reached
+      // its end; a run that errored or was cancelled keeps the unfinished row.
+      attemptFailed = failed;
+      return { completed: completed && !failed };
+    });
+  } catch (error: any) {
+    // One wording for "another attempt has this session right now". It is not a
+    // crash and not a usage error: the same command works once the other run
+    // ends, so the message says exactly that and names the handle to try.
+    if (error instanceof ChatAttemptBusyError) {
+      process.stderr.write(
+        "这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。\n",
+      );
       return 1;
     }
+    throw error;
   }
-  return 0;
+  return attemptFailed ? 1 : 0;
 }

@@ -298,10 +298,17 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   preempted, and once the holder's process is confirmed dead the next
   waiter takes over at once instead of waiting the 10-minute stale window
   (which only governs owners this machine cannot confirm, e.g. on another
-  host). A same-session caller that waits longer than the 120-second cap
-  gets an explicit "session busy" error result and is expected to retry;
-  different sessions still run in parallel. No evidence exists for
+  host). Different sessions still run in parallel. No evidence exists for
   network-filesystem session directories; same machine only.
+- A chat **attempt** is the wider unit around that run: lease → record start →
+  run → record result (#299). Its lease lives in a `leases/` folder beside
+  `locks/` and covers the two `chat_projects` writes, so two attempts on one
+  session cannot leave a completed row behind a still-running one. A second
+  attempt on a session that is already leased fails **immediately** with a
+  "this session is running elsewhere" result naming the handle — it does not
+  wait. That replaced the earlier two-minute wait, which was a decision rather
+  than a bug: an attempt that cannot begin has nothing to wait for. Asking the
+  user whether to fork or wait belongs to #317.
 - The single-writer rule is a property of this build. Released versions up
   to and including v0.1.2 predate the lock (#266) and the reservation owner
   table (#275): they write the same session without taking the session lock
@@ -370,7 +377,7 @@ written to config files. Hosts that inherit their environment (the usual
 | `ANS_LLM_BASE_URL` + `ANS_LLM_API` | `ans_chat` | Custom upstream. `ANS_LLM_API` must be `chat`, `messages`, or `responses` whenever `ANS_LLM_BASE_URL` is set. |
 | `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | The real model window. It drives request budgeting, the L0 low-water mark, PI's compaction trigger, and the window reported back in `structuredContent.context`. It overrides a catalog model's own window; a malformed value fails the call rather than silently defaulting to 128K. |
 | `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` beside the durable DB. Threading the same `sessionId` back resumes the conversation, including after a restart. |
-| `ANS_PI_LOCK_STALE_MS` / `ANS_PI_LOCK_TIMEOUT_MS` | `ans_chat` | Override the cross-process session lock windows: how long a lock whose owner this machine cannot confirm is kept (default 600000), and the same-session wait cap before "session busy" (default 120000). Meant for observing expiry and recovery in seconds during a test run; an unparsable value keeps the default. |
+| `ANS_PI_LOCK_STALE_MS` / `ANS_PI_LOCK_TIMEOUT_MS` | `ans_chat` | Override the cross-process session lock windows: how long a lock whose owner this machine cannot confirm is kept (default 600000), and the same-session wait cap before "session busy" (default 120000). The wait cap applies to the run lock only: a chat attempt's lease never waits and answers "running elsewhere" at once (#299). Meant for observing expiry and recovery in seconds during a test run; an unparsable value keeps the default. |
 | `ANS_PI_COMPACTION_RESERVE_TOKENS` / `ANS_PI_COMPACTION_KEEP_RECENT_TOKENS` | `ans_chat` | Override PI's compaction thresholds (defaults 16384 / 20000). Meant for forcing compaction on a small context during a test run; an unparsable value keeps PI's default. |
 
 Auth layers are separate. Provider keys authenticate upstream calls.
