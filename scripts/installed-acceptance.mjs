@@ -496,6 +496,9 @@ async function main() {
     const beforeRefusal = requestLog.length;
     const otherProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], projectB);
     const unknownProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], unknown);
+    const unknownList = await chatCli(["--list"], unknown);
+    check(unknownList.code !== 0 && unknownList.out.includes("无法确定当前项目"),
+      "未知项目查看当前会话时说明原因", unknownList.out);
     check(otherProject.code !== 0 && unknownProject.code !== 0 && requestLog.length === beforeRefusal,
       "其他项目和未知项目不会借用 A 的会话，也不会发模型请求");
     const crossDirectory = await chatCli(["--session", firstHandle ?? "missing", "SECOND-TURN-QUESTION"], projectB);

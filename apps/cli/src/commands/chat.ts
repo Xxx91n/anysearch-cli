@@ -88,6 +88,7 @@ export async function runChat(argv: string[]): Promise<number> {
     const canResume = (id: string) => !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(id));
     if (options.list) {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
+      if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
       const root = options.unassigned ? null : project.root;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
       for (const entry of store.listChatSessions(root)) {
