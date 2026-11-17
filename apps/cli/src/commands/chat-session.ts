@@ -86,7 +86,9 @@ export function formatChatListLine(
   let note = entry.isCompleted ? "" : "\t未完成";
   try {
     const verdict = readRecord(entry.id);
-    if (!verdict.ok) note += "\t" + describePiSessionVerdict(verdict);
+    // A torn tail is not a refusal, but it IS something the user should see:
+    // the conversation lost whatever that write was going to say.
+    if (!verdict.ok || verdict.tornTail) note += "\t" + describePiSessionVerdict(verdict);
   } catch (error: any) {
     // The judgment itself must not take the whole list down.
     note += "\t对话记录无法确认，请单独检查";

@@ -65,22 +65,45 @@ function readPiSessionId(file: string): string {
   } finally { closeSync(fd); }
 }
 
-/** Scan PI headers once, without filtering by the creating process's cwd. */
-export function indexPiSessionRecords(dir: string): (key: string) => string | undefined {
+/**
+ * What the directory says about one handle, before the file itself is judged.
+ *
+ * Three outcomes, kept apart because they need three different answers. The old
+ * shape threw from the index and made every caller re-derive which case it was,
+ * and those re-derivations disagreed — a list could say "fine" while a resume
+ * refused (#316). One structured answer is what keeps them identical.
+ */
+type PiSessionRecordClaim =
+  /** No file claims this handle. */
+  | { kind: "absent" }
+  /** Exactly one file claims it. `unreadable` is set when its header could not be read. */
+  | { kind: "one"; path: string; unreadable?: unknown }
+  /** More than one file claims it. Choosing one could hide part of a chat. */
+  | { kind: "many"; paths: string[] };
+
+/**
+ * Scan the record directory once and answer, per handle, which file claims it.
+ *
+ * A file claims a handle two ways: the id in its header and the id in its name.
+ * They can disagree (a copy, a manual rename), and both claims are kept so such
+ * a file is FOUND and then refused by the identity check rather than reading as
+ * "this session never existed" — "wrong" and "absent" are different answers.
+ *
+ * A file whose header cannot be read but whose name claims this handle is
+ * reported as unreadable for that handle: it could be this session's record, and
+ * answering "absent" would let the caller start a fresh conversation under a
+ * handle that already has one.
+ */
+export function scanPiSessionRecords(dir: string): (key: string) => PiSessionRecordClaim {
   let files: string[];
   try { files = readdirSync(dir); }
   catch (error: any) {
-    if (error?.code === "ENOENT") return () => undefined;
+    if (error?.code === "ENOENT") return () => ({ kind: "absent" });
     throw error;
   }
-  // Two claims, kept apart on purpose. A file claims a session by its header id
-  // and by the id in its name, and they can disagree. Indexing both is what lets
-  // a mismatched file be FOUND and then refused by the identity check, instead
-  // of vanishing from the lookup and reading as "this session never existed"
-  // (#316) — the difference between "wrong" and "absent" matters to the user.
   const byHeader = new Map<string, string[]>();
   const byName = new Map<string, string[]>();
-  const failures: Array<{ namedKey?: string; error: unknown }> = [];
+  const unreadableByName = new Map<string, unknown>();
   const push = (map: Map<string, string[]>, key: string, path: string): void => {
     const matches = map.get(key) ?? [];
     matches.push(path);
@@ -88,32 +111,31 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
   };
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
-    // Design: index the header id AND the id in the name. They can disagree
-    // (a renamed file, a copy), and keeping both claims is what lets such a
-    // file be FOUND and then refused by the identity check instead of reading
-    // as "this session never existed" (#316). An unreadable file bearing
-    // another PI key is ignored for this lookup, as another process may be
-    // creating it.
     const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
     const path = join(dir, file);
     if (namedKey) push(byName, namedKey, path);
     try {
       push(byHeader, readPiSessionId(path), path);
-    } catch (error) { failures.push({ namedKey, error }); }
+    } catch (error) {
+      // Only a file whose NAME claims the handle can be attributed to it. A
+      // stray unreadable file with no name (or another session's name) says
+      // nothing about this handle, and letting it fail every lookup would stop
+      // brand-new chats over a file they never touch.
+      if (namedKey) unreadableByName.set(namedKey, error);
+    }
   }
-  return (key: string) => {
-    // Design: only a failure that could BE this key blocks the lookup. A
-    // stray unreadable file with no name (or another session's name) says
-    // nothing about this session, and letting it fail every lookup would stop
-    // brand-new chats over a file they never touch — the runtime asks this
-    // same question for a first run.
-    const failure = failures.find((item) => item.namedKey === key);
-    if (failure) throw failure.error;
+  return (key: string): PiSessionRecordClaim => {
     // One path can claim the key both ways; that is one record, not two.
-    const matches = [...new Set([...(byHeader.get(key) ?? []), ...(byName.get(key) ?? [])])];
-    // Design: reject duplicate claims — choosing one can hide part of a chat.
-    if (matches.length > 1) throw new AmbiguousSessionRecordError(key, matches);
-    return matches[0];
+    const paths = [...new Set([...(byHeader.get(key) ?? []), ...(byName.get(key) ?? [])])];
+    if (paths.length > 1) return { kind: "many", paths };
+    const unreadable = unreadableByName.get(key);
+    // An unreadable file that names the handle: the name gives its path, and a
+    // missing name means it cannot be this handle's record at all.
+    if (unreadable !== undefined) {
+      const named = byName.get(key)?.[0];
+      return named ? { kind: "one", path: named, unreadable } : { kind: "absent" };
+    }
+    return paths.length === 1 ? { kind: "one", path: paths[0]! } : { kind: "absent" };
   };
 }
 
@@ -121,9 +143,7 @@ export function indexPiSessionRecords(dir: string): (key: string) => string | un
  * More than one file claims the same session handle.
  *
  * A distinct type because this is not "one file could not be read": no amount of
- * retrying settles which record is the real one, and the user has to look. The
- * lookup below must report it rather than fall back to picking a file — a list
- * that said "fine" here would disagree with the run, which refuses.
+ * retrying settles which record is the real one, and the user has to look.
  */
 export class AmbiguousSessionRecordError extends Error {
   constructor(readonly key: string, readonly paths: string[]) {
@@ -134,7 +154,11 @@ export class AmbiguousSessionRecordError extends Error {
 
 /** Find one PI record; check again under the caller's session lock before use. */
 export function findPiSessionRecord(dir: string, key: string): string | undefined {
-  return indexPiSessionRecords(dir)(key);
+  const claim = scanPiSessionRecords(dir)(key);
+  if (claim.kind === "many") throw new AmbiguousSessionRecordError(key, claim.paths);
+  if (claim.kind === "absent") return undefined;
+  if (claim.unreadable !== undefined) throw claim.unreadable;
+  return claim.path;
 }
 
 /**
@@ -383,71 +407,67 @@ export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVe
 }
 
 /**
- * Judge one session's record using an index that is already built.
- *
- * `lookupPiSessionRecord` per row of the session list would list the directory
- * again for every conversation — the cost grows with the square of the session
- * count. The list builds the index once (`indexPiSessionRecords`) and asks this
- * for each row, so the verdict still comes from the same rules a resume uses.
- *
- * Never throws: a row that cannot be judged must still appear in the list.
+ * Turn one claim into a verdict, without reading the file when the claim already
+ * refutes it. This is the ONE place the claim becomes a sentence, so the resume
+ * path and the session list cannot disagree about the same directory.
  */
-export function judgeIndexedSession(lookup: (key: string) => string | undefined, key: string): PiSessionRecordVerdict {
-  let path: string | undefined;
-  try {
-    path = lookup(key);
-  } catch (error: any) {
-    if (error instanceof AmbiguousSessionRecordError) return refuse("ambiguous", error.message);
-    return refuse("unreadable", error?.message || String(error));
+function verdictFromClaim(claim: PiSessionRecordClaim, key: string): PiSessionRecordLookup {
+  if (claim.kind === "absent") {
+    return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
   }
-  if (!path) return refuse("missing", "没有这段会话的对话记录：" + key);
-  return judgePiSessionRecord(path, key);
+  if (claim.kind === "many") {
+    return { verdict: refuse("ambiguous", "同一个会话有多份对话记录，请先核对：" + key) };
+  }
+  // The name claims this handle but the header could not be read. The path is
+  // still reported: a caller asking "does this session have a transcript?" must
+  // see "yes, and it is damaged", or it would start a fresh empty conversation
+  // under a handle that already has one (#316).
+  if (claim.unreadable !== undefined) {
+    const message = (claim.unreadable as any)?.message || String(claim.unreadable);
+    return { path: claim.path, verdict: refuse("unreadable", message) };
+  }
+  return { path: claim.path, verdict: judgePiSessionRecord(claim.path, key) };
 }
 
 /**
  * Locate one session's record and judge it, without throwing.
  *
- * A damaged record still yields its path: a caller that asks "does this session
- * have a transcript?" must see "yes, and it is damaged", not "no", or it would
- * mint a fresh empty conversation under a handle that already has one (#316).
- * Two files claiming the handle is its own refusal, never a pick.
+ * Nothing here guesses: the claim decides, and a claim that cannot be settled
+ * (two files, an unreadable header) becomes its own refusal. Throwing instead
+ * would leave each caller to re-derive the case, which is how a list ends up
+ * saying "fine" about a record a resume refuses.
  */
 export function lookupPiSessionRecord(dir: string, key: string): PiSessionRecordLookup {
-  let indexed: string | undefined;
-  let indexError: unknown;
-  try { indexed = indexPiSessionRecords(dir)(key); }
-  catch (error) { indexError = error; }
-
-  // Two records for one handle is not a damaged file: it is an ambiguity only a
-  // person can settle, and picking one would hide part of a chat. Report it as
-  // its own refusal so the list and a resume both say the same thing.
-  if (indexError instanceof AmbiguousSessionRecordError) {
-    return { verdict: refuse("ambiguous", indexError.message) };
+  let claim: PiSessionRecordClaim;
+  try { claim = scanPiSessionRecords(dir)(key); }
+  catch (error: any) {
+    // The directory itself cannot be listed. Nothing about this handle can be
+    // claimed either way, so say so rather than "missing".
+    return { verdict: refuse("unreadable", "会话记录目录读不出来：" + (error?.message || String(error))) };
   }
+  return verdictFromClaim(claim, key);
+}
 
-  // The index is authoritative when it answers: it also rejects ambiguity.
-  // When it fails on a single unreadable file, fall back to the handle written
-  // in the FILE NAME, because that file may be this session's damaged record —
-  // reporting "no transcript" would let the caller mint a fresh empty
-  // conversation under a handle that already has one (#316).
-  let path = indexed;
-  if (!path) {
-    try {
-      const named = readdirSync(dir)
-        .filter((file) => file.endsWith(".jsonl"))
-        .find((file) => idFromFileName(join(dir, file)) === key);
-      if (named) path = join(dir, named);
-    } catch { /* the directory itself is unreadable; reported below */ }
-  }
-
-  if (path) return { path, verdict: judgePiSessionRecord(path, key) };
-  if (indexError) {
-    // A file claims this key by its header while its name does not match, and
-    // the header could not be read. The claim is real, so say the record is
-    // unreadable rather than absent.
-    return { verdict: refuse("unreadable", (indexError as any)?.message || String(indexError)) };
-  }
-  return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
+/**
+ * A verdict function for a whole session list, from ONE directory scan.
+ *
+ * Scanning the directory per listed row makes the list quadratic, and the point
+ * of the list is to show many conversations at once. The returned function gives
+ * exactly the verdict `lookupPiSessionRecord` would for each handle, so a listed
+ * row and a resume can never disagree — including the refusals for a duplicate
+ * record or an unreadable one.
+ */
+export function sessionVerdictsForDir(dir: string): (key: string) => PiSessionRecordVerdict {
+  let scan: ((key: string) => PiSessionRecordClaim) | undefined;
+  let scanError: unknown;
+  try { scan = scanPiSessionRecords(dir); }
+  catch (error) { scanError = error; }
+  return (key: string) => {
+    if (!scan) {
+      return refuse("unreadable", "会话记录目录读不出来：" + ((scanError as any)?.message || String(scanError)));
+    }
+    return verdictFromClaim(scan(key), key).verdict;
+  };
 }
 
 /**

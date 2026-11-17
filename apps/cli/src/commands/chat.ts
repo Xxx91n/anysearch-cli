@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, indexPiSessionRecords, judgeIndexedSession, lookupPiSessionRecord, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, sessionVerdictsForDir, lookupPiSessionRecord, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult, PiSessionRecordVerdict } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -93,22 +93,12 @@ export async function runChat(argv: string[]): Promise<number> {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
       const root = options.unassigned ? null : project.root;
-      // The list judges each record with the SAME rules a resume uses, so it can
-      // never say "fine" about a record the run would refuse. The index is built
-      // once for the whole list; per row it would scan the directory again for
-      // every conversation. A damaged row is still listed: the user may want to
-      // inspect or repair it by hand, and one bad file must not fail the list.
-      const sessionDir = resolvePiSessionDir();
-      let sessionIndex: ((key: string) => string | undefined) | undefined;
-      let indexFailure: string | undefined;
-      try { sessionIndex = indexPiSessionRecords(sessionDir); }
-      catch (error: any) { indexFailure = error?.message || String(error); }
-      const readListedRecord = (id: string): PiSessionRecordVerdict => {
-        if (!sessionIndex) {
-          return { ok: false, problem: "unreadable", message: indexFailure || "会话记录目录读不出来" };
-        }
-        return judgeIndexedSession(sessionIndex, piSessionKey(id));
-      };
+      // The list asks the kernel for verdicts from ONE directory scan. Each row
+      // gets exactly the answer a resume would get for the same handle, so the
+      // list can never say "正常" about a record the run would refuse. A damaged
+      // row is still listed: the user may want to inspect or repair it by hand,
+      // and one bad file must not fail the whole list.
+      const readListedRecord = sessionVerdictsForDir(resolvePiSessionDir());
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
       for (const entry of store.listChatSessions(root)) {
         console.log(formatChatListLine(entry, readListedRecord));

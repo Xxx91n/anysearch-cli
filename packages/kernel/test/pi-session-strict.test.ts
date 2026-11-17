@@ -29,11 +29,10 @@ import {
   PI_SESSION_FORMAT_VERSION,
   describePiSessionVerdict,
   findPiSessionRecord,
-  indexPiSessionRecords,
   judgePiSessionRecord,
-  judgeIndexedSession,
   lookupPiSessionRecord,
   repairPiSessionTornTail,
+  sessionVerdictsForDir,
   type PiSessionRecordVerdict,
 } from "../src/pi-session";
 
@@ -250,16 +249,17 @@ try {
     // it cannot be any session's record, so it must not fail every lookup — the
     // runtime asks this question for brand-new chats too.
     writeFileSync(join(mixedDir, "stray.jsonl"), "{ this is not json\n");
-    const lookup = indexPiSessionRecords(mixedDir);
-    assert.equal(lookup(KEY), healthy, "R8: a stray unreadable file does not hide a healthy record");
-    assert.equal(lookup(OTHER_KEY), undefined, "R8: an unrelated handle still resolves to nothing");
+    assert.equal(findPiSessionRecord(mixedDir, KEY), healthy,
+      "R8: a stray unreadable file does not hide a healthy record");
+    assert.equal(findPiSessionRecord(mixedDir, OTHER_KEY), undefined,
+      "R8: an unrelated handle still resolves to nothing");
 
     // A broken file that DOES name this handle is reported as this session's
     // problem, in words, rather than thrown at the caller.
     const namedBroken = join(dir, "named-broken");
     const namedBrokenPath = record(namedBroken, `2026-01-01T00-00-18_${KEY}.jsonl`, ["{ not json"]);
-    assert.throws(() => indexPiSessionRecords(namedBroken)(KEY),
-      "R8: the raw index still refuses a record naming this handle");
+    assert.throws(() => findPiSessionRecord(namedBroken, KEY),
+      "R8: asking for a path still refuses a record naming this handle");
     const found = lookupPiSessionRecord(namedBroken, KEY);
     // The path is kept on purpose: a caller asking "does this session have a
     // transcript?" must answer yes-and-damaged, not "no". Answering "no" is what
@@ -274,28 +274,70 @@ try {
   }
 
   // ---------- R9: two files for one handle is an ambiguity, never a pick ----------
-  // The index refuses it. The lookup and the list must refuse it the same way:
-  // picking one file would hide part of the chat, and a list that said "fine"
-  // would disagree with the run, which refuses.
+  // Picking one file would hide part of the chat. The list and a resume must
+  // both refuse it, identically — a list that said "fine" would disagree with
+  // the run, which refuses.
   {
     const dupDir = join(dir, "duplicate");
     record(dupDir, `2026-01-01T00-00-21_${KEY}.jsonl`, [HEADER(), USER]);
     record(dupDir, `2026-01-01T00-00-22_${KEY}.jsonl`, [HEADER(), ASSISTANT]);
 
-    assert.throws(() => indexPiSessionRecords(dupDir)(KEY), /有多份对话记录/,
-      "R9: the index refuses two records for one handle");
+    assert.throws(() => findPiSessionRecord(dupDir, KEY), /有多份对话记录/,
+      "R9: asking for a path refuses two records for one handle");
 
     const looked = lookupPiSessionRecord(dupDir, KEY);
     assert.equal(refusal(looked.verdict).problem, "ambiguous",
       "R9: the single-record lookup reports the ambiguity (got " + JSON.stringify(looked.verdict) + ")");
     assert.equal(looked.path, undefined, "R9: it does not pick a file");
 
-    const indexed = judgeIndexedSession(indexPiSessionRecords(dupDir), KEY);
-    assert.equal(refusal(indexed).problem, "ambiguous",
-      "R9: the list path reports the same ambiguity it would refuse at resume");
+    // The list is the SAME answer, from one scan.
+    const listVerdict = sessionVerdictsForDir(dupDir)(KEY);
+    assert.deepEqual(listVerdict, looked.verdict,
+      "R9: the list verdict is byte-for-byte the resume verdict");
 
     assert.match(describePiSessionVerdict(looked.verdict), /多份/,
       "R9: the list line says there are several records to check");
+  }
+
+  // ---------- R10: one readable and one unreadable file for the same handle ----------
+  // Mixed damage used to split the two paths: the index threw a plain unreadable
+  // error, so the duplicate was never noticed, the lookup fell back to a healthy
+  // file and said "fine", and the path lookup threw. Now the claim sees two
+  // files and refuses the same way everywhere.
+  {
+    const mixedDup = join(dir, "mixed-duplicate");
+    const healthy = record(mixedDup, `2026-01-01T00-00-23_${KEY}.jsonl`, [HEADER(), USER]);
+    record(mixedDup, `2026-01-01T00-00-24_${KEY}.jsonl`, ["{ this header is not json"]);
+
+    const looked = lookupPiSessionRecord(mixedDup, KEY);
+    assert.equal(refusal(looked.verdict).problem, "ambiguous",
+      "R10: one readable + one unreadable record is still ambiguous, not a pick (got " +
+      JSON.stringify(looked.verdict) + ")");
+    assert.equal(looked.path, undefined,
+      "R10: it does not quietly fall back to the readable file (" + healthy + ")");
+
+    assert.deepEqual(sessionVerdictsForDir(mixedDup)(KEY), looked.verdict,
+      "R10: the list agrees with the resume about the mixed case");
+    assert.throws(() => findPiSessionRecord(mixedDup, KEY), /有多份对话记录/,
+      "R10: asking for a path refuses it too");
+  }
+
+  // ---------- R11: the list verdict and the resume verdict never differ ----------
+  // Every sample built above gets asked both ways. Any divergence is a bug: the
+  // list would be telling the user something a resume would contradict.
+  {
+    const dirs = [
+      dir, brokenDir, join(dir, "torn"), join(dir, "sentence-torn"), join(dir, "newer"),
+      join(dir, "id-header"), join(dir, "named-broken"), join(dir, "duplicate"), join(dir, "mixed-duplicate"),
+      join(dir, "nowhere"),
+    ];
+    for (const sampleDir of dirs) {
+      const fromList = sessionVerdictsForDir(sampleDir)(KEY);
+      const fromResume = lookupPiSessionRecord(sampleDir, KEY).verdict;
+      assert.deepEqual(fromList, fromResume,
+        "R11: list and resume must agree for " + sampleDir + " (list=" +
+        JSON.stringify(fromList) + ", resume=" + JSON.stringify(fromResume) + ")");
+    }
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
