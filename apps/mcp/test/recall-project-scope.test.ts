@@ -130,7 +130,7 @@ test("explicit project paths: one bad path makes the whole scope unavailable", (
     assert.deepEqual(
       resolveRecallProjects([good, good, " " + good + " "]).projects,
       [realpathSync(good)],
-      "duplicates are one scope, so the cap below counts real roots",
+      "exact duplicates are one scope before the cap counts",
     );
 
     const many = Array.from({ length: 11 }, (_value, index) => project("scope-many-" + index));

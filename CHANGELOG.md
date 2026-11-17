@@ -31,7 +31,7 @@
 
 - `apps/plugin/test/project-scope.test.ts`：用现有 NBA/Knicks/Brunson 材料做 N2——A/B 两个项目默认互不可见，明确 `projects` 才复用 A；服务端拒绝无项目请求，规则按项目返回，清除只动指定项目。原有检索相关性、payload 去重和 bearer 认证断言保留，策略缓存的完整性和回退断言仍在 `policy.test.ts`。
 - `apps/plugin/test/server-discovery.test.ts`：令牌固定在安装目录、环境变量优先、`server.json` 只收本机地址、进程没了就不再用旧地址。
-- `apps/mcp/test/recall-project-scope.test.ts` 与 `recall-http-scope.test.ts`：MCP 召回带上当前项目，`projectPaths` 明确替换范围、格式和上限跟服务端一致、任一路径无效就整体不可用；共享研究库不受项目隔离影响；HTTP 传输没有每次请求的工作区时明确报不可用。
+- `apps/mcp/test/recall-project-scope.test.ts` 与 `recall-http-scope.test.ts`：MCP 召回带上当前项目，`projectPaths` 明确替换范围、要求绝对路径、先去重再限最多 10 个、任一路径无效就整体不可用；共享研究库不受项目隔离影响；HTTP 传输没有每次请求的工作区时明确报不可用。
 
 ## Unreleased — #302: CLI 聊天一次执行一份预算，回答完尾巴也收完
 

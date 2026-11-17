@@ -171,7 +171,8 @@ async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, 
   // its own explicit project for the project-index fallback. A model-supplied
   // projectPaths list wins.
   const root = projectRoot();
-  const suppliedScope = Array.isArray(args.projectPaths) && (args.projectPaths as unknown[]).length > 0;
+  const suppliedScope = Array.isArray(args.projectPaths)
+    && (args.projectPaths as unknown[]).some((value) => typeof value === "string" && value.trim().length > 0);
   const callArgs = wire === 'recall_memory' && !suppliedScope && root
     ? { ...args, projectPaths: [root] }
     : args;
