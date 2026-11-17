@@ -139,7 +139,7 @@ async function main() {
       "#200: a failed budget setup omits the ledger (reserve cannot abort chat)");
     check(/budget sync failed/.test(budgetCaptured), "#200: a failed budget setup is reported");
 
-    // 4. An empty anchor id never reaches the store (no bogus sessions row).
+    // 4. A launch without an explicit handle still registers a nonempty id.
     const origEnv = process.env.ANS_SESSION_ID;
     delete process.env.ANS_SESSION_ID;
     const emptyHome = mkdtempSync(join(tmpdir(), "ans-129-home-"));
@@ -150,7 +150,7 @@ async function main() {
     let emptyWiring: ChatMemoryWiring | undefined;
     let ensuredCalls = 0;
     try {
-      // First call generates + persists an anchor (normal path, not empty).
+      // The cold launch generates a nonempty chat id without using the anchor.
       const probeStore = { ensureSession: async () => { ensuredCalls += 1; } } as any;
       emptyWiring = await wireChatMemory(probeStore, "default");
     } finally {
@@ -161,7 +161,7 @@ async function main() {
       try { rmSync(emptyHome, { recursive: true, force: true }); } catch { /* ignore */ }
     }
     check(emptyWiring?.sessionId !== undefined && ensuredCalls === 1,
-      "a cold anchor generates a non-empty id and registers it (no empty-id wiring)");
+      "a cold launch generates and registers a non-empty chat id");
 
     // #297 S4 / #299: a user-wide observation anchor no longer resumes chat.
     process.env.ANS_SESSION_ID = "cli-wiring-session-129";

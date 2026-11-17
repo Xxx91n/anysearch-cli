@@ -269,7 +269,7 @@ export async function runChat(argv: string[]): Promise<number> {
     }
   }
 
-  // A failed launch is not the project's most recent conversation.
+  // Only a completed run is marked complete; unfinished sessions stay listed.
   if (completed && memory.sessionId) {
     try {
       store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root);
