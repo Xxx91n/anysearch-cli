@@ -183,6 +183,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // uses so an explicit continuation restores the full conversation.
     // A store-less run has no resumable handle, so it stays in memory.
     ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+    requirePiSessionRecord: !!requestedSessionId,
   });
 
   console.log("ans chat: " + query);

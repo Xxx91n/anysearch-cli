@@ -179,7 +179,19 @@
   <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Session Identity
 
-- **显式会话句柄**:`ans_chat` 返回的会话 id，客户端传回它才能接上同一段记忆（代码里叫 sessionId）。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:2183bc23bb479f93417b49e9c82c76bd1d89c9fe4dbe8ddd5b99b711ccfea59b -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8467b1ff91d815487f3dbe21e1752631fd84a7e58796cf3c193b7c8cfcdb82bd -->
+
+- **显式会话句柄**:`ans_chat` 和 `ans chat` 返回的会话 id，用来明确选择要继续的对话和记忆（代码里叫 sessionId）。
+
+  <!-- /coderabbit-ai-generated:v1 -->
+
+  <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Explicit Session Handle
 
 - **审批通道**:宿主在放行一个拿不准的工具调用前，先把“要不要放行”问给用户，再把用户的选择传回工具那一层的整条路（代码里叫 approval channel；上游 dsh 叫 `approval/request`）。

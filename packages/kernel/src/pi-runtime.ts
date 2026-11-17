@@ -366,6 +366,8 @@ export interface PiAgentRuntimeOptions {
    * absent the PI session stays in memory (#258).
    */
   piSessionDir?: string;
+  /** Explicit continuation must find its record after the session lock is held. */
+  requirePiSessionRecord?: boolean;
   /**
    * Cross-process session lock windows (#266). `staleMs` is how long a lock
    * whose owner cannot be confirmed stays protected (default 10 min);
@@ -878,6 +880,9 @@ export class PiAgentRuntime {
       // PI resolves the old relative header cwd against the creating process.
       // Search the record directory by key so another process can resume it.
       const found = findPiSessionRecord(persistentDir, piKey);
+      if (!found && this.opts.requirePiSessionRecord) {
+        throw new Error("找不到这段会话的对话记录，本次没有发送问题。");
+      }
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
         : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });
