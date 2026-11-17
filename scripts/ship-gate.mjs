@@ -1122,7 +1122,8 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     }
   }
   await verifyInstalledProduct(installPrefix, (name, cond, detail) => {
-    if (!cond) fail(name + (detail ? ": " + detail : ""));
+    // Throw so the verifier and this gate can run their cleanup in finally.
+    if (!cond) throw new Error(name + (detail ? ": " + detail : ""));
     report("pass", name);
   });
   report("pass", "one complete product installed; internal libraries and optional embedding absent; bins linked");

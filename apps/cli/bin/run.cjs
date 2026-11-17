@@ -19,9 +19,7 @@ const targets = {
 async function start(role) {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 19)) {
-    process.stderr.write("AnySearch needs Node 22.19.0 or newer; running " + process.versions.node + ".\n");
-    process.exitCode = 1;
-    return;
+    throw new Error("AnySearch needs Node 22.19.0 or newer; running " + process.versions.node + ".");
   }
   const root = resolve(__dirname, "..");
   const target = targets[role];
@@ -48,6 +46,8 @@ async function start(role) {
 module.exports = function run(role) {
   start(role).catch((error) => {
     process.stderr.write(role + ": " + error.message + "\n");
-    process.exitCode = 1;
+    // Preserve the host hook contract even when startup fails before the
+    // adapter loads. CLI and service entry failures must still be nonzero.
+    process.exitCode = role.startsWith("ans-hook-") ? 0 : 1;
   });
 };
