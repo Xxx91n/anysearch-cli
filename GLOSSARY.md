@@ -128,10 +128,10 @@
 - **费用口径**:一次模型调用花的钱是哪来的——没调用、不知道、按价目表估算、服务端返回，或者几种混在一起，分开说清楚，不知道就不写 0（代码里叫 costBasis）。
   _Avoid_: Cost Basis、计费来源
 
-- **项目索引**:钩子把 MCP 工具的输出存进本地库，按项目共享，跨会话可查（代码里叫 ProjectIndexStore）。
+- **项目索引**:钩子把 MCP 工具的输出存进本地库，读写都带上明确项目；默认只看本项目，只有明确给出多个项目才跨项目查（代码里叫 ProjectIndexStore）。
   _Avoid_: Project Index、项目级索引
 
-- **两套数据库**:项目索引和内部记忆分两个库，先查内部，不够再查项目索引（代码里叫 SessionStore 和 ProjectIndexStore）。
+- **两套数据库**:项目索引和内部记忆分两个库，先查内部，不够再查项目索引；项目索引是一个用户级库，靠 project_path 列分项目（代码里叫 SessionStore 和 ProjectIndexStore）。
   _Avoid_: Dual DB、Two-Stage Recall
 
 - **来源标记**:给结果贴两个标签，一个说明可不可信，一个说明是哪次检索来的（代码里叫 SourceTraceLabel）。
@@ -164,6 +164,12 @@
 
 - **钩子层**:各宿主共用的钩子逻辑加每个平台自己的适配层，钩子只做轻量判断，重活交给长驻 server（代码里叫 hooks/core）。
   _Avoid_: Hook Layer、HOOKS 层
+
+- **安装令牌**:同一安装、同一用户共用的服务令牌，放在用户配置目录；长驻 server 和所有项目的钩子读同一个文件，不再每个目录各生成一份（代码里叫 server-token）。
+  _Avoid_: Server Token、服务密钥
+
+- **服务地址登记**:长驻 server 启动后把自己真正监听的地址写进用户配置目录，钩子读这条记录来连；默认端口被占就换空闲端口，读的人不用猜（代码里叫 server.json 和 resolveServerEndpoint）。
+  _Avoid_: Port Registry、端口表
 
 - **路由卡**:会话开始时塞给 agent 的一小段说明，讲插件能干什么、有哪几个工具、什么时候用（代码里叫 routing-card）。
   _Avoid_: Routing Card

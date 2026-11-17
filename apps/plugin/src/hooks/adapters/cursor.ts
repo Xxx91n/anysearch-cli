@@ -9,9 +9,9 @@
 // Cursor hook stdin/stdout contract: JSON in, JSON out, exit 0/2/other (fail-open default).
 // Cursor postToolUse supports updated_mcp_tool_output for MCP tools.
 
-import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
+import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -40,6 +40,7 @@ async function main(): Promise<void> {
   const event = (stdin.hook_event_name ?? stdin.event ?? "").toLowerCase();
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
+  const projectRoot = resolveHookProject(cwd).root;
 
   // Cursor sessionStart — emit additional_context (snake_case) + ensure .mdc.
   if (event === "sessionstart" || event === "session_start") {
@@ -58,7 +59,7 @@ async function main(): Promise<void> {
         event: "PreToolUse",
         toolName,
         toolInput: stdin.tool_input || {},
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
       if (decision.additionalContext) {
@@ -80,17 +81,11 @@ async function main(): Promise<void> {
         toolName,
         toolInput: stdin.tool_input || {},
         toolOutput,
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
 
-      const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-      const token = resolveServerToken().token;
-      if (decision.shouldIndex && decision.indexEntries) {
-        await callServer(serverUrl + "/index", token, {
-          projectPath: cwd, toolName, entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Cursor: updated_mcp_tool_output (MCP tools only).
       if (decision.distilledOutput) {

@@ -6,6 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { buildServer, createDefaultEngine } from "./server.js";
 import { createHttpApp } from "./http.js";
 import { createMcpToolState } from "./tool-state.js";
+import { markHttpTransport } from "./transport-mode.js";
 
 // The /health version banner moved with the HTTP wiring into http.ts (#112),
 // so this entry no longer needs the __PACKAGE_VERSION__ substitution.
@@ -46,6 +47,8 @@ async function main() {
     // (this process). Build it ONCE here and hand it to every request; before
     // this change each request called createEngine() and opened two fresh
     // better-sqlite3 handles, so connections grew with request count.
+    // This process serves many callers, so its cwd is not their project (S3).
+    markHttpTransport();
     const engine = createDefaultEngine();
     const app = createHttpApp(engine, toolState);
 

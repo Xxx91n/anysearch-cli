@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { apply, name, inject, contextMessage } from '../src/index.js';
@@ -94,6 +94,11 @@ async function fakeAnsServer(handler: (req: { url: string; body: string; headers
 }
 
 const tmp = mkdtempSync(join(tmpdir(), 'ans-dsh-test-'));
+// The shared hooks resolve a project before they use project-scoped abilities.
+// Make the temp workspace a real project, or recall/index would correctly
+// report "project identity unknown" and this suite would test the wrong path.
+mkdirSync(join(tmp, '.anysearch'), { recursive: true });
+writeFileSync(join(tmp, '.anysearch', 'config.toml'), '', 'utf8');
 const prevCwd = process.cwd();
 process.chdir(tmp);
 process.env.ANS_SERVER_TOKEN = 'test-token';
@@ -150,7 +155,7 @@ test('tools/pre-execute: non-ans tool passes through untouched', async () => {
 
 test('tools/pre-execute: denied URL on ans tool returns deny', async () => {
   const { url, srv } = await fakeAnsServer(({ url }) =>
-    url === '/policy'
+    url.startsWith('/policy')
       ? { status: 200, body: { allow: ['ok.example'], deny: ['bad.example'], policy_version: 'x' } }
       : { status: 404 });
   process.env.ANS_SERVER_URL = url;
@@ -168,7 +173,7 @@ test('tools/pre-execute: denied URL on ans tool returns deny', async () => {
 
 test('tools/pre-execute: unallowlisted URL returns ask', async () => {
   const { url, srv } = await fakeAnsServer(({ url }) =>
-    url === '/policy'
+    url.startsWith('/policy')
       ? { status: 200, body: { allow: ['ok.example'], deny: [], policy_version: 'x' } }
       : { status: 404 });
   process.env.ANS_SERVER_URL = url;
@@ -185,7 +190,7 @@ test('tools/pre-execute: unallowlisted URL returns ask', async () => {
 
 test('tools/pre-execute: recall hits are injected via agent.inject and the call is allowed', async () => {
   const { url, srv } = await fakeAnsServer(({ url }) =>
-    url === '/recall'
+    url.startsWith('/recall')
       ? { status: 200, body: { hits: [{ title: 'Prior result', url: 'u', snippet: 'snippet-1' }] } }
       : { status: 404 });
   process.env.ANS_SERVER_URL = url;
@@ -250,7 +255,7 @@ test('tools/post-execute: ans result gains a distilled additionalContexts messag
 
 test('tools/result: indexes successful ans results over IPC', async () => {
   const { url, srv, reqs } = await fakeAnsServer(({ url }) =>
-    url === '/index' ? { status: 200, body: { ok: true } } : { status: 404 });
+    url.startsWith('/index') ? { status: 200, body: { ok: true } } : { status: 404 });
   process.env.ANS_SERVER_URL = url;
   try {
     const ctx = mockCtx();
@@ -261,7 +266,7 @@ test('tools/result: indexes successful ans results over IPC', async () => {
       content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
     });
     await new Promise((r) => setTimeout(r, 300)); // fire-and-forget lands
-    const idx = reqs.filter((r) => r.url === '/index');
+    const idx = reqs.filter((r) => r.url.startsWith('/index'));
     assert.equal(idx.length, 1);
     const body = JSON.parse(idx[0].body);
     assert.equal(body.toolName, 'ans_search_web');
@@ -279,7 +284,7 @@ test('tools/result: error results and non-ans tools are skipped', async () => {
     fn(exec('ans_search_web', {}, mockAgent()), { isError: true, error: { message: 'x' }, content: [] });
     fn(exec('read_file', {}, mockAgent()), { isError: false, content: [] });
     await new Promise((r) => setTimeout(r, 200));
-    assert.equal(reqs.filter((r) => r.url === '/index').length, 0);
+    assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 0);
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });
 
@@ -431,7 +436,7 @@ test('native execute: JSON-RPC session error re-handshakes once then succeeds', 
 
 test('hook compatibility: bare ans_* names still hit all four hook surfaces', async () => {
   const { url, srv, reqs } = await fakeAnsServer(({ url }) =>
-    url === '/recall'
+    url.startsWith('/recall')
       ? { status: 200, body: { hits: [{ title: 'Prior', url: 'u', snippet: 'snip' }] } }
       : { status: 200, body: {} });
   process.env.ANS_SERVER_URL = url;
@@ -450,6 +455,6 @@ test('hook compatibility: bare ans_* names still hit all four hook surfaces', as
     assert.ok((p.additionalContexts ?? []).length === 1, 'post-execute did not engage for bare ans_search_web');
     res(exec('ans_search_web', {}, agent), result);
     await new Promise((r) => setTimeout(r, 200));
-    assert.equal(reqs.filter((r) => r.url === '/index').length, 1, 'tools/result did not index for bare ans_search_web');
+    assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 1, 'tools/result did not index for bare ans_search_web');
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });

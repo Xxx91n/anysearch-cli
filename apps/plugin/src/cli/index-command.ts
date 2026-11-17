@@ -2,21 +2,32 @@
 // hooks write project index via server IPC or CLI.
 // Usage: ans index --title "..." --url "..." --snippet "..." --source "..."
 // echo '{"results":[...]}' | ans index --stdin
+//
+// The rows land in the same user-level database the hook server uses, and the
+// project comes from the explicit project this command runs in. Without a
+// project identity the command stops and says so; it never writes into a
+// shared bucket or reads another project's records.
 
 import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { resolveProjectContext } from "@anysearch-cli/store";
+import { projectIndexDbPath } from "../server/token.js";
+
+function requireProject(): string | null {
+  const project = resolveProjectContext();
+  if (!("reason" in project)) return project.root;
+  process.stderr.write(
+    "项目身份不明确：" + project.reason +
+    " 请从项目根目录运行，或在项目里加 .anysearch/config.toml。\n",
+  );
+  return null;
+}
 
 export async function runIndex(args: string[]): Promise<number> {
-  const dbPath = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", "project-index.db");
-  const projectPath = process.cwd();
-
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const store = new ProjectIndexStore(dbPath);
-
-  // Parse args.
+  // Parse first: --help must work outside a project.
   let title = "", url = "", snippet = "", source = "cli", stdinMode = false;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -30,6 +41,12 @@ export async function runIndex(args: string[]): Promise<number> {
         return 0;
     }
   }
+
+  const projectPath = requireProject();
+  if (!projectPath) return 2;
+  const dbPath = projectIndexDbPath();
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const store = new ProjectIndexStore(dbPath);
 
   let indexed = 0;
   if (stdinMode) {
@@ -76,8 +93,9 @@ export async function runIndex(args: string[]): Promise<number> {
 }
 
 export async function runRecall(args: string[]): Promise<number> {
-  const dbPath = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", "project-index.db");
-  const store = new ProjectIndexStore(dbPath);
+  const projectPath = requireProject();
+  if (!projectPath) return 2;
+  const store = new ProjectIndexStore(projectIndexDbPath());
 
   const query = args[0] || "";
   if (!query) {
@@ -86,8 +104,8 @@ export async function runRecall(args: string[]): Promise<number> {
     return 1;
   }
 
-  const hits = store.search(query, 10);
+  const hits = store.search(query, [projectPath], 10);
   store.close();
-  process.stdout.write(JSON.stringify({ query, hits, provenance: "project-index" }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ query, hits, provenance: "project-index", projects: [projectPath] }, null, 2) + "\n");
   return 0;
 }

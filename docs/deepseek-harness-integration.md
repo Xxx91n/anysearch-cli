@@ -5,10 +5,10 @@ surfaces. A thin Cordis bundle mounts the anysearch hooks layer inside the
 host process. It also registers the five `ans_*` tools natively on
 `ctx.tools` (R90: the Phase-1 MCP-client bridge row is retired; see the
 legacy section). All business logic stays on the server. Hooks reach the
-anysearch server at `127.0.0.1:33333`. Tool calls reach `ans-mcp` over its
-HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process holds no
-retrieval logic, no secrets beyond the shared IPC credentials, and no
-database access.
+anysearch server at the address it publishes (`127.0.0.1:33333` by default).
+Tool calls reach `ans-mcp` over its HTTP transport (default
+`127.0.0.1:3001/mcp`). The dsh process holds no retrieval logic, no secrets
+beyond the shared IPC credentials, and no database access.
 
 Tried with `@deepseek-ai/dsh@0.2.2-rc.1`. The web profile loaded the plugin
 unchanged, a browser chat turn ran, the routing card showed up, preheat recall
@@ -99,10 +99,13 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 | `tools/result` | indexes the final outcome into the project index (`POST /index`, fire-and-forget) |
 | `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle |
 
-Server endpoints used: `GET /policy`, `POST /recall`, and `POST /index` on
-`ANS_SERVER_URL` (default `http://127.0.0.1:33333`). They use the shared
-`ANS_SERVER_TOKEN` / `.anysearch-cli/server-token` credential and pass
-`traceparent` plus `x-anysearch-session-id`. Tool execution posts MCP
+Server endpoints used: `GET /policy?project=<root>`, `POST /recall`, and
+`POST /index` on the published address (`ANS_SERVER_URL` overrides it; the
+default is `http://127.0.0.1:33333`). They use the shared
+`ANS_SERVER_TOKEN` / `~/.anysearch-cli/server-token` credential and pass
+`traceparent` plus `x-anysearch-session-id`. Every project-scoped request
+names the project (a Git root or `.anysearch/config.toml`); without one the
+hook reports the capability as unavailable. Tool execution posts MCP
 JSON-RPC to `POST {ANS_MCP_URL}/mcp` (default `http://127.0.0.1:3001`; serve
 it with `ans mcp --transport http`). When set, `ANS_MCP_KEY` supplies the
 Bearer token; otherwise the server token is sent. The bundle caches a

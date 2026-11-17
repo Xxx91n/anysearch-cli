@@ -10,6 +10,29 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #305: 项目索引和网址规则跟着明确项目走，辅助服务按安装身份发现
+
+一句话说清：**以前项目索引查的时候不带项目条件，网址规则看的是服务进程启动目录；现在读写都带明确项目，规则按请求里的项目解析，令牌和地址由安装统一发布，钩子不再靠固定端口和每个目录各一份令牌碰运气。**
+
+### Changed
+
+- **项目索引读写范围一致**：`ProjectIndexStore.search` 必须带项目范围，一个项目是默认，多个项目才是明确的跨项目读；去重和清除本来就按项目，现在查询也跟上了。服务端 `/recall`、`/index`、`/purge` 都要求请求里写明项目，找不到项目根（Git 根或 `.anysearch/config.toml`）就直接 400，不再写进空项目桶或读别的项目。
+- **一个用户级索引库**：项目索引默认放在 `~/.anysearch/project-index.db`（`ANS_PROJECT_DB` 仍可覆盖），服务端、CLI 和钩子写读同一个库，靠 `project_path` 列分项目。
+- **网址规则按项目解析**：`GET /policy?project=<根>` 读那个项目自己的 `domains/default.toml`，缓存写到该项目的 `.anysearch-cli/policy.json`；没有项目就不给规则，钩子按拿不准就 `ask` 处理。服务进程启动目录不再代表所有请求。服务启动也不再因为启动目录的 TOML 坏了拒绝启动：策略在请求时解析，解析失败且该项目没有可用缓存时返回 500，钩子照样按 `ask` 处理；有缓存就按旧缓存继续并在 stderr 告警。
+- **安装级服务发现**：令牌固定到 `~/.anysearch-cli/server-token`，服务启动后把实际监听地址写进 `~/.anysearch-cli/server.json`；默认端口被占就换空闲端口并照常发布。钩子、dsh 和 MCP 的召回回退都读这两样，不再每目录生成令牌、也不再猜端口。
+- **项目身份不明就说不可用**：钩子在找不到项目根时不预热、不索引，PostToolUse 的摘要里标明 `indexNote`；Antigravity 给多个工作区且没有明确 cwd 时，项目身份记为未知、不再拿第一个工作区代表全部（`.mdc` 和待注入文件仍写到宿主给的第一个工作区，那是宿主自己的文件位置，不冒充项目身份）。MCP `recall_memory` 新增可选 `projectPaths`，明确列出项目根时只读这些项目（`projectIndexNote` 说明读不到的原因）；stdio 用宿主工作目录，HTTP 服务没有每次请求的工作区，默认不发项目，dsh 会把自己的工作区显式带上。
+- **发现逻辑只有一份**：令牌、数据目录、`server.json` 读取和 `resolveServerEndpoint` 放进 `@anysearch-cli/store/local-service`，插件服务端、钩子、dsh 和 MCP 共用，避免两边各写一套端口/令牌规则。
+
+### 迁移说明
+
+- 旧版本写在 `<项目>/.anysearch/project-index.db` 的索引不再读取。项目索引是从工具输出派生的缓存，重跑原来的搜索或研究就会重新写入；研究资料库（`ans` 的会话与知识库）和旧账都不动，也没有删除任何旧文件。
+
+### 测试
+
+- `apps/plugin/test/project-scope.test.ts`：用现有 NBA/Knicks/Brunson 材料做 N2——A/B 两个项目默认互不可见，明确 `projects` 才复用 A；服务端拒绝无项目请求，规则按项目返回，清除只动指定项目。原有检索相关性、payload 去重和 bearer 认证断言保留，策略缓存的完整性和回退断言仍在 `policy.test.ts`。
+- `apps/plugin/test/server-discovery.test.ts`：令牌固定在安装目录、环境变量优先、`server.json` 只收本机地址、进程没了就不再用旧地址。
+- `apps/mcp/test/recall-project-scope.test.ts` 与 `recall-http-scope.test.ts`：MCP 召回带上当前项目，`projectPaths` 明确替换范围、要求绝对路径、先去重再限最多 10 个、任一路径无效就整体不可用；共享研究库不受项目隔离影响；HTTP 传输没有每次请求的工作区时明确报不可用。
+
 ## Unreleased — #302: CLI 聊天一次执行一份预算，回答完尾巴也收完
 
 一句话说清：**以前 CLI 聊天的额度记在会话头上，续聊会被历史支出挤兑、账也分不清是哪一次跑的；现在一次执行就是一条任务、自己一份预算，主程序还把每条 CLI 命令的任务登记了起来。**

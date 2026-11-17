@@ -38,6 +38,8 @@ import { makePreToolUseDecision } from '@anysearch-cli/plugin/hooks/preheat';
 import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
 import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
 import { resolveServerToken } from '@anysearch-cli/plugin/hooks/server-token';
+import { resolveHookProject } from '@anysearch-cli/plugin/hooks/project-identity';
+import { indexToProject } from '@anysearch-cli/plugin/hooks/index-entries';
 
 /**
  * anysearch plugin producer kind for injected user messages (0.2.2 contract:
@@ -55,7 +57,8 @@ export const name = 'anysearch-dsh-plugin';
 /** Services required before apply(): tools pipeline + prompt registry. */
 export const inject = ['tools', 'systemPrompt'];
 
-const serverUrl = (): string => process.env.ANS_SERVER_URL || 'http://127.0.0.1:33333';
+/** The explicit project this dsh process runs in; null when it cannot be told. */
+const projectRoot = (): string | null => resolveHookProject(process.cwd()).root;
 
 /** Hand-rolled UserMessage — a zero-dep plugin cannot import dsh-llm at runtime. */
 export function contextMessage(text: string): UserMessage {
@@ -89,7 +92,7 @@ function postHookInput(exec: Readonly<ToolExecution>, result: Readonly<ToolExecu
     toolName: exec.name,
     toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
     toolOutput: toolOutputOf(result),
-    projectPath: process.cwd(),
+    projectPath: projectRoot() ?? '',
     sessionId: sessionIdOf(exec.agent),
   };
 }
@@ -164,13 +167,22 @@ function mcpChannel(base: string, token: string): Promise<McpChannel | null> {
 async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, exec: ToolRunContext, timeoutMs: number): Promise<{ content: ContentBlock[] }> {
   const base = mcpBaseUrl();
   const token = mcpBearer();
+  // The MCP HTTP transport has no per-request workspace, so this host passes
+  // its own explicit project for the project-index fallback. A model-supplied
+  // projectPaths list wins.
+  const root = projectRoot();
+  const suppliedScope = Array.isArray(args.projectPaths)
+    && (args.projectPaths as unknown[]).some((value) => typeof value === "string" && value.trim().length > 0);
+  const callArgs = wire === 'recall_memory' && !suppliedScope && root
+    ? { ...args, projectPaths: [root] }
+    : args;
   const key = base + '|' + token;
   for (let attempt = 0; attempt < 2; attempt++) {
     const ch = await mcpChannel(base, token);
     if (!ch) return { content: [] }; // fail-open: endpoint down/misconfigured
     const resp = await callServer(base + '/mcp', token, {
       jsonrpc: '2.0', id: ++rpcSeq, method: 'tools/call',
-      params: { name: wire, arguments: args },
+      params: { name: wire, arguments: callArgs },
     }, {
       sessionId: sessionIdOf(exec.agent),
       headers: { Accept: MCP_ACCEPT, 'MCP-Protocol-Version': ch.version },
@@ -246,7 +258,7 @@ export function apply(ctx: Context): void {
         event: 'PreToolUse',
         toolName: exec.name,
         toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
-        projectPath: process.cwd(),
+        projectPath: projectRoot() ?? '',
         sessionId: sessionIdOf(exec.agent),
       });
     } catch {
@@ -290,13 +302,7 @@ export function apply(ctx: Context): void {
     if (!isAnsTool(exec.name) || result.isError) return;
     try {
       const d = makePostToolUseDecision(postHookInput(exec, result));
-      if (d.shouldIndex && d.indexEntries && d.indexEntries.length > 0) {
-        void callServer(serverUrl() + '/index', resolveServerToken().token, {
-          projectPath: process.cwd(),
-          toolName: exec.name,
-          entries: d.indexEntries,
-        }, { sessionId: sessionIdOf(exec.agent) });
-      }
+      void indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent));
     } catch { /* fail-open: indexing must never disturb the pipeline */ }
   });
 }

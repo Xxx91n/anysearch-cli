@@ -28,9 +28,9 @@
 // <artifactDirectoryPath>/anysearch-pending.jsonl and flushed as
 // ephemeralMessage injectSteps by the next invocation event.
 
-import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
+import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 import { existsSync, readFileSync, mkdirSync, appendFileSync, unlinkSync } from "node:fs";
@@ -132,7 +132,12 @@ async function main(): Promise<void> {
   const toolName = effectiveToolName(stdin.toolCall?.name || stdin.tool_name || "", stdin.toolCall?.args || stdin.tool_input || {});
   const toolInput = stdin.toolCall?.args || stdin.tool_input || {};
   const sessionId = stdin.conversationId || stdin.session_id || "";
-  const cwd = stdin.workspacePaths?.[0] || stdin.cwd || process.cwd();
+  const workspacePaths = stdin.workspacePaths ?? [];
+  const cwd = stdin.cwd || workspacePaths[0] || process.cwd();
+  // Several workspaces and no explicit cwd means the project is not
+  // identifiable; the first one must not stand for all of them (S3).
+  const projectPath = stdin.cwd || (workspacePaths.length === 1 ? workspacePaths[0] : "");
+  const projectRoot = projectPath ? resolveHookProject(projectPath).root : null;
 
   // generate .mdc on any hook invocation as fallback
   // (SessionStart does not exist on this host). Antigravity rules live under
@@ -148,7 +153,7 @@ async function main(): Promise<void> {
           event: "PreToolUse",
           toolName,
           toolInput,
-          projectPath: cwd,
+          projectPath: projectRoot ?? "",
           sessionId,
         });
         if (decision.additionalContext) stagePending(stdin, cwd, decision.additionalContext);
@@ -173,17 +178,11 @@ async function main(): Promise<void> {
           toolName,
           toolInput,
           toolOutput,
-          projectPath: cwd,
+          projectPath: projectRoot ?? "",
           sessionId,
         });
 
-        const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-        const token = resolveServerToken().token;
-        if (decision.shouldIndex && decision.indexEntries) {
-          await callServer(serverUrl + "/index", token, {
-            projectPath: cwd, toolName, entries: decision.indexEntries,
-          }, { sessionId }).catch(() => null);
-        }
+        await indexToProject(projectRoot, toolName, decision.indexEntries, sessionId);
 
         if (decision.distilledOutput) stagePending(stdin, cwd, decision.distilledOutput);
       }

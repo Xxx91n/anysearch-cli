@@ -12,7 +12,7 @@ These are the tools the anysearch plugin handles. All use the `ans_*` prefix. A 
 
 ## Fail-open behavior
 
-If the anysearch server at 127.0.0.1:33333 cannot be reached, every tool still works, just with fewer features:
+If the anysearch server cannot be reached, every tool still works, just with fewer features. The server publishes its address (127.0.0.1:33333 by default, or a free port when that one is taken) and one shared token under `~/.anysearch-cli/`; hooks read both instead of guessing a port or copying a token.
 
 - search_web / research_web go straight to the search code, with no warm-up lookup and no summary step.
 - recall_memory returns an empty list instead of crashing.
@@ -25,5 +25,6 @@ A broken hook exits 0. The shared hook code is the same on every host, but URL p
 
 - Tool names start with `ans_` and are matched by the regex `/(?:^|_|__)(?:search_web|research_web|recall_memory|query_knowledge|ans_chat)$/`
 - Hook names start with the `anysearch-*` prefix (for example anysearch-preheat, anysearch-distill, anysearch-session-start).
-- Config environment variables: `ANS_SERVER_URL`, `ANS_SERVER_TOKEN`, `ANS_SERVER_PORT`, `ANS_PROJECT_DB`.
+- Config environment variables: `ANS_SERVER_URL`, `ANS_SERVER_TOKEN`, `ANS_SERVER_PORT`, `ANS_SERVER_REGISTRY`, `ANS_PROJECT_DB`.
 - IPC uses HTTP on 127.0.0.1 with a Bearer token, and times out after 5 seconds.
+- Project-scoped routes (`/policy`, `/recall`, `/index`, `/purge`) refuse a request that does not name a real project root (Git root or `.anysearch/config.toml`). The hook resolves that root before calling; an unknown project is reported, never replaced with another project's records.

@@ -9,9 +9,9 @@
 // block, top-level permissionDecision executes anyway).
 // Q5: only intercept ans_* tools.
 
-import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+import { isAnsTool, unwrapToolResponse, type HookDecision } from "../core.js";
+import { resolveHookProject } from "../project-identity.js";
+import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -43,6 +43,9 @@ async function main(): Promise<void> {
   const event = stdin.hook_event_name ?? stdin.event ?? "";
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
+  // The project is resolved once; an unknown identity stays empty so the hook
+  // reports the capability as unavailable instead of borrowing another scope.
+  const projectRoot = resolveHookProject(cwd).root;
 
   // Q5: only intercept our tools.
   if (!isAnsTool(toolName)) {
@@ -55,7 +58,7 @@ async function main(): Promise<void> {
         event: "PreToolUse",
         toolName,
         toolInput: stdin.tool_input || {},
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
       // + ER-2: every PreToolUse decision key goes inside the
@@ -88,20 +91,12 @@ async function main(): Promise<void> {
         toolName,
         toolInput: stdin.tool_input || {},
         toolOutput,
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
 
-      // Send to server for indexing (fail-open).
-      const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-      const token = resolveServerToken().token;
-      if (decision.shouldIndex && decision.indexEntries && decision.indexEntries.length > 0) {
-        await callServer(serverUrl + "/index", token, {
-          projectPath: cwd,
-          toolName,
-          entries: decision.indexEntries,
-        }, { sessionId: stdin.session_id || "" }).catch(() => null);
-      }
+      // Send to server for indexing (fail-open). A project-less hook does not index.
+      await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Return distilled output to Claude. PostToolUse has no output-rewrite
       // field on Claude — the only honored channel is
