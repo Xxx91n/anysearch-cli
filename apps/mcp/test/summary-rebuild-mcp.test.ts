@@ -19,7 +19,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
@@ -328,15 +328,14 @@ function domainDir(root: string, ragAdapter: "none" | "fts" = "none"): string {
 let endpointUrl = "";
 const roots: string[] = [];
 
-// Where the local embedding model lives, if this host has it at all.
-//
-// M5 is the only case that needs a real `fts` recall, and that recall's vector arm
-// loads the model. Its FTS arm does not — so the test still proves what it claims
-// without the model — but the arm is consulted on every recall, and with an empty
-// cache it tries to download one. Honour ANYSEARCH_MODEL_CACHE when the operator
-// set it; otherwise look in the default location.
-const MODEL_CACHE_DIR = process.env.ANYSEARCH_MODEL_CACHE ?? join(homedir(), ".anysearch", "models");
-const MODEL_CACHE_AVAILABLE = existsSync(join(MODEL_CACHE_DIR, "Xenova"));
+// #322: M5 is the only case that needs a real `fts` recall, whose vector arm
+// loads a local embedding model. Use ONLY a cache the operator explicitly points
+// at with ANYSEARCH_MODEL_CACHE. Never fall back to ~/.anysearch/models: probing
+// the real home made "M5 ran or skipped" depend on whatever this machine happened
+// to have downloaded, and quietly borrowed operator data. With no explicit env
+// var, M5 is skipped loudly below — an honest skip, not a silent pass.
+const MODEL_CACHE_DIR = process.env.ANYSEARCH_MODEL_CACHE?.trim();
+const MODEL_CACHE_AVAILABLE = MODEL_CACHE_DIR ? existsSync(join(MODEL_CACHE_DIR, "Xenova")) : false;
 
 function makeRoot(name: string): string {
   const root = mkdtempSync(join(tmpdir(), "ans-264-mcp-" + name + "-"));
@@ -359,16 +358,11 @@ function makeEnv(root: string, ragAdapter: "none" | "fts" = "none"): Record<stri
     ANS_LLM_API_KEY: "rebuild-test-key-not-real",
     ANS_LLM_CONTEXT_WINDOW: "100000",
   };
-  // The `fts` case reaches Stage-1's vector arm, which loads the local embedding
-  // model. HOME points at a temp dir (so nothing touches the real profile), which
-  // would leave the cache empty and make the arm DOWNLOAD the model — a 60s stall
-  // in this environment that has nothing to do with the behaviour under test.
-  //
-  // Point the cache at whatever the host already has. When there is none (a clean
-  // CI runner caches pnpm only, not this model) the M5 case is skipped LOUDLY by
-  // the caller instead of quietly passing, because a test that needs a network
-  // download to run is not a test that ran.
-  if (MODEL_CACHE_AVAILABLE) env.ANYSEARCH_MODEL_CACHE = MODEL_CACHE_DIR;
+  // #322: HOME is a temp dir, so a model cache found under the real profile is
+  // never borrowed. Only pass through the cache the operator explicitly set in
+  // ANYSEARCH_MODEL_CACHE; otherwise M5 is skipped loudly by the caller. A test
+  // that would need a network download to run is not a test that ran.
+  if (MODEL_CACHE_AVAILABLE && MODEL_CACHE_DIR) env.ANYSEARCH_MODEL_CACHE = MODEL_CACHE_DIR;
   return env;
 }
 
@@ -586,8 +580,9 @@ for (const mode of ["complete", "no-source", "no-task"] as const) {
 // behaviour without needing the model at all.
 if (!MODEL_CACHE_AVAILABLE) {
   console.error(
-    "[summary-rebuild-mcp] SKIP M5: no local embedding model under " + MODEL_CACHE_DIR +
-    " — the fts RAG case needs one to run without a download. " +
+    "[summary-rebuild-mcp] SKIP M5: no embedding model cache was explicitly provided via " +
+    "ANYSEARCH_MODEL_CACHE — the fts RAG case needs one to run without a download, " +
+    "and the test no longer probes ~/.anysearch/models on the operator's machine. " +
     "The same behaviour is covered by R18 (store) and K17 (kernel).",
   );
 } else {

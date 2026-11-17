@@ -27,8 +27,8 @@ import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/
 import { createHttpApp } from "../src/http.js";
 import { buildServer } from "../src/server.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { stdioRpc } from "./helpers/mcp-harness.js";
 
@@ -41,6 +41,16 @@ function assert(cond: boolean, msg: string) {
   } else {
     failed++;
     console.error("FAIL: " + msg);
+  }
+}
+
+// #322 regression guard: PI session records under a dir (empty if the dir is
+// absent). Compares the temp root against the real home so a leak fails loudly.
+function piRecords(dir: string): string[] {
+  try {
+    return readdirSync(dir).filter((f) => f.endsWith(".jsonl")).sort();
+  } catch {
+    return [];
   }
 }
 
@@ -209,6 +219,12 @@ async function main() {
       else process.env[key] = saved[key];
     }
   };
+
+  // #322 regression guard: snapshot the operator's real PI-session dir before
+  // redirecting. If any future edit drops the env isolation, a chat record
+  // lands there and the assertion at the end fails — no human has to notice.
+  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realBefore = piRecords(realPiDir);
 
   const piDir = mkdtempSync(join(tmpdir(), "ans-mcp-cache-pi-"));
   try {
@@ -386,8 +402,23 @@ async function main() {
         "shared state: holds the LLM client cache and its factory only — no conversation/handle/anchor/budget state",
       );
     }
+
+    // ---- #322: writes stayed in the temp root, none reached the real home ----
+    const tempRecords = piRecords(piDir);
+    assert(
+      tempRecords.length > 0,
+      "#322: chat runs kept their PI session records under the isolated temp root (got " +
+        tempRecords.length + ")",
+    );
+    const realAfter = piRecords(realPiDir);
+    assert(
+      realBefore.join("|") === realAfter.join("|"),
+      "#322: the operator's real ~/.anysearch/pi-sessions gained no record (before=" +
+        realBefore.length + ", after=" + realAfter.length + ")",
+    );
   } finally {
     restoreEnv();
+    try { rmSync(piDir, { recursive: true, force: true }); } catch { /* OS temp */ }
   }
 
   console.log("--- ans_chat shared-cache tests: " + passed + " passed, " + failed + " failed ---");
