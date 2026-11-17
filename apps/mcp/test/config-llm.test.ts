@@ -132,6 +132,11 @@ async function main() {
       assert(h.seen.length === 1, "user TOML: one session was built");
       assert(h.seen[0]?.provider === "anthropic", "user TOML: provider was read by MCP");
       assert(h.seen[0]?.model === "claude-sonnet-4-6", "user TOML: model was read by MCP");
+      // Project-unknown (cwd has no .anysearch/config.toml): report the real
+      // source as user, never invent a project layer (#300 如实报告).
+      assert(h.attrs[0]?.["anysearch.llm.provider.source"] === "user" &&
+        h.attrs[0]?.["anysearch.llm.model.source"] === "user",
+        "project-unknown: sources name user, no fabricated project provider");
     }
 
     // 2. project TOML overrides user, same as the CLI
