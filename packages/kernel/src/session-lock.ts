@@ -398,9 +398,8 @@ export async function acquireSessionLock(
   const deadlineAt = Date.now() + windows.waitMs;
   mkdirSync(dirname(lockPath), { recursive: true });
   for (;;) {
-    // The deadline is checked at the TOP of every iteration, so every path —
-    // a live holder, a reclaim sweep, or a sweep that keeps failing — ends at
-    // "session busy" instead of spinning forever (#266: the wait has a cap).
+    // Try once even with a zero cap: an uncontended session can start. After
+    // contention, the cap bounds retries; zero never enters the polling path.
     const release = takeLockDir(lockPath, staleMs);
     if (release) return release;
     if (Date.now() >= deadlineAt) throw new LockHeldError(SESSION_BUSY_MESSAGE);

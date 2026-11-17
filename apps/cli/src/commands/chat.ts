@@ -203,7 +203,7 @@ export async function runChat(argv: string[]): Promise<number> {
         const forkMemory = await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, attempt.sessionId);
         if (forkMemory.sessionId !== attempt.sessionId) throw new Error("新会话登记失败，本次没有发送问题。");
         memory = forkMemory;
-        if (cliTask) { try { cliTask.attachSession(memory.sessionId); } catch { /* best-effort link */ } }
+        if (cliTask) { try { cliTask.attachSession(attempt.sessionId); } catch { /* best-effort link */ } }
         console.log("[session] 已 fork，新句柄：" + memory.sessionId);
       }
       // Construct PiAgentRuntime and run.

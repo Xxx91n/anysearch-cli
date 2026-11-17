@@ -358,6 +358,17 @@ async function main() {
       const first = drain(runtime1.run("W2-A-QUESTION"));
       // Give the first run a moment to take its slot before contending.
       await new Promise((r) => setTimeout(r, 200));
+      const immediate = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: slowProvider("W2-DEFAULT", 50) as any,
+        sessionId: "w2-session",
+        getApiKey: async () => "probe-key",
+      });
+      const before = Date.now();
+      const refused = await drain(immediate.run("W2-DEFAULT-QUESTION"));
+      assert(refused.some(e => e.type === "error" && e.message === SESSION_BUSY_MESSAGE),
+        "W2/#317: the same-process runtime refuses by default");
+      assert(Date.now() - before < 300, "W2/#317: the default refusal does not queue");
       const events = await drain(runtime2.run("W2-B-QUESTION"));
       const busyEvent = events.find((e) => e.type === "error");
       assert(busyEvent?.message === SESSION_BUSY_MESSAGE,

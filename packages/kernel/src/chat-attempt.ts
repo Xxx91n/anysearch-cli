@@ -125,9 +125,14 @@ export async function runChatAttempt(
     if (choice === "wait") {
       // Design: #315/#317 replace #266's automatic two-minute queue. Only a
       // caller who explicitly chooses wait gets a bounded wait on the lease.
-      release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
-        ...windows, waitMs: options.sessionLock?.waitMs || 120_000,
-      });
+      try {
+        release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
+          ...windows, waitMs: windows.waitMs || 120_000,
+        });
+      } catch (waitError) {
+        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId);
+        throw waitError;
+      }
     } else {
       return runChatAttempt({ ...options, sessionId: choice.fork, onBusy: undefined }, async ctx => {
         forkChatSession(piSessionDir, sessionId, choice.fork);
