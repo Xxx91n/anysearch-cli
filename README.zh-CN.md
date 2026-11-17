@@ -37,9 +37,6 @@ npm i -g @anysearch-cli/embedding
 `--installation`，就能看到构建提交、版本、安装目录和入口类型。`ans mcp`
 启动同一安装里的 MCP，各入口仍然各跑各的进程，向量能力照旧按需安装。
 
-这里覆盖的是干净安装。原来分别装了 MCP 和插件包的用户，迁移由 #311 处理；
-旧命令归属、冲突检查和迁移都还没在本票验证。
-
 ## 安装后：可选向量检索
 
 `@anysearch-cli/embedding` 是可选依赖（peer-optional），没装时 CLI 只用 FTS。

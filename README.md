@@ -37,10 +37,7 @@ The complete product includes `ans`, `ans-mcp`, `ans-plugin-server`, and the
 `ans --installation` (or any of those commands with `--installation`) to see
 the build commit, version, installed path and entry role. `ans mcp` starts the
 MCP entry from this same installation; each entry runs in its own process.
-Vector search remains optional. Existing installations of the separate MCP
-and plugin packages still need the migration work tracked in #311; this change
-covers clean installations only; old command ownership and conflicts have not
-been validated here.
+Vector search remains optional.
 
 ## Post-install: Optional Vector Search
 
