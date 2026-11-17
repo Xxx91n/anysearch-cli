@@ -29,7 +29,7 @@ process.chdir(dir);
 // is the project under test.
 mkdirSync(join(dir, ".anysearch"), { recursive: true });
 writeFileSync(join(dir, ".anysearch", "config.toml"), "", "utf8");
-// Keep the installation token/address out of the operator's home (#322) and
+// Keep the installation token/address out of the operator's home and
 // pin the endpoint at a dead port so a real local server cannot answer.
 process.env.HOME = dir;
 process.env.USERPROFILE = dir;

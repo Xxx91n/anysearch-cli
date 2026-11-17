@@ -12,6 +12,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recallProjectIndex } from "../src/project-index.js";
+import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 
 function project(tag: string): string {
   const dir = mkdtempSync(join(tmpdir(), "ans-mcp-scope-" + tag + "-"));
@@ -98,6 +99,71 @@ test("recall fallback reports an unknown project instead of borrowing one", asyn
     const recall = await recallProjectIndex("anything", 3);
     assert.equal(recall.hits.length, 0);
     assert.match(recall.note ?? "", /project index unavailable/);
+  } finally {
+    process.chdir(previous.cwd);
+    for (const [key, value] of Object.entries({
+      ANS_SERVER_URL: previous.url,
+      ANS_SERVER_TOKEN: previous.token,
+      HOME: previous.home,
+      USERPROFILE: previous.profile,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(plain, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("shared research archive stays shared when the project index is unavailable", async () => {
+  // N2: project-local isolation must not narrow the research archive. The
+  // archive hit below is not project-filtered; only the project-index fallback
+  // is, and it reports itself unavailable here.
+  const plain = mkdtempSync(join(tmpdir(), "ans-mcp-scope-shared-"));
+  const home = mkdtempSync(join(tmpdir(), "ans-mcp-scope-shared-home-"));
+  const previous = {
+    cwd: process.cwd(),
+    url: process.env.ANS_SERVER_URL,
+    token: process.env.ANS_SERVER_TOKEN,
+    home: process.env.HOME,
+    profile: process.env.USERPROFILE,
+  };
+  process.chdir(plain);
+  delete process.env.ANS_SERVER_TOKEN;
+  process.env.ANS_SERVER_URL = "http://127.0.0.1:1";
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    const handlers: Record<string, (args: unknown) => Promise<any>> = {};
+    const engine = {
+      store: {
+        searchMemory: async () => [
+          { role: "user", content: "SHARED-RESEARCH-ROW", rank: 1, sessionId: "s1", rowid: 1 },
+        ],
+      },
+      observation: {
+        recordOperation: async (_options: unknown, callback: (span: unknown) => unknown) => callback({}),
+      },
+    };
+    registerRecallMemory(
+      {
+        registerTool: (name: string, _config: unknown, handler: (args: unknown) => Promise<any>) => {
+          handlers[name] = handler;
+        },
+      } as any,
+      engine as any,
+    );
+    const result = await handlers.recall_memory!({ query: "Knicks", limit: 5 });
+    assert.notEqual(result?.isError, true);
+    const body = JSON.parse(result.content[0].text) as {
+      internal: Array<{ content: string }>;
+      hitsCount: number;
+      projectIndexNote?: string;
+    };
+    assert.equal(body.internal.length, 1, "the shared archive is read regardless of the project");
+    assert.equal(body.internal[0]!.content, "SHARED-RESEARCH-ROW");
+    assert.equal(body.hitsCount, 1);
+    assert.match(body.projectIndexNote ?? "", /unavailable/);
   } finally {
     process.chdir(previous.cwd);
     for (const [key, value] of Object.entries({

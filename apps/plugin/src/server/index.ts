@@ -9,6 +9,12 @@
 // GET /policy?project=<root> — URL policy for that explicit project
 // Bearer token auth on all endpoints.
 //
+// Design: every project-scoped request names its project and the server
+// refuses one that cannot — a shared long-running process cannot tell the
+// caller's workspace from its own start directory, and guessing would put one
+// project's rules or records into another project's answers (S3).
+// The bearer token and the published address belong to the installation.
+//
 // The token and the published address belong to the installation (see
 // server/token.ts). The project index is one user-level database; isolation
 // comes from the project_path column on every read and write. A request that
@@ -248,8 +254,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         process.stderr.write("[anysearch] info: env override active: " + policy.envHostsApplied + " hosts\n");
       }
       const before = policyVersions.get(project.root);
-      if (policy.policyVersion !== before) {
-        policyVersions.set(project.root, policy.policyVersion);
+      policyVersions.set(project.root, policy.policyVersion);
+      // First sight of a project is the baseline, not a change; only a later
+      // version difference is recorded as an audit row.
+      if (before !== undefined && policy.policyVersion !== before) {
         // server path: extract traceId/sessionId from inbound
         // headers so the audit row links back to the same logical request the
         // caller initiated. traceparentValid=false means the client sent garbage;
@@ -257,7 +265,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const incoming = parseAndValidateHeaders(req);
         void emitConfigChangeAudit(OBS_DB, {
           actor: "server", source: "toml", path: tomlPath,
-          change: { before: before ?? null, after: policy.policyVersion },
+          change: { before, after: policy.policyVersion },
           policyVersion: policy.policyVersion,
           traceId: incoming.traceId,
           sessionId: incoming.sessionId,

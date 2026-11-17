@@ -325,7 +325,7 @@ testAsync("Server: /health endpoint returns 200", async () => {
     detached: process.platform !== "win32",
     // the server is never open; pin a token so the liveness probe authenticates.
     // Keep the index database and the published address inside this test's temp
-    // dir so the run never touches the operator's home (#322).
+    // dir so the run never touches the operator's home.
     env: {
       ...process.env,
       ANS_SERVER_PORT: String(port),

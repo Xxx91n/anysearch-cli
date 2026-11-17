@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.join(__dirname, "..");
 const TOKEN = "sec-test-token";
-// #322: keep the server's index database and published address inside a temp
-// dir; the run must not touch the operator's home.
+// Keep the server's index database and published address inside a temp dir;
+// the run must not touch the operator's home.
 const HOME = mkdtempSync(path.join(tmpdir(), "ans-plugin-security-"));
 
 let passed = 0, failed = 0;

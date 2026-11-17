@@ -104,6 +104,9 @@ test("project index: dedupe and purge stay inside one project", () => {
     }
     assert.equal(store.search("same row", [a], 10).length, 1);
     assert.equal(store.search("same row", [b], 10).length, 1);
+    // Whitespace and duplicates are normalized before binding, so the number
+    // of placeholders and the number of values always agree.
+    assert.equal(store.search("same row", [" " + a + " ", a, ""], 10).length, 1);
 
     assert.equal(store.purgeProject(a), 1);
     assert.equal(store.search("same row", [a], 10).length, 0, "purge removes only the named project");
@@ -132,6 +135,7 @@ test("project identity: the hook copy matches the store resolver", () => {
       const store = resolveProjectContext(dir);
       assert.equal(hook.root, store.root, "same root for " + dir);
       assert.equal(hook.source, store.source, "same source for " + dir);
+      assert.equal(hook.reason, "reason" in store ? store.reason : undefined, "same reason for " + dir);
     }
     assert.equal(resolveHookProject(nested).root, realpathSync(gitProject), "a nested directory resolves to the project root");
     assert.equal(resolveHookProject(plain).root, null, "a plain directory has no project identity");

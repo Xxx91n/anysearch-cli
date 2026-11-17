@@ -6,6 +6,11 @@
 // than one is a deliberate cross-project read the caller asked for. There is
 // no "all projects" mode: a query that carries no project condition would let
 // one project's records leak into another's context.
+//
+// Design: the project condition is a required parameter, not an optional
+// filter — a default of "everything" is the failure mode this store exists to
+// prevent (S3/N2).
+
 
 import Database from "better-sqlite3";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed } from "@anysearch-cli/store";
@@ -133,7 +138,7 @@ export class ProjectIndexStore {
     if (scopedProjects.length === 0) throw new Error("project scope required: refusing an unscoped project-index read");
     const searchStmt = this.readStatement(scopedProjects.length);
     const safeQuery = this.fts5Escape(query);
-    const strict = searchStmt.all(safeQuery, ...projects, limit) as ProjectIndexHit[];
+    const strict = searchStmt.all(safeQuery, ...scopedProjects, limit) as ProjectIndexHit[];
     // host recall questions are natural language — relax when the strict rung under-fills.
     if (strict.length >= limit) return strict;
     const relaxed = fts5RelaxedQuery(query);
@@ -141,7 +146,7 @@ export class ProjectIndexStore {
     // `p.rowid` on an INTEGER PRIMARY KEY table comes back under the PK's name (`id`), so dedupe on it.
     const idOf = (h: ProjectIndexHit) => (h as unknown as { id?: number }).id ?? h.rowid;
     const terms = relaxedTerms(query);
-    const wide = (searchStmt.all(relaxed, ...projects, limit * 4) as ProjectIndexHit[])
+    const wide = (searchStmt.all(relaxed, ...scopedProjects, limit * 4) as ProjectIndexHit[])
       .filter((h) => coversMajority(terms, `${h.title ?? ""} ${h.snippet ?? ""} ${h.url ?? ""}`));
     return appendRelaxed(strict, wide, limit, idOf);
   }

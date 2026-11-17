@@ -1,5 +1,9 @@
 // Project-index recall for the MCP entry.
 //
+// Design: read through the plugin server instead of opening the index database
+// here — the server already owns the writer, so this keeps one writer/reader
+// pair and one place that enforces the project condition (S3).
+//
 // The project index is written by the plugin server, so MCP reads it from that
 // same service instead of opening a second database handle. That keeps one
 // writer/reader pair and one project condition: the server only answers for

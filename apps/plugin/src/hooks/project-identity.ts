@@ -1,5 +1,10 @@
 // Project identity for the hook bundle.
 //
+// Design: mirror packages/store/src/project-context.ts here — hook bundles are
+// built with esbuild --bundle and must stay free of the store's native
+// dependencies; the drift check in project-scope.test.ts keeps the copy
+// honest. The authoritative resolver lives in the store.
+//
 // The authoritative resolver lives in packages/store/src/project-context.ts.
 // Hook bundles are built with esbuild --bundle and must stay free of the store
 // (its native dependencies do not bundle), so this file mirrors that resolver

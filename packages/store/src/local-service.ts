@@ -1,6 +1,11 @@
 // Local service identity: where the plugin server keeps its token, which
 // address it published, and where the shared project index lives.
 //
+// Design: one token and one published address per installation under
+// ~/.anysearch-cli, plus one user-level index database — a per-project token
+// and a cwd-derived port made every new directory a guessing game, and the
+// server could not answer for a project other than its start directory (S3).
+//
 // This module is the single source for every entry point that talks to the
 // local service (plugin hooks, the plugin server, dsh, and the MCP recall
 // fallback). It uses only node builtins so hook bundles (esbuild) and the

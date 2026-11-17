@@ -79,8 +79,11 @@ export function makePostToolUseDecision(input: HookInput): HookDecision {
 
 function noteProjectUnavailable(distilled: string): string {
   try {
-    const parsed = JSON.parse(distilled) as Record<string, unknown>;
-    return JSON.stringify({ ...parsed, indexNote: "project identity unknown; project index disabled" });
+    const parsed = JSON.parse(distilled) as unknown;
+    // Only the distilled summary object takes the note; truncated raw output
+    // (plain text, or an array that happens to parse) stays untouched.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return distilled;
+    return JSON.stringify({ ...(parsed as Record<string, unknown>), indexNote: "project identity unknown; project index disabled" });
   } catch {
     return distilled;
   }

@@ -68,7 +68,14 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
     return {};
   }
 
-  const project = resolveHookProject(input.projectPath || process.cwd());
+  // Adapters pass the resolved project root, or "" when the host did not name
+  // a single project. An empty value stays unknown: the hook process's own
+  // start directory must not stand in for the request's project (S3).
+  const project = input.projectPath.trim()
+    ? resolveHookProject(input.projectPath)
+    : { root: null, source: "unknown" as const, reason: "the host did not name a project" };
+  const projectRoot = project.root;
+  const projectReason = project.reason ?? "no Git root or .anysearch/config.toml";
 
   // +: any URL in the tool input is gated against the resolved
   // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.
@@ -76,14 +83,14 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   {
     const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
     if (urls.length > 0) {
-      if (!project.root) {
+      if (!projectRoot) {
         return {
           permission: "ask",
-          permissionReason: "URL policy unavailable: project identity unknown (" + (project.reason ?? "no Git root or .anysearch/config.toml") + ")",
+          permissionReason: "URL policy unavailable: project identity unknown (" + projectReason + ")",
         };
       }
       const endpoint = resolveServerEndpoint();
-      const policy = await readPolicy(endpoint.url, endpoint.token, project.root);
+      const policy = await readPolicy(endpoint.url, endpoint.token, projectRoot);
       for (const url of urls) {
         let host = "";
         try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
@@ -114,9 +121,9 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
 
   // No project identity: say the project index is unavailable instead of
   // reading another project's rows or this process's start directory.
-  if (!project.root) {
+  if (!projectRoot) {
     return {
-      additionalContext: "[anysearch] project index unavailable: " + (project.reason ?? "no Git root or .anysearch/config.toml") +
+      additionalContext: "[anysearch] project index unavailable: " + projectReason +
         " (run from a project root, or add .anysearch/config.toml)",
     };
   }
@@ -128,7 +135,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   const endpoint = resolveServerEndpoint();
   const result = await callServer(endpoint.url + "/recall", endpoint.token, {
     query,
-    projectPath: project.root,
+    projectPath: projectRoot,
     limit: 3,
   }, { sessionId: input.sessionId });
 
