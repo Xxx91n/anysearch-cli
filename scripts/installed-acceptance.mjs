@@ -583,6 +583,13 @@ async function main() {
       "两轮的固定提示词逐字节相同，缓存前缀是稳的",
       JSON.stringify({ prev: String(prevSys).slice(0, 120), last: String(lastSys).slice(0, 120) }));
 
+    // 同一已知项目会话可以经 MCP 续聊；CLI 最近会话要看到这次使用。
+    const makeSecondRecent = await chatCli(["--session", secondHandle ?? "missing", "FIRST-TURN-QUESTION"], projectA);
+    const mcpContinued = await prober.rpc("tools/call", { name: "ans_chat", arguments: { message: "SECOND-TURN-QUESTION", sessionId: firstHandle } });
+    const recentAfterMcp = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
+    check(makeSecondRecent.code === 0 && mcpContinued.result?.isError !== true && recentAfterMcp.code === 0 && handleOf(recentAfterMcp) === firstHandle,
+      "MCP 续聊后 CLI 选到同项目里刚续过的会话", recentAfterMcp.out);
+
     // ================= C2. 冷启动：两个服务，一个全新的库 =================
     //
     // 规格 D12 / T3：全新的库不能因为 SQLITE_BUSY 丢一个进程。store 那边有限

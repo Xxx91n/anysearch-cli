@@ -499,6 +499,16 @@ export function registerAnsChat(
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
             });
           }
+          // A known project session may also continue through MCP. Update its
+          // recent-use time without assigning unowned sessions to this process's cwd.
+          if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
+            try {
+              const entry = memory.store.getChatSession(memory.sessionId);
+              if (entry?.projectRoot) memory.store.recordChatProject(memory.sessionId, entry.projectRoot);
+            } catch (error) {
+              process.stderr.write("[warn] 无法更新最近会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
+            }
+          }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.

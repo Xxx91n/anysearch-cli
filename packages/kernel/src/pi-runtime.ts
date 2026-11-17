@@ -886,6 +886,11 @@ export class PiAgentRuntime {
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
         : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });
+      // PI can create a fresh record if the path vanishes while it is opening.
+      // Recheck its id before handing any history or question to the model.
+      if (found && sessionManager.getHeader()?.id !== piKey) {
+        throw new Error("对话记录打开后发生变化，本次没有发送问题。");
+      }
     } else {
       sessionManager = sdk.SessionManager.inMemory(cwd);
     }
