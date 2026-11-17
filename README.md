@@ -254,4 +254,11 @@ ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
 node apps/cli/dist/index.js search "..." --json
 ```
 
+The source MCP command uses the complete product's build outputs. Before its first run, and after changing MCP or hook sources, build the product before starting it:
+
+```bash
+pnpm -C apps/cli build
+pnpm -C apps/cli dev mcp --help
+```
+
 The CLI resolves to `ans` when installed globally or linked. Inside the repository, `node apps/cli/dist/index.js` is the exact same entry point.

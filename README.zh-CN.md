@@ -33,7 +33,7 @@ npm i -g @anysearch-cli/embedding
 ```
 
 完整产品包带上了 `ans`、`ans-mcp`、`ans-plugin-server`、`ans-hook-*`
-命令，以及领域配置和宿主资源。运行 `ans --installation`，或给上面任一命令加
+命令，以及领域配置和宿主资源。运行 `ans --installation`，或给上面任意一个命令加
 `--installation`，就能看到构建提交、版本、安装目录和入口类型。`ans mcp`
 启动同一安装里的 MCP，各入口仍然各跑各的进程，向量能力照旧按需安装。
 
@@ -298,6 +298,13 @@ ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
 
 # 机器可读输出（包含证据够不够、来源标记、拒答）
 node apps/cli/dist/index.js search "..." --json
+```
+
+源码开发模式的 MCP 入口会复用完整产品的构建产物。首次运行前，以及修改 MCP 或钩子源码后，先构建再启动：
+
+```bash
+pnpm -C apps/cli build
+pnpm -C apps/cli dev mcp --help
 ```
 
 CLI 在全局安装或 link 后解析为 `ans`；仓库形态下

@@ -33,6 +33,15 @@ test("probe failure stays a failure", async () => {
   });
 });
 
+test("stderr without a newline stays data and preserves a nonzero exit", async () => {
+  await withScript('process.stderr.write("warning"); process.exitCode = 7;', async (file) => {
+    const result = await runProbeProcess(file);
+    assert.equal(result.status, 7);
+    assert.equal(result.timedOut, false);
+    assert.equal(result.stderr, "warning");
+  });
+});
+
 function assertExited(owned) {
   const alive = [];
   for (const pid of [owned.probe, owned.descendant]) {

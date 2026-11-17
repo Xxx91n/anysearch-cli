@@ -1,6 +1,6 @@
 # A Windows job owns the probe before its first instruction runs. Descendants
 # remain in the job even if their immediate parent exits or closes its pipes.
-param([string]$NodeExe, [string]$Payload, [int]$TimeoutMs)
+param([string]$NodeExe, [string]$Payload, [int]$TimeoutMs, [string]$ReceiptPath)
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
@@ -126,7 +126,10 @@ public static class AnySearchProbeJob {
 try {
     [string[]]$ProbeArgs = @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload)) | ConvertFrom-Json)
     $Result = [AnySearchProbeJob]::Run($NodeExe, $ProbeArgs, $TimeoutMs)
-    [Console]::Error.WriteLine('ANS_PROBE_RESULT:' + (@{ status = $Result.ExitCode; timedOut = $Result.TimedOut } | ConvertTo-Json -Compress))
+    # Keep control data separate from arbitrary probe stderr, including a final
+    # message without a newline. The job is empty before this receipt is written.
+    $Json = @{ status = $Result.ExitCode; timedOut = $Result.TimedOut } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($ReceiptPath, $Json, [Text.UTF8Encoding]::new($false))
     exit 0
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)

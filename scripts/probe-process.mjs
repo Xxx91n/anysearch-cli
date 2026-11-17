@@ -2,6 +2,9 @@
 // descendants may be stopped; no machine-wide process discovery is involved.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export const PROBE_CLEANUP_FAILED = "ANS_PROBE_CLEANUP_FAILED";
 
@@ -71,6 +74,8 @@ async function stopTree(child, closed) {
 /** Capture a probe result and finish tree cleanup before returning to its caller. */
 export async function runProbeProcess(file, args = [], { cwd, env = process.env, timeoutMs = 90000 } = {}) {
   const windows = process.platform === "win32";
+  const receiptDir = windows ? mkdtempSync(join(tmpdir(), "ans-probe-receipt-")) : undefined;
+  const receiptPath = windows ? join(receiptDir, "result.json") : undefined;
   // Design: Windows probes use an owned job — taskkill loses descendants
   // after their parent exits; job ownership starts before the probe resumes.
   const executable = windows ? "powershell.exe" : process.execPath;
@@ -79,7 +84,7 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
     fileURLToPath(new URL("./probe-job.ps1", import.meta.url)),
     "-NodeExe", process.execPath,
     "-Payload", Buffer.from(JSON.stringify([file, ...args])).toString("base64"),
-    "-TimeoutMs", String(timeoutMs),
+    "-TimeoutMs", String(timeoutMs), "-ReceiptPath", receiptPath,
   ] : [file, ...args];
   const child = spawn(executable, argv, {
     cwd, env, detached: !windows, stdio: ["ignore", "pipe", "pipe"],
@@ -95,6 +100,7 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
   const closed = new Promise((resolve) => child.once("close", resolve));
   let timer;
   let timedOut = false;
+  let waitError;
   try {
     await Promise.race([
       // Exit starts cleanup; it is not proof the descendants or pipes closed.
@@ -105,27 +111,38 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
         timer = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs + (windows ? 20000 : 0));
       }),
     ]);
+  } catch (error) {
+    waitError = error;
   } finally {
     clearTimeout(timer);
-    try {
-      await stopTree(child, closed);
-    } catch (error) {
-      throw Object.assign(new Error("probe cleanup could not be confirmed: " + error.message, { cause: error }), {
-        code: PROBE_CLEANUP_FAILED,
-      });
-    }
+  }
+  // Cleanup uncertainty takes priority, but never throws from a finally block.
+  try {
+    await stopTree(child, closed);
+  } catch (error) {
+    throw Object.assign(new Error("probe cleanup could not be confirmed: " + error.message, { cause: error }), {
+      code: PROBE_CLEANUP_FAILED,
+    });
   }
   let result = await exited;
   if (windows) {
-    const marker = stderr.match(/^ANS_PROBE_RESULT:(.+)\r?$/m);
-    // No success receipt means the supervisor could not confirm an empty job.
-    if (timedOut || result.status !== 0 || !marker) {
-      throw Object.assign(new Error("Windows probe cleanup could not be confirmed: " + stderr), { code: PROBE_CLEANUP_FAILED });
+    // Design: a private result file carries the job receipt — stderr belongs
+    // entirely to the probe and need not end in a newline or follow a schema.
+    try {
+      if (timedOut || result.status !== 0) throw new Error(stderr || "probe supervisor did not finish");
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+      if (!Number.isInteger(receipt.status) || receipt.status < 0 || receipt.status > 0xffffffff ||
+          typeof receipt.timedOut !== "boolean") throw new Error("invalid job receipt");
+      result = receipt;
+      timedOut = receipt.timedOut;
+    } catch (error) {
+      throw Object.assign(new Error("Windows probe cleanup could not be confirmed: " + error.message, { cause: error }), {
+        code: PROBE_CLEANUP_FAILED,
+      });
     }
-    result = JSON.parse(marker[1]);
-    timedOut = result.timedOut;
-    stderr = stderr.replace(marker[0], "");
+    rmSync(receiptDir, { recursive: true, force: true });
   }
+  if (waitError) throw waitError;
   return {
     ...result, stdout, stderr, timedOut,
     ...(timedOut ? { status: null, error: Object.assign(new Error("protocol probe timed out"), { code: "ETIMEDOUT" }) } : {}),
