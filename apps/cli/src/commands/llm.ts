@@ -13,9 +13,13 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
     const cfg = resolveLlmConfig();
-    const src = (k: "provider" | "model") => cfg.sources[k] ?? "unset";
+    const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
+    // #300: name where EVERY effective value came from, not just provider/model.
+    // Sources are layer labels (flag/env/project/user), never the secret itself.
+    console.log("Sources: provider=" + src("provider") + " model=" + src("model") +
+      " baseUrl=" + src("baseUrl") + " api=" + src("api") + " apiKey=" + src("apiKey"));
     console.log("Files: user " + userConfigPath() + " | project " + projectConfigPath());
     console.log("");
     console.log("Available providers:");

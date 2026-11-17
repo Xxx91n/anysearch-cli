@@ -180,12 +180,16 @@ async function main() {
 
     // ---- 3. ans_chat: missing configuration and runtime errors ----
     {
-      // Missing config: captured at registration time from the env.
+      // Missing config: resolved per call through the shared layered resolver.
       const missing = await captureHandlers(makeEngine(async () => emptyEnvelope([]))).ans_chat({ message: "hi" });
       assert(missing?.isError === true, "ans_chat missing LLM config: isError true");
+      // #300: the report names BOTH ways in — env and a config file — so a
+      // host that wrote a TOML knows where to look.
       assert(
-        String(missing?.content?.[0]?.text) === "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars.",
-        "ans_chat missing LLM config: actionable copy kept",
+        String(missing?.content?.[0]?.text) ===
+          "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
+          "or write provider/model in ~/.anysearch-cli/config.toml (user) or .anysearch/config.toml (project).",
+        "ans_chat missing LLM config: names env and both config files",
       );
       assert(missing?.structuredContent === undefined, "ans_chat missing LLM config: no structuredContent");
 

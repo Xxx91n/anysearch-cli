@@ -17,6 +17,12 @@ import {
   type LlmSession,
   type LlmSessionOptions,
 } from "@anysearch-cli/kernel";
+// #300: the config resolver is a seam so tests can point it at a temp
+// home/cwd instead of the operator's real ones. Production uses the shared
+// store resolver unchanged.
+import { resolveLlmConfig, type ResolvedLlmConfig, type ResolveLlmOpts } from "@anysearch-cli/store";
+
+export type LlmConfigResolver = (opts?: ResolveLlmOpts) => ResolvedLlmConfig;
 
 /** One ans_chat LLM client slot plus its credential-rotation tiebreaker. */
 export interface AnsChatCacheEntry {
@@ -39,10 +45,13 @@ export interface McpToolState {
   /** Lazy LLM client cache keyed by wire-affecting config; clients only. */
   readonly ansChatSessionCache: Map<string, AnsChatCacheEntry>;
   readonly createAnsChatSession: AnsChatSessionFactory;
+  /** #300: layered model-config resolver; injectable to isolate test home/cwd. */
+  readonly resolveLlmConfig: LlmConfigResolver;
 }
 
 export interface McpToolStateOverrides {
   createAnsChatSession?: AnsChatSessionFactory;
+  resolveLlmConfig?: LlmConfigResolver;
 }
 
 /** Build one process-level tool state; omit overrides in production. */
@@ -50,5 +59,6 @@ export function createMcpToolState(overrides: McpToolStateOverrides = {}): McpTo
   return {
     ansChatSessionCache: new Map(),
     createAnsChatSession: overrides.createAnsChatSession ?? createKernelLlmSession,
+    resolveLlmConfig: overrides.resolveLlmConfig ?? resolveLlmConfig,
   };
 }

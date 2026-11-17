@@ -1,0 +1,219 @@
+// #300 acceptance — CLI and MCP read model config by the same rules.
+//
+// These tests drive the real ans_chat handler through an injected tool state:
+//   - resolveLlmConfig is the SHARED store resolver, pointed at a temp home/cwd
+//     so no operator file is touched (#322). This is exactly what production
+//     uses; only the two directory roots differ.
+//   - createAnsChatSession records the LlmSessionOptions it receives, so the
+//     assertions see the config the tool actually handed to the kernel rather
+//     than a copy of the resolver logic.
+//
+// Covered: user TOML, project TOML override, env override, visible per-field
+// sources, missing-config report, malformed-TOML report, and the project
+// whitelist / provider-secret binding guard. Offline, no network, no build.
+
+import type { McpServer } from "@modelcontextprotocol/server";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
+import { resolveLlmConfig } from "@anysearch-cli/store";
+import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
+import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let passed = 0;
+let failed = 0;
+function assert(cond: boolean, msg: string) {
+  if (cond) passed++;
+  else { failed++; console.error("FAIL: " + msg); }
+}
+
+const fakeSpan = {
+  traceId: "t", spanId: "s", addEvent: () => {}, setAttributes: () => {},
+  startSpan: async (_o: any, cb: any) => cb(fakeSpan), finish: () => {},
+};
+
+const ENV_KEYS = [
+  "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API",
+  "ANS_LLM_API_KEY", "ANS_LLM_CONTEXT_WINDOW", "ANS_DB_PATH", "ANS_PI_SESSION_DIR",
+];
+
+/** A temp home/cwd pair, each with an isolated config root. */
+function fixture(userToml?: string, projectToml?: string) {
+  const home = mkdtempSync(join(tmpdir(), "ans-300-home-"));
+  const cwd = mkdtempSync(join(tmpdir(), "ans-300-proj-"));
+  // #322: chat runs write PI records + a DB; keep both off the operator's home.
+  process.env.ANS_PI_SESSION_DIR = join(cwd, "pi-sessions");
+  process.env.ANS_DB_PATH = join(cwd, "anysearch.db");
+  if (userToml !== undefined) {
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    writeFileSync(join(home, ".anysearch-cli", "config.toml"), userToml);
+  }
+  if (projectToml !== undefined) {
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "config.toml"), projectToml);
+  }
+  const warnings: string[] = [];
+  return { home, cwd, warnings };
+}
+
+type SessionOpts = {
+  provider: string; model: string; baseUrl?: string;
+  api?: string; apiKey?: string; contextWindow?: number;
+};
+
+/** Build a handler plus a recorder of the LlmSessionOptions it constructs. */
+function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
+  const seen: SessionOpts[] = [];
+  const factory: AnsChatSessionFactory = async (opts) => {
+    seen.push({ ...opts });
+    // Faux pi-ai core: a well-formed session the runtime actually drives, so a
+    // call completes quickly instead of hanging or erroring on a wrong shape.
+    const core = createFauxCore({ provider: opts.provider, models: [{ id: opts.model }] });
+    // A few responses in hand: the runtime may make more than one model call
+    // (summary/re-judge). Match the shared-cache suite instead of starving it.
+    core.setResponses(Array.from({ length: 8 }, () => () => fauxAssistantMessage(fauxText("pong"))));
+    return {
+      model: core.getModel(), streamFn: core.streamSimple, models: core,
+      providerName: opts.provider, modelName: opts.model, apiKey: opts.apiKey,
+      contextWindow: opts.contextWindow,
+    } as any;
+  };
+  const state = createMcpToolState({
+    createAnsChatSession: factory,
+    // The production resolver with injected roots — no env leakage from the
+    // operator shell, so each case is fully controlled by `env` + TOML files.
+    resolveLlmConfig: (opts = {}) => resolveLlmConfig({
+      home: fix.home, cwd: fix.cwd, env,
+      warn: (m) => fix.warnings.push(m),
+      ...opts,
+    }),
+  });
+  const engine = {
+    retriever: { search: async () => ({ results: [], answers: [], metadata: {} }) },
+    observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+  } as unknown as CompositionResult;
+  let handler: ((args: unknown) => Promise<any>) | undefined;
+  const server = {
+    registerTool: (name: string, _cfg: unknown, fn: (args: unknown) => Promise<any>) => {
+      if (name === "ans_chat") handler = fn;
+    },
+  } as unknown as McpServer;
+  registerAnsChat(server, engine, state);
+  if (!handler) throw new Error("ans_chat handler not registered");
+  return { call: (message = "hi") => handler!({ message }), seen };
+}
+
+function textOf(result: any): string {
+  return (result?.content ?? []).map((b: any) => b.text).join("\n");
+}
+
+async function main() {
+  const saved: Record<string, string | undefined> = {};
+  for (const k of ENV_KEYS) { saved[k] = process.env[k]; delete process.env[k]; }
+  try {
+    // 1. user TOML alone reaches MCP (the #300 gap: independent MCP saw only env)
+    {
+      const fix = fixture('[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n');
+      const h = harness(fix);
+      await h.call();
+      assert(h.seen.length === 1, "user TOML: one session was built");
+      assert(h.seen[0]?.provider === "anthropic", "user TOML: provider was read by MCP");
+      assert(h.seen[0]?.model === "claude-sonnet-4-6", "user TOML: model was read by MCP");
+    }
+
+    // 2. project TOML overrides user, same as the CLI
+    {
+      const fix = fixture(
+        '[llm]\nprovider = "anthropic"\nmodel = "claude-haiku-4-5"\n',
+        '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n',
+      );
+      const h = harness(fix);
+      await h.call();
+      assert(h.seen[0]?.provider === "google", "project TOML overrides user provider on MCP");
+      assert(h.seen[0]?.model === "gemini-2.5-flash", "project TOML overrides user model on MCP");
+    }
+
+    // 3. env overrides both; sources report WHERE each value came from
+    {
+      const fix = fixture(
+        '[llm]\nprovider = "anthropic"\nmodel = "claude-haiku-4-5"\n',
+        '[llm]\nprovider = "google"\n',
+      );
+      const cfg = resolveLlmConfig({ home: fix.home, cwd: fix.cwd,
+        env: { ANS_LLM_MODEL: "gpt-5-mini" }, warn: (m) => fix.warnings.push(m) });
+      assert(cfg.provider === "google" && cfg.sources.provider === "project",
+        "sources: provider labeled project");
+      assert(cfg.model === "gpt-5-mini" && cfg.sources.model === "env",
+        "sources: model labeled env");
+      const h = harness(fix, { ANS_LLM_MODEL: "gpt-5-mini" });
+      await h.call();
+      assert(h.seen[0]?.provider === "google" && h.seen[0]?.model === "gpt-5-mini",
+        "env override of project file reaches the MCP session");
+    }
+
+    // 4. missing model config is an error, not a successful-looking chat
+    {
+      const fix = fixture();
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "missing config: isError true");
+      assert(textOf(res).includes("LLM not configured"), "missing config: actionable report kept");
+      assert(h.seen.length === 0, "missing config: no LLM session was built");
+    }
+
+    // 5. a malformed TOML is reported, never treated as "model connected"
+    {
+      const fix = fixture("[llm\nprovider = broken");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML: isError true, not silently connected");
+      assert(fix.warnings.some((w) => w.includes("TOML parse failed")),
+        "bad TOML: the parse failure was reported on stderr channel");
+      assert(h.seen.length === 0, "bad TOML: no LLM session was built");
+    }
+
+    // 6. project whitelist: a repo cannot redirect endpoint/protocol/secret
+    {
+      const fix = fixture(undefined,
+        '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' +
+        'base_url = "https://evil.example/v1"\napi = "chat"\n' +
+        'api_key = "sk-plaintext"\nenv_key = "MY_KEY"\n');
+      const h = harness(fix, { MY_KEY: "sk-secret" });
+      await h.call();
+      assert(h.seen[0]?.baseUrl === undefined, "whitelist: project base_url dropped");
+      assert(h.seen[0]?.api === undefined, "whitelist: project api dropped");
+      assert(h.seen[0]?.apiKey === undefined, "whitelist: project secret source dropped");
+    }
+
+    // 7. provider binding: a project picking another provider cannot reuse the
+    //    user file's secret that was bound to a different provider.
+    {
+      const fix = fixture(
+        '[llm]\nprovider = "anthropic"\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+        '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n',
+      );
+      const h = harness(fix, { ANTHROPIC_API_KEY: "sk-ant" });
+      await h.call();
+      assert(h.seen[0]?.provider === "openai", "binding: project provider wins");
+      // custom endpoint not set, so apiKey is not passed to buildSession —
+      // assert the guard at the resolver instead (same shared rules).
+      const cfg = resolveLlmConfig({ home: fix.home, cwd: fix.cwd,
+        env: { ANTHROPIC_API_KEY: "sk-ant" }, warn: (m) => fix.warnings.push(m) });
+      assert(cfg.apiKey === undefined, "binding: cross-provider secret blocked by shared resolver");
+      assert(fix.warnings.some((w) => w.includes("refusing to send that secret")),
+        "binding: refusal was reported");
+    }
+  } finally {
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+
+  console.log("--- mcp config-resolution tests (#300): " + passed + " passed, " + failed + " failed ---");
+  if (failed > 0) process.exit(1);
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });

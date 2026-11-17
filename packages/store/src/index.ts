@@ -1,4 +1,7 @@
 // @anysearch-cli/store: session store + domain schema
+// #300: the shared LLM config resolver lives here so CLI and MCP read model
+// settings through one set of rules (layers, whitelist, secret binding, sources).
+export * from "./config-llm";
 export * from "./domain-schema";
 export * from "./session-store";
 export * from "./budget-ledger";

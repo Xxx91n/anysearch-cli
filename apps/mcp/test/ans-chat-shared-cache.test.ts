@@ -397,9 +397,11 @@ async function main() {
         a.ansChatSessionCache !== b.ansChatSessionCache,
         "default state: each instance gets a fresh cache (direct registrations stay isolated)",
       );
+      // #300: resolveLlmConfig joins as a third process-level dependency —
+      // still no conversation/handle/anchor/budget state on this object.
       assert(
-        Object.keys(a).sort().join(",") === "ansChatSessionCache,createAnsChatSession",
-        "shared state: holds the LLM client cache and its factory only — no conversation/handle/anchor/budget state",
+        Object.keys(a).sort().join(",") === "ansChatSessionCache,createAnsChatSession,resolveLlmConfig",
+        "shared state: holds only the LLM client cache, its factory and the config resolver — no conversation/handle/anchor/budget state",
       );
     }
 
