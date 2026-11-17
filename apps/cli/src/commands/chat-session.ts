@@ -41,14 +41,10 @@ export function parseChatOptions(args: string[]): ChatOptions {
 }
 
 /**
- * Pick the conversation this run belongs to, and refuse one whose record cannot
- * be used.
+ * 选出这次要续的会话；记录不能用就拒绝。
  *
- * The record judgment is passed in as a function so this stays a pure decision:
- * the caller owns the filesystem. A broken record is refused with its own
- * sentence — the line number, the format version, the identity mismatch — so
- * the user can tell "the file is damaged" from "this handle never had a record"
- * and neither is mistaken for a fresh conversation.
+ * 读记录是传进来的函数，所以这里不碰文件系统。拒绝时把原因带上：坏了第几行、
+ * 格式比本版新、还是身份对不上。坏了和从来没有，是两句话，都不会被当成新对话。
  */
 export function selectChatSession(store: SessionStorePort, options: ChatOptions, projectRoot: string | null, readRecord: (id: string) => PiSessionRecordVerdict): string | undefined {
   if (options.continueLatest) {
@@ -70,14 +66,10 @@ export function selectChatSession(store: SessionStorePort, options: ChatOptions,
 }
 
 /**
- * One line of `ans chat --list`.
+ * `ans chat --list` 的一行。
  *
- * Every conversation the store knows is listed, including the ones whose record
- * cannot be opened: a user needs to see that the conversation exists and what is
- * wrong with it, so they can inspect or repair it by hand. The reason comes from
- * the verdict, so a broken middle line, a newer format and a mismatched identity
- * each read differently. A record problem never removes the row — one bad file
- * must not make the list look like the conversation never existed.
+ * 有问题的会话照样列出，后面写清是哪一种问题，方便自己去查或手工处理。
+ * 一条坏记录不会让整张表失败，也不会让这一行消失。
  */
 export function formatChatListLine(
   entry: { id: string; updatedAt?: string; isCompleted?: number | boolean | null },
@@ -97,31 +89,19 @@ export function formatChatListLine(
 }
 
 /**
- * The one reader both `ans chat --list` and `ans chat --session/--continue` use.
+ * 列表和续聊共用的读记录函数。
  *
- * The store and the record directory disagree on what a conversation is called:
- * the store speaks its own session id, the record directory speaks PI handles.
- * Mapping the id here, once, is what keeps the list and a resume talking about
- * the same file — a caller that passed a raw store id would make every row read
- * "没有对话记录" while a resume of the same id worked (#316).
+ * 存储用的是自己的会话 id，记录目录用的是 PI 句柄。id 在这里转一次，两条路才在说同一份文件。
  */
 export function chatRecordReader(sessionDir: string): (storeSessionId: string) => PiSessionRecordVerdict {
   const verdictsByHandle = sessionVerdictsForDir(sessionDir);
   return (storeSessionId: string) => verdictsByHandle(piSessionKey(storeSessionId));
 }
 
-/**
- * Every line `ans chat --list` prints, from a session dir and a list of rows.
- *
- * The rendering is here rather than in the command so the reader BELOW and the
- * rows it feeds are exercised together: a test can hand in a real directory and
- * real rows, and any break in the id→handle mapping shows up as a wrong line
- * instead of passing because the test rebuilt the mapping itself (#316).
- */
+/** `ans chat --list` 的全部行，每行一个会话。 */
 export function formatChatList(
-  sessionDir: string,
+  readRecord: (storeSessionId: string) => PiSessionRecordVerdict,
   entries: ReadonlyArray<{ id: string; updatedAt?: string; isCompleted?: number | boolean | null }>,
 ): string[] {
-  const readRecord = chatRecordReader(sessionDir);
   return entries.map((entry) => formatChatListLine(entry, readRecord));
 }

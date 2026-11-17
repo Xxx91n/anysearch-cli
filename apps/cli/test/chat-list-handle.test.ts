@@ -1,13 +1,7 @@
-// The session list and a resume must agree about the same store row (#316).
+// 列表和续聊必须对同一行会话给出同样的判决。
 //
-// The store speaks in its own session id; the record directory speaks in PI
-// handles (`piSessionKey(id)`). A path that forgets that mapping reports "没有对话记录"
-// for every row while a resume of the same id works fine — and an earlier
-// version of this ticket shipped exactly that.
-//
-// This file therefore calls the PRODUCTION reader (`chatRecordReader`) instead
-// of rebuilding the mapping locally. A test that rebuilt it would stay green
-// while the product broke, which is how the bug survived one round already.
+// 存储用自己的会话 id，记录目录用 PI 句柄。测试直接调产品里的 chatRecordReader，
+// 不在测试里自己拼映射——自己拼的话，产品坏了测试还是绿的。
 //
 // Run: pnpm --filter @anysearch-cli/cli run test
 
@@ -123,7 +117,7 @@ test("the whole --list rendering agrees with what a resume would decide", () => 
     { id: "chat-session-dup", updatedAt: "2026-01-05T00:00:00Z", isCompleted: 1 },
     { id: "chat-session-never-ran", updatedAt: "2026-01-06T00:00:00Z", isCompleted: 0 },
   ];
-  const lines = formatChatList(dir, rows);
+  const lines = formatChatList(chatRecordReader(dir), rows);
   assert.equal(lines.length, rows.length, "one line per conversation, none dropped");
 
   const [healthy, broken, torn, dup, neverRan] = lines as [string, string, string, string, string];

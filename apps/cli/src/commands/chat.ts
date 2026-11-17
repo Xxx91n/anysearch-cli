@@ -87,25 +87,23 @@ export async function runChat(argv: string[]): Promise<number> {
   try {
     // PI owns full transcripts. A store row alone may only be a search or a
     // memory anchor, and is not proof that a conversation can be resumed.
-    //
-    // Design: ONE directory scan for the whole process, and ONE place maps the
-    // store id to its PI handle. The list needs many verdicts and a resume needs
-    // one; scanning per row would make the list quadratic, and mapping per call
-    // site is how the two stop talking about the same file (#316).
-    const readRecord = chatRecordReader(resolvePiSessionDir());
+    // The reader scans the record directory once and maps store ids to PI
+    // handles in one place, so the list and a resume judge the same file.
+    // Neither branch creates it twice: a brand-new chat needs no scan.
     if (options.list) {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
       const root = options.unassigned ? null : project.root;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
-      // A damaged row is still listed: the user may want to inspect or repair it
-      // by hand, and one bad file must not fail the whole list.
-      for (const line of formatChatList(resolvePiSessionDir(), store.listChatSessions(root))) {
+      // A damaged row is still listed, with what is wrong with it: the user may
+      // want to inspect or repair that file by hand.
+      const readRecord = chatRecordReader(resolvePiSessionDir());
+      for (const line of formatChatList(readRecord, store.listChatSessions(root))) {
         console.log(line);
       }
       return 0;
     }
-    requestedSessionId = selectChatSession(store, options, project.root, readRecord);
+    requestedSessionId = selectChatSession(store, options, project.root, chatRecordReader(resolvePiSessionDir()));
     if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
   } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
 

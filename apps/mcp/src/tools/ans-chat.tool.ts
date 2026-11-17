@@ -48,6 +48,7 @@ import {
   buildAnsChatResult,
   resolveAnsChatSession,
   isValidSessionHandle,
+  classifyContinuation,
 } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
@@ -405,23 +406,21 @@ export function registerAnsChat(
           // An already tracked chat must never silently create a fresh record.
           const previousChat = typeof requestedSessionId === "string"
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
-          // A record that exists but is damaged still counts as "this session
-          // has a transcript": treating it as absent would quietly mint a fresh
-          // empty conversation under the same handle (#316). The runtime judges
-          // the file again under its lock and refuses it with the exact reason.
+          // "This handle has no record" and "I cannot tell what it has" are
+          // different answers. Treating the second as the first would let an
+          // unregistered handle answer from an empty in-memory session while a
+          // real record sits on disk. Only a stated absence starts fresh.
           const recordLookup = isValidSessionHandle(requestedSessionId)
             ? lookupPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId))
             : undefined;
-          const hasPreviousRecord = !!recordLookup?.path;
-          // Design: only a tracked chat or an existing PI record makes this a
-          // continuation. A session row that has neither is an old database
+          const continuation = classifyContinuation(recordLookup, !!previousChat?.chatTracked);
+          if (continuation.block) return toolFailure(continuation.block);
+          // Only a tracked chat or an existing PI record makes this a
+          // continuation. A session row with neither is an old database
           // conversation whose transcript lives in the research store, and
           // #265's recovery path answers it — `summary-rebuild-mcp.test.ts`
-          // seeds exactly that shape and requires it to work. Refusing it as
-          // "no record" would break the recovery this build already ships.
-          // (CodeRabbit's #314 suggestion to treat every `sessions` row as
-          // resumable was rejected for this reason.)
-          const mustResume = !!previousChat?.chatTracked || hasPreviousRecord;
+          // seeds exactly that shape and requires it to work.
+          const mustResume = continuation.mustResume;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.

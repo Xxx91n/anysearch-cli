@@ -24,6 +24,7 @@ import { PiAgentRuntime, type CompositionResult } from "@anysearch-cli/kernel";
 import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
 import {
   buildAnsChatResult,
+  classifyContinuation,
   isValidSessionHandle,
   resetAnsChatSessionWarnings,
   resolveAnsChatSession,
@@ -333,6 +334,47 @@ async function main() {
       store.close();
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
     }
+  }
+
+  // ---------- 续聊的判定：没有记录和非没有记录是两件事 ----------
+  // 「看不出有什么」如果被当成「没有记录」，一个还没登记的句柄就会在空内存里回答，
+  // 而磁盘上其实有它的记录。这几种输入必须给出不同的答案。
+  {
+    // 明确没有记录：允许新起一段。
+    const fresh = classifyContinuation({ verdict: { ok: false, problem: "missing", message: "没有这段会话的对话记录" } }, false);
+    assert(fresh.mustResume === false && !fresh.block,
+      "no record: a fresh conversation is allowed");
+
+    // 目录读不出来：不能当成没有记录。
+    const unreadableDir = classifyContinuation(
+      { verdict: { ok: false, problem: "unreadable", message: "会话记录目录读不出来" } }, false);
+    assert(!!unreadableDir.block,
+      "unreadable directory must not silently start a fresh conversation (got " + JSON.stringify(unreadableDir) + ")");
+    assert(unreadableDir.block!.includes("本次没有发送问题"),
+      "the refusal says nothing was sent");
+
+    // 同一句柄有多份记录：一样不算没有记录。
+    const dup = classifyContinuation(
+      { verdict: { ok: false, problem: "ambiguous", message: "同一个会话有多份对话记录，要人工核对是哪一份" } }, false);
+    assert(!!dup.block, "an ambiguous handle must not start fresh");
+
+    // 坏记录但有路径：交给运行时在锁内再判，不在这里拦。
+    const damaged = classifyContinuation(
+      { path: "C:/sessions/x_ans-1.jsonl", verdict: { ok: false, problem: "bad-line", message: "第 3 行坏了" } }, false);
+    assert(damaged.mustResume === true && !damaged.block,
+      "a damaged record with a path is a continuation, judged again under the run lock");
+
+    // 健康记录：续聊。
+    const healthy = classifyContinuation({ path: "C:/sessions/x_ans-1.jsonl", verdict: { ok: true } }, false);
+    assert(healthy.mustResume === true && !healthy.block, "a healthy record resumes");
+
+    // 没有句柄可查，但库里有登记：仍然是续聊。
+    const tracked = classifyContinuation(undefined, true);
+    assert(tracked.mustResume === true && !tracked.block, "a tracked chat resumes even with no record lookup");
+
+    // 既没登记也没记录：新对话。
+    const untracked = classifyContinuation(undefined, false);
+    assert(untracked.mustResume === false && !untracked.block, "no handle, no row: a new conversation");
   }
 
   console.log("--- ans_chat session tests: " + passed + " passed, " + failed + " failed ---");

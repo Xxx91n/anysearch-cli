@@ -241,19 +241,11 @@ function idFromFileName(path: string): string {
 }
 
 /**
- * How many raw bytes the unfinished last line occupies.
+ * 最后一行没写完的部分占多少字节。
  *
- * This must be counted on the FILE, not on the decoded text. An append killed in
- * the middle of a multi-byte character decodes that partial character to U+FFFD,
- * and re-encoding the decoded string gives 3 bytes for a fragment that really
- * holds 1 or 2. Cutting the larger number slices into the PREVIOUS complete
- * line's terminating newline, so the next read would treat that whole complete
- * line as the new torn tail and drop a real turn — data loss from a repair that
- * was supposed to save the file.
- *
- * The fragment is everything after the last 0x0A, so its length is the bytes
- * after that offset. Undefined means the file has no newline at all, which the
- * caller treats as unreadable rather than guessing.
+ * 按文件原始字节算，不按解码后的文字算：一个汉字被切成一半时，解码会变成替换字符，
+ * 再编码就多出一两个字节，切下去会把上一行的换行符也削掉，下轮就丢一条真消息。
+ * 片段就是最后一个换行符之后的内容；整个文件没有换行符时返回 undefined，由调用方拒绝。
  */
 function tornTailBytes(raw: Buffer): number | undefined {
   const lastNewline = raw.lastIndexOf(0x0a);
