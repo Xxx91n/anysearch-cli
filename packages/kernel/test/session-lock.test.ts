@@ -2,7 +2,7 @@
 //
 // The lock's own rules, verified without spawning MCP servers:
 //   L1 defaults and bounds — the engineering values are the production ones
-//      (10 min stale, 120 s wait) and the heartbeat cadence is clamped;
+//      (10 min stale, no automatic wait) and the heartbeat cadence is clamped;
 //   L2 mutual exclusion in one process, plus busy after the wait cap;
 //   L3 a live local owner is never reclaimed, however old its heartbeat is;
 //   L4 a confirmed-dead local owner is reclaimed at once — no ten-minute wait;
@@ -131,7 +131,7 @@ async function main() {
     // ---------- L1: engineering values are the production ones ----------
     {
       assert(SESSION_LOCK_STALE_MS === 10 * 60_000, "L1: stale window defaults to 10 minutes");
-      assert(SESSION_LOCK_WAIT_MS === 120_000, "L1: same-session wait cap defaults to 120 seconds");
+      assert(SESSION_LOCK_WAIT_MS === 0, "L1: same-session collisions do not wait by default");
       assert(heartbeatIntervalMs(SESSION_LOCK_STALE_MS) === 5_000,
         "L1: production heartbeat cadence is the 5 s cap");
       assert(heartbeatIntervalMs(3_000) === 1_000, "L1: heartbeat follows stale/3 in the open interval");
@@ -358,6 +358,17 @@ async function main() {
       const first = drain(runtime1.run("W2-A-QUESTION"));
       // Give the first run a moment to take its slot before contending.
       await new Promise((r) => setTimeout(r, 200));
+      const immediate = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: slowProvider("W2-DEFAULT", 50) as any,
+        sessionId: "w2-session",
+        getApiKey: async () => "probe-key",
+      });
+      const before = Date.now();
+      const refused = await drain(immediate.run("W2-DEFAULT-QUESTION"));
+      assert(refused.some(e => e.type === "error" && e.message === SESSION_BUSY_MESSAGE),
+        "W2/#317: the same-process runtime refuses by default");
+      assert(Date.now() - before < 300, "W2/#317: the default refusal does not queue");
       const events = await drain(runtime2.run("W2-B-QUESTION"));
       const busyEvent = events.find((e) => e.type === "error");
       assert(busyEvent?.message === SESSION_BUSY_MESSAGE,

@@ -372,7 +372,7 @@ export interface PiAgentRuntimeOptions {
    * Cross-process session lock windows (#266). `staleMs` is how long a lock
    * whose owner cannot be confirmed stays protected (default 10 min);
    * `waitMs` is the same-session wait cap before the run fails with
-   * "session busy" (default 120 s). Parsed from ANS_PI_LOCK_STALE_MS /
+   * "session busy" (default 0: immediate refusal). Parsed from ANS_PI_LOCK_STALE_MS /
    * ANS_PI_LOCK_TIMEOUT_MS by piSessionOptions.
    */
   sessionLock?: SessionLockWindows;
@@ -531,6 +531,7 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
 const sessionQueues = new Map<string, Promise<void>>();
 
 async function acquireSessionQueue(key: string, deadlineAt: number, signal?: AbortSignal): Promise<() => void> {
+  if (sessionQueues.has(key) && Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
   const previous = sessionQueues.get(key) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
@@ -557,6 +558,7 @@ async function acquireSessionQueue(key: string, deadlineAt: number, signal?: Abo
     // of hanging on one nobody will ever release; the abandoned request runs
     // nothing, so there is nothing to interleave.
     release();
+    void tail.then(() => { if (sessionQueues.get(key) === tail) sessionQueues.delete(key); });
     throw e;
   } finally {
     clearTimeout(timer);
@@ -734,11 +736,10 @@ export class PiAgentRuntime {
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
-    // Design: the queue and the file lock share one deadline — a same-session
-    // caller must hit the same 120 s cap whether the current run is in this
-    // process or another one, and splitting the budget would let a caller wait
-    // twice as long for the same "session busy" answer. Both waits surface as
-    // an error event, like every other run failure.
+    // Design: the queue and file lock share one deadline — the default is an
+    // immediate refusal in either process. An explicit wait cap must not be
+    // spent twice, once on the queue and again on the file lock. Both paths
+    // surface contention as an error event, like every other run failure.
     const windows = resolveSessionLockWindows(this.opts.sessionLock);
     const deadlineAt = Date.now() + windows.waitMs;
     let releaseQueue: () => void = () => {};
@@ -751,7 +752,7 @@ export class PiAgentRuntime {
         // waits never add up past the cap.
         releaseLock = await acquireSessionLock(lockPath, {
           staleMs: windows.staleMs,
-          waitMs: Math.max(1, deadlineAt - Date.now()),
+          waitMs: Math.max(0, deadlineAt - Date.now()),
         });
       }
       yield* this.runInternal(input);

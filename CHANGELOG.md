@@ -1328,6 +1328,8 @@ T1 检查只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ## [Unreleased]
 
+- 会话撞车时，终端可选 fork 或等待；无终端立即失败。底层不再默认等两分钟，等待须由调用方明确要求。这是 #315/#317 对 #266 的决定调整。
+
 ### Added
 
 - (T-1 / F-15, round 58): evaluation has two grades. The merge gate (ship-gate step 7) only observes and never spends a pre-registered OF look (ANS_EVAL_NO_LOOK=1); decision grade moved to a new `release` workflow (pre-tag dispatch = the only formal look; post-tag only asserts the recorded verdict is still valid and spends nothing). The OF look ledger moved from the local `.ship-gate/eval-looks.json` to the git-tracked repo-root `eval-looks.json` (`anysearch/eval-looks@2`, append-only, 50-row compaction cap, pre-compaction SHA-256 preserved); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
