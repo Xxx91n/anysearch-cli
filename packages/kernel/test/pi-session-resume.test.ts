@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { parseContextWindow } from "../src/llm-init";
 import { piSessionKey, PiAgentRuntime } from "../src/pi-runtime";
+import { forkChatSession } from "../src/fork-session";
+import { findPiSessionRecord } from "../src/pi-session";
 import { accumulateUsage, emptyUsageTotals, toRunUsage } from "../src/usage";
 
 let passed = 0, failed = 0;
@@ -148,6 +150,28 @@ async function main() {
         "R1: each session handle gets its own record file");
       assert(piSessionKey(session.id) !== piSessionKey(other.id),
         "R1: the record key is derived from the handle, not shared");
+
+      // #317: a copy must actually resume through PI, not merely parse as JSON.
+      // Reuse this test's recorded turns and fake endpoint response.
+      const fork = await store.createSession("chat");
+      const originalFile = findPiSessionRecord(piDir, piSessionKey(session.id))!;
+      const originalBytes = readFileSync(originalFile);
+      forkChatSession(piDir, session.id, fork.id);
+      const forkProvider = provider("SECOND-ANSWER");
+      const forkRuntime = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: forkProvider.fn as any,
+        store, sessionId: fork.id, piSessionDir: piDir,
+        requirePiSessionRecord: true,
+        getApiKey: async () => "probe-key",
+      });
+      const forkEvents = await drain(forkRuntime.run("SECOND-QUESTION-MARKER"));
+      assert(forkEvents.some(e => e.type === "done"), "R1/#317: the forked conversation completes");
+      assert(textOf(forkProvider.calls[0]?.context).includes("FIRST-QUESTION-MARKER"),
+        "R1/#317: the fork restores the source's question in the actual provider request");
+      assert(readFileSync(originalFile).equals(originalBytes), "R1/#317: running the fork leaves the original byte-for-byte unchanged");
+      assert(findPiSessionRecord(piDir, piSessionKey(fork.id)) !== originalFile,
+        "R1/#317: the fork appends to its own record");
     }
 
     // ---------- R1b resume from a different working directory ----------
@@ -156,6 +180,9 @@ async function main() {
     // would then silently start a new conversation, which is exactly the
     // "restart lost my progress" failure this ticket is about.
     {
+      // This scenario owns its record directory; earlier forks must not change
+      // its assertion that two working directories keep one conversation file.
+      const piDir = join(workDir, "cwd-resume");
       const session = await store.createSession("chat");
       const firstProvider = provider("FIRST-ANSWER");
       const r1 = new PiAgentRuntime({
@@ -180,7 +207,7 @@ async function main() {
       assert(textOf(secondProvider.calls[0]?.context).includes("QUESTION-FROM-DIR-A"),
         "R1b: the same handle resumes its record when run from another directory");
       const files = readdirSync(piDir).filter((f) => f.endsWith(".jsonl"));
-      assert(files.length === 3,
+      assert(files.length === 1,
         "R1b: a new cwd does not create a second record for the same handle (files=" + files.length + ")");
     }
 

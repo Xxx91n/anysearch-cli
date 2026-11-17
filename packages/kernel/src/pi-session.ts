@@ -388,7 +388,7 @@ export function piCompactionFromEnv(env: NodeJS.ProcessEnv = process.env): { res
  * Cross-process session lock windows (#266). `ANS_PI_LOCK_STALE_MS` bounds how
  * long a lock whose owner this machine cannot confirm is kept (default
  * 10 min); `ANS_PI_LOCK_TIMEOUT_MS` is the same-session wait cap before the
- * run fails with "session busy" (default 120 s). Both exist so tests can
+ * run fails with "session busy" (default 0, no automatic wait). Both exist so tests can
  * observe expiry and recovery in seconds; an unparsable or non-positive value
  * keeps the default rather than silently becoming 0.
  */

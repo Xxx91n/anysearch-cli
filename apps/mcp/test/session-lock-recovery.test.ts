@@ -552,7 +552,7 @@ async function main() {
       const root = join(base, "c3");
       const env = {
         ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl,
-        ANS_PI_LOCK_TIMEOUT_MS: "3000", // test value; production keeps 120 s
+        ANS_PI_LOCK_TIMEOUT_MS: "3000", // explicit test wait; production no longer waits by default (#317)
       };
       const a = startMcp(env); await a.init();
       const b = startMcp(env); await b.init();
