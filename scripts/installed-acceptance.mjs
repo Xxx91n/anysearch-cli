@@ -1003,8 +1003,7 @@ async function main() {
 
       const callsBeforeMissingRecord = requestLog.length;
       const noRecord = await chatCli(["--session", "older-session", "FIRST-TURN-QUESTION"], projectA, "probe", { ANS_DB_PATH: legacyPath });
-      // #316: the refusal now names the problem instead of the old yes/no
-      // phrase. A tracked row whose record is gone reads as "no record".
+      // 拒绝的话已改成说清原因。库里有这行、记录没了，就是「没有对话记录」。
       check(noRecord.code !== 0 && noRecord.out.includes("没有这段会话的对话记录") && requestLog.length === callsBeforeMissingRecord,
         "没有对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
 

@@ -400,16 +400,9 @@ export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVe
   return true;
 }
 
-/**
- * Turn one claim into a verdict, without reading the file when the claim already
- * refutes it. This is the ONE place the claim becomes a sentence, so the resume
- * path and the session list cannot disagree about the same directory.
- */
+/** 把扫描结论变成判决。判决只在这里拼，列表和续聊说的是同一句话。 */
 function verdictFromClaim(claim: PiSessionRecordClaim, key: string): PiSessionRecordLookup {
-  // Design: the sentence does not repeat `key`. It is a hashed handle, not
-  // something a person can act on, and every caller already shows the session id
-  // it asked about. The useful part is what is wrong and — for a damaged file —
-  // which path to look at.
+  // 句子里不带 key：那是哈希出来的句柄，人看不懂也用不上，调用方已经显示了会话 id。
   if (claim.kind === "absent") {
     return { verdict: refuse("missing", "没有这段会话的对话记录") };
   }
