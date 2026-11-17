@@ -151,6 +151,14 @@ export async function runChat(argv: string[]): Promise<number> {
   if (memory.sessionId) console.log("[session] " + memory.sessionId);
   if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
+  // The attempt's lease and the runtime's run lock guard the same session, so
+  // they must read the SAME windows: an operator (or a test) shortening
+  // ANS_PI_LOCK_STALE_MS expects an abandoned lease to clear on that shorter
+  // window too, not on the production ten minutes.
+  const sessionWiring = piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey);
+  // Filled in when the attempt starts; the runtime's onRunStart reads it.
+  let startedAttempt: { markStarted(): void } | undefined;
+
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
@@ -177,8 +185,15 @@ export async function runChat(argv: string[]): Promise<number> {
     // PI owns the session record; key it by the same stable handle the store
     // uses so an explicit continuation restores the full conversation.
     // A store-less run has no resumable handle, so it stays in memory.
-    ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+    ...sessionWiring,
     requirePiSessionRecord: !!requestedSessionId,
+    // #299: the runtime names the exact moment the provider is reached. The
+    // attempt is recorded from there, so a request cancelled before its first
+    // token still counts as one that ran, while a request refused before the
+    // prompt (cancelled caller, exhausted budget) records nothing.
+    // The attempt context arrives when runChatAttempt starts, which is after
+    // this object is built, so it is read through this slot.
+    onRunStart: () => startedAttempt?.markStarted(),
   });
 
   // #299: the whole attempt runs under the lease, so its two chat_projects
@@ -192,7 +207,11 @@ export async function runChat(argv: string[]): Promise<number> {
       sessionId: memory.sessionId,
       projectRoot: attemptProject,
       piSessionDir: durableStore && memory.sessionId ? resolvePiSessionDir() : undefined,
+      // Same windows the run lock reads, so a shortened stale window applies to
+      // an abandoned lease too.
+      sessionLock: sessionWiring.sessionLock,
     }, async (attempt) => {
+      startedAttempt = attempt;
       console.log("ans chat: " + query);
       console.log("---");
 
@@ -205,31 +224,21 @@ export async function runChat(argv: string[]): Promise<number> {
         for await (const event of runtime.run(query)) {
           switch (event.type) {
             case "text":
-              // Answer text only exists once the provider was called, so this
-              // is a real "started" signal, not merely "the command launched".
-              attempt.markStarted();
               process.stdout.write(event.content);
               break;
             case "tool_call":
-              // The turn is really under way: a tool ran, so this attempt has
-              // state worth recording as unfinished if it stops here.
-              attempt.markStarted();
               console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
               break;
             case "tool_result":
               console.log("[result: " + event.name + "]");
               break;
             case "search":
-              attempt.markStarted();
               console.log("\n[search: " + event.query + "]");
               break;
             case "search_result":
               console.log("[search done]");
               break;
             case "done":
-              // A finished run certainly happened, even one that produced no
-              // text; record it so the row exists and ends up complete.
-              attempt.markStarted();
               completed = true;
               console.log("\n---");
               console.log(event.summary);

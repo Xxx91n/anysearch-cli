@@ -394,6 +394,17 @@ export interface PiAgentRuntimeOptions {
   // completion-shaped budget settlement. An already-aborted signal starts no
   // provider call and reserves no budget.
   signal?: AbortSignal;
+  /**
+   * Called once, immediately before the provider request is issued (#299).
+   *
+   * This is the precise "the run really started" moment: everything that can
+   * refuse a run — an already-cancelled caller, an exhausted budget, a missing
+   * session record — returns before it, and everything the caller sees as
+   * output (text, tool calls) happens after it. A caller that tracks an attempt
+   * needs exactly this boundary, because a request cancelled before the first
+   * token is still a request that ran and must be recorded as unfinished.
+   */
+  onRunStart?: () => void;
 }
 
 // pure event mapping extracted for tests — pi-ai's
@@ -1339,6 +1350,11 @@ export class PiAgentRuntime {
 
     let promptPromise: Promise<void> | null = null;
     try {
+      // #299: the run is about to reach the provider. Everything above could
+      // still refuse it (cancelled caller, budget, missing record); from here
+      // on it counts as an attempt that ran, even if it is cancelled before a
+      // single token arrives.
+      try { this.opts.onRunStart?.(); } catch { /* the caller's bookkeeping must not stop the run */ }
       // Start the session prompt in background. Prompt templates stay off: a
       // user message beginning with "/" is text, not a host command.
       promptPromise = session.prompt(input, { expandPromptTemplates: false }).catch((e: any) => {

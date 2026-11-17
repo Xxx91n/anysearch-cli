@@ -169,6 +169,52 @@ async function main() {
     assert(events.length === 0, "2: a pre-aborted run emits no events");
   }
 
+  // ---- 2b. #299: onRunStart fires when the provider is reached, not earlier ----
+  // The distinction this pins: a request cancelled before the prompt was
+  // reached records nothing, while one cancelled after it started records an
+  // attempt that ran. Greptile's #314 finding was exactly the second half —
+  // the old signal (first text event) missed a run cancelled mid-flight.
+  {
+    // Reached the provider, then cancelled: the hook fires. The stream is left
+    // stalled on purpose — onRunStart is what matters, not the tokens — and the
+    // abort below is what lets the run end.
+    const caller = new AbortController();
+    let started = 0;
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model,
+      streamFn: neverResolvingStream(() => { }),
+      signal: caller.signal,
+      onRunStart: () => { started++; },
+    });
+    const consumed = consume(runtime, "hello");
+    await waitFor(() => started === 1, "onRunStart to fire once the prompt is issued");
+    assert(started === 1, "2b: onRunStart fires for a run that reached the provider");
+    caller.abort("client cancelled");
+    await settleWithTimeout(consumed.done);
+    assert(started === 1, "2b: onRunStart fires exactly once, not again on cancellation");
+    assert(!consumed.events.some((e) => e.type === "done"),
+      "2b: a cancelled run still emits no completion summary");
+
+    // Never reached it: an already-aborted caller starts nothing, so the hook
+    // must stay silent — the row of a finished conversation is left alone.
+    const preAborted = new AbortController();
+    preAborted.abort("cancelled before run");
+    let startedEarly = 0;
+    const silentRuntime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model,
+      streamFn: neverResolvingStream(() => { }),
+      signal: preAborted.signal,
+      onRunStart: () => { startedEarly++; },
+    });
+    for await (const _ev of silentRuntime.run("hello")) { /* no events expected */ }
+    assert(startedEarly === 0,
+      "2b: a run refused before the prompt does not report a start");
+  }
+
   // ---- 3. Cancelled run skips completion writes and completion settlement ----
   {
     const caller = new AbortController();

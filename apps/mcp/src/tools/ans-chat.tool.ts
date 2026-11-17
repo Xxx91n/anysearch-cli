@@ -422,6 +422,12 @@ export function registerAnsChat(
           if (mustResume && (!memory.store || memory.sessionId !== requestedSessionId)) {
             return toolFailure("ans_chat: 会话恢复失败，本次没有发送问题。");
           }
+          // The attempt's lease and the runtime's run lock guard the same
+          // session, so they read the SAME windows: a shortened
+          // ANS_PI_LOCK_STALE_MS applies to an abandoned lease too.
+          const sessionWiring = piSessionOptions(memory.sessionId, session.apiKey);
+          // Filled in when the attempt starts; the runtime's onRunStart reads it.
+          let startedAttempt: { markStarted(): void } | undefined;
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
@@ -443,8 +449,14 @@ export function registerAnsChat(
             getApiKey: async () => session.apiKey,
             // PI's own session record resumes the conversation; the same handle
             // keys both the record and the SQLite anchors (#258).
-            ...piSessionOptions(memory.sessionId, session.apiKey),
+            ...sessionWiring,
             requirePiSessionRecord: mustResume,
+            // #299: record the attempt from the moment the provider is reached,
+            // not from the first token. A request cancelled before its first
+            // token still ran; one refused before the prompt (cancelled caller,
+            // exhausted budget) still records nothing. Read through this slot
+            // because the attempt context arrives after this object is built.
+            onRunStart: () => startedAttempt?.markStarted(),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -481,19 +493,16 @@ export function registerAnsChat(
               sessionId: memory.sessionId,
               projectRoot: attemptProject,
               piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
+              // Same windows the run lock reads (#299 review).
+              sessionLock: sessionWiring.sessionLock,
             }, async (attempt) => {
+              startedAttempt = attempt;
               for await (const event of runtime.run(chatMessage)) {
                 if (event.type === "text") {
-                  // The provider answered, so this attempt really ran.
-                  attempt.markStarted();
                   output += event.content;
                 } else if (event.type === "tool_call") {
-                  attempt.markStarted();
                   toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
                 } else if (event.type === "done") {
-                  // A finished run certainly happened, even one that produced
-                  // no text; record it so the row exists and ends up complete.
-                  attempt.markStarted();
                   completed = true;
                   output += "\n" + event.summary;
                   runUsage = event.usage ?? null;

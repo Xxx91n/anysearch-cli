@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS chat_projects (
   is_complete INTEGER NOT NULL CHECK (is_complete IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS idx_chat_projects_recent ON chat_projects(project_root, last_used);
+-- #299 review: recordChatProject keeps `last_used` strictly increasing by
+-- reading the table's maximum on every write. The index above starts with
+-- project_root, so it cannot answer a global MAX; without this one each chat
+-- turn scans the whole table twice while holding the write lock.
+CREATE INDEX IF NOT EXISTS idx_chat_projects_last_used ON chat_projects(last_used);
 
 -- Messages table: conversation entries within a session.
 CREATE TABLE IF NOT EXISTS messages (
