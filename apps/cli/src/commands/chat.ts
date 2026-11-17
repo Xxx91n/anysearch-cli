@@ -12,7 +12,7 @@ import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
-import { parseChatArgv, selectChatSession, formatChatListLine } from "./chat-session";
+import { parseChatArgv, selectChatSession, formatChatListLine, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 import { wireChatTaskBudget } from "./chat-task-budget";
 import { currentCliTask } from "../cli-task-context";
@@ -88,13 +88,11 @@ export async function runChat(argv: string[]): Promise<number> {
     // PI owns full transcripts. A store row alone may only be a search or a
     // memory anchor, and is not proof that a conversation can be resumed.
     //
-    // Design: ONE directory scan for the whole process. The list needs many
-    // verdicts and a resume needs one, and scanning per row would make the list
-    // quadratic. Both go through this dictionary, which keys by the PI handle —
-    // so the store id must be mapped here, in ONE place, or the two paths stop
-    // talking about the same file.
-    const verdictsByHandle = sessionVerdictsForDir(resolvePiSessionDir());
-    const readRecord = (id: string) => verdictsByHandle(piSessionKey(id));
+    // Design: ONE directory scan for the whole process, and ONE place maps the
+    // store id to its PI handle. The list needs many verdicts and a resume needs
+    // one; scanning per row would make the list quadratic, and mapping per call
+    // site is how the two stop talking about the same file (#316).
+    const readRecord = chatRecordReader(resolvePiSessionDir());
     if (options.list) {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");

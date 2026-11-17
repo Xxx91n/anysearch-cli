@@ -1,5 +1,5 @@
 import type { PiSessionRecordVerdict, SessionStorePort } from "@anysearch-cli/kernel";
-import { describePiSessionVerdict } from "@anysearch-cli/kernel";
+import { describePiSessionVerdict, piSessionKey, sessionVerdictsForDir } from "@anysearch-cli/kernel";
 import { parseLlmFlags } from "../config-llm";
 
 export interface ChatOptions {
@@ -94,4 +94,18 @@ export function formatChatListLine(
     note += "\t对话记录无法确认，请单独检查";
   }
   return entry.id + "\t" + entry.updatedAt + note;
+}
+
+/**
+ * The one reader both `ans chat --list` and `ans chat --session/--continue` use.
+ *
+ * The store and the record directory disagree on what a conversation is called:
+ * the store speaks its own session id, the record directory speaks PI handles.
+ * Mapping the id here, once, is what keeps the list and a resume talking about
+ * the same file — a caller that passed a raw store id would make every row read
+ * "没有对话记录" while a resume of the same id worked (#316).
+ */
+export function chatRecordReader(sessionDir: string): (storeSessionId: string) => PiSessionRecordVerdict {
+  const verdictsByHandle = sessionVerdictsForDir(sessionDir);
+  return (storeSessionId: string) => verdictsByHandle(piSessionKey(storeSessionId));
 }
