@@ -305,6 +305,52 @@ function sh(cmd, args, opts = {}) {
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
+/**
+ * 异步版 sh：同样的引号纪律，换成 spawn + 等待退出。
+ *
+ * 为什么要一个异步版：假模型端点就跑在当前进程里，spawnSync 会把整个事件
+ * 循环冻住——聊天子进程发来的模型请求永远等不到回答，这条验收只能等超时。
+ * 异步 spawn 让事件循环活着，端点照常应答。只有「要跟进程内端点说话的子进
+ * 程」需要走这条路；纯本地的命令（--version、consolidate）继续用同步 sh，
+ * 免去等待样板。
+ *
+ * 超时上限 240 秒，跟 MCP 车道同款：一轮真实（假端点的）对话不值得无限等，
+ * 卡住就是发现了问题，该红就红。
+ */
+async function shAsync(cmd, args, opts = {}) {
+  if (process.platform !== "win32") {
+    const r = await new Promise((resolve) => {
+      const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d.toString()));
+      child.stderr.on("data", (d) => (out += d.toString()));
+      const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
+      child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
+      child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+    });
+    return r;
+  }
+  // cmd.exe 的引号纪律与 sh() 完全一致（同款两坑：成对 %NAME% 拦下、参数一律
+  // 加引号），只是换成异步 spawn。
+  const EXPANDS = /%[^%]+%/;
+  if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
+    throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
+  }
+  const isPath = cmd.includes("/") || cmd.includes("\\");
+  const parts = [isPath ? '"' + cmd + '"' : cmd];
+  for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
+  const r = await new Promise((resolve) => {
+    const child = spawn(parts.join(" "), { ...opts, stdio: ["ignore", "pipe", "pipe"], shell: true });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.stderr.on("data", (d) => (out += d.toString()));
+    const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
+    child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+  });
+  return r;
+}
+
 function writeDomain(dir, name, body) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, name + ".toml"), body.join("\n") + "\n", "utf8");
@@ -408,6 +454,11 @@ async function main() {
     const runAns = process.platform === "win32"
       ? (args, opts = {}) => sh(process.execPath, [cliEntry, ...args], opts)
       : (args, opts = {}) => sh(ansBin, args, opts);
+    // 要跟模型端点说话的子进程必须走异步版：端点在本进程里，spawnSync 冻住
+    // 事件循环就没人应答了（见 shAsync 的注释）。C3 的两轮 chat 用它。
+    const runAnsAsync = process.platform === "win32"
+      ? (args, opts = {}) => shAsync(process.execPath, [cliEntry, ...args], opts)
+      : (args, opts = {}) => shAsync(ansBin, args, opts);
 
     // ================= A. 装出来的 CLI =================
     //
@@ -597,7 +648,7 @@ async function main() {
         ANS_DB_PATH: chatDb,
         ANS_SESSION_ID: "acc302-chat",
       };
-      const r1 = runAns(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      const r1 = await runAnsAsync(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r1.code === 0, "带预算域的 CLI chat 退出码 0", r1.out.slice(-500));
       check(/REPLY-TO-FIRST-TURN-QUESTION/.test(r1.out), "第一轮带回了模型的回答", r1.out.slice(-300));
       check(/\[task-budget\] this execution:/.test(r1.out), "收尾时报了这次执行自己的预算", r1.out.slice(-500));
@@ -605,7 +656,7 @@ async function main() {
         "同屏把会话历史账（累计）单独报出来，和本次执行的两行不混", r1.out.slice(-500));
 
       // 同一会话再来一轮：任务预算是新的，会话的账从头到尾没被 CLI 聊天碰过。
-      const r2 = runAns(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      const r2 = await runAnsAsync(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r2.code === 0, "同会话第二轮退出码 0（续聊不受历史额度牵制）", r2.out.slice(-500));
 
       const chatCheck = new Database(chatDb, { readonly: true });

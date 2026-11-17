@@ -74,6 +74,20 @@ function warnOnce(msg: string): void {
 }
 
 /**
+ * One registration write with the warning-not-blocker contract: a thrown write
+ * degrades to `undefined` (nothing registered) plus a named stderr line, so
+ * the command still runs — the same shape an un-openable registry produces.
+ */
+function tryRegister<T>(write: () => T, label: string): T | undefined {
+  try {
+    return write();
+  } catch (e: any) {
+    warnOnce(label + " failed (" + (e?.message || String(e)) + ") — continuing without " + label);
+    return undefined;
+  }
+}
+
+/**
  * Register this CLI invocation: a process record for the process, and — unless
  * the command is a process entry — a task record for the command's work.
  *
@@ -96,14 +110,27 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
     );
     return { endProcess: () => { /* nothing registered */ } };
   }
-  const processRecord: RegisteredProcess = registry.registerProcess({ entry: "cli" });
+  // #302: registration failures are warnings, not blockers — a broken registry
+  // must not stop `doctor` or any other command from running. That applies to
+  // the writes too, not only the open: a registry that opened but cannot write
+  // (a contended DB lock, a full disk) throws here, and the same degraded
+  // shape comes back — no task, no process record, the command runs on.
+  const processRecord: RegisteredProcess | undefined = tryRegister(
+    () => registry.registerProcess({ entry: "cli" }),
+    "process registration",
+  );
   let taskRecord: RegisteredTask | undefined;
   let identity: CliTaskIdentity | undefined;
   if (!PROCESS_ENTRY_COMMANDS.has(cmd)) {
     const kind = cliTaskKind(cmd);
     const role = cliTaskRole(cmd);
-    taskRecord = registry.registerTask({ kind, role, entry: "cli" });
-    identity = { taskId: taskRecord.taskId, kind, role, attachSession: (s) => taskRecord!.attachSession(s) };
+    taskRecord = tryRegister(
+      () => registry.registerTask({ kind, role, entry: "cli" }),
+      "task registration",
+    );
+    if (taskRecord) {
+      identity = { taskId: taskRecord.taskId, kind, role, attachSession: (s) => taskRecord!.attachSession(s) };
+    }
   }
   return {
     task: identity
@@ -120,7 +147,7 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
       : undefined,
     endProcess: (): void => {
       try {
-        processRecord.end();
+        processRecord?.end();
       } catch { /* already ended or the store closed first */ }
     },
   };

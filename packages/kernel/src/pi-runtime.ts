@@ -809,15 +809,17 @@ export class PiAgentRuntime {
     // (run unmetered), established (enforce), declared-but-failed (stop) — and
     // failing open here would turn a broken registry into an unmetered chat,
     // exactly the hole this ticket closes. No session work has happened yet at
-    // this point, so there is nothing to dispose or settle.
+    // this point, so there is nothing to dispose or settle; stopRunScope runs
+    // before the yield so a consumer that returns at the error event still
+    // leaves a closed scope behind.
     if (this.opts.taskBudgetFault) {
+      stopRunScope("task budget fault");
       yield {
         type: "error",
         message:
           "Task budget not established: " + this.opts.taskBudgetFault +
           ". The run was not started; no provider call was made.",
       };
-      stopRunScope("task budget fault");
       return;
     }
 
@@ -1301,6 +1303,13 @@ export class PiAgentRuntime {
               unownedHint = " Part of the reserved tokens is claimed by no owner row — likely a leftover from a pre-#275 build; start a new session to get a clean budget.";
             }
           } catch { /* read-only probe; omit the hint */ }
+          // Cleanup BEFORE the yield, same reason as the call-quota stop below:
+          // a consumer that returns at the error event never resumes code after
+          // the yield, and this branch sits before the main try/finally. The
+          // reservation was never taken here, so there is nothing to release —
+          // only the session needs disposing before the run is declared stopped.
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget rejected");
           yield {
             type: "error",
             message:
@@ -1311,8 +1320,6 @@ export class PiAgentRuntime {
               " cannot cover it. " +
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML)." + unownedHint,
           };
-          try { session.dispose(); } catch { /* already disposed */ }
-          stopRunScope("budget rejected");
           return;
         }
         tokenReserved = reserveAmount;
@@ -1397,17 +1404,24 @@ export class PiAgentRuntime {
       try {
         callReserved = billingLedger!.reserveCalls(billingId!, 1);
         if (!callReserved && taskBudget) {
+          // Cleanup BEFORE the yield: a consumer that stops reading at the
+          // error event (the CLI returns 1 on the first error) runs the
+          // generator's `.return()` path, and code after a yielded error in a
+          // not-yet-entered try region never executes. Releasing the token
+          // reservation and disposing the session first means the task's
+          // budget row and the PI session record are already whole when the
+          // consumer walks away.
+          // The token reservation taken above is released with zero spend —
+          // the run never started, so no provider call exists to settle.
+          settleTokenReserve(0);
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget rejected");
           yield {
             type: "error",
             message:
               "Call budget exhausted: this run needs 1 call reserved but the task's call quota is used up. " +
               "The run was not started; raise [budget] callCap and retry (the next run re-reads the domain TOML).",
           };
-          // The token reservation taken above is released with zero spend —
-          // the run never started, so no provider call exists to settle.
-          settleTokenReserve(0);
-          try { session.dispose(); } catch { /* already disposed */ }
-          stopRunScope("budget rejected");
           return;
         }
       } catch (e) {
