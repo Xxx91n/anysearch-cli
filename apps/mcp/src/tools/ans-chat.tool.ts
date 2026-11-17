@@ -399,6 +399,11 @@ export function registerAnsChat(
           const previousChat = typeof requestedSessionId === "string"
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
+          // Design: refuse a tracked continuation when wiring fails — #132's
+          // fail-open path would otherwise answer without its recorded history.
+          if (previousChat?.chatTracked && (!memory.store || memory.sessionId !== requestedSessionId)) {
+            return toolFailure("ans_chat: 会话恢复失败，本次没有发送问题。");
+          }
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
