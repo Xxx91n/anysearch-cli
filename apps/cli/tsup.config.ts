@@ -1,5 +1,7 @@
 import { defineConfig, type Options } from "tsup";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pluginBuildOptions } from "../plugin/tsup.config";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
@@ -18,6 +20,11 @@ const cli: Options & { noExternal: string[] } = {
   skipNodeModulesBundle: true,
   define: {
     __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+  },
+  esbuildOptions(options) {
+    // The plugin's public default export is its built CJS barrel. Product
+    // builds must resolve the source, even when that barrel is absent or old.
+    options.alias = { ...options.alias, "@anysearch-cli/plugin": resolve("../plugin/src/index.ts") };
   },
   noExternal: [
     "@anysearch-cli/retriever",
@@ -45,6 +52,9 @@ const cli: Options & { noExternal: string[] } = {
 
 // Design: the complete product builds the existing entry sources into its own
 // package. Independent processes share one installed product, not sibling apps.
+// The CLI build is uncached in turbo.json: it also reads MCP source outside this
+// package and stamps the current Git commit. A cached package-local hash cannot
+// establish either input, and must not produce a partial or wrongly stamped app.
 export default defineConfig([
   cli,
   {
@@ -56,18 +66,8 @@ export default defineConfig([
     noExternal: cli.noExternal,
   },
   {
+    ...pluginBuildOptions,
     entry: ["../plugin/src/index.ts", "../plugin/src/server/index.ts"],
     outDir: "plugin/dist",
-    format: ["cjs"],
-    target: "es2022",
-    platform: "node",
-    clean: true,
-    dts: false,
-    outExtension: () => ({ js: ".cjs" }),
-    noExternal: [
-      "@anysearch-cli/kernel", "@anysearch-cli/retriever", "@anysearch-cli/store",
-      "@earendil-works/pi-agent-core", "@earendil-works/pi-ai", "@sinclair/typebox",
-    ],
-    external: ["better-sqlite3", "@anysearch-cli/embedding"],
   },
 ]);
