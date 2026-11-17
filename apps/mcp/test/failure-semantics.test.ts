@@ -24,7 +24,7 @@ import { createMcpToolState } from "../src/tool-state.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
 import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { httpStateless } from "./helpers/mcp-harness.js";
@@ -51,6 +51,9 @@ const fakeSpan = {
 
 type Handler = (args: unknown) => Promise<any>;
 
+// Empty resolver roots created below, removed in main()'s finally.
+const failureRoots: string[] = [];
+
 function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
   const fakeServer = {
@@ -65,6 +68,7 @@ function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   // operator's real ~/.anysearch-cli/config.toml. Point the shared resolver at
   // an empty temp root so only this suite's env decides the outcome.
   const emptyRoot = mkdtempSync(join(tmpdir(), "ans-300-failure-"));
+  failureRoots.push(emptyRoot);
   const isolatedState = createMcpToolState({
     resolveLlmConfig: (opts = {}) => resolveLlmConfig({ ...opts, home: emptyRoot, cwd: emptyRoot }),
   });
@@ -394,6 +398,7 @@ async function main() {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    for (const root of failureRoots) rmSync(root, { recursive: true, force: true });
   }
 
   console.log("--- mcp failure-semantics tests: " + passed + " passed, " + failed + " failed ---");
