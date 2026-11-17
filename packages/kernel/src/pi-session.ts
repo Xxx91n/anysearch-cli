@@ -4,8 +4,9 @@
 // The kernel reads no env, so each host (CLI, MCP) passes its own env in. The
 // contract lives here once instead of being copied into both roots.
 import { dirname, join } from "node:path";
+import { closeSync, openSync, readSync, readdirSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import { resolveDbPath } from "./composition";
-import { loadPiCodingAgent } from "./pi-sdk";
 import type { SessionLockWindows } from "./session-lock";
 
 /**
@@ -18,14 +19,72 @@ export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): strin
   return join(dirname(resolveDbPath(env)), "pi-sessions");
 }
 
-/** Find existing records across working directories using PI's public API.
- * PI resolves a relative header cwd against the creating process's directory,
- * so findById(cwd, ...) cannot recover that record from a different process.
- * listAll returns newest first if an older release wrote duplicate keys.
- */
+// PI writes its session id in the JSONL header. Read only the bounded header:
+// listAll reads every transcript and silently skips files on errors, which can
+// make a restart create a second conversation under an existing handle.
+function readPiSessionId(file: string): string {
+  const fd = openSync(file, "r");
+  try {
+    const decoder = new StringDecoder("utf8");
+    const buffer = Buffer.allocUnsafe(4096);
+    const limit = 1024 * 1024;
+    let scanned = 0;
+    let pending = "";
+    const parseLine = (line: string): string | undefined => {
+      let entry: unknown;
+      try { entry = JSON.parse(line); } catch { return undefined; }
+      if (!entry || typeof entry !== "object" || (entry as { type?: unknown }).type !== "session" ||
+          typeof (entry as { id?: unknown }).id !== "string") {
+        throw new Error("会话记录的开头不是有效的会话信息：" + file);
+      }
+      return (entry as { id: string }).id;
+    };
+    while (scanned < limit) {
+      const count = readSync(fd, buffer, 0, Math.min(buffer.length, limit - scanned), null);
+      if (count === 0) {
+        const id = parseLine(pending + decoder.end());
+        if (id) return id;
+        throw new Error("会话记录没有有效的会话信息：" + file);
+      }
+      scanned += count;
+      pending += decoder.write(buffer.subarray(0, count));
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) !== -1) {
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        const id = parseLine(line);
+        if (id) return id;
+      }
+    }
+    const probe = Buffer.allocUnsafe(1);
+    if (readSync(fd, probe, 0, 1, null) === 0) {
+      const id = parseLine(pending + decoder.end());
+      if (id) return id;
+    }
+    throw new Error("会话记录的开头太长，无法确定会话：" + file);
+  } finally { closeSync(fd); }
+}
+
+/** Find existing PI records without filtering by the creating process's cwd. */
 export async function listPiSessionRecords(dir: string): Promise<Array<{ id: string; path: string }>> {
-  const sdk = await loadPiCodingAgent();
-  return sdk.SessionManager.listAll(dir);
+  let files: string[];
+  try { files = readdirSync(dir); }
+  catch (error: any) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  const records = files.filter((file) => file.endsWith(".jsonl")).map((file) => {
+    const path = join(dir, file);
+    return { id: readPiSessionId(path), path };
+  });
+  // Older releases could create duplicate keys after a cross-directory run.
+  // Do not guess which copy is complete or discard either record.
+  const seen = new Set<string>();
+  for (const record of records) {
+    if (seen.has(record.id)) throw new Error("同一个会话有多份对话记录，请先核对：" + record.id);
+    seen.add(record.id);
+  }
+  return records;
 }
 
 /**

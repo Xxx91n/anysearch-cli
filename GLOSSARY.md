@@ -174,9 +174,9 @@
 
 - **会话身份**:观测和钩子用来归组记录的 id（代码里叫 session_id）。
 
-<!-- /coderabbit-ai-generated:v1 -->
+  <!-- /coderabbit-ai-generated:v1 -->
 
-<!-- /coderabbit-ai-generated:v1 -->
+  <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Session Identity
 
 - **显式会话句柄**:`ans_chat` 返回的会话 id，客户端传回它才能接上同一段记忆（代码里叫 sessionId）。

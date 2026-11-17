@@ -542,10 +542,8 @@ async function acquireSessionQueue(key: string, deadlineAt: number, signal?: Abo
 // and would skip the provider's env fallback. streamSimple strips it.
 export const PLACEHOLDER_API_KEY = "anysearch-local-stream";
 
-// The cwd a PI session record is stamped with. Fixed on purpose: PI's
-// findById filters by the recorded cwd whenever a custom session dir is used,
-// which would make the same anysearch handle unresumable from another
-// directory. A record belongs to the handle, not to the folder it ran in.
+// Historical PI session header marker. PI resolves this relative path against
+// the creating process, so record discovery uses the handle across directories.
 export const SESSION_RECORD_CWD = "anysearch-session";
 
 // Stable PI session id per AnySearch session handle. Hashing keeps arbitrary
