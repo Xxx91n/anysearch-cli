@@ -163,6 +163,13 @@ export function registerAnsChat(
         // endpoints, exactly like CLI chat.ts. cfg.apiKey covers ANS_LLM_API_KEY
         // and a user-file env_key indirection; gating it on baseUrl would make
         // a working CLI config fail auth only on the MCP path (#300, greptile P1).
+        // Both sources are already provider-appropriate: ANS_LLM_API_KEY is an
+        // explicit override, and a user-file env_key passed the #120 binding
+        // guard in the resolver. pi-ai's `options.apiKey ?? auth.apiKey` then
+        // uses this key instead of the provider's own env — the same override
+        // the CLI has always applied. Widening the #120 guard beyond project
+        // files is a separate security change, not part of making both entries
+        // read config the same way (#300 review opinion B — user decision).
         apiKey,
       }),
     };
@@ -191,10 +198,24 @@ export function registerAnsChat(
       // well as stderr, so a broken TOML or a dropped key is never invisible —
       // an otherwise-valid env config must not make a bad file read as "fine".
       const configWarnings: string[] = [];
-      const cfg = resolveConfig({ warn: (m) => {
-        configWarnings.push(m);
-        process.stderr.write(m + "\n");
-      } });
+      let cfg: ResolvedLlmConfig;
+      try {
+        cfg = resolveConfig({ warn: (m) => {
+          configWarnings.push(m);
+          process.stderr.write(m + "\n");
+        } });
+      } catch (e) {
+        // Design: a resolver fault must never escape as a raw handler rejection
+        // — that skips observation and returns no isError result. Record it as
+        // an observation and return a structured tool error, carrying whatever
+        // warnings were collected before the fault (#300 review).
+        const detail = e instanceof Error ? e.message : String(e);
+        return observeTool(eng, "ans_chat", ctx, async () =>
+          toolError("ans_chat", "config resolution failed: " + detail), {
+            "anysearch.llm.configError": detail,
+            "anysearch.llm.configWarnings": configWarnings.length,
+          });
+      }
       const providerName = cfg.provider;
       const modelName = cfg.model;
       // #211: the same seam as the search tools (#209) — the SDK context

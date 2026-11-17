@@ -68,7 +68,11 @@ type SessionOpts = {
 };
 
 /** Build a handler plus a recorder of the LlmSessionOptions it constructs. */
-function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
+function harness(
+  fix: ReturnType<typeof fixture>,
+  env: NodeJS.ProcessEnv = {},
+  resolverOverride?: (opts?: any) => any,
+) {
   const seen: SessionOpts[] = [];
   const attrs: Record<string, any>[] = [];
   const factory: AnsChatSessionFactory = async (opts) => {
@@ -90,6 +94,7 @@ function harness(fix: ReturnType<typeof fixture>, env: NodeJS.ProcessEnv = {}) {
     // The production resolver with injected roots — no env leakage from the
     // operator shell, so each case is fully controlled by `env` + TOML files.
     resolveLlmConfig: (opts = {}) => {
+      if (resolverOverride) return resolverOverride(opts);
       // Both sides get every warning: the tool's observation collector (opts.warn)
       // and this fixture's assertion recorder.
       const upstreamWarn = opts.warn;
@@ -267,6 +272,20 @@ async function main() {
         "env_key catalog: the user-file key reaches a catalog model session (no baseUrl needed)");
       assert(h.attrs[0]?.["anysearch.llm.provider.source"] === "user",
         "env_key catalog: source reported as user");
+    }
+
+    // 9. a resolver fault returns a structured isError result AND leaves an
+    //    observation — never a raw handler rejection that skips both (#300 review A).
+    {
+      const fix = fixture();
+      const h = harness(fix, {}, () => { throw new Error("resolver exploded"); });
+      const res = await h.call();
+      assert(res?.isError === true, "resolver fault: returned isError result, not a thrown rejection");
+      assert(textOf(res).includes("config resolution failed: resolver exploded"),
+        "resolver fault: actionable structured error text");
+      assert(h.attrs[0]?.["anysearch.llm.configError"] === "resolver exploded",
+        "resolver fault: observation recorded the config error");
+      assert(h.seen.length === 0, "resolver fault: no LLM session was built");
     }
   } finally {
     for (const k of Object.keys(saved)) {
