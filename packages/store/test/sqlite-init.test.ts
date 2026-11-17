@@ -59,6 +59,12 @@ function main() {
   assert(!isBusyError(busyError("SQLITE_CONSTRAINT", "constraint failed")), "SQLITE_CONSTRAINT is NOT retryable");
   assert(!isBusyError(busyError("SQLITE_READONLY", "attempt to write a readonly database")), "SQLITE_READONLY is NOT retryable");
   assert(!isBusyError(new Error("disk I/O error")), "plain IO errors are NOT retryable");
+  // #299: a CODED IOERR is contention on Windows (two cold-start processes, one
+  // fresh DB) and is retried; the code-less form above stays non-retryable
+  // because there is no evidence it is not the disk itself.
+  assert(isBusyError(busyError("SQLITE_IOERR", "disk I/O error")),
+    "a coded SQLITE_IOERR is retryable — it is the Windows cold-start race");
+  assert(isBusyError(busyError("SQLITE_IOERR_WRITE", "disk I/O error")), "SQLITE_IOERR sub-codes are retryable too");
   // A real non-busy code wins over a lock-sounding message: only code-less
   // errors fall back to the text, so a mislabelled failure is never retried.
   assert(!isBusyError(busyError("SQLITE_CONSTRAINT", "database is locked constraints")), "a non-busy code is never retried, even if the text says locked");

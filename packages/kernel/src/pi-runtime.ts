@@ -19,6 +19,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import { findPiSessionRecord, readPiSessionRecord } from "./pi-session";
 import {
   acquireSessionLock,
   resolveSessionLockWindows,
@@ -365,6 +366,8 @@ export interface PiAgentRuntimeOptions {
    * absent the PI session stays in memory (#258).
    */
   piSessionDir?: string;
+  /** Explicit continuation must find its record after the session lock is held. */
+  requirePiSessionRecord?: boolean;
   /**
    * Cross-process session lock windows (#266). `staleMs` is how long a lock
    * whose owner cannot be confirmed stays protected (default 10 min);
@@ -391,6 +394,18 @@ export interface PiAgentRuntimeOptions {
   // completion-shaped budget settlement. An already-aborted signal starts no
   // provider call and reserves no budget.
   signal?: AbortSignal;
+  /**
+  /**
+   * Called once, immediately before the provider request is issued (#299).
+   *
+   * This is the precise "the run really started" moment: everything that can
+   * refuse a run — an already-cancelled caller, an exhausted budget, a missing
+   * session record — returns before it, and everything the caller sees as
+   * output (text, tool calls) happens after it. A caller that tracks an attempt
+   * needs exactly this boundary, because a request cancelled before the first
+   * token is still a request that ran and must be recorded as unfinished.
+   */
+  onRunStart?: () => void;
   /**
    * #302: the per-execution task budget this runtime's runs bill to (the chat
    * run's own task). Present: every reserve/settle in the run — the agent
@@ -559,10 +574,8 @@ async function acquireSessionQueue(key: string, deadlineAt: number, signal?: Abo
 // and would skip the provider's env fallback. streamSimple strips it.
 export const PLACEHOLDER_API_KEY = "anysearch-local-stream";
 
-// The cwd a PI session record is stamped with. Fixed on purpose: PI's
-// findById filters by the recorded cwd whenever a custom session dir is used,
-// which would make the same anysearch handle unresumable from another
-// directory. A record belongs to the handle, not to the folder it ran in.
+// Historical PI session header marker. PI resolves this relative path against
+// the creating process, so record discovery uses the handle across directories.
 export const SESSION_RECORD_CWD = "anysearch-session";
 
 // Stable PI session id per AnySearch session handle. Hashing keeps arbitrary
@@ -936,19 +949,29 @@ export class PiAgentRuntime {
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });
       const piKey = piSessionKey(sessionId!);
-      // Resume the same handle's record when it exists; a restart then picks up
-      // the whole transcript, not just the memory anchors.
-      //
-      // findById filters by the cwd recorded in the session header whenever a
-      // custom session dir is in use, so passing the caller's cwd would hide a
-      // record the same handle created from a different directory (`ans chat`
-      // run in another folder, or MCP started elsewhere). Look the record up
-      // from a fixed anchor instead: the anysearch handle identifies a
-      // session, not the working directory it happened to run in.
-      const found = sdk.SessionManager.findById(SESSION_RECORD_CWD, piKey, persistentDir);
+      // PI resolves the old relative header cwd against the creating process.
+      // Search the record directory by key so another process can resume it.
+      const found = findPiSessionRecord(persistentDir, piKey);
+      if (!found && this.opts.requirePiSessionRecord) {
+        throw new Error("找不到这段会话的对话记录，本次没有发送问题。");
+      }
+      // Design: a record whose header is fine but whose later lines are not
+      // would be loaded by PI with the bad lines silently skipped, and the
+      // model would answer as if those turns never happened. Resuming a
+      // shorter history is worse than refusing, so the whole file is checked
+      // before PI opens it. Only a RESUME pays this: a first run has no file.
+      if (found) {
+        const readable = readPiSessionRecord(found);
+        if (!readable.ok) throw new Error(readable.reason + "。本次没有发送问题，原文件未改动。");
+      }
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
         : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });
+      // PI can create a fresh record if the path vanishes while it is opening.
+      // Recheck its id before handing any history or question to the model.
+      if (found && sessionManager.getHeader()?.id !== piKey) {
+        throw new Error("对话记录打开后发生变化，本次没有发送问题。");
+      }
     } else {
       sessionManager = sdk.SessionManager.inMemory(cwd);
     }
@@ -1431,6 +1454,17 @@ export class PiAgentRuntime {
 
     let promptPromise: Promise<void> | null = null;
     try {
+      // #299: the run is about to reach the provider. Everything above could
+      // still refuse it (cancelled caller, budget, missing record); from here
+      // on it counts as an attempt that ran, even if it is cancelled before a
+      // single token arrives.
+      //
+      // A failure to record the start STOPS the run. Swallowing it would spend
+      // a paid turn whose state can never be written down: a later crash would
+      // leave the old row reading "complete" with no trace that this attempt
+      // happened, and `--continue` would pick the wrong conversation. "写盘失败
+      // 即停" applies here exactly as it does to the completion write.
+      this.opts.onRunStart?.();
       // Start the session prompt in background. Prompt templates stay off: a
       // user message beginning with "/" is text, not a host command.
       promptPromise = session.prompt(input, { expandPromptTemplates: false }).catch((e: any) => {

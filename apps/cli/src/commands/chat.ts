@@ -6,52 +6,27 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, indexPiSessionRecords, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, type BudgetBalance } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
+import { parseChatArgv, selectChatSession } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 import { wireChatTaskBudget } from "./chat-task-budget";
 import { currentCliTask } from "../cli-task-context";
 
 export async function runChat(argv: string[]): Promise<number> {
-  const { flags, argv: args } = parseLlmFlags(argv);
-  // Parse query from args.
-  const query = args.join(" ");
-  if (!query) {
-    process.stderr.write("Usage: ans chat [--llm.provider P] [--llm.model M] [--llm.base-url U --llm.api KIND] [query]\n");
-    process.stderr.write("Example: ans chat \"What is RRF fusion?\"\n");
+  let flags, options;
+  try { ({ flags, options } = parseChatArgv(argv)); }
+  catch (error: any) { process.stderr.write(error.message + "\n"); return 2; }
+  const query = options.query;
+  if (!query && !options.list) {
+    process.stderr.write('用法：ans chat [--continue | --session ID] "问题"\n查看会话：ans chat --list [--unassigned]\n');
     return 2;
   }
-
-  // Resolve LLM config: CLI flag > env > project > user > default.
-  const cfg = resolveLlmConfig({ flags });
-  if (!cfg.provider || !cfg.model) {
-    process.stderr.write("LLM provider not configured.\n");
-    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
-    process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
-    return 3;
-  }
-
-  // Initialize LLM session via kernel deep module.
-  let session;
-  try {
-    // custom endpoint config — api is required when baseUrl is set (explicit
-    // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
-    // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
-    // secret via env_key indirection or ANS_LLM_API_KEY.
-    session = await createLlmSession({
-      provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
-      // #113: custom endpoints have no catalog window; the wiring
-      // reads the env here (kernel stays env-free). Unknown window -> 128000.
-      contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
-    });
-  } catch (e: any) {
-    process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
-    return 3;
-  }
+  const project = resolveProjectContext();
 
   // Initialize retriever + domain over the DURABLE store (#129).
   // Design: use createPersistentEngine (ANS_DB_PATH, default
@@ -107,15 +82,84 @@ export async function runChat(argv: string[]): Promise<number> {
   }
   const { retriever, store } = engine;
 
+  let requestedSessionId: string | undefined;
+  try {
+    // PI owns full transcripts. A store row alone may only be a search or a
+    // memory anchor, and is not proof that a conversation can be resumed.
+    const canResume = (id: string) => !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(id));
+    if (options.list) {
+      if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
+      if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
+      const root = options.unassigned ? null : project.root;
+      console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
+      const findRecord = indexPiSessionRecords(resolvePiSessionDir());
+      for (const entry of store.listChatSessions(root)) {
+        let note = entry.isCompleted ? "" : "\t未完成";
+        try { if (!findRecord(piSessionKey(entry.id))) note += "\t没有完整对话记录"; }
+        catch { note += "\t对话记录无法确认，请单独检查"; }
+        console.log(entry.id + "\t" + entry.updatedAt + note);
+      }
+      return 0;
+    }
+    requestedSessionId = selectChatSession(store, options, project.root, canResume);
+    if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
+  } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
+
+  // Resolve LLM config: CLI flag > env > project > user > default.
+  const cfg = resolveLlmConfig({ flags });
+  if (!cfg.provider || !cfg.model) {
+    process.stderr.write("LLM provider not configured.\n");
+    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
+    process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
+    return 3;
+  }
+
+  // Initialize LLM session via kernel deep module.
+  let session;
+  try {
+    // custom endpoint config — api is required when baseUrl is set (explicit
+    // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
+    // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
+    // secret via env_key indirection or ANS_LLM_API_KEY.
+    session = await createLlmSession({
+      provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
+      // #113: custom endpoints have no catalog window; the wiring
+      // reads the env here (kernel stays env-free). Unknown window -> 128000.
+      contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
+    });
+  } catch (e: any) {
+    process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
+    return 3;
+  }
+
   // Stable session id + FK registration (#129) — see wireChatMemory.
   // #187: pass the Active Domain's optional [budget] so registration also
   // creates the ledger row (absent section = no row = unmetered).
   // #178: pass the engine's ledger (same store connection) so the runtime's
   // agent-loop usage settles into the real budget row instead of a dead port.
   // The wiring helper drops it when registration fails open.
+  const previousSession = requestedSessionId ? store.getChatSession?.(requestedSessionId) : undefined;
   const memory = durableStore
-    ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger)
+    ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, requestedSessionId)
     : {};
+
+  if (requestedSessionId && !memory.sessionId) {
+    process.stderr.write("会话恢复失败，本次没有发送问题。\n");
+    return 1;
+  }
+  // The attempt's project. A resumed conversation keeps the project it already
+  // belongs to; a new one takes the directory it started in.
+  const attemptProject = previousSession ? previousSession.projectRoot : project.root;
+  if (memory.sessionId) console.log("[session] " + memory.sessionId);
+  if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
+
+  // The attempt's lease and the runtime's run lock guard the same session, so
+  // they must read the SAME windows: an operator (or a test) shortening
+  // ANS_PI_LOCK_STALE_MS expects an abandoned lease to clear on that shorter
+  // window too.
+  const sessionWiring = piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey);
+  // Filled in when the attempt starts; the runtime's onRunStart reads it.
+  let startedAttempt: { markStarted(): void } | undefined;
 
   // #302: one execution, one budget. The task id comes from the dispatch-level
   // registration (index.ts registers every CLI command); wireChatMemory above
@@ -161,9 +205,17 @@ export async function runChat(argv: string[]): Promise<number> {
     models: session.models,
     getApiKey: async () => session.apiKey,
     // PI owns the session record; key it by the same stable handle the store
-    // uses so a later `ans chat` resumes the conversation, not just the anchors.
+    // uses so an explicit continuation restores the full conversation.
     // A store-less run has no resumable handle, so it stays in memory.
-    ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+    ...sessionWiring,
+    requirePiSessionRecord: !!requestedSessionId,
+    // #299: the runtime names the exact moment the provider is reached. The
+    // attempt is recorded from there, so a request cancelled before its first
+    // token still counts as one that ran, while a request refused before the
+    // prompt (cancelled caller, exhausted budget) records nothing.
+    // The attempt context arrives when runChatAttempt starts, which is after
+    // this object is built, so it is read through this slot.
+    onRunStart: () => startedAttempt?.markStarted(),
     // #302: this execution's own budget — reserves and settles route to the
     // task's ledger, and internal searches carry the scope (the engine bills
     // the task instead of the session). Absent → session form, unchanged.
@@ -171,121 +223,161 @@ export async function runChat(argv: string[]): Promise<number> {
     taskBudgetFault: taskBudgetWiring.taskBudgetFault,
   });
 
-  console.log("ans chat: " + query);
-  console.log("---");
-
+  // #299: the whole attempt runs under the lease, so its two chat_projects
+  // writes cannot interleave with another attempt on the same session. The
+  // runtime still takes its own run lock inside; this wraps it rather than
+  // moving it, so the JSONL append keeps the guarantee it already had.
+  let attemptFailed = false;
   try {
-    for await (const event of runtime.run(query)) {
-      switch (event.type) {
-        case "text":
-          process.stdout.write(event.content);
-          break;
-        case "tool_call":
-          console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
-          break;
-        case "tool_result":
-          console.log("[result: " + event.name + "]");
-          break;
-        case "search":
-          console.log("\n[search: " + event.query + "]");
-          break;
-        case "search_result":
-          console.log("[search done]");
-          break;
-        case "done":
-          console.log("\n---");
-          console.log(event.summary);
-          if (event.recovery) console.log("\n" + event.recovery);
-          // Report the run's own accounting; a dimension the provider
-          // never reported is named instead of zero-filled into "free".
-          if (event.usage) {
-            const u = event.usage;
+    await runChatAttempt({
+      store: durableStore ? store : undefined,
+      sessionId: memory.sessionId,
+      projectRoot: attemptProject,
+      piSessionDir: durableStore && memory.sessionId ? resolvePiSessionDir() : undefined,
+      // Same windows the run lock reads, so a shortened stale window applies to
+      // an abandoned lease too.
+      sessionLock: sessionWiring.sessionLock,
+    }, async (attempt) => {
+      startedAttempt = attempt;
+      console.log("ans chat: " + query);
+      console.log("---");
+
+      let completed = false;
+      // The body returns the attempt's outcome, not the process exit code: a
+      // run error is still an attempt that must be recorded as unfinished, and
+      // the code is applied after the lease is handed back.
+      let failed = false;
+      try {
+        for await (const event of runtime.run(query)) {
+          switch (event.type) {
+            case "text":
+              process.stdout.write(event.content);
+              break;
+            case "tool_call":
+              console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
+              break;
+            case "tool_result":
+              console.log("[result: " + event.name + "]");
+              break;
+            case "search":
+              console.log("\n[search: " + event.query + "]");
+              break;
+            case "search_result":
+              console.log("[search done]");
+              break;
+            case "done":
+              completed = true;
+              console.log("\n---");
+              console.log(event.summary);
+              if (event.recovery) console.log("\n" + event.recovery);
+              // Report the run's own accounting; a dimension the provider
+              // never reported is named instead of zero-filled into "free".
+              if (event.usage) {
+                const u = event.usage;
+                console.log(
+                  "[usage] calls=" + u.assistantCalls +
+                  " in=" + u.inputTokens + " out=" + u.outputTokens +
+                  " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
+                  " total=" + u.totalTokens + " costUsd=" + u.costUsd + "(" + u.costSource + ")" +
+                  " compaction=" + u.compactionCalls + "/" + u.compactionTokens + "tok/" + u.compactionCostUsd + "usd" +
+                  (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
+                  (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
+                );
+              }
+              break;
+            case "error":
+              console.error("\n[error] " + event.message);
+              failed = true;
+              break;
+          }
+          if (failed) break;
+        }
+      } catch (e: any) {
+        console.error("[error] " + (e?.message || String(e)));
+        failed = true;
+      } finally {
+        // Design: drain background anchor writes before the CLI closes this store
+        // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
+        // returning here without waiting loses the rolling_summary / l2_recall write.
+        await runtime.flushMemory();
+        // #264 (D9): a suspended summary was either rebuilt from current sources or
+        // it was not. Read AFTER the drain (a rebuild is background work the drain
+        // waits for) and say it in plain words, so an empty memory block is not read
+        // as "there was never a summary".
+        for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
+        // Summary calls are a separate, real cost; report them apart from the run.
+        // The reuse/compress adjudication is its own book (D4 重判): one judgment
+        // call must not read as a summary the summarizer never made.
+        const memoryUsage = runtime.getMemoryUsage();
+        if (memoryUsage && memoryUsage.calls > 0) {
+          console.log(
+            "[usage] memory-summary calls=" + memoryUsage.calls +
+            " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
+            " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
+            (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
+          );
+        }
+        const adjudicationUsage = memoryUsage?.adjudication;
+        if (adjudicationUsage && adjudicationUsage.calls > 0) {
+          console.log(
+            "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
+            " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
+            " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
+            (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
+          );
+        }
+        // #302: this execution's own budget, read AFTER the drain so compaction,
+        // summary/re-judge and late settlement are already on the row. What the
+        // run spent vs the caps the domain declared for THIS task — the
+        // conversation's history is a different row in a different table, so the
+        // two reports can never blur. A nonzero reserve here is in-flight or
+        // fault-left work, not part of the spend: reported, not hidden.
+        const taskBudgetScope = taskBudgetWiring.taskBudget;
+        if (taskBudgetScope) {
+          const taskBalance = taskBudgetScope.ledger.getBalance(taskBudgetScope.taskId);
+          if (taskBalance) {
             console.log(
-              "[usage] calls=" + u.assistantCalls +
-              " in=" + u.inputTokens + " out=" + u.outputTokens +
-              " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
-              " total=" + u.totalTokens + " costUsd=" + u.costUsd + "(" + u.costSource + ")" +
-              " compaction=" + u.compactionCalls + "/" + u.compactionTokens + "tok/" + u.compactionCostUsd + "usd" +
-              (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
-              (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
+              "[task-budget] this execution: tokens=" + taskBalance.spentTokens + "/" + taskBalance.tokenCap +
+              " calls=" + taskBalance.billableCalls + "/" + taskBalance.callCap +
+              " usd=" + taskBalance.spentUsd + "/" + taskBalance.usdCap +
+              (taskBalance.reservedTokens > 0 ? " reserved=" + taskBalance.reservedTokens + "tok (still in flight or left by a fault)" : ""),
             );
           }
-          break;
-        case "error":
-          console.error("\n[error] " + event.message);
-          return 1;
+        }
+        // S5: this-run and cumulative are reported apart. The conversation's own
+        // account is the session row — CLI chats no longer spend it, so what it
+        // shows is the history this conversation accumulated before the task form
+        // (or through its unmigrated callers). Only printed when the row exists:
+        // an undeclared domain has no session row and no account to report.
+        // The ledger's port shape carries no read seam; the concrete engine
+        // ledger does have getBalance, and the cast says exactly that.
+        const sessionLedgerView = engine.ledger as { getBalance?: (sessionId: string) => BudgetBalance | null } | undefined;
+        const sessionBalance = memory.sessionId ? sessionLedgerView?.getBalance?.(memory.sessionId) : null;
+        if (sessionBalance) {
+          console.log(
+            "[session-budget] conversation history: tokens=" + sessionBalance.spentTokens + "/" + sessionBalance.tokenCap +
+            " calls=" + sessionBalance.billableCalls + "/" + sessionBalance.callCap +
+            " usd=" + sessionBalance.spentUsd + "/" + sessionBalance.usdCap +
+            " — CLI chats no longer spend this account",
+          );
+        }
       }
-    }
-  } catch (e: any) {
-    console.error("[error] " + (e?.message || String(e)));
-    return 1;
-  } finally {
-    // Design: drain background anchor writes before the CLI closes this store
-    // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
-    // returning here without waiting loses the rolling_summary / l2_recall write.
-    await runtime.flushMemory();
-    // #264 (D9): a suspended summary was either rebuilt from current sources or
-    // it was not. Read AFTER the drain (a rebuild is background work the drain
-    // waits for) and say it in plain words, so an empty memory block is not read
-    // as "there was never a summary".
-    for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
-    // Summary calls are a separate, real cost; report them apart from the run.
-    // The reuse/compress adjudication is its own book (D4 重判): one judgment
-    // call must not read as a summary the summarizer never made.
-    const memoryUsage = runtime.getMemoryUsage();
-    if (memoryUsage && memoryUsage.calls > 0) {
-      console.log(
-        "[usage] memory-summary calls=" + memoryUsage.calls +
-        " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
-        " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
-        (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
+      // The attempt's own record now says finished only when the run reached
+      // its end; a run that errored or was cancelled keeps the unfinished row.
+      attemptFailed = failed;
+      return { completed: completed && !failed };
+    });
+  } catch (error: any) {
+    // One wording for "another attempt has this session right now". It is not a
+    // crash and not a usage error: the same command works once the other run
+    // ends, so the message says exactly that and names the handle to try.
+    if (error instanceof ChatAttemptBusyError) {
+      process.stderr.write(
+        "这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。\n",
       );
+      return 1;
     }
-    const adjudicationUsage = memoryUsage?.adjudication;
-    if (adjudicationUsage && adjudicationUsage.calls > 0) {
-      console.log(
-        "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
-        " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
-        " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
-        (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
-      );
-    }
-    // #302: this execution's own budget, read AFTER the drain so compaction,
-    // summary/re-judge and late settlement are already on the row. What the run
-    // spent vs the caps the domain declared for THIS task — the conversation's
-    // history is a different row in a different table, so the two reports can
-    // never blur. A nonzero reserve here is in-flight or fault-left work, not
-    // part of the spend: reported, not hidden.
-    const taskBudgetScope = taskBudgetWiring.taskBudget;
-    if (taskBudgetScope) {
-      const taskBalance = taskBudgetScope.ledger.getBalance(taskBudgetScope.taskId);
-      if (taskBalance) {
-        console.log(
-          "[task-budget] this execution: tokens=" + taskBalance.spentTokens + "/" + taskBalance.tokenCap +
-          " calls=" + taskBalance.billableCalls + "/" + taskBalance.callCap +
-          " usd=" + taskBalance.spentUsd + "/" + taskBalance.usdCap +
-          (taskBalance.reservedTokens > 0 ? " reserved=" + taskBalance.reservedTokens + "tok (still in flight or left by a fault)" : ""),
-        );
-      }
-    }
-    // S5: this-run and cumulative are reported apart. The conversation's own
-    // account is the session row — CLI chats no longer spend it, so what it
-    // shows is the history this conversation accumulated before the task form
-    // (or through its unmigrated callers). Only printed when the row exists:
-    // an undeclared domain has no session row and no account to report.
-    // The ledger's port shape carries no read seam; the concrete engine
-    // ledger does have getBalance, and the cast says exactly that.
-    const sessionLedgerView = engine.ledger as { getBalance?: (sessionId: string) => BudgetBalance | null } | undefined;
-    const sessionBalance = memory.sessionId ? sessionLedgerView?.getBalance?.(memory.sessionId) : null;
-    if (sessionBalance) {
-      console.log(
-        "[session-budget] conversation history: tokens=" + sessionBalance.spentTokens + "/" + sessionBalance.tokenCap +
-        " calls=" + sessionBalance.billableCalls + "/" + sessionBalance.callCap +
-        " usd=" + sessionBalance.spentUsd + "/" + sessionBalance.usdCap +
-        " — CLI chats no longer spend this account",
-      );
-    }
+    throw error;
   }
-
-  return 0;
+  return attemptFailed ? 1 : 0;
 }

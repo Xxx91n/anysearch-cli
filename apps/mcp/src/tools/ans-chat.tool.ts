@@ -14,6 +14,12 @@ import {
   PiAgentRuntime,
   parseContextWindow,
   piSessionOptions,
+  piSessionKey,
+  findPiSessionRecord,
+  resolvePiSessionDir,
+  runChatAttempt,
+  ChatAttemptBusyError,
+  type ChatAttemptOutcome,
   emptyRunUsage,
   createConsolidationSeams,
   isConsolidationBudgetError,
@@ -41,6 +47,7 @@ import {
   buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
+  isValidSessionHandle,
 } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
@@ -394,7 +401,33 @@ export function registerAnsChat(
           // #178: the resolver also returns the engine's ledger on success —
           // the same connection that holds the session's [budget] row — so the
           // agent loop's token/USD usage settles on the production path.
+          // Capture the old state before the resolver can register a new handle.
+          // An already tracked chat must never silently create a fresh record.
+          const previousChat = typeof requestedSessionId === "string"
+            ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
+          const hasPreviousRecord = isValidSessionHandle(requestedSessionId) &&
+            !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId));
+          // Design: only a tracked chat or an existing PI record makes this a
+          // continuation. A session row that has neither is an old database
+          // conversation whose transcript lives in the research store, and
+          // #265's recovery path answers it — `summary-rebuild-mcp.test.ts`
+          // seeds exactly that shape and requires it to work. Refusing it as
+          // "no record" would break the recovery this build already ships.
+          // (CodeRabbit's #314 suggestion to treat every `sessions` row as
+          // resumable was rejected for this reason.)
+          const mustResume = !!previousChat?.chatTracked || hasPreviousRecord;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
+          // Design: refuse a tracked continuation when wiring fails — #132's
+          // fail-open path would otherwise answer without its recorded history.
+          if (mustResume && (!memory.store || memory.sessionId !== requestedSessionId)) {
+            return toolFailure("ans_chat: 会话恢复失败，本次没有发送问题。");
+          }
+          // The attempt's lease and the runtime's run lock guard the same
+          // session, so they read the SAME windows: a shortened
+          // ANS_PI_LOCK_STALE_MS applies to an abandoned lease too.
+          const sessionWiring = piSessionOptions(memory.sessionId, session.apiKey);
+          // Filled in when the attempt starts; the runtime's onRunStart reads it.
+          let startedAttempt: { markStarted(): void } | undefined;
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
@@ -416,7 +449,14 @@ export function registerAnsChat(
             getApiKey: async () => session.apiKey,
             // PI's own session record resumes the conversation; the same handle
             // keys both the record and the SQLite anchors (#258).
-            ...piSessionOptions(memory.sessionId, session.apiKey),
+            ...sessionWiring,
+            requirePiSessionRecord: mustResume,
+            // #299: record the attempt from the moment the provider is reached,
+            // not from the first token. A request cancelled before its first
+            // token still ran; one refused before the prompt (cancelled caller,
+            // exhausted budget) still records nothing. Read through this slot
+            // because the attempt context arrives after this object is built.
+            onRunStart: () => startedAttempt?.markStarted(),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -438,20 +478,53 @@ export function registerAnsChat(
           // Retrieval/tool work is counted separately from LLM usage: a search
           // spends provider quota, not model tokens.
           const toolCalls: Record<string, number> = {};
-          for await (const event of runtime.run(chatMessage)) {
-            if (event.type === "text") output += event.content;
-            else if (event.type === "tool_call") {
-              toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
-            } else if (event.type === "done") {
-              completed = true;
-              output += "\n" + event.summary;
-              runUsage = event.usage ?? null;
-              runContext = event.context ?? null;
-              // #189: the one-shot recovery summary stays visible to the caller.
-              if (event.recovery) output += "\n" + event.recovery;
-            } else if (event.type === "error") {
-              runtimeError = event.message;
+          // #299: the whole attempt runs under this session's lease, so the
+          // "began" and "finished" writes cannot interleave with another attempt
+          // on the same session. The runtime still takes its own run lock
+          // inside; this wraps it rather than moving it.
+          // Design: a resumed session keeps the project it already belongs to;
+          // only a session without one takes the server's directory (which is
+          // why an unowned session is never assigned here).
+          const attemptProject = previousChat?.projectRoot ?? null;
+          let attemptResult: ChatAttemptOutcome;
+          try {
+            attemptResult = await runChatAttempt({
+              store: memory.store,
+              sessionId: memory.sessionId,
+              projectRoot: attemptProject,
+              piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
+              // Same windows the run lock reads (#299 review).
+              sessionLock: sessionWiring.sessionLock,
+            }, async (attempt) => {
+              startedAttempt = attempt;
+              for await (const event of runtime.run(chatMessage)) {
+                if (event.type === "text") {
+                  output += event.content;
+                } else if (event.type === "tool_call") {
+                  toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
+                } else if (event.type === "done") {
+                  completed = true;
+                  output += "\n" + event.summary;
+                  runUsage = event.usage ?? null;
+                  runContext = event.context ?? null;
+                  // #189: the one-shot recovery summary stays visible to the caller.
+                  if (event.recovery) output += "\n" + event.recovery;
+                } else if (event.type === "error") {
+                  runtimeError = event.message;
+                }
+              }
+              // A run that ended before the provider was ever called (a
+              // cancellation during setup) has nothing to record: markStarted
+              // was never reached, so this attempt leaves the row untouched.
+              return { completed };
+            });
+          } catch (error) {
+            if (error instanceof ChatAttemptBusyError) {
+              return toolFailure(
+                "ans_chat: 这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。",
+              );
             }
+            throw error;
           }
           // Background summary calls already ran on this session's behalf, so
           // their spend belongs on the ledger whatever ended the turn. Drain
@@ -468,26 +541,14 @@ export function registerAnsChat(
           // memory block is missing because a rebuild failed, not because the
           // session never had a summary.
           for (const r of summaryRebuilds) output += "\n" + formatSummaryRebuildLine(r);
-          // The runtime's error event means the loop did not complete; surface
-          // it as an execution failure instead of a successful-looking text.
-          //
-          // #264: the rebuild report rides along even here. The summary work runs
-          // in the background and was already drained above, so a rebuilt summary
-          // really does exist; dropping the report would tell the caller nothing
-          // about it and leave it guessing whether the old version is still
-          // suspended.
+          // An error is a failure even when background summary work completed.
+          // The attempt already recorded itself as unfinished on the way out, so
+          // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
             return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
           }
-          // Cancellation is a transport outcome, not a finished run (#211). The
-          // partial text is dropped so a cut-off stream never reads as an
-          // answer. The run still spent real money before it was cut off, and
-          // the provider never returned a final usage figure for it — so the
-          // usage block says exactly that (costSource "unknown", every
-          // dimension named missing) instead of omitting usage, which a caller
-          // can only read as "free" (#266). The handle is not part of the
-          // answer, so it survives: the caller can resume the same session.
-          if (!completed) {
+          // An interrupted request keeps its handle and reports unknown usage.
+          if (!attemptResult.completed) {
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),

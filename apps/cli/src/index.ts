@@ -44,7 +44,7 @@ const help = [
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
-  "  chat      Interactive retrieval-augmented chat session",
+  "  chat      新建对话；--continue 续当前项目最近会话；--session ID 续指定会话；--list 查看",
   "  recommend Suggest a domain for a free-text task (top-3 + confidence, never auto-switches)",
   " domain Switch Active Domain (cc-persona TOML)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",

@@ -86,6 +86,24 @@ export function endInit(db: Database.Database): void {
 const BUSY_CODE_PREFIXES = ["SQLITE_BUSY", "SQLITE_LOCKED"] as const;
 
 /**
+ * Contention SQLite reports under a different code.
+ *
+ * `SQLITE_IOERR` normally means a disk fault, but on Windows a second process
+ * opening a brand-new database while the first is still writing its WAL files
+ * surfaces as "disk I/O error" instead of SQLITE_BUSY — a file handle that is
+ * momentarily unavailable, not a broken disk. #299 hit this in
+ * `coldstart-race` round 5: two MCP servers, one fresh DB, and the second one
+ * died during initialize.
+ *
+ * Retrying costs nothing when the disk really is failing: every init step is
+ * idempotent, the budget is 5 attempts inside a 6 s window, and a genuine fault
+ * still surfaces the same error afterwards. Not retrying, by contrast, kills
+ * one of two servers on a startup race — the exact failure #257 exists to
+ * prevent.
+ */
+const CONTENTION_WITH_OTHER_CODE = ["SQLITE_IOERR"] as const;
+
+/**
  * True for the SQLite error classes the initialization retry is allowed to absorb.
  *
  * The code decides when one is present: an error carrying a real non-busy code
@@ -99,9 +117,12 @@ const BUSY_CODE_PREFIXES = ["SQLITE_BUSY", "SQLITE_LOCKED"] as const;
 export function isBusyError(error: unknown): boolean {
   const code = (error as { code?: unknown })?.code;
   if (typeof code === "string" && code.length > 0) {
-    return BUSY_CODE_PREFIXES.some((p) => code === p || code.startsWith(p + "_"));
+    return BUSY_CODE_PREFIXES.some((p) => code === p || code.startsWith(p + "_"))
+      || CONTENTION_WITH_OTHER_CODE.some((p) => code === p || code.startsWith(p + "_"));
   }
   const message = (error as Error)?.message ?? "";
+  // A code-less "disk I/O error" is deliberately NOT retried: with no code there
+  // is no evidence the failure is contention rather than the disk itself.
   return /database is locked|database table is locked/i.test(message);
 }
 

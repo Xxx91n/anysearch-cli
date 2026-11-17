@@ -206,6 +206,14 @@ export interface ResumeAnchor {
   createdAt: string;
 }
 
+export interface ChatSessionEntry {
+  id: string;
+  projectRoot: string | null;
+  chatTracked: number;
+  isCompleted: number | null;
+  updatedAt: string;
+}
+
 // Port interface: kernel imports this, CLI wiring injects implementation.
 export interface SessionStore {
   createSession(domain: string): Promise<Session>;
@@ -216,6 +224,10 @@ export interface SessionStore {
   // anchor) must be registered before any dependent write. Idempotent: an
   // existing row is left untouched.
   ensureSession(sessionId: string, domain: string): Promise<void>;
+  getChatSession?(sessionId: string): ChatSessionEntry | undefined;
+  listChatSessions?(projectRoot: string | null): ChatSessionEntry[];
+  recordChatProject?(sessionId: string, projectRoot: string | null, completed?: boolean): void;
+
   // #187: register the domain's [budget] caps for this session at the same
   // composition-root point as ensureSession/createSession. Omitted when the
   // Active Domain declares no [budget] — a fresh session then has no row, and
@@ -934,6 +946,42 @@ export class SqliteSessionStore implements SessionStore {
     // id (or two CLI processes racing on the same anchor) must be a no-op, and a
     // PK conflict must not surface as a memory failure.
     this.stmts.ensureSession.run(sessionId, domain);
+  }
+
+  getChatSession(sessionId: string): ChatSessionEntry | undefined {
+    return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
+      p.is_complete AS isCompleted,
+      CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      WHERE s.id = ?`).get(sessionId) as ChatSessionEntry | undefined;
+  }
+
+  listChatSessions(projectRoot: string | null): ChatSessionEntry[] {
+    // NULL includes legacy rows. Never guess their project from today's cwd.
+    return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
+      p.is_complete AS isCompleted,
+      CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      WHERE p.project_root IS ?
+      ORDER BY COALESCE(p.last_used, 0) DESC, s.updated_at DESC, s.id DESC`).all(projectRoot) as ChatSessionEntry[];
+  }
+
+  recordChatProject(sessionId: string, projectRoot: string | null, completed = true): void {
+    // Design: keep the original project on cross-directory resume — moving it
+    // would make another project’s history appear in its recent-session list.
+    // Record each attempt separately from completion: the latest conversation
+    // may have been interrupted and must not be replaced by an older one.
+    //
+    // Design: `last_used` is kept strictly increasing per database, not just
+    // "the clock now". Two sessions registered in the same millisecond would
+    // otherwise tie, and the list would fall through to `s.id DESC` — a
+    // stable-looking order that is about the handle text, not about which
+    // conversation was used last. Bumping past the current maximum costs at
+    // most a few milliseconds of displayed drift when several writes land in
+    // one tick, and buys an exact answer to "which one is most recent".
+    this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used, is_complete)
+      VALUES (?, ?, max(?, coalesce((SELECT max(last_used) FROM chat_projects), 0) + 1), ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+      last_used = excluded.last_used, is_complete = excluded.is_complete`)
+      .run(sessionId, projectRoot, Date.now(), completed ? 1 : 0);
   }
 
   // #187/CodeRabbit: merge legacy duplicate budget rows before the unique index.

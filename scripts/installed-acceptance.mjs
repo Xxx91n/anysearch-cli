@@ -400,6 +400,11 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   mkdirSync(prefix, { recursive: true });
   writeFileSync(join(prefix, "package.json"), JSON.stringify({ name: "ans-installed-acc", private: true }), "utf8");
+  // #299: `--continue` and `--list` need a project root to scope the search. A
+  // bare package.json directory is not one, so the sandbox gets a .git marker
+  // and the CLI resolves `prefix` as the project here — the same way it would
+  // in a real checkout.
+  mkdirSync(join(prefix, ".git"), { recursive: true });
 
   const clients = [];
   try {
@@ -512,6 +517,54 @@ async function main() {
       HOME: work,
     };
 
+    // #299: reuse the existing two-turn material through the installed CLI.
+    // Async children keep this process free to serve the same SSE endpoint.
+    async function chatCli(args, cwd, domain = "probe", extraEnv = {}) {
+      return await new Promise((resolve, reject) => {
+        const env = { ...baseEnv, ANS_DOMAIN: domain, ANS_SESSION_ID: "cli-wiring-session-129", ...extraEnv };
+        const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+        let out = "";
+        child.stdout.on("data", (chunk) => { out += chunk; });
+        child.stderr.on("data", (chunk) => { out += chunk; });
+        const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
+        child.on("error", (error) => { clearTimeout(timer); reject(error); });
+        child.on("close", (code) => { clearTimeout(timer); resolve({ code, out }); });
+      });
+    }
+    const projectA = join(work, "project-a");
+    const projectB = join(work, "project-b");
+    const unknown = join(work, "unknown-project");
+    for (const project of [projectA, projectB]) mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(unknown);
+    const handleOf = (result) => result.out.match(/\[session\] (\S+)/)?.[1];
+    const cliFirst = await chatCli(["FIRST-TURN-QUESTION"], projectA);
+    const firstHandle = handleOf(cliFirst);
+    check(cliFirst.code === 0 && !!firstHandle, "CLI 默认新建并显示会话句柄", cliFirst.out);
+    const cliSecond = await chatCli(["SECOND-TURN-QUESTION"], projectA);
+    const secondHandle = handleOf(cliSecond);
+    check(cliSecond.code === 0 && !!secondHandle && secondHandle !== firstHandle, "设置观测身份时再次独立启动也不会接回前一段对话", cliSecond.out);
+    let cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(cliBody.includes("SECOND-TURN-QUESTION") && !cliBody.includes("FIRST-TURN-QUESTION"), "新对话的上游请求没有前一段聊天历史");
+    const cliContinue = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
+    cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(cliContinue.code === 0 && handleOf(cliContinue) === secondHandle, "--continue 选择当前项目最近会话", cliContinue.out);
+    check(cliBody.includes("SECOND-TURN-QUESTION") && cliBody.includes("REPLY-TO-SECOND-TURN-QUESTION"), "CLI 续聊恢复完整问答历史");
+    const beforeRefusal = requestLog.length;
+    const otherProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], projectB);
+    const unknownProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], unknown);
+    const unknownList = await chatCli(["--list"], unknown);
+    check(unknownList.code !== 0 && unknownList.out.includes("无法确定当前项目"),
+      "未知项目查看当前会话时说明原因", unknownList.out);
+    check(otherProject.code !== 0 && unknownProject.code !== 0 && requestLog.length === beforeRefusal,
+      "其他项目和未知项目不会借用 A 的会话，也不会发模型请求");
+    const crossDirectory = await chatCli(["--session", firstHandle ?? "missing", "SECOND-TURN-QUESTION"], projectB);
+    cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(crossDirectory.code === 0 && handleOf(crossDirectory) === firstHandle && cliBody.includes("REPLY-TO-FIRST-TURN-QUESTION"),
+      "指定句柄跨目录恢复完整历史", crossDirectory.out);
+    const bList = await chatCli(["--list"], projectB);
+    check(bList.code === 0 && !bList.out.includes(firstHandle ?? "missing") && !bList.out.includes(secondHandle ?? "missing"),
+      "跨目录恢复不会把原会话搬进 B 的最近列表", bList.out);
+
     // ================= B/C. MCP：初始化、对话、显式续接 =================
     console.log("\n== B/C. installed MCP: initialize -> chat -> resume ==");
     const prober = mcpClient(mcpBin, { ...baseEnv, ANS_DOMAIN: "probe" }, "probe");
@@ -586,6 +639,13 @@ async function main() {
       "两轮的固定提示词逐字节相同，缓存前缀是稳的",
       JSON.stringify({ prev: String(prevSys).slice(0, 120), last: String(lastSys).slice(0, 120) }));
 
+    // 同一已知项目会话可以经 MCP 续聊；CLI 最近会话要看到这次使用。
+    const makeSecondRecent = await chatCli(["--session", secondHandle ?? "missing", "FIRST-TURN-QUESTION"], projectA);
+    const mcpContinued = await prober.rpc("tools/call", { name: "ans_chat", arguments: { message: "SECOND-TURN-QUESTION", sessionId: firstHandle } });
+    const recentAfterMcp = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
+    check(makeSecondRecent.code === 0 && mcpContinued.result?.isError !== true && recentAfterMcp.code === 0 && handleOf(recentAfterMcp) === firstHandle,
+      "MCP 续聊后 CLI 选到同项目里刚续过的会话", recentAfterMcp.out);
+
     // ================= C2. 冷启动：两个服务，一个全新的库 =================
     //
     // 规格 D12 / T3：全新的库不能因为 SQLITE_BUSY 丢一个进程。store 那边有限
@@ -646,7 +706,10 @@ async function main() {
         ...baseEnv,
         ANS_DOMAIN: "chatbudget",
         ANS_DB_PATH: chatDb,
-        ANS_SESSION_ID: "acc302-chat",
+        // #299: CLI chat now starts a NEW conversation by default and
+        // ANS_SESSION_ID is observation-only, so it is deliberately NOT set
+        // here. This case needs two turns in ONE conversation and asks for it
+        // explicitly with --continue below, which is also what a user does.
       };
       const r1 = await runAnsAsync(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r1.code === 0, "带预算域的 CLI chat 退出码 0", r1.out.slice(-500));
@@ -654,10 +717,19 @@ async function main() {
       check(/\[task-budget\] this execution:/.test(r1.out), "收尾时报了这次执行自己的预算", r1.out.slice(-500));
       check(/\[session-budget\] conversation history:/.test(r1.out) && /CLI chats no longer spend this account/.test(r1.out),
         "同屏把会话历史账（累计）单独报出来，和本次执行的两行不混", r1.out.slice(-500));
+      // The handle this run created, so the second turn can continue it and the
+      // session-budget assertion below names the row that actually exists.
+      const handleOf = (result) => result.out.match(/\[session\] (\S+)/)?.[1];
+      const chatHandle = handleOf(r1);
+      check(!!chatHandle, "第一轮打印了会话句柄", r1.out.slice(-300));
 
       // 同一会话再来一轮：任务预算是新的，会话的账从头到尾没被 CLI 聊天碰过。
-      const r2 = await runAnsAsync(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      // #299: `--continue` is the explicit way to reuse the conversation; a bare
+      // `chat` would now start a second one, which is the behaviour that made
+      // this assertion fail when the two tickets met.
+      const r2 = await runAnsAsync(["chat", "--continue", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r2.code === 0, "同会话第二轮退出码 0（续聊不受历史额度牵制）", r2.out.slice(-500));
+      check(handleOf(r2) === chatHandle, "第二轮续的是同一段会话", r2.out.slice(-300));
 
       const chatCheck = new Database(chatDb, { readonly: true });
       try {
@@ -667,7 +739,7 @@ async function main() {
         check(tasks.length === 2 && tasks.every((t) => t.ended && t.code === 0),
           "两次 CLI chat 各登记为一条任务，跑完即结束（两条都收尾）",
           JSON.stringify(tasks));
-        check(tasks.every((t) => t.session === "acc302-chat"),
+        check(!!chatHandle && tasks.every((t) => t.session === chatHandle),
           "两条任务都关联到同一个会话句柄（上下文挂钩会话，额度挂任务）",
           JSON.stringify(tasks));
         const budgets = chatCheck.prepare(
@@ -681,7 +753,7 @@ async function main() {
         // 记在任务账上，会话的历史账不被这轮执行花掉。
         const sessionBilled = chatCheck.prepare(
           "SELECT COALESCE(SUM(reserved_tokens + spent_tokens + reserved_usd + spent_usd + reserved_calls + billable_calls), 0) as n FROM budget_ledger WHERE session_id = ?"
-        ).get("acc302-chat");
+        ).get(chatHandle);
         check(sessionBilled.n === 0,
           "两轮 CLI 聊天后，会话预算行的一个计数器都没动过（额度记在任务账上）",
           JSON.stringify(sessionBilled));
@@ -787,6 +859,13 @@ async function main() {
       } finally { db.close(); }
     }
 
+    // 复用 D 已有的资料和查询词，在装好的 CLI 新建对话，核对真正发给模型的内容。
+    const recallChat = await chatCli(["Acme"], projectB, "recall");
+    const recallBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(recallChat.code === 0 && !!handleOf(recallChat) && handleOf(recallChat) !== firstHandle && handleOf(recallChat) !== secondHandle,
+      "新对话能使用共享资料，且没有接回其他会话", recallChat.out);
+    check(recallBody.includes(FACT), "新 CLI 对话把已有研究资料带进了模型请求", recallBody.slice(-400));
+
     // ================= E. 内部搜索入库 → 另一个会话召回 =================
     console.log("\n== E. internal search ingest -> another session recalls ==");
     const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
@@ -888,7 +967,7 @@ async function main() {
       check(/scanned \d+ cluster/.test(warm.out), "新库那次报了扫描到几个簇", warm.out.slice(0, 300));
 
       // 后来的版本才加的表。删掉它们，这个文件就像是旧版本写的了。
-      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts"];
+      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts", "chat_projects"];
       let before = null;
       {
         const db = new Database(legacyPath);
@@ -915,6 +994,17 @@ async function main() {
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
       check(open2.code === 0, "再打开一次也不报错，迁移能重复跑", open2.out.slice(0, 400));
+
+      const legacyList = runAns(["chat", "--list", "--unassigned"], {
+        cwd: projectA, env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
+      });
+      check(legacyList.code === 0 && legacyList.out.includes("older-session") && legacyList.out.includes("未归属"),
+        "旧会话列为未归属，没有猜成当前项目", legacyList.out);
+
+      const callsBeforeMissingRecord = requestLog.length;
+      const noRecord = await chatCli(["--session", "older-session", "FIRST-TURN-QUESTION"], projectA, "probe", { ANS_DB_PATH: legacyPath });
+      check(noRecord.code !== 0 && noRecord.out.includes("找不到这段会话的完整对话记录") && requestLog.length === callsBeforeMissingRecord,
+        "没有完整对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
 
       const db = new Database(legacyPath, { readonly: true });
       let after;

@@ -27,6 +27,9 @@ import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/
 import { createHttpApp } from "../src/http.js";
 import { buildServer } from "../src/server.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { stdioRpc } from "./helpers/mcp-harness.js";
 
 let passed = 0;
@@ -50,6 +53,12 @@ const ENV_KEYS = [
   "ANS_LLM_CONTEXT_WINDOW",
   "ANS_MCP_KEY",
   "ANS_PROJECT_DB",
+  // This suite drives chat runs, and each run keeps a PI session record. Without
+  // an isolated directory it writes into the operator's real ~/.anysearch —
+  // which also means a leftover record from an earlier run decides whether the
+  // suite passes. #299 made a duplicate record a refusal, so the leak stopped
+  // being harmless.
+  "ANS_PI_SESSION_DIR",
 ];
 
 // Wire config the two cache-hit calls share.
@@ -201,7 +210,10 @@ async function main() {
     }
   };
 
+  const piDir = mkdtempSync(join(tmpdir(), "ans-mcp-cache-pi-"));
   try {
+    // Every chat run writes a session record; keep it out of the real home.
+    process.env.ANS_PI_SESSION_DIR = piDir;
     // Wire config for every call unless a case changes it.
     process.env.ANS_LLM_PROVIDER = PROVIDER;
     process.env.ANS_LLM_MODEL = MODEL;
