@@ -11,8 +11,10 @@ import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel"
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, type BudgetBalance } from "@anysearch-cli/store";
 import { wireChatMemory } from "./chat-memory";
+import { wireChatTaskBudget } from "./chat-task-budget";
+import { currentCliTask } from "../cli-task-context";
 
 export async function runChat(argv: string[]): Promise<number> {
   const { flags, argv: args } = parseLlmFlags(argv);
@@ -115,6 +117,26 @@ export async function runChat(argv: string[]): Promise<number> {
     ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger)
     : {};
 
+  // #302: one execution, one budget. The task id comes from the dispatch-level
+  // registration (index.ts registers every CLI command); wireChatMemory above
+  // still registers the session row and refreshes the session budget as
+  // before — the conversation's history and the callers that have not
+  // migrated (MCP ans_chat, #303) keep the session form. This run's spend —
+  // the agent loop, compaction, summary/re-judge, late settlement and internal
+  // searches — lands on the task's own budget row instead, so resuming this
+  // conversation later spends none of the history's quota.
+  // A declared [budget] that cannot be established here returns a fault, and
+  // the runtime stops the run before any provider call (the old fail-open
+  // behavior stays for the session form until #303/#304).
+  const cliTask = currentCliTask();
+  const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
+  // Best-effort context link: which conversation this task ran under. The
+  // task bills on its own, but "which session was this" is what diagnostics
+  // and upgrade admission (#309) will want to read off the task record.
+  if (cliTask && memory.sessionId) {
+    try { cliTask.attachSession(memory.sessionId); } catch { /* best-effort link */ }
+  }
+
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
@@ -142,6 +164,11 @@ export async function runChat(argv: string[]): Promise<number> {
     // uses so a later `ans chat` resumes the conversation, not just the anchors.
     // A store-less run has no resumable handle, so it stays in memory.
     ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+    // #302: this execution's own budget — reserves and settles route to the
+    // task's ledger, and internal searches carry the scope (the engine bills
+    // the task instead of the session). Absent → session form, unchanged.
+    taskBudget: taskBudgetWiring.taskBudget,
+    taskBudgetFault: taskBudgetWiring.taskBudgetFault,
   });
 
   console.log("ans chat: " + query);
@@ -221,6 +248,41 @@ export async function runChat(argv: string[]): Promise<number> {
         " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
         " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
         (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
+      );
+    }
+    // #302: this execution's own budget, read AFTER the drain so compaction,
+    // summary/re-judge and late settlement are already on the row. What the run
+    // spent vs the caps the domain declared for THIS task — the conversation's
+    // history is a different row in a different table, so the two reports can
+    // never blur. A nonzero reserve here is in-flight or fault-left work, not
+    // part of the spend: reported, not hidden.
+    const taskBudgetScope = taskBudgetWiring.taskBudget;
+    if (taskBudgetScope) {
+      const taskBalance = taskBudgetScope.ledger.getBalance(taskBudgetScope.taskId);
+      if (taskBalance) {
+        console.log(
+          "[task-budget] this execution: tokens=" + taskBalance.spentTokens + "/" + taskBalance.tokenCap +
+          " calls=" + taskBalance.billableCalls + "/" + taskBalance.callCap +
+          " usd=" + taskBalance.spentUsd + "/" + taskBalance.usdCap +
+          (taskBalance.reservedTokens > 0 ? " reserved=" + taskBalance.reservedTokens + "tok (still in flight or left by a fault)" : ""),
+        );
+      }
+    }
+    // S5: this-run and cumulative are reported apart. The conversation's own
+    // account is the session row — CLI chats no longer spend it, so what it
+    // shows is the history this conversation accumulated before the task form
+    // (or through its unmigrated callers). Only printed when the row exists:
+    // an undeclared domain has no session row and no account to report.
+    // The ledger's port shape carries no read seam; the concrete engine
+    // ledger does have getBalance, and the cast says exactly that.
+    const sessionLedgerView = engine.ledger as { getBalance?: (sessionId: string) => BudgetBalance | null } | undefined;
+    const sessionBalance = memory.sessionId ? sessionLedgerView?.getBalance?.(memory.sessionId) : null;
+    if (sessionBalance) {
+      console.log(
+        "[session-budget] conversation history: tokens=" + sessionBalance.spentTokens + "/" + sessionBalance.tokenCap +
+        " calls=" + sessionBalance.billableCalls + "/" + sessionBalance.callCap +
+        " usd=" + sessionBalance.spentUsd + "/" + sessionBalance.usdCap +
+        " — CLI chats no longer spend this account",
       );
     }
   }

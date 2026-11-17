@@ -369,9 +369,17 @@ export class RetroaererdEngine {
     // decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
     // T2 #177: the caller-supplied session id wins over the construction-time one
     // (PiAgentRuntime threads the wired handle per search). The gate itself is
-    // unchanged: ledger work needs both the port and a session id.
+    // unchanged: ledger work needs both the port and a scope id.
+    // #302: a task-scoped budget (the chat run's own task) bills this search to
+    // the task's ledger — one execution's internal searches belong to that
+    // execution, not to the conversation's history. Callers without one keep the
+    // session form; the anchor write below stays session-scoped either way,
+    // because anchors are context, and the session handle is what context keys on.
     const sessionId = q.sessionId || this.sessionId;
-    const hasLedger = !!(this.ledger && sessionId);
+    const taskBudget = q.taskBudget;
+    const budgetLedger = taskBudget ? taskBudget.ledger : this.ledger;
+    const budgetScope = taskBudget ? taskBudget.taskId : sessionId;
+    const hasLedger = !!(budgetLedger && budgetScope);
     // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
     // answer mode doubles cost for answer-capable providers
     // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
@@ -383,7 +391,7 @@ export class RetroaererdEngine {
       ? allProviders.reduce((acc, p) => acc + (p.modes.includes("answer") ? 2 : 1), 0)
       : allProviders.length;
     if (hasLedger) {
-      const reserved = this.ledger!.reserveCalls(sessionId!, perCallEstimate);
+      const reserved = budgetLedger!.reserveCalls(budgetScope!, perCallEstimate);
       if (!reserved) {
         throw new Error("Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)");
       }
@@ -586,8 +594,11 @@ export class RetroaererdEngine {
     // decision 2C: settle per-call budget — actual = successful providers.
     // #209: a cancelled caller still settles so the reservation cannot leak; the
     // actual count only bills arms that answered, never a completed search.
+    // #302: the settle lands on the same scope the reserve did (task id when the
+    // search was billed to a task, session id otherwise) — splitting the two
+    // would leave one ledger holding the reservation and another the spend.
     if (hasLedger) {
-      this.ledger!.settleCalls(sessionId!, perCallEstimate, providerLists.length);
+      budgetLedger!.settleCalls(budgetScope!, perCallEstimate, providerLists.length);
     }
 
     // WebFusion consumes the registry k and registered web weights (equal-weight

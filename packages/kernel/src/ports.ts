@@ -27,6 +27,14 @@ export type Query = SearchRequest & {
   providers?: string[]; // restrict to subset of registered providers
   // caller-side recordOperation span for the domain-filter audit events.
   span?: RetrievalObservationSink;
+  // #302: the task-scoped budget this search bills to — the chat run's own
+  // task. Present: the engine reserves/settles its per-call budget on the
+  // task's ledger, so one execution's internal searches belong to that
+  // execution instead of accumulating on the conversation's session row.
+  // Absent: the construction-time session form, unchanged (MCP ans_chat,
+  // consolidate — #303/#304 migrate separately). Kernel-side extra: like the
+  // other Query fields here it never crosses the provider boundary.
+  taskBudget?: TaskBudgetScope;
   // T2 #177: per-search session id supplied by the composition path that owns a
   // session (PiAgentRuntime threads the wired CLI anchor / MCP minted handle
   // here). The engine opens its budget ledger reserve→settle and resume
@@ -112,6 +120,27 @@ export interface BudgetLedgerPort {
   // session lock). Optional like the seams above; a ledger without it simply
   // omits the hint. Never mutates anything.
   hasUnownedReservedTokens?(sessionId: string): boolean;
+}
+
+/**
+ * #302: the per-execution task budget a run bills to.
+ *
+ * One chat execution is one task with its own budget: resuming a conversation
+ * consumes none of the history's quota, and everything that execution causes
+ * — the agent loop's calls, PI's compaction, the memory pipeline's
+ * summary/adjudication, the late settlement, and the internal searches —
+ * settles on the same task row instead of the conversation's ledger.
+ *
+ * The ledger is structurally a BudgetLedgerPort whose methods take the task id
+ * as their scope (a store TaskBudgetLedger), so the engine and the runtime
+ * route either form through one port shape — "one implementation now, two =
+ * real seam" was decision 2A's exact bet. Both fields must travel together:
+ * the id without the ledger (or the reverse) is a half-wired budget, the same
+ * hole `store && sessionId && ledger` guards for the session form.
+ */
+export interface TaskBudgetScope {
+  taskId: string;
+  ledger: BudgetLedgerPort;
 }
 
 // ResumeAnchorsPort: engine-side resume-anchor writer (#48).
