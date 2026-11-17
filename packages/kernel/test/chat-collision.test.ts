@@ -81,7 +81,7 @@ async function main() {
         return { completed: true };
       });
       const waiting = runChatAttempt({ ...options, onBusy: async () => "wait" }, async () => ({ completed: true }));
-      child.stdin.write("finish");
+      child.stdin.end("finish");
       assert.equal((await waiting).completed, true);
       assert.equal(await exited, 0);
     } finally { child.kill(); await exited; }
