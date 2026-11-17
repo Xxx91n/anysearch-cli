@@ -925,7 +925,7 @@ export class SqliteSessionStore implements SessionStore {
 
   getChatSession(sessionId: string): ChatSessionEntry | undefined {
     return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
-      (p.last_used > 0) AS isCompleted,
+      p.is_complete AS isCompleted,
       CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
       WHERE s.id = ?`).get(sessionId) as ChatSessionEntry | undefined;
   }
@@ -933,7 +933,7 @@ export class SqliteSessionStore implements SessionStore {
   listChatSessions(projectRoot: string | null): ChatSessionEntry[] {
     // NULL includes legacy rows. Never guess their project from today's cwd.
     return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
-      (p.last_used > 0) AS isCompleted,
+      p.is_complete AS isCompleted,
       CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
       WHERE p.project_root IS ?
       ORDER BY COALESCE(p.last_used, 0) DESC, s.updated_at DESC, s.id DESC`).all(projectRoot) as ChatSessionEntry[];
@@ -942,12 +942,12 @@ export class SqliteSessionStore implements SessionStore {
   recordChatProject(sessionId: string, projectRoot: string | null, completed = true): void {
     // Design: keep the original project on cross-directory resume — moving it
     // would make another project’s history appear in its recent-session list.
-    // Register ownership before exposing a new handle; only a completed run
-    // updates recency. Concurrent resumes must not reassign the project.
-    this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used)
-      VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
-      last_used = CASE WHEN ? THEN excluded.last_used ELSE chat_projects.last_used END`)
-      .run(sessionId, projectRoot, completed ? Date.now() : 0, completed ? 1 : 0);
+    // Record each attempt separately from completion: the latest conversation
+    // may have been interrupted and must not be replaced by an older one.
+    this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used, is_complete)
+      VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
+      last_used = excluded.last_used, is_complete = excluded.is_complete`)
+      .run(sessionId, projectRoot, Date.now(), completed ? 1 : 0);
   }
 
   // #187/CodeRabbit: merge legacy duplicate budget rows before the unique index.

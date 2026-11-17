@@ -31,7 +31,13 @@
 
 <!-- /coderabbit-ai-generated:v1 -->
 
-旧会话不猜归属，跨目录续聊也不会改变原归属。新增的 `chat_projects` 表只记录项目和最近使用时间，不改写旧会话、账目或研究材料。`~/.anysearch-cli/session` 继续用于观测记录，不再自动选择聊天历史。共享研究资料仍可召回，预算规则由 #300 承接，本票不改。
+旧会话不猜归属，跨目录续聊也不会改变原归属。<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f0dd4455ee0dc10da78086ec2bed377a0b0b7c2cbfb64ef06029e00a900f7253 -->
+
+新增的 `chat_projects` 表记录项目、最近使用时间和是否完成，不改写旧会话、账目或研究材料。
+
+<!-- /coderabbit-ai-generated:v1 -->`~/.anysearch-cli/session` 继续用于观测记录，不再自动选择聊天历史。共享研究资料仍可召回，预算规则由 #300 承接，本票不改。
 
 ## 验收范围
 

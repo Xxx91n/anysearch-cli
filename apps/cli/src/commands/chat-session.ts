@@ -43,7 +43,7 @@ export function selectChatSession(store: SessionStorePort, options: ChatOptions,
   if (options.continueLatest) {
     if (!projectRoot) throw new Error("无法确定当前项目。请用 --list --unassigned 查看旧会话，再用 --session ID 续聊。");
     if (!store.listChatSessions) throw new Error("当前存储不支持查看会话。");
-    const latest = store.listChatSessions(projectRoot).find((entry) => entry.isCompleted);
+    const latest = store.listChatSessions(projectRoot)[0];
     if (!latest) throw new Error("当前项目还没有会话。直接提问就会新建对话。");
     if (!hasRecord(latest.id)) throw new Error("最近会话没有完整对话记录，不能自动续聊：" + latest.id);
     return latest.id;

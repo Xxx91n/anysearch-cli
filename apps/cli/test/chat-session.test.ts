@@ -9,6 +9,8 @@ test("explicit continuation selects only the current project; unknown and missin
   } as any;
   assert.equal(selectChatSession(store, parseChatOptions(["question"]), "/a", () => true), undefined);
   assert.equal(selectChatSession(store, parseChatOptions(["--continue", "question"]), "/a", () => true), "a");
+  const incomplete = { ...store, listChatSessions: () => [{ id: "a", projectRoot: "/a", isCompleted: 0 }] } as any;
+  assert.equal(selectChatSession(incomplete, parseChatOptions(["--continue", "question"]), "/a", () => true), "a");
   assert.throws(() => selectChatSession(store, parseChatOptions(["--continue", "question"]), "/b", () => true));
   assert.throws(() => selectChatSession(store, parseChatOptions(["--continue", "question"]), null, () => true));
   assert.equal(selectChatSession(store, parseChatOptions(["--session", "legacy", "question"]), "/b", () => true), "legacy");

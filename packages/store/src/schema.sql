@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS chat_projects (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
   project_root TEXT,
-  last_used INTEGER NOT NULL
+  last_used INTEGER NOT NULL,
+  is_complete INTEGER NOT NULL CHECK (is_complete IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS idx_chat_projects_recent ON chat_projects(project_root, last_used);
 
