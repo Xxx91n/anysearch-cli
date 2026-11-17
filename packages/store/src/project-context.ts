@@ -11,8 +11,8 @@ export function resolveProjectContext(cwd: string = process.cwd()): ProjectConte
     let root = realpathSync(cwd);
     if (!statSync(root).isDirectory()) throw new Error("not a directory");
     for (;;) {
-      // Design: a Git worktree's .git file counts too; resolve symlinks before
-      // walking so aliases of the same workspace share one project identity.
+      // Design: accept a worktree's .git file as well as a directory — Git
+      // worktrees use files. Resolve symlinks first so aliases share an identity.
       for (const [marker, source] of [[".git", "git"], [join(".anysearch", "config.toml"), "config"]] as const) {
         try {
           const entry = statSync(join(root, marker));
