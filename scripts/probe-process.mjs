@@ -1,6 +1,7 @@
 // Run one installation probe in its own process group. Only this probe and its
 // descendants may be stopped; no machine-wide process discovery is involved.
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export const PROBE_CLEANUP_FAILED = "ANS_PROBE_CLEANUP_FAILED";
 
@@ -62,8 +63,19 @@ async function stopTree(child, closed) {
 
 /** Capture a probe result and finish tree cleanup before returning to its caller. */
 export async function runProbeProcess(file, args = [], { cwd, env = process.env, timeoutMs = 90000 } = {}) {
-  const child = spawn(process.execPath, [file, ...args], {
-    cwd, env, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+  const windows = process.platform === "win32";
+  // Windows taskkill cannot rediscover descendants after their parent exits.
+  // A job object instead owns the whole tree from before the probe is resumed.
+  const executable = windows ? "powershell.exe" : process.execPath;
+  const argv = windows ? [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+    fileURLToPath(new URL("./probe-job.ps1", import.meta.url)),
+    "-NodeExe", process.execPath,
+    "-Payload", Buffer.from(JSON.stringify([file, ...args])).toString("base64"),
+    "-TimeoutMs", String(timeoutMs),
+  ] : [file, ...args];
+  const child = spawn(executable, argv, {
+    cwd, env, detached: !windows, stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
   let stderr = "";
@@ -79,12 +91,13 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
     await Promise.race([
       closed,
       new Promise((resolve) => {
-        timer = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
+        // The job enforces the probe deadline. Allow time to start PowerShell
+        // and drain the job; an unresponsive supervisor is a cleanup failure.
+        timer = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs + (windows ? 20000 : 0));
       }),
     ]);
   } finally {
     clearTimeout(timer);
-    // Also covers a failed probe whose descendants outlive its main process.
     try {
       await stopTree(child, closed);
     } catch (error) {
@@ -93,7 +106,17 @@ export async function runProbeProcess(file, args = [], { cwd, env = process.env,
       });
     }
   }
-  const result = await closed;
+  let result = await closed;
+  if (windows) {
+    const marker = stderr.match(/^ANS_PROBE_RESULT:(.+)\r?$/m);
+    // No success receipt means the supervisor could not confirm an empty job.
+    if (timedOut || result.status !== 0 || !marker) {
+      throw Object.assign(new Error("Windows probe cleanup could not be confirmed: " + stderr), { code: PROBE_CLEANUP_FAILED });
+    }
+    result = JSON.parse(marker[1]);
+    timedOut = result.timedOut;
+    stderr = stderr.replace(marker[0], "");
+  }
   return {
     ...result, stdout, stderr, timedOut,
     ...(timedOut ? { status: null, error: Object.assign(new Error("protocol probe timed out"), { code: "ETIMEDOUT" }) } : {}),

@@ -1,5 +1,6 @@
 # Native Smoke Matrix (consumer variant of better-sqlite3 build.yml).
-# Native loading + owned probe-process cleanup. No toolchain, no build.
+# Native loading + owned probe-process cleanup. No package build.
+# Windows probe ownership uses the built-in PowerShell/.NET job API.
 # pnpm-workspace.yaml pins allowBuilds: better-sqlite3=false — a missing prebuild must
 # fail loudly here rather than being papered over by a silent node-gyp source build.
 name: native-smoke

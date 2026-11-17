@@ -33,7 +33,47 @@ test("probe failure stays a failure", async () => {
   });
 });
 
-test("timeout removes the probe and its ready descendant, including a stopped POSIX child", { timeout: 20000 }, async () => {
+function assertExited(owned) {
+  const alive = [];
+  for (const pid of [owned.probe, owned.descendant]) {
+    try { process.kill(pid, 0); alive.push(pid); }
+    catch (error) { if (error.code !== "ESRCH") throw error; }
+  }
+  // A failing regression must not leave its own fixture running in CI.
+  for (const pid of alive) {
+    try { process.kill(pid, "SIGKILL"); } catch { /* already exited */ }
+  }
+  assert.deepEqual(alive, [], "probe left processes running: " + alive.join(", "));
+}
+
+for (const status of [0, 7]) {
+  test("probe exit " + status + " removes a descendant whose stdio is closed", { timeout: 30000 }, async () => {
+    await withScript(`
+      import { spawn } from "node:child_process";
+      import { fileURLToPath } from "node:url";
+      if (process.argv[2] === "child") {
+        process.on("SIGTERM", () => {});
+        setInterval(() => {}, 1000);
+        process.send("ready");
+      } else {
+        const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "child"], {
+          stdio: ["ignore", "ignore", "ignore", "ipc"],
+        });
+        child.on("message", () => {
+          console.log(JSON.stringify({ probe: process.pid, descendant: child.pid }));
+          process.exit(${status});
+        });
+      }
+    `, async (file) => {
+      const result = await runProbeProcess(file);
+      assert.equal(result.status, status);
+      assert.equal(result.timedOut, false);
+      assertExited(JSON.parse(result.stdout.trim()));
+    });
+  });
+}
+
+test("timeout removes the probe and its ready descendant, including a stopped POSIX child", { timeout: 45000 }, async () => {
   await withScript(`
     import { spawn } from "node:child_process";
     import { fileURLToPath } from "node:url";
@@ -58,8 +98,6 @@ test("timeout removes the probe and its ready descendant, including a stopped PO
     assert.equal(result.error?.code, "ETIMEDOUT");
     // The handshake proves the descendant existed before the timeout.
     const owned = JSON.parse(result.stdout.trim());
-    for (const pid of [owned.probe, owned.descendant]) {
-      assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
-    }
+    assertExited(owned);
   });
 });
