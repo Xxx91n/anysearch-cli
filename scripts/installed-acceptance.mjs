@@ -1003,8 +1003,10 @@ async function main() {
 
       const callsBeforeMissingRecord = requestLog.length;
       const noRecord = await chatCli(["--session", "older-session", "FIRST-TURN-QUESTION"], projectA, "probe", { ANS_DB_PATH: legacyPath });
-      check(noRecord.code !== 0 && noRecord.out.includes("找不到这段会话的完整对话记录") && requestLog.length === callsBeforeMissingRecord,
-        "没有完整对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
+      // #316: the refusal now names the problem instead of the old yes/no
+      // phrase. A tracked row whose record is gone reads as "no record".
+      check(noRecord.code !== 0 && noRecord.out.includes("没有这段会话的对话记录") && requestLog.length === callsBeforeMissingRecord,
+        "没有对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
 
       const db = new Database(legacyPath, { readonly: true });
       let after;

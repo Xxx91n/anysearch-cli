@@ -11,7 +11,7 @@
 
 <!-- coderabbit-ai-generated-section:v1:5bd0c26bdcf2060f7c654a2315677c323bd91336a4bbb07f86555ef6a26b5f9d -->
 
-- `ans chat --list --unassigned`：查看旧会话和没有可靠项目归属的记录。列表会标出没有完整对话记录的条目，这些条目不能当作完整对话续聊。
+- `ans chat --list --unassigned`：查看旧会话和没有可靠项目归属的记录。列表会标出有问题的条目——没有记录、坏了第几行、格式比本程序新、身份对不上、有多份记录——这些条目不能当作完整对话续聊。
 
 <!-- /coderabbit-ai-generated:v1 -->
 

@@ -147,7 +147,9 @@ export function scanPiSessionRecords(dir: string): (key: string) => PiSessionRec
  */
 export class AmbiguousSessionRecordError extends Error {
   constructor(readonly key: string, readonly paths: string[]) {
-    super("同一个会话有多份对话记录，请先核对：" + key);
+    // The paths are the useful part: they are what a person has to compare. The
+    // hashed handle is not, so it stays on the field and out of the sentence.
+    super("同一个会话有多份对话记录，要人工核对是哪一份：" + paths.join("、"));
     this.name = "AmbiguousSessionRecordError";
   }
 }
@@ -412,11 +414,15 @@ export function repairPiSessionTornTail(path: string, verdict: PiSessionRecordVe
  * path and the session list cannot disagree about the same directory.
  */
 function verdictFromClaim(claim: PiSessionRecordClaim, key: string): PiSessionRecordLookup {
+  // Design: the sentence does not repeat `key`. It is a hashed handle, not
+  // something a person can act on, and every caller already shows the session id
+  // it asked about. The useful part is what is wrong and — for a damaged file —
+  // which path to look at.
   if (claim.kind === "absent") {
-    return { verdict: refuse("missing", "没有这段会话的对话记录：" + key) };
+    return { verdict: refuse("missing", "没有这段会话的对话记录") };
   }
   if (claim.kind === "many") {
-    return { verdict: refuse("ambiguous", "同一个会话有多份对话记录，请先核对：" + key) };
+    return { verdict: refuse("ambiguous", "同一个会话有多份对话记录，要人工核对是哪一份") };
   }
   // The name claims this handle but the header could not be read. The path is
   // still reported: a caller asking "does this session have a transcript?" must
