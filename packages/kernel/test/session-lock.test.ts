@@ -2,7 +2,7 @@
 //
 // The lock's own rules, verified without spawning MCP servers:
 //   L1 defaults and bounds — the engineering values are the production ones
-//      (10 min stale, 120 s wait) and the heartbeat cadence is clamped;
+//      (10 min stale, no automatic wait) and the heartbeat cadence is clamped;
 //   L2 mutual exclusion in one process, plus busy after the wait cap;
 //   L3 a live local owner is never reclaimed, however old its heartbeat is;
 //   L4 a confirmed-dead local owner is reclaimed at once — no ten-minute wait;
@@ -131,7 +131,7 @@ async function main() {
     // ---------- L1: engineering values are the production ones ----------
     {
       assert(SESSION_LOCK_STALE_MS === 10 * 60_000, "L1: stale window defaults to 10 minutes");
-      assert(SESSION_LOCK_WAIT_MS === 120_000, "L1: same-session wait cap defaults to 120 seconds");
+      assert(SESSION_LOCK_WAIT_MS === 0, "L1: same-session collisions do not wait by default");
       assert(heartbeatIntervalMs(SESSION_LOCK_STALE_MS) === 5_000,
         "L1: production heartbeat cadence is the 5 s cap");
       assert(heartbeatIntervalMs(3_000) === 1_000, "L1: heartbeat follows stale/3 in the open interval");

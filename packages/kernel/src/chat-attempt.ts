@@ -21,16 +21,18 @@
 // this run append to the record?" — and one directory each keeps them from
 // blocking each other by accident.
 //
-// A collision is answered at once, not queued: an attempt that cannot begin has
-// nothing to wait for, and #299 removed the old two-minute wait. Asking the user
-// whether to fork or wait is #317's job and is deliberately not here.
+// A collision is answered at once unless the host obtains an explicit choice
+// to wait or fork (#317). The host asks; this module keeps both paths inside
+// the same lease boundary as the ordinary attempt.
 
 import { join } from "node:path";
 import { piSessionKey } from "./pi-runtime";
+import { forkChatSession } from "./fork-session";
 import type { SessionStorePort } from "./ports";
 import {
   SESSION_LEASE_DIRNAME,
   acquireSessionLease,
+  acquireSessionLock,
   isSessionBusy,
   resolveSessionLockWindows,
   type SessionLockWindows,
@@ -51,6 +53,8 @@ export class ChatAttemptBusyError extends Error {
   }
 }
 
+export type ChatCollisionChoice = "stop" | "wait" | { fork: string };
+
 export interface ChatAttemptOptions {
   /** Store holding the session row and its chat_projects state. */
   store?: SessionStorePort;
@@ -64,11 +68,14 @@ export interface ChatAttemptOptions {
   projectRoot: string | null;
   /** Directory holding the PI records; leases live in its `leases/` child. */
   piSessionDir?: string;
-  /** Lease windows. Only `staleMs` matters; this path never waits. */
+  /** Lease windows. Waiting is enabled only by an explicit onBusy choice. */
   sessionLock?: SessionLockWindows;
+  onBusy?: (sessionId: string) => Promise<ChatCollisionChoice>;
 }
 
 export interface ChatAttemptContext {
+  /** The selected handle, including the new handle after a fork. */
+  sessionId?: string;
   /**
    * Say that the run really started. Call it once the attempt has done
    * something — a provider call, a tool call, a written record.
@@ -95,7 +102,7 @@ export interface ChatAttemptOutcome {
  * session.
  *
  * Throws ChatAttemptBusyError when another attempt holds the lease right now.
- * Both hosts turn that into their own wording; neither waits.
+ * Without an onBusy choice the attempt never waits.
  */
 export async function runChatAttempt(
   options: ChatAttemptOptions,
@@ -112,8 +119,21 @@ export async function runChatAttempt(
   try {
     release = await acquireSessionLease(sessionLeasePath(piSessionDir, sessionId), windows);
   } catch (error) {
-    if (isSessionBusy(error)) throw new ChatAttemptBusyError(sessionId);
-    throw error;
+    if (!isSessionBusy(error)) throw error;
+    const choice = await options.onBusy?.(sessionId) ?? "stop";
+    if (choice === "stop") throw new ChatAttemptBusyError(sessionId);
+    if (choice === "wait") {
+      // Design: #315/#317 replace #266's automatic two-minute queue. Only a
+      // caller who explicitly chooses wait gets a bounded wait on the lease.
+      release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
+        ...windows, waitMs: options.sessionLock?.waitMs || 120_000,
+      });
+    } else {
+      return runChatAttempt({ ...options, sessionId: choice.fork, onBusy: undefined }, async ctx => {
+        forkChatSession(piSessionDir, sessionId, choice.fork);
+        return body(ctx);
+      });
+    }
   }
   try {
     return await runBody(body, store, sessionId, projectRoot);
@@ -140,6 +160,7 @@ async function runBody(
   const writable = !!(record && sessionId);
   let started = false;
   const ctx: ChatAttemptContext = {
+    sessionId,
     markStarted() {
       if (started || !writable) return;
       started = true;

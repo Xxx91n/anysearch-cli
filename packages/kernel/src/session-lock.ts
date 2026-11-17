@@ -60,8 +60,8 @@ import { dirname, join } from "node:path";
 
 /** Reclaim window for a lock whose owner this machine cannot confirm. */
 export const SESSION_LOCK_STALE_MS = 10 * 60_000;
-/** Same-session wait cap: past this the run fails with "session busy". */
-export const SESSION_LOCK_WAIT_MS = 120_000;
+/** #317: no automatic wait; callers must explicitly request a positive cap. */
+export const SESSION_LOCK_WAIT_MS = 0;
 /** Subdirectory of the PI session dir holding the per-session lock dirs. */
 export const SESSION_LOCKS_DIRNAME = "locks";
 /**
@@ -101,7 +101,7 @@ export interface ResolvedSessionLockWindows {
 export function resolveSessionLockWindows(windows: SessionLockWindows | undefined): ResolvedSessionLockWindows {
   return {
     staleMs: positiveMs(windows?.staleMs, SESSION_LOCK_STALE_MS),
-    waitMs: positiveMs(windows?.waitMs, SESSION_LOCK_WAIT_MS),
+    waitMs: windows?.waitMs === 0 ? 0 : positiveMs(windows?.waitMs, SESSION_LOCK_WAIT_MS),
   };
 }
 
@@ -401,9 +401,9 @@ export async function acquireSessionLock(
     // The deadline is checked at the TOP of every iteration, so every path —
     // a live holder, a reclaim sweep, or a sweep that keeps failing — ends at
     // "session busy" instead of spinning forever (#266: the wait has a cap).
-    if (Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
     const release = takeLockDir(lockPath, staleMs);
     if (release) return release;
+    if (Date.now() >= deadlineAt) throw new LockHeldError(SESSION_BUSY_MESSAGE);
     await sleep(POLL_MS);
   }
 }

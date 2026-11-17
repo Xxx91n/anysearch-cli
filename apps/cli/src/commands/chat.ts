@@ -16,6 +16,7 @@ import { parseChatArgv, selectChatSession } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 import { wireChatTaskBudget } from "./chat-task-budget";
 import { currentCliTask } from "../cli-task-context";
+import { chooseChatCollision } from "./chat-collision";
 
 export async function runChat(argv: string[]): Promise<number> {
   let flags, options;
@@ -139,7 +140,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // agent-loop usage settles into the real budget row instead of a dead port.
   // The wiring helper drops it when registration fails open.
   const previousSession = requestedSessionId ? store.getChatSession?.(requestedSessionId) : undefined;
-  const memory = durableStore
+  let memory = durableStore
     ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, requestedSessionId)
     : {};
 
@@ -181,48 +182,6 @@ export async function runChat(argv: string[]): Promise<number> {
     try { cliTask.attachSession(memory.sessionId); } catch { /* best-effort link */ }
   }
 
-  // Construct PiAgentRuntime and run.
-  // models undefined fix — session.models is now properly initialized.
-  const runtime = new PiAgentRuntime({
-    retriever,
-    domain,
-    // store + sessionId together are what make PiAgentRuntime build the
-    // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
-    // the real `ans chat` path instead of being silently skipped.
-    ...memory,
-    // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
-    domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
-    // #188: same dirs the engine loaded the domain from, so the run-boundary
-    // reloader can still resolve inherited base TOMLs.
-    domainsDirs: engine.domainsDirs,
-    // CLI is the place that decides TTY; kernel decides isInteractive itself.
-    interactive: !process.env.ANS_NO_INTERACTIVE,
-    model: session.model,
-    // #113: real window for the L0 watermark; undefined for an unconfigured
-    // custom endpoint -> absolute 128000 fallback.
-    contextWindow: session.contextWindow,
-    streamFn: session.streamFn,
-    models: session.models,
-    getApiKey: async () => session.apiKey,
-    // PI owns the session record; key it by the same stable handle the store
-    // uses so an explicit continuation restores the full conversation.
-    // A store-less run has no resumable handle, so it stays in memory.
-    ...sessionWiring,
-    requirePiSessionRecord: !!requestedSessionId,
-    // #299: the runtime names the exact moment the provider is reached. The
-    // attempt is recorded from there, so a request cancelled before its first
-    // token still counts as one that ran, while a request refused before the
-    // prompt (cancelled caller, exhausted budget) records nothing.
-    // The attempt context arrives when runChatAttempt starts, which is after
-    // this object is built, so it is read through this slot.
-    onRunStart: () => startedAttempt?.markStarted(),
-    // #302: this execution's own budget — reserves and settles route to the
-    // task's ledger, and internal searches carry the scope (the engine bills
-    // the task instead of the session). Absent → session form, unchanged.
-    taskBudget: taskBudgetWiring.taskBudget,
-    taskBudgetFault: taskBudgetWiring.taskBudgetFault,
-  });
-
   // #299: the whole attempt runs under the lease, so its two chat_projects
   // writes cannot interleave with another attempt on the same session. The
   // runtime still takes its own run lock inside; this wraps it rather than
@@ -237,8 +196,57 @@ export async function runChat(argv: string[]): Promise<number> {
       // Same windows the run lock reads, so a shortened stale window applies to
       // an abandoned lease too.
       sessionLock: sessionWiring.sessionLock,
+      onBusy: chooseChatCollision,
     }, async (attempt) => {
       startedAttempt = attempt;
+      if (attempt.sessionId && attempt.sessionId !== memory.sessionId) {
+        const forkMemory = await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, attempt.sessionId);
+        if (forkMemory.sessionId !== attempt.sessionId) throw new Error("新会话登记失败，本次没有发送问题。");
+        memory = forkMemory;
+        if (cliTask) { try { cliTask.attachSession(memory.sessionId); } catch { /* best-effort link */ } }
+        console.log("[session] 已 fork，新句柄：" + memory.sessionId);
+      }
+      // Construct PiAgentRuntime and run.
+      // models undefined fix — session.models is now properly initialized.
+      const runtime = new PiAgentRuntime({
+        retriever,
+        domain,
+        // store + sessionId together are what make PiAgentRuntime build the
+        // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
+        // the real `ans chat` path instead of being silently skipped.
+        ...memory,
+        // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
+        domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
+        // #188: same dirs the engine loaded the domain from, so the run-boundary
+        // reloader can still resolve inherited base TOMLs.
+        domainsDirs: engine.domainsDirs,
+        // CLI is the place that decides TTY; kernel decides isInteractive itself.
+        interactive: !process.env.ANS_NO_INTERACTIVE,
+        model: session.model,
+        // #113: real window for the L0 watermark; undefined for an unconfigured
+        // custom endpoint -> absolute 128000 fallback.
+        contextWindow: session.contextWindow,
+        streamFn: session.streamFn,
+        models: session.models,
+        getApiKey: async () => session.apiKey,
+        // PI owns the session record; key it by the same stable handle the store
+        // uses so an explicit continuation restores the full conversation.
+        // A store-less run has no resumable handle, so it stays in memory.
+        ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+        requirePiSessionRecord: !!requestedSessionId,
+        // #299: the runtime names the exact moment the provider is reached. The
+        // attempt is recorded from there, so a request cancelled before its first
+        // token still counts as one that ran, while a request refused before the
+        // prompt (cancelled caller, exhausted budget) records nothing.
+        // The attempt context arrives when runChatAttempt starts, which is after
+        // this object is built, so it is read through this slot.
+        onRunStart: () => startedAttempt?.markStarted(),
+        // #302: this execution's own budget — reserves and settles route to the
+        // task's ledger, and internal searches carry the scope (the engine bills
+        // the task instead of the session). Absent → session form, unchanged.
+        taskBudget: taskBudgetWiring.taskBudget,
+        taskBudgetFault: taskBudgetWiring.taskBudgetFault,
+      });
       console.log("ans chat: " + query);
       console.log("---");
 
