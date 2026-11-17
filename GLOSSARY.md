@@ -162,7 +162,14 @@
 - **技能启用名单**:当前领域激活哪些 skill，只有激活的才进模型（代码里叫 skills.active）。
   _Avoid_: Skill Active List
 
-- **会话身份**:CLI 用来标识会话并恢复记忆的 id，钩子会带着它传下去（代码里叫 session_id）。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:362bd78db98917d082ffa36aa61b12b9af1f8e709919a5dc965f3be16a47bc61 -->
+
+- **会话身份**:观测和钩子用来归组记录的 id；历史上 CLI 也用它自动续聊，#299 起聊天默认新建，只有明确指定句柄才续聊（代码里叫 session_id）。
+- **项目身份**:本次明确项目的真实根路径及识别来源，不能确定就记为未知，不借其他项目的状态（代码里叫 ProjectContext）。
+
+<!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Session Identity
 
 - **显式会话句柄**:`ans_chat` 返回的会话 id，客户端传回它才能接上同一段记忆（代码里叫 sessionId）。

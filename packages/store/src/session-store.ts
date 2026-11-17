@@ -205,6 +205,12 @@ export interface ResumeAnchor {
   createdAt: string;
 }
 
+export interface ChatSessionEntry {
+  id: string;
+  projectRoot: string | null;
+  updatedAt: string;
+}
+
 // Port interface: kernel imports this, CLI wiring injects implementation.
 export interface SessionStore {
   createSession(domain: string): Promise<Session>;
@@ -215,6 +221,10 @@ export interface SessionStore {
   // anchor) must be registered before any dependent write. Idempotent: an
   // existing row is left untouched.
   ensureSession(sessionId: string, domain: string): Promise<void>;
+  getChatSession?(sessionId: string): ChatSessionEntry | undefined;
+  listChatSessions?(projectRoot: string | null): ChatSessionEntry[];
+  recordChatProject?(sessionId: string, projectRoot: string | null): void;
+
   // #187: register the domain's [budget] caps for this session at the same
   // composition-root point as ensureSession/createSession. Omitted when the
   // Active Domain declares no [budget] — a fresh session then has no row, and
@@ -909,6 +919,28 @@ export class SqliteSessionStore implements SessionStore {
     // id (or two CLI processes racing on the same anchor) must be a no-op, and a
     // PK conflict must not surface as a memory failure.
     this.stmts.ensureSession.run(sessionId, domain);
+  }
+
+  getChatSession(sessionId: string): ChatSessionEntry | undefined {
+    return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot,
+      COALESCE(datetime(p.last_used / 1000, 'unixepoch'), s.updated_at) AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      WHERE s.id = ?`).get(sessionId) as ChatSessionEntry | undefined;
+  }
+
+  listChatSessions(projectRoot: string | null): ChatSessionEntry[] {
+    // NULL includes legacy rows. Never guess their project from today's cwd.
+    return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot,
+      COALESCE(datetime(p.last_used / 1000, 'unixepoch'), s.updated_at) AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      WHERE p.project_root IS ?
+      ORDER BY COALESCE(p.last_used, 0) DESC, s.updated_at DESC, s.id DESC`).all(projectRoot) as ChatSessionEntry[];
+  }
+
+  recordChatProject(sessionId: string, projectRoot: string | null): void {
+    // Design: an explicit cross-directory resume updates recency but never
+    // moves an existing conversation to the directory it was resumed from.
+    this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used)
+      VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET last_used = excluded.last_used`)
+      .run(sessionId, projectRoot, Date.now());
   }
 
   // #187/CodeRabbit: merge legacy duplicate budget rows before the unique index.

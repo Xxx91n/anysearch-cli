@@ -461,6 +461,52 @@ async function main() {
       HOME: work,
     };
 
+    // #299: reuse the existing two-turn material through the installed CLI.
+    // Async children keep this process free to serve the same SSE endpoint.
+    async function chatCli(args, cwd) {
+      return await new Promise((resolve, reject) => {
+        const env = { ...baseEnv, ANS_DOMAIN: "probe" };
+        delete env.ANS_SESSION_ID;
+        const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+        let out = "";
+        child.stdout.on("data", (chunk) => { out += chunk; });
+        child.stderr.on("data", (chunk) => { out += chunk; });
+        const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
+        child.on("error", (error) => { clearTimeout(timer); reject(error); });
+        child.on("close", (code) => { clearTimeout(timer); resolve({ code, out }); });
+      });
+    }
+    const projectA = join(work, "project-a");
+    const projectB = join(work, "project-b");
+    const unknown = join(work, "unknown-project");
+    for (const project of [projectA, projectB]) mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(unknown);
+    const handleOf = (result) => result.out.match(/\[session\] (\S+)/)?.[1];
+    const cliFirst = await chatCli(["FIRST-TURN-QUESTION"], projectA);
+    const firstHandle = handleOf(cliFirst);
+    check(cliFirst.code === 0 && !!firstHandle, "CLI 默认新建并显示会话句柄", cliFirst.out);
+    const cliSecond = await chatCli(["SECOND-TURN-QUESTION"], projectA);
+    const secondHandle = handleOf(cliSecond);
+    check(cliSecond.code === 0 && !!secondHandle && secondHandle !== firstHandle, "再次独立启动不会接回前一段对话", cliSecond.out);
+    let cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(cliBody.includes("SECOND-TURN-QUESTION") && !cliBody.includes("FIRST-TURN-QUESTION"), "新对话的上游请求没有前一段聊天历史");
+    const cliContinue = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
+    cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(cliContinue.code === 0 && handleOf(cliContinue) === secondHandle, "--continue 选择当前项目最近会话", cliContinue.out);
+    check(cliBody.includes("SECOND-TURN-QUESTION") && cliBody.includes("REPLY-TO-SECOND-TURN-QUESTION"), "CLI 续聊恢复完整问答历史");
+    const beforeRefusal = requestLog.length;
+    const otherProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], projectB);
+    const unknownProject = await chatCli(["--continue", "SECOND-TURN-QUESTION"], unknown);
+    check(otherProject.code !== 0 && unknownProject.code !== 0 && requestLog.length === beforeRefusal,
+      "其他项目和未知项目不会借用 A 的会话，也不会发模型请求");
+    const crossDirectory = await chatCli(["--session", firstHandle ?? "missing", "SECOND-TURN-QUESTION"], projectB);
+    cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(crossDirectory.code === 0 && handleOf(crossDirectory) === firstHandle && cliBody.includes("REPLY-TO-FIRST-TURN-QUESTION"),
+      "指定句柄跨目录恢复完整历史", crossDirectory.out);
+    const bList = await chatCli(["--list"], projectB);
+    check(bList.code === 0 && !bList.out.includes(firstHandle ?? "missing") && !bList.out.includes(secondHandle ?? "missing"),
+      "跨目录恢复不会把原会话搬进 B 的最近列表", bList.out);
+
     // ================= B/C. MCP：初始化、对话、显式续接 =================
     console.log("\n== B/C. installed MCP: initialize -> chat -> resume ==");
     const prober = mcpClient(mcpBin, { ...baseEnv, ANS_DOMAIN: "probe" }, "probe");
@@ -768,7 +814,7 @@ async function main() {
       check(/scanned \d+ cluster/.test(warm.out), "新库那次报了扫描到几个簇", warm.out.slice(0, 300));
 
       // 后来的版本才加的表。删掉它们，这个文件就像是旧版本写的了。
-      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts"];
+      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts", "chat_projects"];
       let before = null;
       {
         const db = new Database(legacyPath);
@@ -795,6 +841,12 @@ async function main() {
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
       check(open2.code === 0, "再打开一次也不报错，迁移能重复跑", open2.out.slice(0, 400));
+
+      const legacyList = runAns(["chat", "--list", "--unassigned"], {
+        cwd: projectA, env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
+      });
+      check(legacyList.code === 0 && legacyList.out.includes("older-session") && legacyList.out.includes("未归属"),
+        "旧会话列为未归属，没有猜成当前项目", legacyList.out);
 
       const db = new Database(legacyPath, { readonly: true });
       let after;

@@ -66,3 +66,5 @@ export * from "./eval/attribution-gold";
 export * from "./eval/attribution-calibration";
 // per-instance observability (audit-only, never gates).
 export * from "./eval/attribution-instance-report";
+
+export * from "./project-context";

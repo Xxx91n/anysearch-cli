@@ -83,7 +83,7 @@ async function main() {
     try {
       const fresh = await wireChatMemory(store, "default");
       check(fresh.sessionId === wiring.sessionId,
-        "the durable anchor yields the same session id after a restart");
+        "the explicit ANS_SESSION_ID resumes the same session after a restart");
       // #187: the restart runs a domain without [budget]; the existing session
       // becomes unmetered (the released row keeps spend history internally).
       const released = new BudgetLedger((store as any).db).getBalance(fresh.sessionId!);
@@ -162,6 +162,14 @@ async function main() {
     }
     check(emptyWiring?.sessionId !== undefined && ensuredCalls === 1,
       "a cold anchor generates a non-empty id and registers it (no empty-id wiring)");
+
+    // #297 S4 / #299: a user-wide observation anchor no longer resumes chat.
+    delete process.env.ANS_SESSION_ID;
+    const defaultOne = await wireChatMemory({ ensureSession: async () => {} } as any, "default");
+    const defaultTwo = await wireChatMemory({ ensureSession: async () => {} } as any, "default");
+    check(defaultOne.sessionId !== defaultTwo.sessionId, "independent default launches get different conversation handles");
+    const explicit = await wireChatMemory({ ensureSession: async () => {} } as any, "default", undefined, undefined, defaultOne.sessionId);
+    check(explicit.sessionId === defaultOne.sessionId, "an explicit handle still resumes the selected conversation");
 
     // 5. #187: a domain with no [budget] creates no ledger row — the absence of
     //    the row is the unmetered (pass) state, not a zero-cap row.

@@ -11,45 +11,21 @@ import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel"
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext } from "@anysearch-cli/store";
+import { parseChatOptions, selectChatSession } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 
 export async function runChat(argv: string[]): Promise<number> {
   const { flags, argv: args } = parseLlmFlags(argv);
-  // Parse query from args.
-  const query = args.join(" ");
-  if (!query) {
-    process.stderr.write("Usage: ans chat [--llm.provider P] [--llm.model M] [--llm.base-url U --llm.api KIND] [query]\n");
-    process.stderr.write("Example: ans chat \"What is RRF fusion?\"\n");
+  let options;
+  try { options = parseChatOptions(args); }
+  catch (error: any) { process.stderr.write(error.message + "\n"); return 2; }
+  const query = options.query;
+  if (!query && !options.list) {
+    process.stderr.write('用法：ans chat [--continue | --session ID] "问题"\n查看会话：ans chat --list [--unassigned]\n');
     return 2;
   }
-
-  // Resolve LLM config: CLI flag > env > project > user > default.
-  const cfg = resolveLlmConfig({ flags });
-  if (!cfg.provider || !cfg.model) {
-    process.stderr.write("LLM provider not configured.\n");
-    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
-    process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
-    return 3;
-  }
-
-  // Initialize LLM session via kernel deep module.
-  let session;
-  try {
-    // custom endpoint config — api is required when baseUrl is set (explicit
-    // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
-    // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
-    // secret via env_key indirection or ANS_LLM_API_KEY.
-    session = await createLlmSession({
-      provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
-      // #113: custom endpoints have no catalog window; the wiring
-      // reads the env here (kernel stays env-free). Unknown window -> 128000.
-      contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
-    });
-  } catch (e: any) {
-    process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
-    return 3;
-  }
+  const project = resolveProjectContext();
 
   // Initialize retriever + domain over the DURABLE store (#129).
   // Design: use createPersistentEngine (ANS_DB_PATH, default
@@ -105,15 +81,73 @@ export async function runChat(argv: string[]): Promise<number> {
   }
   const { retriever, store } = engine;
 
+  let requestedSessionId: string | undefined;
+  try {
+    if (options.list) {
+      if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
+      const root = options.unassigned ? null : project.root;
+      console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
+      for (const entry of store.listChatSessions(root)) console.log(entry.id + "\t" + entry.updatedAt);
+      return 0;
+    }
+    requestedSessionId = selectChatSession(store, options, project.root) ?? (process.env.ANS_SESSION_ID?.trim() || undefined);
+    if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
+  } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
+
+  // Resolve LLM config: CLI flag > env > project > user > default.
+  const cfg = resolveLlmConfig({ flags });
+  if (!cfg.provider || !cfg.model) {
+    process.stderr.write("LLM provider not configured.\n");
+    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
+    process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
+    return 3;
+  }
+
+  // Initialize LLM session via kernel deep module.
+  let session;
+  try {
+    // custom endpoint config — api is required when baseUrl is set (explicit
+    // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
+    // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
+    // secret via env_key indirection or ANS_LLM_API_KEY.
+    session = await createLlmSession({
+      provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
+      // #113: custom endpoints have no catalog window; the wiring
+      // reads the env here (kernel stays env-free). Unknown window -> 128000.
+      contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
+    });
+  } catch (e: any) {
+    process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
+    return 3;
+  }
+
   // Stable session id + FK registration (#129) — see wireChatMemory.
   // #187: pass the Active Domain's optional [budget] so registration also
   // creates the ledger row (absent section = no row = unmetered).
   // #178: pass the engine's ledger (same store connection) so the runtime's
   // agent-loop usage settles into the real budget row instead of a dead port.
   // The wiring helper drops it when registration fails open.
+  const previousSession = requestedSessionId ? store.getChatSession?.(requestedSessionId) : undefined;
   const memory = durableStore
-    ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger)
+    ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, requestedSessionId)
     : {};
+
+  if (requestedSessionId && !memory.sessionId) {
+    process.stderr.write("会话恢复失败，本次没有发送问题。\n");
+    return 1;
+  }
+  if (memory.sessionId) {
+    // A cross-directory resume keeps its original project; legacy records stay
+    // unassigned. Only a genuinely new handle inherits the current project.
+    try {
+      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root);
+    } catch (error: any) {
+      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
+      return 1;
+    }
+    console.log("[session] " + memory.sessionId);
+  }
+  if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
@@ -139,7 +173,7 @@ export async function runChat(argv: string[]): Promise<number> {
     models: session.models,
     getApiKey: async () => session.apiKey,
     // PI owns the session record; key it by the same stable handle the store
-    // uses so a later `ans chat` resumes the conversation, not just the anchors.
+    // uses so an explicit continuation restores the full conversation.
     // A store-less run has no resumable handle, so it stays in memory.
     ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
   });

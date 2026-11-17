@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- #299: only new CLI conversations get a known project. Legacy sessions and
+-- entries without a reliable workspace stay unassigned; no history is rewritten.
+CREATE TABLE IF NOT EXISTS chat_projects (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  project_root TEXT,
+  last_used INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_projects_recent ON chat_projects(project_root, last_used);
+
 -- Messages table: conversation entries within a session.
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
