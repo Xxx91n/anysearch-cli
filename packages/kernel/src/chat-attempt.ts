@@ -123,8 +123,9 @@ export async function runChatAttempt(
     const choice = await options.onBusy?.(sessionId) ?? "stop";
     if (choice === "stop") throw new ChatAttemptBusyError(sessionId);
     if (choice === "wait") {
-      // Design: #315/#317 replace #266's automatic two-minute queue. Only a
-      // caller who explicitly chooses wait gets a bounded wait on the lease.
+      // Design: #315/#317 replace #266's automatic two-minute queue — an
+      // unattended caller must not hang without an explanation. Only a caller
+      // who explicitly chooses wait gets a bounded wait on the lease.
       try {
         release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
           ...windows, waitMs: windows.waitMs || 120_000,

@@ -178,9 +178,10 @@ export async function runChat(argv: string[]): Promise<number> {
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics
   // and upgrade admission (#309) will want to read off the task record.
-  if (cliTask && memory.sessionId) {
-    try { cliTask.attachSession(memory.sessionId); } catch { /* best-effort link */ }
-  }
+  const attachSessionToTask = (id: string | undefined) => {
+    if (cliTask && id) { try { cliTask.attachSession(id); } catch { /* best-effort link */ } }
+  };
+  attachSessionToTask(memory.sessionId);
 
   // #299: the whole attempt runs under the lease, so its two chat_projects
   // writes cannot interleave with another attempt on the same session. The
@@ -203,7 +204,7 @@ export async function runChat(argv: string[]): Promise<number> {
         const forkMemory = await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, attempt.sessionId);
         if (forkMemory.sessionId !== attempt.sessionId) throw new Error("新会话登记失败，本次没有发送问题。");
         memory = forkMemory;
-        if (cliTask) { try { cliTask.attachSession(attempt.sessionId); } catch { /* best-effort link */ } }
+        attachSessionToTask(attempt.sessionId);
         console.log("[session] 已 fork，新句柄：" + memory.sessionId);
       }
       // Construct PiAgentRuntime and run.
