@@ -47,7 +47,7 @@ test("same-millisecond registrations keep their real order", async () => {
     // `b` first and `--continue` would pick the conversation that was used
     // second-to-last.
     const realNow = Date.now;
-    let frozen = realNow();
+    const frozen = realNow();
     Date.now = () => frozen;
     try {
       await store.ensureSession("b", "default");
@@ -63,7 +63,6 @@ test("same-millisecond registrations keep their real order", async () => {
       assert.deepEqual(store.listChatSessions("/p").map((s) => s.id), ["c", "a", "b"],
         "a later registration is still later, in the same frozen millisecond");
     } finally {
-      frozen = realNow;
       Date.now = realNow;
     }
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
