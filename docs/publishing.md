@@ -9,8 +9,8 @@ anywhere.**
 
 ### Maintainer setup (one time, fill it in exactly)
 
-Do this for EACH of the five publishable packages (`@anysearch-cli/cli`,
-`@anysearch-cli/mcp`, `@anysearch-cli/plugin`, `@anysearch-cli/embedding`,
+Do this for each current publishable package (`@anysearch-cli/cli`,
+`@anysearch-cli/embedding`,
 `@anysearch-cli/dsh-plugin`). Read "First publish of a NEW package" below
 before you try to save its trusted-publisher row.
 
@@ -55,16 +55,21 @@ a cloud-hosted runner, and a manual `pnpm publish` does not have one).
 
 ## Publish set
 
-There are five packages, all with `publishConfig.access: "public"`
+There are three release packages, all with `publishConfig.access: "public"`
 (`@anysearch-cli/dsh-plugin` also declares `provenance: true`):
 
 | package | shape |
 |---|---|
-| `@anysearch-cli/cli` | bundled app — `@anysearch-cli/{kernel,store,retriever,plugin}` are devDependencies (bundled into `dist`), `@anysearch-cli/embedding` is an optional peer |
-| `@anysearch-cli/mcp` | same |
-| `@anysearch-cli/plugin` | same |
+| `@anysearch-cli/cli` | complete product: CLI, MCP, hook service, adapters and resources; shared libraries are bundled, embedding remains an optional peer |
 | `@anysearch-cli/embedding` | real dist build (`publishConfig.exports` swaps `src` → `dist/index.js` at pack) |
 | `@anysearch-cli/dsh-plugin` | esbuild ESM bundle (`lib/index.js` + `cordis.patch.yml` + `AGENTS.md`; `@deepseek-ai/*` external — host-provided at runtime, never bundled) |
+
+The separate MCP/plugin package directories remain source modules and regression
+fixtures. New releases publish their commands inside the complete CLI product,
+not as independently versioned application copies (#297 S1). Historical npm
+packages are left intact; upgrading the old three-package layout belongs to
+#311. The release workflow still requires an explicitly authorized tag; this
+change does not publish or migrate anything.
 
 `kernel`, `store`, and `retriever` are never published. Bundling makes them
 build-time only. `@anysearch-cli/embedding` is `peerDependencies` +

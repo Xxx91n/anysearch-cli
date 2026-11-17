@@ -1,9 +1,7 @@
-// B2/T2 +: real install-to-use lane — pack the PUBLISHED
-// packages (3 apps + the peer-optional embedding), npm-install the APP tarballs only
-// into a clean temp prefix (consumer-real: bundled internals never ship), then drive
-// the INSTALLED `ans` bin through --version / doctor / domain docs / doctor / search.
-// A second leg co-installs the embedding tarball and asserts peer resolution + the
-// doctor vector-arm line flipping from absent-SKIP to present.
+// #298 / #297 S1: pack the complete CLI product and optional embedding,
+// install only the complete product into a clean prefix, then drive CLI,
+// MCP and hook commands. Explicit embedding installation remains a second leg.
+// Internal libraries and the old separate MCP/plugin apps are not installed.
 //
 // Online leg: when EXA_API_KEY or TAVILY_API_KEY is set, the script hard-asserts
 // that a real search returns >=1 result AND that at least one result URL lands on
@@ -18,6 +16,7 @@
 //
 // macOS limitation: covered by the ci.yml ponytail note — the only arm64 delta is
 // the better-sqlite3 prebuild; add macos-latest when a real mac issue lands.
+import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { execSync, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -38,8 +37,6 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 // dist (build-time devDependencies) and are never published or installed.
 const PACK_DIRS = [
   "apps/cli",
-  "apps/mcp",
-  "apps/plugin",
   "packages/embedding",
 ];
 const ALLOWLIST = ["modelcontextprotocol.io", "typescriptlang.org", "pnpm.io"];
@@ -56,7 +53,7 @@ function check(name, cond, detail) {
   }
 }
 function sh(cmd, opts) {
-  const r = spawnSync(cmd, { shell: true, encoding: "utf8", ...opts });
+  const r = spawnSync(cmd, { shell: true, encoding: "utf8", env: smokeEnv, ...opts });
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
 }
 
@@ -66,6 +63,8 @@ const prefix = join(dir, "prefix");
 mkdirSync(outDir, { recursive: true });
 mkdirSync(prefix, { recursive: true });
 writeFileSync(join(prefix, "package.json"), '{"name":"ans-smoke","private":true}', "utf8");
+
+const smokeEnv = { ...process.env, HOME: dir, USERPROFILE: dir, ANS_DB_PATH: join(dir, "smoke.db") };
 
 try {
   // 1. Pack all workspace packages (workspace:* deps resolve to the packed versions).
@@ -77,14 +76,10 @@ try {
   check("pack produced " + PACK_DIRS.length + " tarballs", tgz.length === PACK_DIRS.length, tgz.join(","));
   check("no stale 0.0.0 tarball", tgz.every((f) => !f.includes("0.0.0")), tgz.join(","));
 
-  // 2. Clean install into the temp prefix —: consumer-real shape.
-  // Only the three APP tarballs are installed; bundled internals are not on npm at
-  // all, and @anysearch-cli/embedding is an optional PEER (peerDependenciesMeta.optional)
-  // so npm does not auto-install it — no --omit=optional knob needed. (No --no-save:
-  // deps must land in prefix/package.json or the peer leg's second npm install would
-  // prune the apps as extraneous.)
-  const appTgz = tgz.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
-  check("install set = 3 app tarballs only", appTgz.length === 3, tgz.join(","));
+  // Install only the public product. Keep it saved so the later explicit
+  // embedding install does not prune it as an extraneous package.
+  const appTgz = tgz.filter((f) => /anysearch-cli-cli-/.test(f));
+  check("install set = one complete product tarball", appTgz.length === 1, tgz.join(","));
   const inst = sh(`npm install ${appTgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
   check("npm install clean prefix", inst.code === 0, inst.out);
   const nm = join(prefix, "node_modules");
@@ -92,9 +87,10 @@ try {
   check("install closure excludes @huggingface/transformers", !existsSync(join(nm, "@huggingface")), readdirSync(nm).join(","));
   check("peer-optional: @anysearch-cli/embedding NOT auto-installed", !existsSync(join(nm, "@anysearch-cli", "embedding")), readdirSync(join(nm, "@anysearch-cli")).join(","));
   check("bundled internals absent from install closure", ["kernel", "store", "retriever"].every((b) => !existsSync(join(nm, "@anysearch-cli", b))), readdirSync(join(nm, "@anysearch-cli")).join(","));
+  await verifyInstalledProduct(prefix, check);
   const bin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
   check("ans bin shim installed", existsSync(bin), bin);
-  const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix });
+  const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix, env: smokeEnv });
 
   // 3. Installed-surface walkthrough.
   const v = ans("--version");
@@ -190,7 +186,7 @@ try {
     ].join("\n"), "utf8");
     const s = sh(`\"${bin}\" search 'MCP Streamable HTTP transport session id' --json`, {
       cwd: prefix,
-      env: { ...process.env, ANS_DOMAIN: "probe", ANS_DOMAINS_DIR: probeDir, ANYSEARCH_ENDPOINT: "http://127.0.0.1:9" },
+      env: { ...smokeEnv, ANS_DOMAIN: "probe", ANS_DOMAINS_DIR: probeDir, ANYSEARCH_ENDPOINT: "http://127.0.0.1:9" },
     });
     let j = null;
     try { j = JSON.parse(s.stdout); } catch { /* null asserted below */ }

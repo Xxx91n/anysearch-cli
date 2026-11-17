@@ -362,11 +362,11 @@ async function main() {
     // 设了 ANS_ACC_TARBALLS 就直接装那个目录里的包，用来在没编译的情况下核对
     // 这个脚本本身。CI 里不设它，自己打包。
     const preset = process.env.ANS_ACC_TARBALLS?.trim();
-    const PACK_DIRS = ["apps/cli", "apps/mcp", "apps/plugin"];
+    const PACK_DIRS = ["apps/cli"];
     if (preset) {
       console.log("== 干净安装（用 " + preset + " 里现成的包）==");
       for (const f of readdirSync(preset)) {
-        if (f.endsWith(".tgz")) writeFileSync(join(outDir, f), readFileSync(join(preset, f)));
+        if (/^anysearch-cli-cli-.*\.tgz$/.test(f)) writeFileSync(join(outDir, f), readFileSync(join(preset, f)));
       }
     } else {
       console.log("== 打包 + 干净安装 ==");
@@ -380,7 +380,7 @@ async function main() {
     check(tgz.length === PACK_DIRS.length, "安装集合里有 " + PACK_DIRS.length + " 个 app 包", tgz.join(","));
     check(tgz.every((f) => !f.includes("0.0.0")), "打出来的包里没有 0.0.0 这种占位版本号", tgz.join(","));
 
-    const appTgz = tgz.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
+    const appTgz = tgz.filter((f) => /anysearch-cli-cli-/.test(f));
     const inst = sh("npm", ["install", ...appTgz.map((f) => join(outDir, f))], { cwd: prefix });
     check(inst.code === 0, "包能装进一个干净的目录", inst.out);
 
@@ -391,7 +391,7 @@ async function main() {
 
     const nm = join(prefix, "node_modules");
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
-    const mcpBin = join(nm, "@anysearch-cli", "mcp", "dist", "index.js");
+    const mcpBin = join(nm, "@anysearch-cli", "cli", "bin", "ans-mcp.cjs");
     check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);
     check(existsSync(mcpBin), "装出来的 MCP 入口在", mcpBin);
 
@@ -404,7 +404,7 @@ async function main() {
     // 这是 shim 自己的毛病：同一路径下 `node <入口>` 跑得好好的。
     // 所以 Windows 走 node + 入口，POSIX 仍然用 .bin/ans（那边没这问题，也更接近
     // 用户实际敲的命令）。
-    const cliEntry = join(nm, "@anysearch-cli", "cli", "dist", "index.js");
+    const cliEntry = join(nm, "@anysearch-cli", "cli", "bin", "ans.cjs");
     const runAns = process.platform === "win32"
       ? (args, opts = {}) => sh(process.execPath, [cliEntry, ...args], opts)
       : (args, opts = {}) => sh(ansBin, args, opts);

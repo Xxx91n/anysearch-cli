@@ -1,5 +1,5 @@
-// ans mcp subcommand: forward to apps/mcp entry.
-// CLI adds ans mcp subcommand that forwards to apps/mcp entry.
+// ans mcp subcommand: forward to the packaged MCP entry.
+// CLI adds ans mcp subcommand that forwards to the packaged MCP entry.
 // Passes through --transport and --port flags.
 
 import { spawn } from "node:child_process";
@@ -7,21 +7,33 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function runMcp(args: string[]): Promise<number> {
-  // Forward all args to apps/mcp entry (the ESM build).
+  // Forward all args to the packaged MCP entry (the ESM build).
   // ponytail: spawn the MCP server process, inherit stdio for stdio transport.
   const self = dirname(fileURLToPath(import.meta.url));
-  const mcpEntry = resolve(self, "../../mcp/dist/index.js");
+  const mcpEntry = resolve(self, "../bin/ans-mcp.cjs");
 
-  const child = spawn("node", [mcpEntry, ...args], {
+  const child = spawn(process.execPath, [mcpEntry, ...args], {
     stdio: "inherit",
     cwd: process.cwd(),
   });
 
   return new Promise<number>((resolve) => {
-    child.on("exit", (code) => {
-      resolve(code ?? 0);
+    // Forward shutdown to the MCP child so a host closing `ans mcp` does not
+    // leave an orphan server behind. Entry processes remain independent.
+    const interrupt = () => child.kill("SIGINT");
+    const terminate = () => child.kill("SIGTERM");
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", terminate);
+    const cleanup = () => {
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", terminate);
+    };
+    child.on("exit", (code, signal) => {
+      cleanup();
+      resolve(code ?? (signal ? 1 : 0));
     });
     child.on("error", (e) => {
+      cleanup();
       process.stderr.write("ans mcp: failed to start MCP server: " + (e instanceof Error ? e.message : String(e)) + "\n");
       resolve(1);
     });

@@ -32,6 +32,14 @@ ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # 只在 docs 域里搜
 npm i -g @anysearch-cli/embedding
 ```
 
+完整产品包带上了 `ans`、`ans-mcp`、`ans-plugin-server`、`ans-hook-*`
+命令，以及领域配置和宿主资源。运行 `ans --installation`，或给上面任一命令加
+`--installation`，就能看到构建提交、版本、安装目录和入口类型。`ans mcp`
+启动同一安装里的 MCP，各入口仍然各跑各的进程，向量能力照旧按需安装。
+
+这里覆盖的是干净安装。原来分别装了 MCP 和插件包的用户，迁移由 #311 处理；
+旧命令归属、冲突检查和迁移都还没在本票验证。
+
 ## 安装后：可选向量检索
 
 `@anysearch-cli/embedding` 是可选依赖（peer-optional），没装时 CLI 只用 FTS。
@@ -48,7 +56,7 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 
 ## 环境要求
 
-- Node.js >= 22
+- Node.js >= 22.19.0
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
 - 搜索至少要有一个能连上的信息源（`ans recommend` 只读本地域配置，不需要 key）：
   - `EXA_API_KEY`：Exa，支持按域名筛；Exa 必须有 key
@@ -192,7 +200,7 @@ AnySearch 还有一根单独的**垂直领域路由**轴。可以按查询传，
 ## MCP 服务器
 
 ```bash
-npm i -g @anysearch-cli/mcp                     # 提供 ans-mcp 命令
+npm i -g @anysearch-cli/cli                     # 一次装齐 CLI、MCP 和钩子命令
 ans-mcp                                         # stdio transport（默认）
 ans-mcp --transport http --port 3001            # Streamable HTTP（只绑本机）
 ```

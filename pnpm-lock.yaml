@@ -267,7 +267,7 @@ importers:
         specifier: ^2.26.0
         version: 2.27.0(ws@8.21.3)
       express:
-        specifier: ^4.18.2
+        specifier: ^4.21.0
         version: 4.22.2
       smol-toml:
         specifier: ^1.8.0
@@ -275,6 +275,15 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
+      '@modelcontextprotocol/node':
+        specifier: ^2.1.2
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
+      '@modelcontextprotocol/server':
+        specifier: ^2.4.0
+        version: 2.4.0
+      zod:
+        specifier: '>=4.2.0'
+        version: 4.4.3
     devDependencies:
       '@anysearch-cli/kernel':
         specifier: workspace:*
@@ -294,6 +303,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.0
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(tsx@4.23.12)(typescript@5.6.2)(yaml@2.9.0)

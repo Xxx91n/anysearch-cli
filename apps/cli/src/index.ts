@@ -58,6 +58,7 @@ const help = [
   "",
   "Options:",
   "  --version, -v     Print version",
+  "  --installation   Print build commit, installation path and entry role (installed command)",
   "  --help, -h        Print this help",
   "",
   "Env:",
