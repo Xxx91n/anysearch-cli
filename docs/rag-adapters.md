@@ -216,10 +216,17 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
   parameters），不是传输层的会话；协议级的 `session_id` 还是空的。这个 id 不是使用方的
   分界线，store 才是（#130）；多个使用方还是各用独立 store/server。存档点写盘是后台
   扔出去就不管（fire-and-forget），响应不等那 90s 摘要额度，马上再调可能和前一次写盘抢。
-- **CLI 的 `ans chat` 已经接上本地持久库和固定的 sessionId（#129）** —— `createPersistentEngine` 走
-  `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），sessionId 从
-  `~/.anysearch-cli/session` 这个存档点读（`ANS_SESSION_ID` 可以覆盖），并且先
-  `store.ensureSession(id, domain)` 建好会话行，满足 `sessions(id)` 外键。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:bc9ebde8612aea32fe2a1d4b0677d262e29a94d60d010139b5eab276ff91fb31 -->
+
+- **CLI 的 `ans chat` 接上本地持久库（#129、#299）** —— `createPersistentEngine` 走
+  `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），每次独立启动默认新建会话；
+  `--continue` 续当前项目最近的对话，`--session ID` 续指定对话。
+  原来用 `~/.anysearch-cli/session` 或 `ANS_SESSION_ID` 自动续聊的行为已取消；
+  旧句柄仍可明确指定。`store.ensureSession(id, domain)` 先建会话行，满足 `sessions(id)` 外键。
+
+<!-- /coderabbit-ai-generated:v1 -->
 - **`ans chat` / `ans_chat` 的内部搜索会入库（#259）** —— 会话接上以后，内核那条 `search` 工具和
   补搜（sufficiency reround）拿到的结果都会写进 `retrieval_results`，记在当次会话 id 下，
   写失败只报警告、不影响这一轮回答。所以 `ans chat` 之前那轮搜到的东西，下一次（包括另一个会话）

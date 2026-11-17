@@ -51,7 +51,7 @@ async function main() {
     const writerLedger = writer.createBudgetLedger();
     let wiring: ChatMemoryWiring;
     try {
-      wiring = await wireChatMemory(writer, "default", { tokenCap: 1234, callCap: 7 }, writerLedger);
+      wiring = await wireChatMemory(writer, "default", { tokenCap: 1234, callCap: 7 }, writerLedger, process.env.ANS_SESSION_ID);
       check(Boolean(wiring.store) && typeof wiring.sessionId === "string" && wiring.sessionId.length > 0,
         "wireChatMemory returns store + a non-empty sessionId");
       // #178: the ledger rides with the successful registration, so the runtime
@@ -81,9 +81,9 @@ async function main() {
     // 2. Restart: reopen and wire again, as a second `ans chat` process would.
     const store = new SqliteSessionStore(dbPath);
     try {
-      const fresh = await wireChatMemory(store, "default");
+      const fresh = await wireChatMemory(store, "default", undefined, undefined, process.env.ANS_SESSION_ID);
       check(fresh.sessionId === wiring.sessionId,
-        "the explicit ANS_SESSION_ID resumes the same session after a restart");
+        "the explicitly passed handle resumes the same session after a restart");
       // #187: the restart runs a domain without [budget]; the existing session
       // becomes unmetered (the released row keeps spend history internally).
       const released = new BudgetLedger((store as any).db).getBalance(fresh.sessionId!);
@@ -164,10 +164,10 @@ async function main() {
       "a cold anchor generates a non-empty id and registers it (no empty-id wiring)");
 
     // #297 S4 / #299: a user-wide observation anchor no longer resumes chat.
-    delete process.env.ANS_SESSION_ID;
+    process.env.ANS_SESSION_ID = "cli-wiring-session-129";
     const defaultOne = await wireChatMemory({ ensureSession: async () => {} } as any, "default");
     const defaultTwo = await wireChatMemory({ ensureSession: async () => {} } as any, "default");
-    check(defaultOne.sessionId !== defaultTwo.sessionId, "independent default launches get different conversation handles");
+    check(defaultOne.sessionId !== defaultTwo.sessionId, "independent launches get different chat handles even when an observation id is set");
     const explicit = await wireChatMemory({ ensureSession: async () => {} } as any, "default", undefined, undefined, defaultOne.sessionId);
     check(explicit.sessionId === defaultOne.sessionId, "an explicit handle still resumes the selected conversation");
 
@@ -177,7 +177,7 @@ async function main() {
     const plainDir = mkdtempSync(join(tmpdir(), "ans-187-plain-"));
     const plainStore = new SqliteSessionStore(join(plainDir, "anysearch.db"));
     try {
-      const plain = await wireChatMemory(plainStore, "default");
+      const plain = await wireChatMemory(plainStore, "default", undefined, undefined, process.env.ANS_SESSION_ID);
       check(plain.sessionId === "cli-no-budget-187", "no-budget wiring still registers the session");
       check(new BudgetLedger((plainStore as any).db).getBalance(plain.sessionId!) === null,
         "#187: no [budget] section -> no budget row (unmetered)");
@@ -194,7 +194,7 @@ async function main() {
     try {
       process.env.ANS_SESSION_ID = "cli-zero-caps-187";
       const zero = loadDomainFromString('name = "zero"\n[rag]\nadapter = "x"\n[budget]\ntokenCap = 0\ncallCap = 0\n');
-      const zeroWiring = await wireChatMemory(chainStore, "default", zero.budget);
+      const zeroWiring = await wireChatMemory(chainStore, "default", zero.budget, undefined, process.env.ANS_SESSION_ID);
       check(zeroWiring.sessionId === "cli-zero-caps-187", "TOML 0 case wires the session");
       const zeroRow = chainLedger.getBalance("cli-zero-caps-187");
       check(zeroRow?.tokenCap === 0 && zeroRow?.callCap === 0, "TOML explicit 0 reaches the ledger as 0");
@@ -203,7 +203,7 @@ async function main() {
 
       process.env.ANS_SESSION_ID = "cli-partial-caps-187";
       const partialDoc = loadDomainFromString('name = "partial"\n[rag]\nadapter = "x"\n[budget]\noutputReserveTokens = 4096\n');
-      await wireChatMemory(chainStore, "default", partialDoc.budget);
+      await wireChatMemory(chainStore, "default", partialDoc.budget, undefined, process.env.ANS_SESSION_ID);
       const partialRow = chainLedger.getBalance("cli-partial-caps-187");
       check(partialRow?.tokenCap === Number.MAX_SAFE_INTEGER && partialRow?.callCap === Number.MAX_SAFE_INTEGER,
         "TOML omitted caps reach the ledger as unlimited, not 0");
@@ -244,7 +244,7 @@ async function main() {
         "#275: fixture killed run holds 12304 before the CLI re-registers");
       check(killLedger.getBalance("cli-sigkill-275")!.reservedTokens === 12_304,
         "#275: the leftover is really on the row before the wiring runs");
-      const killedWiring = await wireChatMemory(killStore, "default", { tokenCap: 20_000, timeLimitMs: 60_000 }, killLedger);
+      const killedWiring = await wireChatMemory(killStore, "default", { tokenCap: 20_000, timeLimitMs: 60_000 }, killLedger, process.env.ANS_SESSION_ID);
       check(killedWiring.sessionId === "cli-sigkill-275", "#275: the re-registration still wires the session");
       check(killLedger.getBalance("cli-sigkill-275")!.reservedTokens === 0,
         "#275: CLI registration released the killed run's reservation");

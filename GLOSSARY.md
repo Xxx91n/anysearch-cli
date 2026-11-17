@@ -166,8 +166,15 @@
 
 <!-- coderabbit-ai-generated-section:v1:362bd78db98917d082ffa36aa61b12b9af1f8e709919a5dc965f3be16a47bc61 -->
 
-- **会话身份**:观测和钩子用来归组记录的 id；历史上 CLI 也用它自动续聊，#299 起聊天默认新建，只有明确指定句柄才续聊（代码里叫 session_id）。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:9cdfe4f755e35f3ff7582e11241770ce6f2b09cd07882260355cfd597dda767b -->
+
 - **项目身份**:本次明确项目的真实根路径及识别来源，不能确定就记为未知，不借其他项目的状态（代码里叫 ProjectContext）。
+
+- **会话身份**:观测和钩子用来归组记录的 id（代码里叫 session_id）。
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Session Identity

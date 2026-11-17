@@ -19,6 +19,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import { listPiSessionRecords } from "./pi-session";
 import {
   acquireSessionLock,
   resolveSessionLockWindows,
@@ -876,16 +877,9 @@ export class PiAgentRuntime {
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });
       const piKey = piSessionKey(sessionId!);
-      // Resume the same handle's record when it exists; a restart then picks up
-      // the whole transcript, not just the memory anchors.
-      //
-      // findById filters by the cwd recorded in the session header whenever a
-      // custom session dir is in use, so passing the caller's cwd would hide a
-      // record the same handle created from a different directory (`ans chat`
-      // run in another folder, or MCP started elsewhere). Look the record up
-      // from a fixed anchor instead: the anysearch handle identifies a
-      // session, not the working directory it happened to run in.
-      const found = sdk.SessionManager.findById(SESSION_RECORD_CWD, piKey, persistentDir);
+      // PI resolves the old relative header cwd against the creating process.
+      // Search the record directory by key so another process can resume it.
+      const found = (await listPiSessionRecords(persistentDir)).find((record) => record.id === piKey)?.path;
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
         : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });

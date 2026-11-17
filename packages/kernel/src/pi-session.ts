@@ -5,6 +5,7 @@
 // contract lives here once instead of being copied into both roots.
 import { dirname, join } from "node:path";
 import { resolveDbPath } from "./composition";
+import { loadPiCodingAgent } from "./pi-sdk";
 import type { SessionLockWindows } from "./session-lock";
 
 /**
@@ -15,6 +16,16 @@ export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): strin
   const override = env.ANS_PI_SESSION_DIR?.trim();
   if (override) return override;
   return join(dirname(resolveDbPath(env)), "pi-sessions");
+}
+
+/** Find existing records across working directories using PI's public API.
+ * PI resolves a relative header cwd against the creating process's directory,
+ * so findById(cwd, ...) cannot recover that record from a different process.
+ * listAll returns newest first if an older release wrote duplicate keys.
+ */
+export async function listPiSessionRecords(dir: string): Promise<Array<{ id: string; path: string }>> {
+  const sdk = await loadPiCodingAgent();
+  return sdk.SessionManager.listAll(dir);
 }
 
 /**

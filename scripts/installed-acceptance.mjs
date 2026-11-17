@@ -463,10 +463,9 @@ async function main() {
 
     // #299: reuse the existing two-turn material through the installed CLI.
     // Async children keep this process free to serve the same SSE endpoint.
-    async function chatCli(args, cwd) {
+    async function chatCli(args, cwd, domain = "probe", extraEnv = {}) {
       return await new Promise((resolve, reject) => {
-        const env = { ...baseEnv, ANS_DOMAIN: "probe" };
-        delete env.ANS_SESSION_ID;
+        const env = { ...baseEnv, ANS_DOMAIN: domain, ANS_SESSION_ID: "cli-wiring-session-129", ...extraEnv };
         const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
         let out = "";
         child.stdout.on("data", (chunk) => { out += chunk; });
@@ -487,7 +486,7 @@ async function main() {
     check(cliFirst.code === 0 && !!firstHandle, "CLI 默认新建并显示会话句柄", cliFirst.out);
     const cliSecond = await chatCli(["SECOND-TURN-QUESTION"], projectA);
     const secondHandle = handleOf(cliSecond);
-    check(cliSecond.code === 0 && !!secondHandle && secondHandle !== firstHandle, "再次独立启动不会接回前一段对话", cliSecond.out);
+    check(cliSecond.code === 0 && !!secondHandle && secondHandle !== firstHandle, "设置观测身份时再次独立启动也不会接回前一段对话", cliSecond.out);
     let cliBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
     check(cliBody.includes("SECOND-TURN-QUESTION") && !cliBody.includes("FIRST-TURN-QUESTION"), "新对话的上游请求没有前一段聊天历史");
     const cliContinue = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
@@ -713,6 +712,13 @@ async function main() {
       } finally { db.close(); }
     }
 
+    // 复用 D 已有的资料和查询词，在装好的 CLI 新建对话，核对真正发给模型的内容。
+    const recallChat = await chatCli(["Acme"], projectB, "recall");
+    const recallBody = requestLog.filter((r) => r.role === "chat").pop()?.body ?? "";
+    check(recallChat.code === 0 && !!handleOf(recallChat) && handleOf(recallChat) !== firstHandle && handleOf(recallChat) !== secondHandle,
+      "新对话能使用共享资料，且没有接回其他会话", recallChat.out);
+    check(recallBody.includes(FACT), "新 CLI 对话把已有研究资料带进了模型请求", recallBody.slice(-400));
+
     // ================= E. 内部搜索入库 → 另一个会话召回 =================
     console.log("\n== E. internal search ingest -> another session recalls ==");
     const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
@@ -847,6 +853,11 @@ async function main() {
       });
       check(legacyList.code === 0 && legacyList.out.includes("older-session") && legacyList.out.includes("未归属"),
         "旧会话列为未归属，没有猜成当前项目", legacyList.out);
+
+      const callsBeforeMissingRecord = requestLog.length;
+      const noRecord = await chatCli(["--session", "older-session", "FIRST-TURN-QUESTION"], projectA, "probe", { ANS_DB_PATH: legacyPath });
+      check(noRecord.code !== 0 && noRecord.out.includes("找不到这段会话的完整对话记录") && requestLog.length === callsBeforeMissingRecord,
+        "没有完整对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
 
       const db = new Database(legacyPath, { readonly: true });
       let after;

@@ -110,7 +110,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
     }
     writeStderr(
       "[warn] session anchor could not be read at " + file +
-      "; using a fresh session id for this run. Set ANS_SESSION_ID to resume a session.\n",
+      "; using a fresh observation id for this run. Set ANS_SESSION_ID to keep the same observation id.\n",
     );
     return tempId;
   }
@@ -125,13 +125,11 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
     // Successful write: discard any cached temporary ID for this path.
     tempIdByAnchor.delete(resolve(file));
   } catch {
-    // Fail-open: write failures don't block core CLI flow. #129 makes this
-    // identity load-bearing for memory (a new id each run means the previous
-    // run's anchors are unreachable), so say it once instead of silently
-    // handing out an id that will not survive the process.
+    // Fail-open: say that the observation id may change on the next run.
+    // Chat continuation uses its own explicit handle (#299).
     writeStderr(
       "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
-      sessionIdBaseDir(env) + " writable to resume memory across runs\n",
+      sessionIdBaseDir(env) + " writable to keep the same observation id across runs\n",
     );
   }
   return fresh;

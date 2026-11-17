@@ -22,9 +22,10 @@ export interface ChatMemoryWiring {
 /**
  * Decide what `ans chat` hands to PiAgentRuntime for memory.
  *
- * Design: #297 S4 / #299 replaces the implicit user-wide chat anchor.
- * Each independent launch gets a fresh handle; an explicit env handle stays
- * supported. The observation anchor in readSessionId() keeps its own role.
+ * Design: default to a fresh chat handle (#297 S4 / #299) — the former
+ * user-wide anchor silently carried another task’s full conversation into a
+ * new launch. Explicit handles still resume it; readSessionId() keeps its
+ * separate observation role.
  * Budget setup below keeps its existing contract (#300 handles task budgets).
  *
  * Returns store + sessionId (and #178's ledger) only when registration and
@@ -40,7 +41,7 @@ export async function wireChatMemory(
   ledger?: BudgetLedgerPort,
   requestedSessionId?: string,
 ): Promise<ChatMemoryWiring> {
-  const sessionId = requestedSessionId ?? (process.env.ANS_SESSION_ID?.trim() || randomUUID());
+  const sessionId = requestedSessionId ?? randomUUID();
   try {
     await store.ensureSession(sessionId, domain);
     // #187: synchronize the budget row at the same session-registration point.

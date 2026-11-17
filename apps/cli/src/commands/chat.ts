@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, listPiSessionRecords, resolvePiSessionDir } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -83,14 +83,23 @@ export async function runChat(argv: string[]): Promise<number> {
 
   let requestedSessionId: string | undefined;
   try {
+    // PI owns full transcripts. A store row alone may only be a search or a
+    // memory anchor, and is not proof that a conversation can be resumed.
+    const records = options.list || options.continueLatest || options.sessionId
+      ? await listPiSessionRecords(resolvePiSessionDir())
+      : [];
+    const recordIds = new Set(records.map((record) => record.id));
+    const canResume = (id: string) => recordIds.has(piSessionKey(id));
     if (options.list) {
       if (!durableStore || !store.listChatSessions) throw new Error("无法读取持久会话列表。");
       const root = options.unassigned ? null : project.root;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
-      for (const entry of store.listChatSessions(root)) console.log(entry.id + "\t" + entry.updatedAt);
+      for (const entry of store.listChatSessions(root)) {
+        console.log(entry.id + "\t" + entry.updatedAt + (canResume(entry.id) ? "" : "\t没有完整对话记录"));
+      }
       return 0;
     }
-    requestedSessionId = selectChatSession(store, options, project.root) ?? (process.env.ANS_SESSION_ID?.trim() || undefined);
+    requestedSessionId = selectChatSession(store, options, project.root, canResume);
     if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
   } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
 

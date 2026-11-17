@@ -936,8 +936,8 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   recordChatProject(sessionId: string, projectRoot: string | null): void {
-    // Design: an explicit cross-directory resume updates recency but never
-    // moves an existing conversation to the directory it was resumed from.
+    // Design: keep the original project on cross-directory resume — moving it
+    // would make another project’s history appear in its recent-session list.
     this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used)
       VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET last_used = excluded.last_used`)
       .run(sessionId, projectRoot, Date.now());
