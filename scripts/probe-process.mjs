@@ -44,7 +44,14 @@ async function stopTree(child, closed) {
 
   const signalGroup = (signal) => {
     try { process.kill(-child.pid, signal); return true; }
-    catch (error) { if (error.code === "ESRCH") return false; throw error; }
+    catch (error) {
+      if (error.code === "ESRCH") return false;
+      // Design: retry Darwin EPERM as still present — killpg1 excludes zombie
+      // members, so a draining group can return EPERM. Only ESRCH proves it gone;
+      // persistent permission errors still fail the bounded cleanup below.
+      if (process.platform === "darwin" && error.code === "EPERM") return true;
+      throw error;
+    }
   };
   if (signalGroup("SIGTERM")) {
     // A stopped MCP cannot act on SIGTERM until it resumes. Escalate as well,
