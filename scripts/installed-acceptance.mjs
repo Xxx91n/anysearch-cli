@@ -1003,8 +1003,9 @@ async function main() {
 
       const callsBeforeMissingRecord = requestLog.length;
       const noRecord = await chatCli(["--session", "older-session", "FIRST-TURN-QUESTION"], projectA, "probe", { ANS_DB_PATH: legacyPath });
-      check(noRecord.code !== 0 && noRecord.out.includes("找不到这段会话的完整对话记录") && requestLog.length === callsBeforeMissingRecord,
-        "没有完整对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
+      // 拒绝的话已改成说清原因。库里有这行、记录没了，就是「没有对话记录」。
+      check(noRecord.code !== 0 && noRecord.out.includes("没有这段会话的对话记录") && requestLog.length === callsBeforeMissingRecord,
+        "没有对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
 
       const db = new Database(legacyPath, { readonly: true });
       let after;

@@ -61,6 +61,32 @@ export function isValidSessionHandle(value: unknown): value is string {
   );
 }
 
+/**
+ * 这次调用算不算「续一段已有的对话」。
+ *
+ * 「手上没有记录」和「看不出有什么」是两件事。把后者当成前者，会让一个还没登记到库里的
+ * 句柄在空内存里跑起来，而磁盘上其实有它的记录——新对话假装接着旧对话。
+ * 只有明确说没有记录，才允许新起一段。
+ *
+ * 返回 `block` 时调用方不能发问题，要把原因说给用户。
+ */
+export function classifyContinuation(
+  lookup: { path?: string; verdict: { ok: boolean; problem?: string; message?: string } } | undefined,
+  chatTracked: boolean,
+): { mustResume: boolean; block?: string } {
+  const hasRecord = !!lookup?.path;
+  if (lookup && !lookup.verdict.ok && lookup.verdict.problem !== "missing" && !lookup.path) {
+    // Damaged records keep their path: the runtime re-judges them under its lock
+    // and refuses with the exact reason. No path means the identity could not be
+    // settled at all, and that is the case that must stop here.
+    return {
+      mustResume: chatTracked || hasRecord,
+      block: "ans_chat: " + (lookup.verdict.message || "会话记录无法确认") + "。本次没有发送问题。",
+    };
+  }
+  return { mustResume: chatTracked || hasRecord };
+}
+
 // Dedupe per failure reason: a stateless MCP host can call ans_chat repeatedly and
 // a broken store must not produce one line per call. Mirrors the warning discipline
 // in pi-runtime.ts (module scope, test hook resets it).
