@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -236,6 +236,14 @@ async function t(name: string, fn: () => Promise<void>) {
   await t("mcp --help exits 0 (mcp subcommand dependency smoke)", async () => {
     const r = await run(["mcp", "--help"]);
     assert.equal(r.code, 0);
+  });
+
+  await t("source CLI mcp --help uses the same product launcher", async () => {
+    const r = spawnSync(process.execPath, ["--import", "tsx", path.resolve(here, "../src/index.ts"), "mcp", "--help"], {
+      cwd: path.resolve(here, ".."), encoding: "utf8", timeout: 15000,
+    });
+    assert.equal(r.status, 0, r.stderr || String(r.error));
+    assert.match(r.stderr, /Usage: ans-mcp/);
   });
 
   await t("pref review lists quarantine state, exit 0", async () => {

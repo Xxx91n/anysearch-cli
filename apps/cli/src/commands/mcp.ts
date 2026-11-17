@@ -9,8 +9,13 @@ import { fileURLToPath } from "node:url";
 export async function runMcp(args: string[]): Promise<number> {
   // Forward all args to the packaged MCP entry (the ESM build).
   // ponytail: spawn the MCP server process, inherit stdio for stdio transport.
-  const self = dirname(fileURLToPath(import.meta.url));
-  const mcpEntry = resolve(self, "../bin/ans-mcp.cjs");
+  const selfFile = fileURLToPath(import.meta.url);
+  const self = dirname(selfFile);
+  // tsx runs this file in src/commands; the product bundle runs in dist.
+  // Select the known layout, rather than falling back outside a broken install.
+  const mcpEntry = resolve(self, selfFile.endsWith(".ts")
+    ? "../../bin/ans-mcp.cjs"
+    : "../bin/ans-mcp.cjs");
 
   const child = spawn(process.execPath, [mcpEntry, ...args], {
     stdio: "inherit",

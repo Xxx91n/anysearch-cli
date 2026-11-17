@@ -1,6 +1,7 @@
 // #298 / #297 S1, T2, N1: use only installed public commands and the existing
 // MCP protocol smoke. The caller owns the temporary prefix and cleanup.
 import { spawn, spawnSync } from "node:child_process";
+import { runProbeProcess } from "./probe-process.mjs";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, sep } from "node:path";
@@ -56,12 +57,12 @@ export async function verifyInstalledProduct(prefix, check) {
   // The established smoke checks initialize, all five tools and schema
   // descriptions over stdio and HTTP, including protocol negotiation.
   for (const [name, viaCli] of [["ans-mcp", false], ["ans", true]]) {
-    const result = spawnSync(process.execPath, [protocolSmoke], {
-      cwd: prefix, encoding: "utf8", timeout: 90000,
+    const result = await runProbeProcess(protocolSmoke, [], {
+      cwd: prefix, timeoutMs: 90000,
       env: { ...env, ANS_MCP_ENTRY: join(product, manifest.bin[name]), ANS_MCP_VIA_CLI: viaCli ? "1" : "0" },
     });
     check(name + (viaCli ? " mcp" : "") + " passes stdio and HTTP protocol smoke",
-      result.status === 0, result.stderr || result.stdout);
+      result.status === 0, result.error?.message || result.stderr || result.stdout);
   }
   const session = run("ans-hook-session-start", ["--envelope"], {
     input: JSON.stringify({ hook_event_name: "SessionStart", cwd: prefix, session_id: "install-smoke" }),

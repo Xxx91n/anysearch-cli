@@ -1,5 +1,5 @@
 # Native Smoke Matrix (consumer variant of better-sqlite3 build.yml).
-# Load-only: pnpm install --frozen-lockfile + verify-native.mjs. No toolchain, no build.
+# Native loading + owned probe-process cleanup. No toolchain, no build.
 # pnpm-workspace.yaml pins allowBuilds: better-sqlite3=false — a missing prebuild must
 # fail loudly here rather than being papered over by a silent node-gyp source build.
 name: native-smoke
@@ -34,6 +34,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Verify probe process-tree cleanup
+        run: node --test scripts/test/probe-process.test.mjs
       # Temporary dependency-age bypass for #260; self-expires (see the script).
       - name: dependency-age override (temporary)
         run: node scripts/ci-dep-age-override.mjs

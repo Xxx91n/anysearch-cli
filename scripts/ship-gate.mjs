@@ -23,6 +23,7 @@
 //
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
+import { PROBE_CLEANUP_FAILED } from "./probe-process.mjs";
 import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
@@ -1596,6 +1597,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
+  let preserveInstall = false;
   try {
     reportStep("step_3_pack");
     const tgzDir = await stepPack(tmpDir);
@@ -1614,8 +1616,14 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
     report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix");
     report("pass", "ship gate green — ready to tag the next release");
     flushReportEntries("pass");
+  } catch (error) {
+    if (error.code === PROBE_CLEANUP_FAILED) {
+      preserveInstall = true;
+      report("fail", "probe cleanup incomplete; kept temporary installation: " + tmpDir);
+    }
+    throw error;
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (!preserveInstall) fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 })().catch((err) => {
   report("fail", err.message);

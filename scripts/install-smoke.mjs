@@ -16,6 +16,7 @@
 //
 // macOS limitation: covered by the ci.yml ponytail note — the only arm64 delta is
 // the better-sqlite3 prebuild; add macos-latest when a real mac issue lands.
+import { PROBE_CLEANUP_FAILED } from "./probe-process.mjs";
 import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { execSync, spawnSync } from "node:child_process";
 import {
@@ -65,6 +66,8 @@ mkdirSync(prefix, { recursive: true });
 writeFileSync(join(prefix, "package.json"), '{"name":"ans-smoke","private":true}', "utf8");
 
 const smokeEnv = { ...process.env, HOME: dir, USERPROFILE: dir, ANS_DB_PATH: join(dir, "smoke.db") };
+
+let preserveInstall = false;
 
 try {
   // 1. Pack all workspace packages (workspace:* deps resolve to the packed versions).
@@ -195,8 +198,14 @@ try {
     check("providersFailed includes anysearch", Array.isArray(j?.providersFailed) && j.providersFailed.includes("anysearch"), s.out.slice(-400));
     check("offline results.length === 0", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
   }
+} catch (error) {
+  if (error.code === PROBE_CLEANUP_FAILED) {
+    preserveInstall = true;
+    console.error("Probe cleanup incomplete; kept temporary installation: " + dir);
+  }
+  throw error;
 } finally {
-  rmSync(dir, { recursive: true, force: true });
+  if (!preserveInstall) rmSync(dir, { recursive: true, force: true });
 }
 
 console.log("install-smoke: " + passed + " passed, " + failed + " failed");
