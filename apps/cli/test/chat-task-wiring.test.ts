@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore, openTaskRegistry } from "@anysearch-cli/store";
 import { wireChatTaskBudget } from "../src/commands/chat-task-budget";
-import { trackCliCommand, cliTaskKind, cliTaskRole } from "../src/cli-task-tracking";
+import { trackCliCommand, cliTaskKind, cliTaskRole, tryRegister } from "../src/cli-task-tracking";
 import { currentCliTask, runWithCliTask } from "../src/cli-task-context";
 
 let passed = 0, failed = 0;
@@ -167,6 +167,36 @@ async function main() {
       check(currentCliTask() === undefined, "9: currentCliTask outside a run is undefined");
       const inner = runWithCliTask({ taskId: "t", kind: "cli.chat", role: "business", attachSession: () => {} }, () => currentCliTask());
       check(inner?.taskId === "t", "9: runWithCliTask threads the identity synchronously");
+    }
+
+    // 10. tryRegister: a registration WRITE that throws degrades to undefined
+    //     plus a warning, never an exception out of trackCliCommand. (Greptile's
+    //     point: the writes used to sit outside the open's try/catch, so a
+    //     contended DB or a full disk took down `doctor` too.) Case 8 proves
+    //     the open-failure shape end-to-end; this pins the write-failure guard
+    //     itself, which an open cannot fail into.
+    {
+      let warned: string[] = [];
+      const origWrite = process.stderr.write.bind(process.stderr);
+      (process.stderr as { write: (chunk: string) => boolean }).write = (chunk: string) => {
+        warned.push(String(chunk));
+        return true;
+      };
+      let threw = false;
+      let degraded: number | undefined;
+      try {
+        degraded = tryRegister(() => { throw new Error("database is locked"); }, "task registration");
+      } catch {
+        threw = true;
+      } finally {
+        (process.stderr as { write: (chunk: string) => boolean }).write = origWrite;
+      }
+      check(!threw, "10: a throwing registration write never escapes tryRegister");
+      check(degraded === undefined, "10: the failed write reads as 'nothing registered'");
+      check(warned.some((w) => w.includes("task registration failed") && w.includes("database is locked")),
+        "10: the degradation warns on stderr with the named fault");
+      check(tryRegister(() => 42, "task registration") === 42,
+        "10: a healthy write passes through unchanged");
     }
   } finally {
     try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }

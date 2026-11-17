@@ -77,8 +77,12 @@ function warnOnce(msg: string): void {
  * One registration write with the warning-not-blocker contract: a thrown write
  * degrades to `undefined` (nothing registered) plus a named stderr line, so
  * the command still runs — the same shape an un-openable registry produces.
+ *
+ * Exported for tests the same way wireChatMemory/wireChatTaskBudget are: the
+ * guard is a wiring unit, and its contract (throw -> degraded, never escapes)
+ * is what a broken-registry day actually exercises.
  */
-function tryRegister<T>(write: () => T, label: string): T | undefined {
+export function tryRegister<T>(write: () => T, label: string): T | undefined {
   try {
     return write();
   } catch (e: any) {

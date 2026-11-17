@@ -234,6 +234,43 @@ async function main() {
       "the refused call is not billed as a completed call");
   }
 
+  // --- 4b. The CLI's real consumption shape: return AT the error event ---
+  //
+  // The CLI handler does `case "error": return 1` — it never drains the
+  // generator, so code after a yielded error never runs. Case 4 above reads
+  // the whole stream; this case breaks out exactly where the CLI does, which
+  // is the consumer shape the cleanup-before-yield reordering exists for.
+  {
+    const taskLedger = new ScopeLedger();
+    taskLedger.refuseCalls = true;
+    const stream = countingStreamFn(usageStreamFn(150, 0.003));
+    const runtime = new PiAgentRuntime({
+      retriever: new ScopeRetriever(),
+      domain: mockDomain,
+      model: { id: "m" } as any,
+      streamFn: stream.fn,
+      store: noopStore(),
+      ledger: new ScopeLedger(),
+      sessionId: "s-302-early-return",
+      taskBudget: { taskId: "t-302-early-return", ledger: taskLedger },
+    });
+    let sawError = false;
+    let errorMessage = "";
+    for await (const ev of runtime.run("hello")) {
+      if (ev.type === "error") { sawError = true; errorMessage = ev.message; break; }
+    }
+    assert(sawError && /Call budget exhausted/.test(errorMessage),
+      "the early-return consumer still sees the call-budget error (got " + errorMessage + ")");
+    // The whole point: cleanup ran BEFORE the error was yielded, so walking
+    // away at the error leaves no phantom reservation on the task's row.
+    const tokenSettles = taskLedger.settles.filter(s => s.dim === "tokens");
+    assert(tokenSettles.length === 1 && tokenSettles[0].reserved > 0 && tokenSettles[0].actual === 0,
+      "an early-return consumer leaves the token reservation already released (got " + JSON.stringify(tokenSettles) + ")");
+    assert(taskLedger.reserves.some(r => r.dim === "tokens" && r.scope === "t-302-early-return"),
+      "the reservation history is kept (honest record), just zero-settled");
+    assert(stream.calls() === 0, "no provider call was made for a consumer that walked away");
+  }
+
   // --- 5. A rejected call quota under the SESSION form stays the soft gate (#178 preserved) ---
   {
     const sessionLedger = new ScopeLedger();
