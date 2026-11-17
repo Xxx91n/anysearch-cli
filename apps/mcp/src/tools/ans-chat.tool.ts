@@ -485,37 +485,26 @@ export function registerAnsChat(
           // memory block is missing because a rebuild failed, not because the
           // session never had a summary.
           for (const r of summaryRebuilds) output += "\n" + formatSummaryRebuildLine(r);
-          // The runtime's error event means the loop did not complete; surface
-          // it as an execution failure instead of a successful-looking text.
-          //
-          // #264: the rebuild report rides along even here. The summary work runs
-          // in the background and was already drained above, so a rebuilt summary
-          // really does exist; dropping the report would tell the caller nothing
-          // about it and leave it guessing whether the old version is still
-          // suspended.
+          // Keep a known or created record registered on any incomplete run.
+          // A cancellation before a new file exists may still be retried as new.
+          const rememberIncomplete = () => {
+            if (!memory.sessionId || !memory.store?.getChatSession || !memory.store.recordChatProject) return;
+            try {
+              const entry = memory.store.getChatSession(memory.sessionId);
+              const hasRecord = mustResume || !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(memory.sessionId));
+              if (entry && hasRecord) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
+            } catch (error) {
+              process.stderr.write("[warn] 无法登记会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
+            }
+          };
+          // An error is a failure even when background summary work completed.
           if (runtimeError !== undefined) {
+            rememberIncomplete();
             return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
           }
-          // Cancellation is a transport outcome, not a finished run (#211). The
-          // partial text is dropped so a cut-off stream never reads as an
-          // answer. The run still spent real money before it was cut off, and
-          // the provider never returned a final usage figure for it — so the
-          // usage block says exactly that (costSource "unknown", every
-          // dimension named missing) instead of omitting usage, which a caller
-          // can only read as "free" (#266). The handle is not part of the
-          // answer, so it survives: the caller can resume the same session.
+          // An interrupted request keeps its handle and reports unknown usage.
           if (!completed) {
-            // This returned handle may be used again even if the run was cut
-            // short. Remember it without calling it a completed recent chat.
-            if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
-              try {
-                const entry = memory.store.getChatSession(memory.sessionId);
-                const hasRecord = mustResume || !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(memory.sessionId));
-                if (entry && hasRecord) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
-              } catch (error) {
-                process.stderr.write("[warn] 无法登记会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
-              }
-            }
+            rememberIncomplete();
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),

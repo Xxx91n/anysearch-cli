@@ -65,32 +65,43 @@ function readPiSessionId(file: string): string {
   } finally { closeSync(fd); }
 }
 
-/** Find one PI record without filtering by the creating process's cwd. */
-export function findPiSessionRecord(dir: string, key: string): string | undefined {
+/** Scan PI headers once, without filtering by the creating process's cwd. */
+export function indexPiSessionRecords(dir: string): (key: string) => string | undefined {
   let files: string[];
   try { files = readdirSync(dir); }
   catch (error: any) {
-    if (error?.code === "ENOENT") return undefined;
+    if (error?.code === "ENOENT") return () => undefined;
     throw error;
   }
-  const matches: string[] = [];
+  const records = new Map<string, string[]>();
+  const failures: Array<{ namedKey?: string; error: unknown }> = [];
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
-    // Design: inspect the header even when the filename names another key —
-    // users may have renamed a record. An unreadable file bearing a different
-    // PI key is ignored as before: another process may be creating it.
+    // Design: inspect headers even when filenames name another key — users may
+    // have renamed records. An unreadable file bearing another PI key is
+    // ignored for this lookup, as another process may be creating it.
     const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
     const path = join(dir, file);
     try {
-      if (readPiSessionId(path) === key) matches.push(path);
-    } catch (error) {
-      if (!namedKey || namedKey === key) throw error;
-    }
+      const id = readPiSessionId(path);
+      const matches = records.get(id) ?? [];
+      matches.push(path);
+      records.set(id, matches);
+    } catch (error) { failures.push({ namedKey, error }); }
   }
-  // Design: reject duplicate keys — older releases could create multiple
-  // records across directories, and choosing one could hide part of the chat.
-  if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
-  return matches[0];
+  return (key: string) => {
+    const failure = failures.find((item) => !item.namedKey || item.namedKey === key);
+    if (failure) throw failure.error;
+    const matches = records.get(key) ?? [];
+    // Design: reject duplicate keys — choosing one can hide part of a chat.
+    if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
+    return matches[0];
+  };
+}
+
+/** Find one PI record; check again under the caller's session lock before use. */
+export function findPiSessionRecord(dir: string, key: string): string | undefined {
+  return indexPiSessionRecords(dir)(key);
 }
 
 /**

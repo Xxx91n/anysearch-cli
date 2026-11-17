@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, resolvePiSessionDir } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, piSessionKey, findPiSessionRecord, indexPiSessionRecords, resolvePiSessionDir } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -90,9 +90,10 @@ export async function runChat(argv: string[]): Promise<number> {
       if (!options.unassigned && !project.root) throw new Error("无法确定当前项目。用 --list --unassigned 查看未归属会话。");
       const root = options.unassigned ? null : project.root;
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
+      const findRecord = indexPiSessionRecords(resolvePiSessionDir());
       for (const entry of store.listChatSessions(root)) {
         let note = "";
-        try { if (!canResume(entry.id)) note = "\t没有完整对话记录"; }
+        try { if (!findRecord(piSessionKey(entry.id))) note = "\t没有完整对话记录"; }
         catch { note = "\t对话记录无法确认，请单独检查"; }
         console.log(entry.id + "\t" + entry.updatedAt + note);
       }
