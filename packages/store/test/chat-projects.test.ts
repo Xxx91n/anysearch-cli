@@ -13,6 +13,11 @@ test("project sessions survive reopening; legacy rows stay unassigned and resear
     await store.ensureSession("legacy", "default");
     await store.saveResults("legacy", [{ url: "https://intra.example/wiki", title: "internal wiki", snippet: "the intranet wiki proxy runs on port 8080", source: "tavily" }]);
     await store.ensureSession("a", "default");
+    store.recordChatProject("a", "/project/a", false);
+    assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
+    assert.deepEqual(store.listChatSessions("/project/a"), []);
+    store.recordChatProject("a", "/project/b", false);
+    assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
     store.recordChatProject("a", "/project/a");
     await store.ensureSession("b", "default");
     store.recordChatProject("b", "/project/b");

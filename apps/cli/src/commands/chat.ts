@@ -144,7 +144,15 @@ export async function runChat(argv: string[]): Promise<number> {
     process.stderr.write("会话恢复失败，本次没有发送问题。\n");
     return 1;
   }
-  if (memory.sessionId) console.log("[session] " + memory.sessionId);
+  if (memory.sessionId) {
+    try {
+      store.recordChatProject?.(memory.sessionId, previousSession ? previousSession.projectRoot : project.root, false);
+    } catch (error: any) {
+      process.stderr.write("无法保存会话的项目记录：" + error.message + "\n");
+      return 1;
+    }
+    console.log("[session] " + memory.sessionId);
+  }
   if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
   // Construct PiAgentRuntime and run.

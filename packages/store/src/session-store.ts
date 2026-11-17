@@ -223,7 +223,7 @@ export interface SessionStore {
   ensureSession(sessionId: string, domain: string): Promise<void>;
   getChatSession?(sessionId: string): ChatSessionEntry | undefined;
   listChatSessions?(projectRoot: string | null): ChatSessionEntry[];
-  recordChatProject?(sessionId: string, projectRoot: string | null): void;
+  recordChatProject?(sessionId: string, projectRoot: string | null, completed?: boolean): void;
 
   // #187: register the domain's [budget] caps for this session at the same
   // composition-root point as ensureSession/createSession. Omitted when the
@@ -931,16 +931,19 @@ export class SqliteSessionStore implements SessionStore {
     // NULL includes legacy rows. Never guess their project from today's cwd.
     return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot,
       COALESCE(datetime(p.last_used / 1000, 'unixepoch'), s.updated_at) AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
-      WHERE p.project_root IS ?
+      WHERE p.project_root IS ? AND (p.project_root IS NULL OR p.last_used > 0)
       ORDER BY COALESCE(p.last_used, 0) DESC, s.updated_at DESC, s.id DESC`).all(projectRoot) as ChatSessionEntry[];
   }
 
-  recordChatProject(sessionId: string, projectRoot: string | null): void {
+  recordChatProject(sessionId: string, projectRoot: string | null, completed = true): void {
     // Design: keep the original project on cross-directory resume — moving it
     // would make another project’s history appear in its recent-session list.
+    // Register ownership before exposing a new handle; only a completed run
+    // updates recency. Concurrent resumes must not reassign the project.
     this.db.prepare(`INSERT INTO chat_projects (session_id, project_root, last_used)
-      VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET last_used = excluded.last_used`)
-      .run(sessionId, projectRoot, Date.now());
+      VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
+      last_used = CASE WHEN ? THEN excluded.last_used ELSE chat_projects.last_used END`)
+      .run(sessionId, projectRoot, completed ? Date.now() : 0, completed ? 1 : 0);
   }
 
   // #187/CodeRabbit: merge legacy duplicate budget rows before the unique index.

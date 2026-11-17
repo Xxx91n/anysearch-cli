@@ -19,9 +19,9 @@ export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): strin
   return join(dirname(resolveDbPath(env)), "pi-sessions");
 }
 
-// PI writes its session id in the JSONL header. Read only the bounded header:
-// listAll reads every transcript and silently skips files on errors, which can
-// make a restart create a second conversation under an existing handle.
+// Design: read PI's bounded JSONL headers — listAll reads every transcript
+// and silently skips files on errors, which can create a second conversation
+// under an existing handle after restart.
 function readPiSessionId(file: string): string {
   const fd = openSync(file, "r");
   try {
@@ -76,16 +76,19 @@ export function findPiSessionRecord(dir: string, key: string): string | undefine
   const matches: string[] = [];
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
-    // PI names its files with the session id. Ignore other recognizable keys:
-    // another process can be writing its header while this session starts.
-    // Still inspect renamed files to preserve the old discovery contract.
+    // Design: inspect the header even when the filename names another key —
+    // users may have renamed a record. An unreadable file bearing a different
+    // PI key is ignored as before: another process may be creating it.
     const namedKey = file.match(/_(ans-[0-9a-f]{32})\.jsonl$/)?.[1];
-    if (namedKey && namedKey !== key) continue;
     const path = join(dir, file);
-    if (readPiSessionId(path) === key) matches.push(path);
+    try {
+      if (readPiSessionId(path) === key) matches.push(path);
+    } catch (error) {
+      if (!namedKey || namedKey === key) throw error;
+    }
   }
-  // Older releases could create duplicate keys after a cross-directory run.
-  // Do not guess which copy is complete or discard either record.
+  // Design: reject duplicate keys — older releases could create multiple
+  // records across directories, and choosing one could hide part of the chat.
   if (matches.length > 1) throw new Error("同一个会话有多份对话记录，请先核对：" + key);
   return matches[0];
 }
