@@ -36,7 +36,7 @@ test("ProjectIndexStore: create and search", () => {
     snippet: "TypeScript is a strongly typed programming language that builds on JavaScript.",
     source: "exa", contentHash: "hash1",
   });
-  const hits = store.search("TypeScript Handbook", 5);
+  const hits = store.search("TypeScript Handbook", ["/test/project"], 5);
   assert.ok(hits.length > 0, "should find indexed entry");
   assert.equal(hits[0].title, "TypeScript Handbook");
   store.close();
@@ -46,7 +46,7 @@ test("ProjectIndexStore: dedup by content_hash", () => {
   const store = new ProjectIndexStore(join(tmpDir, "dedup-test.db"));
   store.indexEntry({ projectPath: "/test", toolName: "t", title: "A", url: "u1", snippet: "s", source: "x", contentHash: "dup" });
   store.indexEntry({ projectPath: "/test", toolName: "t", title: "A", url: "u1", snippet: "s", source: "x", contentHash: "dup" });
-  const hits = store.search("A", 10);
+  const hits = store.search("A", ["/test"], 10);
   assert.equal(hits.length, 1, "dedup should prevent duplicate");
   store.close();
 });
@@ -324,7 +324,15 @@ testAsync("Server: /health endpoint returns 200", async () => {
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
     // the server is never open; pin a token so the liveness probe authenticates.
-    env: { ...process.env, ANS_SERVER_PORT: String(port), ANS_SERVER_TOKEN: "plugin-test-token" },
+    // Keep the index database and the published address inside this test's temp
+    // dir so the run never touches the operator's home (#322).
+    env: {
+      ...process.env,
+      ANS_SERVER_PORT: String(port),
+      ANS_SERVER_TOKEN: "plugin-test-token",
+      ANS_PROJECT_DB: join(tmpDir, "server-project-index.db"),
+      ANS_SERVER_REGISTRY: join(tmpDir, "server.json"),
+    },
   });
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
   try {

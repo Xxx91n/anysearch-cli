@@ -66,9 +66,22 @@ export function distillOutput(input: HookInput): DistillResult {
 
 export function makePostToolUseDecision(input: HookInput): HookDecision {
   const { distilled, shouldIndex, entries } = distillOutput(input);
+  // Adapters pass the resolved project root, or an empty string when the
+  // project cannot be identified. Empty means: do not index, and say why in
+  // the distilled output the host already receives.
+  const projectKnown = input.projectPath.trim().length > 0;
   return {
-    distilledOutput: distilled,
-    shouldIndex,
+    distilledOutput: projectKnown ? distilled : noteProjectUnavailable(distilled),
+    shouldIndex: shouldIndex && projectKnown,
     indexEntries: entries,
   };
+}
+
+function noteProjectUnavailable(distilled: string): string {
+  try {
+    const parsed = JSON.parse(distilled) as Record<string, unknown>;
+    return JSON.stringify({ ...parsed, indexNote: "project identity unknown; project index disabled" });
+  } catch {
+    return distilled;
+  }
 }

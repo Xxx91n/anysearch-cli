@@ -24,7 +24,7 @@ function seeded() {
 test("project index: a natural-language follow-up question recalls indexed evidence (was 0)", () => {
   const { store, dir } = seeded();
   try {
-    const hits = store.search("latest NBA champion NBA Finals MVP", 5);
+    const hits = store.search("latest NBA champion NBA Finals MVP", [dir], 5);
     assert.ok(hits.length >= 2, `expected the two NBA rows, got ${hits.length}`);
     assert.ok(hits.every((h) => /Knicks|Brunson/.test(h.title)), "one-word near-miss rows stay out");
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
@@ -33,10 +33,10 @@ test("project index: a natural-language follow-up question recalls indexed evide
 test("project index: strict matches keep priority; unrelated queries stay empty", () => {
   const { store, dir } = seeded();
   try {
-    const top = store.search("Brunson Finals MVP", 1);
+    const top = store.search("Brunson Finals MVP", [dir], 1);
     assert.equal(top.length, 1);
     assert.match(top[0]!.title, /Brunson/);
-    assert.equal(store.search("quantum zebra telescope", 5).length, 0);
-    assert.equal(store.search("NBA ticket refund policy", 5).length, 0, "single shared entity word is not evidence");
+    assert.equal(store.search("quantum zebra telescope", [dir], 5).length, 0);
+    assert.equal(store.search("NBA ticket refund policy", [dir], 5).length, 0, "single shared entity word is not evidence");
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });

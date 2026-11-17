@@ -40,7 +40,7 @@ Set these at the OS/user level. Never write them into config files:
 ## 3. Plugin server (once per machine)
 
 ```bash
-ans-plugin-server     # listens 127.0.0.1:33333, Bearer token auto-generated
+ans-plugin-server     # 127.0.0.1:33333 by default, Bearer token auto-generated
 ```
 
 On ≤0.0.3 there is no bin. Start it by hand:
@@ -49,9 +49,12 @@ On ≤0.0.3 there is no bin. Start it by hand:
 node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"
 ```
 
-The server writes a 0600 token to `<cwd>/.anysearch-cli/server-token`. Hooks
-read the same file relative to their working directory. Start it from the
-project you work in, or share its cwd with that project.
+The server writes one 0600 token to `~/.anysearch-cli/server-token`
+(`%USERPROFILE%` on Windows) and publishes the address it bound in
+`~/.anysearch-cli/server.json`. Hooks read those two files, so one server
+serves every project; a taken port only changes the published address.
+Project-scoped requests name their project (the workspace's Git root or
+`.anysearch/config.toml`).
 
 ## 4. MCP registration — project `mcp.json`
 

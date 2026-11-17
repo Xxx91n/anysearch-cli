@@ -1,6 +1,11 @@
 // ProjectIndexStore: per-project FTS5 index, physically separate from SessionStore.
 // Physical dual-DB. Internal agent reads this only (read-only).
 // Written by hooks layer via IPC to long-running MCP server ( +2).
+//
+// Every read states its project scope. One project is the normal case; more
+// than one is a deliberate cross-project read the caller asked for. There is
+// no "all projects" mode: a query that carries no project condition would let
+// one project's records leak into another's context.
 
 import Database from "better-sqlite3";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed } from "@anysearch-cli/store";
@@ -20,12 +25,18 @@ export interface ProjectIndexEntry {
 
 export interface ProjectIndexHit {
   rowid: number;
+  projectPath: string;
   title: string;
   url: string;
   snippet: string;
   source: string;
   rank: number;
   createdAt: string;
+}
+
+/** The projects a read may use. Empty is a caller bug, not "everything". */
+export interface ProjectIndexScope {
+  projects: readonly string[];
 }
 
 const SCHEMA_SQL = `
@@ -76,14 +87,31 @@ CREATE INDEX IF NOT EXISTS idx_project_path ON project_index(project_path);
 CREATE INDEX IF NOT EXISTS idx_content_hash ON project_index(content_hash);
 `;
 
+function scopeProjects(scope: ProjectIndexScope | readonly string[]): string[] {
+  const raw: readonly string[] = Array.isArray(scope) ? scope : (scope as ProjectIndexScope).projects;
+  const unique = new Set<string>();
+  for (const value of raw) {
+    const project = typeof value === "string" ? value.trim() : "";
+    if (project) unique.add(project);
+  }
+  return [...unique];
+}
+
+function requireProject(projectPath: string): string {
+  const project = typeof projectPath === "string" ? projectPath.trim() : "";
+  if (!project) throw new Error("projectPath required: refusing to use a project-unscoped row");
+  return project;
+}
+
 export class ProjectIndexStore {
   private db: Database.Database;
-  private stmts: {
+  private readonly stmts: {
     insert: Database.Statement;
-    search: Database.Statement;
     purge: Database.Statement;
     exists: Database.Statement;
   };
+  /** One prepared read per distinct scope size (the project list is a parameter list). */
+  private readonly scopeStmts = new Map<number, Database.Statement>();
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { timeout: 5000 });
@@ -97,19 +125,31 @@ export class ProjectIndexStore {
         `INSERT INTO project_index (project_path, tool_name, query_hash, title, url, snippet, source, content_hash)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       ),
-    search: this.db.prepare(
-      `SELECT p.rowid, p.title, p.url, p.snippet, p.source, p.created_at,
-              f.rank,
-              bm25(project_index_fts, 0, 0, 10.0, 1.0, 5.0, 1.0) as weighted_rank
-       FROM project_index_fts f
-       JOIN project_index p ON f.rowid = p.id
-       WHERE project_index_fts MATCH ?
-       ORDER BY weighted_rank
-       LIMIT ?`
-    ),
       purge: this.db.prepare(`DELETE FROM project_index WHERE project_path = ?`),
       exists: this.db.prepare(`SELECT COUNT(*) as cnt FROM project_index WHERE project_path = ? AND content_hash = ?`),
     };
+  }
+
+  /**
+   * Search only the named projects. A single root is the default scoped read;
+   * two or more roots are the explicit cross-project read (N2 / S3).
+   */
+  search(query: string, scope: ProjectIndexScope | readonly string[], limit = 10): ProjectIndexHit[] {
+    const projects = scopeProjects(scope);
+    if (projects.length === 0) throw new Error("project scope required: refusing an unscoped project-index read");
+    const searchStmt = this.readStatement(projects.length);
+    const safeQuery = this.fts5Escape(query);
+    const strict = searchStmt.all(safeQuery, ...projects, limit) as ProjectIndexHit[];
+    // host recall questions are natural language — relax when the strict rung under-fills.
+    if (strict.length >= limit) return strict;
+    const relaxed = fts5RelaxedQuery(query);
+    if (!relaxed) return strict;
+    // `p.rowid` on an INTEGER PRIMARY KEY table comes back under the PK's name (`id`), so dedupe on it.
+    const idOf = (h: ProjectIndexHit) => (h as unknown as { id?: number }).id ?? h.rowid;
+    const terms = relaxedTerms(query);
+    const wide = (searchStmt.all(relaxed, ...projects, limit * 4) as ProjectIndexHit[])
+      .filter((h) => coversMajority(terms, `${h.title ?? ""} ${h.snippet ?? ""} ${h.url ?? ""}`));
+    return appendRelaxed(strict, wide, limit, idOf);
   }
 
   indexEntry(entry: {
@@ -122,37 +162,43 @@ export class ProjectIndexStore {
     source: string;
     contentHash: string;
   }): void {
+    const projectPath = requireProject(entry.projectPath);
     // Dedup by content_hash within same project (: de-dup rule).
-    const existing = this.stmts.exists.get(entry.projectPath, entry.contentHash) as { cnt: number };
+    const existing = this.stmts.exists.get(projectPath, entry.contentHash) as { cnt: number };
     if (existing.cnt > 0) return;
     this.stmts.insert.run(
-      entry.projectPath, entry.toolName, entry.queryHash ?? null,
+      projectPath, entry.toolName, entry.queryHash ?? null,
       entry.title, entry.url, entry.snippet, entry.source, entry.contentHash
     );
   }
 
-  search(query: string, limit = 10): ProjectIndexHit[] {
-    const safeQuery = this.fts5Escape(query);
-    const strict = this.stmts.search.all(safeQuery, limit) as ProjectIndexHit[];
-    // host recall questions are natural language — relax when the strict rung under-fills.
-    if (strict.length >= limit) return strict;
-    const relaxed = fts5RelaxedQuery(query);
-    if (!relaxed) return strict;
-    // `p.rowid` on an INTEGER PRIMARY KEY table comes back under the PK's name (`id`), so dedupe on it.
-    const idOf = (h: ProjectIndexHit) => (h as unknown as { id?: number }).id ?? h.rowid;
-    const terms = relaxedTerms(query);
-    const wide = (this.stmts.search.all(relaxed, limit * 4) as ProjectIndexHit[])
-      .filter((h) => coversMajority(terms, `${h.title ?? ""} ${h.snippet ?? ""} ${h.url ?? ""}`));
-    return appendRelaxed(strict, wide, limit, idOf);
-  }
-
   purgeProject(projectPath: string): number {
-    const result = this.stmts.purge.run(projectPath);
+    const result = this.stmts.purge.run(requireProject(projectPath));
     return result.changes;
   }
 
   close(): void {
     this.db.close();
+    this.scopeStmts.clear();
+  }
+
+  private readStatement(scopeSize: number): Database.Statement {
+    let stmt = this.scopeStmts.get(scopeSize);
+    if (!stmt) {
+      const placeholders = new Array(scopeSize).fill("?").join(", ");
+      stmt = this.db.prepare(
+        `SELECT p.rowid, p.project_path, p.title, p.url, p.snippet, p.source, p.created_at,
+                f.rank,
+                bm25(project_index_fts, 0, 0, 10.0, 1.0, 5.0, 1.0) as weighted_rank
+         FROM project_index_fts f
+         JOIN project_index p ON f.rowid = p.id
+         WHERE project_index_fts MATCH ? AND p.project_path IN (${placeholders})
+         ORDER BY weighted_rank
+         LIMIT ?`
+      );
+      this.scopeStmts.set(scopeSize, stmt);
+    }
+    return stmt;
   }
 
   private fts5Escape(query: string): string {

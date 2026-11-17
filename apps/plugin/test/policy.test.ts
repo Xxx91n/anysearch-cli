@@ -16,7 +16,26 @@ function assert(label: string, cond: boolean) {
 const DEAD = "http://127.0.0.1:1"; // nothing listens; connection refused fast
 const dir = mkdtempSync(join(tmpdir(), "ans-policy-test-"));
 const prevCwd = process.cwd();
+const prevEnv = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ANS_SERVER_URL: process.env.ANS_SERVER_URL,
+  ANS_SERVER_TOKEN: process.env.ANS_SERVER_TOKEN,
+  ANS_SERVER_REGISTRY: process.env.ANS_SERVER_REGISTRY,
+};
 process.chdir(dir);
+// The hook resolves the project before it reads any policy: without a project
+// marker every URL question is "project identity unknown" (ask). This fixture
+// is the project under test.
+mkdirSync(join(dir, ".anysearch"), { recursive: true });
+writeFileSync(join(dir, ".anysearch", "config.toml"), "", "utf8");
+// Keep the installation token/address out of the operator's home (#322) and
+// pin the endpoint at a dead port so a real local server cannot answer.
+process.env.HOME = dir;
+process.env.USERPROFILE = dir;
+process.env.ANS_SERVER_URL = DEAD;
+process.env.ANS_SERVER_TOKEN = "policy-test-token";
+delete process.env.ANS_SERVER_REGISTRY;
 
 const GOOD = { allow: ["good.example"], deny: ["denied.example"] };
 const goodPolicy = { ...GOOD, policy_version: canonicalVersion(GOOD.allow, GOOD.deny) };
@@ -47,7 +66,7 @@ async function withServer(status: number, body: unknown, fn: (url: string) => Pr
 
 async function main() {
   // 1. no cache + server unreachable -> null (D4 fail-closed on the caller side)
-  const p1 = await readPolicy(DEAD, "");
+  const p1 = await readPolicy(DEAD, "", dir);
   assert("no cache + server down -> null", p1 === null);
 
   const d1 = await makePreToolUseDecision(input("https://unknown-site.example/path"));
@@ -55,7 +74,7 @@ async function main() {
 
   // 2. good cache (integrity-verifiable): consumed when server is down
   writeCache(goodPolicy);
-  const p2 = await readPolicy(DEAD, "");
+  const p2 = await readPolicy(DEAD, "", dir);
   assert("good cache consumed when server down", p2 !== null && p2.policy_version === goodPolicy.policy_version);
 
   const dAllow = await makePreToolUseDecision(input("https://good.example/x"));
@@ -70,7 +89,7 @@ async function main() {
 
   // 4. tampered cache: content replaced but self-declared version kept -> rejected
   writeCache({ allow: [], deny: [], policy_version: goodPolicy.policy_version });
-  const p4 = await readPolicy(DEAD, "");
+  const p4 = await readPolicy(DEAD, "", dir);
   assert("tampered cache (hash mismatch) -> null, fail-closed", p4 === null);
 
   // restore the good cache for the remaining steps
@@ -81,18 +100,29 @@ async function main() {
   await withServer(200, fresh, async (url) => {
     // poison the cache
     writeCache({ allow: ["stale.example"], deny: ["stale.example"], policy_version: canonicalVersion(["stale.example"], ["stale.example"]) });
-    const p = await readPolicy(url, "");
+    const p = await readPolicy(url, "", dir);
     assert("server reachable -> fresh wins (no version-equal early return)", p !== null && p.allow.join() === "fresh.example");
   });
 
   // 6. server reachable but failing (5xx): falls back to good cache, not null
   await withServer(500, { error: "policy parse failed" }, async (url) => {
     writeCache(goodPolicy);
-    const p = await readPolicy(url, "");
+    const p = await readPolicy(url, "", dir);
     assert("5xx + good cache -> cache fallback", p !== null && p.policy_version === goodPolicy.policy_version);
   });
 
+  // 7. a project without its own cache does not borrow this project's cache
+  const other = mkdtempSync(join(tmpdir(), "ans-policy-other-"));
+  try {
+    const pOther = await readPolicy(DEAD, "", other);
+    assert("other project + server down -> no borrowed cache", pOther === null);
+  } finally { rmSync(other, { recursive: true, force: true }); }
+
   process.chdir(prevCwd);
+  for (const [key, value] of Object.entries(prevEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   rmSync(dir, { recursive: true, force: true });
 
   console.log("plugin policy tests: " + passed + " passed, " + failed + " failed");

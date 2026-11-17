@@ -7,6 +7,7 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 import { toolError } from "./failure.js";
+import { recallProjectIndex } from "../project-index.js";
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -18,7 +19,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
     async (args: unknown, ctx?: ServerContext) => {
       return observeTool(eng, "recall_memory", ctx, async () => {
       try {
-        const { query, limit } = args as { query: string; limit?: number };
+        const { query, limit, projectPaths } = args as { query: string; limit?: number; projectPaths?: string[] };
         const lim = limit ?? 5;
         // FTS5 memory recall with time decay.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");
@@ -46,20 +47,25 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
         const eg = isEvergreen(query);
         // Two-stage recall pipeline.
         // Stage 2: project index fallback (if internal hits insufficient).
-        // provenance tagged, no cross-layer score mixing.
-        let projectHits: Array<{ title: string; url: string; snippet: string; source: string; rank: number; createdAt: string }> = [];
+        // provenance tagged, no cross-layer score mixing. The plugin server owns
+        // the index and answers only for the project roots named here; an
+        // unknown project or an absent server is reported, not guessed around.
+        let projectHits: Array<{ title: string; url: string; snippet: string; source: string; rank: number; createdAt: string; projectPath?: string }> = [];
+        let projectIndexNote: string | undefined;
+        let projectScope: string[] = [];
         if (hits.length < lim) {
-          try {
-            const { ProjectIndexStore } = await import("@anysearch-cli/plugin");
-            const dbPath = process.env.ANS_PROJECT_DB || "";
-            if (dbPath) {
-              const store = new ProjectIndexStore(dbPath);
-              projectHits = store.search(query, lim - hits.length);
-              store.close();
-            }
-          } catch {
-            // ponytail: project index optional, fail-open.
-          }
+          const projectRecall = await recallProjectIndex(query, lim - hits.length, projectPaths ?? []);
+          projectHits = projectRecall.hits.map((hit) => ({
+            title: hit.title,
+            url: hit.url,
+            snippet: hit.snippet,
+            source: hit.source,
+            rank: hit.rank,
+            createdAt: hit.createdAt ?? "",
+            ...(hit.projectPath ? { projectPath: hit.projectPath } : {}),
+          }));
+          projectIndexNote = projectRecall.note;
+          projectScope = projectRecall.projects;
         }
         // no attribution — recall_memory reads from memory store, not provider envelopes.
         const summary = JSON.stringify({
@@ -88,7 +94,10 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             source: h.source,
             rank: h.rank,
             provenance: "project-index",
+            ...(h.projectPath ? { project: h.projectPath } : {}),
           })),
+          ...(projectIndexNote ? { projectIndexNote } : {}),
+          ...(projectScope.length ? { projectIndexScope: projectScope } : {}),
         }, null, 2);
         return { content: [{ type: "text" as const, text: summary }] };
       } catch (e) {

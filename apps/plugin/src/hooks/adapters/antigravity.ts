@@ -29,8 +29,9 @@
 // ephemeralMessage injectSteps by the next invocation event.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+// resolve the installation token + published server address.
+import { resolveServerEndpoint } from "../../server/token.js";
+import { resolveHookProject } from "../project-identity.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 import { existsSync, readFileSync, mkdirSync, appendFileSync, unlinkSync } from "node:fs";
@@ -133,6 +134,7 @@ async function main(): Promise<void> {
   const toolInput = stdin.toolCall?.args || stdin.tool_input || {};
   const sessionId = stdin.conversationId || stdin.session_id || "";
   const cwd = stdin.workspacePaths?.[0] || stdin.cwd || process.cwd();
+  const projectRoot = resolveHookProject(cwd).root;
 
   // generate .mdc on any hook invocation as fallback
   // (SessionStart does not exist on this host). Antigravity rules live under
@@ -148,7 +150,7 @@ async function main(): Promise<void> {
           event: "PreToolUse",
           toolName,
           toolInput,
-          projectPath: cwd,
+          projectPath: projectRoot ?? "",
           sessionId,
         });
         if (decision.additionalContext) stagePending(stdin, cwd, decision.additionalContext);
@@ -173,15 +175,14 @@ async function main(): Promise<void> {
           toolName,
           toolInput,
           toolOutput,
-          projectPath: cwd,
+          projectPath: projectRoot ?? "",
           sessionId,
         });
 
-        const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-        const token = resolveServerToken().token;
-        if (decision.shouldIndex && decision.indexEntries) {
-          await callServer(serverUrl + "/index", token, {
-            projectPath: cwd, toolName, entries: decision.indexEntries,
+        if (decision.shouldIndex && decision.indexEntries && projectRoot) {
+          const endpoint = resolveServerEndpoint();
+          await callServer(endpoint.url + "/index", endpoint.token, {
+            projectPath: projectRoot, toolName, entries: decision.indexEntries,
           }, { sessionId }).catch(() => null);
         }
 

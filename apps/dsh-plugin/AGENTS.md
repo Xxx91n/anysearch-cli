@@ -1,6 +1,6 @@
 # AGENTS.md — @anysearch-cli/dsh-plugin
 
-This package is a small Cordis bundle. It plugs DeepSeek Harness (dsh) into anysearch's shared hook code. Since R90 it also registers the five `ans_*` tools through `ctx.tools.register`. What runs inside this package is deliberately small: it only listens to events and declares the tool definitions. Every real capability lives in the anysearch server: hooks talk to that server at `127.0.0.1:33333`, and tool calls go to `ans-mcp` over HTTP at `{ANS_MCP_URL}/mcp`. Apart from the URL policy, a broken layer does not block the call (fail-open).
+This package is a small Cordis bundle. It plugs DeepSeek Harness (dsh) into anysearch's shared hook code. Since R90 it also registers the five `ans_*` tools through `ctx.tools.register`. What runs inside this package is deliberately small: it only listens to events and declares the tool definitions. Every real capability lives in the anysearch server: hooks talk to the address that server publishes (127.0.0.1:33333 by default), and tool calls go to `ans-mcp` over HTTP at `{ANS_MCP_URL}/mcp`. Apart from the URL policy, a broken layer does not block the call (fail-open).
 
 ## Invariants
 

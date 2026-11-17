@@ -37,7 +37,8 @@ import { isAnsTool, callServer, unwrapToolResponse, type HookDecision, type Hook
 import { makePreToolUseDecision } from '@anysearch-cli/plugin/hooks/preheat';
 import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
 import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
-import { resolveServerToken } from '@anysearch-cli/plugin/hooks/server-token';
+import { resolveServerToken, resolveServerEndpoint } from '@anysearch-cli/plugin/hooks/server-token';
+import { resolveHookProject } from '@anysearch-cli/plugin/hooks/project-identity';
 
 /**
  * anysearch plugin producer kind for injected user messages (0.2.2 contract:
@@ -55,7 +56,8 @@ export const name = 'anysearch-dsh-plugin';
 /** Services required before apply(): tools pipeline + prompt registry. */
 export const inject = ['tools', 'systemPrompt'];
 
-const serverUrl = (): string => process.env.ANS_SERVER_URL || 'http://127.0.0.1:33333';
+/** The explicit project this dsh process runs in; null when it cannot be told. */
+const projectRoot = (): string | null => resolveHookProject(process.cwd()).root;
 
 /** Hand-rolled UserMessage — a zero-dep plugin cannot import dsh-llm at runtime. */
 export function contextMessage(text: string): UserMessage {
@@ -89,7 +91,7 @@ function postHookInput(exec: Readonly<ToolExecution>, result: Readonly<ToolExecu
     toolName: exec.name,
     toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
     toolOutput: toolOutputOf(result),
-    projectPath: process.cwd(),
+    projectPath: projectRoot() ?? '',
     sessionId: sessionIdOf(exec.agent),
   };
 }
@@ -246,7 +248,7 @@ export function apply(ctx: Context): void {
         event: 'PreToolUse',
         toolName: exec.name,
         toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
-        projectPath: process.cwd(),
+        projectPath: projectRoot() ?? '',
         sessionId: sessionIdOf(exec.agent),
       });
     } catch {
@@ -290,9 +292,11 @@ export function apply(ctx: Context): void {
     if (!isAnsTool(exec.name) || result.isError) return;
     try {
       const d = makePostToolUseDecision(postHookInput(exec, result));
-      if (d.shouldIndex && d.indexEntries && d.indexEntries.length > 0) {
-        void callServer(serverUrl() + '/index', resolveServerToken().token, {
-          projectPath: process.cwd(),
+      const root = projectRoot();
+      if (d.shouldIndex && d.indexEntries && d.indexEntries.length > 0 && root) {
+        const endpoint = resolveServerEndpoint();
+        void callServer(endpoint.url + '/index', endpoint.token, {
+          projectPath: root,
           toolName: exec.name,
           entries: d.indexEntries,
         }, { sessionId: sessionIdOf(exec.agent) });

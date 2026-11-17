@@ -2,13 +2,18 @@
 // Six measures: loopback Host whitelist, Origin check (no Origin = native client = allow),
 // auto-generated 256-bit token, timing-safe compare, readBody <= 1MB, 403-before-401 ordering.
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import net from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.join(__dirname, "..");
 const TOKEN = "sec-test-token";
+// #322: keep the server's index database and published address inside a temp
+// dir; the run must not touch the operator's home.
+const HOME = mkdtempSync(path.join(tmpdir(), "ans-plugin-security-"));
 
 let passed = 0, failed = 0;
 function check(cond, msg) { if (!cond) { failed++; console.error("FAIL: " + msg); return; } passed++; }
@@ -27,7 +32,15 @@ const proc = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"],
   cwd: PLUGIN_ROOT,
   stdio: ["ignore", "pipe", "pipe"],
   detached: process.platform !== "win32",
-  env: { ...process.env, ANS_SERVER_PORT: String(port), ANS_SERVER_TOKEN: TOKEN },
+  env: {
+    ...process.env,
+    HOME,
+    USERPROFILE: HOME,
+    ANS_SERVER_PORT: String(port),
+    ANS_SERVER_TOKEN: TOKEN,
+    ANS_PROJECT_DB: path.join(HOME, "project-index.db"),
+    ANS_SERVER_REGISTRY: path.join(HOME, "server.json"),
+  },
 });
 const exited = new Promise((r) => proc.once("exit", () => r()));
 const url = "http://127.0.0.1:" + port + "/health";
@@ -100,6 +113,7 @@ try {
     }
   }
   await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
+  rmSync(HOME, { recursive: true, force: true });
 }
 
 console.log("plugin-security.test: " + passed + " passed, " + failed + " failed");

@@ -7,8 +7,9 @@
 // the --envelope flag (generated codex config passes it).
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+// resolve the installation token + published server address.
+import { resolveServerEndpoint } from "../../server/token.js";
+import { resolveHookProject } from "../project-identity.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   const event = stdin.hook_event_name ?? stdin.event ?? "";
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
+  const projectRoot = resolveHookProject(cwd).root;
 
   if (!isAnsTool(toolName)) process.exit(0);
 
@@ -43,7 +45,7 @@ async function main(): Promise<void> {
         event: "PreToolUse",
         toolName,
         toolInput: stdin.tool_input || {},
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
       // single envelope carrying every PreToolUse key — Codex honors
@@ -76,15 +78,14 @@ async function main(): Promise<void> {
         toolName,
         toolInput: stdin.tool_input || {},
         toolOutput,
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
 
-      const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-      const token = resolveServerToken().token;
-      if (decision.shouldIndex && decision.indexEntries) {
-        await callServer(serverUrl + "/index", token, {
-          projectPath: cwd, toolName, entries: decision.indexEntries,
+      if (decision.shouldIndex && decision.indexEntries && projectRoot) {
+        const endpoint = resolveServerEndpoint();
+        await callServer(endpoint.url + "/index", endpoint.token, {
+          projectPath: projectRoot, toolName, entries: decision.indexEntries,
         }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 

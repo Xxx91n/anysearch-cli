@@ -73,10 +73,16 @@ export const RecallMemoryInput = Type.Object({
   limit: Type.Optional(
     Type.Integer({ minimum: 1, description: "Max results to return (default 5)" })
   ),
+  projectPaths: Type.Optional(
+    Type.Array(Type.String({ minLength: 1 }), {
+      description: "Explicit other project roots whose local index should also be searched (a cross-project read the caller asked for). Omit to search only the current project.",
+    })
+  ),
 }, { additionalProperties: false });
 export type RecallMemoryInput = {
   query: string;
   limit?: number;
+  projectPaths?: string[];
 };
 
 export const QueryKnowledgeInput = Type.Object({
@@ -159,7 +165,7 @@ export type KernelToolName = keyof typeof KernelToolSchemas;
 export const KernelToolDescriptions = {
   search_web: "Search the web through several providers at once. Returns results plus a signal saying whether the evidence is enough.",
   research_web: "Run a deep research query over several rounds; each round merges results with RRF and URLs are deduplicated across rounds. Returns an evidence-sufficiency signal and the top citations.",
-  recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look.",
+  recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look. The fallback over host-indexed project results follows the current project; pass projectPaths only when the user asked to reuse another project's local records.",
   query_knowledge: "Query the knowledge base through the retrieval adapter chosen by the domain config. With `fts` it reads the store-wide research archive, not just the current domain's rows.",
   ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls. With operation=\"consolidate\" it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge and returns what it added, updated, skipped or could not do. That scope is required; the call is rejected rather than falling back to the whole archive. With allowSingleEvidence one selected material may correct an existing knowledge row (same fact and reliable evidence only; refused corrections come back with the old content, the candidate, the sources and what to check next).",
 } as const satisfies Record<KernelToolName, string>;

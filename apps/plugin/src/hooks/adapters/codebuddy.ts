@@ -10,8 +10,9 @@
 // `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// resolve the shared server token (env or the 0600 token file).
-import { resolveServerToken } from "../../server/token.js";
+// resolve the installation token + published server address.
+import { resolveServerEndpoint } from "../../server/token.js";
+import { resolveHookProject } from "../project-identity.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 // routing card imported from the shared module (one source, two outputs).
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   const event = stdin.hook_event_name ?? stdin.event ?? "";
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
+  const projectRoot = resolveHookProject(cwd).root;
 
   // SessionStart: raw stdout goes straight into the host context (no envelope).
   // ponytail: no .mdc fallback here — CodeBuddy reads CODEBUDDY.md, and
@@ -64,7 +66,7 @@ async function main(): Promise<void> {
         event: "PreToolUse",
         toolName,
         toolInput: stdin.tool_input || {},
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
       // The envelope carries only the CodeBuddy-documented keys; live probe
@@ -97,16 +99,15 @@ async function main(): Promise<void> {
         toolName,
         toolInput: stdin.tool_input || {},
         toolOutput,
-        projectPath: cwd,
+        projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
 
-      // Send to server for indexing (fail-open).
-      const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-      const token = resolveServerToken().token;
-      if (decision.shouldIndex && decision.indexEntries && decision.indexEntries.length > 0) {
-        await callServer(serverUrl + "/index", token, {
-          projectPath: cwd,
+      // Send to server for indexing (fail-open). A project-less hook does not index.
+      if (decision.shouldIndex && decision.indexEntries && decision.indexEntries.length > 0 && projectRoot) {
+        const endpoint = resolveServerEndpoint();
+        await callServer(endpoint.url + "/index", endpoint.token, {
+          projectPath: projectRoot,
           toolName,
           entries: decision.indexEntries,
         }, { sessionId: stdin.session_id || "" }).catch(() => null);
