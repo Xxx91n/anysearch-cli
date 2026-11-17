@@ -153,6 +153,17 @@
   </section>
 
   <section class="card">
+    <h2>另一个项目（atomcode）怎么做的</h2>
+    <ul>
+      <li><strong>旧会话：</strong>老格式有内容，就转一次成新日志，旧文件改名留着；只有索引、没有内容文件，就报错，不假装续上。</li>
+      <li><strong>两轮撞车：</strong>一个会话一把锁，只允许一个写者。第二个窗口要续，就从最后提交的状态分一个新会话。</li>
+      <li><strong>进程被杀：</strong>下次打开时补“恢复事实”：已收到的半截回答、结果未知的工具调用、一条提醒，然后把这轮结束掉，不自动重跑。</li>
+      <li><strong>文件坏了：</strong>逐行严格读，坏行报错；只写了一半的尾行不算事实，下次追加时切掉。</li>
+    </ul>
+    <p class="fine">完整对照和源码位置写在同目录的 atomcode-comparison.md。那份对照是读源码得出的，没有编译运行 atomcode。</p>
+  </section>
+
+  <section class="card">
     <h2>一句话结论</h2>
     <ul>
       <li>现在的代码选的是 B：找不到完整对话文件就停下，问题不发送，旧数据原样保留。</li>

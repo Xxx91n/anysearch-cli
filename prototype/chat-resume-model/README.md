@@ -16,6 +16,10 @@
 3. **五种出错情况**：并发收尾、MCP 中途被杀、登记写入失败、改名后读不出、文件后面坏了。每条写清楚用户看到什么、数据留没留、验证到哪一步。
 4. **一句话结论**：现在代码是 B；五种情况里哪些有保护、哪些没有。
 
+## 另一份材料
+
+`atomcode-comparison.md`：把 atomcode（`atomgit-atomcode/atomcode`，`ec920b64`）对这几种情况的做法逐条列出来，带源码位置，以及哪些值得借、哪些不值得。
+
 ## 结论来自哪里
 
 - 续聊规则、错误文案、列表标签：读 PR #314 的 `chat-session.ts`、`chat.ts`、`session-store.ts`、`pi-session.ts`。
