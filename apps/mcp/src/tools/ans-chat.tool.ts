@@ -407,12 +407,15 @@ export function registerAnsChat(
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
           const hasPreviousRecord = isValidSessionHandle(requestedSessionId) &&
             !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId));
-          // Design: an explicit handle that already exists in `sessions` must
-          // also be recoverable. A legacy row carrying only database messages
-          // has no PI record and no chat_projects row, so checking only those
-          // two let the runtime mint an empty record under an existing handle
-          // and answer from nothing — the CLI refuses exactly this input.
-          const mustResume = previousChat !== undefined || hasPreviousRecord;
+          // Design: only a tracked chat or an existing PI record makes this a
+          // continuation. A session row that has neither is an old database
+          // conversation whose transcript lives in the research store, and
+          // #265's recovery path answers it — `summary-rebuild-mcp.test.ts`
+          // seeds exactly that shape and requires it to work. Refusing it as
+          // "no record" would break the recovery this build already ships.
+          // (CodeRabbit's #314 suggestion to treat every `sessions` row as
+          // resumable was rejected for this reason.)
+          const mustResume = !!previousChat?.chatTracked || hasPreviousRecord;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
