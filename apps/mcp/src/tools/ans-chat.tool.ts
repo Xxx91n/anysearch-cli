@@ -14,6 +14,9 @@ import {
   PiAgentRuntime,
   parseContextWindow,
   piSessionOptions,
+  piSessionKey,
+  findPiSessionRecord,
+  resolvePiSessionDir,
   emptyRunUsage,
   createConsolidationSeams,
   isConsolidationBudgetError,
@@ -41,6 +44,7 @@ import {
   buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
+  isValidSessionHandle,
 } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
@@ -398,10 +402,13 @@ export function registerAnsChat(
           // An already tracked chat must never silently create a fresh record.
           const previousChat = typeof requestedSessionId === "string"
             ? eng.store?.getChatSession?.(requestedSessionId) : undefined;
+          const hasPreviousRecord = isValidSessionHandle(requestedSessionId) &&
+            !!findPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId));
+          const mustResume = !!previousChat?.chatTracked || hasPreviousRecord;
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
-          if (previousChat?.chatTracked && (!memory.store || memory.sessionId !== requestedSessionId)) {
+          if (mustResume && (!memory.store || memory.sessionId !== requestedSessionId)) {
             return toolFailure("ans_chat: 会话恢复失败，本次没有发送问题。");
           }
           // ponytail: models undefined fix — pass session.models instead of undefined.
@@ -426,7 +433,7 @@ export function registerAnsChat(
             // PI's own session record resumes the conversation; the same handle
             // keys both the record and the SQLite anchors (#258).
             ...piSessionOptions(memory.sessionId, session.apiKey),
-            requirePiSessionRecord: !!previousChat?.chatTracked,
+            requirePiSessionRecord: mustResume,
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -498,6 +505,16 @@ export function registerAnsChat(
           // can only read as "free" (#266). The handle is not part of the
           // answer, so it survives: the caller can resume the same session.
           if (!completed) {
+            // This returned handle may be used again even if the run was cut
+            // short. Remember it without calling it a completed recent chat.
+            if (memory.sessionId && memory.store?.getChatSession && memory.store.recordChatProject) {
+              try {
+                const entry = memory.store.getChatSession(memory.sessionId);
+                if (entry) memory.store.recordChatProject(memory.sessionId, entry.projectRoot, false);
+              } catch (error) {
+                process.stderr.write("[warn] 无法登记会话：" + (error instanceof Error ? error.message : String(error)) + "\n");
+              }
+            }
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
