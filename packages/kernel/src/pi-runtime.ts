@@ -1458,7 +1458,13 @@ export class PiAgentRuntime {
       // still refuse it (cancelled caller, budget, missing record); from here
       // on it counts as an attempt that ran, even if it is cancelled before a
       // single token arrives.
-      try { this.opts.onRunStart?.(); } catch { /* the caller's bookkeeping must not stop the run */ }
+      //
+      // A failure to record the start STOPS the run. Swallowing it would spend
+      // a paid turn whose state can never be written down: a later crash would
+      // leave the old row reading "complete" with no trace that this attempt
+      // happened, and `--continue` would pick the wrong conversation. "写盘失败
+      // 即停" applies here exactly as it does to the completion write.
+      this.opts.onRunStart?.();
       // Start the session prompt in background. Prompt templates stay off: a
       // user message beginning with "/" is text, not a host command.
       promptPromise = session.prompt(input, { expandPromptTemplates: false }).catch((e: any) => {

@@ -400,6 +400,11 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   mkdirSync(prefix, { recursive: true });
   writeFileSync(join(prefix, "package.json"), JSON.stringify({ name: "ans-installed-acc", private: true }), "utf8");
+  // #299: `--continue` and `--list` need a project root to scope the search. A
+  // bare package.json directory is not one, so the sandbox gets a .git marker
+  // and the CLI resolves `prefix` as the project here — the same way it would
+  // in a real checkout.
+  mkdirSync(join(prefix, ".git"), { recursive: true });
 
   const clients = [];
   try {
@@ -701,7 +706,10 @@ async function main() {
         ...baseEnv,
         ANS_DOMAIN: "chatbudget",
         ANS_DB_PATH: chatDb,
-        ANS_SESSION_ID: "acc302-chat",
+        // #299: CLI chat now starts a NEW conversation by default and
+        // ANS_SESSION_ID is observation-only, so it is deliberately NOT set
+        // here. This case needs two turns in ONE conversation and asks for it
+        // explicitly with --continue below, which is also what a user does.
       };
       const r1 = await runAnsAsync(["chat", "FIRST-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r1.code === 0, "带预算域的 CLI chat 退出码 0", r1.out.slice(-500));
@@ -709,10 +717,19 @@ async function main() {
       check(/\[task-budget\] this execution:/.test(r1.out), "收尾时报了这次执行自己的预算", r1.out.slice(-500));
       check(/\[session-budget\] conversation history:/.test(r1.out) && /CLI chats no longer spend this account/.test(r1.out),
         "同屏把会话历史账（累计）单独报出来，和本次执行的两行不混", r1.out.slice(-500));
+      // The handle this run created, so the second turn can continue it and the
+      // session-budget assertion below names the row that actually exists.
+      const handleOf = (result) => result.out.match(/\[session\] (\S+)/)?.[1];
+      const chatHandle = handleOf(r1);
+      check(!!chatHandle, "第一轮打印了会话句柄", r1.out.slice(-300));
 
       // 同一会话再来一轮：任务预算是新的，会话的账从头到尾没被 CLI 聊天碰过。
-      const r2 = await runAnsAsync(["chat", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
+      // #299: `--continue` is the explicit way to reuse the conversation; a bare
+      // `chat` would now start a second one, which is the behaviour that made
+      // this assertion fail when the two tickets met.
+      const r2 = await runAnsAsync(["chat", "--continue", "SECOND-TURN-QUESTION"], { cwd: prefix, env: chatEnv });
       check(r2.code === 0, "同会话第二轮退出码 0（续聊不受历史额度牵制）", r2.out.slice(-500));
+      check(handleOf(r2) === chatHandle, "第二轮续的是同一段会话", r2.out.slice(-300));
 
       const chatCheck = new Database(chatDb, { readonly: true });
       try {
@@ -722,7 +739,7 @@ async function main() {
         check(tasks.length === 2 && tasks.every((t) => t.ended && t.code === 0),
           "两次 CLI chat 各登记为一条任务，跑完即结束（两条都收尾）",
           JSON.stringify(tasks));
-        check(tasks.every((t) => t.session === "acc302-chat"),
+        check(!!chatHandle && tasks.every((t) => t.session === chatHandle),
           "两条任务都关联到同一个会话句柄（上下文挂钩会话，额度挂任务）",
           JSON.stringify(tasks));
         const budgets = chatCheck.prepare(
@@ -736,7 +753,7 @@ async function main() {
         // 记在任务账上，会话的历史账不被这轮执行花掉。
         const sessionBilled = chatCheck.prepare(
           "SELECT COALESCE(SUM(reserved_tokens + spent_tokens + reserved_usd + spent_usd + reserved_calls + billable_calls), 0) as n FROM budget_ledger WHERE session_id = ?"
-        ).get("acc302-chat");
+        ).get(chatHandle);
         check(sessionBilled.n === 0,
           "两轮 CLI 聊天后，会话预算行的一个计数器都没动过（额度记在任务账上）",
           JSON.stringify(sessionBilled));

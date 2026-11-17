@@ -215,6 +215,32 @@ async function main() {
       "2b: a run refused before the prompt does not report a start");
   }
 
+  // ---- 2c. #299: a failed start record stops the run before the provider ----
+  // The start write is the attempt's only evidence. If it cannot land, running
+  // anyway would spend a paid turn nobody can account for, and a later crash
+  // would leave the old row claiming "complete". So the failure must abort.
+  {
+    let streamCalls = 0;
+    const events: AgentEvent[] = [];
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model,
+      streamFn: neverResolvingStream(() => { streamCalls++; }),
+      onRunStart: () => { throw new Error("start record write failed"); },
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+
+    assert(streamCalls === 0,
+      "2c: a failed start record stops the run before any provider call");
+    const failure = events.find((e) => e.type === "error");
+    assert(!!failure && /start record write failed/.test(String((failure as any).message)),
+      "2c: the caller sees the start-record failure as an error event (got "
+      + JSON.stringify(events.map((e) => e.type)) + ")");
+    assert(!events.some((e) => e.type === "done"),
+      "2c: a run stopped at the start write emits no completion summary");
+  }
+
   // ---- 3. Cancelled run skips completion writes and completion settlement ----
   {
     const caller = new AbortController();
