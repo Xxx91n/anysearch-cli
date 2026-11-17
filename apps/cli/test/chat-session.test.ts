@@ -4,7 +4,7 @@ import { parseChatArgv, parseChatOptions, selectChatSession } from "../src/comma
 
 test("explicit continuation selects only the current project; unknown and missing handles fail", () => {
   const store = {
-    listChatSessions: (root: string | null) => root === "/a" ? [{ id: "a", projectRoot: "/a" }] : [],
+    listChatSessions: (root: string | null) => root === "/a" ? [{ id: "a", projectRoot: "/a", isCompleted: 1 }] : [],
     getChatSession: (id: string) => id === "legacy" ? { id, projectRoot: null } : undefined,
   } as any;
   assert.equal(selectChatSession(store, parseChatOptions(["question"]), "/a", () => true), undefined);

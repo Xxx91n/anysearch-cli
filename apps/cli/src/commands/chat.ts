@@ -92,9 +92,9 @@ export async function runChat(argv: string[]): Promise<number> {
       console.log(root ? "项目：" + root : "未归属会话（没有可靠的项目记录）");
       const findRecord = indexPiSessionRecords(resolvePiSessionDir());
       for (const entry of store.listChatSessions(root)) {
-        let note = "";
-        try { if (!findRecord(piSessionKey(entry.id))) note = "\t没有完整对话记录"; }
-        catch { note = "\t对话记录无法确认，请单独检查"; }
+        let note = entry.isCompleted ? "" : "\t未完成";
+        try { if (!findRecord(piSessionKey(entry.id))) note += "\t没有完整对话记录"; }
+        catch { note += "\t对话记录无法确认，请单独检查"; }
         console.log(entry.id + "\t" + entry.updatedAt + note);
       }
       return 0;

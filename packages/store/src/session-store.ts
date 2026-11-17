@@ -209,6 +209,7 @@ export interface ChatSessionEntry {
   id: string;
   projectRoot: string | null;
   chatTracked: number;
+  isCompleted: number | null;
   updatedAt: string;
 }
 
@@ -924,15 +925,17 @@ export class SqliteSessionStore implements SessionStore {
 
   getChatSession(sessionId: string): ChatSessionEntry | undefined {
     return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
-      COALESCE(datetime(p.last_used / 1000, 'unixepoch'), s.updated_at) AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      (p.last_used > 0) AS isCompleted,
+      CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
       WHERE s.id = ?`).get(sessionId) as ChatSessionEntry | undefined;
   }
 
   listChatSessions(projectRoot: string | null): ChatSessionEntry[] {
     // NULL includes legacy rows. Never guess their project from today's cwd.
     return this.db.prepare(`SELECT s.id, p.project_root AS projectRoot, (p.session_id IS NOT NULL) AS chatTracked,
-      COALESCE(datetime(p.last_used / 1000, 'unixepoch'), s.updated_at) AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
-      WHERE p.project_root IS ? AND (p.project_root IS NULL OR p.last_used > 0)
+      (p.last_used > 0) AS isCompleted,
+      CASE WHEN p.last_used > 0 THEN datetime(p.last_used / 1000, 'unixepoch') ELSE s.updated_at END AS updatedAt FROM sessions s LEFT JOIN chat_projects p ON p.session_id = s.id
+      WHERE p.project_root IS ?
       ORDER BY COALESCE(p.last_used, 0) DESC, s.updated_at DESC, s.id DESC`).all(projectRoot) as ChatSessionEntry[];
   }
 

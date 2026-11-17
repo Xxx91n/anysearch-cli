@@ -16,7 +16,8 @@ test("project sessions survive reopening; legacy rows stay unassigned and resear
     store.recordChatProject("a", "/project/a", false);
     assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
     assert.equal(store.getChatSession("a")?.chatTracked, 1);
-    assert.deepEqual(store.listChatSessions("/project/a"), []);
+    assert.equal(store.listChatSessions("/project/a")[0]?.id, "a");
+    assert.equal(store.listChatSessions("/project/a")[0]?.isCompleted, 0);
     store.recordChatProject("a", "/project/b", false);
     assert.equal(store.getChatSession("a")?.projectRoot, "/project/a");
     store.recordChatProject("a", "/project/a");
