@@ -95,6 +95,16 @@ try {
   ]);
   check(statusOf(rebound) === 403, "non-loopback Host -> 403 (got " + statusOf(rebound) + ")");
 
+  // A malformed request target is one bad request (400), not a crash: an
+  // unparseable URL used to throw outside the handler's try block.
+  const badTarget = await rawRequest([
+    "GET http://127.0.0.1:99999/ HTTP/1.1",
+    "Host: 127.0.0.1:" + port,
+    "Authorization: Bearer " + TOKEN,
+    "Connection: close",
+  ]);
+  check(statusOf(badTarget) === 400, "invalid request URL -> 400 (got " + statusOf(badTarget) + ")");
+
   const big = "x".repeat(1024 * 1024 + 64);
   const bigRes = await fetch("http://127.0.0.1:" + port + "/index", {
     method: "POST",

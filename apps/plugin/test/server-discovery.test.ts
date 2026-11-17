@@ -6,7 +6,7 @@
 // the dead-process guard.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -36,6 +36,17 @@ test("token: one file per installation, shared by every project's hook", () => {
     const second = resolveServerToken(env);
     assert.equal(second.generated, false);
     assert.equal(second.token, first.token, "a second caller reads the same token instead of minting one");
+    assert.deepEqual(
+      readdirSync(join(home, ".anysearch-cli")),
+      ["server-token"],
+      "publishing the token leaves no temp file behind",
+    );
+
+    // A first-run file that is empty (crashed writer) is replaced, not trusted.
+    writeFileSync(serverTokenPath(env), "", "utf8");
+    const repaired = resolveServerToken(env);
+    assert.equal(repaired.generated, true);
+    assert.ok(readFileSync(serverTokenPath(env), "utf8").trim().length > 0);
     assert.equal(projectIndexDbPath(env), join(home, ".anysearch", "project-index.db"), "the shared index lives in the data root");
   } finally {
     rmSync(home, { recursive: true, force: true });

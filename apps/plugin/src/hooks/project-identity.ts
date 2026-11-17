@@ -28,8 +28,9 @@ export function resolveHookProject(cwd: string = process.cwd()): HookProject {
         try {
           const entry = statSync(join(root, marker));
           if (source === "git" ? entry.isDirectory() || entry.isFile() : entry.isFile()) return { root, source };
-        } catch (error: any) {
-          if (error?.code !== "ENOENT") throw error;
+        } catch (error) {
+          // Only a missing marker means "keep walking"; other fs errors are real.
+          if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
         }
       }
       const parent = dirname(root);

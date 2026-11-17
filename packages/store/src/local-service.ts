@@ -15,7 +15,7 @@
 // directory: one file per user config root, read by every project's hooks.
 // ANS_SERVER_URL and ANS_SERVER_TOKEN stay the explicit override channel.
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:33333";
@@ -91,8 +91,33 @@ export function resolveServerToken(env: NodeJS.ProcessEnv = process.env): Resolv
   }
   const token = randomBytes(32).toString("hex"); // 256-bit
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, token + "\n", { encoding: "utf8", mode: 0o600 });
-  return { token, generated: true, path };
+  // Design: publish the first token with an exclusive hard link — two first-run
+  // processes must not each mint a token and overwrite the other, or the losing
+  // server keeps a token the shared file no longer matches (401 until restart).
+  // The loser reads the winner's file.
+  const tmp = join(dirname(path), ".server-token." + process.pid + "." + randomBytes(6).toString("hex"));
+  writeFileSync(tmp, token + "\n", { encoding: "utf8", mode: 0o600 });
+  try {
+    linkSync(tmp, path);
+    return { token, generated: true, path };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") {
+      // Hard links unsupported on some filesystems: fall back to exclusive create.
+      try {
+        writeFileSync(path, token + "\n", { encoding: "utf8", mode: 0o600, flag: "wx" });
+        return { token, generated: true, path };
+      } catch (fallbackError) {
+        if ((fallbackError as NodeJS.ErrnoException)?.code !== "EEXIST") throw fallbackError;
+      }
+    }
+    const existing = readFileSync(path, "utf8").trim();
+    if (existing) return { token: existing, generated: false, path };
+    // An empty file is a crashed first write; replace it with this token.
+    writeFileSync(path, token + "\n", { encoding: "utf8", mode: 0o600 });
+    return { token, generated: true, path };
+  } finally {
+    try { unlinkSync(tmp); } catch { /* already gone */ }
+  }
 }
 
 export interface ServerRegistryEntry {
@@ -118,9 +143,10 @@ function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error: any) {
-    // EPERM means the process exists but belongs to someone else.
-    return error?.code === "EPERM";
+  } catch (error) {
+    // EPERM means the process exists but belongs to someone else; any other
+    // error (ESRCH and friends) means it is gone.
+    return (error as NodeJS.ErrnoException)?.code === "EPERM";
   }
 }
 

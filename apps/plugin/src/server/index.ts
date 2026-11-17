@@ -222,8 +222,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  const url = new URL(req.url || "/", "http://127.0.0.1");
   try {
+    // Parsing stays inside the try: a malformed request target is one bad
+    // request (400), never an uncaught throw that takes the server down.
+    const url = new URL(req.url || "/", "http://127.0.0.1");
     if (url.pathname === "/health" && req.method === "GET") {
       sendJson(res, 200, { status: "ok", timestamp: Date.now() });
       return;
@@ -341,6 +343,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     // an oversized body is a client error, not a server fault.
     if (msg.includes("exceeds")) {
       sendJson(res, 413, { error: msg });
+      return;
+    }
+    // A malformed request target is the caller's fault, not a server fault.
+    if ((e as NodeJS.ErrnoException)?.code === "ERR_INVALID_URL") {
+      sendJson(res, 400, { error: "invalid request URL" });
       return;
     }
     // fail-open.
