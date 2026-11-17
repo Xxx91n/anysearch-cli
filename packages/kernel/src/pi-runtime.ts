@@ -736,11 +736,10 @@ export class PiAgentRuntime {
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
-    // Design: the queue and the file lock share one deadline — a same-session
-    // caller must hit the same 120 s cap whether the current run is in this
-    // process or another one, and splitting the budget would let a caller wait
-    // twice as long for the same "session busy" answer. Both waits surface as
-    // an error event, like every other run failure.
+    // Design: the queue and file lock share one deadline — the default is an
+    // immediate refusal in either process. An explicit wait cap must not be
+    // spent twice, once on the queue and again on the file lock. Both paths
+    // surface contention as an error event, like every other run failure.
     const windows = resolveSessionLockWindows(this.opts.sessionLock);
     const deadlineAt = Date.now() + windows.waitMs;
     let releaseQueue: () => void = () => {};
