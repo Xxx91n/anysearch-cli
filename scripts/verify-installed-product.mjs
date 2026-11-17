@@ -1,7 +1,7 @@
 // #298 / #297 S1, T2, N1: use only installed public commands and the existing
 // MCP protocol smoke. The caller owns the temporary prefix and cleanup.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,9 @@ const protocolSmoke = fileURLToPath(new URL("./mcp-smoke.mjs", import.meta.url))
 /** Verify command ownership, resources, both MCP launch paths, and hook startup. */
 export async function verifyInstalledProduct(prefix, check) {
   const nm = join(prefix, "node_modules");
-  const product = join(nm, "@anysearch-cli/cli");
+  // macOS temporary paths can use /var while Node resolves /private/var.
+  // Compare the actual directory, not two spellings of the same installation.
+  const product = realpathSync(join(nm, "@anysearch-cli/cli"));
   const manifest = JSON.parse(readFileSync(join(product, "package.json"), "utf8"));
   const env = Object.fromEntries(Object.entries(process.env)
     .filter(([key]) => !/^(ANS_|ANYSEARCH_|EXA_|TAVILY_)/i.test(key)));
