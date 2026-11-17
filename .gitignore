@@ -59,3 +59,7 @@ apps/cli/.build-stamp.json
 # python virtualenvs — scratch/prototype interpreters (e.g. .venv-tau-proto),
 # never repo content; reproduce via scripts/tau/requirements.txt (#88 T2)
 .venv*/
+
+# Complete product outputs (#298), built from the existing module sources.
+/apps/cli/mcp/
+/apps/cli/plugin/

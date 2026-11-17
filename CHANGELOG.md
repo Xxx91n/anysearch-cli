@@ -1,3 +1,9 @@
+## Unreleased — #298
+
+- `@anysearch-cli/cli` now builds and carries CLI, MCP, hook service and hook commands together, with domain and host resources. `ans mcp` uses this installation rather than a sibling repository directory.
+- Public commands support `--installation` for build commit, installed location, version and entry role. Node 22.19.0 is the minimum; vector support remains an optional peer.
+- Clean-install and installed A–F acceptance now install the complete product only. Old three-package migration remains #311. Remote checks are required before declaring this work accepted.
+
 # Changelog
 
 这里记这个项目每次改了什么，新的在上。格式按

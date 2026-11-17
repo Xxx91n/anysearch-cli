@@ -10,13 +10,14 @@
 //
 // tools/list only (no tools/call) so the smoke needs no provider/LLM API keys.
 // Node stdlib only; cross-platform (ubuntu + windows CI matrix). Exit 0 = green.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const DIST = resolve(ROOT, "apps/mcp/dist/index.js");
+const DIST = process.env.ANS_MCP_ENTRY || resolve(ROOT, "apps/mcp/dist/index.js");
+const ENTRY_ARGS = process.env.ANS_MCP_VIA_CLI === "1" ? ["mcp"] : [];
 const TOOL_NAMES = ["search_web", "research_web", "recall_memory", "query_knowledge", "ans_chat"];
 const LATEST_LEGACY = "2025-11-25";
 const MODERN = "2026-07-28";
@@ -42,9 +43,19 @@ function assertToolList(tools, label) {
   }
 }
 
+// Only stop the processes created by this probe. On Windows, kill() on the
+// forwarding CLI does not deliver a catchable signal and leaves MCP behind.
+function stopProbe(child) {
+  if (process.platform === "win32" && ENTRY_ARGS.length && child.pid && child.exitCode === null) {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+  } else {
+    child.kill();
+  }
+}
+
 // Spawn the built binary and drive newline-delimited JSON-RPC over its stdio.
 function stdioClient(args) {
-  const child = spawn(process.execPath, [DIST, ...args], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [DIST, ...ENTRY_ARGS, ...args], { stdio: ["pipe", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (c) => { stderr += c.toString(); });
   const pending = new Map();
@@ -76,7 +87,7 @@ function stdioClient(args) {
     });
   const notify = (method, params) =>
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, ...(params !== undefined ? { params } : {}) }) + "\n");
-  const close = () => { child.kill(); };
+  const close = () => { stopProbe(child); };
   return { rpc, notify, close };
 }
 
@@ -137,7 +148,7 @@ async function waitHealth(port, child, timeoutMs = 20000) {
 async function httpSmoke() {
   process.stdout.write("Streamable HTTP smoke (built dist, stateless):\n");
   const port = await getFreePort();
-  const child = spawn(process.execPath, [DIST, "--transport", "http", "--port", String(port)], { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [DIST, ...ENTRY_ARGS, "--transport", "http", "--port", String(port)], { stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (c) => { stderr += c.toString(); });
   child.stdout.on("data", () => {});
@@ -167,7 +178,7 @@ async function httpSmoke() {
     failures++;
     process.stdout.write("  FAIL http smoke: " + e.message + "\nstderr: " + stderr + "\n");
   } finally {
-    child.kill();
+    stopProbe(child);
   }
 }
 

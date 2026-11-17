@@ -1,6 +1,6 @@
-import { defineConfig } from "tsup";
+import { defineConfig, type Options } from "tsup";
 
-export default defineConfig({
+export const pluginBuildOptions: Options = {
   // ponytail: two entries — src/index.ts (side-effect-free barrel re-export,
   // referenced by package.json "main"/"exports") and src/server/index.ts
   // (long-running HTTP server, side-effect on import, only used via bin spawn).
@@ -34,4 +34,6 @@ export default defineConfig({
     "better-sqlite3",
     "@anysearch-cli/embedding",
   ],
-});
+};
+
+export default defineConfig(pluginBuildOptions);
