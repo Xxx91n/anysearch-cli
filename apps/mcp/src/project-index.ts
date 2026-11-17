@@ -40,34 +40,31 @@ export interface ProjectIndexRecall {
 /**
  * Resolve the projects this recall may read. Without an explicit list the
  * current working directory is the project. An explicit list replaces it:
- * the caller named exactly the roots it wants, and each one is validated
- * before use.
+ * the caller named exactly the roots it wants, each one is validated, and one
+ * bad path makes the whole scope unknown (the same answer the server gives)
+ * rather than returning partial results.
  */
 export function resolveRecallProjects(explicit: readonly string[] = []): { projects: string[]; notes: string[] } {
-  const notes: string[] = [];
-  const explicitRoots: string[] = [];
-  for (const raw of explicit) {
-    const candidate = typeof raw === "string" ? raw.trim() : "";
-    if (!candidate) continue;
-    const resolved = resolveProjectContext(candidate);
-    if ("reason" in resolved) {
-      notes.push("ignored project path " + candidate + ": " + resolved.reason);
-      continue;
+  const requested = explicit
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0);
+  if (requested.length > 0) {
+    const projects: string[] = [];
+    for (const candidate of requested) {
+      const resolved = resolveProjectContext(candidate);
+      if ("reason" in resolved) {
+        return { projects: [], notes: ["project index unavailable: " + candidate + ": " + resolved.reason] };
+      }
+      if (!projects.includes(resolved.root)) projects.push(resolved.root);
     }
-    if (!explicitRoots.includes(resolved.root)) explicitRoots.push(resolved.root);
-  }
-  if (explicitRoots.length > 0) return { projects: explicitRoots, notes };
-  if (explicit.length > 0) {
-    notes.push("project index unavailable: none of the given project paths resolved to a project root");
-    return { projects: [], notes };
+    return { projects, notes: [] };
   }
 
   const current = resolveProjectContext();
   if ("reason" in current) {
-    notes.push("project index unavailable: " + current.reason);
-    return { projects: [], notes };
+    return { projects: [], notes: ["project index unavailable: " + current.reason] };
   }
-  return { projects: [current.root], notes };
+  return { projects: [current.root], notes: [] };
 }
 
 export async function recallProjectIndex(
@@ -82,9 +79,12 @@ export async function recallProjectIndex(
     return { hits: [], projects, note: "project index unavailable: the plugin server has not run for this installation" };
   }
   try {
-    const body: Record<string, unknown> = projects.length === 1
-      ? { query, projectPath: projects[0], limit }
-      : { query, projects, limit };
+    // An explicit list is always sent as a list, so "the current project" and
+    // "the projects the caller named" stay distinguishable on the wire.
+    const explicitScope = explicitProjects.some((value) => typeof value === "string" && value.trim().length > 0);
+    const body: Record<string, unknown> = explicitScope
+      ? { query, projects, limit }
+      : { query, projectPath: projects[0], limit };
     const response = await fetch(readPublishedServerUrl() + "/recall", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },

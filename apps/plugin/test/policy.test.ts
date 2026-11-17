@@ -1,6 +1,6 @@
 // golden: hook readPolicy pull-through semantics (+ cache integrity, failing-server fallback).
 // Run: npx tsx apps/plugin/test/policy.test.ts
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,9 +39,9 @@ delete process.env.ANS_SERVER_REGISTRY;
 
 const GOOD = { allow: ["good.example"], deny: ["denied.example"] };
 const goodPolicy = { ...GOOD, policy_version: canonicalVersion(GOOD.allow, GOOD.deny) };
-const cacheFile = join(dir, ".anysearch-cli", "policy.json");
+const cacheFile = join(realpathSync(dir), ".anysearch-cli", "policy.json");
 function writeCache(p: unknown) {
-  mkdirSync(join(dir, ".anysearch-cli"), { recursive: true });
+  mkdirSync(join(realpathSync(dir), ".anysearch-cli"), { recursive: true });
   writeFileSync(cacheFile, JSON.stringify(p), "utf8");
 }
 

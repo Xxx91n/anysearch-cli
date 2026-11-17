@@ -5,13 +5,6 @@
 // dependencies; the drift check in project-scope.test.ts keeps the copy
 // honest. The authoritative resolver lives in the store.
 //
-// The authoritative resolver lives in packages/store/src/project-context.ts.
-// Hook bundles are built with esbuild --bundle and must stay free of the store
-// (its native dependencies do not bundle), so this file mirrors that resolver
-// for the hook processes. The drift check lives in
-// apps/plugin/test/project-scope.test.ts ("the hook copy matches the store
-// resolver"), so the copy cannot quietly diverge.
-//
 // A hook only ever runs inside a host's working tree. If that tree is not a
 // project (no Git root, no .anysearch/config.toml), the hook must say the
 // project-scoped capability is unavailable instead of inventing a project or

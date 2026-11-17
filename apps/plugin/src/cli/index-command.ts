@@ -27,13 +27,7 @@ function requireProject(): string | null {
 }
 
 export async function runIndex(args: string[]): Promise<number> {
-  const projectPath = requireProject();
-  if (!projectPath) return 2;
-  const dbPath = projectIndexDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const store = new ProjectIndexStore(dbPath);
-
-  // Parse args.
+  // Parse first: --help must work outside a project.
   let title = "", url = "", snippet = "", source = "cli", stdinMode = false;
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -44,10 +38,15 @@ export async function runIndex(args: string[]): Promise<number> {
       case "--stdin": stdinMode = true; break;
       case "--help": case "-h":
         process.stdout.write("Usage: ans index --title T --url U --snippet S [--source SRC] [--stdin]\n");
-        store.close();
         return 0;
     }
   }
+
+  const projectPath = requireProject();
+  if (!projectPath) return 2;
+  const dbPath = projectIndexDbPath();
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const store = new ProjectIndexStore(dbPath);
 
   let indexed = 0;
   if (stdinMode) {

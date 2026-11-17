@@ -44,6 +44,8 @@ import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFro
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
+// The index holds retrieved snippets; keep it owner-only like the observation DB.
+try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
 const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db");
 
