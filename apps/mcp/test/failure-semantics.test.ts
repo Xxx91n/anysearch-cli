@@ -20,9 +20,13 @@ import { registerResearchWeb } from "../src/tools/research-web.tool.js";
 import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
+import { createMcpToolState } from "../src/tool-state.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
-import type { SessionStore } from "@anysearch-cli/store";
+import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { httpStateless } from "./helpers/mcp-harness.js";
 
 let passed = 0;
@@ -47,6 +51,9 @@ const fakeSpan = {
 
 type Handler = (args: unknown) => Promise<any>;
 
+// Empty resolver roots created below, removed in main()'s finally.
+const failureRoots: string[] = [];
+
 function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
   const fakeServer = {
@@ -57,7 +64,15 @@ function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   registerSearchWeb(fakeServer as any, eng);
   registerResearchWeb(fakeServer as any, eng);
   registerRecallMemory(fakeServer as any, eng);
-  registerAnsChat(fakeServer as any, eng);
+  // #300/greptile P1: the "missing config" case must not depend on the
+  // operator's real ~/.anysearch-cli/config.toml. Point the shared resolver at
+  // an empty temp root so only this suite's env decides the outcome.
+  const emptyRoot = mkdtempSync(join(tmpdir(), "ans-300-failure-"));
+  failureRoots.push(emptyRoot);
+  const isolatedState = createMcpToolState({
+    resolveLlmConfig: (opts = {}) => resolveLlmConfig({ ...opts, home: emptyRoot, cwd: emptyRoot }),
+  });
+  registerAnsChat(fakeServer as any, eng, isolatedState);
   registerQueryKnowledge(fakeServer as any, eng);
   return handlers;
 }
@@ -180,12 +195,16 @@ async function main() {
 
     // ---- 3. ans_chat: missing configuration and runtime errors ----
     {
-      // Missing config: captured at registration time from the env.
+      // Missing config: resolved per call through the shared layered resolver.
       const missing = await captureHandlers(makeEngine(async () => emptyEnvelope([]))).ans_chat({ message: "hi" });
       assert(missing?.isError === true, "ans_chat missing LLM config: isError true");
+      // #300: the report names BOTH ways in — env and a config file — so a
+      // host that wrote a TOML knows where to look.
       assert(
-        String(missing?.content?.[0]?.text) === "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars.",
-        "ans_chat missing LLM config: actionable copy kept",
+        String(missing?.content?.[0]?.text) ===
+          "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
+          "or write provider/model in ~/.anysearch-cli/config.toml (user) or .anysearch/config.toml (project).",
+        "ans_chat missing LLM config: names env and both config files",
       );
       assert(missing?.structuredContent === undefined, "ans_chat missing LLM config: no structuredContent");
 
@@ -379,6 +398,7 @@ async function main() {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    for (const root of failureRoots) rmSync(root, { recursive: true, force: true });
   }
 
   console.log("--- mcp failure-semantics tests: " + passed + " passed, " + failed + " failed ---");

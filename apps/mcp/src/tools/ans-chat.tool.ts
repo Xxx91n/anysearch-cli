@@ -40,6 +40,7 @@ import {
   ConsolidateScopeError,
   toBudgetCaps,
   type BudgetConfig,
+  type ResolvedLlmConfig,
 } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import {
@@ -73,6 +74,7 @@ export function registerAnsChat(
   // Future per-request model override reserves an independent Map slot via an extra key segment, never overwriting the env default slot.
   const sessionCache = state.ansChatSessionCache;
   const buildSession = state.createAnsChatSession;
+  const resolveConfig = state.resolveLlmConfig;
 
   function buildCacheKey(opts: {
     provider: string;
@@ -102,23 +104,30 @@ export function registerAnsChat(
     return JSON.stringify(tuple);
   }
 
-  async function getLlmSession(modelOverride?: string): Promise<LlmSession> {
-    const providerName = process.env.ANS_LLM_PROVIDER ?? "";
-    const modelName = process.env.ANS_LLM_MODEL ?? "";
-    // thread the custom-endpoint env trio like apps/cli chat.ts:40-47 —
-    // ANS_LLM_BASE_URL/ANS_LLM_API/ANS_LLM_API_KEY must reach createLlmSession on
-    // the MCP path too, else the configured v1/chat upstream is unreachable.
-    const baseUrl = process.env.ANS_LLM_BASE_URL;
-    const apiRaw = process.env.ANS_LLM_API;
-    const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
+  // Design: `cfg` carries the shared layered resolution (flag > env > project >
+  // user) from the CLI's resolver — one implementation for the CLI and both MCP
+  // start paths, so a user/project TOML is seen by all three and `sources` can
+  // be reported back (#300). ANS_LLM_CONTEXT_WINDOW stays an env-only input
+  // (#113): it is a request-budget window, not a TOML model setting.
+  async function getLlmSession(cfg: ResolvedLlmConfig, modelOverride?: string): Promise<LlmSession> {
+    const providerName = cfg.provider ?? "";
+    const modelName = cfg.model ?? "";
+    // Custom endpoint trio now comes from the same resolution as the CLI. The
+    // project whitelist already dropped any base_url/api/env_key a repo tried to
+    // set; only env or the user file can supply them here.
+    const baseUrl = cfg.baseUrl;
+    const api = cfg.api;
     // #113: custom endpoints carry no catalog window; the MCP root reads the env
     // (kernel stays env-free). Malformed values fail the call, not silently 128000.
     const contextWindow = parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW);
-    // F-A4 tiebreaker: keyHash detects ANS_LLM_API_KEY rotation on a long-lived MCP server.
+    // F-A4 tiebreaker: keyHash detects credential rotation on a long-lived MCP
+    // server. #300: it hashes the RESOLVED key, so rotation is seen whether the
+    // secret came from ANS_LLM_API_KEY or from a user-file env_key indirection.
     // It is NOT part of the cache key partitioning — same provider/model/baseUrl/api/contextWindow
     // must hit the same cache slot; hash change re-creates the slot value, not a new slot.
-    const keyHash = process.env.ANS_LLM_API_KEY
-      ? createHash("sha256").update(process.env.ANS_LLM_API_KEY).digest("hex").slice(0, 12)
+    const apiKey = cfg.apiKey;
+    const keyHash = apiKey
+      ? createHash("sha256").update(apiKey).digest("hex").slice(0, 12)
       : "";
     // Fingerprint the complete baseUrl before it enters the cache key: raw URLs can
     // contain userinfo (https://user:pass@host) or secrets in query strings, and the
@@ -133,7 +142,7 @@ export function registerAnsChat(
     // Assertion: cache key must not contain secret material. Key is built only from
     // provider+model+baseUrlFingerprint+api+contextWindow (+ optional override segment); keyHash/apiKey are separate.
     // This guards against accidental future leakage of keyHash or raw key into the key string.
-    const rawKey = process.env.ANS_LLM_API_KEY;
+    const rawKey = apiKey;
     if (rawKey && rawKey.length >= 8 && key.includes(rawKey)) {
       throw new Error("cache key must not contain secret material");
     }
@@ -150,7 +159,18 @@ export function registerAnsChat(
       keyHash,
       session: buildSession({
         provider: providerName, model: modelName, baseUrl, api, contextWindow,
-        apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
+        // Design: pass the resolved key for catalog providers AND custom
+        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers ANS_LLM_API_KEY
+        // and a user-file env_key indirection; gating it on baseUrl would make
+        // a working CLI config fail auth only on the MCP path (#300, greptile P1).
+        // Both sources are already provider-appropriate: ANS_LLM_API_KEY is an
+        // explicit override, and a user-file env_key passed the #120 binding
+        // guard in the resolver. pi-ai's `options.apiKey ?? auth.apiKey` then
+        // uses this key instead of the provider's own env — the same override
+        // the CLI has always applied. Widening the #120 guard beyond project
+        // files is a separate security change, not part of making both entries
+        // read config the same way (#300 review opinion B — user decision).
+        apiKey,
       }),
     };
     sessionCache.set(key, entry);
@@ -171,8 +191,33 @@ export function registerAnsChat(
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
     async (args: unknown, ctx?: ServerContext) => {
-      const providerName = process.env.ANS_LLM_PROVIDER;
-      const modelName = process.env.ANS_LLM_MODEL;
+      // Design: resolve once per CALL, not once at registration — a host that
+      // edits its user/project TOML is picked up next call, and the standalone
+      // MCP and `ans mcp` take the same path into this one shared resolver (#300).
+      // Collect the resolver's warnings and surface them on the observation as
+      // well as stderr, so a broken TOML or a dropped key is never invisible —
+      // an otherwise-valid env config must not make a bad file read as "fine".
+      const configWarnings: string[] = [];
+      let cfg: ResolvedLlmConfig;
+      try {
+        cfg = resolveConfig({ warn: (m) => {
+          configWarnings.push(m);
+          process.stderr.write(m + "\n");
+        } });
+      } catch (e) {
+        // Design: a resolver fault must never escape as a raw handler rejection
+        // — that skips observation and returns no isError result. Record it as
+        // an observation and return a structured tool error, carrying whatever
+        // warnings were collected before the fault (#300 review).
+        const detail = e instanceof Error ? e.message : String(e);
+        return observeTool(eng, "ans_chat", ctx, async () =>
+          toolError("ans_chat", "config resolution failed: " + detail), {
+            "anysearch.llm.configError": detail,
+            "anysearch.llm.configWarnings": configWarnings.length,
+          });
+      }
+      const providerName = cfg.provider;
+      const modelName = cfg.model;
       // #211: the same seam as the search tools (#209) — the SDK context
       // signal (stdio notifications/cancelled) or the stateless-HTTP request
       // signal (response stream closed). The runtime aborts the agent loop.
@@ -241,7 +286,7 @@ export function registerAnsChat(
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
           if (providerName && modelName) {
             try {
-              const llm = await getLlmSession();
+              const llm = await getLlmSession(cfg);
               if (signal?.aborted) return buildAnsChatResult("");
               // The seams carry this request's own usage counter and budget
               // binding. They are handed to the run as a per-call dependency
@@ -372,8 +417,13 @@ export function registerAnsChat(
         }
         if (!providerName || !modelName) {
           // Missing configuration is an execution failure, not a successful
-          // chat whose text happens to say "not configured".
-          return toolFailure("ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars.");
+          // chat whose text happens to say "not configured". #300: name both
+          // ways in — env OR a config file — so a host that wrote a TOML knows
+          // to check it instead of being told only to set env vars.
+          return toolFailure(
+            "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
+            "or write provider/model in ~/.anysearch-cli/config.toml (user) or .anysearch/config.toml (project).",
+          );
         }
         // Design: a caller that already cancelled gets no LLM construction,
         // session mint, or budget work — those would be state written for a
@@ -383,7 +433,7 @@ export function registerAnsChat(
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatResult("");
         try {
-          const session = await getLlmSession();
+          const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatResult("");
           const domain = eng.config ?? {
             sources: { enabled: [] },
@@ -578,6 +628,15 @@ export function registerAnsChat(
       }, {
         "anysearch.provider": providerName ?? "",
         "anysearch.model": modelName ?? "",
+        // Design: report WHERE each effective value came from (env/project/user
+        // layer labels) and HOW MANY config problems the resolver saw, so a bad
+        // TOML is visible even when env still supplied a usable model (#300).
+        // Warning text never carries secret values — only key NAMES and file paths.
+        "anysearch.llm.provider.source": cfg.sources.provider ?? "",
+        "anysearch.llm.model.source": cfg.sources.model ?? "",
+        "anysearch.llm.baseUrl.source": cfg.sources.baseUrl ?? "",
+        "anysearch.llm.api.source": cfg.sources.api ?? "",
+        "anysearch.llm.configWarnings": configWarnings.length,
       });
     }
   );
