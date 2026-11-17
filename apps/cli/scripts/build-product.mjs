@@ -33,6 +33,8 @@ rmSync(domains, { recursive: true, force: true });
 mkdirSync(dirname(domains), { recursive: true });
 cpSync(join(cli, "domains"), domains, { recursive: true });
 
+// Design: the complete product uses its own public hook command — keep the
+// source config for the existing plugin package and adapt only the product copy.
 const codebuddyPath = join(cli, "plugin/configs/codebuddy/hooks.json");
 const codebuddy = JSON.parse(readFileSync(codebuddyPath, "utf8"));
 for (const groups of Object.values(codebuddy.hooks)) {
