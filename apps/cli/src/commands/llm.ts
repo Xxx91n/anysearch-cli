@@ -12,6 +12,7 @@ import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch
 import {
   displayEndpoint,
   readUserCredentials,
+  resolveConfigHome,
   userCredentialsPath as credentialsPath,
   resolveLlmConfig,
   userConfigPath,
@@ -25,6 +26,13 @@ function storedBindings(file: ReturnType<typeof readUserCredentials>, provider: 
     .filter((b) => b.provider === provider)
     .map((b) => displayEndpoint(b.endpoint));
 }
+
+/** How to say where the effective key came from, keyed on the resolver's label. */
+const KEY_SOURCE_LABELS: Record<string, string> = {
+  credentials: "stored file",
+  user: "env via [llm].env_key",
+  env: "env",
+};
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
@@ -42,23 +50,30 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Credentials: " + credentialsPath() + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
-    // One read for the whole listing: `storedBindings` re-read and re-parsed the
-    // file, and this loop called it once per provider.
-    const storedFile = readUserCredentials();
+    // One read for the whole listing, from the SAME config root the resolver
+    // used for `cfg` - otherwise the two can describe different files.
+    const storedFile = readUserCredentials({ home: resolveConfigHome() });
+    if (storedFile.error) {
+      // A broken file must not read as "no keys": the resolver already warned,
+      // and this listing has to agree with it rather than contradict it.
+      console.log("Credentials file: BROKEN - " + storedFile.error);
+    }
     for (const [name, models] of Object.entries(MODELS)) {
       const envVarName = API_KEYS[name] || "UNKNOWN";
       const stored = storedBindings(storedFile, name);
-      // Three distinct facts, kept distinct: the env var is set for this
-      // provider; this provider's key is the one in effect; or only a stored
+      // Three facts, three outcomes: the provider's own env var is set, its key
+      // is the one in effect (possibly from another source), or only a stored
       // binding exists and is not being used.
       const envSet = !!process.env[envVarName];
       const effective = name === cfg.provider && !!cfg.apiKey;
-      const label = envSet || effective ? "AUTH" : stored.length > 0 ? "NO KEY (stored, not in effect)" : "NO KEY";
+      let label: string;
+      if (envSet || effective) label = "AUTH";
+      else if (stored.length > 0) label = "NO KEY (stored, not in effect)";
+      else label = "NO KEY";
       console.log("  " + name + " [" + label + "] - " + models.join(", "));
       if (stored.length > 0 && !effective) {
-        // Name the binding without claiming a cause that was never checked: the
-        // entry may be for another provider, another endpoint, or simply not the
-        // selected provider. Saying "the endpoint differs" was a guess.
+        // Name the binding, not a guessed cause: the entry may be for another
+        // provider or another endpoint.
         console.log("      stored for: " + stored.join(", "));
       }
     }
@@ -117,22 +132,24 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("ans llm check - Auth status");
     console.log("---");
     const cfg = resolveLlmConfig();
-    // One read for the whole loop (the per-provider helper re-read the file).
-    const storedFile = readUserCredentials();
+    // One read for the whole loop, from the same config root as `cfg`.
+    const storedFile = readUserCredentials({ home: resolveConfigHome() });
+    if (storedFile.error) {
+      console.log("Credentials file: BROKEN - " + storedFile.error);
+    }
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
       const envVarName = API_KEYS[name] || "UNKNOWN";
       const ownEnvSet = !!process.env[envVarName];
       const fromStore = storedFile.bindings.some((b) => b.provider === name);
-      // Where the key in effect came from, spelled out rather than collapsed into
-      // "resolved": the resolver's source label IS the answer, and the env case
-      // covers two different variables.
       const effective = name === cfg.provider && !!cfg.apiKey;
-      const resolvedFrom = cfg.sources.apiKey === "credentials" ? "stored file"
-        : cfg.sources.apiKey === "user" ? "env via [llm].env_key"
-          : cfg.sources.apiKey === "env" ? "env" : "resolved";
-      const where = ownEnvSet ? "KEY SET (" + envVarName + ")"
-        : effective ? "KEY SET (" + resolvedFrom + ")"
-          : fromStore ? "KEY SET (stored file, not in effect)" : "NO KEY";
+      // The resolver's source label IS the answer, so map it instead of
+      // collapsing it into "resolved" (which told the user nothing).
+      const resolvedFrom = KEY_SOURCE_LABELS[cfg.sources.apiKey ?? ""] ?? "an unknown source";
+      let where: string;
+      if (ownEnvSet) where = "KEY SET (" + envVarName + ")";
+      else if (effective) where = "KEY SET (" + resolvedFrom + ")";
+      else if (fromStore) where = "KEY SET (stored file, not in effect)";
+      else where = "NO KEY";
       try {
         await factoryFn();
         console.log("  " + name + ": [" + where + "]");

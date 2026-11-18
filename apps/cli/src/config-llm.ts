@@ -11,6 +11,7 @@ export {
   parseLlmToml,
   projectConfigPath,
   readUserCredentials,
+  resolveConfigHome,
   resolveLlmConfig,
   userConfigPath,
   userCredentialsPath,

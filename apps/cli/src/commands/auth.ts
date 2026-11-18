@@ -63,11 +63,12 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
     const name = eq >= 0 ? a.slice(0, eq) : a;
     if (name === "--endpoint") {
       const value = eq >= 0 ? a.slice(eq + 1) : args[++i];
-      // `--endpoint --foo` must not silently swallow the flag as a URL, and an
+      // One guard per failure mode: missing, empty, and "the next token is a
+      // flag". `--endpoint --foo` must not swallow the flag as a URL, and an
       // empty value must not quietly fall back to the default endpoint - either
       // would store a key bound somewhere the user did not ask for.
       if (value === undefined) throw new Error("--endpoint requires a URL");
-      if (value === "" || value === undefined) throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
+      if (value === "") throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
       if (value.startsWith("-")) throw new Error("--endpoint requires a URL, got the flag " + value);
       const normalized = normalizeBindingEndpoint(value);
       if (normalized === null) throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
@@ -79,12 +80,24 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
   return { endpoint, rest };
 }
 
+/**
+ * How to describe a resolved key source in one word. A lookup keyed on the
+ * resolver's source label keeps the mapping in one place (and stops the
+ * four-level ternary this used to be). `env` is spelled out by the caller,
+ * which knows which variable is actually in effect.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  credentials: "stored file",
+  user: "env via [llm].env_key",
+};
+
 function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
   const search = resolveSearchCredentials(env);
   const llm = resolveLlmConfig({ env });
   // Same config root the resolver uses, so the report describes the file that is
   // actually in force (and a test's temp home is honoured).
-  const stored = readUserCredentials({ home: resolveConfigHome(undefined, env) });
+  const home = resolveConfigHome(undefined, env);
+  const stored = readUserCredentials({ home });
   const lines: string[] = [];
 
   for (const info of CREDENTIAL_PROVIDERS) {
@@ -93,14 +106,14 @@ function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
     let where: string;
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
       // Report where the EFFECTIVE model key came from. `env` covers two
-      // different variables, so name the one that is actually set: a
-      // cross-config override (ANS_LLM_API_KEY) is a different fact from "this
-      // provider's own variable is exported".
-      where = llm.sources.apiKey === "env"
-        ? (env.ANS_LLM_API_KEY?.trim() ? "env ANS_LLM_API_KEY" : "env " + info.envKey)
-        : llm.sources.apiKey === "credentials" ? "stored file"
-          : llm.sources.apiKey === "user" ? "env via [llm].env_key"
-            : "set";
+      // variables, so name the one actually set: a cross-config override
+      // (ANS_LLM_API_KEY) is a different fact from "this provider's own variable
+      // is exported".
+      if (llm.sources.apiKey === "env") {
+        where = env.ANS_LLM_API_KEY?.trim() ? "env ANS_LLM_API_KEY" : "env " + info.envKey;
+      } else {
+        where = SOURCE_LABELS[llm.sources.apiKey ?? ""] ?? "set";
+      }
     } else if (envValue) {
       where = "env " + info.envKey;
     } else if (binding) {
@@ -131,8 +144,11 @@ export async function runAuth(args: string[]): Promise<number> {
     for (const line of statusLines()) console.log(line);
     console.log("---");
     if (sub === "list") {
-      const path = userCredentialsPath();
-      const file = readUserCredentials();
+      // The SAME root the resolver and statusLines use, so the path announced is
+      // the file that was actually written and read.
+      const home = resolveConfigHome();
+      const path = userCredentialsPath(home);
+      const file = readUserCredentials({ home });
       console.log("Credential file: " + path);
       console.log("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
       if (file.bindings.length > 0) {

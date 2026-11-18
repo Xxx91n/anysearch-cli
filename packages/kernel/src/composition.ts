@@ -195,7 +195,13 @@ export function createEngine(
      * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
-    /** env handed to `searchCredentials`; defaults to process.env. Nothing else in createEngine reads it. */
+    /**
+     * Env handed to `searchCredentials`. NOTHING else in createEngine reads it -
+     * domain dirs, the reloader and the calibration root still resolve through
+     * process.env. Passing it therefore controls exactly one thing: where the
+     * search keys come from (which is what a test needs). Do not pass it
+     * expecting a fully isolated engine.
+     */
     env?: NodeJS.ProcessEnv;
   },
 ): CompositionResult {
@@ -211,22 +217,33 @@ export function createEngine(
   // same answer and a degradation can be explained per arm. A warning about the
   // credential file goes straight to stderr (MCP keeps stdout protocol-pure)
   // and never carries a key value.
-  let creds: CredentialSource;
+  //
+  // The resolution is fail-open like every other arm of this build: a throwing
+  // resolver (an unreadable file, a permission fault) must degrade to "each SDK
+  // reads its own env", not kill the MCP process at startup.
+  let creds: CredentialSource = undefined;
   // undefined = nobody asked for credential resolution; {} = resolution ran and
   // no arm came out with a key. Consumers that report why an arm degraded need
   // to tell those apart.
   let credentialSources: CompositionResult["credentialSources"];
   if (opts?.searchCredentials) {
-    creds = opts.searchCredentials(env);
-    for (const warning of creds?.warnings ?? []) {
-      writeProviderDiagnostic("[anysearch] " + warning.replace(/^\[credentials\]\s*/, "") + "\n");
+    try {
+      creds = opts.searchCredentials(env);
+      for (const warning of creds?.warnings ?? []) {
+        writeProviderDiagnostic("[anysearch] " + warning + "\n");
+      }
+      credentialSources = {};
+      if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
+      if (creds?.exa) credentialSources.exa = creds.exa.source;
+      if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
+    } catch (e) {
+      creds = undefined;
+      writeProviderDiagnostic(
+        "[anysearch] search credentials could not be resolved: " +
+        String(e instanceof Error ? e.message : e).slice(0, 200) +
+        " — falling back to each SDK's own env var\n",
+      );
     }
-    credentialSources = {};
-    if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
-    if (creds?.exa) credentialSources.exa = creds.exa.source;
-    if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
-  } else {
-    creds = undefined;
   }
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;

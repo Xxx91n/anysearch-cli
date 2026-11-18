@@ -100,3 +100,36 @@ test("cleanSecret rejects what a paste accident produces", () => {
   assert.throws(() => cleanSecret("sk-one\nsk-two"), /more than one line/);
   assert.throws(() => cleanSecret("sk-\u001b[31mred"), /control characters/);
 });
+
+test("a CSI sequence's parameter and final bytes never reach the key", async () => {
+  // Arrow key = ESC [ A. Home = ESC [ 1 ~. Dropping only the ESC would leave
+  // "A" / "1~" in the key, which cleanSecret accepts - a silently wrong key.
+  const { input } = fakeTty(["sk-a", "\u001b[A", "b", "\u001b[1~", "c", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-abc");
+});
+
+test("a paste with no markers still keeps every typed character", async () => {
+  // Bracketed-paste mode can be off; the payload then arrives as plain bytes and
+  // must not be mistaken for marker characters.
+  const { input } = fakeTty(["sk-plain-paste-key", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-plain-paste-key");
+});
+
+test("a key that itself contains ESC[ does not lose characters", async () => {
+  // Pathological but possible: the payload contains the start of a CSI sequence
+  // and the rest of the key must still arrive.
+  const { input } = fakeTty(["sk-A", "\u001b[", "B", "\r"]);
+  const out = sink();
+  // ESC[ begins a CSI sequence with no final byte yet, so "B" IS that final
+  // byte - the sequence ends and nothing leaks into the key.
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-A");
+});
+
+test("raw mode is restored even when the read throws", async () => {
+  const { input, rawModes } = fakeTty(["sk-half", "\u0003"]);
+  const out = sink();
+  await assert.rejects(() => readSecret("key: ", { input, output: out.output }));
+  assert.deepEqual(rawModes, [true, false], "raw mode was turned on and then off");
+});

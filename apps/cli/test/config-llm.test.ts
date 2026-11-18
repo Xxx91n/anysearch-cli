@@ -566,3 +566,34 @@ test("a provider-refused key name is not re-read either", () => {
   assert.equal(cfg.provider, "google");
   assert.equal(cfg.apiKey, undefined, "a key refused for the provider mismatch stays refused");
 });
+
+test("refusing one of google's env names refuses both", () => {
+  // GOOGLE_API_KEY and GEMINI_API_KEY are the same secret under two names. The
+  // guard used to block only the name the user file wrote, so the other name
+  // let the same google key reach the new endpoint (review, second round).
+  const f = fixture({
+    userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\nbase_url = "https://a.example/v1"\napi = "chat"\nenv_key = "GOOGLE_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: {
+      ANS_LLM_BASE_URL: "https://b.example/v1",
+      GOOGLE_API_KEY: "google-secret-1",
+      GEMINI_API_KEY: "google-secret-1",
+    },
+  }));
+  assert.equal(cfg.baseUrl, "https://b.example/v1");
+  assert.equal(cfg.apiKey, undefined, "neither google env name may carry the key to the new endpoint");
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
+  assert.ok(!f.warnings.join("\n").includes("google-secret-1"));
+});
+
+test("a provider mismatch refuses the key under either of the provider's names", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "google"\nmodel = "m"\nenv_key = "GOOGLE_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5", GEMINI_API_KEY: "google-secret-2" },
+  }));
+  assert.equal(cfg.provider, "openai");
+  assert.equal(cfg.apiKey, undefined, "the google secret is not re-read under its other name");
+});

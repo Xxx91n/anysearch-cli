@@ -124,7 +124,15 @@ export interface CredentialFileContents {
   error?: string;
 }
 
-export function userCredentialsPath(home: string = homedir()): string {
+/**
+ * The one place the credential file's path is decided. A bare call resolves the
+ * config root through `resolveConfigHome`, so a call site that forgets to pass a
+ * home can never disagree with the resolver - which was exactly the bug: `ans
+ * auth set` wrote to the `homedir()` file while `ans auth list` and the resolver
+ * read the `USERPROFILE` one, and on a host where those differ the command
+ * announced a file it never touched.
+ */
+export function userCredentialsPath(home: string = resolveConfigHome()): string {
   return join(home, ".anysearch-cli", CREDENTIALS_FILENAME);
 }
 
@@ -213,7 +221,9 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
 export function readUserCredentials(
   opts: { home?: string; filePath?: string } = {},
 ): CredentialFileContents {
-  const path = opts.filePath ?? userCredentialsPath(opts.home);
+  // Same resolver as the path helper, so a read that omits `home` looks exactly
+  // where a write with no `home` wrote.
+  const path = opts.filePath ?? userCredentialsPath(opts.home ?? resolveConfigHome());
   if (!existsSync(path)) return { bindings: [] };
   let raw: string;
   try {
@@ -285,7 +295,10 @@ export function resolveSearchCredentials(
   const home = resolveConfigHome(opts.home, env);
   const file = readUserCredentials({ ...opts, home });
   const warnings: string[] = [];
-  if (file.error) warnings.push("[credentials] " + file.error + "; continuing without the user credential file");
+  // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
+  // stderr, `[credentials] ` in doctor). Tagging here would couple them to this
+  // string and double the prefix when they add their own.
+  if (file.error) warnings.push(file.error + "; continuing without the user credential file");
   const out: ResolvedSearchCredentials = { warnings };
 
   // One rule for all three arms: an explicit env value wins over the stored
@@ -308,6 +321,12 @@ export function resolveSearchCredentials(
   // adapter's default endpoint is baked in), and it is meaningful even with no
   // key at all - that is how the offline acceptance lane points the arm at a
   // dead port.
+  //
+  // The endpoint is ALWAYS emitted when the injected env names one, so a caller
+  // that passes its own env cannot end up with the resolver handing `undefined`
+  // while the provider constructor falls back to the real process.env: that
+  // would make the injected env half-honoured (the rest of the arm's config
+  // would come from one env and its endpoint from another).
   const ansEndpoint = env.ANYSEARCH_ENDPOINT?.trim() || undefined;
   const anysearch = pick("anysearch");
   if (anysearch) out.anysearch = { ...anysearch, endpoint: ansEndpoint };

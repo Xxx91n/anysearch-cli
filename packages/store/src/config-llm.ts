@@ -165,7 +165,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const cwd = opts.cwd ?? process.cwd();
   // home follows the same rule as the credential file (one shared resolver), so
   // the model config and the key store always agree on the config root.
-  const home = resolveConfigHome(opts.home, env);
+  // `opts.env` may be a partial env (a test, an MCP call passing only ANS_LLM_*).
+  // Reading HOME from IT would make such a caller silently fall back to the real
+  // homedir and read a different config.toml than it expects, so a partial env
+  // falls through to the process env for the config root. An explicit `home`
+  // always wins.
+  const home = resolveConfigHome(
+    opts.home ?? env.USERPROFILE ?? env.HOME,
+    process.env,
+  );
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
@@ -279,13 +287,23 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     // A refused source must not come back through a later fallback: the
     // env_key was blocked BECAUSE the effective endpoint (or provider) differs
     // from what the file bound it to, and the provider's own env var is usually
-    // the very same variable. Without this flag the guard would be decorative -
-    // the key would be refused, then re-read one branch later and sent anyway
+    // the very same variable. Without this guard the refusal would be decorative
+    // - the key would be refused, then re-read one branch later and sent anyway
     // (#301 review P1).
-    let refusedSecretSources: Set<string> = new Set();
+    //
+    // It refuses EVERY name the same provider's key can live under, not just the
+    // one the file named: google's key is readable from both GOOGLE_API_KEY and
+    // GEMINI_API_KEY, so blocking one name would let the same secret through the
+    // other (#301 review, second round).
+    const refusedSecretSources = new Set<string>();
+    const refuseEveryName = (envKey: string): void => {
+      refusedSecretSources.add(envKey);
+      const owner = providerForEnvKey(envKey);
+      if (owner) for (const name of modelEnvKeysFor(owner)) refusedSecretSources.add(name);
+    };
 
     if (user.env_key && providerBoundElsewhere) {
-      refusedSecretSources.add(user.env_key);
+      refuseEveryName(user.env_key);
       warn(
         "[config] [llm].env_key ignored: it is bound to provider=" + boundProvider +
         (user.provider === undefined ? " (by the variable's own name)" : "") +
@@ -293,7 +311,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         " — refusing to send that secret to a different provider",
       );
     } else if (user.env_key && endpointBoundElsewhere) {
-      refusedSecretSources.add(user.env_key);
+      refuseEveryName(user.env_key);
       warn(
         "[config] [llm].env_key ignored: user file binds base_url=" + displayEndpoint(userEndpoint) +
         " but " + resolved.sources.baseUrl + " selected a different endpoint" +

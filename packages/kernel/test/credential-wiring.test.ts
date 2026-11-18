@@ -277,3 +277,26 @@ test("a search arm with no stored key and no env still degrades by name, never p
     cleanup();
   }
 });
+
+test("a throwing credential resolver degrades to env, it does not kill the engine", () => {
+  // Review (second round), high: the MCP entry exits the process on a throw from
+  // this seam, so an unreadable credential file would kill the server at startup
+  // instead of falling back to each SDK's own env var like every other arm.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => { throw new Error("EACCES: credentials.json is unreadable"); },
+  });
+  try {
+    assert.ok(engine.retriever, "the engine was still assembled");
+    assert.equal(engine.credentialSources, undefined, "no credential sources were recorded");
+    // The point is only that the throw did not propagate: the arms are built as
+    // if no credentials were supplied, which is the pre-#301 path.
+    assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",
+      "the retriever is usable, not a half-built object");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});

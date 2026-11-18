@@ -4,15 +4,20 @@
 // config previews or command arguments. So the key is never a command-line
 // argument - it is read from stdin:
 //
-//   - terminal: characters are read in raw mode and nothing is echoed; the
-//     prompt shows a fixed placeholder instead, so even the length is hidden.
+//   - terminal: characters are read in raw mode and nothing is echoed, so even
+//     the length is hidden.
 //   - pipe / here-string: the whole stream is read, so scripted use works
 //     (`printf '%s' "$KEY" | ans auth set openai`) without the key showing up
 //     in the process list, which is exactly what an argument would do.
 //
-// Ctrl+C in raw mode is handled here because raw mode turns off the terminal's
-// own handler: it cancels the read and reports "cancelled" rather than
-// swallowing the interrupt.
+// Escape sequences are swallowed whole. Two ways this matters, and both used to
+// corrupt the stored key silently:
+//   - a bracketed paste arrives as `ESC [ 200 ~ <payload> ESC [ 201 ~`; dropping
+//     only the ESC bytes leaves the literal marker glued to the key;
+//   - any other CSI sequence (arrow key = `ESC [ A`, Home = `ESC [ 1 ~`) has
+//     parameter and final bytes after the ESC; only dropping the ESC lets `A`
+//     or `1~` flow into the key.
+// `cleanSecret` only rejects control bytes, so neither would be caught later.
 
 import type { Readable, Writable } from "node:stream";
 
@@ -32,6 +37,7 @@ export interface SecretInputIO {
   input?: Readable & { isTTY?: boolean; isRaw?: boolean; setRawMode?: (raw: boolean) => void };
   output?: Writable;
 }
+
 /** Read a secret from stdin without echoing it. */
 export async function readSecret(prompt: string, io: SecretInputIO = {}): Promise<string> {
   // Resolved at call time, not at import time: a caller (or a test) may have
@@ -43,54 +49,57 @@ export async function readSecret(prompt: string, io: SecretInputIO = {}): Promis
     return readPipedSecret(input, output, prompt);
   }
 
-  // Raw mode: keystrokes arrive one at a time and the terminal does not echo.
   output.write(prompt);
-  const wasRaw = input.isRaw;
-  input.setRawMode(true);
-  input.resume();
+  return readFromTerminal(input, output);
+}
+
+async function readFromTerminal(
+  input: NonNullable<SecretInputIO["input"]>,
+  output: Writable,
+): Promise<string> {
+  const setRawMode = input.setRawMode!;
   let value = "";
-  // A terminal paste arrives wrapped in bracketed-paste markers:
-  //   ESC [ 200 ~ <payload> ESC [ 201 ~
-  // Dropping only the ESC bytes leaves the literal "[200~" glued to the key, and
-  // `cleanSecret` would accept it - the stored key is then silently wrong and
-  // auth fails later with no hint. Track the markers and drop them whole.
-  //
-  // The marker match starts ONLY at an ESC (`marker` non-null). Payload
-  // characters inside a paste must flow straight into `value`; matching them
-  // against the closing marker would swallow ordinary characters.
-  let marker: { wanted: string; seen: string; onMatch: () => void } | null = null;
+  // Escape bookkeeping. `escape` is the CSI parameter/final byte accumulator;
+  // `inPaste` tracks whether a bracketed paste is open (so a newline inside it
+  // does not end the read).
+  let escape = "";
+  let inEscape = false;
   let inPaste = false;
+
+  // Raw mode is entered INSIDE the try: if the terminal refuses it, the finally
+  // still runs and the caller never receives a half-configured stdin.
+  const wasRaw = input.isRaw ?? false;
+  setRawMode(true);
+  input.resume();
   try {
     for await (const chunk of input) {
-      const text = String(chunk);
-      for (const ch of text) {
-        if (ch === "\u0003") throw new SecretInputCancelled(); // Ctrl+C
-        if (marker) {
-          marker.seen += ch;
-          if (marker.wanted.startsWith(marker.seen)) {
-            if (marker.seen === marker.wanted) {
-              const done = marker;
-              marker = null;
-              done.onMatch();
-            }
-            continue;
-          }
-          // Not this marker after all: it was some other escape sequence (arrow
-          // key, function key). Drop what was collected for it.
-          marker = null;
+      for (const ch of String(chunk)) {
+        // Ctrl+C: raw mode turns off the terminal's own handler.
+        if (ch === "\u0003") throw new SecretInputCancelled();
+        if (ch === "\u001b") {
+          inEscape = true;
+          escape = "";
           continue;
         }
-        if (ch === "\u001b") {
-          marker = inPaste
-            ? { wanted: "[201~", seen: "", onMatch: () => { inPaste = false; } }
-            : { wanted: "[200~", seen: "", onMatch: () => { inPaste = true; } };
+        if (inEscape) {
+          escape += ch;
+          // Text editors' paste markers are sequences we must recognize rather
+          // than skip: their payload is what the user pasted.
+          if (PASTE_MARKERS.includes(escape)) {
+            inPaste = escape === PASTE_OPEN;
+            inEscape = false;
+            continue;
+          }
+          // Keep collecting while this still looks like the prefix of a marker.
+          if (PASTE_MARKERS.some((m) => m.startsWith(escape))) continue;
+          // Any other CSI sequence ends at its final byte and is dropped whole.
+          // Note `[` itself is in the 0x40-0x7E range, so the marker check above
+          // has to run first - otherwise "[200~" would end at the "[".
+          if (isCsiFinal(ch)) inEscape = false;
           continue;
         }
         if (ch === "\r" || ch === "\n") {
-          if (inPaste) {
-            // A newline inside a paste must not end the read half-way.
-            continue;
-          }
+          if (inPaste) continue; // a newline inside a paste is not "done"
           output.write("\n");
           return value;
         }
@@ -103,10 +112,24 @@ export async function readSecret(prompt: string, io: SecretInputIO = {}): Promis
     }
     throw new Error("stdin closed before a key was entered");
   } finally {
-    input.setRawMode(wasRaw ?? false);
+    setRawMode(wasRaw);
     input.pause();
   }
 }
+
+/**
+ * True for the byte that ends a CSI sequence: the first character in the
+ * 0x40-0x7E range. Arrow keys end at a letter, Home/End at `~`.
+ */
+function isCsiFinal(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return code >= 0x40 && code <= 0x7e;
+}
+
+/** Bracketed-paste markers; their payload must be kept, the markers themselves not. */
+const PASTE_OPEN = "[200~";
+const PASTE_CLOSE = "[201~";
+const PASTE_MARKERS = [PASTE_OPEN, PASTE_CLOSE];
 
 async function readPipedSecret(
   input: Readable,
