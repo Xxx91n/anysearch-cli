@@ -51,6 +51,13 @@ export interface TaskRegistryOptions {
   owner?: { pid: number; host: string };
   /** Liveness probe for a same-host owner; injected so tests need no real kill. */
   isOwnerAlive?: (pid: number) => boolean;
+  /**
+   * #303: whether this registry opened the connection it writes through.
+   * `openTaskRegistry` owns its handle; a registry borrowed from the session
+   * store (#303) does not, and closing the engine's database out from under it
+   * would break every later query. Defaults to true.
+   */
+  ownsConnection?: boolean;
 }
 
 export interface TaskRecordRow {
@@ -105,10 +112,12 @@ export class TaskRegistry {
   };
   private readonly owner: { pid: number; host: string };
   private readonly isOwnerAlive: (pid: number) => boolean;
+  private readonly ownsConnection: boolean;
 
   constructor(private db: Database.Database, opts: TaskRegistryOptions = {}) {
     this.owner = opts.owner ?? { pid: process.pid, host: hostname() };
     this.isOwnerAlive = opts.isOwnerAlive ?? pidIsAlive;
+    this.ownsConnection = opts.ownsConnection ?? true;
     this.stmts = {
       // ended_at IS NULL in the WHERE keeps `finish` from rewriting history:
       // a task that already reported its end keeps the code it ended with.
@@ -208,7 +217,17 @@ export class TaskRegistry {
     return rows.map((row) => ({ ...row, ownerState: this.probeOwnerState(row.ownerHost, row.pid) }));
   }
 
+  /**
+   * Close the connection this registry OWNS. A borrowed registry (the session
+   * store's seam, #303) refuses instead of tearing the engine's database out
+   * from under it — a loud error beats a silently broken store.
+   */
   close(): void {
+    if (!this.ownsConnection) {
+      throw new Error(
+        "this task registry borrows the store's connection — close the store instead",
+      );
+    }
     this.db.close();
   }
 }

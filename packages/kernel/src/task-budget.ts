@@ -37,6 +37,10 @@ export interface TaskBudgetWiring {
   taskBudgetFault?: string;
 }
 
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 export function wireTaskBudget(
   store: SessionStorePort | undefined,
   taskId: string | undefined,
@@ -51,20 +55,26 @@ export function wireTaskBudget(
       ? { taskBudgetFault: "the main program registered no task to hold this run's budget" }
       : {};
   }
+  // Design: name the missing STORE and the missing SEAM differently. Both stop a
+  // declared run, but they point a debugger at different places, and "lacks
+  // createTaskBudgetLedger" about an absent store would send it to the wrong one.
+  if (!store) {
+    return budget ? { taskBudgetFault: "no session store to hold this run's budget" } : {};
+  }
   let ledger: TaskBudgetLedger | undefined;
   try {
     // Optional seam, same discipline as initBudget: a hand-built store without
     // it cannot hold a task budget, which for a declared [budget] is a fault —
     // the same reading chat-memory.ts gives "store lacks initBudget".
-    ledger = store?.createTaskBudgetLedger?.();
-  } catch (e: any) {
+    ledger = store.createTaskBudgetLedger?.();
+  } catch (e: unknown) {
     // The task ledger cannot even be constructed (broken store connection).
     // With a declared budget this is "declared but failed to establish".
     // Without one there is no constraint, and the runtime reports any later
     // ledger fault by name — the broken-store corner must not crash the
     // wiring itself.
     return budget
-      ? { taskBudgetFault: "task budget ledger unavailable: " + (e?.message || String(e)) }
+      ? { taskBudgetFault: "task budget ledger unavailable: " + errText(e) }
       : {};
   }
   if (budget && !ledger) {
@@ -73,10 +83,10 @@ export function wireTaskBudget(
   if (budget && ledger) {
     try {
       ledger.initBudget(taskId, toBudgetCaps(budget));
-    } catch (e: any) {
+    } catch (e: unknown) {
       // The FK on task_budgets makes "task was never registered" land here too
       // — the establishment failure the runtime turns into a hard stop.
-      return { taskBudgetFault: "task budget establishment failed: " + (e?.message || String(e)) };
+      return { taskBudgetFault: "task budget establishment failed: " + errText(e) };
     }
   }
   return ledger ? { taskBudget: { taskId, ledger } } : {};

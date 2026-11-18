@@ -64,6 +64,20 @@ async function main() {
         "3: a declared budget with no registered task is a fault");
     }
 
+    // 3b. Declared, a task id but NO store: the fault must name the missing
+    //     store, not a missing seam — the two point a debugger at different
+    //     places (review finding on the shared kernel wiring, #303).
+    {
+      const wiring = wireChatTaskBudget(undefined, "cli-no-store", budget);
+      check(wiring.taskBudget === undefined && /no session store/.test(wiring.taskBudgetFault ?? ""),
+        "3b: a missing store is named as such (got " + JSON.stringify(wiring.taskBudgetFault) + ")");
+      check(!/createTaskBudgetLedger/.test(wiring.taskBudgetFault ?? ""),
+        "3b: it does not blame a missing seam");
+      const undeclared = wireChatTaskBudget(undefined, "cli-no-store", undefined);
+      check(undeclared.taskBudget === undefined && undeclared.taskBudgetFault === undefined,
+        "3b: an undeclared domain with no store is still the unmetered session form");
+    }
+
     // 4. Undeclared + task: the scope still travels, but no row exists —
     //    unmetered for this task, and never a fall-back to the session form.
     {

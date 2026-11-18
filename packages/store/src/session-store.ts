@@ -879,7 +879,7 @@ export class SqliteSessionStore implements SessionStore {
    * does not.
    */
   createTaskRegistry(): TaskRegistry {
-    return (this.taskRegistryInstance ??= new TaskRegistry(this.db));
+    return (this.taskRegistryInstance ??= new TaskRegistry(this.db, { ownsConnection: false }));
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).

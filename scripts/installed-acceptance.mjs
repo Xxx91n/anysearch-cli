@@ -724,19 +724,32 @@ async function main() {
       // 这条应答不会回来；挂一个吞掉的 catch，免得 240 秒超时把整轮打成未捕获错误。
       pending.promise.catch(() => {});
       // 等到这一轮真的到了上游再取消，否则取消的只是一次还没开始的调用。
+      // 条件只算一次：等超时了才在上面说失败时，别再重新求值一遍。
+      const reachedUpstream = () => requestLog.some((r) => r.body.includes(HOLD_MARKER));
       const holdDeadline = Date.now() + 15000;
-      while (Date.now() < holdDeadline && !requestLog.some((r) => r.body.includes(HOLD_MARKER))) {
+      let arrived = reachedUpstream();
+      while (!arrived && Date.now() < holdDeadline) {
         await new Promise((r) => setTimeout(r, 50));
+        arrived = reachedUpstream();
       }
-      check(requestLog.some((r) => r.body.includes(HOLD_MARKER)), "取消之前这一轮已经到达上游");
+      check(arrived, "取消之前这一轮已经到达上游", "等了 15 秒还没看到 " + HOLD_MARKER + " 到端点");
       budgetProber.notify("notifications/cancelled", { requestId: pending.id, reason: "acceptance cancel" });
 
+      // 一条连接读到尾：每 100ms 新开一条会开合几百次，MCP 子进程一旦正好在写
+      // 还可能撞上 SQLITE_BUSY 把整条车道抛断。读失败就当"还没收尾"，继续等。
       const readTaskRows = () => {
-        const db = new Database(mcpDb, { readonly: true });
+        let db;
+        try {
+          db = new Database(mcpDb, { readonly: true });
+        } catch {
+          return null;
+        }
         try {
           return db.prepare(
             "SELECT task_id as id, kind, ended_at as ended, exit_code as code FROM task_records ORDER BY rowid"
           ).all();
+        } catch {
+          return null;
         } finally { db.close(); }
       };
       // 取消不等于活立刻干完：等到四个任务都写了结束时间，才说明迟到结算、
@@ -744,23 +757,25 @@ async function main() {
       let mcpTasks = [];
       const settleDeadline = Date.now() + 60000;
       while (Date.now() < settleDeadline) {
-        mcpTasks = readTaskRows();
+        const rows = readTaskRows();
+        if (rows) mcpTasks = rows;
         if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
         await new Promise((r) => setTimeout(r, 100));
       }
       check(mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null),
         "取消之后四个任务都等迟到工作做完再收尾", JSON.stringify(mcpTasks));
-      const cancelledTask = mcpTasks[3];
+      // 按退出码认那一条，不按位置：位置依赖"这里只有四行"和 rowid 顺序。
+      const cancelledTask = mcpTasks.find((t) => t.code !== 0);
       check(cancelledTask?.code === 1,
-        "取消那轮按未完成记账，不是假装跑完", JSON.stringify(cancelledTask));
+        "取消那轮按未完成记账，不是假装跑完", JSON.stringify(mcpTasks.map((t) => [t.kind, t.code])));
 
       const mcpCheck = new Database(mcpDb, { readonly: true });
-      let mcpBudgets = [], sessionRows;
+      let mcpBudgets = [], ledgerRows;
       try {
         mcpBudgets = mcpCheck.prepare(
           "SELECT task_id as id, billable_calls as calls, reserved_tokens as reserved FROM task_budgets ORDER BY rowid"
         ).all();
-        sessionRows = mcpCheck.prepare("SELECT COUNT(*) as n FROM budget_ledger").get();
+        ledgerRows = mcpCheck.prepare("SELECT COUNT(*) as n FROM budget_ledger").get();
       } finally { mcpCheck.close(); }
       check(mcpTasks.every((t) => t.kind === "mcp.ans_chat"),
         "四条任务的种类都标着 MCP 聊天", JSON.stringify(mcpTasks.map((t) => t.kind)));
@@ -772,8 +787,8 @@ async function main() {
         "三次完成的调用各自记了至少一次调用", JSON.stringify(mcpBudgets));
       check(mcpBudgets.every((b) => b.reserved === 0),
         "没有预留挂在那里（取消那轮也结掉了）", JSON.stringify(mcpBudgets.map((b) => b.reserved)));
-      check(Number(sessionRows?.n) === 0,
-        "会话的账从头到尾没被 MCP 聊天碰过", JSON.stringify(sessionRows));
+      check(Number(ledgerRows?.n) === 0,
+        "会话的账从头到尾没被 MCP 聊天碰过", JSON.stringify(ledgerRows));
     }
 
     // ================= C2. 冷启动：两个服务，一个全新的库 =================

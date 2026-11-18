@@ -1679,10 +1679,18 @@ export class PiAgentRuntime {
         // #303: kept as a promise the host can wait on for a bounded window
         // (drainLateSettlement) — the task row must not claim "settled" while
         // this delta is still on its way back.
-        this.lateSettlement = promptPromise!.then(
-          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
-          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
-        ).catch(() => { /* the delta write is best-effort by design */ });
+        //
+        // Design: chain onto a previously pending tail instead of overwriting
+        // it. One runtime normally owns one run, but the field IS the contract:
+        // dropping an earlier delta would let drainLateSettlement answer
+        // "settled" while that delta is still pending.
+        const previousTail = this.lateSettlement;
+        const settleDelta = (): void =>
+          settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
+        this.lateSettlement = Promise.all([
+          previousTail ?? Promise.resolve(),
+          promptPromise!.then(settleDelta, settleDelta),
+        ]).then(() => undefined, () => { /* the delta write is best-effort by design */ });
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
@@ -1738,10 +1746,19 @@ export class PiAgentRuntime {
     const expired = new Promise<false>((resolve) => {
       timer = setTimeout(() => resolve(false), ms);
     });
+    // Design: handle the rejection HERE rather than relying on the writer having
+    // swallowed it. A failed late write is no longer pending either, and this
+    // method must never throw out of a closeout path — whatever put the promise
+    // in the field (tests do it directly).
+    const done = pending.then(() => {
+      this.lateSettlement = undefined;
+      return true as const;
+    }, () => {
+      this.lateSettlement = undefined;
+      return true as const;
+    });
     try {
-      const done = await Promise.race([pending.then(() => true as const), expired]);
-      if (done) this.lateSettlement = undefined;
-      return done;
+      return await Promise.race([done, expired]);
     } finally {
       if (timer) clearTimeout(timer);
     }

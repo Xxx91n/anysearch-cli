@@ -84,6 +84,10 @@ export function resetMcpTaskWarnings(): void {
   warned.clear();
 }
 
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 function warnOnce(key: string, detail: string): void {
   if (warned.has(key)) return;
   if (warned.size >= WARNED_MAX) warned.clear();
@@ -113,9 +117,9 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
       return { finish: () => false };
     }
     record = registry.registerTask({ kind, role: "business", entry: "mcp" });
-  } catch (e: any) {
-    warnOnce("register:" + (e?.message || String(e)),
-      "task registration failed (" + (e?.message || String(e)) + ") — running unregistered");
+  } catch (e: unknown) {
+    warnOnce("register:" + errText(e),
+      "task registration failed (" + errText(e) + ") — running unregistered");
     return { finish: () => false };
   }
   if (!record) {
@@ -142,9 +146,14 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
       try {
         task.finish({ exitCode });
         wroteEnd = true;
-      } catch (e: any) {
-        warnOnce("finish:" + (e?.message || String(e)),
-          "task end write failed (" + (e?.message || String(e)) + ") — the record stays open");
+      } catch (e: unknown) {
+        // The closeout is the only place a failed end write becomes visible, and
+        // error paths do not carry one (#204). Name the task, its kind and the
+        // exit code here too, so an upgrade admission (#309) has a discoverable
+        // stderr signal instead of a silently open row.
+        warnOnce("finish:" + errText(e),
+          "task " + task.taskId + " (" + kind + ") end write failed with exit " + exitCode +
+          " (" + errText(e) + ") — the record stays open");
         wroteEnd = false;
       }
       return wroteEnd;

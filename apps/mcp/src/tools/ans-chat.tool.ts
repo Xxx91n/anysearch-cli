@@ -306,12 +306,19 @@ export function registerAnsChat(
           // Budget (D4). The rule lives in the kernel, so this tool and the CLI
           // cannot answer "was this run charged?" differently.
           //
-          // #303: with a task budget established, the run is charged to THIS
-          // call's task — not to the session that happens to own the selected
-          // materials. A memory-list scope has no owning session at all, and
-          // charging the first one would misattribute the spend; the task form
-          // is what makes that a non-question. The session form below stays for
-          // the degraded call (no task registered), unchanged.
+          // Design: #303 — with a task budget established, the run is charged to
+          // THIS call's task, not to the session that happens to own the
+          // selected materials. A memory-list scope has no owning session at
+          // all, and charging the first one would misattribute the spend; the
+          // task form is what makes that a non-question. The session form below
+          // stays for the degraded call (no task registered), unchanged.
+          //
+          // Deliberate omission: the task form does NOT release caps on the
+          // scope session (the session form's `no-declared-caps` branch used
+          // to). This call no longer bills that session, and mutating another
+          // conversation's budget row as a side effect of a consolidate is the
+          // kind of cross-session write #303 removes; its historical row stays
+          // as it was.
           //
           // Design: the engine's own ledger is reused rather than a second one —
           // over the same connection, so the row, the reserves and the settles
@@ -703,7 +710,12 @@ export function registerAnsChat(
               return buildAnsChatBudgetResult(runtimeErrorReason, runtimeError, {
                 ...(task ? { taskId: task.taskId } : {}),
                 usage: {
-                  run: emptyRunUsage(["run usage: the run was stopped by its task budget before any provider call"]),
+                  // Design: this note describes the ACCOUNTING, not the call
+                  // count. Today both budget stops happen before the first
+                  // provider call (the text says so), but a figure reported as
+                  // "unknown" must not double as a claim that zero was spent —
+                  // if a future stop lands mid-run, this wording stays true.
+                  run: emptyRunUsage(["run usage: no provider figure was reported for this run"]),
                   memorySummary: runtime.getMemoryUsage(),
                 },
               });
