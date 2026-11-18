@@ -19,6 +19,7 @@ export function recoverPiSessionRecord(
   let modelCalled = false;
   let assistantSeen = false;
   let lastStopReason: string | undefined;
+  let legacyPolicyStopped = false;
   const unansweredTools = new Map<string, string>();
   for (const entry of branch.slice(questionIndex + 1)) {
     if (entry.type === "custom") {
@@ -39,6 +40,7 @@ export function recoverPiSessionRecord(
     const message = entry.message;
     if (message?.role === "assistant") {
       lastStopReason = message.stopReason;
+      legacyPolicyStopped = false;
       const content = Array.isArray(message.content) ? message.content : [];
       const failed = lastStopReason === "aborted" || lastStopReason === "error";
       // PI can write a failure with an empty text block before reaching the model.
@@ -57,6 +59,14 @@ export function recoverPiSessionRecord(
       }
     } else if (message?.role === "toolResult") {
       unansweredTools.delete(message.toolCallId);
+      if (!modelCalled && message.isError && Array.isArray(message.content)) {
+        // These are the persisted reasons from the old URL policy's
+        // terminate:true paths. PI did not store the terminate bit.
+        legacyPolicyStopped ||= message.content.some((part) =>
+          part?.type === "text" && typeof part.text === "string" &&
+          (part.text.startsWith("URL rejected by trust boundary: ") ||
+            part.text.startsWith("Blocked retrieved-derived URL ")));
+      }
     }
   }
 
@@ -67,7 +77,7 @@ export function recoverPiSessionRecord(
     if (lastStopReason === "stop" || lastStopReason === "length") return undefined;
     // A tool may normally end the turn. Old PI records do not say whether
     // another request was expected, but the chat row can confirm completion.
-    if (lastStopReason === "toolUse" && legacyTurnCompleted()) return undefined;
+    if (lastStopReason === "toolUse" && (legacyPolicyStopped || legacyTurnCompleted())) return undefined;
   }
 
   const tools = Array.from(unansweredTools, ([id, name]) => ({ id, name }));

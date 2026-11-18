@@ -250,30 +250,39 @@ async function keepsOldCompletedToolTurnsComplete() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-legacy-tool-stop-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
-    const sessionId = "legacy-tool-stop";
-    await store.ensureSession(sessionId, "chat");
-    store.recordChatProject(sessionId, null, true);
-    const path = seedRecord(dir, sessionId, [
-      question,
-      { type: "message", message: assistant([{
-        type: "toolCall", id: "blocked", name: "search", arguments: { query: "blocked" },
-      }], "toolUse") },
-      { type: "message", message: {
-        role: "toolResult", toolCallId: "blocked", toolName: "search",
-        content: [{ type: "text", text: "工具请求被拒绝" }], isError: true, timestamp: Date.now(),
-      } },
-    ]);
-    const runtime = chatRuntime(dir, sessionId, reply);
-    await runChatAttempt({ store, sessionId, piSessionDir: dir, projectRoot: null }, async (attempt) => {
-      let completed = false;
-      for await (const event of runtime.run("新问题", attempt)) {
-        assert.notEqual(event.type, "session_recovery");
-        if (event.type === "done") completed = true;
-      }
-      assert.ok(completed);
-      return { completed };
-    });
-    assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
+    const oldTurns = [
+      { sessionId: "legacy-tool-stop", recordedComplete: true, result: "工具请求被拒绝" },
+      {
+        sessionId: "legacy-policy-stop",
+        recordedComplete: false,
+        result: "URL rejected by trust boundary: https://blocked.example.invalid/",
+      },
+    ];
+    for (const { sessionId, recordedComplete, result } of oldTurns) {
+      await store.ensureSession(sessionId, "chat");
+      store.recordChatProject(sessionId, null, recordedComplete);
+      const path = seedRecord(dir, sessionId, [
+        question,
+        { type: "message", message: assistant([{
+          type: "toolCall", id: "blocked", name: "search", arguments: { query: "blocked" },
+        }], "toolUse") },
+        { type: "message", message: {
+          role: "toolResult", toolCallId: "blocked", toolName: "search",
+          content: [{ type: "text", text: result }], isError: true, timestamp: Date.now(),
+        } },
+      ]);
+      const runtime = chatRuntime(dir, sessionId, reply);
+      await runChatAttempt({ store, sessionId, piSessionDir: dir, projectRoot: null }, async (attempt) => {
+        let completed = false;
+        for await (const event of runtime.run("新问题", attempt)) {
+          assert.notEqual(event.type, "session_recovery");
+          if (event.type === "done") completed = true;
+        }
+        assert.ok(completed);
+        return { completed };
+      });
+      assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
+    }
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
