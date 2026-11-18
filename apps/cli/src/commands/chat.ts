@@ -271,6 +271,7 @@ export async function runChat(argv: string[]): Promise<number> {
         taskBudget: taskBudgetWiring.taskBudget,
         taskBudgetFault,
         enforceTaskBudgetPerCall: printOnly,
+        includeAnswer: printOnly,
       });
       if (!printOnly) {
         console.log("ans chat: " + query);

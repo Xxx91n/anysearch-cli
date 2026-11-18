@@ -558,7 +558,8 @@ export class RetroaererdEngine {
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
               // Keep the existing archive key and carry the full link for display.
-              allResults.set(norm, { ...r, url: norm, extra: { ...r.extra, sourceUrl: r.url } });
+              const extra = q.includeSourceUrls ? { ...r.extra, sourceUrl: r.url } : r.extra;
+              allResults.set(norm, { ...r, url: norm, extra });
             }
             urls.push(norm);
             // web native-score snapshot (raw provider score; never fused).

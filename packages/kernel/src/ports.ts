@@ -25,6 +25,8 @@ export interface RetrievalObservationSink {
 export type Query = SearchRequest & {
   budget?: Budget;
   providers?: string[]; // restrict to subset of registered providers
+  /** Include full source links alongside normalized result URLs. */
+  includeSourceUrls?: boolean;
   // caller-side recordOperation span for the domain-filter audit events.
   span?: RetrievalObservationSink;
   // #302: the task-scoped budget this search bills to — the chat run's own

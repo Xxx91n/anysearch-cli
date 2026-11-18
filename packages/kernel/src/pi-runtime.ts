@@ -414,6 +414,8 @@ export interface PiAgentRuntimeOptions {
   taskBudgetFault?: string;
   /** Enforce the task's budget before each model request in scripted chat. */
   enforceTaskBudgetPerCall?: boolean;
+  /** Include the final answer and its search sources in the done event. */
+  includeAnswer?: boolean;
 }
 
 // pure event mapping extracted for tests — pi-ai's
@@ -661,14 +663,16 @@ export class PiAgentRuntime {
     // after construction, so this captured id is the runtime's only session id.
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
     this.archive = wiredSessionId ? { store: opts.store!, sessionId: wiredSessionId } : undefined;
-    this.scopedRetriever = wiredSessionId
-      ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId, taskBudget: opts.taskBudget ?? q.taskBudget }) }
-      : opts.taskBudget
-        // A task-wired runtime without a session still routes its internal
-        // searches to the task's budget — the execution owns that spend even
-        // when the context wiring is absent.
-        ? { search: (q) => opts.retriever.search({ ...q, taskBudget: opts.taskBudget ?? q.taskBudget }) }
-        : opts.retriever;
+    this.scopedRetriever = wiredSessionId || opts.taskBudget || opts.includeAnswer
+      ? {
+        search: (q) => opts.retriever.search({
+          ...q,
+          ...(wiredSessionId ? { sessionId: q.sessionId ?? wiredSessionId } : {}),
+          taskBudget: opts.taskBudget ?? q.taskBudget,
+          ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
+        }),
+      }
+      : opts.retriever;
     // #302: the session half of the routing keeps the old three-part gate
     // (#178: store + sessionId + ledger) — a half-wired runtime cannot bill the
     // conversation; a task scope needs no session because its rows live in
@@ -843,6 +847,7 @@ export class PiAgentRuntime {
     const sources = new Set<string>();
     const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls, results) => {
       saturation.record(urls);
+      if (!this.opts.includeAnswer) return;
       for (const result of results) {
         const url = displaySourceUrl(result);
         if (url) sources.add(url);
@@ -1243,7 +1248,7 @@ export class PiAgentRuntime {
               : "";
             if (toolCallId && text) {
               const urls: string[] = [];
-              for (const result of env.enrichedEnvelope.results ?? []) {
+              for (const result of this.opts.includeAnswer ? env.enrichedEnvelope.results ?? [] : []) {
                 const url = result && displaySourceUrl(result);
                 if (url) urls.push(url);
               }
@@ -1746,10 +1751,12 @@ export class PiAgentRuntime {
         yield {
           type: "done",
           summary: `Agent completed${tokenSummary}`,
-          answer: finalAnswer && finalAnswer.stopReason !== "toolUse"
-            ? finalAnswer.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-            : undefined,
-          sources: [...sources],
+          ...(this.opts.includeAnswer ? {
+            answer: finalAnswer && finalAnswer.stopReason !== "toolUse"
+              ? finalAnswer.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+              : undefined,
+            sources: [...sources],
+          } : {}),
           ...(recovery ? { recovery } : {}),
           ...(context ? { context } : {}),
           usage: toRunUsage(usageTotals, compactionUsage),
