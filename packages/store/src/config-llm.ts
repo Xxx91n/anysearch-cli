@@ -177,14 +177,19 @@ function loadFile(
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  // home follows the same rule as the credential file: one shared resolver, one
-  // env. Passing `env` rather than letting the helper default is what keeps the
-  // model config and the key store on the same file for any caller that injects
-  // its own environment.
-  const home = resolveConfigHome(opts.home, env);
+  // The config root. An injected env means "this env decides", including when it
+  // names NO home: falling through to `homedir()` there would read the machine's
+  // own config file (on Linux homedir() comes from /etc/passwd and ignores HOME),
+  // which is a directory nobody in that call wrote. Only a caller that injects
+  // nothing gets the platform's home.
+  const injected = opts.env !== undefined;
+  const home = opts.home
+    ?? (injected ? (env.USERPROFILE || env.HOME || null) : resolveConfigHome(undefined, env));
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
-  const user = loadFile(userConfigPath(home), "user", warn);
+  // `null` home = the caller supplied an env naming no home, so there is no user
+  // config to read. The project file still resolves from `cwd`.
+  const user = home === null ? {} : loadFile(userConfigPath(home), "user", warn);
   const project = loadFile(projectConfigPath(cwd), "project", warn);
   const flags = opts.flags ?? {};
 
@@ -353,7 +358,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       }
     }
 
-    if (!resolved.apiKey && opts.credentials !== false) {
+    if (!resolved.apiKey && opts.credentials !== false && home !== null) {
       const credsPath = userCredentialsPath(home);
       const file = readUserCredentials({ filePath: credsPath });
       if (file.error) {

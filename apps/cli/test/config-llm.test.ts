@@ -656,3 +656,20 @@ test("a caller's own env decides the root; the host's HOME never leaks in", () =
     if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
   }
 });
+
+test("an injected env with no home reads NO user config at all", () => {
+  // Platform-independent form of the same rule. On Linux `homedir()` comes from
+  // /etc/passwd and ignores HOME, so a fallback there reads the machine's own
+  // config file even though the caller injected an env that names no home. The
+  // observable outcome must not depend on what the CI box happens to have in its
+  // /etc/passwd: nothing under any home is read.
+  const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
+  const cfg = resolveLlmConfig({
+    env: {},
+    cwd: f.cwd,
+    warn: (m: string) => f.warnings.push(m),
+  });
+  assert.equal(cfg.provider, undefined, "no user config was read");
+  assert.equal(cfg.sources.provider, undefined);
+  assert.equal(f.warnings.length, 0, "and nothing was reported as read");
+});
