@@ -224,7 +224,7 @@ export function createEngine(
   let creds: CredentialSource = undefined;
   // undefined = nobody asked for credential resolution; {} = resolution ran and
   // no arm came out with a key. Consumers that report why an arm degraded need
-  // to tell those apart.
+  // to tell those apart, so the catch below also sets `{}`.
   let credentialSources: CompositionResult["credentialSources"];
   if (opts?.searchCredentials) {
     try {
@@ -238,9 +238,14 @@ export function createEngine(
       if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
     } catch (e) {
       creds = undefined;
+      // Resolution ran and produced nothing: `{}`, not `undefined`, so a degraded
+      // arm is not reported as "credentials were never asked for".
+      credentialSources = {};
+      // Trim by code point after shortening, so a multi-byte character is never
+      // cut in half and printed as a broken tail.
+      const reason = Array.from(String(e instanceof Error ? e.message : e)).slice(0, 200).join("");
       writeProviderDiagnostic(
-        "[anysearch] search credentials could not be resolved: " +
-        String(e instanceof Error ? e.message : e).slice(0, 200) +
+        "[anysearch] search credentials could not be resolved: " + reason +
         " — falling back to each SDK's own env var\n",
       );
     }

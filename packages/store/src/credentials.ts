@@ -76,8 +76,18 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
   { id: "anysearch", kind: "search", envKey: "ANYSEARCH_API_KEY" },
 ];
 
-/** Search providers only: the ids the retriever builds arms for. */
-export const SEARCH_PROVIDER_ENV_KEYS: Record<string, string> = envKeysByKind("search");
+/**
+ * The search arms this resolver fills, in one place. It is declared rather than
+ * derived so that reading `resolved[provider]` is typed: a provider added to
+ * CREDENTIAL_PROVIDERS with kind "search" but not listed here would be resolved
+ * by nobody and reported by nothing. `credentials.test.ts` asserts the two lists
+ * match, so that drift fails a test instead of going quiet.
+ */
+export const SEARCH_PROVIDER_IDS = ["tavily", "exa", "anysearch"] as const;
+export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
+
+/** Search providers only: the env var each one's key is read from. */
+export const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = envKeysByKind("search");
 
 /**
  * Every env name that means "this provider's key", canonical first. Used to
@@ -125,12 +135,9 @@ export interface CredentialFileContents {
 }
 
 /**
- * The one place the credential file's path is decided. A bare call resolves the
- * config root through `resolveConfigHome`, so a call site that forgets to pass a
- * home can never disagree with the resolver - which was exactly the bug: `ans
- * auth set` wrote to the `homedir()` file while `ans auth list` and the resolver
- * read the `USERPROFILE` one, and on a host where those differ the command
- * announced a file it never touched.
+ * The one place the credential file's path is decided. A call that omits `home`
+ * resolves the config root through `resolveConfigHome`, so a reader and a writer
+ * that both omit it can never end up describing two different files.
  */
 export function userCredentialsPath(home: string = resolveConfigHome()): string {
   return join(home, ".anysearch-cli", CREDENTIALS_FILENAME);
@@ -195,7 +202,7 @@ function stripAuthorityAndQuery(value: string): string {
 /**
  * Validate one stored record. Returns the binding, or a reason it cannot be
  * trusted. A record is never silently dropped: writing back a filtered list
- * would permanently erase the user's other keys (#301 review P1).
+ * would permanently erase whatever it held.
  */
 function parseBinding(raw: unknown, index: number): { binding: CredentialBinding } | { problem: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -221,9 +228,9 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
 export function readUserCredentials(
   opts: { home?: string; filePath?: string } = {},
 ): CredentialFileContents {
-  // Same resolver as the path helper, so a read that omits `home` looks exactly
-  // where a write with no `home` wrote.
-  const path = opts.filePath ?? userCredentialsPath(opts.home ?? resolveConfigHome());
+  // `userCredentialsPath` already resolves the root when `home` is undefined, so
+  // the path is decided in exactly one place.
+  const path = opts.filePath ?? userCredentialsPath(opts.home);
   if (!existsSync(path)) return { bindings: [] };
   let raw: string;
   try {
@@ -296,15 +303,15 @@ export function resolveSearchCredentials(
   const file = readUserCredentials({ ...opts, home });
   const warnings: string[] = [];
   // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
-  // stderr, `[credentials] ` in doctor). Tagging here would couple them to this
-  // string and double the prefix when they add their own.
+  // stderr, `[credentials] ` in doctor, `[WARN] ` in `ans auth status`). Tagging
+  // here would couple them to this string and double the prefix.
   if (file.error) warnings.push(file.error + "; continuing without the user credential file");
   const out: ResolvedSearchCredentials = { warnings };
 
   // One rule for all three arms: an explicit env value wins over the stored
   // entry, and a missing key means the arm simply is not supplied (its SDK
   // keeps whatever fallback it has).
-  const pick = (provider: "tavily" | "exa" | "anysearch"): { apiKey?: string; source: "env" | "user" } | undefined => {
+  const pick = (provider: SearchProviderId): { apiKey?: string; source: "env" | "user" } | undefined => {
     const envKey = SEARCH_PROVIDER_ENV_KEYS[provider];
     const fromEnv = envKey ? env[envKey]?.trim() : undefined;
     if (fromEnv) return { apiKey: fromEnv, source: "env" };
@@ -322,11 +329,10 @@ export function resolveSearchCredentials(
   // key at all - that is how the offline acceptance lane points the arm at a
   // dead port.
   //
-  // The endpoint is ALWAYS emitted when the injected env names one, so a caller
-  // that passes its own env cannot end up with the resolver handing `undefined`
-  // while the provider constructor falls back to the real process.env: that
-  // would make the injected env half-honoured (the rest of the arm's config
-  // would come from one env and its endpoint from another).
+  // Whenever the injected env names an endpoint it is emitted, with or without a
+  // key: a caller that passes its own env must not get `undefined` here while
+  // the provider constructor falls back to the real process.env, because then
+  // the arm's key and its endpoint would come from two different envs.
   const ansEndpoint = env.ANYSEARCH_ENDPOINT?.trim() || undefined;
   const anysearch = pick("anysearch");
   if (anysearch) out.anysearch = { ...anysearch, endpoint: ansEndpoint };
@@ -385,7 +391,7 @@ const LOCK_STALE_MS = 10_000;
  *
  * Without it, two `ans auth set` processes can each read the same old file, add
  * their own entry, and replace the whole file - the later writer silently
- * deleting the other's key while both report success (#301 review P1). Rename
+ * deleting the other's key while both report success. Rename
  * atomicity does not help: it makes each write complete, not the read+write pair
  * atomic.
  *
@@ -706,7 +712,7 @@ export function writeUserCredential(
   const path = opts.filePath ?? userCredentialsPath(opts.home);
   // The lock covers the WHOLE read-modify-write, not just the file replacement:
   // two writers that both read the old file would otherwise each replace it with
-  // their own view, deleting the other's key (#301 review P1).
+  // their own view, deleting the other's key.
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
@@ -727,7 +733,7 @@ export function removeUserCredential(
   const path = opts.filePath ?? userCredentialsPath(opts.home);
   const endpoint = normalizeBindingEndpoint(input.endpoint);
   // Same lock as the write: a removal racing a write could otherwise resurrect a
-  // key that was just deleted, or delete one that was just added (#301 review P1).
+  // key that was just deleted, or delete one that was just added.
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) throw new Error(existing.error + "; fix or remove that file, then retry");

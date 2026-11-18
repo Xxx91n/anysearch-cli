@@ -10,14 +10,16 @@
 //     (`printf '%s' "$KEY" | ans auth set openai`) without the key showing up
 //     in the process list, which is exactly what an argument would do.
 //
-// Escape sequences are swallowed whole. Two ways this matters, and both used to
-// corrupt the stored key silently:
-//   - a bracketed paste arrives as `ESC [ 200 ~ <payload> ESC [ 201 ~`; dropping
-//     only the ESC bytes leaves the literal marker glued to the key;
-//   - any other CSI sequence (arrow key = `ESC [ A`, Home = `ESC [ 1 ~`) has
-//     parameter and final bytes after the ESC; only dropping the ESC lets `A`
-//     or `1~` flow into the key.
-// `cleanSecret` only rejects control bytes, so neither would be caught later.
+// What the terminal path accepts and what it drops:
+//   - printable bytes are kept, DEL and BS delete the last byte;
+//   - Enter finishes the read;
+//   - Ctrl+C cancels;
+//   - a bracketed paste keeps its payload whole, including newlines and escape
+//     bytes inside it, and drops only the `ESC [ 200 ~` / `ESC [ 201 ~` markers;
+//   - any other escape sequence (arrow keys, Home, End) is dropped whole - its
+//     parameter and final bytes never reach the key.
+// `cleanSecret` then rejects what a paste accident still produces: an empty
+// value, an embedded newline, or control characters.
 
 import type { Readable, Writable } from "node:stream";
 
@@ -59,47 +61,89 @@ async function readFromTerminal(
 ): Promise<string> {
   const setRawMode = input.setRawMode!;
   let value = "";
-  // Escape bookkeeping. `escape` is the CSI parameter/final byte accumulator;
-  // `inPaste` tracks whether a bracketed paste is open (so a newline inside it
-  // does not end the read).
+  // Escape bookkeeping. `escape` is the CSI parameter/final byte accumulator,
+  // `inEscape` says a sequence is open, `inPaste` says a bracketed paste is
+  // open, and `pasteBuffer` holds the paste payload until its closing marker
+  // arrives (the marker can be split across chunks).
   let escape = "";
   let inEscape = false;
   let inPaste = false;
+  let pasteBuffer = "";
 
   // Raw mode is entered INSIDE the try: if the terminal refuses it, the finally
   // still runs and the caller never receives a half-configured stdin.
   const wasRaw = input.isRaw ?? false;
-  setRawMode(true);
-  input.resume();
   try {
+    setRawMode(true);
+    input.resume();
     for await (const chunk of input) {
       for (const ch of String(chunk)) {
         // Ctrl+C: raw mode turns off the terminal's own handler.
         if (ch === "\u0003") throw new SecretInputCancelled();
+
+        // Inside a paste the payload is data, not terminal commands: the only
+        // sequence that means anything is the closing marker, and it arrives
+        // with its own ESC byte. Interpreting other escapes here would delete
+        // part of a pasted key.
+        if (inPaste) {
+          pasteBuffer += ch;
+          if (pasteBuffer.endsWith(PASTE_CLOSE_SEQUENCE)) {
+            value += pasteBuffer.slice(0, -PASTE_CLOSE_SEQUENCE.length);
+            pasteBuffer = "";
+            inPaste = false;
+          }
+          continue;
+        }
+
         if (ch === "\u001b") {
           inEscape = true;
           escape = "";
           continue;
         }
         if (inEscape) {
+          // Enter while a truncated escape is pending: drop the fragment and
+          // treat the keystroke as "done" instead of losing the whole read.
+          if (ch === "\r" || ch === "\n") {
+            inEscape = false;
+            escape = "";
+            output.write("\n");
+            return value;
+          }
+          // A sequence only starts with an introducer: "[" (CSI) or "O" (SS3,
+          // which some terminals use for arrow keys). Any other character right
+          // after ESC means the ESC was stray (Alt+key, a paste artifact) - drop
+          // the ESC and keep the character as ordinary input.
+          if (escape === "") {
+            if (ch !== "[" && ch !== "O") {
+              inEscape = false;
+              if (ch >= " ") value += ch;
+              continue;
+            }
+            escape = ch;
+            continue;
+          }
           escape += ch;
-          // Text editors' paste markers are sequences we must recognize rather
-          // than skip: their payload is what the user pasted.
+          // A complete bracketed-paste marker: its payload follows, and the
+          // markers themselves are not part of the key.
           if (PASTE_MARKERS.includes(escape)) {
             inPaste = escape === PASTE_OPEN;
+            pasteBuffer = "";
             inEscape = false;
             continue;
           }
-          // Keep collecting while this still looks like the prefix of a marker.
+          // Still possible to become a marker - keep collecting.
           if (PASTE_MARKERS.some((m) => m.startsWith(escape))) continue;
-          // Any other CSI sequence ends at its final byte and is dropped whole.
-          // Note `[` itself is in the 0x40-0x7E range, so the marker check above
-          // has to run first - otherwise "[200~" would end at the "[".
+          // SS3 carries exactly one character after "O"; anything else is a CSI
+          // sequence, which ends at its final byte. Everything after the
+          // introducer counts, so a digit parameter never ends it early.
+          if (escape.startsWith("O")) {
+            inEscape = false;
+            continue;
+          }
           if (isCsiFinal(ch)) inEscape = false;
           continue;
         }
         if (ch === "\r" || ch === "\n") {
-          if (inPaste) continue; // a newline inside a paste is not "done"
           output.write("\n");
           return value;
         }
@@ -112,8 +156,8 @@ async function readFromTerminal(
     }
     throw new Error("stdin closed before a key was entered");
   } finally {
-    setRawMode(wasRaw);
-    input.pause();
+    try { setRawMode(wasRaw); } catch { /* the terminal may already be gone */ }
+    try { input.pause(); } catch { /* already paused */ }
   }
 }
 
@@ -126,10 +170,17 @@ function isCsiFinal(ch: string): boolean {
   return code >= 0x40 && code <= 0x7e;
 }
 
-/** Bracketed-paste markers; their payload must be kept, the markers themselves not. */
+/**
+ * Bracketed-paste markers as they arrive on the wire. The payload between them
+ * is kept; the markers themselves are not part of the key. `PASTE_*` are the
+ * forms the accumulator holds after the leading ESC was consumed, which is what
+ * the in-escape branch matches against.
+ */
 const PASTE_OPEN = "[200~";
 const PASTE_CLOSE = "[201~";
 const PASTE_MARKERS = [PASTE_OPEN, PASTE_CLOSE];
+/** The raw form the payload buffer has to see to know a paste ended. */
+const PASTE_CLOSE_SEQUENCE = "\u001b" + PASTE_CLOSE;
 
 async function readPipedSecret(
   input: Readable,

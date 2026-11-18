@@ -597,3 +597,33 @@ test("a provider mismatch refuses the key under either of the provider's names",
   assert.equal(cfg.provider, "openai");
   assert.equal(cfg.apiKey, undefined, "the google secret is not re-read under its other name");
 });
+
+test("the caller's env decides the config root under either home variable name", () => {
+  // A caller that hands in its own env (a test, an MCP call) must get the config
+  // file under THAT root. Merging the process env underneath would let the
+  // operator's USERPROFILE beat a test's HOME, so the two would disagree about
+  // which config.toml is in force.
+  for (const homeVar of ["HOME", "USERPROFILE"] as const) {
+    const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
+    const cfg = resolveLlmConfig({
+      env: { [homeVar]: f.home } as NodeJS.ProcessEnv,
+      cwd: f.cwd,
+      warn: (m: string) => f.warnings.push(m),
+    });
+    assert.equal(cfg.provider, "google", "root taken from " + homeVar);
+    assert.equal(cfg.sources.provider, "user");
+  }
+});
+
+test("an explicit home wins over every environment variable", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
+  const cfg = resolveLlmConfig({
+    home: f.home,
+    // A different root that would win if it were consulted.
+    env: { HOME: join(f.home, "elsewhere"), USERPROFILE: join(f.home, "elsewhere") },
+    cwd: f.cwd,
+    warn: (m: string) => f.warnings.push(m),
+  });
+  assert.equal(cfg.provider, "google");
+  assert.equal(cfg.sources.provider, "user");
+});

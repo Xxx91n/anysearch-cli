@@ -24,6 +24,7 @@ import {
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
+import { KEY_SOURCE_LABELS } from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -68,7 +69,10 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
       // empty value must not quietly fall back to the default endpoint - either
       // would store a key bound somewhere the user did not ask for.
       if (value === undefined) throw new Error("--endpoint requires a URL");
-      if (value === "") throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
+      // One guard owns "empty": a blank value and a whitespace-only value both
+      // land here, and `normalizeBindingEndpoint` is the one rule for what
+      // counts as empty. Storing either would bind the key somewhere the user
+      // did not ask for.
       if (value.startsWith("-")) throw new Error("--endpoint requires a URL, got the flag " + value);
       const normalized = normalizeBindingEndpoint(value);
       if (normalized === null) throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
@@ -81,22 +85,16 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
 }
 
 /**
- * How to describe a resolved key source in one word. A lookup keyed on the
- * resolver's source label keeps the mapping in one place (and stops the
- * four-level ternary this used to be). `env` is spelled out by the caller,
- * which knows which variable is actually in effect.
+ * Describe where a key comes from, given the resolver's answer. `env` is spelled
+ * out by the caller, which knows which variable is actually in effect.
  */
-const SOURCE_LABELS: Record<string, string> = {
-  credentials: "stored file",
-  user: "env via [llm].env_key",
-};
+function describeSource(layer: string | undefined): string {
+  return KEY_SOURCE_LABELS[layer ?? ""] ?? "set";
+}
 
-function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
-  const search = resolveSearchCredentials(env);
-  const llm = resolveLlmConfig({ env });
-  // Same config root the resolver uses, so the report describes the file that is
-  // actually in force (and a test's temp home is honoured).
-  const home = resolveConfigHome(undefined, env);
+function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {
+  const search = resolveSearchCredentials(env, { home });
+  const llm = resolveLlmConfig({ env, home });
   const stored = readUserCredentials({ home });
   const lines: string[] = [];
 
@@ -112,7 +110,7 @@ function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
       if (llm.sources.apiKey === "env") {
         where = env.ANS_LLM_API_KEY?.trim() ? "env ANS_LLM_API_KEY" : "env " + info.envKey;
       } else {
-        where = SOURCE_LABELS[llm.sources.apiKey ?? ""] ?? "set";
+        where = describeSource(llm.sources.apiKey);
       }
     } else if (envValue) {
       where = "env " + info.envKey;
@@ -137,16 +135,17 @@ function rejectUnknownProvider(provider: string): number {
 
 export async function runAuth(args: string[]): Promise<number> {
   const sub = args[0];
+  // ONE root for the whole run: status, list, set and remove all describe and
+  // touch the same file, and an env change mid-run cannot move it under them.
+  const env = process.env;
+  const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
     console.log("ans auth - provider API keys");
     console.log("---");
-    for (const line of statusLines()) console.log(line);
+    for (const line of statusLines(env, home)) console.log(line);
     console.log("---");
     if (sub === "list") {
-      // The SAME root the resolver and statusLines use, so the path announced is
-      // the file that was actually written and read.
-      const home = resolveConfigHome();
       const path = userCredentialsPath(home);
       const file = readUserCredentials({ home });
       console.log("Credential file: " + path);
@@ -188,7 +187,7 @@ export async function runAuth(args: string[]): Promise<number> {
     const target = endpoint !== null
       ? displayEndpoint(endpoint)
       : (info.kind === "model" ? "the provider's default endpoint" : "the provider's fixed endpoint");
-    process.stderr.write("Storing the " + provider + " key in " + userCredentialsPath() + " for " + target + ".\n" +
+    process.stderr.write("Storing the " + provider + " key in " + userCredentialsPath(home) + " for " + target + ".\n" +
       "The file is PLAIN TEXT (not encrypted, not a system keychain); it is locked to your account.\n",
     );
     let raw: string;
@@ -210,7 +209,7 @@ export async function runAuth(args: string[]): Promise<number> {
       return 2;
     }
     try {
-      const path = writeUserCredential({ provider: info.id, endpoint, apiKey });
+      const path = writeUserCredential({ provider: info.id, endpoint, apiKey }, { home });
       // Not the value, not a prefix of it: only what was stored and where.
       console.log("Stored the " + info.id + " key for " + target + " in " + path + ".");
       console.log("An explicit env value (" + info.envKey + " / ANS_LLM_API_KEY) still wins over it.");
@@ -237,7 +236,7 @@ export async function runAuth(args: string[]): Promise<number> {
     if (!provider) return usage();
     if (!credentialProvider(provider)) return rejectUnknownProvider(provider);
     try {
-      const removed = removeUserCredential({ provider, endpoint });
+      const removed = removeUserCredential({ provider, endpoint }, { home });
       if (!removed) {
         process.stderr.write("Nothing stored for " + provider +
           (endpoint ? " at " + displayEndpoint(endpoint) : " at the provider default endpoint") + ".\n");
@@ -245,7 +244,7 @@ export async function runAuth(args: string[]): Promise<number> {
       }
       console.log("Removed the " + provider + " key" +
         (endpoint ? " for " + displayEndpoint(endpoint) : " for the provider default endpoint") +
-        " from " + userCredentialsPath() + ".");
+        " from " + userCredentialsPath(home) + ".");
       return 0;
     } catch (e) {
       process.stderr.write((e as Error).message + "\n");

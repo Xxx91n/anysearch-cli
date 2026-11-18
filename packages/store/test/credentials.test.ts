@@ -14,6 +14,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
   lookupModelCredential,
@@ -21,6 +22,8 @@ import {
   readUserCredentials,
   removeUserCredential,
   resolveSearchCredentials,
+  SEARCH_PROVIDER_ENV_KEYS,
+  SEARCH_PROVIDER_IDS,
   userCredentialsPath,
   verifyFileProtection,
   writeUserCredential,
@@ -33,6 +36,15 @@ function tempRoot(): { home: string; cleanup: () => void } {
 }
 
 const KEY = "sk-test-ABCDEFGHIJKLMNOP-zero-zero";
+
+test("every search provider in the catalog is one this resolver actually fills", () => {
+  // Adding a search provider to CREDENTIAL_PROVIDERS without adding it to
+  // SEARCH_PROVIDER_IDS would leave it resolved by nobody and reported by
+  // nothing: doctor would skip it silently. Fail here instead.
+  const declared = CREDENTIAL_PROVIDERS.filter((p) => p.kind === "search").map((p) => p.id).sort();
+  assert.deepEqual([...SEARCH_PROVIDER_IDS].sort(), declared);
+  assert.deepEqual(Object.keys(SEARCH_PROVIDER_ENV_KEYS).sort(), declared);
+});
 
 test("a stored key is readable with NO environment at all (the GUI case)", () => {
   const { home, cleanup } = tempRoot();

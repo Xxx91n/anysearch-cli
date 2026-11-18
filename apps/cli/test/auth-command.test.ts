@@ -225,31 +225,43 @@ test("status names the effective source per provider without printing values", a
 
 // The `statusLines` helper is the one piece of `runAuth` a test needs directly:
 // it is what decides "where does this provider's key come from", and the point
-// of that report is that it stays true for every source.
+// of that report is that it stays true for every source. It takes the config
+// root as an argument, so a test gives it an empty one and no key can leak in
+// from the operator's own home directory.
 test("statusLines names the source for each provider and shows no key", () => {
-  const lines = AUTH_INTERNALS.statusLines({
-    EXA_API_KEY: "exa-from-env",
-    ANS_LLM_API_KEY: "sk-override",
-    ANS_LLM_PROVIDER: "openai",
-    ANS_LLM_MODEL: "gpt-5",
-  });
-  const joined = lines.join("\n");
-  assert.match(joined, /\[SET\]\s+exa\s+env EXA_API_KEY/);
-  // The effective model key came from ANS_LLM_API_KEY, not from OPENAI_API_KEY,
-  // and the report must not claim the wrong variable.
-  assert.match(joined, /\[SET\]\s+openai\s+env ANS_LLM_API_KEY/);
-  assert.match(joined, /\[EMPTY\]\s+anthropic/);
-  assert.ok(!joined.includes("exa-from-env") && !joined.includes("sk-override"),
-    "the status lines never carry a key value");
+  const { home, cleanup } = tempHome();
+  try {
+    const lines = AUTH_INTERNALS.statusLines({
+      EXA_API_KEY: "exa-from-env",
+      ANS_LLM_API_KEY: "sk-override",
+      ANS_LLM_PROVIDER: "openai",
+      ANS_LLM_MODEL: "gpt-5",
+    }, home);
+    const joined = lines.join("\n");
+    assert.match(joined, /\[SET\]\s+exa\s+env EXA_API_KEY/);
+    // The effective model key came from ANS_LLM_API_KEY, not from OPENAI_API_KEY,
+    // and the report must not claim the wrong variable.
+    assert.match(joined, /\[SET\]\s+openai\s+env ANS_LLM_API_KEY/);
+    assert.match(joined, /\[EMPTY\]\s+anthropic/);
+    assert.ok(!joined.includes("exa-from-env") && !joined.includes("sk-override"),
+      "the status lines never carry a key value");
+  } finally {
+    cleanup();
+  }
 });
 
 test("statusLines distinguishes the provider's own env var from the override", () => {
-  const lines = AUTH_INTERNALS.statusLines({
-    OPENAI_API_KEY: "sk-provider-own",
-    ANS_LLM_PROVIDER: "openai",
-    ANS_LLM_MODEL: "gpt-5",
-  });
-  assert.match(lines.join("\n"), /\[SET\]\s+openai\s+env OPENAI_API_KEY/);
+  const { home, cleanup } = tempHome();
+  try {
+    const lines = AUTH_INTERNALS.statusLines({
+      OPENAI_API_KEY: "sk-provider-own",
+      ANS_LLM_PROVIDER: "openai",
+      ANS_LLM_MODEL: "gpt-5",
+    }, home);
+    assert.match(lines.join("\n"), /\[SET\]\s+openai\s+env OPENAI_API_KEY/);
+  } finally {
+    cleanup();
+  }
 });
 
 test("--endpoint with an empty value is refused, not silently treated as the default", async () => {

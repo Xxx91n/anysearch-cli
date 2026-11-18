@@ -28,3 +28,14 @@ export type {
   ResolvedLlmConfig,
   ResolveLlmOpts,
 } from "@anysearch-cli/store";
+
+/**
+ * How to name a key's source in one word, keyed on the resolver's layer label.
+ * Lives here, next to the re-exported resolver, because both `ans llm` and
+ * `ans auth` describe the same resolution and two copies would drift.
+ */
+export const KEY_SOURCE_LABELS: Record<string, string> = {
+  credentials: "stored file",
+  user: "env via [llm].env_key",
+  env: "env",
+};

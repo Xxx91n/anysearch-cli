@@ -59,9 +59,11 @@ test("a newline inside a paste does not end the read half-way", async () => {
   const { input } = fakeTty(["\u001b[200~sk-line-one\nsk-line-two\u001b[201~", "\r"]);
   const out = sink();
   const value = await readSecret("key: ", { input, output: out.output });
-  // The paste is taken whole; cleanSecret later rejects the embedded newline
-  // rather than silently storing half a key.
-  assert.equal(value, "sk-line-onesk-line-two");
+  // The paste is taken whole, newline included, and the read does not stop at
+  // it. `cleanSecret` then rejects the embedded newline instead of the command
+  // silently storing half a key.
+  assert.equal(value, "sk-line-one\nsk-line-two");
+  assert.throws(() => cleanSecret(value), /more than one line/);
 });
 
 test("an arrow key does not corrupt what was already typed", async () => {
@@ -122,9 +124,35 @@ test("a key that itself contains ESC[ does not lose characters", async () => {
   // and the rest of the key must still arrive.
   const { input } = fakeTty(["sk-A", "\u001b[", "B", "\r"]);
   const out = sink();
-  // ESC[ begins a CSI sequence with no final byte yet, so "B" IS that final
-  // byte - the sequence ends and nothing leaks into the key.
+  // ESC[ begins a CSI sequence; "B" is its final byte, so the whole fragment is
+  // dropped and nothing of it leaks into the key.
   assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-A");
+});
+
+test("a stray ESC before an ordinary character keeps that character", async () => {
+  // Alt+key sends ESC then the letter. Dropping the ESC must not drop the
+  // letter as well: only the ESC is a modifier here, the rest is real input.
+  const { input } = fakeTty(["sk-ab", "\u001bx", "cd", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-abxcd");
+});
+
+test("escape bytes inside a paste are payload, not commands", async () => {
+  // A pasted key that happens to carry ESC[ must arrive whole. `cleanSecret`
+  // then rejects the control byte; the reader must not quietly shorten the key.
+  const { input } = fakeTty(["\u001b[200~sk-A\u001b[Bsuffix\u001b[201~", "\r"]);
+  const out = sink();
+  const value = await readSecret("key: ", { input, output: out.output });
+  assert.equal(value, "sk-A\u001b[Bsuffix");
+  assert.throws(() => cleanSecret(value), /control characters/);
+});
+
+test("an SS3 arrow key is dropped whole too", async () => {
+  // Some terminals send ESC O A for the up arrow instead of ESC [ A. The "O"
+  // form carries one character, and neither byte may reach the key.
+  const { input } = fakeTty(["sk-a", "\u001bOA", "b", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-ab");
 });
 
 test("raw mode is restored even when the read throws", async () => {

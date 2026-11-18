@@ -7,10 +7,11 @@
 // is ANS_LLM_API_KEY > [llm].env_key > the provider's own env var > the credential file.
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
-import { createModels } from "@earendil-works/pi-ai";
-import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
+import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
+import { modelEnvKeysFor } from "@anysearch-cli/store";
 import {
   displayEndpoint,
+  KEY_SOURCE_LABELS,
   readUserCredentials,
   resolveConfigHome,
   userCredentialsPath as credentialsPath,
@@ -27,18 +28,20 @@ function storedBindings(file: ReturnType<typeof readUserCredentials>, provider: 
     .map((b) => displayEndpoint(b.endpoint));
 }
 
-/** How to say where the effective key came from, keyed on the resolver's label. */
-const KEY_SOURCE_LABELS: Record<string, string> = {
-  credentials: "stored file",
-  user: "env via [llm].env_key",
-  env: "env",
-};
+/** True when any env name this provider's key can live under is set. */
+function envKeySet(provider: string): string | undefined {
+  return modelEnvKeysFor(provider).find((name) => !!process.env[name]?.trim());
+}
 
 export async function runLlm(args: string[]): Promise<number> {
+  // ONE root for the whole command, passed to both the resolver and the
+  // credential read, so the listing can never describe a file other than the one
+  // `cfg` came from.
+  const home = resolveConfigHome();
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
-    const cfg = resolveLlmConfig();
+    const cfg = resolveLlmConfig({ home });
     const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
@@ -46,31 +49,35 @@ export async function runLlm(args: string[]): Promise<number> {
     // Sources are layer labels (flag/env/project/user/credentials), never the secret itself.
     console.log("Sources: provider=" + src("provider") + " model=" + src("model") +
       " baseUrl=" + src("baseUrl") + " api=" + src("api") + " apiKey=" + src("apiKey"));
-    console.log("Files: user " + userConfigPath() + " | project " + projectConfigPath());
-    console.log("Credentials: " + credentialsPath() + " (plain text; an env value still wins)");
+    console.log("Files: user " + userConfigPath(home) + " | project " + projectConfigPath());
+    console.log("Credentials: " + credentialsPath(home) + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
-    // One read for the whole listing, from the SAME config root the resolver
-    // used for `cfg` - otherwise the two can describe different files.
-    const storedFile = readUserCredentials({ home: resolveConfigHome() });
+    const storedFile = readUserCredentials({ home });
     if (storedFile.error) {
       // A broken file must not read as "no keys": the resolver already warned,
       // and this listing has to agree with it rather than contradict it.
       console.log("Credentials file: BROKEN - " + storedFile.error);
     }
     for (const [name, models] of Object.entries(MODELS)) {
-      const envVarName = API_KEYS[name] || "UNKNOWN";
       const stored = storedBindings(storedFile, name);
       // Three facts, three outcomes: the provider's own env var is set, its key
       // is the one in effect (possibly from another source), or only a stored
-      // binding exists and is not being used.
-      const envSet = !!process.env[envVarName];
+      // binding exists and is not being used. Every env name the provider's key
+      // can live under counts, so the listing agrees with the resolver (which
+      // accepts GEMINI_API_KEY for google).
+      const envName = envKeySet(name);
       const effective = name === cfg.provider && !!cfg.apiKey;
       let label: string;
-      if (envSet || effective) label = "AUTH";
+      if (envName || effective) label = "AUTH";
       else if (stored.length > 0) label = "NO KEY (stored, not in effect)";
       else label = "NO KEY";
       console.log("  " + name + " [" + label + "] - " + models.join(", "));
+      if (envName && !effective) {
+        // Name the variable, not a guess: which name carries the key is the
+        // usable fact.
+        console.log("      env: " + envName);
+      }
       if (stored.length > 0 && !effective) {
         // Name the binding, not a guessed cause: the entry may be for another
         // provider or another endpoint.
@@ -131,22 +138,20 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
-    const cfg = resolveLlmConfig();
-    // One read for the whole loop, from the same config root as `cfg`.
-    const storedFile = readUserCredentials({ home: resolveConfigHome() });
+    const cfg = resolveLlmConfig({ home });
+    const storedFile = readUserCredentials({ home });
     if (storedFile.error) {
       console.log("Credentials file: BROKEN - " + storedFile.error);
     }
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
-      const envVarName = API_KEYS[name] || "UNKNOWN";
-      const ownEnvSet = !!process.env[envVarName];
+      const envName = envKeySet(name);
       const fromStore = storedFile.bindings.some((b) => b.provider === name);
       const effective = name === cfg.provider && !!cfg.apiKey;
       // The resolver's source label IS the answer, so map it instead of
       // collapsing it into "resolved" (which told the user nothing).
       const resolvedFrom = KEY_SOURCE_LABELS[cfg.sources.apiKey ?? ""] ?? "an unknown source";
       let where: string;
-      if (ownEnvSet) where = "KEY SET (" + envVarName + ")";
+      if (envName) where = "KEY SET (" + envName + ")";
       else if (effective) where = "KEY SET (" + resolvedFrom + ")";
       else if (fromStore) where = "KEY SET (stored file, not in effect)";
       else where = "NO KEY";

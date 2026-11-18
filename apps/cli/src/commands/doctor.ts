@@ -2,7 +2,7 @@
 // CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_ENV_KEYS, userCredentialsPath } from "@anysearch-cli/store";
+import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
@@ -122,8 +122,8 @@ export async function runDoctor(): Promise<number> {
     const file = readUserCredentials({ home });
     if (file.error) check("  user credential file", false, file.error + " — fix or remove it, then run `ans auth set <provider>`");
     else check("  user credential file", true, existsSync(path) ? path + " (" + file.bindings.length + " key(s), plain text)" : path + " (not created yet)");
-    for (const provider of Object.keys(SEARCH_PROVIDER_ENV_KEYS)) {
-      const entry = resolved[provider as "tavily" | "exa" | "anysearch"];
+    for (const provider of SEARCH_PROVIDER_IDS) {
+      const entry = resolved[provider];
       if (!entry) continue;
       const source = entry.source === "env" ? "env" : "user credential file";
       check("  " + provider + " key source", true, source);

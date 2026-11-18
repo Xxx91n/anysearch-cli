@@ -166,14 +166,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   // home follows the same rule as the credential file (one shared resolver), so
   // the model config and the key store always agree on the config root.
   // `opts.env` may be a partial env (a test, an MCP call passing only ANS_LLM_*).
-  // Reading HOME from IT would make such a caller silently fall back to the real
-  // homedir and read a different config.toml than it expects, so a partial env
-  // falls through to the process env for the config root. An explicit `home`
-  // always wins.
-  const home = resolveConfigHome(
-    opts.home ?? env.USERPROFILE ?? env.HOME,
-    process.env,
-  );
+  // The caller's env decides the root as soon as it names one: merging the
+  // process env under it would let the operator's USERPROFILE beat a test's
+  // HOME, so a caller that wants a specific root would silently get another.
+  // Only when it names neither does the process env (then the real home) decide.
+  const rootEnv = env.HOME || env.USERPROFILE ? env : process.env;
+  const home = resolveConfigHome(opts.home, rootEnv);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
@@ -284,17 +282,16 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     const endpointBoundElsewhere =
       userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);
 
-    // A refused source must not come back through a later fallback: the
-    // env_key was blocked BECAUSE the effective endpoint (or provider) differs
-    // from what the file bound it to, and the provider's own env var is usually
-    // the very same variable. Without this guard the refusal would be decorative
-    // - the key would be refused, then re-read one branch later and sent anyway
-    // (#301 review P1).
+    // A refused source must not come back through a later fallback: the env_key
+    // was blocked BECAUSE the effective provider (or endpoint) differs from what
+    // the file bound it to, and the provider's own env var is usually the very
+    // same variable. Without this guard the refusal would be decorative - the
+    // key would be refused here and re-read by the branch below.
     //
-    // It refuses EVERY name the same provider's key can live under, not just the
+    // Every name the same provider's key can live under is refused, not just the
     // one the file named: google's key is readable from both GOOGLE_API_KEY and
-    // GEMINI_API_KEY, so blocking one name would let the same secret through the
-    // other (#301 review, second round).
+    // GEMINI_API_KEY, so blocking one alias would let the same secret through
+    // the other.
     const refusedSecretSources = new Set<string>();
     const refuseEveryName = (envKey: string): void => {
       refusedSecretSources.add(envKey);
@@ -317,7 +314,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         " but " + resolved.sources.baseUrl + " selected a different endpoint" +
         " — refusing to send that secret to a different endpoint",
       );
-    } else if (user.env_key) {
+    } else if (user.env_key && !refusedSecretSources.has(user.env_key)) {
       const secret = env[user.env_key];
       if (secret) {
         resolved.envKey = user.env_key;
