@@ -1903,8 +1903,17 @@ export class PiAgentRuntime {
       if (this.opts.signal) signals.push(this.opts.signal);
       const signal = AbortSignal.any(signals);
       signal.throwIfAborted();
-      const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
-      const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
+      let systemChars = "systemPrompt" in context && typeof context.systemPrompt === "string"
+        ? context.systemPrompt.length
+        : 0;
+      if ("tools" in context && Array.isArray(context.tools)) systemChars += JSON.stringify(context.tools).length;
+      // PI carries prompt sections and tool definitions next to the message body.
+      for (const message of context.messages) {
+        if (message.role !== "system") continue;
+        for (const section of Object.values(message.sections ?? {})) systemChars += section?.length ?? 0;
+        if (message.toolsAdded?.length) systemChars += JSON.stringify(message.toolsAdded).length;
+      }
+      const inputTokens = estimateTranscriptTokens(context.messages) + systemChars / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
       const requestedTokens = resolveTokenReserve(Math.ceil(inputTokens), outputTokens);
       const reservation = takeReservation?.() ?? reserveTaskModelCall(budget, requestedTokens);
