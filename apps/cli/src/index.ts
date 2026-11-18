@@ -46,6 +46,8 @@ const help = [
   "  search    Run a retrieval query",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
   "  chat      新建对话；--continue 续当前项目最近会话；--session ID 续指定会话；--list 查看",
+  "            -p 只输出答案和来源；-c 接着问被打断的那轮",
+  "            两种模式的进度写到标准错误，失败时退出非零",
   "  recommend Suggest a domain for a free-text task (top-3 + confidence, never auto-switches)",
   " domain Switch Active Domain (cc-persona TOML)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",

@@ -557,7 +557,9 @@ export class RetroaererdEngine {
             gateSurvivors += 1;
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
-              allResults.set(norm, { ...r, url: norm }); // store normalized URL as key
+              // Keep the existing archive key and carry the full link for display.
+              const extra = q.includeSourceUrls ? { ...r.extra, sourceUrl: r.url } : r.extra;
+              allResults.set(norm, { ...r, url: norm, extra });
             }
             urls.push(norm);
             // web native-score snapshot (raw provider score; never fused).
