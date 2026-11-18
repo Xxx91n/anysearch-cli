@@ -229,6 +229,34 @@ async function main() {
         "3: the refused call left no phantom spend (got " + JSON.stringify(budgets) + ")");
     }
 
+    // ====== 3b. a LATER round refused: earlier spend stays on the task ======
+    //
+    // The spec's "already-happened calls still settle honestly" is not the same
+    // case as a first-call refusal: round one really spent, and the stop must
+    // keep that number instead of reporting a run that never started.
+    {
+      const dbPath = join(tempRoot, "research-refused.db");
+      const calls = { count: 0 };
+      const eng = makeEngine(dbPath, calls, { budget: { tokenCap: 1_000_000, callCap: 1 } });
+      const handlers = capture(eng);
+      const result = await handlers.research_web({ question: "two rounds", depth: "standard" });
+
+      assert(result?.isError === true, "3b: the second round's refusal is an error result");
+      assert(result?.structuredContent?.errorKind === "budget-rejected",
+        "3b: the answer names the budget refusal (got " + JSON.stringify(result?.structuredContent?.errorKind) + ")");
+      const text = (result?.content ?? []).map((c: any) => c?.text ?? "").join("\n");
+      assert(/1 round\(s\) settled before the stop/.test(text),
+        "3b: the answer says how much already ran (got " + text + ")");
+      assert(calls.count === 1, "3b: only the first round reached a provider (got " + calls.count + ")");
+      const budgets = readRows<TaskBudgetRow>(dbPath, TASK_BUDGETS_SQL);
+      assert(budgets.length === 1 && Number(budgets[0]?.calls) === 1 && Number(budgets[0]?.reserved) === 0,
+        "3b: the round that ran stays booked, with no phantom reservation (got "
+        + JSON.stringify(budgets) + ")");
+      const close = result?.structuredContent?.closeout;
+      assert(close?.state === "ended" && close?.exitCode === 1,
+        "3b: the task ends as unfinished (got " + JSON.stringify(close) + ")");
+    }
+
     // ============ 4. declared but not established: stop before any call ============
     {
       const dbPath = join(tempRoot, "fault.db");

@@ -30,8 +30,8 @@ import type { CallToolResult } from "@modelcontextprotocol/server";
 import { currentMcpTask } from "../mcp-task.js";
 
 // A resident MCP server would print the degradation line on every call while
-// the store stays broken, so dedupe by corner (the wiring names it without the
-// per-call task id).
+// the store stays broken, so dedupe by corner: the key omits the per-call task
+// id even though the message text names it.
 const WARNED_MAX = 16;
 const warned = new Set<string>();
 
@@ -55,6 +55,29 @@ export function establishToolBudget(eng: CompositionResult): TaskBudgetWiring {
   return wireTaskBudget(eng.store, currentMcpTask()?.taskId, eng.config?.budget, {
     warn: warnDegraded,
   });
+}
+
+/**
+ * The one place both search tools ask "may this call run, and on which
+ * budget?". `stop` is the ready-made answer for a declared budget that could
+ * not be established; otherwise `taskBudget` is the scope to pass to the
+ * engine (absent for a call with no registered task).
+ */
+export function beginToolBudget(
+  eng: CompositionResult,
+  toolName: string,
+): { stop: CallToolResult } | { taskBudget: TaskBudgetWiring["taskBudget"] } {
+  const wiring = establishToolBudget(eng);
+  if (wiring.taskBudgetFault) {
+    return {
+      stop: toolBudgetStop(
+        toolName,
+        wiring.taskBudgetFaultReason ?? "budget-not-established",
+        wiring.taskBudgetFault,
+      ),
+    };
+  }
+  return { taskBudget: wiring.taskBudget };
 }
 
 /**

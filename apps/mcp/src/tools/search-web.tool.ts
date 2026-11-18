@@ -10,7 +10,7 @@ import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, t
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
-import { establishToolBudget, toolBudgetStop } from "./task-budget.js";
+import { beginToolBudget, toolBudgetStop } from "./task-budget.js";
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailed,
@@ -52,14 +52,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         // #304: this search bills its own task, never a session that happens to
         // be around. A declared [budget] that cannot be established stops here,
         // before any provider request.
-        const budget = establishToolBudget(eng);
-        if (budget.taskBudgetFault) {
-          return toolBudgetStop(
-            "search_web",
-            budget.taskBudgetFaultReason ?? "budget-not-established",
-            budget.taskBudgetFault,
-          );
-        }
+        const budget = beginToolBudget(eng, "search_web");
+        if ("stop" in budget) return budget.stop;
         try {
           const envelope = await eng.retriever.search({
             query,

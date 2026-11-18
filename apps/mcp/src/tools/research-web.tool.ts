@@ -10,7 +10,7 @@ import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, t
 import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
-import { establishToolBudget, toolBudgetStop } from "./task-budget.js";
+import { beginToolBudget, toolBudgetStop } from "./task-budget.js";
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
@@ -45,14 +45,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         const d = depth ?? "deep";
         // #304: this call's own task budget. A declared [budget] that cannot be
         // established stops before the first round.
-        const budget = establishToolBudget(eng);
-        if (budget.taskBudgetFault) {
-          return toolBudgetStop(
-            "research_web",
-            budget.taskBudgetFaultReason ?? "budget-not-established",
-            budget.taskBudgetFault,
-          );
-        }
+        const budget = beginToolBudget(eng, "research_web");
+        if ("stop" in budget) return budget.stop;
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
         let lastEnvelope: any = null;

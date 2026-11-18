@@ -1330,6 +1330,24 @@ async function main() {
           }
         } finally { db.close(); }
       }
+      const consolidatedDry = await runAnsAsync(
+        ["consolidate", "--session", "consol-a", "--session", "consol-b", "--dry-run"],
+        { cwd: prefix, env: { ...searchEnv, ANS_DB_PATH: consolidateDb } },
+      );
+      check(consolidatedDry.code === 0, "跨两个会话的 CLI 整理 dry-run 退出码 0", consolidatedDry.out.slice(-500));
+      check(/usage: consolidation calls [1-9]/.test(consolidatedDry.out),
+        "dry-run 真的调了模型并报了用量", consolidatedDry.out.slice(-500));
+      check(!/budget: unmetered/.test(consolidatedDry.out),
+        "dry-run 也记在自己的任务上，不是无人计量", consolidatedDry.out.slice(-500));
+      {
+        // dry-run 答应的是"什么都没存"，走任务预算这条路也要做到。
+        const db = new Database(consolidateDb, { readonly: true });
+        try {
+          const rows = db.prepare("SELECT COUNT(*) as n FROM semantic_memories").get();
+          check(rows.n === 0, "dry-run 一条知识行都没写", JSON.stringify(rows));
+        } finally { db.close(); }
+      }
+
       const consolidated = await runAnsAsync(
         ["consolidate", "--session", "consol-a", "--session", "consol-b"],
         { cwd: prefix, env: { ...searchEnv, ANS_DB_PATH: consolidateDb } },
@@ -1342,16 +1360,22 @@ async function main() {
       {
         const db = new Database(consolidateDb, { readonly: true });
         try {
-          // 最后一次才是本段要查的那次整理；前面那次只为建表。
+          // 最后一次才是本段要查的那次整理；前面那次只为建表，中间那次是 dry-run。
           const task = db.prepare(
             "SELECT task_id as id, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.consolidate' ORDER BY rowid DESC LIMIT 1"
           ).get();
           check(task?.ended === 1 && task?.code === 0, "整理登记成一条已收尾的任务", JSON.stringify(task));
-          const budget = db.prepare(
+          const dryTask = db.prepare(
+            "SELECT task_id as id, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.consolidate' ORDER BY rowid DESC LIMIT 1 OFFSET 1"
+          ).get();
+          check(dryTask?.ended === 1 && dryTask?.code === 0, "dry-run 也是一条已收尾的任务", JSON.stringify(dryTask));
+          const applyBudget = db.prepare(
             "SELECT billable_calls as calls, reserved_calls as reserved FROM task_budgets WHERE task_id = ?"
           ).get(task?.id ?? "missing");
-          check(budget && Number(budget.calls) > 0 && Number(budget.reserved) === 0,
-            "整理的模型调用记在这一个任务上并已结清", JSON.stringify(budget));
+          check(applyBudget && Number(applyBudget.calls) > 0 && Number(applyBudget.reserved) === 0,
+            "整理的模型调用记在这一个任务上并已结清", JSON.stringify(applyBudget));
+          const knowledge = db.prepare("SELECT COUNT(*) as n FROM semantic_memories").get();
+          check(knowledge.n >= 1, "apply 在有任务预算的情况下照常写入知识", JSON.stringify(knowledge));
           const sessionRows = db.prepare(
             "SELECT COUNT(*) as n FROM budget_ledger WHERE session_id IN ('consol-a', 'consol-b')"
           ).get();

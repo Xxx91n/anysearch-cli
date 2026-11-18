@@ -89,10 +89,11 @@ function help(): string {
     "[budget] caps — a memory list, one chat, or materials from several chats all bill",
     "the same run, so no single conversation is picked to pay for it. A refused call",
     "stops the run and is counted; anything already spent stays on the task's row.",
-    "Only when no task was registered (a broken registry) does it fall back to the old",
-    "session form, and then the output says why it ran unmetered (no owning session,",
-    "several owners, no declared caps, or a failed budget setup) instead of implying a",
-    "cap was enforced.",
+    "Only when neither a task nor a task-budget ledger can be attached (a broken",
+    "registry or store) does it fall back to the old session form, and then the",
+    "output says why it ran unmetered (no owning session, several owners, no",
+    "declared caps, or a failed budget setup) instead of implying a cap was",
+    "enforced.",
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
@@ -214,13 +215,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   }
   // #304: a declared [budget] that cannot be established stops before any
   // model call. Falling back to the session form here would be exactly the
-  // "keep going unmetered" the spec forbids for a declared constraint.
-  //
-  // Design: prefer the run's own task over the materials' sessions — a memory
-  // list has no owner, and charging "the first of several sessions" misattributes
-  // a run that spans chats. The session form stays only for the no-task fallback.
+  // "keep going unmetered" the spec forbids for a declared constraint. The
+  // session form below stays only for the no-task fallback.
+  const budgetWarn = (m: string): void =>
+    process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n");
   const taskBudgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, domainForBudget?.budget, {
-    warn: (m) => process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n"),
+    warn: budgetWarn,
   });
   if (taskBudgetWiring.taskBudgetFault) {
     process.stderr.write(
@@ -246,7 +246,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       domain: domainForBudget,
       toCaps: (b) => toBudgetCaps(b as BudgetConfig),
       domainLabel: "consolidate",
-      warn: (m) => process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n"),
+      warn: budgetWarn,
     });
   }
   const budget = metering.metered ? metering.budget : undefined;
