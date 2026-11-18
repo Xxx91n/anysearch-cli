@@ -995,6 +995,8 @@ async function main() {
       // 没收尾"继续等；别的读失败（schema 变了、库结构坏了）当场抛出，不伪装成
       // 等超时。
       let lastReadError = null;
+      // 库结构坏了是一次性的事实：报一条就跳出轮询，别每 100ms 重复报。
+      let readFailed = false;
       let pollDb = null;
       const readTaskRows = () => {
         try {
@@ -1010,6 +1012,7 @@ async function main() {
           // 只有锁/忙值得重试。列改了名、库结构坏了这类读到一半的错，记成这条车道的
           // 失败并停止轮询，不拖成 60 秒后的"没收尾"，也不把后面几段车道一起带走。
           if (!/SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(String(e))) {
+            readFailed = true;
             check(false, "任务表读得出来（不是库结构坏了）", String(e));
             return [];
           }
@@ -1022,7 +1025,7 @@ async function main() {
       if (arrived) {
         const settleDeadline = Date.now() + SETTLE_TIMEOUT_MS;
         try {
-          while (Date.now() < settleDeadline) {
+          while (!readFailed && Date.now() < settleDeadline) {
             const rows = readTaskRows();
             if (rows) mcpTasks = rows;
             if (mcpTasks.length >= 4 && mcpTasks.every((t) => t.ended !== null)) break;
@@ -1031,7 +1034,7 @@ async function main() {
         } finally {
           try { pollDb?.close(); } catch { /* already closed */ }
         }
-        if (mcpTasks.length !== 4 || mcpTasks.some((t) => t.ended === null)) {
+        if (!readFailed && (mcpTasks.length !== 4 || mcpTasks.some((t) => t.ended === null))) {
           check(false, "等四个任务都收尾",
             "等了 " + SETTLE_TIMEOUT_MS / 1000 + " 秒；" +
             (lastReadError ? "读库最近一次错误: " + String(lastReadError) : "读库没有报错") +
