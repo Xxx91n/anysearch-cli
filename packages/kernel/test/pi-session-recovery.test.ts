@@ -346,7 +346,7 @@ async function leavesTheRecordReadableWhenCompletionWriteTears() {
   try {
     const sessionId = "torn-completion";
     const path = seedRecord(dir, sessionId, []);
-    SessionManager.prototype.appendCustomEntry = function (this: InstanceType<typeof SessionManager>, type: string, data?: unknown) {
+    SessionManager.prototype.appendCustomEntry = function (this: typeof SessionManager.prototype, type: string, data?: unknown) {
       if (type === "anysearch:turn-completed") {
         appendFileSync(path, '{"type":"custom","customType":"anysearch:turn-com');
         throw new Error("收尾标记写到一半失败");
