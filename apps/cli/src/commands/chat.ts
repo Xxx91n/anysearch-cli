@@ -105,8 +105,7 @@ export async function runChat(argv: string[]): Promise<number> {
       }
       return 0;
     }
-    // Scripted calls check the record after taking the lock. An active writer may
-    // still be creating it, and that should be reported as a busy session.
+    // Design: 脚本模式拿到锁后再查记录 — 正在写第一轮时，要报占用。
     requestedSessionId = selectChatSession(store, options, project.root,
       printOnly ? undefined : chatRecordReader(resolvePiSessionDir()));
     if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
@@ -181,6 +180,9 @@ export async function runChat(argv: string[]): Promise<number> {
   // behavior stays for the session form until #303/#304).
   const cliTask = currentCliTask();
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
+  // Design: 脚本模式需要能按任务记账 — 持久库出错时，不能换个库放行付费请求。
+  const taskBudgetFault = taskBudgetWiring.taskBudgetFault ??
+    (printOnly && (!durableStore || !taskBudgetWiring.taskBudget) ? "无法为这次提问建立任务预算" : undefined);
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics
   // and upgrade admission (#309) will want to read off the task record.
@@ -261,7 +263,7 @@ export async function runChat(argv: string[]): Promise<number> {
         // task's ledger, and internal searches carry the scope (the engine bills
         // the task instead of the session). Absent → session form, unchanged.
         taskBudget: taskBudgetWiring.taskBudget,
-        taskBudgetFault: taskBudgetWiring.taskBudgetFault,
+        taskBudgetFault,
       });
       if (!printOnly) {
         console.log("ans chat: " + query);

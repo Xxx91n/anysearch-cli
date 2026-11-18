@@ -101,6 +101,7 @@ function classify(body) {
 }
 
 const PRINT_SOURCE = "https://print.example/source";
+const PRINT_REROUND_SOURCE = "https://print.example/second-source";
 let onPrintInterrupted;
 const endpoint = createServer(async (req, res) => {
   let body = "";
@@ -108,19 +109,22 @@ const endpoint = createServer(async (req, res) => {
   if (req.url === "/print-search") {
     const { id, method, params } = JSON.parse(body);
     if (method === "notifications/initialized") return res.writeHead(202).end();
+    const url = params?.arguments?.query === "anysearch-cli GitHub repository" ? PRINT_SOURCE : PRINT_REROUND_SOURCE;
     const result = method === "initialize" ? { protocolVersion: params.protocolVersion } : {
-      structuredContent: { results: [{ url: PRINT_SOURCE, title: "Print source", snippet: "The print test source." }] },
+      structuredContent: { results: [{ url, title: "Print source", snippet: "The print test source." }] },
     };
     return res.writeHead(200, { "Content-Type": "application/json" })
       .end(JSON.stringify({ jsonrpc: "2.0", id, result }));
   }
-  const role = classify(body);
+  const isPrintGap = body.includes("What is missing? Write a single search query") && body.includes("Print source");
+  const role = isPrintGap ? "print-gap" : classify(body);
   requestLog.push({ role, body });
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   if (role === "toolcall") {
     return res.end(sseToolCall("search", JSON.stringify({ query: "anysearch-cli GitHub repository" }),
       body.includes("PRINT-SEARCH-QUESTION") ? "我先搜一下。" : undefined));
   }
+  if (role === "print-gap") return res.end(sseText("Find the second print source"));
   if (role === "consolidate") return res.end(sseText(FACT));
   // 回最新一轮的问题。后面那次请求如果带着这句话，就说明会话记录真的接上了；
   // 写死一句固定回答不行，因为全新会话也会出现同一个常量。
@@ -149,15 +153,16 @@ function latestUserMarker(body) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || m.role !== "user") continue;
-    const text = typeof m.content === "string"
-      ? m.content
-      : Array.isArray(m.content)
-        ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
-        : "";
-    const marker = (text.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
+    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
+}
+
+function messageText(message) {
+  if (typeof message?.content === "string") return message.content;
+  if (!Array.isArray(message?.content)) return "";
+  return message.content.map((part) => (typeof part === "string" ? part : part?.text ?? "")).join(" ");
 }
 
 /**
@@ -657,12 +662,19 @@ async function main() {
       ANYSEARCH_API_KEY: "print-test-key",
     };
     const printed = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print", printEnv);
-    check(printed.code === 0 && printed.stdout === "REPLY-TO-PRINT-SEARCH-QUESTION\n\n来源\n- " + PRINT_SOURCE + "\n",
-      "-p 的标准输出只有答案和来源", printed.out);
+    check(printed.code === 0 && printed.stdout === "REPLY-TO-PRINT-SEARCH-QUESTION\n\n来源\n- " + PRINT_SOURCE + "\n- " + PRINT_REROUND_SOURCE + "\n",
+      "-p 只输出答案和两次检索的来源", printed.out);
     const beforePrintFailures = requestLog.length;
     const denied = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print-denied", printEnv);
     check(denied.code === 1 && denied.stdout === "" && /Call budget exhausted/.test(denied.stderr),
       "-p 额度不足时报错，标准输出为空", denied.out);
+    const blockedDbParent = join(work, "not-a-db-directory");
+    writeFileSync(blockedDbParent, "");
+    const untracked = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
+      ...printEnv, ANS_DB_PATH: join(blockedDbParent, "print.db"),
+    });
+    check(untracked.code === 1 && untracked.stdout === "" && /无法为这次提问建立任务预算/.test(untracked.stderr),
+      "-p 无法建立任务预算时退出非零，标准输出为空", untracked.out);
     const unconfigured = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
       ...printEnv, ANS_LLM_PROVIDER: "", ANS_LLM_MODEL: "", ANS_LLM_BASE_URL: "", ANS_LLM_API: "", ANS_LLM_API_KEY: "",
     });
@@ -680,11 +692,13 @@ async function main() {
     try {
       await Promise.race([requestStarted, active.result.then(({ out }) => { throw new Error(out); })]);
       const beforeBusy = requestLog.length;
+      const startedWaiting = Date.now();
       const busy = await chatCli(["-p", "--continue", "SECOND-TURN-QUESTION"], printProject, "print", {
         ...printEnv, ANS_PI_LOCK_TIMEOUT_MS: "60000",
       });
       check(busy.code === 1 && busy.stdout === "" && /正在别处运行/.test(busy.stderr)
-        && requestLog.length === beforeBusy, "-p 撞上占用当场退出，没发送请求", busy.out);
+        && requestLog.length === beforeBusy && Date.now() - startedWaiting < 30_000,
+        "-p 撞上占用当场退出，没发送请求", busy.out);
     } finally {
       onPrintInterrupted = undefined;
       active.child.kill("SIGKILL");
@@ -694,17 +708,24 @@ async function main() {
     const interruptedPrintHandle = handleOf({ out: interruptedPrint.stderr });
     check(!!interruptedPrintHandle && interruptedPrint.stdout === "",
       "-p 被打断时标准错误里有句柄，标准输出没有半截回答", interruptedPrint.out);
+    const beforeResume = requestLog.length;
     const resumed = await chatCli(["-c"], printProject, "print", printEnv);
+    const resumedMessages = JSON.parse(requestLog[beforeResume]?.body ?? "{}").messages ?? [];
+    const resumedQuestions = resumedMessages.filter((message) => message.role === "user").map(messageText);
     check(resumed.code === 0 && resumed.stdout === "REPLY-TO-PRINT-INTERRUPTED-QUESTION\n"
       && /上一轮没正常结束/.test(resumed.stderr) && handleOf({ out: resumed.stderr }) === interruptedPrintHandle,
       "-c 用原句柄重问被打断的问题", resumed.out);
+    check(resumedQuestions.filter((question) => question === "PRINT-INTERRUPTED-QUESTION").length === 2
+      && resumedQuestions.at(-1) === "PRINT-INTERRUPTED-QUESTION",
+      "-c 的模型请求保留原问题，并原样重问", JSON.stringify(resumedQuestions));
     const printCheck = new Database(printEnv.ANS_DB_PATH, { readonly: true });
     try {
       const spent = printCheck.prepare(
-        "SELECT b.spent_tokens, b.billable_calls FROM task_budgets b JOIN task_records t USING (task_id) WHERE t.kind = 'cli.chat' AND t.exit_code = 0"
+        "SELECT b.spent_tokens, b.billable_calls FROM task_budgets b JOIN task_records t USING (task_id) WHERE t.kind = 'cli.chat' AND t.exit_code = 0 ORDER BY b.billable_calls DESC"
       ).all();
-      check(spent.length === 2 && spent.every((row) => row.spent_tokens > 0 && row.billable_calls > 0),
-        "-p 和 -c 各自记入本次任务预算", JSON.stringify(spent));
+      check(spent.length === 2 && spent.every((row) => row.spent_tokens > 0 && row.billable_calls > 0)
+        && spent[0]?.billable_calls >= 4,
+        "-p 和 -c 各自记入本次任务预算，-p 也记了补搜前的模型调用", JSON.stringify(spent));
     } finally {
       printCheck.close();
     }

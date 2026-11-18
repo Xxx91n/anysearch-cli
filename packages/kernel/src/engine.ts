@@ -557,7 +557,7 @@ export class RetroaererdEngine {
             gateSurvivors += 1;
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
-              allResults.set(norm, { ...r, url: norm }); // store normalized URL as key
+              allResults.set(norm, r);
             }
             urls.push(norm);
             // web native-score snapshot (raw provider score; never fused).

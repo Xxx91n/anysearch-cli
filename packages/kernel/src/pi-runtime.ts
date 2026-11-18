@@ -107,10 +107,6 @@ export class SearchSaturation {
     this.noNewStreak = fresh === 0 ? this.noNewStreak + 1 : 0;
   }
 
-  sources(): string[] {
-    return [...this.seen];
-  }
-
   exhausted(): boolean {
     return this.calls >= this.limits.maxCalls || this.noNewStreak >= this.limits.maxNoNewStreak;
   }
@@ -720,6 +716,7 @@ export class PiAgentRuntime {
       streamFn: opts.streamFn as any,
       model: opts.model as any,
       getApiKey: opts.getApiKey,
+      taskBudget: opts.taskBudget,
       // #259: the reround indexes into the same archive as the search tool.
       // Same gate as the pipeline above (store + sessionId); a half-wired
       // runtime writes nothing, so it cannot seed rows the recall path would
@@ -847,7 +844,11 @@ export class PiAgentRuntime {
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls), this.archive);
+    const sources = new Set<string>();
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => {
+      saturation.record(urls);
+      for (const url of urls) if (url) sources.add(url);
+    }, this.archive);
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
@@ -885,7 +886,7 @@ export class PiAgentRuntime {
     // array would resurrect history compaction just removed. This carries only
     // the rewritten tool-result text, keyed by tool call, and prepareRequest
     // applies it on top of whatever PI projected.
-    let pendingToolResultEnrichment: { toolCallId: string; text: string } | null = null;
+    let pendingToolResultEnrichment: { toolCallId: string; text: string; urls: string[] } | null = null;
 
     // Full PI SDK session. The provider registration below routes every model
     // call back through the caller's streamFn, so auth/baseUrl stay owned by
@@ -1230,7 +1231,13 @@ export class PiAgentRuntime {
             const text = Array.isArray(replacement)
               ? replacement.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("")
               : "";
-            if (toolCallId && text) pendingToolResultEnrichment = { toolCallId, text };
+            if (toolCallId && text) {
+              const urls: string[] = [];
+              for (const result of env.enrichedEnvelope.results ?? []) {
+                if (typeof result?.url === "string" && result.url) urls.push(result.url);
+              }
+              pendingToolResultEnrichment = { toolCallId, text, urls };
+            }
           }
           await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
         } catch { /* fail-open: a memory fault must not end the turn */ }
@@ -1256,6 +1263,7 @@ export class PiAgentRuntime {
       // then there is nothing to rewrite and PI's projection stands.
       const patched = messages.map((message: any) => {
         if (message?.role !== "toolResult" || String(message?.toolCallId ?? "") !== pending.toolCallId) return message;
+        for (const url of pending.urls) sources.add(url);
         const content = Array.isArray(message.content)
           ? message.content.map((c: any) => (c?.type === "text" ? { ...c, text: pending.text } : c))
           : message.content;
@@ -1718,7 +1726,7 @@ export class PiAgentRuntime {
           answer: finalAnswer && finalAnswer.stopReason !== "toolUse"
             ? finalAnswer.content.filter((part) => part.type === "text").map((part) => part.text).join("")
             : undefined,
-          sources: saturation.sources(),
+          sources: [...sources],
           ...(recovery ? { recovery } : {}),
           ...(context ? { context } : {}),
           usage: toRunUsage(usageTotals, compactionUsage),
