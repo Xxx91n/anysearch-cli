@@ -531,17 +531,24 @@ async function main() {
         const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
         let out = "";
         let interrupted = false;
+        let caughtSignals;
         child.stdout.on("data", (chunk) => {
           out += chunk;
           if (interruptOnText && !interrupted && out.includes(interruptOnText)) {
             interrupted = true;
+            if (process.platform === "linux") {
+              try {
+                const status = readFileSync("/proc/" + child.pid + "/status", "utf8");
+                caughtSignals = status.match(/^SigCgt:\s*(\w+)/m)?.[1];
+              } catch { /* the subprocess may already have exited */ }
+            }
             child.kill("SIGINT");
           }
         });
         child.stderr.on("data", (chunk) => { out += chunk; });
         const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
         child.on("error", (error) => { clearTimeout(timer); reject(error); });
-        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, out }); });
+        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, caughtSignals, out }); });
       });
     }
     const projectA = join(work, "project-a");
@@ -596,7 +603,7 @@ async function main() {
       const saved = answers.some((answer) =>
         answer.stopReason === "aborted" && answer.text === "CANCEL-STREAM-PARTIAL");
       check(interrupted.code === 130 && saved, "CLI 收到 Ctrl-C 后保存半截回答",
-        JSON.stringify({ code: interrupted.code, signal: interrupted.signal, answers }) + "\n" + interrupted.out);
+        JSON.stringify({ code: interrupted.code, signal: interrupted.signal, caughtSignals: interrupted.caughtSignals, answers }) + "\n" + interrupted.out);
       if (interruptedHandle) {
         const resumed = await chatCli(["--session", interruptedHandle, "SECOND-TURN-QUESTION"], projectA);
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),

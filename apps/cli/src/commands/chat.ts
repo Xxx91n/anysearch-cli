@@ -210,6 +210,10 @@ export async function runChat(argv: string[]): Promise<number> {
       }
       const cancellation = new AbortController();
       const interrupt = () => cancellation.abort();
+      const listenForInterrupt = () => {
+        process.off("SIGINT", interrupt);
+        process.on("SIGINT", interrupt);
+      };
       // Construct PiAgentRuntime and run.
       // models undefined fix — session.models is now properly initialized.
       const runtime = new PiAgentRuntime({
@@ -260,7 +264,8 @@ export async function runChat(argv: string[]): Promise<number> {
       // run error is still an attempt that must be recorded as unfinished, and
       // the code is applied after the lease is handed back.
       let failed = false;
-      process.once("SIGINT", interrupt);
+      let startedStreaming = false;
+      listenForInterrupt();
       try {
         for await (const event of runtime.run(query, attempt)) {
           switch (event.type) {
@@ -268,6 +273,12 @@ export async function runChat(argv: string[]): Promise<number> {
               console.error(event.notice);
               break;
             case "text":
+              if (!startedStreaming) {
+                // Design: renew the signal watcher after lazy provider setup —
+                // the installed CLI must catch SIGINT once output is visible.
+                listenForInterrupt();
+                startedStreaming = true;
+              }
               process.stdout.write(event.content);
               break;
             case "tool_call":
