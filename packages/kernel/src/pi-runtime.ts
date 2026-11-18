@@ -589,7 +589,7 @@ export function piSessionKey(sessionId: string): string {
   return "ans-" + createHash("sha256").update(sessionId).digest("hex").slice(0, 32);
 }
 
-function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: boolean }): void {
+function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: boolean }): string | undefined {
   switch (event.type) {
     case "message_start":
       state.textSeen = false;
@@ -597,7 +597,7 @@ function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: bo
     case "message_update": {
       const mapped = mapAssistantMessageEvent(event.assistantMessageEvent, state);
       if (mapped) buffer.push(mapped);
-      break;
+      return mapped?.type === "text" ? mapped.content : undefined;
     }
     case "tool_execution_start":
       buffer.push({ type: "tool_call", name: event.toolName, args: event.args });
@@ -612,6 +612,7 @@ function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: bo
       }
       break;
   }
+  return undefined;
 }
 
 export class PiAgentRuntime {
@@ -902,6 +903,8 @@ export class PiAgentRuntime {
     let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     let questionWritten = false;
     let turnStarted = false;
+    let partialAnswer: AssistantMessage | undefined;
+    let partialText = "";
     let recordWriteError: Error | undefined;
     const writeSessionRecord = (append: () => void): void => {
       if (recordWriteError) throw recordWriteError;
@@ -970,6 +973,10 @@ export class PiAgentRuntime {
         // PI writes the question before asking the model. Startup compaction can
         // call a model earlier, before there is a new question to mark.
         if (recordWriteError) throw recordWriteError;
+        if (questionWritten) {
+          partialAnswer = undefined;
+          partialText = "";
+        }
         if (persistentDir && questionWritten && !turnStarted) {
           writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_STARTED));
           turnStarted = true;
@@ -1250,7 +1257,6 @@ export class PiAgentRuntime {
     // session events -> our AgentEvent types.
     // text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
-    let partialAnswer: AssistantMessage | undefined;
     let finalAnswer: AssistantMessage | undefined;
     session.subscribe((event: any) => {
       // PI's own compaction is a real provider call: count it separate from the
@@ -1258,17 +1264,21 @@ export class PiAgentRuntime {
       if (event.type === "compaction_end" && event.result?.usage) {
         accumulateUsage(compactionUsage, { role: "assistant", usage: event.result.usage });
       }
-      if (event.type === "message_update" && event.message?.role === "assistant") {
-        partialAnswer = event.message;
-      }
       if (event.type === "message_end") {
         if (event.message?.role === "user") questionWritten = true;
         if (event.message?.role === "assistant") {
-          partialAnswer = undefined;
           finalAnswer = event.message;
+          if (event.message.stopReason !== "aborted" && event.message.stopReason !== "error") {
+            partialAnswer = undefined;
+            partialText = "";
+          }
         }
       }
-      mapSessionEvent(event, eventBuffer, mapState);
+      const delta = mapSessionEvent(event, eventBuffer, mapState);
+      if (delta && event.message?.role === "assistant") {
+        partialAnswer = event.message;
+        partialText += delta;
+      }
       if (event.type === "agent_end") agentDone = true;
       if (event.type === "error") {
         agentError = event.error?.message || String(event.error || "Unknown error");
@@ -1764,10 +1774,18 @@ export class PiAgentRuntime {
       // PI may still be waiting for a cancelled stream. Save text already
       // received while the run still owns the write lock, after detaching PI's
       // listener so a late provider event cannot save the same answer again.
-      if (turnStarted && partialAnswer && (callerCancelled || abortedEarly)) {
-        const content = partialAnswer.content.filter((part) => part.type === "text" && part.text);
-        if (content.length > 0) {
-          const interruptedAnswer: AssistantMessage = { ...partialAnswer, content, stopReason: "aborted" };
+      if (turnStarted && partialAnswer && partialText && (callerCancelled || abortedEarly)) {
+        const leaf = sessionManager.getLeafEntry();
+        const message = leaf?.type === "message" ? leaf.message : undefined;
+        const savedText = message?.role === "assistant" && message.stopReason === "aborted"
+          ? message.content.map((part) => part.type === "text" ? part.text : "").join("")
+          : "";
+        if (!savedText.startsWith(partialText)) {
+          const interruptedAnswer: AssistantMessage = {
+            ...partialAnswer,
+            content: [{ type: "text", text: partialText }],
+            stopReason: "aborted",
+          };
           writeSessionRecord(() => sessionManager.appendMessage(interruptedAnswer));
         }
       }

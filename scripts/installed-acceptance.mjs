@@ -541,7 +541,7 @@ async function main() {
         child.stderr.on("data", (chunk) => { out += chunk; });
         const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
         child.on("error", (error) => { clearTimeout(timer); reject(error); });
-        child.on("close", (code) => { clearTimeout(timer); resolve({ code, out }); });
+        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, out }); });
       });
     }
     const projectA = join(work, "project-a");
@@ -588,10 +588,15 @@ async function main() {
       const entries = file
         ? readFileSync(join(baseEnv.ANS_PI_SESSION_DIR, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line))
         : [];
-      const partial = entries.find((entry) => entry.type === "message" && entry.message.role === "assistant");
-      check(interrupted.code === 130 && partial?.message.stopReason === "aborted" &&
-        partial.message.content.some((part) => part.type === "text" && part.text === "CANCEL-STREAM-PARTIAL"),
-      "CLI 收到 Ctrl-C 后保存半截回答", interrupted.out);
+      const answers = entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant")
+        .map((entry) => ({
+          stopReason: entry.message.stopReason,
+          text: entry.message.content.map((part) => part.type === "text" ? part.text : "").join(""),
+        }));
+      const saved = answers.some((answer) =>
+        answer.stopReason === "aborted" && answer.text === "CANCEL-STREAM-PARTIAL");
+      check(interrupted.code === 130 && saved, "CLI 收到 Ctrl-C 后保存半截回答",
+        JSON.stringify({ code: interrupted.code, signal: interrupted.signal, answers }) + "\n" + interrupted.out);
       if (interruptedHandle) {
         const resumed = await chatCli(["--session", interruptedHandle, "SECOND-TURN-QUESTION"], projectA);
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
