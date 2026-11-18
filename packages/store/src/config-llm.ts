@@ -25,8 +25,9 @@ import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import {
   lookupModelCredential,
-  modelProviderEnvKeys,
+  modelEnvKeysFor,
   normalizeBindingEndpoint,
+  providerForEnvKey,
   readUserCredentials,
   resolveConfigHome,
   userCredentialsPath,
@@ -267,9 +268,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     // An effective provider/endpoint that differs from what the user file bound
     // the key to means the key belongs somewhere else. An absent effective
     // provider has no target at all, so there is nothing to misroute.
-    const providerOwnedByEnvKey = user.env_key
-      ? Object.entries(modelProviderEnvKeys()).find(([, envName]) => envName === user.env_key)?.[0]
-      : undefined;
+    const providerOwnedByEnvKey = user.env_key ? providerForEnvKey(user.env_key) : undefined;
     const boundProvider = user.provider ?? providerOwnedByEnvKey;
     const providerBoundElsewhere =
       boundProvider !== undefined && resolved.provider !== undefined && boundProvider !== resolved.provider;
@@ -303,11 +302,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     }
 
     if (!resolved.apiKey && resolved.provider) {
-      // The env name belongs to the provider, so this key is provider-appropriate
-      // by construction — that is exactly the binding pi-ai would apply itself.
-      const providerEnvKey = modelProviderEnvKeys()[resolved.provider];
-      const providerSecret = providerEnvKey ? env[providerEnvKey]?.trim() : undefined;
-      if (providerEnvKey && providerSecret) {
+      // The env names belong to the provider, so a key found under any of them is
+      // provider-appropriate by construction — that is exactly the binding pi-ai
+      // would apply itself. `modelEnvKeysFor` includes pi-ai's own alternate
+      // names (google reads GEMINI_API_KEY), so this stays in step with what the
+      // client would have done on its own.
+      const providerSecret = modelEnvKeysFor(resolved.provider)
+        .map((name) => env[name]?.trim())
+        .find((value) => !!value);
+      if (providerSecret) {
         resolved.apiKey = providerSecret;
         resolved.sources.apiKey = "env";
       }

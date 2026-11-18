@@ -498,3 +498,41 @@ test("an unset env_key does not stop the search for the provider's own env var",
   assert.equal(cfg.apiKey, "sk-provider-env");
   assert.equal(cfg.sources.apiKey, "env");
 });
+
+test("google's own env name (GEMINI_API_KEY) is recognized as google's key", () => {
+  // pi-ai resolves google's key from GEMINI_API_KEY, not GOOGLE_API_KEY. A key
+  // entered under that name is still google's, so the binding must recognize it
+  // — otherwise an env-chosen provider would receive it.
+  const f = fixture({
+    userToml: '[llm]\nmodel = "m"\nenv_key = "GEMINI_API_KEY"\n',
+  });
+  const mismatch = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "openai", GEMINI_API_KEY: "gemini-real-key" },
+  }));
+  assert.equal(mismatch.apiKey, undefined, "a google key is not sent to openai");
+  assert.ok(f.warnings.some((w) => w.includes("bound to provider=google")));
+
+  const matching = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "google", ANS_LLM_MODEL: "gemini-2.5-flash", GEMINI_API_KEY: "gemini-real-key" },
+  }));
+  assert.equal(matching.apiKey, "gemini-real-key");
+  assert.equal(matching.envKey, "GEMINI_API_KEY");
+});
+
+test("a provider's own env var is picked up under either of its names", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
+  const cfg = resolveLlmConfig(f.opts({ env: { GEMINI_API_KEY: "gemini-env" } }));
+  assert.equal(cfg.apiKey, "gemini-env");
+  assert.equal(cfg.sources.apiKey, "env");
+});
+
+test("an explicit user-file provider wins over the variable-name inference", () => {
+  // The file names the provider, so that is the binding — the env_key's name is
+  // not consulted to override it.
+  const f = fixture({
+    userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\nenv_key = "OPENAI_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({ env: { OPENAI_API_KEY: "key-for-google" } }));
+  assert.equal(cfg.provider, "google");
+  assert.equal(cfg.apiKey, "key-for-google", "the file's explicit provider is the binding");
+});

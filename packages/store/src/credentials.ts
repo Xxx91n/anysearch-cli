@@ -53,24 +53,46 @@ export interface CredentialProviderInfo {
   kind: "model" | "search";
   /** Env var that holds this provider's key when an explicit env value is in force. */
   envKey: string;
+  /**
+   * Additional env names that also mean "this provider's key". pi-ai resolves a
+   * model provider's key from its OWN map, and for google that name is
+   * GEMINI_API_KEY (see @earendil-works/pi-ai dist/env-api-keys). A key entered
+   * under that name is still google's key, so the provider binding must
+   * recognize it — otherwise changing the provider would send it elsewhere.
+   */
+  altEnvKeys?: readonly string[];
 }
 
 export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
   { id: "openai", kind: "model", envKey: "OPENAI_API_KEY" },
   { id: "anthropic", kind: "model", envKey: "ANTHROPIC_API_KEY" },
-  { id: "google", kind: "model", envKey: "GOOGLE_API_KEY" },
+  { id: "google", kind: "model", envKey: "GOOGLE_API_KEY", altEnvKeys: ["GEMINI_API_KEY"] },
   { id: "tavily", kind: "search", envKey: "TAVILY_API_KEY" },
   { id: "exa", kind: "search", envKey: "EXA_API_KEY" },
   { id: "anysearch", kind: "search", envKey: "ANYSEARCH_API_KEY" },
 ];
 
-/** Model providers only: the ids `ans llm` knows about, with their canonical env names. */
-export function modelProviderEnvKeys(): Record<string, string> {
-  return envKeysByKind("model");
-}
-
 /** Search providers only: the ids the retriever builds arms for. */
 export const SEARCH_PROVIDER_ENV_KEYS: Record<string, string> = envKeysByKind("search");
+
+/**
+ * Every env name that means "this provider's key", canonical first. Used to
+ * resolve the provider a stored `env_key` name belongs to when the user file
+ * does not state one.
+ */
+export function providerForEnvKey(envKey: string): string | undefined {
+  const wanted = envKey.trim();
+  return CREDENTIAL_PROVIDERS.find(
+    (p) => p.envKey === wanted || p.altEnvKeys?.includes(wanted),
+  )?.id;
+}
+
+/** The env var a model provider's key is read from; includes pi-ai's alternate names. */
+export function modelEnvKeysFor(provider: string): string[] {
+  const info = credentialProvider(provider);
+  if (!info || info.kind !== "model") return [];
+  return [info.envKey, ...(info.altEnvKeys ?? [])];
+}
 
 function envKeysByKind(kind: CredentialProviderInfo["kind"]): Record<string, string> {
   return Object.fromEntries(
@@ -124,6 +146,38 @@ export function normalizeBindingEndpoint(endpoint: string | null | undefined): s
   if (endpoint === undefined || endpoint === null) return null;
   const trimmed = endpoint.trim().replace(/\/+$/, "");
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * What may be SHOWN for a bound endpoint. A base URL can carry credentials
+ * (`https://user:pass@host/v1`) or a secret in its query string, and `ans auth
+ * list` prints the binding — so the userinfo and the query are stripped first.
+ * The stored value is untouched; only the display form is.
+ */
+export function displayEndpoint(endpoint: string | null): string {
+  if (!endpoint) return "(provider default endpoint)";
+  // `new URL("user:pass@host/v1")` parses with scheme "user:" — so a missing
+  // scheme must be caught BEFORE parsing, or the userinfo would ride along.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) return stripAuthorityAndQuery(endpoint);
+  try {
+    const url = new URL(endpoint);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return stripAuthorityAndQuery(endpoint);
+  }
+}
+
+/** Drop userinfo (everything up to the last '@' in the authority) and the query. */
+function stripAuthorityAndQuery(value: string): string {
+  const withoutQuery = value.split(/[?#]/)[0] ?? "";
+  const firstSlash = withoutQuery.indexOf("/");
+  const authority = firstSlash < 0 ? withoutQuery : withoutQuery.slice(0, firstSlash);
+  const at = authority.lastIndexOf("@");
+  return at >= 0 ? withoutQuery.slice(at + 1) : withoutQuery;
 }
 
 function asBinding(raw: unknown): CredentialBinding | null {

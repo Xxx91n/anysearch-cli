@@ -14,6 +14,7 @@
 import {
   CREDENTIAL_PROVIDERS,
   credentialProvider,
+  displayEndpoint,
   normalizeBindingEndpoint,
   readUserCredentials,
   removeUserCredential,
@@ -34,7 +35,7 @@ export const AUTH_IO: { input?: SecretInputIO["input"] } = {};
 
 /** Show whether an entry exists, bound where — and it must never show the value. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
-  return binding.provider + "  " + (binding.endpoint ?? "(provider default endpoint)");
+  return binding.provider + "  " + displayEndpoint(binding.endpoint);
 }
 
 function usage(): number {
@@ -96,7 +97,7 @@ function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
     } else if (envValue) {
       where = "env " + info.envKey;
     } else if (binding) {
-      where = "stored file" + (binding.endpoint ? " (" + binding.endpoint + ")" : "");
+      where = "stored file" + (binding.endpoint ? " (" + displayEndpoint(binding.endpoint) + ")" : "");
     } else {
       where = "not set";
     }

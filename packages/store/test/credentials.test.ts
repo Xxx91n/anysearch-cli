@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   credentialProtectionSeam,
+  displayEndpoint,
   lookupModelCredential,
   normalizeBindingEndpoint,
   readUserCredentials,
@@ -327,4 +328,18 @@ test("Windows: a DACL that still inherits is rejected even when every entry look
     execFileSync(icacls, [path, "/inheritance:e"], { windowsHide: true });
     assert.throws(() => verifyFileProtection(path), /inherits permissions|inherited entry/);
   } finally { cleanup(); }
+});
+
+test("an endpoint carrying credentials is shown without them", () => {
+  // `ans auth list` prints the binding. A base URL can carry userinfo or a
+  // secret in the query, and spec S2 forbids a secret in terminal output, so the
+  // display form is stripped while the stored value stays exact.
+  assert.equal(displayEndpoint(null), "(provider default endpoint)");
+  assert.equal(displayEndpoint("https://gw.example/v1"), "https://gw.example/v1");
+  assert.equal(displayEndpoint("https://user:s3cret@Gw.Example/v1/"), "https://gw.example/v1");
+  assert.equal(displayEndpoint("https://gw.example/v1?key=sk-secret"), "https://gw.example/v1");
+  assert.ok(!displayEndpoint("https://gw.example/v1?api_key=sk-live").includes("sk-live"));
+  // Not a parseable URL: keep the host part only.
+  assert.ok(!displayEndpoint("gw.example/v1?token=sk-x").includes("sk-x"));
+  assert.ok(!displayEndpoint("user:pass@gw.example/v1").includes("pass"));
 });
