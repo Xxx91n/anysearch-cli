@@ -107,17 +107,11 @@ function buildProviders(
 }
 
 /**
- * Turn a credential-resolution failure into a sentence safe to show. The
- * resolver reads a file that holds keys, so its message is not assumed clean:
- * only a recognised category and a bare errno code are quoted. Anything
- * unrecognised becomes a fixed sentence - an unknown message is exactly the case
- * where a key fragment could ride along.
- *
- * The patterns follow what the store actually reports, in both shapes it uses:
- * a returned `error` field ("<path>: could not read it (EACCES)", "<path>: not
- * valid JSON", "<path>: entry 1 has no apiKey") and a thrown refusal ("refusing
- * to write the credential file …: <reason>"). Each branch names the fix, so a
- * permissions fault never reads as "delete the file".
+ * Turn a credential-resolution failure into a sentence safe to show. Only a
+ * recognised category and a bare errno are quoted: this text comes from a module
+ * that reads a key file, so an unrecognised message is exactly the case where a
+ * key fragment could ride along. Each branch names the fix, so a permissions
+ * fault never reads as "delete the file".
  */
 function classifyCredentialFault(error: unknown): string {
   const raw = String(error instanceof Error ? error.message : error);
@@ -157,8 +151,11 @@ function classifyCredentialFault(error: unknown): string {
     if (code === "ENOTDIR" || code === "ENAMETOOLONG") {
       return "the credential file's folder path is not usable (" + code + "); check the config root";
     }
-    if (code === "EMFILE" || code === "EBUSY") {
-      return "the credential file is busy (" + code + "); close other programs using it and retry";
+    if (code === "EMFILE" || code === "ENFILE") {
+      return "this process has too many files open to write the credential file (" + code + "); close some and retry";
+    }
+    if (code === "EBUSY") {
+      return "the credential file is in use (" + code + "); retry in a moment";
     }
     return "the credential file could not be written; check the folder's permissions";
   }
@@ -224,32 +221,29 @@ export type CredentialSourceLabel = "env" | "user" | "none";
 /**
  * Keep a resolver warning's meaning but drop anything that could be a secret.
  *
- * The store's warnings are fixed sentences plus a file path today, but this
- * string goes to stderr from a module that reads a key file, so it is checked
- * rather than assumed. Two rules, and they are deliberately narrow:
+ * Two shapes are removed, and both are anchored so ordinary text survives:
  *
- * - a known key prefix followed by its body (`sk-…`, `tvly-…`, `exa-…`, `key-…`)
- *   is redacted wherever it appears, short or long;
- * - a bare run of the key alphabet is redacted only when no separator (`.`,
- *   `/`, `:`, whitespace, `"`) interrupts it for 32+ characters. That is what
- *   keeps a long path readable: `/home/someone/very-long-nas-mount/...` is broken
- *   by slashes, so it survives, while an unbroken base64-shaped key does not.
- *
- * The first rule is what covers a SHORT key; a length threshold alone cannot,
- * and a key split by a JSON message's quotes is still caught by its prefix.
+ * - a key prefix (`sk-`, `tvly-`, `api-`, …) that starts at a word boundary and
+ *   is followed by a body containing a digit or a symbol. A path segment like
+ *   `api-gateway-service` has neither, so the file name the reader needs stays;
+ * - a run of 32+ key characters, `+` included. `/` is the one character left
+ *   out, because it is what makes a path a path; a key containing `/` still
+ *   loses the rest of its run, and its prefix rule above catches the whole thing.
  */
 export function redactPathFault(warning: string): string {
   return warning
-    // Prefix form: `sk-`, `sk_live_`, `tvly-`, `exa-`, `key-`, `api-` and the
-    // like, then the key body. The body stops at any separator (`/`, `.`, `:`,
-    // `"`, whitespace) so a path segment cannot be swallowed and a quoted key in
-    // a parse message is still caught. Eight body characters is short enough for
-    // real keys and long enough to miss ordinary words.
-    .replace(/\b(?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-]{8,}/gi, "[redacted]")
-    // Bare form: an unbroken run of 40+ key characters. `/` and `+` are left out
-    // on purpose - a path is made of them, and a key that contains one is still
-    // caught by the prefix rule above or by its remaining runs.
-    .replace(/[A-Za-z0-9_\-=]{40,}/g, "[redacted]");
+    // Prefix form. `(^|[^A-Za-z0-9])` rather than `\b`: `_` is a word character,
+    // so `\b` would match inside `my_key_abc` and behave differently either side
+    // of an underscore. The body must carry a digit or symbol - a key always
+    // does, a pair of English words joined by a hyphen never does.
+    .replace(
+      /(^|[^A-Za-z0-9])((?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-]*[0-9_+=][A-Za-z0-9_\-]*)/gi,
+      "$1[redacted]",
+    )
+    // Bare form: an unbroken key run. `+` is kept in the class because a path
+    // never contains it and a base64 key often does; `/` is excluded because
+    // dropping it would swallow every path.
+    .replace(/[A-Za-z0-9_\-+=]{32,}/g, "[redacted]");
 }
 
 // createEngine: build configured engine.
@@ -343,27 +337,23 @@ export function createEngine(
     try {
       creds = opts.searchCredentials(env);
       for (const warning of creds?.warnings ?? []) {
-        // The resolver's warnings describe a file that holds keys, so they get
-        // the same treatment as a thrown fault: the sentence is kept, but only
-        // once it has been checked for anything that looks like secret material.
+        // Same rule as a thrown fault: the sentence is useful, so it is kept,
+        // but only after anything key-shaped has been removed.
         writeProviderDiagnostic("[anysearch] " + redactPathFault(warning) + "\n");
       }
       const resolved: CredentialSources = { status: "resolved" };
-      // The anysearch arm is the one the resolver emits WITHOUT a key when only
-      // ANYSEARCH_ENDPOINT is set, so `"none"` is meaningful there. tavily and
-      // exa are simply absent when they have no key - `pick()` omits the field
-      // entirely - so recording `"none"` for them would be a claim the resolver
-      // never makes. Absent stays absent.
+      // `"none"` is only meaningful for anysearch: it is the one arm the resolver
+      // emits without a key (an endpoint alone). tavily and exa are simply absent
+      // when keyless, so nothing is recorded for them.
       if (creds?.tavily) resolved.tavily = creds.tavily.source;
       if (creds?.exa) resolved.exa = creds.exa.source;
       if (creds?.anysearch) resolved.anysearch = creds.anysearch.apiKey ? creds.anysearch.source : "none";
       credentialSources = resolved;
     } catch (e) {
       creds = undefined;
-      // The raw message is classified, never forwarded: this string can reach
-      // stderr and (through the engine result) an MCP payload, and the resolver
-      // reads a credential file, so its error text must not be trusted to be
-      // free of a key fragment (CWE-532; same rule as buildProvider above).
+      // Classified, never forwarded: this text reaches stderr and the engine
+      // result, and it comes from a module that reads a key file (CWE-532, same
+      // rule as buildProvider above).
       const reason = classifyCredentialFault(e);
       credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(

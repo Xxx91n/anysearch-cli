@@ -88,15 +88,15 @@ export interface ResolveLlmOpts {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   /**
-   * The config root. Omit it and the root is `resolveConfigHome(undefined, env)`
-   * - the same call every writer makes, so a caller can only get a different
-   * file by passing a different `home` on purpose.
+   * The config root. Omit it and the root is `resolveConfigHome(undefined, env)`:
+   * the same call the writers make, so a caller only gets a different file by
+   * passing a different `home` on purpose.
    *
-   * Note what an injected `env` does and does not control: it decides the key
-   * resolution and, if it names HOME/USERPROFILE, the root. It does NOT isolate
-   * the root - an env with neither name still falls through to the process env
-   * and then the platform's home, exactly like `ans auth` does. A test that
-   * wants isolation passes `home`.
+   * An injected `env` is not isolation: if it names HOME/USERPROFILE the root
+   * follows it, and if it names neither the root falls through to the process
+   * env and then the platform's home. A caller that needs a fixed root passes
+   * `home`. (The path helpers below default to `process.env`, not to the caller's
+   * `env` - they take only a root.)
    */
   home?: string;
   flags?: LlmFlags;
