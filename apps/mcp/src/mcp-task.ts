@@ -1,32 +1,12 @@
 // #303 — one MCP tool call is one task.
 //
-// Why this exists: an MCP server is a resident process. The `ans mcp` dispatch
-// registers that process once (#302); the standalone `ans-mcp` entry registers
-// nothing of its own, which is a gap for the admission work in #309, not
-// something this ticket invents an entry point for. Registering the server's
-// whole lifetime as a task would be exactly the "permanently unfinished task"
-// the registry was built to avoid. What a later upgrade admission (#309) has to
-// wait for is the work: one tool call, from the moment the handler starts to the
-// moment its late work is really done.
-//
-// The late work is the point of this module. A reply is not the end of a task:
-// background summaries, the settlement of what the run already spent, and the
-// observation write all happen around it. The task row is therefore ended
-// AFTER the handler's promise resolves — `flushMemory()` is awaited inside the
-// handler and `observeTool()` wraps it — so a cancelled request cannot leave a
-// finished-looking task with settlement still in flight. A cancellation ends
-// the WAIT, not the work (spec S6).
-//
-// Fail-open, like the CLI's registration: a store without the registry seam, or
-// a registry that throws, warns on stderr and the call runs unregistered. The
-// one downstream consequence is the same as #302's: a declared [budget] that
-// cannot be attached to a task is a fault the run stops on (see
-// wireTaskBudget), never a silent unmetered run.
-//
-// Reuse: `withMcpTask` is the entry point for the tools that have not migrated
-// yet (MCP search / research / standalone consolidate, #304). Wrapping a
-// handler is the whole migration step for the task identity; the budget wiring
-// is independent and each tool opts in by reading `currentMcpTask()`.
+// A resident server's lifetime is a process fact, not work; what an upgrade has
+// to wait out is one tool call, including its late work (background summaries,
+// settlement, the observation write). So the task row is ended AFTER the handler
+// resolves — a cancellation ends the wait, not the work. Registration is
+// fail-open like the CLI's; a declared [budget] that cannot be attached is the
+// one thing that stops the run. `withMcpTask` is also the migration point for
+// the tools still on the session form (#304).
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CompositionResult } from "@anysearch-cli/kernel";

@@ -26,8 +26,10 @@ import type {
   BudgetLedgerPort,
   CompositionResult,
   ConsolidationUsage,
+  RunUsage,
   RuntimeErrorReason,
   SessionStorePort,
+  SummaryUsage,
 } from "@anysearch-cli/kernel";
 import {
   formatConsolidateScope,
@@ -45,6 +47,11 @@ export interface AnsChatSessionWiring {
   // ledger that could settle against an absent row or abort `agent.prompt`
   // (#178, CodeRabbit #200).
   ledger?: BudgetLedgerPort;
+  /** Which accounting form this wiring drives. "session": the runtime bills the
+   * conversation through . "context": the handle only restores context
+   * and the run bills its own task ( is then undefined). Absent when
+   * there is no usable handle at all. */
+  mode?: "session" | "context";
 }
 
 // Wire contract mirrors AnsChatInput.sessionId (tool-schemas.ts): visible ASCII,
@@ -168,19 +175,16 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  * @param eng - Composition result carrying the session store.
  * @param requested - `AnsChatInput.sessionId`, already type-checked by AJV; the
  *   runtime guard here also covers direct callers and non-string test input.
- * @param opts.sessionBudget - #303: false when this call has its own task budget
- *   and the handle is context only. The session's [budget] row is then neither
- *   initialized nor released — the conversation's history stays exactly as it
- *   was, and nothing pretends the handle still owns this run's quota. Default
- *   true: the unmigrated callers (and a degraded call that could not register a
- *   task) keep the session form untouched.
- * @returns store + sessionId only when the handle is usable. The engine's
- *   ledger (#178) travels with it on the SESSION form only — that is, when
- *   `sessionBudget` is true. The migrated `ans_chat` path passes false: the
- *   handle restores context and the run bills its task, so a present ledger
- *   here would be a session fallback that must not exist. Absent `store` /
- *   `sessionId` still leaves the runtime's `store && sessionId` gate closed
- *   (single-shot / memory disabled).
+ * @param opts.sessionBudget - false when this call already has its own task
+ *   budget: the handle then only restores context, and the session's [budget]
+ *   row is neither initialized nor released. Defaults to true (the session
+ *   form every unmigrated caller still runs).
+ * @returns the store and handle when they are usable. On the session form the
+ *   engine ledger travels with them (#178); on the context form the ledger is
+ *   undefined and the run bills its task instead. The returned field "mode"
+ *   says which form this is. With no usable handle, store and sessionId are
+ *   absent, which closes the runtime's store-and-sessionId gate (single-shot /
+ *   no memory).
  */
 export async function resolveAnsChatSession(
   eng: CompositionResult,
@@ -206,9 +210,9 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
-      if (!sessionBudget) return { store, sessionId: requested };
+      if (!sessionBudget) return { mode: "context", store, sessionId: requested };
       const budgetReady = registerSessionBudget(store, requested, eng.config?.budget);
-      return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
+      return { mode: "session", store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       warnOnce("register:" + msg, "session row registration failed (" + msg + ") — memory wiring unavailable");
@@ -223,9 +227,9 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
-    if (!sessionBudget) return { store, sessionId: id };
+    if (!sessionBudget) return { mode: "context", store, sessionId: id };
     const budgetReady = registerSessionBudget(store, id, eng.config?.budget);
-    return { store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
+    return { mode: "session", store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnOnce("mint:" + msg, "createSession failed (" + msg + ") — continuing without memory");
@@ -307,7 +311,7 @@ export function buildAnsChatErrorResult(
 export interface AnsChatBudgetStopExtra {
   taskId?: string;
   /** What this run spent. A stop before the first provider call spends nothing, and the report says why it has no figure. */
-  usage?: unknown;
+  usage?: { run: RunUsage; memorySummary: SummaryUsage | null };
   /**
    * Which operation was stopped. The same builder serves both, and saying
    * "chat" about a consolidate call would send a caller down the wrong branch.
@@ -384,13 +388,12 @@ export function buildAnsChatBudgetResult(
  * payload — the task row is what says what happened.
  */
 export function buildAnsChatCancelledResult(): AnsChatToolResult {
-  const result = buildAnsChatResult("", undefined, { interrupted: true });
+  // Built directly, not through buildAnsChatResult: a content-only host would
+  // otherwise read that builder's empty-result fallback ("ans_chat: no
+  // response") as a successful empty answer.
   return {
-    ...result,
-    // The empty-result fallback ("ans_chat: no response") reads as a successful
-    // empty answer to a content-only host. Say what happened instead; a host
-    // that reads structuredContent gets `interrupted: true` either way.
-    content: [{ type: "text" as const, text: "ans_chat: cancelled — no answer was produced for this request." }],
+    content: [{ type: "text", text: "ans_chat: cancelled — no answer was produced for this request." }],
+    structuredContent: { interrupted: true },
   };
 }
 
