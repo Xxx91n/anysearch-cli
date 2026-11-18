@@ -13,8 +13,7 @@
 //      answer (`errorKind: budget-not-established`), also with no call
 //   6. a cancelled request still finishes its late work before the task closes:
 //      the answer reports `interrupted`, and the closeout says the task ended
-//   7. a tool that has not migrated (search_web) records no task — the entry
-//      point is opt-in
+//   7. a search tool registers its own task too (#304 migrated it)
 //
 // Offline by construction: a faux pi-ai session answers locally, the store is a
 // temp SQLite file, and every env that could steer writes into the operator's
@@ -364,11 +363,17 @@ async function main() {
         "3: and it is a third task");
       assert(readRows<TaskRow>(dbPath, TASKS_SQL).length === 3, "3: three calls, three tasks");
 
-      // ---- 7. an unmigrated tool records no task ----
+      // ---- 7. search_web is migrated too (#304): one call, one task ----
       const beforeSearch = readRows<TaskRow>(dbPath, TASKS_SQL).length;
-      await handlers.search_web({ query: "anything" });
-      assert(readRows<TaskRow>(dbPath, TASKS_SQL).length === beforeSearch,
-        "7: search_web (not migrated yet, #304) registers no task");
+      const searchResult = await handlers.search_web({ query: "anything" });
+      const searchTasks = readRows<TaskRow>(dbPath, TASKS_SQL);
+      assert(searchTasks.length === beforeSearch + 1,
+        "7/#304: search_web registers its own task");
+      assert(searchTasks.some((t) => t.kind === "mcp.search_web" && !!t.ended && t.code === 0),
+        "7/#304: the search task ends cleanly (got " + JSON.stringify(searchTasks) + ")");
+      assert(searchResult?.structuredContent?.closeout?.kind === "mcp.search_web",
+        "7/#304: the answer carries the closeout for this call (got "
+        + JSON.stringify(searchResult?.structuredContent?.closeout) + ")");
     }
 
     // ============ 4. a budget refusal is its own structured answer ============

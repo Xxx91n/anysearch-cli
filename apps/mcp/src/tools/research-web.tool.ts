@@ -6,10 +6,12 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
+import { establishToolBudget, toolBudgetStop } from "./task-budget.js";
+import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
   providerFailureMetadata,
@@ -28,7 +30,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       // #209: same seam as search_web — SDK context signal (stdio) or the
       // HTTP request signal (stateless response-stream closure).
       const signal = requestSignal(ctx);
-      return observeTool(eng, "research_web", ctx, async (span) => {
+      // #304: one tool call is one task; every research round below draws from
+      // that task's single budget.
+      return withMcpTask(eng, "research_web", () => observeTool(eng, "research_web", ctx, async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // + /: shared
         // guard + assembly; error copy is this surface's rendering of the
@@ -39,6 +43,16 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         }
         const vertical = built.vertical;
         const d = depth ?? "deep";
+        // #304: this call's own task budget. A declared [budget] that cannot be
+        // established stops before the first round.
+        const budget = establishToolBudget(eng);
+        if (budget.taskBudgetFault) {
+          return toolBudgetStop(
+            "research_web",
+            budget.taskBudgetFaultReason ?? "budget-not-established",
+            budget.taskBudgetFault,
+          );
+        }
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
         let lastEnvelope: any = null;
@@ -61,6 +75,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               mode: "deep" as const,
               maxResults: 10,
               ...(vertical ? { vertical } : {}),
+              ...(budget.taskBudget ? { taskBudget: budget.taskBudget } : {}),
               span,
               signal,
             });
@@ -147,9 +162,19 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
+          // A refused reservation never reached a provider. Earlier rounds, if
+          // any, already settled on the same task row — say how many, so the
+          // answer does not read like a run that never started.
+          if (isTaskBudgetRejectedError(e)) {
+            return toolBudgetStop(
+              "research_web",
+              "budget-rejected",
+              e.message + " (" + rounds + " round(s) settled before the stop)",
+            );
+          }
           return toolError("research_web", e instanceof Error ? e.message : String(e));
         }
-      });
+      }));
     },
   );
 }

@@ -15,6 +15,7 @@
 //   B. 装出来的 MCP：initialize + tools/list，然后真跑一轮 ans_chat
 //   C. 会话续接：第二轮请求里必须带着第一轮的问答
 //   C4. MCP 聊天的任务账：一次调用一个任务一份预算，取消之后收尾状态看得见
+//   C5. 搜索和独立整理的任务账：CLI 搜索、MCP 搜索/研究、跨会话整理各记各的任务
 //   D. 整理：dry-run 不落库，apply 写一条知识行，用量和费用如实报
 //   E. 内部搜索入库 → 另一个会话用 query_knowledge 把那行捞回来
 //   F. 旧一点的库：能打开、能迁移、原来的行还在、再开一次不报错
@@ -1194,6 +1195,168 @@ async function main() {
         check(processes.n >= 2, "每次 CLI 执行登记了一条进程记录且已收尾", JSON.stringify(processes));
       } finally {
         chatCheck.close();
+      }
+    }
+
+    // ================= C5. 搜索和独立整理：各自任务各自的预算 =================
+    //
+    // #304：CLI 搜索、MCP 搜索/研究、独立整理都建立本次任务预算。材料来自几个
+    // 会话不再让整理变成"没人付钱"，也不从第一段聊天里扣钱。这一段的搜索全部
+    // 打在本进程的假搜索端点上，不需要真 key；整理用假模型端点。
+    console.log("\n== C5. search and standalone consolidate: one task, one budget ==");
+    {
+      const searchBudgetDomain = DOMAIN_MIN("searchbudget", "SEARCH-BUDGET-SYSTEM.");
+      searchBudgetDomain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
+      searchBudgetDomain.push("[budget]", "tokenCap = 20000", "callCap = 20");
+      writeDomain(domainsDir, "searchbudget", searchBudgetDomain);
+      // 拒绝那条域也要真的有一个搜索臂：否则引擎会先在"没有 provider"处报错，
+      // 这段就测不到预算拒绝，反而测成另一条错。
+      const searchCappedDomain = DOMAIN_MIN("search-capped", "SEARCH-CAPPED.");
+      searchCappedDomain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
+      searchCappedDomain.push("[budget]", "callCap = 0");
+      writeDomain(domainsDir, "search-capped", searchCappedDomain);
+      const searchEnv = {
+        ...baseEnv,
+        ANS_DOMAIN: "searchbudget",
+        ANS_DB_PATH: join(work, "search-budget.db"),
+        ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/print-search",
+        ANYSEARCH_API_KEY: "print-test-key",
+      };
+
+      // ---- 1. CLI 搜索：一条命令一个任务，账记在任务上 ----
+      const searched = await runAnsAsync(
+        ["search", "anysearch-cli GitHub repository", "--json"],
+        { cwd: prefix, env: searchEnv },
+      );
+      check(searched.code === 0, "带预算域的 CLI 搜索退出码 0", searched.out.slice(-400));
+      let searchJson;
+      try {
+        searchJson = JSON.parse(searched.out.slice(searched.out.indexOf("{"), searched.out.lastIndexOf("}") + 1));
+      } catch { searchJson = null; }
+      check(searchJson?.results?.length >= 1, "CLI 搜索真的搜到了东西", String(searched.out).slice(-300));
+      {
+        const db = new Database(searchEnv.ANS_DB_PATH, { readonly: true });
+        try {
+          const tasks = db.prepare(
+            "SELECT task_id as id, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.search'"
+          ).all();
+          check(tasks.length === 1 && !!tasks[0]?.ended && tasks[0]?.code === 0,
+            "CLI 搜索登记成一条已收尾的任务", JSON.stringify(tasks));
+          const budgets = db.prepare(
+            "SELECT billable_calls as calls, reserved_calls as reserved, configured FROM task_budgets WHERE task_id = ?"
+          ).all(tasks[0]?.id ?? "missing");
+          check(budgets.length === 1 && Number(budgets[0].calls) > 0 && Number(budgets[0].reserved) === 0
+            && Number(budgets[0].configured) === 1,
+            "这次搜索的花费记在任务预算上并已结清", JSON.stringify(budgets));
+          const sessionRows = db.prepare("SELECT COUNT(*) as n FROM budget_ledger").get();
+          check(sessionRows.n === 0, "裸搜索没有开任何会话预算行", JSON.stringify(sessionRows));
+        } finally { db.close(); }
+      }
+
+      // ---- 2. 额度拒绝：停在上游之前，账不冒充免费 ----
+      const beforeRefusedSearch = requestLog.filter((r) => r.role === "print-search").length;
+      const refusedSearch = await runAnsAsync(
+        ["search", "anysearch-cli GitHub repository"],
+        { cwd: prefix, env: { ...searchEnv, ANS_DOMAIN: "search-capped" } },
+      );
+      check(refusedSearch.code === 1 && /stopped by this run's task budget/.test(refusedSearch.out),
+        "额度拒绝的搜索退出非零，并说明是任务预算拦下的", refusedSearch.out.slice(-400));
+      check(requestLog.filter((r) => r.role === "print-search").length === beforeRefusedSearch,
+        "额度拒绝的搜索一个上游请求都没发");
+      {
+        const db = new Database(searchEnv.ANS_DB_PATH, { readonly: true });
+        try {
+          const task = db.prepare(
+            "SELECT task_id as id, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.search' ORDER BY rowid DESC LIMIT 1"
+          ).get();
+          check(task?.ended === 1 && task?.code === 1, "被拒绝的搜索任务照样登记并收尾（未完成）", JSON.stringify(task));
+          const budget = db.prepare(
+            "SELECT billable_calls as calls, reserved_calls as reserved FROM task_budgets WHERE task_id = ?"
+          ).get(task?.id ?? "missing");
+          check(budget && Number(budget.calls) === 0 && Number(budget.reserved) === 0,
+            "被拒绝的搜索没有记出花费，也没留下预留", JSON.stringify(budget));
+        } finally { db.close(); }
+      }
+
+      // ---- 3. MCP 搜索/研究：一次调用一个任务，多轮研究共用同一份预算 ----
+      const mcpSearchDb = join(work, "mcp-search-budget.db");
+      const searcher = mcpClient(mcpBin, { ...searchEnv, ANS_DB_PATH: mcpSearchDb }, "search-budget");
+      clients.push(searcher);
+      await searcher.ready();
+      const searchCall = await searcher.rpc("tools/call", {
+        name: "search_web", arguments: { query: "anysearch-cli GitHub repository" },
+      });
+      check(searchCall.result?.isError !== true
+        && searchCall.result?.structuredContent?.closeout?.kind === "mcp.search_web",
+        "MCP 搜索完成，并带回这次任务的收尾", textOf(searchCall).slice(0, 200));
+      const researchCall = await searcher.rpc("tools/call", {
+        name: "research_web", arguments: { question: "anysearch-cli GitHub repository", depth: "standard" },
+      });
+      check(researchCall.result?.isError !== true
+        && researchCall.result?.structuredContent?.closeout?.kind === "mcp.research_web",
+        "MCP 研究完成，并带回这次任务的收尾", textOf(researchCall).slice(0, 200));
+      await searcher.kill();
+      {
+        const db = new Database(mcpSearchDb, { readonly: true });
+        try {
+          const kinds = db.prepare("SELECT kind FROM task_records ORDER BY rowid").all().map((r) => r.kind).sort();
+          check(JSON.stringify(kinds) === JSON.stringify(["mcp.research_web", "mcp.search_web"]),
+            "MCP 搜索和研究各登记一条任务", JSON.stringify(kinds));
+          const budgets = db.prepare("SELECT billable_calls as calls FROM task_budgets ORDER BY rowid").all();
+          check(budgets.length === 2 && budgets.every((b) => Number(b.calls) > 0),
+            "两次 MCP 调用的花费各记在自己的任务预算上", JSON.stringify(budgets));
+        } finally { db.close(); }
+      }
+
+      // ---- 4. 独立整理：材料来自两个会话，也记在这一个任务身上 ----
+      const consolidateDb = join(work, "consolidate-budget.db");
+      // 先让装出来的命令把库和表建好：直接 new Database 只会得到一个空文件，
+      // 里面没有 sessions / retrieval_results，塞不进材料。
+      const warmed = await runAnsAsync(
+        ["consolidate", "--session", "warm-up", "--dry-run"],
+        { cwd: prefix, env: { ...searchEnv, ANS_DB_PATH: consolidateDb } },
+      );
+      check(warmed.code === 0, "整理用的新库能被装出来的命令建好", warmed.out.slice(-300));
+      {
+        const db = new Database(consolidateDb);
+        try {
+          for (const [sessionId, entity] of [["consol-a", "acme-hours"], ["consol-b", "acme-support"]]) {
+            db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run(sessionId, "probe");
+            for (let i = 1; i <= 3; i++) {
+              db.prepare(
+                "INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?,?,?,?,?,?)"
+              ).run(sessionId, "https://acme.example/" + entity + "-" + i, entity + " " + i, FACT, "exa", entity);
+            }
+          }
+        } finally { db.close(); }
+      }
+      const consolidated = await runAnsAsync(
+        ["consolidate", "--session", "consol-a", "--session", "consol-b"],
+        { cwd: prefix, env: { ...searchEnv, ANS_DB_PATH: consolidateDb } },
+      );
+      check(consolidated.code === 0, "跨两个会话的 CLI 整理退出码 0", consolidated.out.slice(-500));
+      check(/usage: consolidation calls [1-9]/.test(consolidated.out),
+        "整理真的调了模型并报了用量", consolidated.out.slice(-500));
+      check(!/budget: unmetered/.test(consolidated.out),
+        "材料来自两个会话也不再报「没人付钱」", consolidated.out.slice(-500));
+      {
+        const db = new Database(consolidateDb, { readonly: true });
+        try {
+          // 最后一次才是本段要查的那次整理；前面那次只为建表。
+          const task = db.prepare(
+            "SELECT task_id as id, ended_at IS NOT NULL as ended, exit_code as code FROM task_records WHERE kind = 'cli.consolidate' ORDER BY rowid DESC LIMIT 1"
+          ).get();
+          check(task?.ended === 1 && task?.code === 0, "整理登记成一条已收尾的任务", JSON.stringify(task));
+          const budget = db.prepare(
+            "SELECT billable_calls as calls, reserved_calls as reserved FROM task_budgets WHERE task_id = ?"
+          ).get(task?.id ?? "missing");
+          check(budget && Number(budget.calls) > 0 && Number(budget.reserved) === 0,
+            "整理的模型调用记在这一个任务上并已结清", JSON.stringify(budget));
+          const sessionRows = db.prepare(
+            "SELECT COUNT(*) as n FROM budget_ledger WHERE session_id IN ('consol-a', 'consol-b')"
+          ).get();
+          check(sessionRows.n === 0, "没有从任何一个聊天会话的账上扣钱", JSON.stringify(sessionRows));
+        } finally { db.close(); }
       }
     }
 

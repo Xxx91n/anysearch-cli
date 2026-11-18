@@ -80,9 +80,12 @@ answer mode, `answersAvailable` is `false`.
 
 Every tool returns MCP `content: [{type:"text", ...}]`. Search results are a
 pretty-printed JSON document in that text block. For the search tools,
-`structuredContent` carries only machine-readable metadata (the
-`sufficiency` verdict, attribution, abstain, and provider-failure fields). It never
-carries the result list itself. `ans_chat` returns the answer text plus, when
+`structuredContent` carries machine-readable metadata (the `sufficiency`
+verdict, attribution, abstain, and provider-failure fields). It never carries
+the result list itself. When a task was registered, `search_web` and
+`research_web` also put `closeout` here (see
+[Search and research tasks](#search-and-research-tasks-304)). `ans_chat`
+returns the answer text plus, when
 a handle exists, a trailing text block `{"sessionId": "..."}` and
 `structuredContent.sessionId`. Alongside the handle it reports what the run
 spent:
@@ -175,7 +178,7 @@ passed:
 | `scope.sessionIdNotApplied` | `true` when a `sessionId` accompanied `memoryIds` and was therefore not the scope. |
 | `counts` | `add`, `update`, `skip` (no-op reruns), `conflict` (the fidelity gate refused a claim), `failure` (no summary available), `budgetRejected`, `verifyRejected` (the correction check refused: different fact, unreliable evidence, a missing `correction` relation, or unclear), `correctionsIncomplete` (a merge, re-judge or final check was withheld or faulted; the result is then `isError: true` and the previous knowledge stays live), `supersededClusterSkipped` (a cluster whose materials were all replaced already, so no new knowledge was created from them), `unresolvedConflicts` (a concurrent session replaced the same knowledge first and this run's correction did not land — both sides' evidence is in `structuredContent.report.conflictDetails`, the result is `isError: true`, and nothing is deleted), `resolvedCollisions` (collisions resolved after one re-read + re-judge: the correction was already applied — no new version — or it was re-merged onto the latest version; details in `structuredContent.report.resolvedCollisions`). The `counts` summary does not include every skip: a single-evidence cluster with no existing knowledge to correct increments `structuredContent.report.singleEvidenceSkipped`, not a field in `counts`. Do not treat these counters as mutually exclusive or exhaustive. |
 | `usage` | The same honest ledger the chat path uses, with these consolidation-specific bases: `not-called`, `unknown`, `price-estimate`, `provider-reported`, `mixed`. `missing[]` names every dimension that never arrived. A custom endpoint's zero price table reports `unknown`; its `costUsd` of 0 is not a claim of a free run. A call that reported no usage still books its reserved estimate against the cap, so a silent provider cannot slip past a budget. |
-| `budgetUnmetered` | Present when the run could not be metered: a memory-list scope has no owning session to charge, several session owners cannot share one run's spend, the Active Domain declares no `[budget]` caps, or the budget row/caps could not be registered. `budgetUnmeteredReason` names which. Both entry points follow the same rule — a `sessionId` given alongside `memoryIds` is echoed but never billed. |
+| `budgetUnmetered` | Present when the run could not be metered. With a registered task, the run bills that task whenever the Active Domain declares `[budget]`; the materials' provenance does not matter, so a memory list and materials from several chats are metered the same way. This field appears only on the fallback path (no task registered): a memory-list scope has no owning session to charge, several session owners cannot share one run's spend, the domain declares no `[budget]` caps, or the budget row/caps could not be registered. `budgetUnmeteredReason` names which. A `sessionId` given alongside `memoryIds` is echoed but never billed. |
 
 Consolidation is triggered explicitly by the user or the host agent. There is no
 background consolidation loop.
@@ -189,6 +192,7 @@ The server follows the MCP rule that an execution failure is an
 |------|-----------|---------------------|
 | Handler exception (the SDK turns an uncaught throw into an `isError` result); vertical-guard rejection (`verticalSubDomain`/`verticalParams` without `verticalDomain`); `ans_chat` runtime error or missing LLM configuration | `true` | absent — text content only |
 | `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `operation`, `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
+| `search_web` / `research_web` stopped by their task budget (refused, or declared but not established) | `true` | `operation` (the tool name), `errorKind`, `budget`, optional `taskId`, plus `closeout` when a task was registered — see [Search and research tasks](#search-and-research-tasks-304) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed` and their error classes |
 | Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
@@ -443,6 +447,27 @@ Both carry `structuredContent.operation` (`chat` or `consolidate`),
 task was registered, and a `usage` block that names why it has no figure.
 Generic upstream failures keep the bare `<tool> error: ` result shape with no
 `structuredContent`.
+
+### Search and research tasks (#304)
+
+`search_web` and `research_web` follow the same rule as `ans_chat`: one tool
+call is one task (`mcp.search_web` / `mcp.research_web` in `task_records`), and
+the Active Domain's `[budget]` caps that task. A bare search has no session, so
+nothing is charged to any conversation.
+
+- Every research round draws from the SAME task row. A `deep` call makes three
+  provider searches under one budget; the rounds do not each start a fresh
+  quota.
+- A result that carries `structuredContent` also carries `closeout` when a task
+  was registered. The fields are the same as the `ans_chat` closeout, with
+  `kind` naming the search tool.
+- A budget stop carries `structuredContent.errorKind`:
+  - `budget-not-established` — the domain declares `[budget]` and the task
+    budget could not be created. No provider request is sent.
+  - `budget-rejected` — the reservation did not fit the cap. No provider
+    request is sent for that call; earlier rounds of a research call already
+    settled on the same row, and the text says how many.
+- An undeclared domain still registers the task and writes no budget row.
 
 ## Environment and auth
 

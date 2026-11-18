@@ -11,6 +11,7 @@ import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 import type { AttributionCalibration } from "./calibrate";
+import { TaskBudgetRejectedError } from "./budget-error";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -393,7 +394,9 @@ export class RetroaererdEngine {
     if (hasLedger) {
       const reserved = budgetLedger!.reserveCalls(budgetScope!, perCallEstimate);
       if (!reserved) {
-        throw new Error("Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)");
+        throw new TaskBudgetRejectedError(
+          "Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)",
+        );
       }
     }
 

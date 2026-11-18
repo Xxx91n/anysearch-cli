@@ -1,4 +1,6 @@
-// The per-execution task budget `ans chat` and MCP `ans_chat` bill one run to.
+// The per-execution task budget every paid entry bills one run to: `ans chat`,
+// MCP `ans_chat`, `ans search`, MCP `search_web` / `research_web`, and
+// `ans consolidate` (#302/#303/#304).
 //
 // Three states:
 // - undeclared: no task_budgets row and no caps. The scope still travels, so the

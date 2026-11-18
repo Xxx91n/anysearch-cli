@@ -3,7 +3,9 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
+import { wireTaskBudget, isTaskBudgetRejectedError } from "@anysearch-cli/kernel";
 import { createPersistentEngine } from "../db";
+import { currentCliTask } from "../cli-task-context";
 
 import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "./search-abstain";
 
@@ -108,7 +110,23 @@ export async function runSearch(args: string[]): Promise<number> {
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const { retriever, observation, providerBuildErrors } = createPersistentEngine(domain);
+  const engine = createPersistentEngine(domain);
+  const { retriever, observation, providerBuildErrors, store, config } = engine;
+  // #304: this execution is its own task. The Active Domain's [budget] caps
+  // this run, not a session (a bare search has none). A declared budget that
+  // cannot be established stops before any provider request; an undeclared one
+  // travels a no-row scope and caps nothing.
+  const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, config?.budget, {
+    warn: (m) => process.stderr.write("[warn] " + m + "\n"),
+  });
+  if (budgetWiring.taskBudgetFault) {
+    process.stderr.write(
+      "ans search: this run's task budget could not be established — " +
+        budgetWiring.taskBudgetFault + "\nNo provider request was sent.\n",
+    );
+    return 1;
+  }
+  const taskBudget = budgetWiring.taskBudget;
   // #180: one-line construction-absence note paired with the runtime provider
   // chain lines below ("Providers queried" / "Providers failed") — undefined
   // when every enabled arm built, so the healthy path adds zero noise. The
@@ -129,7 +147,7 @@ export async function runSearch(args: string[]): Promise<number> {
       },
       // span passed through so the kernel can emit the dual
       // retrieval.domain_filter.* audit events + the anysearch.outcome dimension.
-      (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), span }),
+      (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
     // --json pure — single JSON document on stdout, nothing else.
@@ -228,6 +246,13 @@ export async function runSearch(args: string[]): Promise<number> {
 
     return searchExitCode({ resultCount: envelope.results.length, abstain: false, failOnAbstain });
   } catch (e: any) {
+    // A refused reservation never reached a provider: name the budget stop
+    // instead of reporting it as an upstream error.
+    if (isTaskBudgetRejectedError(e)) {
+      process.stderr.write("ans search: stopped by this run's task budget — " + e.message + "\n");
+      if (providerAbsentLine) console.error(providerAbsentLine);
+      return 1;
+    }
     console.error("ans search error: " + e.message);
     // All-absent arm case (#180): with every enabled arm failing construction
     // the kernel engine throws "No providers registered" (pinned contract,
