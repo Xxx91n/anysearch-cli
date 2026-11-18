@@ -66,24 +66,45 @@ export const MISSING_CONSOLIDATION_COST = "consolidation cost (price unknown)";
  *
  * Design: consolidation spends real money outside the agent loop — so it uses
  * the same reserve-then-settle ledger as the run (D4: extra model work is
- * budgeted and accounted, never hidden outside the main call). One rule for
- * both entry points: a run is metered when it names a session that owns a
- * ledger row; a memory-list scope that no session owns is reported as
- * unmetered instead of being charged to a session the caller never named.
+ * budgeted and accounted, never hidden outside the main call). The task-first
+ * decision lives in `taskBudgetMetering`; this type is the row key either form
+ * hands to one ledger interface.
  */
 export interface ConsolidationBudget {
   /** The ledger's key for this run: a session id on the session form, a task id
-   * on the task form (MCP `ans_chat operation=consolidate`). Only used as the
-   * row key against `ledger` — never resolved back to a session. */
+   * on the task form (`ans consolidate` and MCP `ans_chat operation=consolidate`).
+   * Only used as the row key against `ledger` — never resolved back to a session. */
   sessionId: string;
   ledger: BudgetLedgerPort;
 }
 
 /**
+ * The task-first metering answer both hosts share (#304/#303).
+ *
+ * `undefined` means "no task budget to bill, use the session-form rule"; a
+ * returned value is final — the run bills that task, and a domain that declares
+ * no caps is reported as unmetered WITHOUT releasing anything on a session the
+ * caller never named.
+ *
+ * Design: one function instead of the same ternary in each host — a memory list
+ * has no owning session, and charging "the first of several sessions" would
+ * misattribute a run that spans chats. Keeping the branch here is what stops
+ * the CLI and the MCP tool from answering "was this run charged?" differently.
+ */
+export function taskBudgetMetering(
+  wiring: { taskBudget?: { taskId: string; ledger: BudgetLedgerPort }; declared: boolean },
+): ConsolidationMetering | undefined {
+  if (!wiring.taskBudget) return undefined;
+  return wiring.declared
+    ? { metered: true, budget: { sessionId: wiring.taskBudget.taskId, ledger: wiring.taskBudget.ledger } }
+    : { metered: false, reason: "no-declared-caps" };
+}
+
+/**
  * Decide whether one consolidation run is metered, and on which session.
  *
- * Design: one function both entry points call — writing this rule twice already
- * produced two different answers to "was this run charged?".
+ * Design: the session-form rule lives in one function — writing it twice
+ * already produced two different answers to "was this run charged?".
  * A run is metered only when all three hold: it scoped to exactly one session
  * (several owners cannot share one run's spend, and charging the first would
  * misattribute it), a [budget] section is declared for the Active Domain
@@ -681,12 +702,14 @@ export interface ConsolidationMeteringStore {
 }
 
 /**
- * Prepare metering for one run: register the session row and its caps, then
- * report whether the run will actually be charged.
+ * Prepare metering for one run on the SESSION form: register the session row
+ * and its caps, then report whether the run will actually be charged.
  *
- * Both entry points call this, so they cannot answer "was this metered?"
- * differently. Never throws: a setup fault is reported as unmetered with the
- * reason, because a broken budget must not turn a usable run into a failure.
+ * Callers ask `taskBudgetMetering` first; this is the fallback when no task
+ * budget can be attached. Both hosts call this rather than writing the session
+ * rule themselves, so they cannot answer "was this metered?" differently.
+ * Never throws: a setup fault is reported as unmetered with the reason,
+ * because a broken budget must not turn a usable run into a failure.
  */
 export async function resolveConsolidationMetering(opts: {
   store: ConsolidationMeteringStore;

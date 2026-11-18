@@ -3,7 +3,7 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { loadDomainByNameIn } from "@anysearch-cli/store";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -123,10 +123,10 @@ export async function runSearch(args: string[]): Promise<number> {
   // fanout for provider selection, but it must not silently drop the default
   // domain's declared cap. The engine's own config is absent in that case, so
   // the default TOML is read once for the budget only.
-  let budgetDomain: { budget?: ReturnType<typeof loadDomainByNameIn>["budget"] } | undefined = config;
+  let budgetDomain: DomainConfigPort | undefined = config;
   if (!budgetDomain) {
     try {
-      budgetDomain = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs());
+      budgetDomain = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs()) as DomainConfigPort;
     } catch (e) {
       // Same fail-open contract as `ans chat`: an unreadable domain leaves the
       // run unmetered, and the warning says so instead of implying a cap.

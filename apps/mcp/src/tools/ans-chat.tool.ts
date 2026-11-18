@@ -24,6 +24,7 @@ import {
   createConsolidationSeams,
   isConsolidationBudgetError,
   resolveConsolidationMetering,
+  taskBudgetMetering,
   CONSOLIDATION_UNMETERED_TEXT,
   MISSING_CONSOLIDATION_USAGE,
   MISSING_CONSOLIDATION_CACHE,
@@ -338,7 +339,6 @@ export function registerAnsChat(
               operation: "consolidate",
             });
           }
-          const consolidateTaskBudget = consolidateBudget.taskBudget;
           // With a task budget, the run is charged to THIS call's task, not to
           // the session that happens to own the selected materials (a memory
           // list has no owning session at all). The task form also does NOT
@@ -347,7 +347,12 @@ export function registerAnsChat(
           // cross-session write this ticket removes. The session form below
           // stays for the degraded call (no task registered), unchanged.
           let metering: ConsolidationMetering;
-          if (!consolidateTaskBudget) {
+          const taskMetering = taskBudgetMetering(consolidateBudget);
+          if (taskMetering) {
+            // The task has the caps (or none — an undeclared [budget] domain
+            // bills no task): the kernel's one shared decision answers it.
+            metering = taskMetering;
+          } else {
             metering = await resolveConsolidationMetering({
               store: store as never,
               scope,
@@ -357,12 +362,6 @@ export function registerAnsChat(
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
               warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
             });
-          } else if (consolidateBudget.declared) {
-            metering = { metered: true, budget: { sessionId: consolidateTaskBudget.taskId, ledger: consolidateTaskBudget.ledger } };
-          } else {
-            // The task has a budget row but it carries no caps (an undeclared
-            // [budget] domain): nothing to enforce, and nothing to release.
-            metering = { metered: false, reason: "no-declared-caps" };
           }
           // The awaits above open a window the earlier check cannot see: a
           // request cancelled while waiting for the meter must not go on to

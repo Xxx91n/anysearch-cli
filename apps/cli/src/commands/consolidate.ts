@@ -15,6 +15,7 @@ import {
   createConsolidationSeams,
   isConsolidationBudgetError,
   resolveConsolidationMetering,
+  taskBudgetMetering,
   wireTaskBudget,
   CONSOLIDATION_UNMETERED_TEXT,
   MISSING_CONSOLIDATION_USAGE,
@@ -89,11 +90,11 @@ function help(): string {
     "[budget] caps — a memory list, one chat, or materials from several chats all bill",
     "the same run, so no single conversation is picked to pay for it. A refused call",
     "stops the run and is counted; anything already spent stays on the task's row.",
-    "Only when neither a task nor a task-budget ledger can be attached (a broken",
-    "registry or store) does it fall back to the old session form, and then the",
-    "output says why it ran unmetered (no owning session, several owners, no",
-    "declared caps, or a failed budget setup) instead of implying a cap was",
-    "enforced.",
+    "Only when no task budget can be attached and the domain declares none does it",
+    "fall back to the old session form; then the output says why it ran unmetered",
+    "(no owning session, several owners, no declared caps, or a failed budget setup)",
+    "instead of implying a cap was enforced. A domain that DOES declare [budget] stops",
+    "instead of falling back.",
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
@@ -229,17 +230,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
     return 1;
   }
+  const taskMetering = taskBudgetMetering(taskBudgetWiring);
   let metering: ConsolidationMetering;
-  if (taskBudgetWiring.taskBudget) {
-    metering = taskBudgetWiring.declared
-      ? {
-          metered: true,
-          budget: { sessionId: taskBudgetWiring.taskBudget.taskId, ledger: taskBudgetWiring.taskBudget.ledger },
-        }
-      : { metered: false, reason: "no-declared-caps" };
+  if (taskMetering) {
+    metering = taskMetering;
   } else {
-    // No registered task (a broken registry / dispatch outside the CLI): the
-    // old session form stands unchanged, and says why it is unmetered.
+    // No task budget to bill (a broken registry / dispatch outside the CLI):
+    // the old session form stands unchanged, and says why it is unmetered.
     metering = await resolveConsolidationMetering({
       store,
       scope,

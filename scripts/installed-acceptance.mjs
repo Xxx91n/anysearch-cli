@@ -1303,8 +1303,10 @@ async function main() {
           check(JSON.stringify(kinds) === JSON.stringify(["mcp.research_web", "mcp.search_web"]),
             "MCP 搜索和研究各登记一条任务", JSON.stringify(kinds));
           const budgets = db.prepare("SELECT billable_calls as calls FROM task_budgets ORDER BY rowid").all();
-          check(budgets.length === 2 && budgets.every((b) => Number(b.calls) > 0),
-            "两次 MCP 调用的花费各记在自己的任务预算上", JSON.stringify(budgets));
+          // 顺序就是调用顺序：search_web 一次，research_web（standard）两轮。
+          // 研究那行记 2 而不是 1，说明多轮真的共用同一份任务预算，不是每轮新开账。
+          check(budgets.length === 2 && Number(budgets[0]?.calls) === 1 && Number(budgets[1]?.calls) === 2,
+            "两次 MCP 调用的花费各记在自己的任务预算上（研究两轮共用一行）", JSON.stringify(budgets));
         } finally { db.close(); }
       }
 
