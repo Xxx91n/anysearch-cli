@@ -535,12 +535,12 @@ export function registerAnsChat(
           // #265's recovery path answers it — `summary-rebuild-mcp.test.ts`
           // seeds exactly that shape and requires it to work.
           const mustResume = continuation.mustResume;
-          // #303: the handle restores context only. With a task registered, the
-          // session's own [budget] row is neither refreshed nor released — this
-          // run bills its task, and the conversation's history stays untouched
-          // (S5: a handle no longer doubles as the execution's quota owner).
-          // Without a task (degraded registry) the old session form runs
-          // unchanged.
+          // Design: #303 — the handle restores context only. With a task
+          // registered, the session's own [budget] row is neither refreshed nor
+          // released; this run bills its task and the conversation's history
+          // stays untouched (S5: a handle no longer doubles as the execution's
+          // quota owner). Without a task (degraded registry) the old session
+          // form runs unchanged.
           const memory = await resolveAnsChatSession(eng, requestedSessionId, { sessionBudget: !task });
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
@@ -591,17 +591,15 @@ export function registerAnsChat(
             span,
             // #211: cancellation of the MCP request aborts this agent run.
             signal,
-            // #303: this execution's own budget. Every reserve/settle — the
-            // agent loop, compaction, the memory pipeline's summary/adjudication
-            // and the late settlement — lands on the task's row, and internal
-            // searches carry the scope so they stop accumulating on the
-            // conversation's ledger. Absent (degraded call) → session form,
-            // unchanged.
+            // Design: #303 — this execution's own budget. Every reserve/settle
+            // (the agent loop, compaction, the memory pipeline's
+            // summary/adjudication and the late settlement) lands on the task's
+            // row, and internal searches carry the scope so they stop
+            // accumulating on the conversation's ledger. Absent (degraded call)
+            // → session form, unchanged. A declared budget that could not be
+            // established never reaches here: it stops above, before the client
+            // and the session mint.
             taskBudget: taskBudgetScope,
-            // S9's third state: declared but could not be established. The
-            // runtime stops before any provider call and reports it as a
-            // structured budget stop (reason="budget-not-established").
-            taskBudgetFault: chatBudget.taskBudgetFault,
           });
           let output = "";
           let runtimeError: string | undefined;
@@ -758,6 +756,10 @@ export function registerAnsChat(
         "anysearch.llm.baseUrl.source": cfg.sources.baseUrl ?? "",
         "anysearch.llm.api.source": cfg.sources.api ?? "",
         "anysearch.llm.configWarnings": configWarnings.length,
+        // Design: #303 — the observation row names the task it belongs to, so a
+        // cancelled or budget-stopped call's trace can be tied back to the task
+        // record instead of living as an unattributed MCP span.
+        "anysearch.task.id": currentMcpTask()?.taskId ?? "",
       }));
     }
   );

@@ -188,7 +188,7 @@ The server follows the MCP rule that an execution failure is an
 | Case | `isError` | `structuredContent` |
 |------|-----------|---------------------|
 | Handler exception (the SDK turns an uncaught throw into an `isError` result); vertical-guard rejection (`verticalSubDomain`/`verticalParams` without `verticalDomain`); `ans_chat` runtime error or missing LLM configuration | `true` | absent — text content only |
-| `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
+| `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `operation`, `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed` and their error classes |
 | Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
@@ -372,8 +372,11 @@ points, and budget state stay per call / per session.
 
 ### Task closeout (#303)
 
-Every `ans_chat` call is one task: `mcp.ans_chat` in `task_records`. A result
-that carries `structuredContent` also carries `structuredContent.closeout`:
+Every `ans_chat` call is one task: `mcp.ans_chat` in `task_records`. When a task
+was registered, a result that carries `structuredContent` also carries
+`structuredContent.closeout`. A store without the registry seam runs
+unregistered (a stderr warning), and then there is no closeout to report —
+nothing was written to claim otherwise.
 
 | Field | Meaning |
 |-------|---------|
@@ -382,24 +385,22 @@ that carries `structuredContent` also carries `structuredContent.closeout`:
 | `state` | `"finished"` — the end row is written; `"open"` — the end write failed, so the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). |
 | `exitCode` | `0` completed, `1` failed or interrupted. |
 | `interrupted` | The answer stopped early (cancellation). |
-| `lateSettlement` | On an interrupted answer only: `"settled"` (the provider's final usage already reached the task row) or `"still-running"` (the stream never closed; the delta lands later). |
 
 The closeout is written **after** the handler resolves — after
-`flushMemory()` (background summaries and late settlement) and after the
-observation write. That is why a cancelled turn does not read as "work still
-in flight": the task row only ends when that work is done. A cancelled
-request gets no reply at all (the SDK drops a response for an aborted request
-signal), so the record is what says the work finished.
+`flushMemory()` (background summaries) and after the observation write. A
+cancelled request gets no reply at all (the SDK drops a response for an aborted
+request signal), so the record is what says what happened.
 
 Two cancellation details worth knowing:
 
 - A run whose provider stream never closed books its real usage later (#188).
   `ans_chat` gives that tail a short bounded window (250 ms — cancellation has
   to stay snappy, and a stream that never ends is not helped by waiting longer)
-  before writing the closeout, and the interrupted result says which happened:
-  `structuredContent.lateSettlement` is `"settled"` (the row is final) or
-  `"still-running"` (the provider never ended; the delta will land on the task
-  row afterwards). It never waits unboundedly.
+  before writing the closeout, and the interrupted answer says which happened in
+  `structuredContent.lateSettlement` (a sibling of `closeout`, not a field
+  inside it): `"settled"` — the task row is final; `"still-running"` — the
+  provider never ended and the delta will land on the task row afterwards. It
+  never waits unboundedly.
 - Any cancelled request's task is recorded as unfinished (`exitCode: 1`),
   including one cancelled before its run started, where no provider call was
   made. "Cancelled" is not "completed without output".
@@ -424,10 +425,11 @@ failure. This is the one error result that carries `structuredContent`
 | `budget-not-established` | The domain declares `[budget]` and the task budget could not be created (no registered task, no ledger seam, row creation failed). | Nothing was sent to the model. Fix registration/store or the caps — not a provider problem. |
 | `budget-rejected` | The task's own budget refused the run (tokens or calls). | Nothing was sent to the model. Raise `[budget]`; the next call starts a fresh task budget. |
 
-Both carry `structuredContent.budget` (`stopped`, `reason`, `detail`), the
-`taskId` when a task was registered, and a `usage` block that names why it has
-no figure. Generic upstream failures keep the bare `<tool> error: ` result
-shape with no `structuredContent`.
+Both carry `structuredContent.operation` (`chat` or `consolidate`),
+`structuredContent.budget` (`stopped`, `reason`, `detail`), the `taskId` when a
+task was registered, and a `usage` block that names why it has no figure.
+Generic upstream failures keep the bare `<tool> error: ` result shape with no
+`structuredContent`.
 
 ## Environment and auth
 

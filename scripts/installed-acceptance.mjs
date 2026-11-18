@@ -763,7 +763,7 @@ async function main() {
         sessionRows = mcpCheck.prepare("SELECT COUNT(*) as n FROM budget_ledger").get();
       } finally { mcpCheck.close(); }
       check(mcpTasks.every((t) => t.kind === "mcp.ans_chat"),
-        "四条任务的颜色都标着 MCP 聊天", JSON.stringify(mcpTasks.map((t) => t.kind)));
+        "四条任务的种类都标着 MCP 聊天", JSON.stringify(mcpTasks.map((t) => t.kind)));
       check(mcpTasks.filter((t) => t.code === 0).length === 3 && mcpTasks.filter((t) => t.code === 1).length === 1,
         "三次完成记 0，取消那轮记 1", JSON.stringify(mcpTasks.map((t) => t.code)));
       const budgetById = new Map(mcpBudgets.map((b) => [b.id, b]));

@@ -1,8 +1,8 @@
 // #302/#303 — the per-execution task budget a host bills one run to.
 //
-// One implementation, two hosts. The CLI (#302) and the MCP `ans_chat` tool
-// (#303) both need the same three-state decision, and answering it twice is
-// how the two entries would end up disagreeing about whether a run was
+// Design: one implementation, two hosts. The CLI (#302) and the MCP `ans_chat`
+// tool (#303) both need the same three-state decision, and answering it twice
+// is how the two entries would end up disagreeing about whether a run was
 // metered. The states, decided here:
 //
 // - undeclared (the domain has no [budget]): no task_budgets row is created and

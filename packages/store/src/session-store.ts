@@ -867,16 +867,16 @@ export class SqliteSessionStore implements SessionStore {
   /**
    * #303: the task registry over this store's single connection.
    *
-   * The MCP entry registers one task per tool call and ends it after the late
-   * work (settlement, background summaries, the observation write) has
-   * finished. Going through this seam instead of opening a second connection
-   * keeps the task record and the task's budget row in the same database and
-   * the same prepared statements, and it keeps test isolation automatic: a
-   * store built on a temp file registers tasks in that temp file.
+   * Design: register tasks through the engine's own connection instead of
+   * opening a second one — the task record and the task's budget row then live
+   * in one database and one set of prepared statements, and a test's temp store
+   * registers into its temp file without any extra isolation. The CLI opens its
+   * own registry (`openTaskRegistry`) because it registers before any engine
+   * exists; a host that already built the engine uses this seam.
    *
-   * The returned registry must NOT be closed by the caller — the store owns
-   * the connection. `openTaskRegistry` (the CLI's path) owns its connection
-   * and closes it; this one does not.
+   * The returned registry must NOT be closed by the caller — the store owns the
+   * connection. `openTaskRegistry` owns its connection and closes it; this one
+   * does not.
    */
   createTaskRegistry(): TaskRegistry {
     return (this.taskRegistryInstance ??= new TaskRegistry(this.db));

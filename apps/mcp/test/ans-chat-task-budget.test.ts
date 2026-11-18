@@ -117,6 +117,8 @@ interface EngineOpts {
   domainName?: string;
   domainsDirs?: string[];
   onSearch?: () => void;
+  /** Receives each observation record the engine is asked to write. */
+  onObserve?: (record: any) => void;
 }
 
 function makeEngine(store: unknown, opts: EngineOpts = {}): CompositionResult {
@@ -128,7 +130,12 @@ function makeEngine(store: unknown, opts: EngineOpts = {}): CompositionResult {
       },
     },
     store,
-    observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+    observation: {
+      recordOperation: async (o: any, cb: any) => {
+        opts.onObserve?.(o);
+        return cb(fakeSpan);
+      },
+    },
     ...(opts.domainName ? { domainName: opts.domainName } : {}),
     ...(opts.domainsDirs ? { domainsDirs: opts.domainsDirs } : {}),
     ...(opts.budget
@@ -269,12 +276,14 @@ async function main() {
       const dbPath = join(tempRoot, "one-task.db");
       const store = new SqliteSessionStore(dbPath);
       const seen: Array<unknown> = [];
+      const observed: any[] = [];
       const state = createMcpToolState({ createAnsChatSession: makeAnsweringFactory(seen).factory });
       // A declared [budget] is what makes "the run was charged" a statement
       // about a real row, and it is the shape that used to bill the session.
       const eng = makeEngine(store, {
         ...domainOpts("taskbudget"),
         budget: { tokenCap: 1_000_000, callCap: 20 },
+        onObserve: (o) => observed.push(o),
       });
       const handlers = capture(eng, state);
 
@@ -298,6 +307,13 @@ async function main() {
         "1: the task row is ended with exit 0 after the answer (got " + JSON.stringify(tasks[0]) + ")");
       assert(tasks[0]?.session === first?.structuredContent?.sessionId,
         "1: the task record carries the conversation handle it ran under");
+      // #303: the observation row names the task, so a cancelled or
+      // budget-stopped call's trace can be tied back to its record.
+      const observedTaskIds = observed
+        .map((o) => o?.attributes?.["anysearch.task.id"])
+        .filter((v) => typeof v === "string" && v.length > 0);
+      assert(observedTaskIds.length > 0 && observedTaskIds.every((v) => v === close1?.taskId),
+        "1: the observation attributes carry the task id (got " + JSON.stringify(observedTaskIds) + ")");
 
       const budgets = readRows<TaskBudgetRow>(dbPath, TASK_BUDGETS_SQL);
       assert(budgets.length === 1 && budgets[0]?.id === close1?.taskId,

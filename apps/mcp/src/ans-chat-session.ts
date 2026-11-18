@@ -377,8 +377,8 @@ export function buildAnsChatBudgetResult(
  * drops the response for a cancelled request anyway, so no caller sees this
  * payload — the task row is what says what happened.
  */
-export function buildAnsChatCancelledResult(sessionId?: string): AnsChatToolResult {
-  return buildAnsChatResult("", sessionId, { interrupted: true });
+export function buildAnsChatCancelledResult(): AnsChatToolResult {
+  return buildAnsChatResult("", undefined, { interrupted: true });
 }
 
 // ---- consolidation result (D5 / Q18 / Q19) ----

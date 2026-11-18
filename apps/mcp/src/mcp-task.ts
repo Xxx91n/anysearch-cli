@@ -1,11 +1,13 @@
 // #303 — one MCP tool call is one task.
 //
-// Why this exists: an MCP server is a resident process. `ans mcp` registers the
-// process once (#302), and registering the server's whole lifetime as a task
-// would be exactly the "permanently unfinished task" the registry was built to
-// avoid. What a later upgrade admission (#309) has to wait for is the work: one
-// tool call, from the moment the handler starts to the moment its late work is
-// really done.
+// Why this exists: an MCP server is a resident process. The `ans mcp` dispatch
+// registers that process once (#302); the standalone `ans-mcp` entry registers
+// nothing of its own, which is a gap for the admission work in #309, not
+// something this ticket invents an entry point for. Registering the server's
+// whole lifetime as a task would be exactly the "permanently unfinished task"
+// the registry was built to avoid. What a later upgrade admission (#309) has to
+// wait for is the work: one tool call, from the moment the handler starts to the
+// moment its late work is really done.
 //
 // The late work is the point of this module. A reply is not the end of a task:
 // background summaries, the settlement of what the run already spent, and the
@@ -43,10 +45,12 @@ export interface McpTaskIdentity {
  * What the caller is told about the task's end (#303).
  *
  * `state: "finished"` is not decoration: it is written only after the handler
- * resolved, which means the late settlement, the background summaries and the
- * observation write are done. `state: "open"` means the end write failed — the
- * record stays open on purpose (an upgrade must see it as a blocker, not read a
- * missing row as "nothing was running").
+ * resolved, which means the background summaries and the observation write are
+ * done. One tail can still land afterwards: a provider stream that never closed
+ * books its usage later (#188), and `structuredContent.lateSettlement` says
+ * whether that already happened or is still on its way. `state: "open"` means
+ * the end write failed — the record stays open on purpose (an upgrade must see
+ * it as a blocker, not read a missing row as "nothing was running").
  */
 export interface McpTaskCloseout {
   taskId: string;
@@ -148,35 +152,48 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
   };
 }
 
-/** The result shape a wrapper can read back: MCP's callback result. */
-interface AttachableResult {
-  isError?: boolean;
+/** One reading of a tool result, so the exit code and the closeout cannot disagree. */
+interface ResultVerdict {
+  isError: boolean;
+  interrupted: boolean;
   structuredContent?: Record<string, unknown>;
 }
 
-function asAttachable(result: unknown): AttachableResult | undefined {
-  return result && typeof result === "object" ? (result as AttachableResult) : undefined;
+function readVerdict(result: unknown): ResultVerdict {
+  const readable = result && typeof result === "object"
+    ? (result as { isError?: boolean; structuredContent?: Record<string, unknown> })
+    : undefined;
+  const structuredContent = readable?.structuredContent;
+  return {
+    isError: readable?.isError === true,
+    interrupted: structuredContent?.interrupted === true,
+    ...(structuredContent ? { structuredContent } : {}),
+  };
 }
 
-function attachCloseout<R>(result: R, identity: McpTaskIdentity, wroteEnd: boolean, exitCode: number): R {
-  const readable = asAttachable(result);
-  // #204 keeps ERROR results free of structuredContent (the error channel and
-  // the output schema stay apart). A budget stop is the one exception, because
-  // #303 requires it to be machine-distinguishable from an upstream failure —
-  // that result already carries its own structuredContent and gets the
-  // closeout added to it. A generic error result stays bare.
-  const isError = readable?.isError === true;
-  if (isError && readable?.structuredContent === undefined) return result;
+function attachCloseout<R>(
+  result: R,
+  identity: McpTaskIdentity,
+  verdict: ResultVerdict,
+  wroteEnd: boolean,
+  exitCode: number,
+): R {
+  // Design: #204 keeps ERROR results free of structuredContent (the error
+  // channel and the output schema stay apart). A budget stop is the one
+  // exception, because #303 requires it to be machine-distinguishable from an
+  // upstream failure — that result already carries its own structuredContent
+  // and gets the closeout added to it. A generic error result stays bare.
+  if (verdict.isError && verdict.structuredContent === undefined) return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
     kind: identity.kind,
     state: wroteEnd ? "finished" : "open",
     exitCode,
-    interrupted: readable?.structuredContent?.interrupted === true,
+    interrupted: verdict.interrupted,
   };
   return {
     ...(result as unknown as Record<string, unknown>),
-    structuredContent: { ...(readable?.structuredContent ?? {}), closeout },
+    structuredContent: { ...(verdict.structuredContent ?? {}), closeout },
   } as unknown as R;
 }
 
@@ -185,7 +202,8 @@ function attachCloseout<R>(result: R, identity: McpTaskIdentity, wroteEnd: boole
  *
  * Order matters and is the whole contract:
  * 1. register (fail-open: a broken registry never breaks the call),
- * 2. run the handler inside the task context so it can read `currentMcpTask()`,
+ * 2. run the handler inside the task context so it can read `currentMcpTask()`
+ *    — one channel, not a parameter and a context that could disagree,
  * 3. await it — this is the late work; `flushMemory()` and `observeTool()` are
  *    inside there,
  * 4. write the task's end with the outcome's exit code,
@@ -197,25 +215,23 @@ function attachCloseout<R>(result: R, identity: McpTaskIdentity, wroteEnd: boole
 export async function withMcpTask<R>(
   eng: CompositionResult,
   toolName: string,
-  handler: (task: McpTaskIdentity | undefined) => Promise<R>,
+  handler: () => Promise<R>,
 ): Promise<R> {
   const tracking = trackMcpToolCall(eng, toolName);
   const identity = tracking.identity;
   let result: R;
   try {
-    result = identity ? await storage.run(identity, () => handler(identity)) : await handler(undefined);
+    result = identity ? await storage.run(identity, handler) : await handler();
   } catch (e) {
     tracking.finish(1);
     throw e;
   }
-  const readable = asAttachable(result);
-  // An interrupted answer is not a completed task: the run stopped before its
-  // final answer, so the record carries exit 1 even though the tool result is
-  // not an error (#211 keeps the handle and reports unknown usage). A later
-  // admission (#309) must not read a cut-off turn as clean work.
-  const interrupted = readable?.structuredContent?.interrupted === true;
-  const failed = readable?.isError === true || interrupted;
-  const exitCode = failed ? 1 : 0;
+  const verdict = readVerdict(result);
+  // Design: an interrupted answer is not a completed task — the run stopped
+  // before its final answer, so the record carries exit 1 even though the tool
+  // result is not an error (#211 keeps the handle and reports unknown usage).
+  // A later admission (#309) must not read a cut-off turn as clean work.
+  const exitCode = verdict.isError || verdict.interrupted ? 1 : 0;
   const wroteEnd = tracking.finish(exitCode);
-  return identity ? attachCloseout(result, identity, wroteEnd, exitCode) : result;
+  return identity ? attachCloseout(result, identity, verdict, wroteEnd, exitCode) : result;
 }
