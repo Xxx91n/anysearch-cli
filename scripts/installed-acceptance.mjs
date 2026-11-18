@@ -1295,6 +1295,13 @@ async function main() {
       check(researchCall.result?.isError !== true
         && researchCall.result?.structuredContent?.closeout?.kind === "mcp.research_web",
         "MCP 研究完成，并带回这次任务的收尾", textOf(researchCall).slice(0, 200));
+      let researchRounds = 0;
+      try {
+        const summaryText = textOf(researchCall);
+        const parsed = JSON.parse(summaryText.slice(summaryText.indexOf("{"), summaryText.lastIndexOf("}") + 1));
+        researchRounds = Number(parsed?.rounds ?? 0);
+      } catch { researchRounds = 0; }
+      check(researchRounds >= 1, "研究报了自己跑了几轮", String(researchRounds));
       await searcher.kill();
       {
         const db = new Database(mcpSearchDb, { readonly: true });
@@ -1303,10 +1310,11 @@ async function main() {
           check(JSON.stringify(kinds) === JSON.stringify(["mcp.research_web", "mcp.search_web"]),
             "MCP 搜索和研究各登记一条任务", JSON.stringify(kinds));
           const budgets = db.prepare("SELECT billable_calls as calls FROM task_budgets ORDER BY rowid").all();
-          // 顺序就是调用顺序：search_web 一次，research_web（standard）两轮。
-          // 研究那行记 2 而不是 1，说明多轮真的共用同一份任务预算，不是每轮新开账。
-          check(budgets.length === 2 && Number(budgets[0]?.calls) === 1 && Number(budgets[1]?.calls) === 2,
-            "两次 MCP 调用的花费各记在自己的任务预算上（研究两轮共用一行）", JSON.stringify(budgets));
+          // 研究那行的次数就是它报的轮数：多轮共用同一份任务预算，不是每轮新开账。
+          // 不写死 2，免得正常早停（那一轮就够）被当成红灯。
+          check(budgets.length === 2 && Number(budgets[0]?.calls) >= 1
+            && Number(budgets[1]?.calls) === researchRounds,
+            "两次 MCP 调用的花费各记在自己的任务预算上（研究那行等于轮数）", JSON.stringify(budgets) + " rounds=" + researchRounds);
         } finally { db.close(); }
       }
 

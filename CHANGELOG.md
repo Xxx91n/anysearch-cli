@@ -46,7 +46,7 @@
 
 - 死掉的 MCP 进程留下的任务预算预留不会被回收，也不需要——下一个任务开的是新账，死任务那行只是躺着。会话账那套按属主回收（#275）没有搬到任务预算上。
 - 取消之后客户端拿不到回复（SDK 会丢掉被取消请求的响应）。"活干完了没有"要读库里的任务行；这一点写在 docs/mcp-server.md 的取消一节。
-- `withMcpTask` 包了 `ans_chat`（#303）和 `search_web` / `research_web`（#304）；独立整理走 CLI 的 `cli.consolidate` 任务。
+- `withMcpTask` 包了 `ans_chat`（#303）和 `search_web` / `research_web`（#304）；独立整理在 CLI 走 `cli.consolidate` 任务，MCP 的 `operation=consolidate` 记在这次 `mcp.ans_chat` 任务上。
 
 ## Unreleased — #301: 密钥录一次，CLI 和 GUI 入口共用
 

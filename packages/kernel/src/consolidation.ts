@@ -21,6 +21,7 @@ import type {
 } from "@anysearch-cli/store";
 import { classifyClaim } from "./attribution";
 import type { BudgetLedgerPort } from "./ports";
+import type { TaskBudgetWiring } from "./task-budget";
 import type { LlmSession } from "./llm-init";
 import type { AliasJudgeFn, AliasJudgeVerdict } from "@anysearch-cli/store";
 
@@ -92,7 +93,7 @@ export interface ConsolidationBudget {
  * the CLI and the MCP tool from answering "was this run charged?" differently.
  */
 export function taskBudgetMetering(
-  wiring: { taskBudget?: { taskId: string; ledger: BudgetLedgerPort }; declared: boolean },
+  wiring: TaskBudgetWiring,
 ): ConsolidationMetering | undefined {
   if (!wiring.taskBudget) return undefined;
   return wiring.declared

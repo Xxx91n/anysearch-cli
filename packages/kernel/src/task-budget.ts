@@ -54,8 +54,8 @@ export interface WireTaskBudgetOptions {
   /**
    * Where a degradation is reported. Called for the corner that would otherwise
    * be invisible: an UNDECLARED domain whose store cannot hand out a ledger —
-   * the run then falls back to the session form, which is indistinguishable from
-   * "correctly unmetered" without a line somewhere.
+   * the run then has no task budget, which is indistinguishable from "correctly
+   * unmetered" without a line somewhere.
    *
    * `key` names that corner without the task id, so a long-lived host can dedupe
    * without parsing the message. Defaults to a no-op so unit tests stay quiet.
@@ -76,8 +76,8 @@ export function wireTaskBudget(
   const warn = opts.warn ?? (() => {});
   const declared = budget !== undefined;
   // One shape for every corner: a declared cap that cannot be established is a
-  // fault (stop, never fail open); the same corner with no declaration degrades
-  // to the session form and says so once.
+  // fault (stop, never fail open); the same corner with no declaration runs
+  // without a task budget and says so once.
   //
   // The warn call is isolated: the sink is caller-supplied and writes to stderr,
   // and neither a dead pipe nor a sink bug may abort the command.
