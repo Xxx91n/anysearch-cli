@@ -274,6 +274,10 @@ export function buildAnsChatErrorResult(
   formatLine: (r: any) => string,
   recoveryNotice?: string,
 ): AnsChatToolResult {
+  const metadata = {
+    ...(rebuilds.length > 0 ? { summaryRebuilds: rebuilds } : {}),
+    ...(recoveryNotice ? { recoveryNotice } : {}),
+  };
   return {
     isError: true,
     content: [
@@ -281,7 +285,7 @@ export function buildAnsChatErrorResult(
       ...rebuilds.map((r) => ({ type: "text" as const, text: formatLine(r) })),
       ...(recoveryNotice ? [{ type: "text" as const, text: recoveryNotice }] : []),
     ],
-    ...(rebuilds.length > 0 ? { structuredContent: { summaryRebuilds: rebuilds } } : {}),
+    ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
   };
 }
 

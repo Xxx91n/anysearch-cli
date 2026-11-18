@@ -903,17 +903,17 @@ export class PiAgentRuntime {
     let questionWritten = false;
     let turnStarted = false;
     let recordWriteError: Error | undefined;
-    const recordStart = (type: string, data?: unknown): void => {
+    const writeSessionRecord = (append: () => void): void => {
       if (recordWriteError) throw recordWriteError;
       try {
-        sessionManager.appendCustomEntry(type, data);
+        append();
       } catch (error) {
         recordWriteError = error instanceof Error ? error : new Error(String(error));
         const path = sessionManager.getSessionFile();
         try {
           if (path && sessionId) {
             // PI can catch the error and append its own error message. Remove
-            // an unfinished marker first so that append starts on a new line.
+            // an unfinished entry first so that append starts on a new line.
             const verdict = judgePiSessionRecord(path, piSessionKey(sessionId));
             if (!verdict.ok) throw new Error(verdict.message);
             if (verdict.tornTail && !repairPiSessionTornTail(path, verdict)) throw recordWriteError;
@@ -971,7 +971,7 @@ export class PiAgentRuntime {
         // call a model earlier, before there is a new question to mark.
         if (recordWriteError) throw recordWriteError;
         if (persistentDir && questionWritten && !turnStarted) {
-          recordStart(PI_TURN_STARTED);
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_STARTED));
           turnStarted = true;
         }
         const forwarded = options && typeof options === "object"
@@ -1148,7 +1148,7 @@ export class PiAgentRuntime {
         // the time it invokes execute. A request alone does not mean it ran.
         if (turnStarted) {
           args[2]?.throwIfAborted();
-          recordStart(PI_TOOL_STARTED, { id: args[0], name: tool.name });
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TOOL_STARTED, { id: args[0], name: tool.name }));
         }
         return tool.execute(...args);
       },
@@ -1663,7 +1663,7 @@ export class PiAgentRuntime {
         yield { type: "error", message: failure };
       } else {
         if (turnStarted && agentDone && finalAnswer) {
-          sessionManager.appendCustomEntry(PI_TURN_COMPLETED);
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_COMPLETED));
         }
         // The summary reports the same scope the ledger settles: main calls
         // plus PI's compaction. Reporting only the main total here would
@@ -1767,7 +1767,8 @@ export class PiAgentRuntime {
       if (turnStarted && partialAnswer && (callerCancelled || abortedEarly)) {
         const content = partialAnswer.content.filter((part) => part.type === "text" && part.text);
         if (content.length > 0) {
-          sessionManager.appendMessage({ ...partialAnswer, content, stopReason: "aborted" });
+          const interruptedAnswer: AssistantMessage = { ...partialAnswer, content, stopReason: "aborted" };
+          writeSessionRecord(() => sessionManager.appendMessage(interruptedAnswer));
         }
       }
       // #259: drop the run's scope LAST, after every shutdown step above. A

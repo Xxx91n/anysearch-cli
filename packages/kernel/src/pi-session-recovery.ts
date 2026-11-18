@@ -11,9 +11,11 @@ export function recoverPiSessionRecord(
   legacyTurnCompleted: () => boolean,
 ): string | undefined {
   const branch = record.getBranch();
-  const questionIndex = branch.findLastIndex(
-    (entry) => entry.type === "message" && entry.message?.role === "user",
-  );
+  let questionIndex = branch.length - 1;
+  for (; questionIndex >= 0; questionIndex--) {
+    const entry = branch[questionIndex];
+    if (entry?.type === "message" && entry.message?.role === "user") break;
+  }
   if (questionIndex < 0) return undefined;
 
   let modelCalled = false;

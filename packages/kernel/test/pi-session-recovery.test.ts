@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { runChatAttempt, sessionLeasePath } from "../src/chat-attempt";
 import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
+import { loadPiCodingAgent } from "../src/pi-sdk";
 import { judgePiSessionRecord, PI_SESSION_FORMAT_VERSION } from "../src/pi-session";
 
 const model = {
@@ -338,6 +339,38 @@ async function reportsModelErrorsAsUnfinished() {
   }
 }
 
+async function leavesTheRecordReadableWhenCompletionWriteTears() {
+  const dir = mkdtempSync(join(tmpdir(), "ans-318-torn-completion-"));
+  const { SessionManager } = await loadPiCodingAgent();
+  const appendCustomEntry = SessionManager.prototype.appendCustomEntry;
+  try {
+    const sessionId = "torn-completion";
+    const path = seedRecord(dir, sessionId, []);
+    SessionManager.prototype.appendCustomEntry = function (this: InstanceType<typeof SessionManager>, type: string, data?: unknown) {
+      if (type === "anysearch:turn-completed") {
+        appendFileSync(path, '{"type":"custom","customType":"anysearch:turn-com');
+        throw new Error("收尾标记写到一半失败");
+      }
+      return appendCustomEntry.call(this, type, data);
+    };
+
+    const errors: string[] = [];
+    const runtime = chatRuntime(dir, sessionId, reply);
+    await runChatAttempt({ sessionId, piSessionDir: dir, projectRoot: null }, async (attempt) => {
+      for await (const event of runtime.run("会话记录写到一半失败", attempt)) {
+        assert.notEqual(event.type, "done");
+        if (event.type === "error") errors.push(event.message);
+      }
+      return { completed: false };
+    });
+    assert.deepEqual(errors, ["收尾标记写到一半失败"]);
+    assert.deepEqual(judgePiSessionRecord(path, piSessionKey(sessionId)), { ok: true });
+  } finally {
+    SessionManager.prototype.appendCustomEntry = appendCustomEntry;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function preservesPartialAnswersOnCancellation() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-cancel-"));
   const caller = new AbortController();
@@ -381,6 +414,7 @@ async function main() {
   await keepsPolicyStoppedTurnsComplete();
   await keepsOldCompletedToolTurnsComplete();
   await reportsModelErrorsAsUnfinished();
+  await leavesTheRecordReadableWhenCompletionWriteTears();
   await preservesPartialAnswersOnCancellation();
   console.log("会话中断恢复验收通过");
 }

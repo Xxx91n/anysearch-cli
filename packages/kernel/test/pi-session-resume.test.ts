@@ -28,9 +28,13 @@ function assert(cond: boolean, msg: string) {
   passed++; return true;
 }
 
-// A provider stream that reports (or omits) usage. `usage === null` is the
-// "provider stayed silent" shape, which must surface as MISSING.
-function reply(text: string, usage: any = null) {
+// PI requires usage on a completed assistant message. Tests for missing
+// provider dimensions exercise the accounting helpers separately below.
+const probeUsage = {
+  input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+function reply(text: string, usage: any) {
   const message: any = {
     role: "assistant",
     content: [{ type: "text", text }],
@@ -39,7 +43,7 @@ function reply(text: string, usage: any = null) {
     model: "probe-model",
     stopReason: "stop",
     timestamp: Date.now(),
-    ...(usage ? { usage } : {}),
+    usage,
   };
   return {
     async *[Symbol.asyncIterator]() {
@@ -51,7 +55,7 @@ function reply(text: string, usage: any = null) {
   };
 }
 
-function provider(text: string, usage: any = null) {
+function provider(text: string, usage: any = probeUsage) {
   const calls: any[] = [];
   const fn = (_model: any, context: any, options: any) => {
     calls.push({ context, options });
