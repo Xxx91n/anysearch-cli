@@ -140,6 +140,43 @@ async function main() {
       biz.finish({ exitCode: 0 });
     }
 
+    // 6. #307: post-work is recorded as a follow-up of the task that caused it,
+    //    and a parent id that names no row is recorded as NO link — never a
+    //    dangling reference or an invented id.
+    {
+      const root = registry.registerTask({ kind: "mcp.ans_chat", role: "business", entry: "mcp" });
+      const followUp = registry.registerTask({
+        kind: "server.project_index", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: root.taskId,
+      });
+      const link = registry.taskById(followUp.taskId)!;
+      assert(link.origin === "follow-up", "6: the follow-up keeps its origin");
+      assert(link.parentTaskId === root.taskId, "6: a real parent row is linked");
+      assert(followUp.parentLink === "linked", "6: the caller is told the link landed");
+      assert(registry.taskById(root.taskId)!.origin === "independent",
+        "6: the root keeps its own origin (the follow-up does not rewrite it)");
+
+      // Unknown parent: the row exists but names nothing this database knows.
+      const orphan = registry.registerTask({
+        kind: "server.policy_audit", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: "elsewhere-0000",
+      });
+      const orphanRow = registry.taskById(orphan.taskId)!;
+      assert(orphanRow.parentTaskId === null, "6: an unknowable parent is recorded as no link, not a dead pointer");
+      assert(orphan.parentLink === "unknown" && orphanRow.origin === "follow-up",
+        "6: the follow-up still says it was post-work, and the caller is told the parent was unknown");
+
+      // A follow-up may start AFTER its parent ended: that is what a tail IS.
+      followUp.finish({ exitCode: 0 });
+      assert(registry.taskById(followUp.taskId)!.endedAt !== null, "6: the follow-up closes on its own");
+      root.finish({ exitCode: 0 });
+      assert(registry.taskById(root.taskId)!.endedAt !== null, "6: ending the parent later does not reopen or unlink the follow-up");
+      assert(registry.taskById(followUp.taskId)!.parentTaskId === root.taskId, "6: the link survives the parent's end");
+      orphan.finish({ exitCode: 0 });
+      assert(registry.openTasks().filter((t) => t.entry === "server").length === 0,
+        "6: both server follow-ups ended");
+    }
+
     registry.close();
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }

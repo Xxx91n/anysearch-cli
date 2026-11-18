@@ -96,7 +96,9 @@ import { TaskBudgetLedger } from "./task-budget.js";
 // #303: the task registry over this store's own connection — the MCP entry
 // registers one task per tool call, and it must write into the SAME durable
 // database the engine and the task budget use.
-import { TaskRegistry } from "./task-registry.js";
+// #307: the follow-up migration lives beside the registry so both openers
+// apply the same column set.
+import { migrateTaskFollowupColumns, TaskRegistry } from "./task-registry.js";
 // #310: the pre-migration snapshot runs before this constructor opens its
 // handle — the very first statement below (journal_mode = WAL) already rewrites
 // the physical file, so "back up before assembly" must precede openDatabase.
@@ -770,6 +772,13 @@ export class SqliteSessionStore implements SessionStore {
       if (!isBusyRetryExhausted(e)) this.accessEventTel.bootstrapFailed = true;
       this.warnOrRefuseWhenContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
     }
+    // #307: the follow-up shape of task_records (origin + parent link). New
+    // files get it from the CREATE TABLE in schema.sql; an old file gains it
+    // here. It must land BEFORE the layout marker below claims the file is
+    // current — a marker written over a table without these columns would tell
+    // the next open "nothing to migrate" and leave the registry's own ALTER as
+    // the only path that ever fixes it.
+    migrateTaskFollowupColumns(this.db, initDeadline);
     // #310: the assembly above has committed (schema, column migrations, chain
     // bootstrap); only now may the layout marker claim "current". A crash
     // before this point leaves the marker absent, so the next open re-runs this

@@ -95,9 +95,17 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 | `agent/created` | with `source === 'startup'`, `agent.inject()` writes the routing card as a durable user message (next request). Resume, clear, and compact are skipped. |
 | `ctx.systemPrompt` | registers the `anysearch:routing-card` section (every request) |
 | `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
-| `tools/post-execute` | appends the distilled result summary to `additionalContexts` |
-| `tools/result` | indexes the final outcome into the project index (`POST /index`, fire-and-forget) |
-| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle |
+| `tools/post-execute` | appends the distilled result summary to `additionalContexts`, and (#307) sends the awaited project-index write (`POST /index`). The host waits for that write, so it belongs to the call instead of becoming a tail nobody owns. |
+| `tools/result` | unused since #307: the host does not await this notification, so a write there would be a task with no owner. The index write moved into the awaited post-execute above. |
+| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle. The MCP call's own task id (`structuredContent.closeout.taskId`) rides the tool VALUE, so the index write can name it as its parent. |
+
+How those writes are accounted for (#307). A hook process lives for one tool
+event; the write it asks for runs in the long-lived anysearch service, which
+registers it as a follow-up task (`entry = "server"`, `origin = "follow-up"`)
+in the shared durable DB and answers only after that task's row ends. An
+upgrade coordinator therefore sees the tail while it runs instead of reading an
+idle service, and a caller that names no parent gets no invented link — the
+registry records "unknown parent" rather than a dangling id.
 
 Server endpoints used: `GET /policy?project=<root>`, `POST /recall`, and
 `POST /index` on the published address (`ANS_SERVER_URL` overrides it; the
@@ -154,6 +162,16 @@ Verified on the wire:
   `requires approval` (URL gating is fail-closed by the /0055 contract);
 - the distilled summary is appended to `additionalContexts`, and `POST /index`
   carries real result entries with `x-anysearch-session-id`.
+
+Those observations predate #307. What #307 changes is *when* the write happens:
+it now runs inside the awaited `tools/post-execute`, so the host waits for it,
+and the request body names the MCP call's task as `parentTaskId` when the host
+holds one. Unit coverage is in `apps/dsh-plugin/test/dsh-plugin.test.ts` (the
+request is already on the wire when the listener resolves — no sleep — and the
+parent id round-trips) and in `apps/plugin/test/post-work.test.ts` (the server's
+follow-up task row is ended before the response is sent). Neither run has been
+repeated on a real dsh host in this ticket; the verification above still stands
+for the wire shape, not for the new ordering.
 
 ## Approval channel (verified on the real host)
 

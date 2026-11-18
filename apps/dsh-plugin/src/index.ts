@@ -13,11 +13,13 @@
  * agent/created → agent.inject() routing card (durable next-step msg; source!=='startup' guard)
  * systemPrompt → 'anysearch:routing-card' section registration
  * tools/pre-execute → URL-policy deny/ask + preheat recall injection
- * tools/post-execute → distilled summary via additionalContexts
- * tools/result → /index IPC on the final frozen outcome
+ * tools/post-execute → distilled summary via additionalContexts, and (#307) the
+ *   awaited project-index write so the host waits out that call's post-work
+ * tools/result → unused (a non-awaited notification is no place for a write)
  * Tool plane:
  * ctx.tools.register → five native ans_* tools; execute = MCP tools/call
- * over the ans-mcp HTTP endpoint (zero business logic)
+ * over the ans-mcp HTTP endpoint (zero business logic); the MCP task id is
+ * carried into the tool value so the index write can name its parent (#307)
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent, SessionStartSource } from '@deepseek-ai/dsh-agent';
@@ -163,8 +165,14 @@ function mcpChannel(base: string, token: string): Promise<McpChannel | null> {
  * (Bearer + propagation trio + fail-open). Reachable-but-erroring calls
  * materialize as thrown tool errors; transport failure degrades to the
  * canonical empty value (the AGENTS.md "empty results" contract).
+ *
+ * #307: the MCP side reports its per-call task in `structuredContent.closeout`.
+ * It is carried into the tool VALUE (not the model-facing content) so the
+ * awaited post-execute can name the task this call ran as when it sends the
+ * project-index write. A host that does not know the id simply forwards none;
+ * the service records "no link" instead of inventing one.
  */
-async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, exec: ToolRunContext, timeoutMs: number): Promise<{ content: ContentBlock[] }> {
+async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, exec: ToolRunContext, timeoutMs: number): Promise<{ content: ContentBlock[]; taskId?: string }> {
   const base = mcpBaseUrl();
   const token = mcpBearer();
   // The MCP HTTP transport has no per-request workspace, so this host passes
@@ -200,12 +208,18 @@ async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, 
       if ((rpcError.code === -32001 || rpcError.code === -32600) && attempt === 0) { channels.delete(key); continue; }
       throw new Error('ans-mcp tools/call ' + wire + ': ' + (rpcError.message ?? 'rpc error'));
     }
-    const result = resp.result as { content?: ContentBlock[]; isError?: boolean } | undefined;
+    const result = resp.result as { content?: ContentBlock[]; isError?: boolean; structuredContent?: Record<string, unknown> } | undefined;
     if (result?.isError) {
       const text = (result.content ?? []).map((b) => (b as { text?: string }).text ?? '').filter(Boolean).join('\n');
       throw new Error(text || 'ans tool ' + wire + ' failed upstream');
     }
-    return { content: result?.content ?? [] };
+    // #307: keep the MCP task id for the post-work attribution. It rides the
+    // tool value, so the model-facing content is unchanged.
+    const taskId = (result?.structuredContent?.closeout as { taskId?: unknown } | undefined)?.taskId;
+    return {
+      content: result?.content ?? [],
+      ...(typeof taskId === 'string' && taskId.length > 0 ? { taskId } : {}),
+    };
   }
   return { content: [] };
 }
@@ -277,6 +291,18 @@ export function apply(ctx: Context): void {
   });
 
   // -- surface 4: post-execute — distilled summary for the next request ------
+  // #307: the project-index write belongs to the SAME call as the distilled
+  // summary. Before this ticket it ran on `tools/result` as fire-and-forget,
+  // which the host never awaits: the agent loop had already moved on, and the
+  // write could still be in flight (or be dropped when the process exited)
+  // while the anysearch service recorded nothing for it. Running it here means
+  // the host waits for it, and the follow-up task it starts names the MCP
+  // call's own task as its parent whenever the id came back.
+  // It stays excluded from `isError` results: an error outcome has nothing
+  // indexable, and the index write is not a correction of the error.
+  // The tool VALUE is passed through untouched — dsh validates it against the
+  // declared output schema and the model reads `content`, so this wrapper
+  // changes none of it.
   ctx.on('tools/post-execute', async (
     exec: ToolExecution,
     result: Readonly<ToolExecutionResult>,
@@ -284,8 +310,17 @@ export function apply(ctx: Context): void {
   ): Promise<PostToolDecision> => {
     if (!isAnsTool(exec.name)) return next();
     const downstream = await next();
+    // `next()` is the only place a listener's own failure is contained; a throw
+    // here would fail the tool. Every step below is guarded for that reason.
     try {
       const d = makePostToolUseDecision(postHookInput(exec, result));
+      if (!result.isError && d.indexEntries && d.indexEntries.length > 0) {
+        const valueTask = (result.value as { taskId?: unknown } | undefined)?.taskId;
+        const parentTaskId = typeof valueTask === 'string' && valueTask.length > 0 ? valueTask : undefined;
+        // Awaited on purpose: this is the call's post-work, not a new request.
+        await indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent), parentTaskId)
+          .catch(() => { /* fail-open: indexing never fails the tool */ });
+      }
       if (!d.distilledOutput) return downstream;
       const injected = contextMessage(d.distilledOutput);
       return {
@@ -297,12 +332,10 @@ export function apply(ctx: Context): void {
     }
   });
 
-  // -- surface 4b: tools/result — index the final frozen outcome (fire+forget)
-  ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) => {
-    if (!isAnsTool(exec.name) || result.isError) return;
-    try {
-      const d = makePostToolUseDecision(postHookInput(exec, result));
-      void indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent));
-    } catch { /* fail-open: indexing must never disturb the pipeline */ }
-  });
+  // -- surface 4b: tools/result — no write here (see surface 4) ------------
+  // The index write moved into the awaited post-execute above (#307). The
+  // listener is gone rather than kept empty: `tools/result` is a notification
+  // the host does NOT await, so writing there is exactly the "task with no
+  // owner" shape this ticket removes. The dsh integration doc's surface table
+  // says where the write lives now.
 }
