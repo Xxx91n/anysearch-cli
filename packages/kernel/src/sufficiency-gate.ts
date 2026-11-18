@@ -8,9 +8,7 @@
 // Claim-ticket pattern: gate.evaluate -> gate.applyTo -> pipeline.consolidate.
 
 import { computeSufficiency } from "./engine";
-import type { RetrieverPort, DomainConfigPort, TaskBudgetScope } from "./ports";
-import { estimateTranscriptTokens } from "./message-text";
-import { reportBudgetFault, reserveTaskModelCall } from "./usage";
+import type { RetrieverPort, DomainConfigPort } from "./ports";
 import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
 
 export interface SufficiencyEvaluatorDeps {
@@ -19,7 +17,6 @@ export interface SufficiencyEvaluatorDeps {
   streamFn: any;
   model: any;
   getApiKey?: () => Promise<string | undefined>;
-  taskBudget?: TaskBudgetScope;
   // #259: the same archive writer the search tool uses. The gate's reround is a
   // real internal search whose results reach the next provider request, so they
   // must be indexed too — otherwise material the model just used is missing from
@@ -85,7 +82,7 @@ export class SufficiencyEvaluator {
   // PURE — returns GateEnvelope, does NOT modify messages.
   // Best-effort, fail-open. Returns empty envelope if no work needed.
   async evaluate(messages: any[], signal?: AbortSignal): Promise<GateEnvelope> {
-    const { domain, retriever, streamFn, model } = this.deps;
+    const { domain, retriever, streamFn, model, getApiKey } = this.deps;
     // #259: one cancellation scope for the whole evaluation — the run's own, or
     // the one handed in. A stop means this turn is over, so the reround must not
     // keep searching and must not archive.
@@ -137,7 +134,18 @@ export class SufficiencyEvaluator {
         "sufficiency-judge",
       );
 
-      let gapQuery = (await this.askForGap(gapPrompt, scope)).trim().replace(/^["']|["']$/g, "");
+      let gapQuery = "";
+      const apiKey = await getApiKey?.();
+      // 1.5.1 stream contract: streamFn(model, context, options). The old
+      // 0.84.2 shape passed a single {model, messages} object.
+      const stream = streamFn(model, { messages: gapPrompt }, { apiKey, signal: scope });
+      for await (const chunk of stream) {
+        if (chunk?.type === "text_delta" && typeof chunk.delta === "string") gapQuery += chunk.delta;
+        else if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
+        else if (chunk?.type === "error") return empty;
+        else if (chunk?.delta) gapQuery += chunk.delta;
+      }
+      gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
       if (gapQuery.length <= 3) return empty;
 
       // assertion-level GapRequest is the preferred reround seed.
@@ -188,40 +196,6 @@ export class SufficiencyEvaluator {
       };
     } catch {
       return empty; // ponytail: sufficiency gate is best-effort, fail-open.
-    }
-  }
-
-  private async askForGap(messages: Array<{ role: "system" | "user"; content: string }>, signal?: AbortSignal): Promise<string> {
-    const { taskBudget, getApiKey, streamFn, model } = this.deps;
-    const apiKey = await getApiKey?.();
-    const maxTokens = 256;
-    const estimate = Math.ceil(estimateTranscriptTokens(messages)) + maxTokens;
-    signal?.throwIfAborted();
-    let settle: ReturnType<typeof reserveTaskModelCall> | undefined;
-    if (taskBudget) {
-      // Design: 补搜前问模型缺什么也要记账 — 预留不够就跳过这次补搜。
-      try { settle = reserveTaskModelCall(taskBudget, estimate); }
-      catch (error) {
-        reportBudgetFault("sufficiency reserve", error);
-        return "";
-      }
-    }
-    let text = "";
-    let usage: { totalTokens?: number; cost?: { total?: number } } | undefined;
-    try {
-      const stream = streamFn(model, { messages }, { apiKey, signal, ...(taskBudget ? { maxTokens } : {}) });
-      for await (const chunk of stream) {
-        if (chunk?.type === "text_delta" && typeof chunk.delta === "string") text += chunk.delta;
-        else if (chunk?.type === "text" && chunk.text) text += chunk.text;
-        else if (chunk?.type === "done") usage = chunk.message?.usage;
-        else if (chunk?.type === "error") {
-          usage = chunk.error?.usage;
-          return "";
-        } else if (chunk?.delta) text += chunk.delta;
-      }
-      return text;
-    } finally {
-      settle?.(usage);
     }
   }
 

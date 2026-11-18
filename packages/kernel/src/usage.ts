@@ -299,15 +299,15 @@ export function reserveTaskModelCall(
     catch (settleError) { reportBudgetFault("model call settlement", settleError); }
     throw error;
   }
-  return (usage?: { totalTokens?: number; cost?: { total?: number } }) => {
+  return (usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) => {
     // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
     const tokens = typeof usage?.totalTokens === "number" && usage.totalTokens > 0 ? usage.totalTokens : estimate;
     const cost = usage?.cost?.total ?? 0;
-    try { ledger.settleCalls(taskId, 1, 1); }
+    try { ledger.settleCalls(taskId, 1, Number(started)); }
     catch (error) { reportBudgetFault("model call settlement", error); }
-    try { ledger.settleTokens(taskId, estimate, tokens); }
+    try { ledger.settleTokens(taskId, estimate, started ? tokens : 0); }
     catch (error) { reportBudgetFault("model token settlement", error); }
-    try { if (cost > 0) ledger.settleUsd(taskId, 0, cost); }
+    try { if (started && cost > 0) ledger.settleUsd(taskId, 0, cost); }
     catch (error) { reportBudgetFault("model cost settlement", error); }
   };
 }

@@ -609,7 +609,7 @@ function displaySourceUrl(result: NormalizedResult): string {
 
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
-  private readonly memoryBudgetSettlements = new Set<Promise<void>>();
+  private readonly taskBudgetSettlements = new Set<Promise<void>>();
   private readonly domainReloader: (() => unknown) | null;
   private warnedEnvIgnored = false;
   // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
@@ -678,6 +678,9 @@ export class PiAgentRuntime {
         ? { taskId: opts.sessionId, ledger: opts.ledger }
         : undefined);
 
+    const taskStream = opts.enforceTaskBudgetPerCall && opts.taskBudget
+      ? this.budgetedModelStream(opts.streamFn as StreamFunction, opts.taskBudget)
+      : undefined;
     // constructor internally creates pipeline + gate instances.
     // The caller supplies the wiring; caller opts unchanged.
     // Design: the gate stays exactly `store && sessionId` — narrowing it here
@@ -694,9 +697,7 @@ export class PiAgentRuntime {
         retriever: this.scopedRetriever,
         domain: opts.domain,
         model: opts.model as any,
-        streamFn: opts.enforceTaskBudgetPerCall && opts.taskBudget
-          ? this.memoryStream(opts.streamFn as StreamFunction, opts.taskBudget)
-          : opts.streamFn,
+        streamFn: taskStream ?? opts.streamFn,
         sessionId: opts.sessionId,
         getApiKey: opts.getApiKey,
         providerName: (opts as any).providerName,
@@ -708,10 +709,9 @@ export class PiAgentRuntime {
     this.gate = new SufficiencyEvaluator({
       retriever: this.scopedRetriever,
       domain: opts.domain,
-      streamFn: opts.streamFn as any,
+      streamFn: taskStream ?? opts.streamFn,
       model: opts.model as any,
       getApiKey: opts.getApiKey,
-      taskBudget: opts.taskBudget,
       // #259: the reround indexes into the same archive as the search tool.
       // Same gate as the pipeline above (store + sessionId); a half-wired
       // runtime writes nothing, so it cannot seed rows the recall path would
@@ -816,7 +816,8 @@ export class PiAgentRuntime {
     // `store` is not destructured: the billing gate reads the constructor's
     // billingScope (#302) and the FTS sync reads this.opts.store directly, so
     // the local would be an unused binding.
-    const { domain, model, streamFn, ledger, sessionId } = this.opts;
+    const { domain, model, streamFn, ledger, sessionId, taskBudget } = this.opts;
+    const perCallBudget = this.opts.enforceTaskBudgetPerCall ? taskBudget : undefined;
 
     // #302: a declared task budget that could not be established stops the run
     // before any controlled call. S9 keeps three states apart — undeclared
@@ -906,8 +907,14 @@ export class PiAgentRuntime {
     let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     let questionWritten = false;
     let turnStarted = false;
-    let modelCallsStarted = 0;
-    let reserveFollowupModelCall: ((messages: unknown[]) => void) | undefined;
+    let firstModelReservation: ReturnType<typeof reserveTaskModelCall> | undefined;
+    const providerStream = perCallBudget
+      ? this.budgetedModelStream(streamFn as StreamFunction, perCallBudget, () => {
+        const reserve = firstModelReservation;
+        firstModelReservation = undefined;
+        return reserve;
+      })
+      : streamFn as StreamFunction;
     let partialAnswer: AssistantMessage | undefined;
     let partialText = "";
     let recordWriteError: Error | undefined;
@@ -978,7 +985,6 @@ export class PiAgentRuntime {
         // PI writes the question before asking the model. Startup compaction can
         // call a model earlier, before there is a new question to mark.
         if (recordWriteError) throw recordWriteError;
-        if (modelCallsStarted > 0) reserveFollowupModelCall?.(context.messages);
         if (questionWritten) {
           partialAnswer = undefined;
           partialText = "";
@@ -990,8 +996,7 @@ export class PiAgentRuntime {
         const forwarded = options && typeof options === "object"
           ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
           : options;
-        modelCallsStarted++;
-        return (streamFn as any)(baseModel, context, forwarded);
+        return providerStream(baseModel, context, forwarded);
       },
     });
     const sdkModel = modelRuntime.getModel(sdkProviderId, modelId);
@@ -1035,10 +1040,10 @@ export class PiAgentRuntime {
         throw new Error("对话记录打开后发生变化，本次没有发送问题。");
       }
       if (found) {
-        const interrupted = attempt?.recoverRecord?.(sessionManager);
-        if (interrupted) {
-          interruptedQuestion = interrupted.question;
-          const { notice } = interrupted;
+        const interrupted = attempt?.recoverInterruptedTurn?.(sessionManager);
+        interruptedQuestion = interrupted?.question;
+        const notice = attempt?.recoverInterruptedTurn ? interrupted?.notice : attempt?.recoverRecord?.(sessionManager);
+        if (notice) {
           try {
             yield { type: "session_recovery", notice };
           } finally {
@@ -1355,10 +1360,9 @@ export class PiAgentRuntime {
     // resuming a conversation spends none of the history's quota. Callers
     // without one (MCP ans_chat, consolidate) keep the session form and its
     // old semantics untouched (#303/#304 migrate separately).
-    const taskBudget = this.opts.taskBudget;
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
-    const billingWired = !!this.billingScope;
+    const billingWired = !!this.billingScope && !perCallBudget;
 
     // #275: release reservations whose owner this machine can prove is gone
     // before this run reserves anything. A run killed by SIGKILL never reaches
@@ -1399,7 +1403,7 @@ export class PiAgentRuntime {
     // later probes are mtime-gated, so this costs one parse and at most one
     // initBudget upsert per runtime.
     const budgetChanged = !!reloadedDomain || this.pendingBudgetRefresh;
-    if (budgetChanged && billingWired) {
+    if (budgetChanged && this.billingScope) {
       try {
         if (domain.budget) {
           billingLedger!.initBudget?.(billingId!, toBudgetCaps(domain.budget));
@@ -1407,9 +1411,10 @@ export class PiAgentRuntime {
           billingLedger!.clearBudgetCaps?.(billingId!);
         }
       } catch (e) {
-        // fail-open: keep the previously registered caps and name the fault.
         reportBudgetFault("budget refresh", e);
-        if (this.opts.enforceTaskBudgetPerCall) {
+        if (perCallBudget) {
+          callerSignal?.removeEventListener("abort", cancelRun);
+          callerSignal?.removeEventListener("abort", onCallerAbort);
           try { session.dispose(); } catch { /* already disposed */ }
           stopRunScope("budget refresh failed");
           yield { type: "error", message: "无法更新这次提问的任务预算。" };
@@ -1481,12 +1486,6 @@ export class PiAgentRuntime {
         tokenReserved = reserveAmount;
       } catch (e) {
         reportBudgetFault("token reserve", e);
-        if (this.opts.enforceTaskBudgetPerCall) {
-          try { session.dispose(); } catch { /* already disposed */ }
-          stopRunScope("budget reserve failed");
-          yield { type: "error", message: "无法为这次提问预留 token 额度。" };
-          return;
-        }
       }
     }
 
@@ -1561,11 +1560,11 @@ export class PiAgentRuntime {
     //   established a budget for exactly this execution, so "unbilled but
     //   running" is not an honest state for it; raising [budget] callCap lets
     //   the NEXT task through, since every task starts with a fresh budget.
-    let reservedCalls = 0;
+    let callReserved = false;
     if (billingWired) {
       try {
-        if (billingLedger!.reserveCalls(billingId!, 1)) reservedCalls = 1;
-        if (!reservedCalls && taskBudget) {
+        callReserved = billingLedger!.reserveCalls(billingId!, 1);
+        if (!callReserved && taskBudget) {
           // Cleanup BEFORE the yield: a consumer that stops reading at the
           // error event (the CLI returns 1 on the first error) runs the
           // generator's `.return()` path, and code after a yielded error in a
@@ -1588,36 +1587,17 @@ export class PiAgentRuntime {
         }
       } catch (e) {
         reportBudgetFault("reserve", e);
-        if (this.opts.enforceTaskBudgetPerCall) {
-          settleTokenReserve(0);
-          try { session.dispose(); } catch { /* already disposed */ }
-          stopRunScope("budget reserve failed");
-          yield { type: "error", message: "无法为这次提问预留调用额度。" };
-          return;
-        }
       }
-    }
-
-    if (billingWired && this.opts.enforceTaskBudgetPerCall) {
-      // Design: 脚本模式每次发请求都先查额度 — 工具执行后，模型还可能再被调用。
-      reserveFollowupModelCall = (messages) => {
-        if (!billingLedger!.reserveCalls(billingId!, 1)) {
-          throw new Error("Call budget exhausted: no calls left for the next model request.");
-        }
-        reservedCalls++;
-        const amount = resolveTokenReserve(
-          Math.ceil(estimateTranscriptTokens(messages) + systemPrompt.length / 4),
-          resolveOutputReserveTokens(domain.budget),
-        );
-        if (!billingLedger!.reserveTokens(billingId!, amount)) {
-          throw new Error("Token budget exhausted: cannot reserve tokens for the next model request.");
-        }
-        tokenReserved += amount;
-      };
     }
 
     let promptPromise: Promise<void> | null = null;
     try {
+      if (perCallBudget) {
+        // Design: 第一笔额度在写入问题前预留 — 没开始的提问不进入会话记录。
+        const occupancy = resolveReserveInputTokens(0, agent.state.messages, input, systemPrompt);
+        firstModelReservation = reserveTaskModelCall(perCallBudget,
+          resolveTokenReserve(occupancy.tokens, resolveOutputReserveTokens(domain.budget)));
+      }
       // #299: the run is about to reach the provider. Everything above could
       // still refuse it (cancelled caller, budget, missing record); from here
       // on it counts as an attempt that ran, even if it is cancelled before a
@@ -1679,10 +1659,9 @@ export class PiAgentRuntime {
         // Design: each settlement attempt is independently fail-open and
         // reported — a locked ledger must not fail an already-completed chat or
         // skip message synchronization and the final event (CodeRabbit #200).
-        if (reservedCalls) {
+        if (callReserved) {
           try {
-            const actualCalls = this.opts.enforceTaskBudgetPerCall ? modelCallsStarted : 1;
-            billingLedger!.settleCalls(billingId!, reservedCalls, actualCalls);
+            billingLedger!.settleCalls(billingId!, 1, 1);
             callSettled = true;
           } catch (e) {
             reportBudgetFault("call settlement", e);
@@ -1812,14 +1791,12 @@ export class PiAgentRuntime {
         // runInternal never ran. settleUsdUpTo books only the difference, so the
         // two paths can never charge the same spend twice.
         settleUsdUpTo(usageTotals.costUsd + compactionUsage.costUsd);
-        if (billingWired && reservedCalls && !callSettled) {
+        if (billingWired && callReserved && !callSettled) {
           // A provider call happened if it reported usage, or if we aborted it
           // before the final chunk arrived.
-          const actualCalls = this.opts.enforceTaskBudgetPerCall
-            ? modelCallsStarted
-            : Number(usageReported || abortedEarly);
+          const actualCalls = usageReported || abortedEarly ? 1 : 0;
           try {
-            billingLedger!.settleCalls(billingId!, reservedCalls, actualCalls);
+            billingLedger!.settleCalls(billingId!, 1, actualCalls);
           } catch (e) {
             reportBudgetFault("call settlement", e);
           }
@@ -1832,8 +1809,9 @@ export class PiAgentRuntime {
           new Promise<void>((resolve) => setTimeout(resolve, 1000)),
         ]);
       }
+      firstModelReservation?.(undefined, false);
       finalizeBudget();
-      if (!promptStopped) {
+      if (billingWired && !promptStopped) {
         // #211: a cancelled run returns immediately — the caller is gone, so
         // do not spend the bounded wait on a stream that may never settle.
         // Provider still running: the reservation was released above; add only
@@ -1887,28 +1865,32 @@ export class PiAgentRuntime {
    * usage after draining the pipeline.
    */
   async flushMemory(): Promise<void> {
-    if (!this.pipeline) return;
-    await this.pipeline.flush();
+    await this.pipeline?.flush();
     if (this.opts.enforceTaskBudgetPerCall && this.opts.taskBudget) {
-      await Promise.all(this.memoryBudgetSettlements);
+      await Promise.all(this.taskBudgetSettlements);
     } else {
       await this.settleMemoryUsage();
     }
   }
 
-  private memoryStream(streamFn: StreamFunction, budget: TaskBudgetScope): StreamFunction {
+  private budgetedModelStream(
+    streamFn: StreamFunction,
+    budget: TaskBudgetScope,
+    takeReservation?: () => ReturnType<typeof reserveTaskModelCall> | undefined,
+  ): StreamFunction {
     return (model, context, options) => {
       options?.signal?.throwIfAborted();
       const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
       const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
-      const settle = reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
+      const settle = takeReservation?.() ??
+        reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
       try {
         const stream = streamFn(model, context, options);
-        // Design: 用 PI 的最终结果记账 — 等摘要的函数和读条目的函数可以用同一个流。
+        // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
         const settlement = stream.result().then(message => settle(message.usage), () => settle());
-        this.memoryBudgetSettlements.add(settlement);
-        void settlement.then(() => this.memoryBudgetSettlements.delete(settlement));
+        this.taskBudgetSettlements.add(settlement);
+        void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
         return stream;
       } catch (error) {
         settle();

@@ -79,7 +79,8 @@ export interface ChatAttemptContext {
   /** The selected handle, including the new handle after a fork. */
   sessionId?: string;
   /** Append recovery facts after validating the record and before replaying it. */
-  recoverRecord?(record: SessionManager): ReturnType<typeof recoverPiSessionRecord>;
+  recoverRecord?(record: SessionManager): string | undefined;
+  recoverInterruptedTurn?(record: SessionManager): ReturnType<typeof recoverPiSessionRecord>;
   /**
    * Say that the run really started. Call it once the attempt has done
    * something — a provider call, a tool call, a written record.
@@ -166,14 +167,15 @@ async function runBody(
   store: SessionStorePort | undefined,
   sessionId: string | undefined,
   projectRoot: string | null,
-  recoverRecord?: ChatAttemptContext["recoverRecord"],
+  recoverInterruptedTurn?: ChatAttemptContext["recoverInterruptedTurn"],
 ): Promise<ChatAttemptOutcome> {
   const record = store?.recordChatProject;
   const writable = !!(record && sessionId);
   let started = false;
   const ctx: ChatAttemptContext = {
     sessionId,
-    recoverRecord,
+    recoverRecord: recoverInterruptedTurn && (record => recoverInterruptedTurn(record)?.notice),
+    recoverInterruptedTurn,
     markStarted() {
       if (started || !writable) return;
       started = true;

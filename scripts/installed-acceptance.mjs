@@ -652,7 +652,7 @@ async function main() {
     for (const [name, callCap] of [["print", 20], ["print-capped", 4]]) {
       const domain = DOMAIN_MIN(name, "PRINT-SYSTEM-PROMPT.");
       domain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
-      writeDomain(domainsDir, name, [...domain, "[budget]", "tokenCap = 100000", "callCap = " + callCap]);
+      writeDomain(domainsDir, name, [...domain, "[budget]", "tokenCap = 20000", "callCap = " + callCap]);
     }
     writeDomain(domainsDir, "print-denied", [
       ...DOMAIN_MIN("print-denied", "PRINT-DENIED."), "[budget]", "callCap = 0",
