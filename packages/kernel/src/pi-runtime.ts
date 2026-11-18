@@ -1846,7 +1846,7 @@ export class PiAgentRuntime {
       // PI may still be waiting for a cancelled stream. Save text already
       // received while the run still owns the write lock, after detaching PI's
       // listener so a late provider event cannot save the same answer again.
-      if (turnStarted && partialAnswer && partialText && (callerCancelled || abortedEarly)) {
+      if (turnStarted && partialAnswer && partialText && (callerCancelled || abortedEarly || timedOut())) {
         const leaf = sessionManager.getLeafEntry();
         const message = leaf?.type === "message" ? leaf.message : undefined;
         const savedText = message?.role === "assistant" && message.stopReason === "aborted"

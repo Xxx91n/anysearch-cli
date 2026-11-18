@@ -293,7 +293,9 @@ export function reserveTaskModelCall(
 ) {
   if (!ledger.reserveCalls(taskId, 1)) throw new Error("Call budget exhausted.");
   try {
-    if (!ledger.reserveTokens(taskId, estimate)) throw new Error("Token budget exhausted.");
+    if (!ledger.reserveTokens(taskId, estimate)) {
+      throw new Error("Token budget exhausted. This request needs " + estimate + " tokens. Raise [budget] tokenCap and retry.");
+    }
   } catch (error) {
     try { ledger.settleCalls(taskId, 1, 0); }
     catch (settleError) { reportBudgetFault("model call settlement", settleError); }
@@ -304,7 +306,10 @@ export function reserveTaskModelCall(
     coverTokens(required: number) {
       const additional = required - reservedTokens;
       if (additional <= 0) return;
-      if (!ledger.reserveTokens(taskId, additional)) throw new Error("Token budget exhausted.");
+      if (!ledger.reserveTokens(taskId, additional)) {
+        throw new Error("Token budget exhausted. This request needs " + required + " tokens, with " + reservedTokens +
+          " already reserved. Raise [budget] tokenCap and retry.");
+      }
       reservedTokens = required;
     },
     settle(usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) {

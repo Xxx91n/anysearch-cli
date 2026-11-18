@@ -138,15 +138,17 @@ export class SufficiencyEvaluator {
       const apiKey = await getApiKey?.();
       // 1.5.1 stream contract: streamFn(model, context, options). The old
       // 0.84.2 shape passed a single {model, messages} object.
-      const stream = streamFn(model, { messages: gapPrompt }, { apiKey, signal: scope });
-      for await (const chunk of stream) {
-        if (chunk?.type === "text_delta" && typeof chunk.delta === "string") gapQuery += chunk.delta;
-        else if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
-        else if (chunk?.type === "error") {
-          if (!scope?.aborted) process.stderr.write("[anysearch] 补搜前的模型请求失败，已跳过补搜。\n");
-          return empty;
+      try {
+        const stream = streamFn(model, { messages: gapPrompt }, { apiKey, signal: scope });
+        for await (const chunk of stream) {
+          if (chunk?.type === "text_delta" && typeof chunk.delta === "string") gapQuery += chunk.delta;
+          else if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
+          else if (chunk?.type === "error") throw new Error("Gap model request failed");
+          else if (chunk?.delta) gapQuery += chunk.delta;
         }
-        else if (chunk?.delta) gapQuery += chunk.delta;
+      } catch {
+        if (!scope?.aborted) process.stderr.write("[anysearch] 补搜前的模型请求失败，已跳过补搜。\n");
+        return empty;
       }
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
       if (gapQuery.length <= 3) return empty;

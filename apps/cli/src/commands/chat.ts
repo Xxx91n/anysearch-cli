@@ -57,7 +57,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // the fallback below.
     if (isDomainSchemaError(e)) throw e;
     if (printOnly) {
-      console.error("读取领域或打开持久库失败。" + (e?.message || String(e)));
+      console.error("读取领域或打开持久库失败。 " + (e?.message || String(e)));
       return 1;
     }
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
@@ -202,7 +202,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // runtime still takes its own run lock inside; this wraps it rather than
   // moving it, so the JSONL append keeps the guarantee it already had.
   let attemptExitCode = 0;
-  let printedAnswer = "";
+  let bufferedAnswer = "";
   try {
     await runChatAttempt({
       store: durableStore ? store : undefined,
@@ -317,7 +317,7 @@ export async function runChat(argv: string[]): Promise<number> {
               if (printOnly) {
                 if (event.answer?.trim()) {
                   const sources = event.sources?.length ? "\n\n来源\n- " + event.sources.join("\n- ") : "";
-                  printedAnswer = event.answer.trimEnd() + sources + "\n";
+                  bufferedAnswer = event.answer.trimEnd() + sources + "\n";
                 }
                 break;
               }
@@ -357,7 +357,7 @@ export async function runChat(argv: string[]): Promise<number> {
         try {
           await runtime.flushMemory();
         } catch (error) {
-          if (printedAnswer) process.stderr.write("模型已答完，但收尾出错，本次没有输出答案。\n");
+          if (bufferedAnswer) process.stderr.write("模型已答完，但收尾出错，本次没有输出答案。\n");
           throw error;
         } finally {
           if (printOnly) process.off("SIGINT", interrupt);
@@ -427,10 +427,10 @@ export async function runChat(argv: string[]): Promise<number> {
       // The attempt's own record now says finished only when the run reached
       // its end; a run that errored or was cancelled keeps the unfinished row.
       if (cancellation.signal.aborted) {
-        if (printedAnswer) process.stderr.write("模型已答完，但收尾时被中断，本次没有输出答案。\n");
+        if (bufferedAnswer) process.stderr.write("模型已答完，但收尾时被中断，本次没有输出答案。\n");
         attemptExitCode = 130;
       } else if (failed) attemptExitCode = 1;
-      else if (printOnly && !printedAnswer) {
+      else if (printOnly && !bufferedAnswer) {
         process.stderr.write("模型没有返回答案。\n");
         attemptExitCode = 1;
       }
@@ -448,6 +448,6 @@ export async function runChat(argv: string[]): Promise<number> {
     }
     throw error;
   }
-  if (printOnly && attemptExitCode === 0) process.stdout.write(printedAnswer);
+  if (printOnly && attemptExitCode === 0) process.stdout.write(bufferedAnswer);
   return attemptExitCode;
 }
