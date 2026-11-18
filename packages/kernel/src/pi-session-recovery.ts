@@ -1,6 +1,7 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const PI_TURN_STARTED = "anysearch:turn-started";
+export const PI_TOOL_STARTED = "anysearch:tool-started";
 export const PI_TURN_COMPLETED = "anysearch:turn-completed";
 const PI_TURN_INTERRUPTED = "anysearch:turn-interrupted";
 
@@ -20,6 +21,12 @@ export function recoverPiSessionRecord(record: SessionManager): string | undefin
     if (entry.type === "custom") {
       if (entry.customType === PI_TURN_COMPLETED) return undefined;
       if (entry.customType === PI_TURN_STARTED) modelCalled = true;
+      if (entry.customType === PI_TOOL_STARTED) {
+        const data = entry.data as { id?: unknown; name?: unknown } | undefined;
+        if (typeof data?.id === "string" && typeof data.name === "string") {
+          unansweredTools.set(data.id, data.name);
+        }
+      }
     }
     if (entry.type === "custom_message" && entry.customType === PI_TURN_INTERRUPTED) return undefined;
     if (entry.type !== "message") continue;
@@ -28,7 +35,8 @@ export function recoverPiSessionRecord(record: SessionManager): string | undefin
     if (message?.role === "assistant") {
       assistantSeen = true;
       lastStopReason = message.stopReason;
-      if (lastStopReason !== "aborted" && lastStopReason !== "error" && Array.isArray(message.content)) {
+      // 旧记录只知道模型发过哪些工具请求，无法确认工具是否真的跑过。
+      if (!modelCalled && lastStopReason !== "aborted" && lastStopReason !== "error" && Array.isArray(message.content)) {
         for (const part of message.content) {
           if (part?.type === "toolCall") unansweredTools.set(part.id, part.name);
         }
@@ -46,9 +54,11 @@ export function recoverPiSessionRecord(record: SessionManager): string | undefin
   }
 
   const tools = Array.from(unansweredTools, ([id, name]) => ({ id, name }));
+  // 工具名和调用编号来自记录，只把标识符显示给用户和模型。
+  const displayId = (value: string) => value.replace(/[^A-Za-z0-9_.:|+/-]/g, "�");
   const notice = [
     "上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。",
-    ...tools.map(({ id, name }) => `工具 ${name}（${id}）：结果未知，不要自动重跑。`),
+    ...tools.map(({ id, name }) => `工具 ${displayId(name)}（${displayId(id)}）：结果未知，不要自动重跑。`),
   ].join("\n");
   // Design: 提醒和工具状态写在同一行。写到一半被杀时整行作废，下一次还能补齐。
   record.appendCustomMessageEntry(PI_TURN_INTERRUPTED, notice, true, { tools });

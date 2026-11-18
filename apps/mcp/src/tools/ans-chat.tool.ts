@@ -7,7 +7,7 @@
 // MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
 
-import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
+import type { CallToolResult, McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import {
@@ -433,6 +433,17 @@ export function registerAnsChat(
         // aborted request signal, and on the HTTP seam the abort fires only
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatResult("");
+        let recoveryNotice: string | undefined;
+        const withRecovery = (result: CallToolResult): CallToolResult => {
+          if (!recoveryNotice) return result;
+          const notice = { type: "text" as const, text: recoveryNotice };
+          if (result.isError) return { ...result, content: [...result.content, notice] };
+          return {
+            ...result,
+            content: [notice, ...result.content],
+            structuredContent: { ...result.structuredContent, recoveryNotice },
+          };
+        };
         try {
           const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatResult("");
@@ -519,10 +530,6 @@ export function registerAnsChat(
             signal,
           });
           let output = "";
-          let recoveryNotice: string | undefined;
-          const withRecovery = (result: ReturnType<typeof buildAnsChatResult>) => recoveryNotice
-            ? { ...result, content: [{ type: "text" as const, text: recoveryNotice }, ...result.content] }
-            : result;
           let runtimeError: string | undefined;
           let runUsage: unknown;
           let runContext: unknown;
@@ -559,6 +566,13 @@ export function registerAnsChat(
               for await (const event of runtime.run(chatMessage, attempt)) {
                 if (event.type === "session_recovery") {
                   recoveryNotice = event.notice;
+                  const progressToken = ctx?.mcpReq?._meta?.progressToken;
+                  if (ctx && progressToken !== undefined) {
+                    await ctx.mcpReq.notify({
+                      method: "notifications/progress",
+                      params: { progressToken, progress: 1, message: event.notice },
+                    }).catch(() => {}); // The final result still carries the notice.
+                  }
                 } else if (event.type === "text") {
                   output += event.content;
                 } else if (event.type === "tool_call") {
@@ -634,7 +648,7 @@ export function registerAnsChat(
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
           }));
         } catch (e) {
-          return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          return withRecovery(toolError("ans_chat", e instanceof Error ? e.message : String(e)));
         }
       }, {
         "anysearch.provider": providerName ?? "",

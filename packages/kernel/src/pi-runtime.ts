@@ -15,7 +15,7 @@
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ChatAttemptContext } from "./chat-attempt";
-import { PI_TURN_STARTED, PI_TURN_COMPLETED } from "./pi-session-recovery";
+import { PI_TOOL_STARTED, PI_TURN_STARTED, PI_TURN_COMPLETED } from "./pi-session-recovery";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
@@ -902,6 +902,32 @@ export class PiAgentRuntime {
     let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     let questionWritten = false;
     let turnStarted = false;
+    let recordWriteError: Error | undefined;
+    const recordStart = (type: string, data?: unknown): void => {
+      if (recordWriteError) throw recordWriteError;
+      try {
+        sessionManager.appendCustomEntry(type, data);
+      } catch (error) {
+        recordWriteError = error instanceof Error ? error : new Error(String(error));
+        const path = sessionManager.getSessionFile();
+        try {
+          if (path && sessionId) {
+            // PI can catch the error and append its own error message. Remove
+            // an unfinished marker first so that append starts on a new line.
+            const verdict = judgePiSessionRecord(path, piSessionKey(sessionId));
+            if (!verdict.ok) throw new Error(verdict.message);
+            if (verdict.tornTail && !repairPiSessionTornTail(path, verdict)) throw recordWriteError;
+          }
+        } catch {
+          // If the file cannot be repaired, detach PI's writer. A later open
+          // can still cut off the unfinished last line.
+          try { session.dispose(); } catch { /* already disposed */ }
+          agentDone = true;
+          wakeGenerator();
+        }
+        throw recordWriteError;
+      }
+    };
     // The one place the PI SDK is loaded: a run is the only thing that needs it.
     const sdk = await loadPiCodingAgent();
     const modelRuntime = await sdk.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
@@ -941,8 +967,10 @@ export class PiAgentRuntime {
       streamSimple: (_model, context, options) => {
         // PI writes the question before asking the model. Startup compaction can
         // call a model earlier, before there is a new question to mark.
+        if (recordWriteError) throw recordWriteError;
         if (persistentDir && questionWritten && !turnStarted) {
-          sessionManager.appendCustomEntry(PI_TURN_STARTED);
+          options?.signal?.throwIfAborted();
+          recordStart(PI_TURN_STARTED);
           turnStarted = true;
         }
         const forwarded = options && typeof options === "object"
@@ -1110,6 +1138,19 @@ export class PiAgentRuntime {
     });
     await resourceLoader.reload();
 
+    const customTools = activeTools as unknown as import("@earendil-works/pi-coding-agent").ToolDefinition[];
+    const recordedTools = persistentDir ? customTools.map((tool) => ({
+      ...tool,
+      execute(...args: Parameters<typeof tool.execute>) {
+        // PI has accepted the call and checked its arguments and policy by
+        // the time it invokes execute. A request alone does not mean it ran.
+        if (turnStarted) {
+          args[2]?.throwIfAborted();
+          recordStart(PI_TOOL_STARTED, { id: args[0], name: tool.name });
+        }
+        return tool.execute(...args);
+      },
+    })) : customTools;
     const created = await sdk.createAgentSession({
       cwd,
       agentDir,
@@ -1121,7 +1162,7 @@ export class PiAgentRuntime {
       sessionManager,
       // The whitelist-filtered set is both the executable set and the declared
       // set, so PI cannot expose a tool the domain excluded.
-      customTools: activeTools as unknown as import("@earendil-works/pi-coding-agent").ToolDefinition[],
+      customTools: recordedTools,
       tools: activeTools.map((t) => t.name),
     });
     const session = created.session;
@@ -1536,6 +1577,7 @@ export class PiAgentRuntime {
       if (callerCancelled) return;
       // Wait for prompt() to fully resolve.
       await promptPromise;
+      if (recordWriteError) throw recordWriteError;
       if (callerCancelled) return;
       // Drain any events that arrived between agent_end and promptPromise resolution.
       while (eventBuffer.length > 0 && !callerCancelled) {
@@ -1614,7 +1656,7 @@ export class PiAgentRuntime {
       if (agentError) {
         yield { type: "error", message: agentError };
       } else {
-        if (turnStarted && (finalStopReason === "stop" || finalStopReason === "length")) {
+        if (turnStarted && agentDone && finalStopReason && finalStopReason !== "error" && finalStopReason !== "aborted") {
           sessionManager.appendCustomEntry(PI_TURN_COMPLETED);
         }
         // The summary reports the same scope the ledger settles: main calls

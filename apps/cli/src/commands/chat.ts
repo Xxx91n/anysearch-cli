@@ -188,7 +188,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // writes cannot interleave with another attempt on the same session. The
   // runtime still takes its own run lock inside; this wraps it rather than
   // moving it, so the JSONL append keeps the guarantee it already had.
-  let attemptFailed = false;
+  let attemptExitCode = 0;
   try {
     await runChatAttempt({
       store: durableStore ? store : undefined,
@@ -208,9 +208,12 @@ export async function runChat(argv: string[]): Promise<number> {
         attachSessionToTask(attempt.sessionId);
         console.log("[session] 已 fork，新句柄：" + memory.sessionId);
       }
+      const cancellation = new AbortController();
+      const interrupt = () => cancellation.abort();
       // Construct PiAgentRuntime and run.
       // models undefined fix — session.models is now properly initialized.
       const runtime = new PiAgentRuntime({
+        signal: cancellation.signal,
         retriever,
         domain,
         // store + sessionId together are what make PiAgentRuntime build the
@@ -257,6 +260,7 @@ export async function runChat(argv: string[]): Promise<number> {
       // run error is still an attempt that must be recorded as unfinished, and
       // the code is applied after the lease is handed back.
       let failed = false;
+      process.once("SIGINT", interrupt);
       try {
         for await (const event of runtime.run(query, attempt)) {
           switch (event.type) {
@@ -309,6 +313,7 @@ export async function runChat(argv: string[]): Promise<number> {
         console.error("[error] " + (e?.message || String(e)));
         failed = true;
       } finally {
+        process.off("SIGINT", interrupt);
         // Design: drain background anchor writes before the CLI closes this store
         // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
         // returning here without waiting loses the rolling_summary / l2_recall write.
@@ -377,7 +382,8 @@ export async function runChat(argv: string[]): Promise<number> {
       }
       // The attempt's own record now says finished only when the run reached
       // its end; a run that errored or was cancelled keeps the unfinished row.
-      attemptFailed = failed;
+      if (cancellation.signal.aborted) attemptExitCode = 130;
+      else if (failed) attemptExitCode = 1;
       return { completed: completed && !failed };
     });
   } catch (error: any) {
@@ -392,5 +398,5 @@ export async function runChat(argv: string[]): Promise<number> {
     }
     throw error;
   }
-  return attemptFailed ? 1 : 0;
+  return attemptExitCode;
 }
