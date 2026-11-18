@@ -436,7 +436,7 @@ export function registerAnsChat(
               content: [
                 {
                   type: "text" as const,
-                  text: "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
+                  text: "ans_chat consolidate: stopped by this run's budget (" + report.budgetRejected +
                     " model call(s) refused); " +
                     (report.add + report.update === 0
                       ? "nothing was written."
@@ -577,7 +577,7 @@ export function registerAnsChat(
           // stays untouched (S5: a handle no longer doubles as the execution's
           // quota owner). Without a task (degraded registry) the old session
           // form runs unchanged.
-          const memory = await resolveAnsChatSession(eng, requestedSessionId, { sessionBudget: !task });
+          const memory = await resolveAnsChatSession(eng, requestedSessionId, { sessionBudget: !taskBudgetScope });
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
           if (mustResume && (!memory.store || memory.sessionId !== requestedSessionId)) {
@@ -627,14 +627,9 @@ export function registerAnsChat(
             span,
             // #211: cancellation of the MCP request aborts this agent run.
             signal,
-            // Design: #303 — this execution's own budget. Every reserve/settle
-            // (the agent loop, compaction, the memory pipeline's
-            // summary/adjudication and the late settlement) lands on the task's
-            // row, and internal searches carry the scope so they stop
-            // accumulating on the conversation's ledger. Absent (degraded call)
-            // → session form, unchanged. A declared budget that could not be
-            // established never reaches here: it stops above, before the client
-            // and the session mint.
+            // This execution's own budget: the agent loop, compaction, the
+            // memory pipeline and the late settlement all bill the task's row.
+            // Absent on a degraded call, which runs the session form.
             taskBudget: taskBudgetScope,
           });
           let output = "";

@@ -178,16 +178,13 @@ function attachCloseout<R>(
   wroteEnd: boolean,
   exitCode: number,
 ): R {
-  // #204 keeps ERROR results out of the success output schema. Only two error
-  // shapes carry structuredContent at all: a budget stop (the exception this
-  // ticket adds, because it must be machine-distinguishable from an upstream
-  // failure) and the summary-rebuild report (#264), whose shape clients already
-  // parse. Every other error stays bare; the task row is still written and
-  // ended in all cases.
+  // #204 keeps ERROR results out of the success output schema. Only a budget
+  // stop carries structuredContent on an error (it must stay machine-
+  // distinguishable), so only it gets a closeout; every other error stays bare.
+  // The task row is written and ended in all cases.
   if (verdict.isError && !verdict.budgetStop) return result;
-  // A handler is free to return a non-object (a future #304 tool might hand back
-  // a bare string): spreading one would silently replace it with an object and
-  // lose the original. Leave such a result exactly as it is.
+  // A future #304 tool might return a bare string; spreading one would replace
+  // it with an object. Leave non-object results exactly as they are.
   if (!result || typeof result !== "object") return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
@@ -206,25 +203,14 @@ function attachCloseout<R>(
 }
 
 /**
- * Run one tool handler under a registered task.
+ * Run one tool handler under a registered task: register (fail-open), run the
+ * handler inside the task context, await its late work, write the end, then
+ * attach the closeout (best-effort).
  *
- * Order matters and is the whole contract:
- * 1. register (fail-open: a broken registry never breaks the call),
- * 2. run the handler inside the task context so it can read `currentMcpTask()`,
- * 3. await it — this is the late work; `flushMemory()` and `observeTool()` are
- *    inside there,
- * 4. write the task's end with the outcome's exit code,
- * 5. hand the closeout back in the result (best-effort; a shape surprise in the
- *    handler's result must not undo the row that was just written).
- *
- * A handler that throws ends the task as failed (exit 1) and the error
- * propagates unchanged — the wrapper does not turn a throw into a result.
- *
- * Handler contract: a handler that stops early because the caller cancelled
- * must say so in its result (`structuredContent.interrupted: true`). The
- * wrapper cannot infer it — a bare empty result looks identical to a real one.
- * `ans_chat` does this on every cancellation path; a tool that migrates later
- * (#304) must do the same.
+ * A handler that throws ends the task as failed and the error propagates
+ * unchanged. A handler that stops early because the caller cancelled must say
+ * so (`interrupted: true`) — the wrapper cannot infer it, since a bare empty
+ * result looks identical to a real one.
  */
 export async function withMcpTask<R>(
   eng: CompositionResult,

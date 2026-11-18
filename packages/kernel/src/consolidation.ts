@@ -112,7 +112,7 @@ export type ConsolidationUnmeteredReason =
 export const CONSOLIDATION_UNMETERED_TEXT: Record<ConsolidationUnmeteredReason, string> = {
   "no-scope-session": "a memory-list scope has no owning session to charge",
   "several-scope-sessions": "several session owners cannot share one run's spend, and charging the first would misattribute it",
-  "no-declared-caps": "this session declared no [budget] caps, so these calls were not charged to a cap",
+  "no-declared-caps": "this run declared no [budget] caps, so these calls were not charged to a cap",
   "budget-setup-failed": "this run's budget row or caps could not be registered",
 };
 

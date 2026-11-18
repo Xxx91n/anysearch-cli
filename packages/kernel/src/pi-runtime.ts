@@ -1380,12 +1380,9 @@ export class PiAgentRuntime {
     // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
     //
-    // #302: a task-scoped budget is the new accounting form. The run bills its
-    // task — the scope is the task id and the ledger is the task's own — so
-    // resuming a conversation spends none of the history's quota. Callers
-    // without one (MCP ans_chat, consolidate) keep the session form and its
-    // old semantics untouched (#303/#304 migrate separately).
-    // `taskBudget` itself is destructured at the top of this run.
+    // A task-scoped budget is the new accounting form: the run bills its task,
+    // so resuming a conversation spends none of its history. The entries still
+    // on the session form (#304) keep their old semantics untouched.
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
     const billingWired = !!this.billingScope && !perCallBudget;

@@ -855,24 +855,16 @@ export class SqliteSessionStore implements SessionStore {
    * settle path, and the engine's per-call routing all see one object, so a
    * task's reserve and settle hit one row through one set of prepared
    * statements. Rows live in task_budgets (keyed by task id) and never touch
-   * budget_ledger — the session form and its history stay as they were for
-   * callers that have not migrated (#303/#304).
+   * budget_ledger — the session form and its history stay as they were for the
+   * entries still on it (#304).
    */
   createTaskBudgetLedger(): TaskBudgetLedger {
     return (this.taskBudgetLedgerInstance ??= new TaskBudgetLedger(this.db));
   }
 
-  /**
-   * The task registry over this store's single connection, so a task row and its
-   * budget row live in the same database (and a test's temp store registers into
-   * its temp file). Each object still prepares its own statements — they are per
-   * handle, not per database. The CLI opens its own registry
-   * (`openTaskRegistry`) because it registers before any engine exists; a host
-   * that already built the engine uses this seam.
-   *
-   * The registry borrows this store's connection: its `close()` is a no-op and
-   * `SqliteSessionStore.close()` closes the handle.
-   */
+  /** The task registry over this store's connection, so a task row and its
+   * budget row share one database. It borrows the handle: `close()` is a no-op
+   * and `SqliteSessionStore.close()` closes it. */
   createTaskRegistry(): TaskRegistry {
     return (this.taskRegistryInstance ??= new TaskRegistry(this.db, { ownsConnection: false }));
   }
