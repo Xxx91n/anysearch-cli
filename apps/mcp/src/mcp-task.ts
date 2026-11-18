@@ -44,18 +44,24 @@ export interface McpTaskIdentity {
 /**
  * What the caller is told about the task's end (#303).
  *
- * `state: "finished"` is not decoration: it is written only after the handler
- * resolved, which means the background summaries and the observation write are
- * done. One tail can still land afterwards: a provider stream that never closed
- * books its usage later (#188), and `structuredContent.lateSettlement` says
- * whether that already happened or is still on its way. `state: "open"` means
- * the end write failed — the record stays open on purpose (an upgrade must see
- * it as a blocker, not read a missing row as "nothing was running").
+ * The end is written only after the handler resolved, which means the background
+ * summaries and the observation write are done. One tail can still land
+ * afterwards: a provider stream that never closed books its usage later (#188),
+ * and `structuredContent.lateSettlement` says whether that already happened or
+ * is still on its way.
  */
 export interface McpTaskCloseout {
   taskId: string;
   kind: string;
-  state: "finished" | "open";
+  /**
+   * Whether the record's end was written — NOT how the turn went. `"ended"`
+   * says the row is closed, `"open"` says the end write failed and the record
+   * stays open on purpose (an upgrade must see it as a blocker, not read a
+   * missing row as "nothing was running"). The outcome lives in `exitCode` and
+   * `interrupted`, so a caller cannot mistake a cut-off turn for a clean one by
+   * reading this field alone.
+   */
+  state: "ended" | "open";
   exitCode: number;
   /** The answer stopped early (cancelled / run interrupted); late work still finished before this closeout was written. */
   interrupted: boolean;
@@ -206,7 +212,7 @@ function attachCloseout<R>(
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
     kind: identity.kind,
-    state: wroteEnd ? "finished" : "open",
+    state: wroteEnd ? "ended" : "open",
     exitCode,
     interrupted: verdict.interrupted,
   };

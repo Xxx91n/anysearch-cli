@@ -34,6 +34,7 @@ import {
   wireTaskBudget,
   type ConsolidationMetering,
   type LlmSession,
+  type RuntimeErrorReason,
   type SummaryRebuildReport,
 } from "@anysearch-cli/kernel";
 import {
@@ -247,7 +248,10 @@ export function registerAnsChat(
         // Resolved lazily, at the point a run is really about to start: a call
         // rejected for its arguments or for a missing model config must not
         // leave a budget row behind. Memoized so both operations read one
-        // decision — establishing twice would refresh the same caps twice.
+        // decision — establishing twice would refresh the same caps twice. The
+        // caps are the DOMAIN's, snapshotted at first use; a TOML edited between
+        // this snapshot and the run still takes effect through the runtime's own
+        // run-boundary re-read (#188), which re-applies them to the task row.
         let budgetWiringMemo: ReturnType<typeof wireTaskBudget> | undefined;
         const budgetWiring = (): ReturnType<typeof wireTaskBudget> =>
           (budgetWiringMemo ??= wireTaskBudget(eng.store, task?.taskId, eng.config?.budget));
@@ -612,7 +616,7 @@ export function registerAnsChat(
           let runtimeError: string | undefined;
           // #303: the runtime's own classification of a budget stop, so this
           // surface never has to match on message text.
-          let runtimeErrorReason: "budget-not-established" | "budget-rejected" | undefined;
+          let runtimeErrorReason: RuntimeErrorReason | undefined;
           let runUsage: unknown;
           let runContext: unknown;
           // A `done` event is the runtime's own signal that the loop finished.
@@ -681,13 +685,6 @@ export function registerAnsChat(
           // real spend unrecorded and later read as free. Fail-open: a drain
           // fault is reported by the runtime, never turned into a tool failure.
           await runtime.flushMemory().catch(() => {});
-          // #303: a cancelled run whose provider stream never closed schedules
-          // one late settlement of its own (#188). Give it a short, bounded
-          // window (the runtime's default; cancellation must stay snappy, #211)
-          // so the task row is final before its closeout — and when the window
-          // closes first, the answer says so instead of claiming the row
-          // stopped moving.
-          const lateSettled = await runtime.drainLateSettlement();
           // #264 (D9): read the rebuild attempts ONLY after the drain — a rebuild
           // is background work flushMemory() waits for, so reading earlier would
           // describe an attempt that had not run.
@@ -724,6 +721,16 @@ export function registerAnsChat(
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
+            // #303: give the late settlement a bounded window before closing the
+            // task. A tail can only exist here: it is scheduled when a run ends
+            // with its provider stream still open (#188), which is exactly an
+            // interrupted run. A pre-prompt stop (budget refusal) never started a
+            // prompt, and a completed/errored run's prompt settled — both have
+            // no tail, so no other branch pays this wait. When the window closes
+            // first the answer says so instead of claiming the row stopped
+            // moving (the generic error path can name no such field — #204 —
+            // and the runtime logs a failed late write instead).
+            const lateSettled = await runtime.drainLateSettlement();
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),

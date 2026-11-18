@@ -874,9 +874,10 @@ export class SqliteSessionStore implements SessionStore {
    * own registry (`openTaskRegistry`) because it registers before any engine
    * exists; a host that already built the engine uses this seam.
    *
-   * The returned registry must NOT be closed by the caller — the store owns the
-   * connection. `openTaskRegistry` owns its connection and closes it; this one
-   * does not.
+   * Ownership: the registry borrows this store's connection. Its `close()` is a
+   * no-op, `SqliteSessionStore.close()` is what closes the handle, and a cached
+   * registry used after that close throws on the closed database — a loud
+   * signal, not a silent no-op that pretends the rows were written.
    */
   createTaskRegistry(): TaskRegistry {
     return (this.taskRegistryInstance ??= new TaskRegistry(this.db, { ownsConnection: false }));

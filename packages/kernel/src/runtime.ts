@@ -7,6 +7,20 @@
 import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort } from "./ports";
 import type { CostSource } from "./usage";
 
+/**
+ * #303: the machine-readable class of a stop the runtime itself decided, so a
+ * host can keep a budget refusal apart from a provider failure without reading
+ * the message text. Named here once and used by the emitter (pi-runtime), the
+ * MCP result builder and the task wrapper, so a typo at an emit site is a type
+ * error instead of a silently unclassified error.
+ *
+ * - `budget-not-established`: the domain declared [budget] but the task budget
+ *   could not be created; nothing was called.
+ * - `budget-rejected`: the task's own budget refused the run (tokens or calls);
+ *   nothing was called for this refusal.
+ */
+export type RuntimeErrorReason = "budget-not-established" | "budget-rejected";
+
 export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "tool_call"; name: string; args: unknown }
@@ -23,18 +37,8 @@ export type AgentEvent =
   | {
       type: "error";
       message: string;
-      /**
-       * #303: the machine-readable class of a stop the runtime itself decided,
-       * so a host can keep a budget refusal apart from a provider failure
-       * without reading the message text. Absent means "not a runtime-decided
-       * budget stop" — an upstream error, a cancellation, or a fault.
-       *
-       * - `budget-not-established`: the domain declared [budget] but the task
-       *   budget could not be created; nothing was called.
-       * - `budget-rejected`: the task's own budget refused the run (tokens or
-       *   calls); nothing was called for this refusal.
-       */
-      reason?: "budget-not-established" | "budget-rejected";
+      /** Absent means "not a runtime-decided budget stop". */
+      reason?: RuntimeErrorReason;
     };
 
 /**

@@ -17,10 +17,13 @@
 //   uncontrolled calls.
 //
 // Degradation, said plainly: when NO task was registered (a broken registry, or
-// a host that never registered one) or the store lacks the seam, an UNDECLARED
-// domain returns an empty wiring and the run falls back to the session form —
-// the shape every unmigrated caller still runs, not a hidden guarantee. A
-// DECLARED domain in the same corner returns a fault and stops instead.
+// a host that never registered one) or the store cannot hand out a ledger, an
+// UNDECLARED domain returns an empty wiring and the run falls back to the
+// session form — the shape every unmigrated caller still runs, not a hidden
+// guarantee. "Cannot hand out a ledger" is a real corner, not an oversight: with
+// no ledger object there is nothing for the engine's per-call routing to bill,
+// so "the scope still travels" cannot hold there. A DECLARED domain in the same
+// corner returns a fault and stops instead.
 //
 // Run from tests: pnpm --filter @anysearch-cli/kernel test
 

@@ -296,7 +296,7 @@ async function main() {
       assert(!!close1 && typeof close1.taskId === "string" && close1.taskId.length > 0,
         "1: the result names the task this call ran as (got " + JSON.stringify(close1) + ")");
       assert(close1?.kind === "mcp.ans_chat", "1: the task kind names the tool (got " + JSON.stringify(close1?.kind) + ")");
-      assert(close1?.state === "finished", "1: the closeout says the task's late work finished (got " + JSON.stringify(close1?.state) + ")");
+      assert(close1?.state === "ended", "1: the closeout says the task's late work finished (got " + JSON.stringify(close1?.state) + ")");
       assert(close1?.exitCode === 0 && close1?.interrupted === false, "1: a completed answer ends the task as success");
 
       const tasks = readRows<TaskRow>(dbPath, TASKS_SQL);
@@ -392,7 +392,7 @@ async function main() {
       assert(/stopped by its task budget/.test(refusedText), "4: the text names the task budget (got " + refusedText.slice(0, 160) + ")");
       assert(seen.length === 0, "4: no provider call was made (got " + seen.length + ")");
       const close = refused?.structuredContent?.closeout;
-      assert(close?.state === "finished" && close?.exitCode === 1,
+      assert(close?.state === "ended" && close?.exitCode === 1,
         "4: the task closes as failed (got " + JSON.stringify(close) + ")");
       const tasks = readRows<TaskRow>(refusedDb, TASKS_SQL);
       assert(tasks.length === 1 && !!tasks[0]?.ended && tasks[0]?.code === 1,
@@ -459,7 +459,7 @@ async function main() {
         "6: the answer says whether the late settlement already landed (got "
         + JSON.stringify(lateSettlement) + ")");
       const close = result?.structuredContent?.closeout;
-      assert(close?.state === "finished",
+      assert(close?.state === "ended",
         "6/#303: the task closes only after its late settlement/summary drained (got " + JSON.stringify(close) + ")");
       assert(close?.interrupted === true && close?.exitCode === 1,
         "6: the record says the turn did not complete (got " + JSON.stringify(close) + ")");

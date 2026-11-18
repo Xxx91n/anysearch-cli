@@ -1690,7 +1690,13 @@ export class PiAgentRuntime {
         this.lateSettlement = Promise.all([
           previousTail ?? Promise.resolve(),
           promptPromise!.then(settleDelta, settleDelta),
-        ]).then(() => undefined, () => { /* the delta write is best-effort by design */ });
+        ]).then(() => undefined, (e: unknown) => {
+          // A failed late write is best-effort, but not silent: the host reads
+          // "settled" for it (the promise is no longer pending), so an operator
+          // needs the one line that tells "the write blew up" apart from "it
+          // decided there was nothing to add".
+          reportBudgetFault("late token settlement", e);
+        });
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
@@ -1750,11 +1756,18 @@ export class PiAgentRuntime {
     // swallowed it. A failed late write is no longer pending either, and this
     // method must never throw out of a closeout path — whatever put the promise
     // in the field (tests do it directly).
+    //
+    // Clear only the promise THIS call captured: a second run on the same
+    // runtime may already have installed its own tail, and clearing that one
+    // would report "settled" while its delta is still pending.
+    const clearIfStillOurs = (): void => {
+      if (this.lateSettlement === pending) this.lateSettlement = undefined;
+    };
     const done = pending.then(() => {
-      this.lateSettlement = undefined;
+      clearIfStillOurs();
       return true as const;
     }, () => {
-      this.lateSettlement = undefined;
+      clearIfStillOurs();
       return true as const;
     });
     try {

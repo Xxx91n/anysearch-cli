@@ -141,8 +141,34 @@ async function main() {
         "13: createTaskBudgetLedger caches one instance per store");
     }
 
+    // 14. #303: the store's registry borrows the connection — a stray close()
+    //     is a documented no-op, and the store keeps working afterwards.
+    {
+      const borrowed = store.createTaskRegistry();
+      assert(borrowed === store.createTaskRegistry(), "14: createTaskRegistry caches one instance per store");
+      const task = borrowed.registerTask({ kind: "mcp.ans_chat", role: "business", entry: "mcp" });
+      let closeThrew = false;
+      try { borrowed.close(); } catch { closeThrew = true; }
+      assert(!closeThrew, "14: closing a borrowed registry does not throw");
+      // The store's connection is still the store's: reading through it must work.
+      assert(borrowed.taskById(task.taskId) !== null,
+        "14: the store's connection survives a stray registry close");
+      task.finish({ exitCode: 0 });
+      assert(borrowed.taskById(task.taskId)?.endedAt !== null,
+        "14: the borrowed registry still writes after the no-op close");
+    }
+
     registry.close();
     store.close();
+
+    // 15. #303: once the store closes its handle, the cached registry fails
+    //     loudly instead of silently pretending the write landed.
+    {
+      const borrowed = store.createTaskRegistry();
+      let threw = false;
+      try { borrowed.registerTask({ kind: "mcp.ans_chat", role: "business", entry: "mcp" }); } catch { threw = true; }
+      assert(threw, "15: a cached registry used after store.close() throws");
+    }
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
   }

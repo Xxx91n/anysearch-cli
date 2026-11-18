@@ -385,7 +385,7 @@ was registered, a result that carries `structuredContent` also carries
 |-------|---------|
 | `taskId` | The task record this call ran as. |
 | `kind` | `mcp.ans_chat`. |
-| `state` | `"finished"` — the end row is written; `"open"` — the end write failed, so the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). |
+| `state` | Whether the record's END was written — not how the turn went. `"ended"` = the row is closed; `"open"` = the end write failed and the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). The outcome is `exitCode` (+ `interrupted`), so the two cannot be confused. |
 | `exitCode` | `0` completed, `1` failed or interrupted. |
 | `interrupted` | The answer stopped early (cancellation). |
 

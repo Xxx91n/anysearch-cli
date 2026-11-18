@@ -173,9 +173,13 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  *   was, and nothing pretends the handle still owns this run's quota. Default
  *   true: the unmigrated callers (and a degraded call that could not register a
  *   task) keep the session form untouched.
- * @returns store + sessionId (and the engine's ledger, #178) only when the
- *   handle is usable; an empty object leaves the runtime's `store && sessionId`
- *   gate closed (single-shot / memory disabled).
+ * @returns store + sessionId only when the handle is usable. The engine's
+ *   ledger (#178) travels with it on the SESSION form only — that is, when
+ *   `sessionBudget` is true. The migrated `ans_chat` path passes false: the
+ *   handle restores context and the run bills its task, so a present ledger
+ *   here would be a session fallback that must not exist. Absent `store` /
+ *   `sessionId` still leaves the runtime's `store && sessionId` gate closed
+ *   (single-shot / memory disabled).
  */
 export async function resolveAnsChatSession(
   eng: CompositionResult,
@@ -299,8 +303,10 @@ export function buildAnsChatErrorResult(
 
 // ---- #303: a run stopped by its own task budget ----
 
-/** The two runtime-decided budget stops (#303), as the MCP surface names them. */
-export type AnsChatBudgetStop = "budget-not-established" | "budget-rejected";
+/** The two runtime-decided budget stops (#303), as the MCP surface names them.
+ *  The union itself is the kernel's, so the emitter and the result builder cannot
+ *  drift apart on a spelling. */
+export type AnsChatBudgetStop = import("@anysearch-cli/kernel").RuntimeErrorReason;
 
 export interface AnsChatBudgetStopExtra {
   taskId?: string;

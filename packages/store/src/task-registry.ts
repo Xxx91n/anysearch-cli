@@ -218,16 +218,18 @@ export class TaskRegistry {
   }
 
   /**
-   * Close the connection this registry OWNS. A borrowed registry (the session
-   * store's seam, #303) refuses instead of tearing the engine's database out
-   * from under it — a loud error beats a silently broken store.
+   * Close the connection this registry OWNS.
+   *
+   * Design: a borrowed registry (the session store's seam, #303) is a documented
+   * NO-OP instead of a throw. A stray `close()` from a teardown path must not
+   * turn into an error mid-exit, and closing the store's connection from here
+   * would break every later query — so the borrowed case does nothing and says
+   * so. The store owns that handle; `SqliteSessionStore.close()` is what closes
+   * it (and any later use of this registry then throws on the closed DB, which
+   * is the honest signal).
    */
   close(): void {
-    if (!this.ownsConnection) {
-      throw new Error(
-        "this task registry borrows the store's connection — close the store instead",
-      );
-    }
+    if (!this.ownsConnection) return;
     this.db.close();
   }
 }
