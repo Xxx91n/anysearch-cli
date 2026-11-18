@@ -89,22 +89,28 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
 }
 
 const DEFAULT_AGENT_TIMEOUT_MS = 300_000;
+const PARTIAL_ANSWER_NOTICE = "这是上一轮被打断留下的半截回答，不要当成完整回答。";
 
 function markPartialAnswer(message: AgentMessage): AgentMessage {
   if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
   const textParts = message.content.filter((part) => part.type === "text");
   const firstText = textParts.findIndex((part) => part.text.trim());
   if (firstText === -1) return message;
-  // PI's providers drop aborted messages. Replay only the visible text so an
-  // unfinished tool call or reasoning block cannot get into the next request.
+  // Design: mark the visible text at replay time — PI drops aborted messages
+  // from requests, and the saved record still needs the original stop reason.
   return {
     ...message,
     stopReason: "stop",
     content: textParts.map(({ text }, index) => ({
       type: "text",
-      text: index === firstText ? "这是上一轮被打断留下的半截回答，不要当成完整回答。\n\n" + text : text,
+      text: index === firstText ? PARTIAL_ANSWER_NOTICE + "\n\n" + text : text,
     })),
   };
+}
+
+function omitPartialAnswerFromSummary(message: AgentMessage): AgentMessage {
+  if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
+  return { ...message, content: message.content.filter((part) => part.type !== "text") };
 }
 
 // r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
@@ -1141,10 +1147,10 @@ export class PiAgentRuntime {
       });
       pi.on("context_with_system", (event) => ({ messages: event.messages.map(markPartialAnswer) }));
       pi.on("session_before_compact", (event) => {
-        // The summary request reads these lists directly, outside the context hook.
+        // Design: leave partial text out of the summary — it could read as a conclusion there.
         const preparation = event.preparation;
-        preparation.messagesToSummarize = preparation.messagesToSummarize.map(markPartialAnswer);
-        preparation.turnPrefixMessages = preparation.turnPrefixMessages.map(markPartialAnswer);
+        preparation.messagesToSummarize = preparation.messagesToSummarize.map(omitPartialAnswerFromSummary);
+        preparation.turnPrefixMessages = preparation.turnPrefixMessages.map(omitPartialAnswerFromSummary);
       });
       pi.on("tool_call", async (event) => {
         // saturation stop — block further searches, let the model answer.

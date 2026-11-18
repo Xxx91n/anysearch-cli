@@ -440,6 +440,14 @@ async function replaysPartialAnswersWithTheirNotice() {
         }
         assert.ok(completed);
         assert.equal(requests.length, 1);
+        if (stopReason === "aborted") {
+          for await (const _event of runtime.run("再问一次")) { /* drain */ }
+          assert.equal(requests.length, 2);
+          const marked = requests[1]!.messages.filter((message) => JSON.stringify(message.content).includes(notice));
+          assert.deepEqual(marked.map(({ role, content }) => ({ role, content })), [
+            { role: "assistant", content: [{ type: "text", text: notice + "\n\n答到一半" }] },
+          ]);
+        }
         const record = readFileSync(path, "utf8");
         assert.ok(record.startsWith(original));
         assert.ok(!record.includes(notice));
@@ -461,16 +469,20 @@ async function replaysPartialAnswersWithTheirNotice() {
   }
 }
 
-async function compactionSeesTheNoticeWithThePartialAnswer() {
+async function compactionLeavesPartialTextOutOfTheSummary() {
   const dir = mkdtempSync(join(tmpdir(), "ans-compact-partial-"));
   try {
     const sessionId = "compact-partial";
     const path = seedRecord(dir, sessionId, [
       question,
-      { type: "message", message: assistant([{ type: "text", text: "将被压缩的半截文字" }], "aborted") },
+      { type: "message", message: assistant([
+        { type: "text", text: "将被压缩的半截文字" },
+        { type: "toolCall", id: "compacted-call", name: "search", arguments: { query: "早先的检索" } },
+      ], "aborted") },
       { type: "message", message: { ...question.message, content: [{ type: "text", text: "This more recent question remains in the compacted conversation." }] } },
       { type: "message", message: { ...assistant([{ type: "text", text: "近期回答" }]), usage: { ...usage, input: 6000, totalTokens: 6001 } } },
     ]);
+    const original = readFileSync(path, "utf8");
     const requests: TranscriptContext[] = [];
     const runtime = chatRuntime(dir, sessionId, (_model: unknown, context: TranscriptContext) => {
       requests.push(context);
@@ -486,9 +498,14 @@ async function compactionSeesTheNoticeWithThePartialAnswer() {
         ? message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
         : []
     )).join("\n") ?? "";
-    assert.ok(summaryPrompt.includes("[Assistant]: 这是上一轮被打断留下的半截回答，不要当成完整回答。\n\n将被压缩的半截文字"));
+    assert.ok(summaryPrompt.includes("[User]: 上次的问题"));
+    assert.ok(summaryPrompt.includes('[Assistant tool calls]: search(query="早先的检索")'));
+    assert.ok(!summaryPrompt.includes("将被压缩的半截文字"));
+    assert.ok(!summaryPrompt.includes("不要当成完整回答"));
     assert.ok(!JSON.stringify(requests.at(-1)?.messages).includes("将被压缩的半截文字"));
-    assert.match(readFileSync(path, "utf8"), /"type":"compaction"/);
+    const record = readFileSync(path, "utf8");
+    assert.ok(record.startsWith(original));
+    assert.match(record.slice(original.length), /"type":"compaction"/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -504,7 +521,7 @@ async function main() {
   await leavesTheRecordReadableWhenCompletionWriteTears();
   await preservesPartialAnswersOnCancellation();
   await replaysPartialAnswersWithTheirNotice();
-  await compactionSeesTheNoticeWithThePartialAnswer();
+  await compactionLeavesPartialTextOutOfTheSummary();
   console.log("会话中断恢复验收通过");
 }
 
