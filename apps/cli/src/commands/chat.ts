@@ -56,6 +56,10 @@ export async function runChat(argv: string[]): Promise<number> {
     // error and exits non-zero (#162). Missing domains and DB/IO faults keep
     // the fallback below.
     if (isDomainSchemaError(e)) throw e;
+    if (printOnly) {
+      console.error("无法为这次提问建立任务预算，读取领域或打开持久库失败。" + (e?.message || String(e)));
+      return 1;
+    }
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
     // Fallback: no domain filtering, all providers — still on the durable DB so
     // memory reads keep working across runs.
@@ -182,7 +186,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
   // Design: 脚本模式需要能按任务记账 — 持久库出错时，不能换个库放行付费请求。
   const taskBudgetFault = taskBudgetWiring.taskBudgetFault ??
-    (printOnly && (!durableStore || !taskBudgetWiring.taskBudget) ? "无法为这次提问建立任务预算" : undefined);
+    (printOnly && !taskBudgetWiring.taskBudget ? "无法为这次提问建立任务预算" : undefined);
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics
   // and upgrade admission (#309) will want to read off the task record.
@@ -264,6 +268,7 @@ export async function runChat(argv: string[]): Promise<number> {
         // the task instead of the session). Absent → session form, unchanged.
         taskBudget: taskBudgetWiring.taskBudget,
         taskBudgetFault,
+        enforceTaskBudgetPerCall: printOnly,
       });
       if (!printOnly) {
         console.log("ans chat: " + query);

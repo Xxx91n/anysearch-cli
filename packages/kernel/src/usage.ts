@@ -9,6 +9,7 @@
 // dimension that never arrived is named instead of zero-filled.
 
 import type { RunUsage } from "./runtime";
+import type { TaskBudgetScope } from "./ports";
 
 /** Where a cost figure came from. `mixed` spans a provider figure and an estimate. */
 export type CostSource = "provider" | "estimated" | "unknown" | "mixed";
@@ -272,5 +273,41 @@ export function emptyRunUsage(missing: string[]): RunUsage {
     compactionCostUsd: 0,
     compactionCostSource: "unknown",
     missing,
+  };
+}
+
+/** Send budget faults to stderr so they stay out of command output and MCP replies. */
+export function reportBudgetFault(stage: string, e: unknown): void {
+  try {
+    process.stderr.write(
+      "[anysearch] budget " + stage + " failed: " +
+      (e instanceof Error ? e.message : String(e)) + "\n",
+    );
+  } catch { /* stderr unavailable */ }
+}
+
+/** Reserve one model request. The caller settles it when the provider finishes. */
+export function reserveTaskModelCall(
+  { taskId, ledger }: TaskBudgetScope,
+  estimate: number,
+) {
+  if (!ledger.reserveCalls(taskId, 1)) throw new Error("Call budget exhausted.");
+  try {
+    if (!ledger.reserveTokens(taskId, estimate)) throw new Error("Token budget exhausted.");
+  } catch (error) {
+    try { ledger.settleCalls(taskId, 1, 0); }
+    catch (settleError) { reportBudgetFault("model call settlement", settleError); }
+    throw error;
+  }
+  return (usage?: { totalTokens?: number; cost?: { total?: number } }) => {
+    // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
+    const tokens = typeof usage?.totalTokens === "number" && usage.totalTokens > 0 ? usage.totalTokens : estimate;
+    const cost = usage?.cost?.total ?? 0;
+    try { ledger.settleCalls(taskId, 1, 1); }
+    catch (error) { reportBudgetFault("model call settlement", error); }
+    try { ledger.settleTokens(taskId, estimate, tokens); }
+    catch (error) { reportBudgetFault("model token settlement", error); }
+    try { if (cost > 0) ledger.settleUsd(taskId, 0, cost); }
+    catch (error) { reportBudgetFault("model cost settlement", error); }
   };
 }

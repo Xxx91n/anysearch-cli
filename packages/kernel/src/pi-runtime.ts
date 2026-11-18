@@ -14,7 +14,7 @@
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, StreamFunction } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
@@ -31,7 +31,7 @@ import {
   type SessionLockWindows,
 } from "./session-lock";
 import { estimateTranscriptTokens } from "./message-text";
-import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
+import { accumulateUsage, emptyUsageTotals, reportBudgetFault, reserveTaskModelCall, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -41,6 +41,7 @@ import {
   RETRIEVAL_CONTENT_SCHEMA_URL,
   shouldAllowUrl,
   wrapRetrieved,
+  type NormalizedResult,
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
@@ -149,23 +150,6 @@ function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
   } catch { /* fail-open */ }
 }
 
-/**
- * Report a budget reserve/settle fault without letting it abort the chat.
- *
- * Design: budget is an accounting layer, not a precondition for answering —
- * a locked/unavailable ledger must not turn a completed agent run into a
- * failed call. stderr stays protocol-safe for MCP (no stdout), and a closed
- * stderr pipe is itself fail-open.
- */
-function reportBudgetFault(stage: string, e: unknown): void {
-  try {
-    process.stderr.write(
-      "[anysearch] budget " + stage + " failed: " +
-      (e instanceof Error ? e.message : String(e)) + "\n",
-    );
-  } catch { /* stderr unavailable */ }
-}
-
 // #259: index one internal search into the shared research archive.
 //
 // One writer for both internal retrieval paths (the search tool and the
@@ -236,7 +220,7 @@ function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined
 export function createSearchTool(
   retriever: RetrieverPort,
   span?: RetrievalObservationSink,
-  onResults?: (urls: string[]) => void,
+  onResults?: (urls: string[], results: NormalizedResult[]) => void,
   // #259: the archive writer for this session, or absent when the runtime has
   // no wired session (nothing is indexed then).
   archive?: { store: SessionStorePort; sessionId: string },
@@ -271,7 +255,8 @@ export function createSearchTool(
         ...(signal ? { signal } : {}),
       };
       const rawEnvelope = await retriever.search(q);
-      onResults?.((rawEnvelope.results ?? []).map((r) => r.url));
+      const results = rawEnvelope.results ?? [];
+      onResults?.(results.map((result) => result.url), results);
       // #259: archive this search so a later call — same session or another one —
       // can recall the material instead of searching again.
       // #263: the write also reports which row each result landed in, and those
@@ -427,6 +412,8 @@ export interface PiAgentRuntimeOptions {
    * here so both hosts (CLI now, MCP in #303) get the same stop.
    */
   taskBudgetFault?: string;
+  /** Enforce the task's budget before each model request in scripted chat. */
+  enforceTaskBudgetPerCall?: boolean;
 }
 
 // pure event mapping extracted for tests — pi-ai's
@@ -615,8 +602,14 @@ function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: bo
   return undefined;
 }
 
+function displaySourceUrl(result: NormalizedResult): string {
+  const sourceUrl = result.extra?.sourceUrl;
+  return typeof sourceUrl === "string" && sourceUrl ? sourceUrl : result.url;
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
+  private readonly memoryBudgetSettlements = new Set<Promise<void>>();
   private readonly domainReloader: (() => unknown) | null;
   private warnedEnvIgnored = false;
   // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
@@ -701,7 +694,9 @@ export class PiAgentRuntime {
         retriever: this.scopedRetriever,
         domain: opts.domain,
         model: opts.model as any,
-        streamFn: opts.streamFn as any,
+        streamFn: opts.enforceTaskBudgetPerCall && opts.taskBudget
+          ? this.memoryStream(opts.streamFn as StreamFunction, opts.taskBudget)
+          : opts.streamFn,
         sessionId: opts.sessionId,
         getApiKey: opts.getApiKey,
         providerName: (opts as any).providerName,
@@ -845,9 +840,12 @@ export class PiAgentRuntime {
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
     const sources = new Set<string>();
-    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => {
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls, results) => {
       saturation.record(urls);
-      for (const url of urls) if (url) sources.add(url);
+      for (const result of results) {
+        const url = displaySourceUrl(result);
+        if (url) sources.add(url);
+      }
     }, this.archive);
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
@@ -908,6 +906,8 @@ export class PiAgentRuntime {
     let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     let questionWritten = false;
     let turnStarted = false;
+    let modelCallsStarted = 0;
+    let reserveFollowupModelCall: ((messages: unknown[]) => void) | undefined;
     let partialAnswer: AssistantMessage | undefined;
     let partialText = "";
     let recordWriteError: Error | undefined;
@@ -978,6 +978,7 @@ export class PiAgentRuntime {
         // PI writes the question before asking the model. Startup compaction can
         // call a model earlier, before there is a new question to mark.
         if (recordWriteError) throw recordWriteError;
+        if (modelCallsStarted > 0) reserveFollowupModelCall?.(context.messages);
         if (questionWritten) {
           partialAnswer = undefined;
           partialText = "";
@@ -989,6 +990,7 @@ export class PiAgentRuntime {
         const forwarded = options && typeof options === "object"
           ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
           : options;
+        modelCallsStarted++;
         return (streamFn as any)(baseModel, context, forwarded);
       },
     });
@@ -1234,7 +1236,8 @@ export class PiAgentRuntime {
             if (toolCallId && text) {
               const urls: string[] = [];
               for (const result of env.enrichedEnvelope.results ?? []) {
-                if (typeof result?.url === "string" && result.url) urls.push(result.url);
+                const url = result && displaySourceUrl(result);
+                if (url) urls.push(url);
               }
               pendingToolResultEnrichment = { toolCallId, text, urls };
             }
@@ -1406,6 +1409,12 @@ export class PiAgentRuntime {
       } catch (e) {
         // fail-open: keep the previously registered caps and name the fault.
         reportBudgetFault("budget refresh", e);
+        if (this.opts.enforceTaskBudgetPerCall) {
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget refresh failed");
+          yield { type: "error", message: "无法更新这次提问的任务预算。" };
+          return;
+        }
       } finally {
         // Clear only after the refresh attempt (CodeRabbit): a change consumed
         // mid-run by beforeToolCall is applied once at the next run boundary.
@@ -1472,6 +1481,12 @@ export class PiAgentRuntime {
         tokenReserved = reserveAmount;
       } catch (e) {
         reportBudgetFault("token reserve", e);
+        if (this.opts.enforceTaskBudgetPerCall) {
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget reserve failed");
+          yield { type: "error", message: "无法为这次提问预留 token 额度。" };
+          return;
+        }
       }
     }
 
@@ -1546,11 +1561,11 @@ export class PiAgentRuntime {
     //   established a budget for exactly this execution, so "unbilled but
     //   running" is not an honest state for it; raising [budget] callCap lets
     //   the NEXT task through, since every task starts with a fresh budget.
-    let callReserved = false;
+    let reservedCalls = 0;
     if (billingWired) {
       try {
-        callReserved = billingLedger!.reserveCalls(billingId!, 1);
-        if (!callReserved && taskBudget) {
+        if (billingLedger!.reserveCalls(billingId!, 1)) reservedCalls = 1;
+        if (!reservedCalls && taskBudget) {
           // Cleanup BEFORE the yield: a consumer that stops reading at the
           // error event (the CLI returns 1 on the first error) runs the
           // generator's `.return()` path, and code after a yielded error in a
@@ -1573,7 +1588,32 @@ export class PiAgentRuntime {
         }
       } catch (e) {
         reportBudgetFault("reserve", e);
+        if (this.opts.enforceTaskBudgetPerCall) {
+          settleTokenReserve(0);
+          try { session.dispose(); } catch { /* already disposed */ }
+          stopRunScope("budget reserve failed");
+          yield { type: "error", message: "无法为这次提问预留调用额度。" };
+          return;
+        }
       }
+    }
+
+    if (billingWired && this.opts.enforceTaskBudgetPerCall) {
+      // Design: 脚本模式每次发请求都先查额度 — 工具执行后，模型还可能再被调用。
+      reserveFollowupModelCall = (messages) => {
+        if (!billingLedger!.reserveCalls(billingId!, 1)) {
+          throw new Error("Call budget exhausted: no calls left for the next model request.");
+        }
+        reservedCalls++;
+        const amount = resolveTokenReserve(
+          Math.ceil(estimateTranscriptTokens(messages) + systemPrompt.length / 4),
+          resolveOutputReserveTokens(domain.budget),
+        );
+        if (!billingLedger!.reserveTokens(billingId!, amount)) {
+          throw new Error("Token budget exhausted: cannot reserve tokens for the next model request.");
+        }
+        tokenReserved += amount;
+      };
     }
 
     let promptPromise: Promise<void> | null = null;
@@ -1639,9 +1679,10 @@ export class PiAgentRuntime {
         // Design: each settlement attempt is independently fail-open and
         // reported — a locked ledger must not fail an already-completed chat or
         // skip message synchronization and the final event (CodeRabbit #200).
-        if (callReserved) {
+        if (reservedCalls) {
           try {
-            billingLedger!.settleCalls(billingId!, 1, 1);
+            const actualCalls = this.opts.enforceTaskBudgetPerCall ? modelCallsStarted : 1;
+            billingLedger!.settleCalls(billingId!, reservedCalls, actualCalls);
             callSettled = true;
           } catch (e) {
             reportBudgetFault("call settlement", e);
@@ -1771,12 +1812,14 @@ export class PiAgentRuntime {
         // runInternal never ran. settleUsdUpTo books only the difference, so the
         // two paths can never charge the same spend twice.
         settleUsdUpTo(usageTotals.costUsd + compactionUsage.costUsd);
-        if (billingWired && callReserved && !callSettled) {
+        if (billingWired && reservedCalls && !callSettled) {
           // A provider call happened if it reported usage, or if we aborted it
           // before the final chunk arrived.
-          const actualCalls = usageReported || abortedEarly ? 1 : 0;
+          const actualCalls = this.opts.enforceTaskBudgetPerCall
+            ? modelCallsStarted
+            : Number(usageReported || abortedEarly);
           try {
-            billingLedger!.settleCalls(billingId!, 1, actualCalls);
+            billingLedger!.settleCalls(billingId!, reservedCalls, actualCalls);
           } catch (e) {
             reportBudgetFault("call settlement", e);
           }
@@ -1839,15 +1882,39 @@ export class PiAgentRuntime {
    * this first or those writes are lost. No-op when no pipeline is wired.
    *
    * The summary calls are real provider calls made on this session's behalf, so
-   * their spend settles on the same ledger as the main run: extra merge and
-   * check work belongs to the budget, not outside it. Settlement happens AFTER
-   * the drain, because the cost only exists once the calls finished — settling
-   * earlier would under-report them.
+   * their spend settles on the same ledger as the main run. Scripted chat
+   * settles each request as it finishes. Other callers settle the accumulated
+   * usage after draining the pipeline.
    */
   async flushMemory(): Promise<void> {
     if (!this.pipeline) return;
     await this.pipeline.flush();
-    await this.settleMemoryUsage();
+    if (this.opts.enforceTaskBudgetPerCall && this.opts.taskBudget) {
+      await Promise.all(this.memoryBudgetSettlements);
+    } else {
+      await this.settleMemoryUsage();
+    }
+  }
+
+  private memoryStream(streamFn: StreamFunction, budget: TaskBudgetScope): StreamFunction {
+    return (model, context, options) => {
+      options?.signal?.throwIfAborted();
+      const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
+      const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
+      const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
+      const settle = reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
+      try {
+        const stream = streamFn(model, context, options);
+        // Design: 用 PI 的最终结果记账 — 等摘要的函数和读条目的函数可以用同一个流。
+        const settlement = stream.result().then(message => settle(message.usage), () => settle());
+        this.memoryBudgetSettlements.add(settlement);
+        void settlement.then(() => this.memoryBudgetSettlements.delete(settlement));
+        return stream;
+      } catch (error) {
+        settle();
+        throw error;
+      }
+    };
   }
 
   /**

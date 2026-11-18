@@ -649,9 +649,11 @@ async function main() {
     console.log("\n== CLI print and interrupted turn ==");
     const printProject = join(work, "project-print");
     mkdirSync(join(printProject, ".git"), { recursive: true });
-    const printDomain = DOMAIN_MIN("print", "PRINT-SYSTEM-PROMPT.");
-    printDomain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
-    writeDomain(domainsDir, "print", [...printDomain, "[budget]", "tokenCap = 100000", "callCap = 20"]);
+    for (const [name, callCap] of [["print", 20], ["print-capped", 4]]) {
+      const domain = DOMAIN_MIN(name, "PRINT-SYSTEM-PROMPT.");
+      domain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
+      writeDomain(domainsDir, name, [...domain, "[budget]", "tokenCap = 100000", "callCap = " + callCap]);
+    }
     writeDomain(domainsDir, "print-denied", [
       ...DOMAIN_MIN("print-denied", "PRINT-DENIED."), "[budget]", "callCap = 0",
     ]);
@@ -687,6 +689,11 @@ async function main() {
     check(empty.code === 1 && empty.stdout === "" && /没有返回答案/.test(empty.stderr),
       "-p 收到空回答时退出非零，标准输出为空", empty.out);
 
+    const beforeCapped = requestLog.length;
+    const capped = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print-capped", printEnv);
+    check(capped.code === 1 && capped.stdout === "" && /Call budget exhausted/.test(capped.stderr)
+      && !requestLog.slice(beforeCapped).some((request) => request.role === "chat"),
+      "-p 在工具调用后也检查额度，没额度就不再请求模型", capped.out);
     const requestStarted = new Promise((resolve) => { onPrintInterrupted = resolve; });
     const active = startChatCli(["-p", "PRINT-INTERRUPTED-QUESTION"], printProject, "print", printEnv);
     try {
@@ -724,7 +731,7 @@ async function main() {
         "SELECT b.spent_tokens, b.billable_calls FROM task_budgets b JOIN task_records t USING (task_id) WHERE t.kind = 'cli.chat' AND t.exit_code = 0 ORDER BY b.billable_calls DESC"
       ).all();
       check(spent.length === 2 && spent.every((row) => row.spent_tokens > 0 && row.billable_calls > 0)
-        && spent[0]?.billable_calls >= 4,
+        && spent[0]?.billable_calls >= 5,
         "-p 和 -c 各自记入本次任务预算，-p 也记了补搜前的模型调用", JSON.stringify(spent));
     } finally {
       printCheck.close();

@@ -10,6 +10,7 @@
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort, TaskBudgetScope } from "./ports";
 import { estimateTranscriptTokens } from "./message-text";
+import { reportBudgetFault, reserveTaskModelCall } from "./usage";
 import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
 
 export interface SufficiencyEvaluatorDeps {
@@ -195,21 +196,19 @@ export class SufficiencyEvaluator {
     const apiKey = await getApiKey?.();
     const maxTokens = 256;
     const estimate = Math.ceil(estimateTranscriptTokens(messages)) + maxTokens;
-    let callReserved = false;
-    let tokensReserved = false;
-    let called = false;
+    signal?.throwIfAborted();
+    let settle: ReturnType<typeof reserveTaskModelCall> | undefined;
+    if (taskBudget) {
+      // Design: 补搜前问模型缺什么也要记账 — 预留不够就跳过这次补搜。
+      try { settle = reserveTaskModelCall(taskBudget, estimate); }
+      catch (error) {
+        reportBudgetFault("sufficiency reserve", error);
+        return "";
+      }
+    }
     let text = "";
     let usage: { totalTokens?: number; cost?: { total?: number } } | undefined;
     try {
-      if (taskBudget) {
-        // Design: 补搜前问模型缺什么也要记账 — 预留不够就跳过这次补搜。
-        callReserved = taskBudget.ledger.reserveCalls(taskBudget.taskId, 1);
-        if (!callReserved) return "";
-        tokensReserved = taskBudget.ledger.reserveTokens(taskBudget.taskId, estimate);
-        if (!tokensReserved) return "";
-      }
-      signal?.throwIfAborted();
-      called = true;
       const stream = streamFn(model, { messages }, { apiKey, signal, ...(taskBudget ? { maxTokens } : {}) });
       for await (const chunk of stream) {
         if (chunk?.type === "text_delta" && typeof chunk.delta === "string") text += chunk.delta;
@@ -222,14 +221,7 @@ export class SufficiencyEvaluator {
       }
       return text;
     } finally {
-      if (taskBudget) {
-        const { taskId, ledger } = taskBudget;
-        const tokens = usage?.totalTokens ?? estimate;
-        const cost = usage?.cost?.total ?? 0;
-        try { if (callReserved) ledger.settleCalls(taskId, 1, called ? 1 : 0); } catch { /* release tokens too */ }
-        try { if (tokensReserved) ledger.settleTokens(taskId, estimate, called ? tokens : 0); } catch { /* still settle cost */ }
-        if (cost > 0) ledger.settleUsd(taskId, 0, cost);
-      }
+      settle?.(usage);
     }
   }
 
