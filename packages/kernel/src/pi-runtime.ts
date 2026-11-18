@@ -13,7 +13,7 @@
 // anysearch side keeps only the research store and its anchors.
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { normalizeContext, resolveTranscript, type AssistantMessage, type StreamFunction } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
@@ -89,6 +89,23 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
 }
 
 const DEFAULT_AGENT_TIMEOUT_MS = 300_000;
+
+function markPartialAnswer(message: AgentMessage): AgentMessage {
+  if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
+  const textParts = message.content.filter((part) => part.type === "text");
+  const firstText = textParts.findIndex((part) => part.text.trim());
+  if (firstText === -1) return message;
+  // PI's providers drop aborted messages. Replay only the visible text so an
+  // unfinished tool call or reasoning block cannot get into the next request.
+  return {
+    ...message,
+    stopReason: "stop",
+    content: textParts.map(({ text }, index) => ({
+      type: "text",
+      text: index === firstText ? "这是上一轮被打断留下的半截回答，不要当成完整回答。\n\n" + text : text,
+    })),
+  };
+}
 
 // r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
 // On adversarial questions the model kept re-searching (46–62 calls per question in
@@ -1121,6 +1138,13 @@ export class PiAgentRuntime {
         if (!this.pipeline) return undefined;
         const injected = await this.pipeline.inject(event.messages as any);
         return { messages: injected as any };
+      });
+      pi.on("context_with_system", (event) => ({ messages: event.messages.map(markPartialAnswer) }));
+      pi.on("session_before_compact", (event) => {
+        // The summary request reads these lists directly, outside the context hook.
+        const preparation = event.preparation;
+        preparation.messagesToSummarize = preparation.messagesToSummarize.map(markPartialAnswer);
+        preparation.turnPrefixMessages = preparation.turnPrefixMessages.map(markPartialAnswer);
       });
       pi.on("tool_call", async (event) => {
         // saturation stop — block further searches, let the model answer.

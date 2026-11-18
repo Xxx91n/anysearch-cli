@@ -725,6 +725,13 @@ async function main() {
         const resumed = await chatCli(["--session", interruptedHandle, "SECOND-TURN-QUESTION"], projectA);
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
           "从 Ctrl-C 中断的会话续聊时先看到提醒", resumed.out);
+        const request = JSON.parse(requestLog.filter((r) => r.role === "chat").at(-1)?.body ?? "{}");
+        const notice = "这是上一轮被打断留下的半截回答，不要当成完整回答。";
+        const expected = notice + "\n\nCANCEL-STREAM-PARTIAL";
+        const messages = request.messages ?? [];
+        check(messages.filter((message) => JSON.stringify(message).includes(notice)).length === 1 &&
+          messages.some((message) => message.role === "assistant" && message.content === expected),
+          "模型在半截回答原来的位置收到标记和原文");
       }
     }
 

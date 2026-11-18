@@ -3,8 +3,9 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFil
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
+import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { runChatAttempt, sessionLeasePath } from "../src/chat-attempt";
-import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
+import { PiAgentRuntime, piSessionKey, type PiAgentRuntimeOptions } from "../src/pi-runtime";
 import { loadPiCodingAgent } from "../src/pi-sdk";
 import { judgePiSessionRecord, PI_SESSION_FORMAT_VERSION } from "../src/pi-session";
 
@@ -51,11 +52,13 @@ function seedRecord(dir: string, sessionId: string, entries: Array<Record<string
   return path;
 }
 
-function chatRuntime(dir: string, sessionId: string, streamFn: unknown, signal?: AbortSignal) {
+function chatRuntime(dir: string, sessionId: string, streamFn: unknown, signal?: AbortSignal,
+  compaction?: Pick<PiAgentRuntimeOptions, "contextWindow" | "piCompaction">) {
   return new PiAgentRuntime({
     cwd: dir, piSessionDir: dir, sessionId, domain: domain as any, model, streamFn, signal,
     getApiKey: async () => "probe-key",
     retriever: { async search() { throw new Error("恢复时执行了搜索"); } } as any,
+    ...compaction,
   });
 }
 
@@ -407,6 +410,90 @@ async function preservesPartialAnswersOnCancellation() {
   }
 }
 
+async function replaysPartialAnswersWithTheirNotice() {
+  const dir = mkdtempSync(join(tmpdir(), "ans-partial-context-"));
+  const sessionId = "partial-context";
+  const notice = "这是上一轮被打断留下的半截回答，不要当成完整回答。";
+  const complete = { type: "message", message: assistant([{ type: "text", text: "完整回答" }]) };
+  const followUp = {
+    type: "message",
+    message: { ...question.message, content: [{ type: "text", text: "会被打断的问题" }] },
+  };
+  try {
+    for (const compacted of [false, true]) {
+      async function nextRequest(stopReason: string) {
+        const saved = assistant([{ type: "text", text: "答到一半" }], stopReason);
+        const path = seedRecord(dir, sessionId, [
+          question, complete, followUp, { type: "message", message: saved },
+          { type: "message", message: assistant([], "aborted") },
+          ...(compacted ? [{ type: "compaction", firstKeptEntryId: "entry-0", summary: "更早的对话摘要", tokensBefore: 100 }] : []),
+        ]);
+        const original = readFileSync(path, "utf8");
+        const requests: TranscriptContext[] = [];
+        const runtime = chatRuntime(dir, sessionId, (_model: unknown, context: TranscriptContext) => {
+          requests.push(context);
+          return reply();
+        });
+        let completed = false;
+        for await (const event of runtime.run("新的问题")) {
+          if (event.type === "done") completed = true;
+        }
+        assert.ok(completed);
+        assert.equal(requests.length, 1);
+        const record = readFileSync(path, "utf8");
+        assert.ok(record.startsWith(original));
+        assert.ok(!record.includes(notice));
+        return requests[0]!.messages.map(({ role, content }) => ({ role, content }));
+      }
+
+      const completeRequest = await nextRequest("stop");
+      const expected = completeRequest.map((message) => (
+        message.role === "assistant" && Array.isArray(message.content) &&
+        message.content.some((part) => part.type === "text" && part.text === "答到一半")
+          ? { ...message, content: [{ type: "text", text: notice + "\n\n答到一半" }] }
+          : message
+      ));
+      assert.notDeepEqual(expected, completeRequest);
+      assert.deepEqual(await nextRequest("aborted"), expected);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function compactionSeesTheNoticeWithThePartialAnswer() {
+  const dir = mkdtempSync(join(tmpdir(), "ans-compact-partial-"));
+  try {
+    const sessionId = "compact-partial";
+    const path = seedRecord(dir, sessionId, [
+      question,
+      { type: "message", message: assistant([{ type: "text", text: "将被压缩的半截文字" }], "aborted") },
+      { type: "message", message: { ...question.message, content: [{ type: "text", text: "This more recent question remains in the compacted conversation." }] } },
+      { type: "message", message: { ...assistant([{ type: "text", text: "近期回答" }]), usage: { ...usage, input: 6000, totalTokens: 6001 } } },
+    ]);
+    const requests: TranscriptContext[] = [];
+    const runtime = chatRuntime(dir, sessionId, (_model: unknown, context: TranscriptContext) => {
+      requests.push(context);
+      return reply();
+    }, undefined, { contextWindow: 8192, piCompaction: { reserveTokens: 4096, keepRecentTokens: 8 } });
+    let completed = false;
+    for await (const event of runtime.run("新的问题")) {
+      if (event.type === "done") completed = true;
+    }
+    assert.ok(completed);
+    const summaryPrompt = requests[0]?.messages.flatMap((message) => (
+      message.role === "user" && Array.isArray(message.content)
+        ? message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+        : []
+    )).join("\n") ?? "";
+    assert.ok(summaryPrompt.includes("[Assistant]: 这是上一轮被打断留下的半截回答，不要当成完整回答。\n\n将被压缩的半截文字"));
+    assert.ok(!JSON.stringify(requests.at(-1)?.messages).includes("将被压缩的半截文字"));
+    assert.match(readFileSync(path, "utf8"), /"type":"compaction"/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   await recoversOnlyToolsWithoutResults();
   await recoversWhenTheModelNeverAnswered();
@@ -416,6 +503,8 @@ async function main() {
   await reportsModelErrorsAsUnfinished();
   await leavesTheRecordReadableWhenCompletionWriteTears();
   await preservesPartialAnswersOnCancellation();
+  await replaysPartialAnswersWithTheirNotice();
+  await compactionSeesTheNoticeWithThePartialAnswer();
   console.log("会话中断恢复验收通过");
 }
 
