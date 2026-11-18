@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { runChatAttempt, sessionLeasePath } from "../src/chat-attempt";
 import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
@@ -67,7 +66,7 @@ function reply() {
   };
 }
 
-test("一次尝试在重放前补中断记录，第二次打开不重复补", async () => {
+async function recoversOnlyToolsWithoutResults() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-recovery-"));
   try {
     const sessionId = "interrupted";
@@ -138,9 +137,9 @@ test("一次尝试在重放前补中断记录，第二次打开不重复补", as
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("模型已经开始但还没有回答时补一次说明", async () => {
+async function recoversWhenTheModelNeverAnswered() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-no-answer-"));
   try {
     const sessionId = "no-answer";
@@ -171,17 +170,17 @@ test("模型已经开始但还没有回答时补一次说明", async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-for (const setup of [
-  { label: "只留下问题", entries: [question] },
-  { label: "发给模型前被取消", entries: [question, { type: "message", message: assistant([], "aborted") }] },
-]) {
-  test(setup.label + "时可以直接再问，正常收尾的轮次不补说明", async () => {
+async function acceptsRepeatingAQuestionNotSentToTheModel() {
+  for (const entries of [
+    [question],
+    [question, { type: "message", message: assistant([], "aborted") }],
+  ]) {
     const dir = mkdtempSync(join(tmpdir(), "ans-318-retry-"));
     try {
       const sessionId = "question-only";
-      const path = seedRecord(dir, sessionId, setup.entries);
+      const path = seedRecord(dir, sessionId, entries);
       const before = readFileSync(path, "utf8");
       const runtime = chatRuntime(dir, sessionId, () => {
         const record = readFileSync(path, "utf8");
@@ -210,10 +209,10 @@ for (const setup of [
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }
 }
 
-test("策略拒绝工具并正常收尾时，下一轮不报中断", async () => {
+async function keepsPolicyStoppedTurnsComplete() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-tool-stop-"));
   try {
     const sessionId = "tool-stop";
@@ -244,9 +243,9 @@ test("策略拒绝工具并正常收尾时，下一轮不报中断", async () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("旧工具轮的数据库状态确认已收尾时，不补中断说明", async () => {
+async function keepsOldCompletedToolTurnsComplete() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-legacy-tool-stop-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
@@ -278,9 +277,9 @@ test("旧工具轮的数据库状态确认已收尾时，不补中断说明", as
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("模型返回错误时，本次和续聊都不把它当成正常收尾", async () => {
+async function reportsModelErrorsAsUnfinished() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-model-error-"));
   try {
     const sessionId = "model-error";
@@ -314,9 +313,9 @@ test("模型返回错误时，本次和续聊都不把它当成正常收尾", as
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("取消卡住的模型请求时把收到的文字存成半截回答", async () => {
+async function preservesPartialAnswersOnCancellation() {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-cancel-"));
   const caller = new AbortController();
   let unblock!: () => void;
@@ -350,4 +349,20 @@ test("取消卡住的模型请求时把收到的文字存成半截回答", async
     unblock();
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+async function main() {
+  await recoversOnlyToolsWithoutResults();
+  await recoversWhenTheModelNeverAnswered();
+  await acceptsRepeatingAQuestionNotSentToTheModel();
+  await keepsPolicyStoppedTurnsComplete();
+  await keepsOldCompletedToolTurnsComplete();
+  await reportsModelErrorsAsUnfinished();
+  await preservesPartialAnswersOnCancellation();
+  console.log("会话中断恢复验收通过");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });

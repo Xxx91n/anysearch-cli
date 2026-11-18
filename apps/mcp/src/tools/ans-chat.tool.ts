@@ -7,7 +7,7 @@
 // MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
 
-import type { CallToolResult, McpServer, ServerContext } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import {
@@ -434,13 +434,15 @@ export function registerAnsChat(
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatResult("");
         let recoveryNotice: string | undefined;
-        const withRecovery = (result: CallToolResult): CallToolResult => {
+        const withRecovery = (result: ReturnType<typeof buildAnsChatResult>) => {
           if (!recoveryNotice) return result;
           const notice = { type: "text" as const, text: recoveryNotice };
           if (result.isError) return { ...result, content: [...result.content, notice] };
+          // Keep the answer and the trailing session handle in their usual blocks.
+          const [answer, ...trailing] = result.content;
           return {
             ...result,
-            content: [...result.content, notice],
+            content: [{ ...notice, text: answer ? recoveryNotice + "\n\n" + answer.text : recoveryNotice }, ...trailing],
             structuredContent: { ...result.structuredContent, recoveryNotice },
           };
         };
@@ -648,7 +650,9 @@ export function registerAnsChat(
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
           }));
         } catch (e) {
-          return withRecovery(toolError("ans_chat", e instanceof Error ? e.message : String(e)));
+          return withRecovery(buildAnsChatErrorResult(
+            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine,
+          ));
         }
       }, {
         "anysearch.provider": providerName ?? "",
