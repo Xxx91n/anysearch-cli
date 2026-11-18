@@ -1889,16 +1889,21 @@ export class PiAgentRuntime {
     takeReservation?: () => ReturnType<typeof reserveTaskModelCall> | undefined,
   ): StreamFunction {
     return (model, context, options) => {
-      options?.signal?.throwIfAborted();
+      const callerSignal = this.opts.signal;
+      const requestSignal = options?.signal;
+      const signal = callerSignal && requestSignal
+        ? AbortSignal.any([callerSignal, requestSignal])
+        : callerSignal ?? requestSignal;
+      signal?.throwIfAborted();
       const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
       const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
       const settle = takeReservation?.() ??
         reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
       try {
-        const stream = streamFn(model, context, options);
+        const stream = streamFn(model, context, signal === requestSignal ? options : { ...options, signal });
         // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
-        const settlement = this.settleStreamUsage(stream, settle, options?.signal);
+        const settlement = this.settleStreamUsage(stream, settle, signal);
         this.taskBudgetSettlements.add(settlement);
         void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
         return stream;

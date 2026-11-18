@@ -349,11 +349,15 @@ export async function runChat(argv: string[]): Promise<number> {
         console.error("[error] " + (e?.message || String(e)));
         failed = true;
       } finally {
-        process.off("SIGINT", interrupt);
+        if (!printOnly) process.off("SIGINT", interrupt);
         // Design: drain background anchor writes before the CLI closes this store
         // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
         // returning here without waiting loses the rolling_summary / l2_recall write.
-        await runtime.flushMemory();
+        try {
+          await runtime.flushMemory();
+        } finally {
+          process.off("SIGINT", interrupt);
+        }
         // #264 (D9): a suspended summary was either rebuilt from current sources or
         // it was not. Read AFTER the drain (a rebuild is background work the drain
         // waits for) and say it in plain words, so an empty memory block is not read
