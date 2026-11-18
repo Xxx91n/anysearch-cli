@@ -383,7 +383,7 @@ async function preservesPartialAnswersOnCancellation() {
     const runtime = chatRuntime(dir, sessionId, () => ({
       async *[Symbol.asyncIterator]() {
         yield { type: "start", partial: { ...message, content: [] } };
-        yield { type: "text_delta", contentIndex: 0, delta: "答到一半", partial: message };
+        yield { type: "text_delta", contentIndex: 0, delta: "答到一半", partial: { ...message, content: [] } };
         await blocked;
       },
       result: async () => ({ ...message, stopReason: "aborted" }),

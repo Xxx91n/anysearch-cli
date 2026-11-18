@@ -1274,6 +1274,8 @@ export class PiAgentRuntime {
           }
         }
       }
+      // Design: keep the streamed text separately — PI can replace the draft
+      // with an empty error when an aborted request unwinds.
       const delta = mapSessionEvent(event, eventBuffer, mapState);
       if (delta && event.message?.role === "assistant") {
         partialAnswer = event.message;
