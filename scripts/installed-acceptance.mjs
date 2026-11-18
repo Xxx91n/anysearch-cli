@@ -34,7 +34,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -949,10 +949,12 @@ async function main() {
     }
     await prober.kill();
 
-    // ================= F. 旧一点的库：能开、能迁移、行还在 =================
-    console.log("\n== F. older database: read, migrate, migrate again ==");
+    // ================= F. 旧一点的库：能开、先备份、能迁移、行还在 =================
+    console.log("\n== F. older database: read, backup-before-migration, migrate, migrate again ==");
     {
       const legacyPath = join(work, "older.db");
+      const backupPath = legacyPath + ".pre-migration.db";
+      const recordPath = legacyPath + ".pre-migration.json";
       // 先用装好的产品建一个库，再把后加的表删掉，假装是旧版本写的。删掉后来才
       // 有的表，是手边最接近的替身：不用编数据，也不改历史。
       //
@@ -965,9 +967,14 @@ async function main() {
       });
       check(warm.code === 0, "全新的库能被装出来的 CLI 打开，consolidate 退出码 0", warm.out.slice(0, 400));
       check(/scanned \d+ cluster/.test(warm.out), "新库那次报了扫描到几个簇", warm.out.slice(0, 300));
+      // 全新建库没有历史可保，不该产生备份文件（#310）。
+      check(!existsSync(backupPath), "全新的库不会生成迁移前备份", backupPath);
 
       // 后来的版本才加的表。删掉它们，这个文件就像是旧版本写的了。
-      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts", "chat_projects"];
+      // #310 之后 store_meta 表本身就是"这个版本线碰过"的标记，task_records /
+      // task_budgets / process_records 是 #302 的新表；不把它们一起删掉，库会
+      // 被当成已是新布局，备份永远不会被触发（F 段就退化为纯旧断言了）。
+      const laterTables = ["summary_sources", "summary_suspensions", "legacy_summary_states", "legacy_summary_attempts", "budget_reservations", "semantic_memories_fts", "chat_projects", "store_meta", "task_records", "task_budgets", "process_records"];
       let before = null;
       {
         const db = new Database(legacyPath);
@@ -989,6 +996,28 @@ async function main() {
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
       });
       check(open1.code === 0, "旧库第一次打开就迁移好了", open1.out.slice(0, 400));
+      // #310：迁移之前必须已经有一致备份（不是迁完再补）。备份必须真的可用：
+      // 打开它查得到旧行、查不到新标志表——它是迁移前的快照，不是事后副本。
+      check(existsSync(backupPath), "打开旧库前先生成了迁移前备份", backupPath);
+      {
+        const bak = new Database(backupPath, { readonly: true });
+        try {
+          const bakRow = bak.prepare("SELECT title FROM retrieval_results WHERE url = ?").get("https://older.example/x");
+          check(bakRow && bakRow.title === "OLDER-ROW-TITLE", "备份里能查到旧数据", JSON.stringify(bakRow));
+          const bakMarker = bak.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name='store_meta'").get().c;
+          check(bakMarker === 0, "备份是迁移前的快照，不带新布局标记表");
+        } finally { bak.close(); }
+      }
+      {
+        const record = JSON.parse(readFileSync(recordPath, "utf8"));
+        check(record.method === "sqlite-vacuum-into", "备份记录写明了快照方式", JSON.stringify(record).slice(0, 200));
+        check(Array.isArray(record.declaredCompatibleLayouts) && record.declaredCompatibleLayouts.length === 2,
+          "兼容声明只列已知样本，模拟库和 0.2 真实布局分开标", JSON.stringify(record.declaredCompatibleLayouts));
+        check(typeof record.sha256 === "string" && record.sha256.length === 64, "备份记录带可核验的 sha256");
+        check(typeof record.manualRecovery === "string" && record.manualRecovery.length > 0, "备份记录写了手动恢复指引");
+      }
+      const backupMtimeAfterFirstOpen = statSync(backupPath).mtimeMs;
+
       const open2 = runAns(["consolidate", "--session", "older-session"], {
         cwd: prefix,
         env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "probe" },
@@ -1006,6 +1035,11 @@ async function main() {
       // 拒绝的话已改成说清原因。库里有这行、记录没了，就是「没有对话记录」。
       check(noRecord.code !== 0 && noRecord.out.includes("没有这段会话的对话记录") && requestLog.length === callsBeforeMissingRecord,
         "没有对话记录的旧条目不会被当成续聊，也不会发模型请求", noRecord.out);
+
+      // #310：中间这一整串打开（chat --list、续聊尝试、后面的 MCP）都不该动备份。
+      // 它是迁移前状态的快照，后续每次打开要么已是新布局、要么直接复用它。
+      check(statSync(backupPath).mtimeMs === backupMtimeAfterFirstOpen,
+        "后续打开不会再改备份文件");
 
       const db = new Database(legacyPath, { readonly: true });
       let after;
@@ -1033,6 +1067,28 @@ async function main() {
       check(recall.result?.isError !== true, "装出来的 MCP 也能打开迁移后的库", recallText.slice(0, 200));
       check(/"hitsCount":\s*[1-9]/.test(recallText), "迁移后的库还能召回到旧那条数据", recallText.slice(0, 300));
       await legacyReader.kill();
+
+      // #310：分层诊断。doctor 只读探测，不装配、不迁移：对已迁移的库要报出
+      // 当前布局和备份位置，以及「回退程序先手动恢复备份」的说明。
+      // 域注意：probe 的 sources.enabled 故意是空的（别的车道靠它不走真实搜
+      // 索），而 doctor 对当前域会检查 enabled 非空，拿 probe 跑 doctor 必然退
+      // 出码非 0。迁移状态检查本身只看 ANS_DB_PATH，跟用哪个域无关，所以这里
+      // 给 doctor 单独配一个能过域检查的域（enabled 列 anysearch——没有 key 时
+      // doctor 记 SKIP 不记 FAIL，正好）。
+      writeDomain(domainsDir, "migrate", [
+        'name = "migrate"',
+        'sources = { enabled = ["anysearch"] }',
+        'prompts = [{ name = "system", content = "MIGRATION-CHECK." }]',
+        'skills = { active = ["search"] }',
+        'hooks = { toolWhitelist = ["search"] }',
+        'rag = { adapter = "none" }',
+      ]);
+      const doctorLegacy = runAns(["doctor"], {
+        cwd: prefix,
+        env: { ...baseEnv, ANS_DB_PATH: legacyPath, ANS_DOMAIN: "migrate" },
+      });
+      check(doctorLegacy.code === 0 && doctorLegacy.out.includes("当前布局") && doctorLegacy.out.includes("迁移前备份") && doctorLegacy.out.includes("手动恢复备份"),
+        "doctor 把库的布局和迁移前备份情况报告出来，恢复指引说清是手动动作", doctorLegacy.out.slice(0, 400));
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

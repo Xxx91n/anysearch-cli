@@ -128,7 +128,9 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.ok(r.out.includes(marker), "missing " + marker);
     }
     // B1: doctor surfaces the real domains section + the docs domain.
-    assert.ok(r.out.includes("[5] Domains"), "missing domains section");
+    // #310 moved Domains to [6]; the migration-state section is the new [5].
+    assert.ok(r.out.includes("[5] Database migration state"), "missing migration-state section");
+    assert.ok(r.out.includes("[6] Domains"), "missing domains section");
     assert.ok(r.out.includes("docs"), "docs domain not listed");
   });
 
