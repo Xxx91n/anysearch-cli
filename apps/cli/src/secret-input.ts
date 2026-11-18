@@ -85,9 +85,25 @@ async function readFromTerminal(
         // sequence that means anything is the closing marker, and it arrives
         // with its own ESC byte. Interpreting other escapes here would delete
         // part of a pasted key.
+        //
+        // Enter is the exception, and only while nothing has been collected yet:
+        // that is a user pressing Enter with an empty paste (a terminal that sent
+        // the opening marker and no closing one), and without that exit the only
+        // way out would be Ctrl+C. A newline AFTER payload bytes is part of the
+        // payload - it means two lines were pasted - and stays in the value for
+        // `cleanSecret` to refuse out loud.
         if (inPaste) {
+          if (pasteBuffer === "" && (ch === "\r" || ch === "\n")) {
+            inPaste = false;
+            output.write("\n");
+            return value;
+          }
           pasteBuffer += ch;
-          if (pasteBuffer.endsWith(PASTE_CLOSE_SEQUENCE)) {
+          // Only the FIRST closing marker ends the paste; anything after it is
+          // ordinary input again. Comparing a fixed-length tail keeps this
+          // linear on a large paste.
+          if (pasteBuffer.length >= PASTE_CLOSE_SEQUENCE.length &&
+              pasteBuffer.slice(-PASTE_CLOSE_SEQUENCE.length) === PASTE_CLOSE_SEQUENCE) {
             value += pasteBuffer.slice(0, -PASTE_CLOSE_SEQUENCE.length);
             pasteBuffer = "";
             inPaste = false;
@@ -116,7 +132,7 @@ async function readFromTerminal(
           if (escape === "") {
             if (ch !== "[" && ch !== "O") {
               inEscape = false;
-              if (ch >= " ") value += ch;
+              if (isPrintable(ch)) value += ch;
               continue;
             }
             escape = ch;
@@ -151,7 +167,7 @@ async function readFromTerminal(
           value = value.slice(0, -1);
           continue;
         }
-        if (ch >= " ") value += ch;
+        if (isPrintable(ch)) value += ch;
       }
     }
     throw new Error("stdin closed before a key was entered");
@@ -159,6 +175,16 @@ async function readFromTerminal(
     try { setRawMode(wasRaw); } catch { /* the terminal may already be gone */ }
     try { input.pause(); } catch { /* already paused */ }
   }
+}
+
+/**
+ * True for a byte that may go into a key: anything from the space upward except
+ * DEL. Compared by code point, not by string order - `ch >= " "` is a lexical
+ * comparison and would let DEL and other control bytes through.
+ */
+function isPrintable(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return code >= 0x20 && code !== 0x7f;
 }
 
 /**

@@ -24,7 +24,7 @@ import {
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
-import { KEY_SOURCE_LABELS } from "../config-llm";
+import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -88,8 +88,8 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
  * Describe where a key comes from, given the resolver's answer. `env` is spelled
  * out by the caller, which knows which variable is actually in effect.
  */
-function describeSource(layer: string | undefined): string {
-  return KEY_SOURCE_LABELS[layer ?? ""] ?? "set";
+function describeSource(layer: LlmLayer | undefined): string {
+  return layer ? KEY_SOURCE_LABELS[layer] : "set";
 }
 
 function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {

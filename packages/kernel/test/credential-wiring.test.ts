@@ -290,10 +290,11 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
   });
   try {
     assert.ok(engine.retriever, "the engine was still assembled");
-    // `{}`, not undefined: resolution DID run and came out empty, which is a
-    // different fact from "nobody asked for credentials". A consumer explaining
-    // a degraded arm needs to tell those apart.
-    assert.deepEqual(engine.credentialSources, {}, "resolution ran and recorded no key source");
+    // A third shape, not `{}`: resolution THREW, so nothing is known about any
+    // arm. Reporting `{}` would tell a consumer "checked, found no keys" and hide
+    // the real fault from whoever tries to diagnose it.
+    assert.equal(engine.credentialSources?.error, "EACCES: credentials.json is unreadable",
+      "the failure is reported, not flattened into an empty result");
     // The point is only that the throw did not propagate: the arms are built as
     // if no credentials were supplied, which is the pre-#301 path.
     assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",

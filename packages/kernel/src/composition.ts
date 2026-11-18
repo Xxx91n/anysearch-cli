@@ -134,8 +134,15 @@ export interface CompositionResult {
   // file), so a degraded arm can say "no key" instead of only "construction
   // failed". Never carries a secret value. UNDEFINED when no credential
   // resolution was configured at all, which is a different fact from "resolution
-  // ran and no arm got a key" (that one is an empty object).
-  credentialSources?: { tavily?: string; exa?: string; anysearch?: string };
+  // ran and no arm got a key" (that one is an empty object), and `error` is a
+  // third: resolution was attempted and THREW, so nothing is known about any arm.
+  credentialSources?: {
+    tavily?: string;
+    exa?: string;
+    anysearch?: string;
+    /** Set when resolution threw; a consumer must not read this as "no keys". */
+    error?: string;
+  };
 }
 
 // createEngine: build configured engine.
@@ -223,8 +230,9 @@ export function createEngine(
   // reads its own env", not kill the MCP process at startup.
   let creds: CredentialSource = undefined;
   // undefined = nobody asked for credential resolution; {} = resolution ran and
-  // no arm came out with a key. Consumers that report why an arm degraded need
-  // to tell those apart, so the catch below also sets `{}`.
+  // no arm came out with a key; `{error}` = resolution threw. Consumers that
+  // explain a degraded arm need to tell those three apart, so the catch does not
+  // reuse the empty shape.
   let credentialSources: CompositionResult["credentialSources"];
   if (opts?.searchCredentials) {
     try {
@@ -238,12 +246,12 @@ export function createEngine(
       if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
     } catch (e) {
       creds = undefined;
-      // Resolution ran and produced nothing: `{}`, not `undefined`, so a degraded
-      // arm is not reported as "credentials were never asked for".
-      credentialSources = {};
       // Trim by code point after shortening, so a multi-byte character is never
       // cut in half and printed as a broken tail.
       const reason = Array.from(String(e instanceof Error ? e.message : e)).slice(0, 200).join("");
+      // Resolution THREW: nothing is known about any arm, which an empty object
+      // would misreport as "checked, found no keys" and hide the real fault.
+      credentialSources = { error: reason };
       writeProviderDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
         " — falling back to each SDK's own env var\n",

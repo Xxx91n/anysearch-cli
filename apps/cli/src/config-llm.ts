@@ -1,12 +1,13 @@
 // Shared LLM config resolver — now lives in @anysearch-cli/store so CLI and
 // MCP use the same rules (issue #300). This module stays as a thin re-export so
 // existing CLI imports and tests keep their paths. The implementation, the
-// project whitelist, the provider/secret binding guard and the per-field
-// source report all live in the store module — there is exactly one copy.
-// #301: the user credential file accessors are re-exported the same way.
+// project whitelist, the provider/secret binding guard, the per-field source
+// report and the source labels all live in the store module — there is exactly
+// one copy. #301: the user credential file accessors are re-exported the same way.
 
 export {
   displayEndpoint,
+  KEY_SOURCE_LABELS,
   parseLlmFlags,
   parseLlmToml,
   projectConfigPath,
@@ -28,14 +29,3 @@ export type {
   ResolvedLlmConfig,
   ResolveLlmOpts,
 } from "@anysearch-cli/store";
-
-/**
- * How to name a key's source in one word, keyed on the resolver's layer label.
- * Lives here, next to the re-exported resolver, because both `ans llm` and
- * `ans auth` describe the same resolution and two copies would drift.
- */
-export const KEY_SOURCE_LABELS: Record<string, string> = {
-  credentials: "stored file",
-  user: "env via [llm].env_key",
-  env: "env",
-};

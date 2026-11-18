@@ -155,6 +155,32 @@ test("an SS3 arrow key is dropped whole too", async () => {
   assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-ab");
 });
 
+test("Enter with an empty paste finishes the read instead of hanging", async () => {
+  // A terminal that sends the opening marker and never the closing one would
+  // otherwise leave Ctrl+C as the only way out.
+  const { input } = fakeTty(["\u001b[200~", "\r", "sk-typed-after\r"]);
+  const out = sink();
+  const value = await readSecret("key: ", { input, output: out.output });
+  assert.equal(value, "");
+});
+
+test("a control byte never silently joins the key", async () => {
+  // NUL and SOH are dropped, DEL is the backspace key. Pinned because the
+  // printable test is now a code-point range rather than a lexical string
+  // compare, and a later edit must not start letting them through.
+  const { input } = fakeTty(["sk-a", "\u0000", "\u0001", "\u007f", "b", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-b");
+});
+
+test("a pasted payload carrying its own closing marker keeps only the first split", async () => {
+  // The marker closes the paste exactly once. Bytes after it are ordinary input,
+  // so a payload that happens to contain the sequence cannot swallow the rest.
+  const { input } = fakeTty(["\u001b[200~sk-one\u001b[201~two\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-onetwo");
+});
+
 test("raw mode is restored even when the read throws", async () => {
   const { input, rawModes } = fakeTty(["sk-half", "\u0003"]);
   const out = sink();

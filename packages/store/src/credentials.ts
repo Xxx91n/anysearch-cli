@@ -77,17 +77,42 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
 ];
 
 /**
- * The search arms this resolver fills, in one place. It is declared rather than
- * derived so that reading `resolved[provider]` is typed: a provider added to
- * CREDENTIAL_PROVIDERS with kind "search" but not listed here would be resolved
- * by nobody and reported by nothing. `credentials.test.ts` asserts the two lists
- * match, so that drift fails a test instead of going quiet.
+ * The search arms this resolver fills, in one place. It is DECLARED and the
+ * catalog is checked against it at load time: a provider added to
+ * CREDENTIAL_PROVIDERS with kind "search" but not listed here stops the module
+ * with a named error, instead of being resolved by nobody and reported by
+ * nothing.
  */
 export const SEARCH_PROVIDER_IDS = ["tavily", "exa", "anysearch"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 
 /** Search providers only: the env var each one's key is read from. */
-export const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = envKeysByKind("search");
+export const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = Object.fromEntries(
+  SEARCH_PROVIDER_IDS.map((id) => {
+    const found = CREDENTIAL_PROVIDERS.find((p) => p.id === id && p.kind === "search");
+    if (!found) {
+      throw new Error("SEARCH_PROVIDER_IDS names " + id + " but CREDENTIAL_PROVIDERS has no search provider of that id");
+    }
+    return [id, found.envKey];
+  }),
+) as Record<SearchProviderId, string>;
+assertCatalogMatchesSearchIds();
+
+/**
+ * A search provider in the catalog that no arm resolves is a silent hole: doctor
+ * would list it, `resolveSearchCredentials` would never fill it, and nothing
+ * would say why. Fail at import instead.
+ */
+function assertCatalogMatchesSearchIds(): void {
+  const catalog = CREDENTIAL_PROVIDERS.filter((p) => p.kind === "search").map((p) => p.id).sort();
+  const declared = [...SEARCH_PROVIDER_IDS].sort();
+  if (catalog.join(",") !== declared.join(",")) {
+    throw new Error(
+      "CREDENTIAL_PROVIDERS search ids (" + catalog.join(", ") + ") and SEARCH_PROVIDER_IDS (" +
+      declared.join(", ") + ") disagree; add the provider to both",
+    );
+  }
+}
 
 /**
  * Every env name that means "this provider's key", canonical first. Used to
@@ -106,12 +131,6 @@ export function modelEnvKeysFor(provider: string): string[] {
   const info = credentialProvider(provider);
   if (!info || info.kind !== "model") return [];
   return [info.envKey, ...(info.altEnvKeys ?? [])];
-}
-
-function envKeysByKind(kind: CredentialProviderInfo["kind"]): Record<string, string> {
-  return Object.fromEntries(
-    CREDENTIAL_PROVIDERS.filter((p) => p.kind === kind).map((p) => [p.id, p.envKey]),
-  );
 }
 
 export function credentialProvider(id: string): CredentialProviderInfo | undefined {

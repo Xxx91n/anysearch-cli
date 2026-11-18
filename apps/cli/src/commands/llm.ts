@@ -149,7 +149,8 @@ export async function runLlm(args: string[]): Promise<number> {
       const effective = name === cfg.provider && !!cfg.apiKey;
       // The resolver's source label IS the answer, so map it instead of
       // collapsing it into "resolved" (which told the user nothing).
-      const resolvedFrom = KEY_SOURCE_LABELS[cfg.sources.apiKey ?? ""] ?? "an unknown source";
+      const layer = cfg.sources.apiKey;
+      const resolvedFrom = layer ? KEY_SOURCE_LABELS[layer] : "an unknown source";
       let where: string;
       if (envName) where = "KEY SET (" + envName + ")";
       else if (effective) where = "KEY SET (" + resolvedFrom + ")";

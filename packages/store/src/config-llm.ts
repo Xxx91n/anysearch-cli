@@ -37,6 +37,21 @@ import {
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
 
+/**
+ * How to name a layer in plain words, for any command that shows where a value
+ * came from. It lives next to `LlmLayer` because the labels ARE that type's
+ * vocabulary; a caller only looks up the label for the layer it got back.
+ * `cli`, `project` and `default` are spelled by the caller, which knows which
+ * flag or file it means.
+ */
+export const KEY_SOURCE_LABELS: Record<LlmLayer, string> = {
+  cli: "command line",
+  env: "env",
+  project: "project file",
+  user: "env via [llm].env_key",
+  credentials: "stored file",
+};
+
 // Keys a project-level file may set under [llm]. Everything security-adjacent
 // (endpoint, wire protocol, secret source) is user-level only.
 const PROJECT_LLM_WHITELIST = new Set(["provider", "model"]);
@@ -163,15 +178,12 @@ function loadFile(
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  // home follows the same rule as the credential file (one shared resolver), so
-  // the model config and the key store always agree on the config root.
-  // `opts.env` may be a partial env (a test, an MCP call passing only ANS_LLM_*).
-  // The caller's env decides the root as soon as it names one: merging the
-  // process env under it would let the operator's USERPROFILE beat a test's
-  // HOME, so a caller that wants a specific root would silently get another.
-  // Only when it names neither does the process env (then the real home) decide.
-  const rootEnv = env.HOME || env.USERPROFILE ? env : process.env;
-  const home = resolveConfigHome(opts.home, rootEnv);
+  // home follows the same rule as the credential file: one shared resolver, one
+  // env. `resolveConfigHome` itself falls back to the real home when the env
+  // names neither HOME nor USERPROFILE, so a caller that passes a partial env
+  // gets the SAME root the search credential resolver gives it - the two entry
+  // points cannot disagree about which config.toml is in force.
+  const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
