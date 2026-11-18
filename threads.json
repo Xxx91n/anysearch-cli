@@ -1,0 +1,3151 @@
+[
+ {
+  "id": "PRRT_kwDOUIldFM64zQS7",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/mcp/src/tools/ans-chat.tool.ts",
+  "line": 169,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/documentation]** This comment block now claims \"Every source is already provider-appropriate\" — but per the PR's own summary, `ANS_LLM_API_KEY` is an explicit override that is *not* provider-bound (the binding guard covers the file layers, not the env override). The preceding sentence contradicts it two lines later (\"ANS_LLM_API_KEY is an explicit override\"). Worth tightening so the reasoning doesn't read as an unverified security guarantee.",
+     "createdAt": "2026-11-18T06:05:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQS-",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/bug]** Nested ternary (3 levels) + semantically off. `keySet` only checks the canonical env var (`API_KEYS[name]`), so for google a key that came from `GEMINI_API_KEY` falls into the `effective` branch and `cfg.sources.apiKey === \"env\"` → prints the meaningless label `\"KEY SET (resolved)\"` — exactly the case the per-provider env layer was added for. Also `cfg.sources.apiKey === \"user\"` is only possible when `[llm].env_key` is set, so \"env_key\" is right, but the generic fallback hides the name. Flatten it and name the actual variable.\n\n```suggestion\nlet where: string;\n      if (keySet) {\n        where = \"KEY SET (\" + apiKey + \")\";\n      } else if (effective) {\n        where = \"KEY SET (\" + (cfg.sources.apiKey === \"credentials\" ? \"stored file\" :\n          cfg.sources.apiKey === \"user\" ? \"env_key\" : \"env\") + \")\";\n      } else if (fromStore.length > 0) {\n        where = \"KEY SET (stored file)\";\n      } else {\n        where = \"NO KEY\";\n      }\n```",
+     "createdAt": "2026-11-18T06:05:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTG",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/bug]** `stored.length > 0` only proves a stored entry exists for this provider; no endpoint comparison was done here. When `name !== cfg.provider` the stored key is simply not eligible (wrong provider), and even when it is the selected provider the mismatch could be the endpoint *or* the provider binding. The unconditional \"the effective endpoint differs\" asserts a cause that was never checked — misleading on the main troubleshooting surface. Report the stored bindings without claiming a reason, or only add the endpoint reason when `name === cfg.provider`.\n\n```suggestion\nif (!set && stored.length > 0) {\n        console.log(\"      stored for: \" + stored.join(\", \") + \" — not used by the current config\");\n      }\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTI",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/documentation]** The documented order is missing a layer: `resolveLlmConfig` actually resolves `ANS_LLM_API_KEY > [llm].env_key > the provider's own env var (e.g. GEMINI_API_KEY) > the credential file`. Comment drift on the security-relevant precedence chain is what misleads later debugging.\n\n```suggestion\n// is ANS_LLM_API_KEY > [llm].env_key > the provider's own env var > the credential file.\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTM",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/db.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** This arrow wrapper just forwards its argument — the option type is `(env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials`, so the function reference works: `searchCredentials: resolveSearchCredentials`. The wrapper adds nothing and hides the actual call site.\n\n```suggestion\nsearchCredentials: resolveSearchCredentials,\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTQ",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/performance]** `storedBindings(name)` calls `readUserCredentials()`, which does `existsSync` + `readFileSync` + `JSON.parse` on every call. In this loop that is one full re-read/re-parse of the credential file per provider (3x here, plus once per `MODELS` entry in the `show` branch). Read it once and reuse.\n\n```suggestion\nconst cfg = resolveLlmConfig();\n    const credFile = readUserCredentials();\n    for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {\n      const apiKey = API_KEYS[name] || \"UNKNOWN\";\n      const keySet = !!process.env[apiKey];\n      const fromStore = credFile.bindings\n        .filter((b) => b.provider === name)\n        .map((b) => b.endpoint ?? \"(provider default endpoint)\");\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTV",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[major/bug]** This drops the ESC byte but keeps the printable payload of a bracketed-paste marker. A real terminal paste of a key arrives as `\\x1b[200~<key>\\x1b[201~`; the ESC bytes are stripped, but the literal `[200~` / `[201~` remain and get concatenated into the stored key. `cleanSecret` only rejects empty/`\\r\\n`/control chars, so `[200~sk-...` is accepted and written — the key silently becomes wrong and later auth fails with no hint. Strip the `[200~`/`[201~` markers (or track paste state) before appending characters.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTZ",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/maintainability]** Four-level nested ternary violates the no-nested-ternary rule and is hard to follow — especially since this is the logic that fixes the source-attribution ambiguity. `sources.apiKey` is a small union (`\"env\" | \"user\" | \"credentials\" | undefined`), so use a lookup keyed on it (with the `env` case handling the ANS_LLM_API_KEY vs provider-var distinction) instead of a chained ternary.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTb",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/bug]** Two issues in one parse: (1) `args[++i]` accepts any following token, so `ans auth set openai --endpoint --foo` silently consumes `--foo` as the URL; guard that the next token isn't another flag. (2) `--endpoint=` (empty value) is normalized to `null`, silently falling back to the default endpoint instead of erroring — the user's intent is dropped with no message. Reject empty values explicitly.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTe",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** `@anysearch-cli/store` is already imported statically at the top of this file (lines 5 and 7). This dynamic `import()` adds nothing and obscures that the symbols are always available — move `userCredentialsPath` and `readUserCredentials` into the static import instead.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTo",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/bug]** `stored` is still computed for every provider even when `set` is already true — that's a wasted credential-file read per provider (see confirmed finding #4; hoisting the read once fixes both). More importantly, in the `show` branch the `label` logic never consults `cfg.sources.apiKey`, so a key that came from the credential file for the *selected* provider shows `AUTH` only via `name === cfg.provider && !!cfg.apiKey`; but for a non-selected provider whose stored entry is bound to a different endpoint it prints `AUTH (stored)` and then contradicts itself on the next line with \"the effective endpoint differs\". Pick one story: if a stored entry exists but is not effective, the label should reflect that (e.g. `NO KEY (stored for other endpoint)`) rather than claiming AUTH.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTt",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": 125,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** `ans llm check` only reports `[ERROR] ...` per provider and the old `keySet` line was the only hint; but note the `set` subcommand prints `\"Make sure the SDK is installed and API key is set.\"` — now that a stored key is a first-class source, that hint should also mention `ans auth set <provider>`, otherwise a user who stored a key still gets told to \"set an API key\" with no pointer. Minor, but the message is now misleading.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQTy",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** In the `check` branch, `apiKey` here means \"the canonical env var name\" — the variable name collides with the concept of the resolved secret and reads confusingly next to `fromStore`/`effective`. Consider `envVarName` for clarity. (Not blocking.)",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQT2",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/mcp/src/tools/ans-chat.tool.ts",
+  "line": 169,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/maintainability]** The comment now lists step 3 (the provider's own env var) in a way that reads like an added layer, but the code change is only plumbing. The real new risk in this file is the session cache: `keyHash` is derived from `cfg.apiKey`, so the first `ans_chat` call after the server starts pins the slot to whatever the credential file held at that moment. `ans auth remove <provider>` / `ans auth set` on a running MCP server will produce a different `keyHash` on the next call, so the slot rebuilds — that path is covered. But if `ans auth remove` leaves `cfg.apiKey` undefined while a cached slot from a *previous different* key is still in `sessionCache`, the new key becomes `\"\"` and `cached.keyHash === \"\"` never matches a previously-hashed entry, so the cache effectively stores one stale session keyed by the old provider/model/baseUrl. Confirm `state.ansChatSessionCache` is bounded, otherwise a rotation loop (credential file rewritten by an external process) inflates the Map forever, since entries are only deleted on a failed build. Add a test that rotates the credential file twice while the server stays up.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQT4",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/db.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** `db.ts` is the only CLI entry that wires `searchCredentials`; the sibling MCP entry (`apps/mcp/src/server.ts:65`) does the same thing via a redundant arrow wrapper (already flagged). Nothing to change in `db.ts` beyond the wrapper noted in the confirmed findings — just confirming the wiring matches `createEngine`'s `searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials` signature, which it does.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQT8",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/maintainability]** `env` is computed (`const env = opts?.env ?? process.env`) solely to feed `searchCredentials`, but the value is never used anywhere else in `createEngine` — `dbPath` still comes from `opts.dbPath`, and the domains chain uses `process.env` via `defaultDomainsDirs()`. The `env` option's doc comment claims it is \"for the search-credential resolution and the db path\", which is wrong on both counts (db path is `opts.dbPath`), and passing `env` with no `searchCredentials` silently does nothing. Drop the misleading clause, or wire `env` into the paths that actually read it.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQT_",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/maintainability]** `credentialSources` is always an object, so a consumer cannot distinguish \"no search-credential resolution was configured\" from \"resolution ran and every arm had no key\" — both look like `{}` / partial object. Since the field is declared optional, callers that want to say \"this arm had no key at all\" versus \"we never looked\" need that distinction. Return `undefined` when `searchCredentials` was not supplied (or at least when no source is recorded).",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUF",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 590,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/test]** `flags` here is the DACL's *control* flags (P/AI/etc.), not the ACE inheritance flags — each ACE gets its own flags field, which the loop below checks via `ace.flags.includes(\"I\")`. That part is correct. But the test at credentials.test.ts:329 asserts `/inherits permissions|inherited entry/`; in the `/inheritance:e` case the SDDL usually keeps a `P`-less DACL and the inherited ACEs will also carry `I`, so that passes. Verify with one real Windows run that the `P` check actually fires on a truly unprotected DACL (e.g. a fresh file in a temp dir with no ACL replacement), because if `parseAces` ever picks a wrong line from `icacls /save` output the verification silently passes. No code change required — just confirm coverage of the \"no P flag\" branch specifically, since the current tests only hit the other two throw paths.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUH",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/maintainability]** When more than one endpoint is stored for the same provider, `forProvider[0]` is whichever entry happens to appear first in the file (sorted by endpoint in `serialize`, so lexicographically first). The resulting warning in `resolveLlmConfig` then tells the user the stored key is bound to an arbitrary endpoint. Either pick deterministically and document it, or (better) report all stored endpoints so the message is honest. Also, deleting the \"wrong\" entry via `ans auth remove <provider>` without `--endpoint` won't help here since the user is told to re-run `set` — consider making the message mention `ans auth list` instead of silently pointing at one endpoint.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUK",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 546,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/other]** placeholder",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUO",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[major/test]** Hardcoding the credential path as `$HOME/.anysearch-cli/credentials.json` couples the test to one resolution strategy. If `credentials.ts` actually resolves the dir via `XDG_CONFIG_HOME`/`APPDATA` (or any path helper), `existsSync(credPath)` will be false and every downstream protection assertion (mode 600, file header markers) silently no-ops instead of failing, so the lane can go green while never checking the real file. Either derive the path the same way the product does, or assert it against the path printed by `ans auth list`/`doctor` rather than a re-typed literal.",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUQ",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[major/security]** The failure detail dumps the raw `Authorization` header into `check()` output, i.e. the plaintext key appears in the very lane that asserts \"no output contains the key\". Any red run leaks the secret into console/CI logs. Redact before printing — e.g. map to `r.authorization?.startsWith(\"Bearer \" + credKey) ? \"Bearer <stored>\" : r.authorization` or just compare booleans. Same problem in the MCP branch below with `mcpCredCalls`.\n\n```suggestion\ncheck(credCalls.length > 0 && credCalls.every((r) => r.authorization === \"Bearer \" + credKey),\n        \"上游收到的正是文件里那把 key（看 Authorization 头）\",\n        JSON.stringify(credCalls.map(() => \"<redacted>\")));\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUX",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[major/security]** Same leak: raw `authorization` values get stringified into the failure message. Redact like the CLI branch.\n\n```suggestion\ncheck(mcpCredCalls.length > 0 && mcpCredCalls.every((r) => r.authorization === \"Bearer \" + credKey),\n        \"MCP 的上游请求带的是同一把存起来的 key\",\n        JSON.stringify(mcpCredCalls.map(() => \"<redacted>\")));\n```",
+     "createdAt": "2026-11-18T06:05:37Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUb",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1130,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/test]** No guard that `ANS_LLM_BASE_URL` is actually set. If it's undefined this passes `--endpoint undefined`, and both the bind and the later exact-match `auth remove --endpoint` assertions become vacuous (remove of `undefined` could match/delete anything, or fail for the wrong reason). Assert it's defined before using it as the binding key.\n\n```suggestion\nconst credEndpoint = llmEnv.ANS_LLM_BASE_URL;\n      check(typeof credEndpoint === \"string\" && credEndpoint.length > 0,\n        \"车道环境里 ANS_LLM_BASE_URL 必须已设置\", String(credEndpoint));\n```",
+     "createdAt": "2026-11-18T06:05:38Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUg",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[minor/bug]** The directory is only chmod-restored after the spawn, not in a `finally`. If the spawn throws (spawn error, test abort, uncaught rejection) the 0o500 dir stays in `work` and any subsequent `rmSync(work)` teardown may fail on a non-writable dir. Wrap the chmod restore (and the temp home cleanup) in `try/finally`.\n\n```suggestion\nconst tightHome = join(work, \"tight-home\");\n        mkdirSync(join(tightHome, \".anysearch-cli\"), { recursive: true });\n        chmodSync(join(tightHome, \".anysearch-cli\"), 0o500);\n        try {\n          // ... spawn ...\n        } finally {\n          chmodSync(join(tightHome, \".anysearch-cli\"), 0o700);\n        }\n```",
+     "createdAt": "2026-11-18T06:05:38Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zQUj",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "**[info/test]** Non-zero exit alone is ambiguous here — a CLI that crashes for any reason (bad args, missing binary path) also yields non-zero, so this doesn't prove the \"cannot protect → refuse to write\" path specifically. Consider asserting on the error surface (e.g. the stderr mentions permission/protection failure) in addition to the exit code.",
+     "createdAt": "2026-11-18T06:05:38Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTxg",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 357,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> <a href=\"\"><img alt=\"security\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/Security.svg?v=2\" align=\"top\"></a> **被拒绝的密钥又被取回**。用户配置把 `env_key = \"OPENAI_API_KEY\"` 绑定到地址 A，环境中的 `ANS_LLM_BASE_URL` 改成地址 B 时，前面会拒绝这把密钥，但这里又从同一个 `OPENAI_API_KEY` 取回它。CLI 和 MCP 随后会把它交给地址 B。请记住已被绑定检查拒绝的来源，避免后续回退重新启用它，并补上规范变量名的端点切换测试。\n\n**How this was verified:** 用户配置中的端点检查会拒绝该密钥，但后续按服务商读取环境变量时再次赋给 `apiKey`，调用方会把它和新地址一起传入模型客户端。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTxi",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> <a href=\"\"><img alt=\"security\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/Security.svg?v=2\" align=\"top\"></a> **地址中的秘密会被打印**。`--endpoint` 允许地址带用户名、密码或查询参数，但这里直接把原值写到终端。例如 `https://gw.example/v1?api_key=secret` 会连同密钥一起显示。`remove` 的输出和配置解析器的端点告警也有同样问题；`storedBindings` 还会把原地址交给 `ans llm` 打印。请让所有展示路径统一调用已有的 `displayEndpoint`，而不是只保护列表。\n\n**How this was verified:** 端点只经过空白和末尾斜杠清理，随后直接拼入输出；已有的 `displayEndpoint` 才会移除用户名、密码和查询参数。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTxo",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **坏记录会被静默覆盖**。有效 JSON 中只要有一条记录缺少 `apiKey`，这里就会直接丢掉它，却不设置 `error`。随后为另一家录入或删除密钥，会把过滤后的内容写回文件，永久抹掉原记录。非字符串的 `endpoint` 还会被改成默认端点。请逐条检查记录格式；发现坏记录就返回错误并拒绝改写，保持现有的坏文件保护承诺。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTxt",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **并行保存会丢密钥**。两个进程同时执行 `ans auth set` 时，都可能先读到同一份旧文件，各自追加一条后再整份替换。最后完成的进程会覆盖另一条刚保存的密钥，两个命令却都报成功。保存与删除并行时也可能让已删密钥重新出现。请用跨进程锁保护整个读取、修改、写回过程，并让删除使用同一把锁；只保证重命名完整还不够。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTxy",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **删除失败仍报成功**。删除最后一条记录时，这里吞掉了所有 `unlinkSync` 错误。目录没有写权限或文件无法删除时，命令仍返回成功并显示已移除，但后续 CLI 和 MCP 还会读到这把密钥。请只把文件已不存在的错误当作成功，其他错误应向上传出。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTx6",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": 186,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **读写使用不同主目录**。`resolveConfigHome` 在所有平台都优先选 `USERPROFILE`，但凭据和模型配置的写入仍默认用 `homedir()`。在同时有不同 `HOME`、`USERPROFILE` 的 POSIX 环境中，`ans auth set` 和 `ans llm set` 会写到一个目录，解析器却去另一个目录找，保存后仍显示缺少配置或密钥。请让读、写、删除和路径展示使用同一套目录规则，并按平台处理 `USERPROFILE`。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTyC",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P2\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p2.svg?v=9\" align=\"top\"></a> **方向键会混进密钥**。终端输入时这里只丢掉 ESC 字节，方向键后面的 `[D` 等字符仍会被追加到密钥里；带粘贴标记的输入同样会留下 `[200~` 和 `[201~`。这些都是可打印字符，能通过 `cleanSecret`，最终保存成功但认证失败。请完整识别并跳过转义序列，保留真正的粘贴内容，并补上终端分支测试。",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64zTyK",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 278,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "greptile-apps"
+     },
+     "body": "<a href=\"\"><img alt=\"P2\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p2.svg?v=9\" align=\"top\"></a> **注释夹带大段票号复盘**。这段注释反复解释旧票做过什么、这次为什么要改，而下面的判断已经直接表达了规则。它让维护者在改几行判断前先读一段开发复盘，违反了仓库要求的简短、自然、避免反复辩护的写法。请改掉这种 AI 式语气：用初中生能直接看懂的大白话，只留绑定规则和必要原因，删掉重复强调、票号历史和长难句。`credentials.ts` 的文件头也有同类重复说明。\n\n**Context Used:** 默认用 Concise 风格：第一句先给结果或结论；不开场白、不逐直播、不复述我刚说过的话.简单问题 1–3 句结束.除非我要求解释、排错、架构权衡、安全/危险操作确认, 否则不展开.若信息不足, 只问一个最关键的澄清问题；否则给出最佳默认假设并继续.工程任务仍按完整标准做：改动要说清文件、原因、验证命令；失败/风险/不安全操作必须完整报警, 不得为了简短而省略.不论是输入/输出/还是思维链, 语气和组词都要地道化, 不要使用LLM的幻觉复杂词汇, 也不要翻译腔, 将许多翻译腔、晦涩难懂、需要让... ([source](https://app.greptile.com/custom-context?memory=instruction-0))\n\nNote: If this suggestion doesn't match your team's coding style, reply to this and let me know. I'll remember it for next time!",
+     "createdAt": "2026-11-18T06:09:01Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z25J",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-1d763d7042c01440 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThe second `value === undefined` check is dead — the first line already returned. Similarly, the `normalized === null` check repeats the same \"must not be empty\" message, so the same input can hit two identical errors. Trim the redundant checks down to one empty check and one flag check.\n\n**Suggestion:**\n```suggestion\n      if (value === undefined) throw new Error(\"--endpoint requires a URL\");\n      if (value.startsWith(\"-\")) throw new Error(\"--endpoint requires a URL, got the flag \" + value);\n      const normalized = normalizeBindingEndpoint(value);\n      if (normalized === null) throw new Error(\"--endpoint must not be empty; omit it to use the provider's default endpoint\");\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z250",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-836b0dace4bb11cf -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nNested ternary chain (repo rule: no nested ternaries), and the final `: \"set\"` fallback is effectively dead — `resolveLlmConfig` only sets `sources.apiKey` to \"env\" | \"credentials\" | \"user\", so the last branch never runs and can silently hide a future source. Replace with a lookup map / if-chain so a new source is surfaced explicitly.\n\n**Suggestion:**\n```suggestion\n      where = describeModelKeySource(llm.sources.apiKey, env, info.envKey);\n\n// elsewhere\nfunction describeModelKeySource(source: string | undefined, env: NodeJS.ProcessEnv, envKey: string): string {\n  if (source === \"env\") return env.ANS_LLM_API_KEY?.trim() ? \"env ANS_LLM_API_KEY\" : \"env \" + envKey;\n  if (source === \"credentials\") return \"stored file\";\n  if (source === \"user\") return \"env via [llm].env_key\";\n  return \"set (\" + String(source) + \")\";\n}\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z253",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-bdb657f581b4a751 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n`statusLines()` reads through `resolveConfigHome(undefined, process.env)`, but the `list` branch reads via bare `readUserCredentials()` / `userCredentialsPath()`, which default to `homedir()`. When `HOME`/`USERPROFILE` differ from `homedir()` (sudo, test harness, some GUI launchers), the status lines and the list describe two different files. Route both through the same resolved home.\n\n**Suggestion:**\n```suggestion\n      const home = resolveConfigHome(undefined, process.env);\n      const path = userCredentialsPath(home);\n      const file = readUserCredentials({ home });\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z259",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-aaee1e6f0b2b9f62 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`existsSync(path)` and `file.bindings` come from two different sources with different home resolution: `userCredentialsPath()` defaults to `os.homedir()`, while `readUserCredentials()` (and `resolveSearchCredentials()` above) go through `resolveConfigHome()`, which prefers `USERPROFILE`/`HOME`. When those disagree, doctor prints \"(not created yet)\" for a file that exists, or reports 0 keys for a file that has some — and doctor is exactly the screen used to debug this. Pass the same home to both.\n\n**Suggestion:**\n```suggestion\n    const home = resolveConfigHome();\n    const file = readUserCredentials({ home });\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26F",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-2d023d4f23e7ab3d -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nThese lines duplicate the old section 6 check (lines ~237-251) that decides a provider is \"key present\" purely by `process.env[key]`. After this change the effective key may come from the credential file, so section [6] will still say \"unset -> provider skipped at search\" for a provider that [4] just reported as coming from the user credential file. Users see contradictory output from the same run. Section [6] should consult `resolved[prov]` instead of `process.env[key]`.",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26J",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-d551a95f026bc3a5 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`resolved.warnings` falls back to whatever the resolver produced, which includes the reason-only strings. But `resolveSearchCredentials()` already reuses the `readUserCredentials()` error, so a broken file produces the same fault twice: once at line 120 (`[FAIL] user credential file`) and again here (`[FAIL] <path>: not valid JSON …; continuing without…`). Counting one fault twice inflates `failed` and the exit summary. Skip warnings that repeat `file.error`.\n\n**Suggestion:**\n```suggestion\n    for (const warning of resolved.warnings) {\n      if (file.error && warning.includes(file.error)) continue;\n      check(\"  \" + warning.replace(/^\\[credentials\\]\\s*/, \"\"), false);\n    }\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26U",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-3aee16b91c280f73 -->\n![style · medium](https://img.shields.io/badge/style-medium-orange)\nTwo problems here: (1) `where` is a ternary nested two levels deep, which the repo rules forbid — use an if/else chain (auth.ts already models this shape). (2) `providerForEnvKey`/`modelEnvKeysFor` treat `GEMINI_API_KEY` as google's key, but `envVarName` only holds `API_KEYS[name]`, so `ownEnvSet` reports NO KEY when only GEMINI_API_KEY is exported while the resolver does find the key — the two lines disagree for google.",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26X",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/db.ts",
+  "line": 37,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-3e3af0ac1ffea8de -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThe comment is written like a ticket write-up (\"GUI host inherits no shell env\", \"enter the key once\"). Keep one short line on why the resolver is wired here; drop the rest. Pre-existing comments in this file use the same style, so this is about not making it worse, not a blocker.",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26a",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/db.ts",
+  "line": 42,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-7a5b1970c8e62172 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nPassing `resolveSearchCredentials` as a bare function reference means `createEngine` will call it with no arguments (it calls `opts.searchCredentials(env)`, but `resolveSearchCredentials(env, opts)` has a second defaulted param — fine here). The real gap: `createPersistentEngine` gives no way to inject env, so tests/GUI hosts that call it with a custom env can never exercise the non-env path. Kernel's `createEngine` already exposes `env`; `createPersistentEngine(domain?, env?)` would keep that testable. Not blocking, but worth wiring while the param is new.",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26d",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 177,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-95a12511ba6c0400 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nIf the paste never delivers the closing `ESC[201~` (paste cancelled, terminal quirk, or any escape sequence swallowed while `inPaste` is true), `inPaste` stays true forever and every following `\\r`/`\\n` is dropped. Enter never submits, so the read only ends when stdin closes, and then it throws instead of returning the pasted key. `inPaste` needs a way out — at minimum, a lone `\\r` should end the read rather than be discarded.\n\n**Suggestion:**\n```suggestion\n        if (ch === \"\\r\" || ch === \"\\n\") {\n          // A newline inside a paste must not end the read half-way, but a lone\n          // newline after a paste that never closed means the user pressed Enter.\n          if (inPaste && !marker) {\n            continue;\n          }\n          output.write(\"\\n\");\n          return value;\n        }\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26h",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/mcp/src/tools/ans-chat.tool.ts",
+  "line": 174,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-b31b0631322c2a00 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThis comment block now reads like a ticket rehash instead of a code comment: ticket numbers (#300, #301), a review-source attribution (\"greptile P1\"), and a paragraph arguing past review decisions. Our repo rule is to audit comments for this AI register. Cut it to the fact a future reader needs: why the key is passed even when baseUrl is set, and that a credential-file key is already endpoint/provider bound by the resolver.\n\nSuggested:\n```\n        // Pass the resolved key for catalog providers and custom endpoints alike,\n        // same as CLI chat. cfg.apiKey comes from ANS_LLM_API_KEY, a user-file\n        // env_key, or the stored credential entry; the resolver has already\n        // checked that each of those belongs to this provider/endpoint. If we\n        // dropped it for custom endpoints, a config the CLI accepts would fail\n        // auth here only.\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26l",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-c041527e670007cc -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n`searchCredentials` is called without a try/catch, so any throw here aborts `createEngine` entirely — before any arm exists. Every other construction step in this file degrades per arm instead. Wrap the call so a credential-resolution fault becomes a stderr diagnostic (and `credentialSources = {}`) rather than a hard failure.\n\n**Suggestion:**\n```suggestion\n  if (opts?.searchCredentials) {\n    try {\n      creds = opts.searchCredentials(env);\n    } catch (error) {\n      writeProviderDiagnostic(\"[anysearch] credential resolution failed: \" +\n        (error instanceof Error ? error.message : String(error)) + \"\\n\");\n      creds = { warnings: [] } as ResolvedSearchCredentials;\n    }\n```",
+     "createdAt": "2026-11-18T06:42:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26t",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-a9eb792aa594c3a1 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nThe `else` branch only assigns `undefined`, which is already the value of an uninitialised `let` — dead branch. Drop it and rely on the declaration.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z26z",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 284,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-af225bc5c4adeb8b -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThis comment block (lines ~229–263, plus similar ones in composition.ts and llm.ts) retells ticket history and review history — \"#120 did this for the project layer only\", \"#301 review P1\", \"(spec S2, ...)\", \"This is the boundary #301 was asked to decide\", \"Saying 'the endpoint differs' was a guess\". That's development archaeology, not documentation, and it reads machine-written. Keep the rule (order of sources, binding rule), drop the ticket numbers, spec references and self-justification.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z266",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 298,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-e073bcd15023c2af -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nWhen the user file binds `base_url` but the effective provider is missing/`undefined` (e.g. only `env_key` is set in the user file and no provider layer picks one), `endpointBoundElsewhere` is true and the env_key is refused. Then line 315 (`if (!resolved.apiKey && resolved.provider)`) skips the provider-env fallback, and the credential-file lookup returns `absent` because `provider` is undefined. Result: the user's own typeable `env_key` is silently dropped although nothing was misrouted. The guard should only fire when there's an effective provider to compare against, i.e. require `resolved.provider !== undefined` here too.\n\n**Suggestion:**\n```suggestion\n    const endpointBoundElsewhere =\n      resolved.provider !== undefined &&\n      userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);\n```",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27C",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-2be7dd2812c3a195 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nThis default (`homedir()`) is what every caller without an explicit home picks up — including `writeUserCredential` (which is invoked as `writeUserCredential({...})` from `ans auth set` with no opts) and `resolveSearchCredentials` when `opts.home` is empty. Meanwhile `resolveLlmConfig` and the `status` branch read from `resolveConfigHome(...)`. On a host where `HOME`/`USERPROFILE` differ from `homedir()`, the CLI writes one file and the resolver looks in another — the exact divergence the surrounding comments claim to prevent. Default to `resolveConfigHome()` instead.\n\n**Suggestion:**\n```suggestion\nexport function userCredentialsPath(home: string = resolveConfigHome()): string {\n```",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27L",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 675,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-4fbab810b785dcba -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\nWhen the post-rename verify fails, deleting the whole file wipes every other provider's key too, not just the one being written. That is data loss disproportionate to the check. Better: roll back to the pre-existing content, or (failing that) leave the file and report loudly — deleting silently is the worst of both.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27N",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 107,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-a4ff12fdd031ef34 -->\n![security · medium](https://img.shields.io/badge/security-medium-orange)\nStoring the raw Authorization header means the fake endpoint keeps plaintext keys in memory for the whole run. Any later diagnostic that dumps `requestLog` (there are already `check(..., JSON.stringify(...))` places in this file) would write the key to CI logs — the exact thing the lane forbids. Suggest keeping only a hash or last-4 fingerprint and comparing against it.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27R",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 127,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-15bc78ee559c608c -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nThe `matching/calls` count already tells you whether a header matched, and the two shapes collapse \"absent\" + \"wrong value\" into the same diagnostic (wrong value shows as `Bearer <redacted>`, same as the expected one). Add a mismatched count so a red log actually says why it failed.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27V",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1132,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-61c892a8bed24b01 -->\n![security · medium](https://img.shields.io/badge/security-medium-orange)\nIf `ANS_LLM_BASE_URL` is ever inherited from the host environment, this failure message prints the full URL — userinfo/query tokens would land in CI logs. Print only whether it's set, e.g. `credEndpoint ? \"<set>\" : \"<empty>\"`.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27X",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1205,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-100172b99cbaf960 -->\n![test · medium](https://img.shields.io/badge/test-medium-orange)\nNothing re-reads the credential file after the env-override turn, so a bug where the env value overwrites the stored key would still pass. Add a check that `readFileSync(credPath)` still contains `credKey` right after this turn (before `auth remove`).",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27h",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1252,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-ae2894d3326dbbdc -->\n![test · medium](https://img.shields.io/badge/test-medium-orange)\n`code === 1` alone doesn't prove the exact-match behavior — a crash, a timeout, or an unknown-subcommand error also exits non-zero. Assert the message mentions the missing entry (e.g. no matching credential found), otherwise this claim is unverified.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM64z27m",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1281,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794984151966-1-c181a81661ad71cb -->\n![test · medium](https://img.shields.io/badge/test-medium-orange)\nThis probe assumes 0o500 actually blocks writes. Under root (or some CI containers/WSL) it doesn't, so the write succeeds and the lane goes red for an FS reason, not a product bug. Guard with `process.getuid?.() !== 0`, otherwise skip with an explicit reason.",
+     "createdAt": "2026-11-18T06:42:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640OVk",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": 7,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-9f2203a444151c56 -->\n![style · medium](https://img.shields.io/badge/style-medium-orange)\nThe file header narrates the ticket and the old behaviour (\"Before #301 this command only printed…\"). That's PR-description material: it dates the file and makes a reader scan four lines before the actual API. Keep only what the code can't say itself (the key never goes to argv, nothing prints a key).",
+     "createdAt": "2026-11-18T07:02:49Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640OZx",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-4ef79ff8eae0a1ed -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n`takeEndpoint` has a muddled guard chain: `value === undefined` is checked twice, and the second check bundles `value === \"\"` with an impossible `undefined`. Collapse to: read the value, reject `undefined` (missing), reject `\"\"` (empty), then reject a dash-prefixed value. Also note the freshly added `rest` side effect: `--endpoint --foo` throws as intended, so this is only readability — but a single guard per failure mode is what makes that intent verifiable at a glance.\n\n**Suggestion:**\n```suggestion\n      if (value === undefined) throw new Error(\"--endpoint requires a URL\");\n      if (value === \"\") throw new Error(\"--endpoint must not be empty; omit it to use the provider's default endpoint\");\n```",
+     "createdAt": "2026-11-18T07:02:52Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640OeV",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-d534b159e1d1b055 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nFour-level nested ternary, which the repo rules forbid on top of being hard to read. A small lookup/source-name function keeps the mapping in one place and is easier to extend when a source is added.",
+     "createdAt": "2026-11-18T07:02:56Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Okp",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-19c47f5b5618832f -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`llm.sources.apiKey` is compared against the literal strings `\"env\"` / `\"credentials\"` / `\"user\"` (plus a dead `\"set\"` fallback — `LlmLayer` has no such value, so that branch is unreachable). Import `LlmLayer`-backed logic instead or at least drop the impossible `\"set\"` case; a typo here turns into a wrong source label with no compile error.\n\n**Suggestion:**\n```suggestion\n            : \"set\";\n```",
+     "createdAt": "2026-11-18T07:02:59Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Oqb",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-f3eeb4c31a663821 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nThe credential path in `list`/`set`/`remove` comes from `userCredentialsPath()` (real `homedir()`), while the resolver and the status report use `resolveConfigHome(undefined, env)`. With HOME/USERPROFILE pointing somewhere else (a container, a test, the acceptance lane's tight-home run) `ans auth set` writes to one file and `ans auth list`/doctor/resolution reports the other. Use the same `resolveConfigHome(undefined, process.env)` here too — otherwise the command can announce a file it never touched. Same in doctor.ts line 118.\n\n**Suggestion:**\n```suggestion\n      const home = resolveConfigHome(undefined, process.env);\n      const path = userCredentialsPath(home);\n      const file = readUserCredentials({ home });\n```",
+     "createdAt": "2026-11-18T07:03:02Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Owk",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": 237,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-dd0ff2c7febf672e -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`remove` accepts `--endpoint` for ANY known provider, including search providers, while `set` rejects it. `ans auth remove tavily --endpoint https://x` therefore silently normalizes the endpoint and reports \"Nothing stored\" (exit 1) instead of the same clear \"only applies to model providers\" error `set` gives. Reuse the same check so the two paths can't drift.\n\n**Suggestion:**\n```suggestion\n    const provider = rest[0];\n    if (!provider) return usage();\n    const info = credentialProvider(provider);\n    if (!info) return rejectUnknownProvider(provider);\n    if (endpoint !== null && info.kind !== \"model\") {\n      process.stderr.write(provider + \" is a search provider; --endpoint only applies to model providers.\\n\");\n      return 2;\n    }\n```",
+     "createdAt": "2026-11-18T07:03:05Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640O1R",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": 260,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-0b210055e9768d55 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`statusLines` is only ever called from `runAuth` in production; `AUTH_INTERNALS` exists purely so the test can reach it. Export `statusLines` directly (it also makes the module's contract honest) instead of wrapping it in an `INTERNALS` bag, and drop the \"Exported for the tests\" note.",
+     "createdAt": "2026-11-18T07:03:08Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640O6c",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-56751c7411d4946a -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n`userCredentialsPath()` here resolves off the real `homedir()`, but `resolveSearchCredentials()` and the model resolver use `resolveConfigHome()` (USERPROFILE/HOME). With HOME overridden (container, CI lane, the acceptance tight-home case) doctor reports \"not created yet\" for a path that isn't the one being read, and the `(N key(s))` count comes from a different file than the path shown. Pass the same resolved home.\n\n**Suggestion:**\n```suggestion\n    const home = resolveConfigHome(undefined, process.env);\n    const resolved = resolveSearchCredentials(process.env, { home });\n    const path = userCredentialsPath(home);\n    const file = readUserCredentials({ home });\n```",
+     "createdAt": "2026-11-18T07:03:11Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640O-y",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-a46b2b420907d223 -->\n![bug · low](https://img.shields.io/badge/bug-low-green)\nReplace the three hard-coded provider ids with the exported list, otherwise any provider added to `CREDENTIAL_PROVIDERS` (or renamed) is silently never reported here and doctor stays green while it has no key. `SEARCH_PROVIDER_ENV_KEYS` / `CREDENTIAL_PROVIDERS` already exist for exactly this.\n\n**Suggestion:**\n```suggestion\n    for (const provider of Object.keys(SEARCH_PROVIDER_ENV_KEYS) as Array<keyof typeof resolved>) {\n      if (provider === \"warnings\") continue;\n      const entry = resolved[provider];\n```",
+     "createdAt": "2026-11-18T07:03:15Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PC1",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": 7,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-5358a7bdd6169e63 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nHeader comment is fine, but the inline comment on line 45 (\"One read for the whole listing: `storedBindings` re-read and re-parsed the file, and this loop called it once per provider.\") explains a past implementation, not the current one. Scratch that history — a `// read once, then loop` is enough.",
+     "createdAt": "2026-11-18T07:03:18Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PGx",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": 26,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-0fa2115d567a9eb0 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nThis helper is now called exactly once, in a single loop, so its only stated reason to exist (\"don't re-read the file per provider\") is gone. `file.bindings.filter(...).map(...)` inline in the loop is the same length and needs no helper.",
+     "createdAt": "2026-11-18T07:03:22Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PKy",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-35c10c519a3daf7d -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nPhrasing drift across the same command: `list` says \"(plain text; an env value still wins)\", `set` says \"An env value (… / ANS_LLM_API_KEY) still wins over the stored key\", `check` says \"plain text, owner-only, shared with GUI entries\", and `auth status` says \"Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable\". Four wordings for one rule. Pick one sentence and reuse it.",
+     "createdAt": "2026-11-18T07:03:25Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PPU",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-ab158c2ad16a3d6b -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThis comment (and the \"Saying 'the endpoint differs' was a guess\" one inside the loop) reads like PR review notes rather than code documentation. Keep a one-liner on what the read is for; drop the history of what previous versions did.",
+     "createdAt": "2026-11-18T07:03:28Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PTS",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-54ad718c199b03e6 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nTwo problems here. (1) No `home` passed: `readUserCredentials()` defaults to `homedir()`, but `resolveLlmConfig()` (and `ans auth set`, which writes via `resolveConfigHome`) use USERPROFILE-first. On a host where those differ, `ans llm` shows \"NO KEY (stored)\" while the resolver actually uses a stored key — the report lies about the file in force. (2) `storedFile.error` is dropped: a broken credential file silently reads as \"no keys\" here, while `auth list` and `doctor` both print the error. Pass `{ home: resolveConfigHome() }` and warn on `error`.\n\n**Suggestion:**\n```suggestion\n    const storedFile = readUserCredentials({ home: resolveConfigHome() });\n    if (storedFile.error) process.stderr.write(\"[credentials] \" + storedFile.error + \"\\n\");\n```",
+     "createdAt": "2026-11-18T07:03:31Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PXl",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": 64,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-c21d6940fb57327e -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`storedFile.error` is never checked here (unlike `auth status`, which surfaces it). A broken credentials.json is silently rendered as \"NO KEY\" for every provider. With the file broken, the resolver's own warning goes to stderr from `resolveLlmConfig()`, but this list loop still claims NO KEY — the two outputs contradict each other. Print the error once (e.g. as a `Credentials: ... BROKEN` line) before the loop.",
+     "createdAt": "2026-11-18T07:03:35Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Pbv",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-d1df4eef338a2db0 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nNested ternary — the repo checklist forbids it, and this one is dense enough to need a second read. Two flags and two states are actually three distinct outcomes; if/else makes that obvious. Same for the comment block above (\"Three distinct facts…\", \"Name the binding without claiming a cause that was never checked…\"): those narrate why an earlier version was wrong instead of what the code does, which is the ticket-retrospective style to avoid.\n\n**Suggestion:**\n```suggestion\n      let label: string;\n      if (envSet || effective) label = \"AUTH\";\n      else if (stored.length > 0) label = \"NO KEY (stored, not in effect)\";\n      else label = \"NO KEY\";\n```",
+     "createdAt": "2026-11-18T07:03:38Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PfD",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-0a988f7f7a0535b5 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThe label is derived from `process.env[envVarName]`, i.e. the provider's own env var only. But `resolveLlmConfig()` also honors `ANS_LLM_API_KEY` and a stored `[llm].env_key` name. So with only `ANS_LLM_API_KEY` set for the configured provider, `effective` is true and the line prints `[AUTH]` — correct — yet for a provider whose `[llm].env_key` points at a custom variable the same happens silently with no hint of which variable was used. More concretely, `ans llm` and `ans llm check` report a different notion of \"set\" (list: own env var OR effective key; check: own env var OR effective key with source label). The two subcommands should share one labeling function, the way `auth.ts` keeps a single `statusLines`.",
+     "createdAt": "2026-11-18T07:03:41Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Pji",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-a723a09c200ef189 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nSame two issues as in the list branch: no `home` argument (so this may read a different file than `resolveLlmConfig()` used for `cfg`), and `storedFile.error` is discarded. A broken file then prints \"NO KEY\" for every provider instead of saying the file is unreadable.\n\n**Suggestion:**\n```suggestion\n    // One read for the whole loop (the per-provider helper re-read the file).\n    const storedFile = readUserCredentials({ home: resolveConfigHome() });\n    if (storedFile.error) process.stderr.write(\"[credentials] \" + storedFile.error + \"\\n\");\n```",
+     "createdAt": "2026-11-18T07:03:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Pmx",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-7924a0832479caf8 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nNested ternaries are disallowed by the repo checklist, and this is a 4-branch chain plus a second 3-branch chain. The `\"resolved\"` fallback is also a dead-end label — unreachable today (any non-empty `apiKey` always has `env`/`user`/`credentials`), but if it ever fires it tells the user nothing. Use a lookup map with an explicit default, and branch with if/else instead of nested ternaries.\n\n**Suggestion:**\n```suggestion\n      const fromLabel = ({ credentials: \"stored file\", user: \"env via [llm].env_key\", env: \"env\" } as const)[\n        cfg.sources.apiKey as \"credentials\" | \"user\" | \"env\"\n      ] ?? \"unknown source\";\n      let where: string;\n      if (ownEnvSet) where = \"KEY SET (\" + envVarName + \")\";\n      else if (effective) where = \"KEY SET (\" + fromLabel + \")\";\n      else if (fromStore) where = \"KEY SET (stored file, not in effect)\";\n      else where = \"NO KEY\";\n```",
+     "createdAt": "2026-11-18T07:03:47Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Pqq",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/db.ts",
+  "line": 41,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-67bcad0254c7dc18 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nPassing a function reference that takes `(env, opts)` into a slot typed `(env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials` works only because JS ignores the extra arg. It also means `createPersistentEngine` never forwards its own env: the resolved home comes from `process.env` inside `resolveSearchCredentials`, not from `opts.env` that `createEngine` may have been given. Fine today (db.ts passes no `env`), but the coupling is implicit; a lambda like `(env) => resolveSearchCredentials(env)` would make the shape explicit and keep the `opts` hole closed.",
+     "createdAt": "2026-11-18T07:03:50Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Pu_",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-7623047260d941c2 -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThis line describes behaviour the code doesn't have: the prompt is just the caller's string, and there is no \"fixed placeholder\" — the raw-mode path prints nothing per keystroke, so length is hidden by omission, not by a placeholder. Also correct the same claim in auth.ts's header (\"plus the last four characters\"): `describeBinding` shows provider + endpoint only. Stale comments like these are worse than none, because the next reader trusts them.",
+     "createdAt": "2026-11-18T07:03:53Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640PzF",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-afd7010462c0a56d -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\nTry/catch inside the loop does not cover `setRawMode(true)`/`resume()` (they run before the `try`), so a throw leaves the terminal in raw mode with no echo for whatever the shell does next. And the finally block resets to `wasRaw ?? false` — a stream that already reported `isRaw === false` is fine, but any error path from `input` iteration (EPIPE on stdin) now can't even restore. Put the raw-mode setup and the reads under the same try/finally.",
+     "createdAt": "2026-11-18T07:03:57Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640P3i",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-2bda56ff7cc5b015 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nEscape handling is incomplete in two ways that both corrupt a typed key.\n\n1. A terminal in bracketed-paste mode sends `\\x1b[200~` / `\\x1b[201~`, but a paste WITHOUT them (paste mode off, or a key typed char by char containing `\\x1b[` in a payload) hits the `marker` prefix match and then drops the collected chars — here ordinary key characters disappear silently.\n2. For any other CSI sequence, `ESC [ <params> <final>`: the first non-matching char clears `marker` and `continue`s, so the params/final byte (`A` for an arrow key, `1~` for Home) flow straight into `value` on the next iterations. `cleanSecret` only rejects control bytes, so `1~`, `A`, `C` end up in the stored key and auth fails later with no hint.\n\nSwallow the whole CSI sequence (all bytes up to and including the first byte in the 0x40–0x7E range) instead of only the ESC, and treat a non-matching sequence as \"drop until final byte\".",
+     "createdAt": "2026-11-18T07:04:00Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640P7d",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-f9f1a2609264462d -->\n![bug · low](https://img.shields.io/badge/bug-low-green)\nDropping an unknown escape sequence silently is fine for an arrow key, but an ESC that is the start of a partial marker at the END of the stream (`\\x1b[200` then EOF) or a paste that closes with `\\x1b[201` (single trailing tilde typed by hand) will lose those characters without any hint — the stored key then just fails auth later. At minimum, when the reader throws \"stdin closed before a key was entered\", tell the user a stray ESC may have eaten characters so they retype rather than chase an auth error.",
+     "createdAt": "2026-11-18T07:04:04Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640P_M",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/mcp/src/server.ts",
+  "line": 61,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-7ba311e57178d8ee -->\n![style · low](https://img.shields.io/badge/style-low-green)\nSame ticket-numbered comment style: `#301:` prefixes a sentence that's really just describing behaviour. Fine to explain that this shares the CLI's credential file, but the ticket ID belongs in the PR, not the codebase.",
+     "createdAt": "2026-11-18T07:04:07Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QDP",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/mcp/src/tools/ans-chat.tool.ts",
+  "line": 163,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-11b6a93bbf8f06b4 -->\n![style · low](https://img.shields.io/badge/style-low-green)\nThis comment block is written as a review transcript (\"greptile P1\", \"#300 review opinion B\", \"user decision\", \"#301 widened that guard to every layer\"). It explains the discussion, not the behaviour, and it's long enough to obscure the one rule that matters: the resolved key is used for catalog providers and custom endpoints alike because the resolver has already bound it to the provider/endpoint. Cut it to that and drop the ticket IDs and review chatter.",
+     "createdAt": "2026-11-18T07:04:11Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QGf",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 39,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-4f9975a9abc9e6d6 -->\n![style · low](https://img.shields.io/badge/style-low-green)\nThese new comments narrate the review history and cite ticket IDs (`#301`, `#300 review opinion B`) rather than saying what the code does. Comments like that read as AI leftovers and age badly — the ticket is where the why lives. Keep the concrete fact (argument wins over the SDK's env fallback; explicit env wins over the file) and drop the ticket numbers.",
+     "createdAt": "2026-11-18T07:04:14Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QKU",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 46,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-686f2a0dc2275dc0 -->\n![other · low](https://img.shields.io/badge/other-low-green)\nSorry, wrong anchor. Ignore.",
+     "createdAt": "2026-11-18T07:04:17Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QOO",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 45,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-77b6dcd3861daec6 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`resolveSearchCredentials` only fills `anysearch.endpoint` from `env.ANYSEARCH_ENDPOINT`, but `AnySearchProvider` already falls back to `process.env.ANYSEARCH_ENDPOINT`. So the moment a caller passes a different env (`createEngine(domain, { env })`), the arm silently switches endpoint source: with `env = {}` the resolver hands `endpoint: undefined` and the provider reads the real process env anyway — the injected env is half-honoured. Either have the resolver always emit the resolved endpoint (provider default included) or keep `env` out of the option surface until the provider constructors take it.",
+     "createdAt": "2026-11-18T07:04:20Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QR_",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-954f367b95c5aae7 -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThe doc comment says this field explains where each arm's key came from, but it only mirrors the resolver: `apps/cli/src/commands/chat.ts` calls `createEngine()` with no `searchCredentials`, the arms still pick up keys from the SDKs' own env fallback, and `credentialSources` stays undefined. Say plainly that it records only what the resolver reported, or have the constructors stop falling back to env so the reported source is always the real one.",
+     "createdAt": "2026-11-18T07:04:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QVk",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-689acbce91b4e801 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nThe values are typed as free-form `string` while the real origin is a closed set (`\"env\" | \"user\"` in `ResolvedSearchCredentials`). Reusing that union keeps the \"never carries a secret\" promise checkable and stops a typo'd label from reaching user-facing diagnostics.\n\n**Suggestion:**\n```suggestion\n  credentialSources?: {\n    tavily?: ResolvedSearchCredentials[\"tavily\"][\"source\"];\n    exa?: ResolvedSearchCredentials[\"exa\"][\"source\"];\n    anysearch?: ResolvedSearchCredentials[\"anysearch\"][\"source\"];\n  };\n```",
+     "createdAt": "2026-11-18T07:04:26Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QZP",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-cc0dc21a0e9d4e04 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`env` is only forwarded to `searchCredentials`, while the rest of `createEngine` still reads `process.env` (`defaultDomainsDirs()`, `domainTomlPath`/reloader, and `resolveActiveAttributionCalibration()`). A caller that passes `env` therefore gets a mixed config: credential file located via the injected env, domain dirs and calibration from the real one. Either thread `env` through those calls too, or drop the option and let tests stub `process.env`.",
+     "createdAt": "2026-11-18T07:04:30Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QdM",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-642b403ccf4749af -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n`creds` is declared without an initializer and only assigned inside the branches, so a reader can't tell it's always defined by the time it's used; `credentialSources` is the same shape. Both are assigned once, so build them together and drop the awkward `let creds: CredentialSource;` — at minimum initialise it to `undefined` so the \"not resolved\" case is explicit rather than incidental.\n\n**Suggestion:**\n```suggestion\n  let creds: CredentialSource = undefined;\n  // undefined = nobody asked for credential resolution; {} = resolution ran and\n  // no arm came out with a key. Consumers that report why an arm degraded need\n  // to tell those apart.\n  let credentialSources: CompositionResult[\"credentialSources\"];\n```",
+     "createdAt": "2026-11-18T07:04:33Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Qgr",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-032d3dab265e0fcb -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n`opts.searchCredentials(env)` is called unguarded. It can throw — `resolveSearchCredentials` swallows read/parse errors today, but `apps/mcp/src/index.ts` exits the process on any throw here, so a broken or permission-denied `credentials.json` would kill the MCP server at startup instead of falling back to env keys. Everything else in this build is fail-open (see `buildProvider`), so this seam should be too: catch, write a diagnostic to stderr (no key values), and continue with `creds = undefined`.\n\n**Suggestion:**\n```suggestion\n    try {\n      creds = opts.searchCredentials(env);\n    } catch (e) {\n      creds = undefined;\n      writeProviderDiagnostic(\n        \"[anysearch] search credentials could not be resolved: \" +\n          (e instanceof Error ? e.message : String(e)) +\n          \" — falling back to each SDK's own env var\\n\",\n      );\n    }\n```",
+     "createdAt": "2026-11-18T07:04:36Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Qje",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-cbbc1660cf448114 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThe `[credentials]` prefix is stripped here and `[anysearch] ` is prepended, which hard-couples this consumer to the exact string the store builds (`warnings.push(\"[credentials] \" + ...)` in `credentials.ts`). Change the store's tag and stderr shows a doubled prefix with nothing failing. `apps/cli/src/commands/auth.ts` and `doctor.ts` repeat the same `replace`, so there are three copies. Cleaner: the store returns untagged messages and each consumer adds its own tag.",
+     "createdAt": "2026-11-18T07:04:39Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QnI",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-7d06b95e94ae3bb7 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`resolveLlmConfig` now derives `home` from `env.HOME` when `opts.home` is unset, but `opts.env` is allowed to be a partial env object. Callers that pass a scrubbed/partial `env` (tests, MCP passing an explicit env) will silently lose HOME and fall back to `homedir()`, so the resolver may read a different config.toml than the caller expects. Previously `opts.home ?? homedir()` did not depend on `env` at all. Consider keeping `opts.home ?? homedir()` here, or documenting that `opts.env` must carry HOME/USERPROFILE.",
+     "createdAt": "2026-11-18T07:04:42Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Qqg",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 270,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-223349ad587e0de0 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nSame AI-voice/history concern as `credentials.ts`: this ~35-line comment block narrates the ticket lineage (`#120 did this...`, `#301 extended it to env/CLI`, `This is the boundary #301 was asked to decide`, `spec S2: 明确环境凭据优先`) and reads as a PR discussion pasted into the source. Keep a short statement of the resolution order and binding rules; move the historical rationale out.",
+     "createdAt": "2026-11-18T07:04:46Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640QuY",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 354,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-6bd45643cf8ef2f4 -->\n![security · high](https://img.shields.io/badge/security-high-red)\nThe refused-source guard only blocks the exact env var name stored in `user.env_key`. Google's key can live under two names (`GOOGLE_API_KEY` and `GEMINI_API_KEY`). If the user file binds `GOOGLE_API_KEY` to endpoint A (`env_key = \"GOOGLE_API_KEY\"`, `base_url = A`), and the env moves the effective endpoint to B while `GEMINI_API_KEY` is also exported, `GOOGLE_API_KEY` is refused but `GEMINI_API_KEY` passes the filter and the same google secret is sent to endpoint B anyway — the binding guard is defeated. Same goes for a provider mismatch where the key is exported under both names. Refusing one name must refuse all names of the *same provider's key*, e.g. block every name returned by `modelEnvKeysFor(providerForEnvKey(user.env_key))` when the refusal is about provider/endpoint binding.\n\n**Suggestion:**\n```suggestion\n    if (!resolved.apiKey && resolved.provider) {\n      const providerSecret = modelEnvKeysFor(resolved.provider)\n        .filter((name) => !refusedSecretSources.has(name))\n        .map((name) => env[name]?.trim())\n        .find((value) => !!value);\n```",
+     "createdAt": "2026-11-18T07:04:49Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Qyj",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-87c7ff17952d2619 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`userCredentialsPath()` defaults to `homedir()` and does not go through `resolveConfigHome`, so a call site that uses the default (e.g. `apps/cli/src/commands/auth.ts` `ans auth list`, which calls `userCredentialsPath()` bare while `statusLines` uses `resolveConfigHome`) resolves the path differently from `resolveConfigHome` on a host where `HOME`/`USERPROFILE` differ from `os.homedir()`. Make the default `resolveConfigHome()` so there is exactly one rule, as the doc comment on `resolveConfigHome` claims.",
+     "createdAt": "2026-11-18T07:04:52Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Q17",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 258,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-5b56b56eda6c60e5 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nNote for the resolver side: an empty `bindings` array (`{\"bindings\": []}`) is indistinguishable from \"no such provider\", so `lookupModelCredential` returns `absent` with no warning. That is fine, but the `endpoint-mismatch` message in `config-llm.ts` builds `storedList = \"(the provider default)\"` only when `lookup.stored.length === 0` — which, given `endpoint-mismatch` requires at least one binding, can only happen when the single stored binding is a null endpoint that was filtered out, producing the misleading text \"bound to (the provider default)\" for a file that is actually storing only the default-endpoint key. Worth checking that branch is reachable/intended.",
+     "createdAt": "2026-11-18T07:04:55Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Q53",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 288,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-891fda20005a12e3 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`parsed` can legally be a primitive (e.g. the file contains `\"abc\"` or `42`). Casting to `Record<string, unknown> | null` and indexing `[\"bindings\"]` on a string/number returns `undefined`, so this path degrades to \"missing the bindings list\" — acceptable — but the cast hides that from the type system. Prefer an explicit `typeof parsed === \"object\" && parsed !== null` guard before indexing, so the `as` cast (which the repo discourages) can be dropped.",
+     "createdAt": "2026-11-18T07:04:58Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640Q-Q",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 348,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-dd5af8ffd79fde52 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`resolveSearchCredentials` silently ignores model-provider keys and non-matching providers, which is right, but it also silently ignores an `anysearch` binding whose endpoint was stored (not possible today since search providers reject `--endpoint`, yet nothing stops a hand-edited file from carrying one). The stored endpoint is dropped without a warning, and the arm then talks to its baked-in endpoint while the user believes the key is bound to the URL in the file. Consider warning when a search binding carries a non-null endpoint.",
+     "createdAt": "2026-11-18T07:05:02Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RBV",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 439,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-f33cc58e6ed39405 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nSecondary AI-flavored narration in error/comment text — `“(found by the installed-product lane in CI: a read-only config directory must fail with this message, not with an errno)”` reads as PR history rather than code explanation. Please reduce to what the branch does (\"a directory that refuses the lock file fails with the same actionable message\").",
+     "createdAt": "2026-11-18T07:05:05Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640REP",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 472,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-5dd03e4ec58244b7 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`withCredentialLock` unlinks a lock whose mtime is older than `LOCK_STALE_MS` without checking its owner. The lock is only mtime-stamped once at creation (`writeSync(fd, pid)`), and the PID is never re-verified. A writer that legitimately takes longer than 10s (e.g. a hung `icacls` in `applyProtection`/`readWindowsSddl`) has its lock stolen mid-flight, which reintroduces the lost-update race the lock is meant to prevent. Consider recording the owner pid and checking it is still alive before stealing, or bumping the lock mtime during the critical section.",
+     "createdAt": "2026-11-18T07:05:08Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RIO",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 680,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-fa13ca12fae0d460 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nOn a post-publish verification failure the whole credential file is deleted, so a single failed write wipes every provider's stored key, not just the one being written. The prior contents (`existing.bindings`) are still in memory at this point and were replaced only by the rename. Failing closed is right, but deleting the entire multi-provider store is a worse outcome than the leak it avoids for unrelated keys. Consider restoring the previous contents (or at least writing back the previous bindings without the new key) when a prior file existed, and only unlinking when there was no prior file.",
+     "createdAt": "2026-11-18T07:05:11Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RMH",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 772,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-672b159b115fda48 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`removeUserCredential` compares `b.provider === input.provider` verbatim, while `writeUserCredential` compares against the canonical `info.id`. Stored bindings are always lowercased by `parseBinding`, so a caller that passes a non-lowercase id (e.g. `\"OpenAI\"`) never matches and the remove silently returns false. Normalize before comparing (`input.provider.trim().toLowerCase()`) so write and remove agree.\n\n**Suggestion:**\n```suggestion\n    const kept = existing.bindings.filter(\n      (b) => !(b.provider === input.provider.trim().toLowerCase() && b.endpoint === endpoint),\n    );\n```",
+     "createdAt": "2026-11-18T07:05:15Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RP6",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1163,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-9446509b807d543b -->\n![security · high](https://img.shields.io/badge/security-high-red)\n`check()` 的第三个参数在失败时会被打进控制台（见 check 的实现），而这里几处把 `raw`（整个凭据文件内容）或者 `listed.out`（含 `Stored …` 之类输出）直接丢进去，一旦红了就把文件里的明文 key 写进 CI 日志——正好是 `describeAuthHeaders` 那段注释在防的事。这里的 detail 参数建议换成不含密钥的描述（比如 \"file length/contains key: \" + raw.includes(credKey)），`raw.slice(0,160)` 只保留文件头那段 note 就行。",
+     "createdAt": "2026-11-18T07:05:18Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RTz",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1173,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-2386a590d669e51c -->\n![test · medium](https://img.shields.io/badge/test-medium-orange)\n这两条 Windows ACL 断言的语义和实现不符：\n\n1. `!\\/\\(I\\)\\/` 只禁止“继承来的 ACE”，但换成显式 ACE（DACL 里一条不带 `(I)` 的 `Everyone`）就通过了；第二遍已经把危险主体单独查了，这里只能算弱信号。\n2. 更实际的问题：`icacls` 的输出受系统语言影响。中文 Windows 上是 `BUILTIN\\Users` 之外的 `Everyone`/`Users` 会被本地化（如 `BUILTIN\\Users` 保留、但 `<机器>\\Users`、`Everyone` 可能显示为 `Everyone` 或本地名）。PR 描述里也写明“Windows ACL 只在本机英文系统实测”，说明这条断言只在英文机器上验证过，到中文 CI 机器上大概率假红或假绿。\n\n建议用 `icacls` 的 SID 形式或解析为 SID 后再比对（例如 `*S-1-1-0` = Everyone、`*S-1-5-32-545` = Users），或者直接读 SDDL（产品侧 `verifyFileProtection` 已经在解析 SDDL）后再断言，别比对本地化的显示名。",
+     "createdAt": "2026-11-18T07:05:21Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RYT",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1233,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-9c692fce277f9ca1 -->\n![test · medium](https://img.shields.io/badge/test-medium-orange)\n这条断言和产品/注释对不上：`auth.ts` 头注释说 list 会带末四位好让用户区分两把 key，而这里要求连末四位都不能出现。哪天产品真按注释打出末四位，这条就红，而且红的原因和票要求正好相反。两处得挑一个改：要么去掉末四位断言（改成只查完整 key），要么改掉 auth.ts 里那句注释和对应行为。",
+     "createdAt": "2026-11-18T07:05:25Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640RbR",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "scripts/installed-acceptance.mjs",
+  "line": 1251,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794985299881-1-a13717f51ce6588f -->\n![test · high](https://img.shields.io/badge/test-high-red)\n`credPath` 是上一段正则从 `auth list` 输出里抠出来的，而 `existsSync` 的回退分支只把 600 和保护/明文那几条断言圈在 `if (credPath && existsSync(credPath))` 里。这里（以及下面 `check(!existsSync(credPath), ...)`）却在圈外用。只要格式一变，`credPath` 就是 `undefined`，`existsSync(undefined)` 直接抛 TypeError 把整条车道炸掉——删 key 和“建不起保护”这两段根本不跑。而且 `wrongEndpoint.code === 1` 那段其实不需要路径，本来也该独立成立。\n\n建议：`credPath` 为空时先判红并跳过所有依赖路径的断言，而不是让它们变成静默通过或崩溃。例如把依赖路径的部分收进 `if (typeof credPath === \"string\")` 里，否则 `skip(...)`。\n\n**Suggestion:**\n```suggestion\n      if (typeof credPath !== \"string\" || credPath.length === 0) {\n        skip(\"删 key / 访问保护断言\", \"ans auth list 没报出凭据文件路径，依赖路径的断言无从谈起\");\n      } else {\n        const wrongEndpoint = runAns([\"auth\", \"remove\", \"openai\"], { cwd: prefix, env: baseEnv });\n        check(wrongEndpoint.code === 1 && existsSync(credPath),\n```",
+     "createdAt": "2026-11-18T07:05:28Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQC",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-63ffea3c56df63b5 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\nThe two empty-check branches are indistinguishable: `value === \"\"` and `normalizeBindingEndpoint(value) === null` both throw the identical message, and only the second also catches whitespace-only input like `\"   \"` (after the `-` check, which a blank value passes). Keep one guard that owns the message and let `normalizeBindingEndpoint` be the single source of truth, e.g. drop the `value === \"\"` line.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQI",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-4946818333c42ab8 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThis duplicates `KEY_SOURCE_LABELS` in `apps/cli/src/commands/llm.ts` (same keys `credentials`/`user`/`env`, same strings), with `env` handled inline here. Two copies drift the moment one is updated. Export the map from one place (e.g. `apps/cli/src/config-llm.ts` or a shared constants module) and import it in both commands.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQK",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-a65579b28aae1c74 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nThis is not \"the SAME root statusLines uses\": `statusLines()` was called above with its default `process.env`, and `resolveConfigHome()` here reads `process.env` at this instant. Inside one `runAuth` run they only agree by accident. More importantly, the `set`/`remove` paths still call `userCredentialsPath()` with no home (lines 191, 248), so `list` and `set` can announce different files than `statusLines` reported when `HOME`/`USERPROFILE` change mid-run. Compute `home` once at the top of `runAuth` from a single env snapshot and pass it to `statusLines`, `set`, `remove`, and `list`.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQM",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/auth.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-9ff7c9a39443dba5 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`userCredentialsPath()` is called with no argument here, so it picks the root on its own — while the `list` branch above now pins the root with `resolveConfigHome()` and passes it in. Same story a few lines below on the `set` success message and in the `remove` success message. When `home` is overridden (tests, or any future caller that passes `env`), the announced path and the file actually written can differ. Resolve the root once here and pass it to both `userCredentialsPath(home)` and `writeUserCredential({ ..., home })`.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQV",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/doctor.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-f052bdf2575dc200 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n`SEARCH_PROVIDER_ENV_KEYS` is typed `Record<string, string>`, so `Object.keys` yields `string` and the `as` cast just silences the mismatch. If a fourth search provider is added to `CREDENTIAL_PROVIDERS`, `resolveSearchCredentials` will not populate it (it only assigns tavily/exa/anysearch) and this loop silently skips it — doctor then reports nothing for a configured provider. Prefer iterating the typed union explicitly (or derive the key list from a typed source) so an added provider is a compile error rather than a silent omission.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQc",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-ef8616cf06f71a08 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\nAll three label lines call `resolveConfigHome()` / `credentialsPath()` / `userConfigPath()` with no env, so this listing describes `process.env`'s root while `cfg` came from `resolveLlmConfig()`'s own root. That is the only reason the comment here can claim the two agree — they agree by coincidence of both defaulting to `process.env`, not because a shared value is passed. `ans auth status` already does it the other way (`resolveConfigHome(undefined, env)`); resolving the root once and passing it to both `resolveLlmConfig({ home })` and `readUserCredentials({ home })` would hold the invariant no matter how the resolver is called. Same for the `ans llm check` path below.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQl",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-ff1e87687727f285 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`envSet` only checks the provider's own canonical var from `API_KEYS`, but the resolver also accepts alternate names (`GEMINI_API_KEY` for google). A google key exported as `GEMINI_API_KEY` will show `NO KEY` here while `resolveLlmConfig` happily resolves it — the listing contradicts the resolver. Check every name in `modelEnvKeysFor(provider)` (the same helper the resolver uses) instead of just `API_KEYS[name]`.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQq",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-231bf444d4409fb2 -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThese comments narrate the bug history (\"both used to corrupt the stored key silently\", \"dropping only the ESC bytes leaves…\", \"the four-level ternary this used to be\") and are defensive. Rewrite as plain statements of the current contract: what the parser accepts and what it drops. Same for the `SOURCE_LABELS` doc comment in `auth.ts` and the \"SAME root…\" comment in the `list` branch.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQu",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 56,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-6ca660f9d5eda3ae -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\nThe comment at line 69 says raw mode is entered inside the try so `finally` always runs, but `setRawMode(true)` and `input.resume()` are still outside the `try`. If the terminal refuses raw mode, the `finally` does not run and stdin stays resumed/echoing — exactly the case the comment claims to handle. Move them inside the `try` (with `setRawMode`/`pause` guarded in `finally`) or drop the misleading comment.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQx",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 155,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-c4b9b8c7050bdc03 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nPrefix check runs before the final-byte check, so `ESC [` alone is treated as \"still a marker prefix\" and swallowed — including when the user typed a literal `[`. Test \"a key that itself contains ESC[\" expects `\"sk-A\"` from `\"sk-A\" + ESC + \"[\" + \"B\" + Enter`, which this code cannot produce: `[` never closes the escape, `B` is not a marker prefix, `isCsiFinal(\"B\")` closes it, and the `\\r` is then dropped while still `inEscape` — the loop ends and it throws \"stdin closed before a key was entered\". Also, the paste payload passes through here, so a pasted key containing `ESC [` loses everything up to the next ASCII letter. Fix: only treat `[` as a marker prefix when the sequence is short enough to actually be a marker (a CSI marker is exactly 5 chars incl. ESC) and treat a bare `ESC` followed by an ordinary printable char as a stray ESC to be dropped rather than feeding that char into the sequence.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQz",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 279,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-0e0f9f06e9c874dd -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nSame ticket-log tone here (\"#301 review P1\" and the round narrative) mixed into the rest of this file's already long header comments. Trim to the behavior: \"Resolve every search key once; a warning about the credential file goes to stderr and never carries a key value. A throwing resolver falls back to each SDK's own env.\" Losing the staged history makes it readable for someone meeting the code first.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vQ2",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 310,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-0779e7a464201987 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\nOn a throw, `credentialSources` stays `undefined`, which the comment above says means \"nobody asked for credential resolution\". Consumers that tell `undefined` from `{}` to explain a degraded arm will now read a failed resolution as \"never requested\" — `ans doctor`/diagnostics would say nothing instead of pointing at the credential file. Set it to `{}` in the catch so the two states keep the documented meaning. Also `slice(0, 200)` can cut a multi-byte character in half and print a mojibake tail; trim after the slice.\n\n**Suggestion:**\n```suggestion\n    } catch (e) {\n      creds = undefined;\n      // Resolution ran and produced nothing: `{}`, not `undefined`, so a degraded\n      // arm is not reported as \"credentials were never asked for\".\n      credentialSources = {};\n      const reason = String(e instanceof Error ? e.message : e).slice(0, 200);\n      writeProviderDiagnostic(\n        \"[anysearch] search credentials could not be resolved: \" + reason +\n        \" — falling back to each SDK's own env var\\n\",\n      );\n    }\n```",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRA",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-3fadad5a22928b1b -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\nThis always takes the config root from the real `process.env`. Callers that hand in their own env to control the root (e.g. `ans auth status` calls `resolveLlmConfig({ env })` after reading the credential file from `resolveConfigHome(undefined, env)`) now get the model config from a different root than the key file, and any `env.HOME` set in `opts.env` is ignored. `resolveConfigHome` already applies the `explicit || USERPROFILE || HOME || homedir()` rule, so pass the env that should decide the root instead of pinning `process.env`.\n\n**Suggestion:**\n```suggestion\n  const home = resolveConfigHome(opts.home, env);\n```",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRF",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-5830e23c2dabbd58 -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThese new comments read like a ticket log rather than a description of what the code does: \"#301 review P1\", \"second round\" and the \"refused, then re-read one branch later\" narrative describe history, not behavior. The anti-AI-comment rule in this repo wants plain statements. Rewrite as: \"Every name the same provider's key can live under is refused, so blocking one alias cannot let the same secret through another.\" Drop the issue numbers and the round-by-round story — the git log already keeps that.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRK",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 315,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-7be02a67146eb932 -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`refusedSecretSources` is now mutated outside any branch, but it is still only consulted by the provider-env fallback (line 340). The `else if (user.env_key)` branch right below reads `env[user.env_key]` directly and never checks the set; the new `const` and `refuseEveryName` helper were arguably introduced to guard exactly that. Today it happens to be harmless because the two refusal branches are `else if` alternatives to that read, so the set is always empty when the read runs. It looks like a live guard but isn't one — either drop the declaration to the branch that uses it, or actually consult it in the `env[user.env_key]` read so a future `else if` → `if` refactor can't leak the refused key.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRO",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-144cf4a7f3e429ab -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThe comment above `resolveSearchCredentials` (line ~298) says each consumer adds its own prefix, but `statusLines` in `auth.ts` adds `[WARN] `, not a credentials tag — not a bug, but the comment's list of consumers is incomplete. Also, the doc block for `userCredentialsPath` recounts the whole `auth set` vs `auth list` incident with specific env-var names; per repo rules, ticket-recap comments should be trimmed to a one-line \"why\". Not blocking, but worth shortening.",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRV",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-71ef05bb98923f5a -->\n![maintainability · low](https://img.shields.io/badge/maintainability-low-green)\n`?? resolveConfigHome()` here is a no-op: `userCredentialsPath`'s default parameter already calls `resolveConfigHome()` when `home` is undefined. Suggest dropping the duplication so the \"one place the path is decided\" claim in the comment above the helper actually holds.\n\n```suggestion\n  const path = opts.filePath ?? userCredentialsPath(opts.home);\n```",
+     "createdAt": "2026-11-18T07:29:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRd",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 338,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-e71c2b74790c2b9e -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThis warning text is now consumed in three places with different prefixes, but `statusLines` in `apps/cli/src/commands/auth.ts` still prints `[WARN] ` + warning. That is consistent, so fine. However the comment claims \"each consumer adds its own prefix\", which is only true for kernel and doctor — worth tightening the comment rather than the code, or leave it. More importantly: the sentence \"continuing without the user credential file\" is now unqualified; the resolver does in fact continue with env-only, which matches. No functional issue.",
+     "createdAt": "2026-11-18T07:29:24Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM640vRi",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794986957434-1-c086cda07f0c5f1d -->\n![documentation · low](https://img.shields.io/badge/documentation-low-green)\nThe comment states \"ALWAYS emitted\", but the code only emits `endpoint` when a key was found or when `ansEndpoint` is set. With no key and no `ANYSEARCH_ENDPOINT`, `out.anysearch` stays undefined and there is nothing to emit — the comment overstates what the code guarantees. Trim it to what the two `if` branches actually do.",
+     "createdAt": "2026-11-18T07:29:24Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5g",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-19b6383968a302b7 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n两处问题。一是文件顶部第 1–6 行的旧注释还在说「这个模块只是薄薄一层 re-export，实现只有一份在 store 里」，现在这里真的放了一份逻辑（KEY_SOURCE_LABELS），注释和代码对不上，顺手改掉。二是这个映射表更适合搬进 `@anysearch-cli/store`（`sources.apiKey` 的取值就是 store 里 `LlmLayer` 定的，`ans auth` 和 `ans llm` 都从 store 拿配置），这样「一份实现」那句话才成立。留在这里，等于把一个不该分叉的文案表硬塞进了 CLI 层，今后 MCP 或插件想显示来源还得再抄一遍。另外注释里「two copies would drift」是写给 reviewer 的解释，不是给读代码的人看的信息，改成说清楚谁在什么场景用它就行。",
+     "createdAt": "2026-11-18T09:17:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5k",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-7e5444b8a15f64a4 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n粘贴结束判定用的是「缓冲区结尾等于 ESC[201~」，而不是「本次粘贴还没出现过结束标记」。payload 里如果本来就带 ESC[201~（粘贴的内容被终端二次包裹，或者用户粘的就是含转义字节的原始数据），会被当成结束标记提前闭合，剩下的字节又被当终端命令解析，于是密钥后半段无声丢失，用户只看到存进去的是残缺的 key。\n\n另外这个分支每来一个字符就 endsWith 一次，长度 O(n) 的字符串拼接 + 比较，粘贴大段内容时是平方级。建议改成「取尾部和 PASTE_CLOSE_SEQUENCE 比较长度相等时才做一次 slice 比较」，并明确只认第一个闭合标记。",
+     "createdAt": "2026-11-18T09:17:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5p",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-c9f28de7221830be -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`ch >= \" \"` 是字典序字符串比较，不是码点语义：`\\u007f`(DEL) 和 `\\^@` 以上字符都满足。DEL 恰好被上面的退格分支拦住了，但其它控制字节（比如 `\\^@`–`\\^_` 里非 ESC/CR/LF 的那些）以及非 ASCII 高位字符会被写进 value，最后才在 `cleanSecret` 里整体报错，用户拿不到「哪个字符坏了」的信息。建议和 `isCsiFinal` 一致用 `ch.charCodeAt(0)` 判 `>= 0x20 && !== 0x7f`，或者直接用可打印字符正则。",
+     "createdAt": "2026-11-18T09:17:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5t",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 149,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-c6b3265f5fd0b214 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n粘贴进行中没有「Enter 结束读取」的出口：如果终端不给闭合标记（部分终端/管道场景只发开标记），用户按 Enter 也只是被塞进 pasteBuffer，永远不会返回 `value`，只能 Ctrl+C 退出。建议在 inPaste 分支收到 `\\r`/`\\n` 且 pasteBuffer 已非空时也结束读取，或者至少给出提示。",
+     "createdAt": "2026-11-18T09:17:44Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "已修，a71c560c。粘贴里收到换行就结束读取；缓冲区 trim 后为空当\"输完了\"，有内容则报 `the paste did not finish before the line ended` 并什么都不写（返回载荷会被 cleanSecret 的 trim 截掉结尾换行，两行粘贴会静默存成第一行）。",
+     "createdAt": "2026-11-18T10:25:39Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5v",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-f99af5391af9b340 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n注释和代码对不上：走到 catch 说明解析**失败**了，谁的 key 从哪来根本没解析出来，不是「解析跑了、什么都没拿到」。这里写 `{}` 的代价是：下游拿到 `{}` 会以为「解析过了，确实没有 key」，于是这次故障（文件不可读、权限错）就永远显示成「没有密钥」，用户排不出原因。既然上面已经写了 stderr 告警，建议返回类型里带个「解析失败」的标记（比如 `credentialSources` 里加 `error?: string`），别让失败和空结果共用一个形状；至少注释要改回「解析抛异常，按无凭据处理」。",
+     "createdAt": "2026-11-18T09:17:45Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z5y",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-5583fca8d3fe657c -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这里拿 `process.env` 兜底跟同一行上面的说法对不上：`opts.env` 是什么都没说（比如测试或 MCP 只传了 `ANS_LLM_*`）时，主目录还是从 `process.env` 里取，也就是仍然会读到开发机真实 home 下的 config.toml。而 `resolveSearchCredentials(env, { home })` 走的是 `resolveConfigHome(opts.home, env)`，同样情况下直接用 `env` 兜到 `homedir()`。两个入口对“同一个只传部分 env 的调用方”会指向不同的配置文件。建议统一用调用方传进来的 `env`，`resolveConfigHome` 自己会处理兜底：\n\n```ts\nconst home = resolveConfigHome(opts.home, env);\n```",
+     "createdAt": "2026-11-18T09:17:45Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM643Z55",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794993460217-1-3a2ad4b8ddba42d8 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n类型声明成了 Record<SearchProviderId, string>，但赋值来源 envKeysByKind 返回的是 Record<string, string>，而且它只是按 kind 过滤 CREDENTIAL_PROVIDERS，并没有按 SEARCH_PROVIDER_IDS 取。如果哪天从 SEARCH_PROVIDER_IDS 里删掉一项，SEARCH_PROVIDER_ENV_KEYS 里多出来的键（tavily/exa/anysearch 之一）不会被发现：tsc 不会报，`credentials.test.ts` 比较的是 Object.keys 反而会过。建议直接按 SEARCH_PROVIDER_IDS 生成，让「声明列表」成为唯一真相。\n\n**Suggestion:**\n```suggestion\nexport const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = Object.fromEntries(\n  SEARCH_PROVIDER_IDS.map((id) => [id, envKeyFor(id)]),\n) as Record<SearchProviderId, string>;\n```",
+     "createdAt": "2026-11-18T09:17:45Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "改成先 assertCatalogMatchesSearchIds()，再按 SEARCH_PROVIDER_IDS 组装：`credentialProvider(id)!.envKey`。map 里重复的那个 throw 删了，一类问题只剩一种说法。",
+     "createdAt": "2026-11-18T10:25:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644kkm",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/commands/llm.ts",
+  "line": 145,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-a7a659893b5bba2f -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n`ans llm check` 现在有两处根目录不一致：`runLlm` 顶部用 `resolveConfigHome()`（不带 env，走真实进程环境）定 `home`，这里再把这个 `home` 作为 `opts.home` 传进 `resolveLlmConfig`；而 `ans auth set` / `resolveSearchCredentials` 那边走的是 `resolveConfigHome(undefined, env)`。当进程里 HOME/USERPROFILE 与 `homedir()` 不一致（例如 Windows 上 USERPROFILE 被改、或宿主注入了 HOME）时，`check` 报的凭据文件路径和实际写入的不是同一个，用户会看到「已存 key」但 `check` 说 NO KEY。修法只有一处：让 `runLlm` 也用同一个 env 解析根目录，即 `resolveConfigHome(undefined, process.env)`，或者干脆不传 `home`、让 resolver 自己解析。\n\n**Suggestion:**\n```suggestion\n      const cfg = resolveLlmConfig({ home });\n      const storedFile = readUserCredentials({ home });\n      if (storedFile.error) {\n        console.log(\"Credentials file: BROKEN - \" + storedFile.error);\n```",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "已修，a71c560c。`const home = resolveConfigHome(undefined, env)` 和 ans auth 走同一条，env 就是 process.env，不再靠默认参数各走一套。",
+     "createdAt": "2026-11-18T10:25:50Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644kkz",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-f4605a6a135d64dd -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n按仓库的注释规范，注释里不该夹带票号复盘和长篇设计叙述。整个文件头（以及 85-94、102-104、180-184 等处的注释）把「为什么这样写」写成了成段的辩护，还带了 `#301`、`Spec S2` 这种内部编号，读的人要在注释里考古才能看懂代码。建议每个块压到一两句说明「这段在干什么 + 关键约束」，票号删掉，历史原因丢到 commit message 或 PR 描述里。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "文件头和块注释重写了，票号、Spec 编号、复盘叙述都删掉，只留\"这段在干什么 + 关键约束\"。",
+     "createdAt": "2026-11-18T10:25:57Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644kk5",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-35bb83bfa4fbc6ad -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这里的 `pasteBuffer === \"\"` 判断只拦住了「粘贴开头紧跟回车」这一种情况。如果用户粘贴了只含空白/换行的内容（比如 `\\n\\n`），缓冲区已经不是空串，回车判定失效，这段未闭合粘贴就只能靠 Ctrl+C 退出；而作者注释里说的「空粘贴按回车能退出」就打了个折扣。建议改成判断「缓冲区里还没有内容」，例如 `pasteBuffer.trim() === \"\"`，或者干脆把「首个非空字符之前的所有换行」都当成结束信号。\n\n**Suggestion:**\n```suggestion\n          if (pasteBuffer.trim() === \"\" && (ch === \"\\r\" || ch === \"\\n\")) {\n```",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "已修。判空改成 `pasteBuffer.trim() !== \"\"`，只含空行/空白的未闭合粘贴也能用 Enter 结束。补了测试。",
+     "createdAt": "2026-11-18T10:26:03Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klC",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 139,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-636cad2f0fd6d32c -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这里要看清 `ch` 到底是什么：外层 `for (const ch of String(chunk))` 按**码点**迭代，而 `isPrintable` 用 `charCodeAt(0)` 取的是**第一个 UTF-16 码元**。两者对增补平面字符（emoji、部分 CJK 扩展字）不一致——这类字符一个码点对应两个码元，`charCodeAt(0)` 拿到的是一个 0xD800-0xDBFF 的代理项，落在 >= 0x20 且 != 0x7f 的范围里，于是判定「可打印」，整个码点被加进 `value`。结果是一个用户看着正常的符号，到了 `cleanSecret` 里被当成控制字符拦下来（`\\^@-\\^_\\u007f` 只匹配码元，实际代理项不在该区间，所以会漏过去，进到 HTTP 头里）。要么显式拒绝非 BMP 码点（`codePointAt(0)! > 0xffff` 返回 false），要么在注释里说清这里只保证 ASCII 可打印。另外 `ch.charCodeAt(0)` 在 `ch` 为空串时返回 `NaN`，`NaN >= 0x20` 为 false，不会崩但属于隐式依赖，建议顺手加 `ch.length > 0` 的前提。\n\n**Suggestion:**\n```suggestion\n              if (isPrintable(ch)) value += ch;\n```",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "按码点判，且拒绝增补平面：`codePointAt(0)` 取 code，`code  返回 false。另外 cleanSecret 补了一条非 ASCII 兜底，因为管道输入根本不经过这个读取器。两条都做了变异验证，去掉守卫测试就红。",
+     "createdAt": "2026-11-18T10:26:08Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klL",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-da3719c25ad2b7f1 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n新增的 `error` 和三个来源字段共用同一个对象，但真正的用途是两件事。`{}` 已经是“查了、没 key”，而 `{error}` 是“没查成”，消费者要写 `if (sources.error)` 才能区分；可是 `error` 一旦存在，它和 `tavily/exa/anysearch` 是否可能同时出现没有约定，将来有人只读 `sources.tavily` 就会把它当成“确实没 key”。建议把三种状态写成可辨识联合更贴合原来的语义，例如 `type CredentialSources = { status: \"unasked\" } | { status: \"resolved\"; tavily?: ...; exa?: ...; anysearch?: ... } | { status: \"failed\"; error: string }`，这样类型层面就堵住误读，也不用靠注释提醒。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "改成可辨识联合 `CredentialSources = {status:\"unasked\"} | {status:\"resolved\"; tavily?…} | {status:\"failed\"; error}`。消费者想读 tavily 必须先判 status，编译期就堵住。原来那三个测试也跟着改成按状态取值。",
+     "createdAt": "2026-11-18T10:27:02Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klR",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-305946219fe6d898 -->\n![security · medium](https://img.shields.io/badge/security-medium-orange)\n`reason` 是解析函数抛出的原始 message 直接截断后塞进返回值和 stderr。这里和上面 `buildProvider` 的做法不一致：那里明确写了构造器异常会带 key（CWE-532），只放安全分类；而 `resolveSearchCredentials` 目前抛的错里虽然多是路径和 errno，但 `readUserCredentials` 之外的路径（比如未来 I/O 层把 JSON 片段拼进 message）一旦带出片段就会顺着 `credentialSources.error` 流到 MCP 的 structuredContent / `ans search --json`（如果有人把该字段透出）和 stderr。建议至少套一个和 `buildProvider` 同类的清洗/分类，或者只保留 `code` + 固定措辞，别原样转发。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "已修。新增 classifyCredentialFault：只放类别加裸 errno（EACCES/EPERM/…），未知情况给固定句子，原始 message 不转发。和 buildProvider 用同一条规则。测试断言原始文本没出现在返回里。",
+     "createdAt": "2026-11-18T10:26:17Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klX",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 49,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-28fe0d5d22873f1c -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n把 `KEY_SOURCE_LABELS` 从 CLI 搬到 store 是对的方向，但注释里承诺的“every other layer 都在 store”与实际不符：`cli` / `project` 两个标签的文案现在是 store 说了算，而注释又说“`cli`/`project` 由调用方自己拼”——自相矛盾，而且这两个词以前根本不在这个映射里。要么删掉注释里“spells by the caller”这句，要么真的把 cli/project 从映射里去掉（`Record<LlmLayer, string>` 改 `Partial`），别两边都写着。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "\"cli/project 由调用方拼\"那句删了。现在 Record<LlmLayer, string>：新增一层就必须给文案，调用方只管查表。",
+     "createdAt": "2026-11-18T10:27:07Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klc",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/config-llm.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-54603bbd123b514a -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n这里把 `env.HOME || env.USERPROFILE ? env : process.env` 换成直接传 `env`，前提是 `resolveConfigHome` 会兜底到真实 home。实际它只是 `explicit || env.USERPROFILE || env.HOME || homedir()`，兜底靠 `homedir()`，不完全等价于原来的 `process.env`。\n\n具体风险：调用方传入只有 `ANS_LLM_*` 的 env（文档里说过 MCP 会这么干），而进程环境里又设了 HOME 时，现在会走 `homedir()`（Node 在 Linux 上读 /etc/passwd，不读 HOME），可能和 `process.env.HOME` 指向的目录不是同一个，于是仍是「两个入口读不同的 config.toml」。要么把 `rootEnv` 的逻辑挪进 `resolveConfigHome` 一处实现，要么在这里保留 `env.HOME || env.USERPROFILE ? env : process.env`。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "兜底逻辑收进 resolveConfigHome 一处：显式 → 调用方 env → 进程 env → homedir()。你指出的正是关键：只传 ANS_LLM_* 时不能直接落到 homedir()（Linux 读 /etc/passwd）。补了测试：进程 HOME 设了、调用方只传 ANS_LLM_* 时仍读进程 HOME 下的文件；变异验证去掉这段就红。",
+     "createdAt": "2026-11-18T10:26:22Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM644klg",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 103,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794995921793-1-dd8b154a9709a6d4 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n这里有两处检查同一件事，而且报错文案不一样（`find` 的 “has no search provider of that id” 和 `assertCatalogMatchesSearchIds` 的 “disagree; add the provider to both”）。catalog 多一个 search provider 时，两处都会炸但先说哪句取决于这段代码有没有先跑到；维护时看到两种说法容易以为是两回事。另外 `as Record<SearchProviderId, string>` 这个断言把类型检查关掉了，等于 `Object.fromEntries` 的漏项只有运行时才发现。建议只留一种：先在顶层调用 `assertCatalogMatchesSearchIds()`，再用 `SEARCH_PROVIDER_IDS.map((id) => [id, credentialProvider(id)!.envKey])` 组装（此时 catalog 与 id 列表已对齐，`!` 安全），删掉 map 里的 `if (!found) throw`。",
+     "createdAt": "2026-11-18T09:58:46Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "两处检查合成一处：先 assertCatalogMatchesSearchIds()，再 `SEARCH_PROVIDER_IDS.map((id) =, credentialProvider(id)!.envKey])`。断言保证两边已对齐，所以 `!` 安全，map 里的 throw 删了。",
+     "createdAt": "2026-11-18T10:26:29Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645bh3",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 101,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-a86957016e0265b3 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n这个错误分支永远走不到：非空路径要么被下面的 `ESC[201~` 分支消费掉且不 return，要么等到换行时 `pasteBuffer` 已被置空，所以 `pasteBuffer.trim() !== \"\"` 为真时不可能 `break` 出来。具体后果：终端发了开标记但没发闭标记，用户敲 Enter 后，已经粘进去的 key 被 `pasteBuffer = \"\"` 丢掉，返回的是旧 `value`（空串），不报错；随后的管道/终端直接报 “the API key is empty”，用户看不出是自己粘的被吃了。要么真的把 buf 当错误抛出，要么把 buf 当成输入收下（并让它进 `value`）。\n\n**Suggestion:**\n```suggestion\n          if (ch === \"\\r\" || ch === \"\\n\") {\n            inPaste = false;\n            if (pasteBuffer.trim() !== \"\") {\n              throw new Error(\"the paste did not finish before the line ended; paste only the key itself\");\n            }\n```",
+     "createdAt": "2026-11-18T10:28:21Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "这条不成立，我实际跑了：`test/secret-input.test.ts` 里 \"Enter after a paste payload is refused instead of stored shortened\" 就打的这条路径，输入是 `\\^[[200~sk-pasted` 后接 `\\r`，缓冲区非空，抛 `the paste did not finish`。测试文件第 165 行起，本轮 CI 也是绿的。\n\n你推测的分支顺序里少了一种情况：`pasteBuffer = \"\"` 只在闭标记命中的那一刻发生，而闭标记没来的时候缓冲区一直是满的，所以 `hasKeyBytes(pasteBuffer)` 为真，throw 会走到。",
+     "createdAt": "2026-11-18T10:59:32Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biD",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-894a3c2cfb5e30bd -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n这里的 `trim()` 规则和 `cleanSecret` 里\"空白/控制字符\"的判断是两套：`\"\\^@\"` 或 `\"\\^[\"` 这种非空白字符会让 `trim() !== \"\"` 成立，于是走\"粘贴没完成\"的报错，而不是应该报的\"粘贴里有终端转义码\"。同时 `PASTE_CLOSE_SEQUENCE` 这一集合的两处判断散落在两个地方，后续改一处忘另一处就会跑偏。建议把\"缓冲里有没有有效内容\"抽成一个共用判断，或者干脆把 buf 交给 `cleanSecret` 后再分类报错。",
+     "createdAt": "2026-11-18T10:28:21Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "按可打印规则统一了：新增 `hasKeyBytes(buffer)`，内部就调 `isPrintable`，和读取器同一套判断。控制字节（含 `\\^@`、`\\^[`）不再被当成\"粘贴没结束\"，它们本来就不是内容。闭标记的判断没动，仍在一处。",
+     "createdAt": "2026-11-18T10:59:39Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biK",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-3512816417e4cfa0 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n上限写错了：`<= 0xffff` 会把 U+0100–U+FFFF 的字符（西里尔字母、全角标点、CJK 汉字等）都放进来，虽然 `cleanSecret` 之后会拒掉，但终端里敲的这些字符先进了 `value`，用户看到的动作和最终报错对不上。按注释想表达的“ASCII printable”，应该收到 0x7e。\n\n**Suggestion:**\n```suggestion\n  return code >= 0x20 && code !== 0x7f && code <= 0x7e;\n```",
+     "createdAt": "2026-11-18T10:28:21Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "上界收到 `0x7e` 了。原因是你说得对：`<= 0xffff` 会把 U+0100–U+FFFF 放进来，终端里敲进去、最后才在 `cleanSecret` 被拒，用户看到的动作和报错对不上。",
+     "createdAt": "2026-11-18T10:59:44Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biQ",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 265,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-5dcdadbb9cb814e4 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这个报错文案不准：之前段落里的“粘贴没结束”现在不会走到，但普通输入路径里（`inPaste=false`）的键入如果超出 ASCII，会掉进这个分支，用户看到的是“key 里含有非 ASCII 字符”。这本身没错；但建议顺便确认：终端路径中被 `isPrintable` 拒掉的字符会被静默丢弃（不报错），用户可能在等半天也不知道为什么登录失败，最好在这里统一报错。",
+     "createdAt": "2026-11-18T10:28:21Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "现在终端路径里非 ASCII 直接被 `isPrintable` 挡在外面（上界 0x7e），不再进 `value`，所以 `cleanSecret` 那句只服务管道输入。文案保留，因为它描述的正是那种情况：`ans auth set` 从管道喂进来一个带非 ASCII 的串。",
+     "createdAt": "2026-11-18T10:59:49Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biS",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-59af11b61faa651a -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这条分支基本进不来。store 里“文件坏了”的几种情况（`not valid JSON`、`missing the \"bindings\" list`、`entry N has no provider`/`has no apiKey`）都是 `readUserCredentials` **返回 error 字段**，`resolveSearchCredentials` 只是把它塞进 `warnings`，不会抛。所以这条 catch 里真正会碰到的只有 `refusing to write the credential file ...` 那类，剩下的都掉到最后那句通用兜底，用户拿不到“文件坏了”这个具体提示。要么放宽匹配：把 store 的全部读错误（`could not read it`、`not valid JSON`、`missing the \"bindings\" list`、`entry N ...`、`is not an object`）都收进来；要么干脆让 store 给出结构化的 fault 分类，别在这里靠文案猜。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "匹配放宽了：补上 `could not read it`、`is not an object`、`non-string endpoint`，读错误也能命中。另外 `refusing to write` 那条不再是一句话，按 store 的真实原因分了三类（锁被占 / 目录拒绝 / ACL 没建起来）。",
+     "createdAt": "2026-11-18T10:59:55Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biV",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-d1e5651e44ef3f30 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n这里的分类靠对 store 侧错误文案做字符串匹配，`readUserCredentials` 现在返回的可读错误是 `\"<path>: could not read it (EACCES)\"`、`\"<path>: missing the \\\"bindings\\\" list\"`、`\"<path>: entry 1 has no provider\"` 这几句，而 store 里该路径是**返回 error 字段**、并不是抛异常；真正会抛的是 `refusing to write ...` 那类。也就是说“读不出来/文件坏了”这条分支在 catch 里基本命中不了 `could not read it`，会落到兜底句，把用户指向 `ans auth list`，拿不到文件位置和 errno。建议：要么与 store 侧的返回错误文案对齐（补 `could not read it` 关键词），要么让 `resolveSearchCredentials`/`readUserCredentials` 抛出结构化错误码（如 `{ code: \"parse\" | \"read\" | \"write\", errno }`），kernel 只按码分类，别再匹配中英文句子。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "两件事都做了：文案对齐（补 `could not read it` 等），并且不再靠伪错误码——`write fault` 删了，改成按 store 已有的原因词分类，只有真 errno 才引用 errno。结构化错误码是更大的改动，超出这张票的范围；如果要做，应该在 store 侧另开票。",
+     "createdAt": "2026-11-18T11:00:00Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645biZ",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 143,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-47f102d2d2e1c857 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`refusing to write` 后面真正的原因（access denied、ACL 工具失败、保护校验没过、锁被别的进程占着）在这里全丢了，还塞了个拼出来的伪 errno（`write fault`）。用户只能看到“去查权限”，但真实原因可能是权限、Windows icacls 出错、或者另一个 ans 进程正拿着锁 —— 分不出来。建议按 store 侧已有的原因词分几类（权限 / 锁被占 / 保护没建起来），都对不上再用通用句，并去掉 `write fault` 这种不像错误码的兜底串。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "按原因分类了：锁被占 → \"another ans process is writing the credential file; wait for it to finish\"；目录拒绝（`cannot take the write lock` / `cannot create`）→ 带 errno 的权限句；ACL/POSIX/owner 校验失败 → \"could not be locked to your account\"；其余 → 带 errno 的通用写失败。伪错误码 `write fault` 删了。\n\n补了测试，四类各断言一次。",
+     "createdAt": "2026-11-18T11:00:07Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645big",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-602f910da979d0bb -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`credentialSources` 从对象改成了固定带 `status` 的对象，`{ status: \"unasked\" }` 永远是真值。如果有调用方用 `if (engine.credentialSources)` 判断“有没有解析过”，旧代码在没传 seam 时是 `undefined`（假），现在会变成真，走进原本不会走的分支。建议外部消费端一律先看 `status`，或者把 unasked 保留为 `undefined` 以保持旧语义。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "`unasked` 已经改回 `undefined` 了：没传 seam 时 `engine.credentialSources` 就是 undefined，`if (engine.credentialSources)` 的旧语义不变。联合类型只剩 `resolved` 和 `failed` 两种。补了测试固定这一点。",
+     "createdAt": "2026-11-18T11:00:12Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645bij",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/kernel/src/composition.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-046d6bf4ffc04762 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`resolveSearchCredentials` 返回 `anysearch` 时，只要 env 里设了 `ANYSEARCH_ENDPOINT` 就算没 key 也会填 `{ endpoint, source: \"env\" }`（见 credentials.ts 里 `else if (ansEndpoint)` 那支）。这里把它的 `source` 当“这个臂拿到 key 了”写进 `anysearch`，消费端会把“只有端点、没有 key”误判成“有 key，来自 env”。建议只在该臂真有 `apiKey` 时才记录来源，或者额外区分“只有端点”这种情况。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "改了：只有 `creds.X.apiKey` 存在才记来源。只有 `ANYSEARCH_ENDPOINT` 的臂现在不出现，消费端不会把\"有端点没 key\"读成\"有 key，来自 env\"。补了测试，变异验证过去掉 `?.apiKey` 测试就红。",
+     "createdAt": "2026-11-18T11:00:18Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645bip",
+  "isResolved": true,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 103,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-9954352951a581b1 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这里只判了「id 在 catalog 里存在」，没判「它是 search 类型」。原来那段 `find((p) => p.id === id && p.kind === \"search\")` 会挡住「id 是模型 provider」的错配，现在 catalog 里只要有同名 id 就放行，`SEARCH_PROVIDER_ENV_KEYS` 会悄悄拿到模型 provider 的 env 名，而加载期的 assert 因为顺序问题救不了这个方向。建议复用已有的 `credentialProvider(id)` 但补上 kind 判断，不要靠非空断言。\n\n**Suggestion:**\n```suggestion\nexport const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = Object.fromEntries(\n  SEARCH_PROVIDER_IDS.map((id) => {\n    const found = credentialProvider(id);\n    if (!found || found.kind !== \"search\") {\n      throw new Error(\"SEARCH_PROVIDER_IDS names \" + id + \" but CREDENTIAL_PROVIDERS has no search provider of that id\");\n    }\n    return [id, found.envKey];\n  }),\n) as Record<SearchProviderId, string>;\n```",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "kind 判断补回来了，非空断言也去掉了。加载期断言只比对两份名单，同 id 的模型 provider 确实能蒙混过关——你这一点是对的。",
+     "createdAt": "2026-11-18T11:00:23Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645bi0",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-38d0dbc9c2f9c7fc -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n`assertCatalogMatchesSearchIds()` 挪到上面之后，这里的 `credentialProvider(id)!` 才安全；但这条依赖只存在于文件里的语句顺序上，读代码的人看不出来。另外把原来的显式检查换成了非空断言，一旦顺序被后来的重构打乱，报错就变成了难以理解的 `Cannot read properties of undefined`。建议保留原来的查找+具名错误，或改成先把结果算出来再断言，别依赖 import 期的执行顺序。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "改成查找 + 具名错误了，不再依赖语句顺序：`const found = credentialProvider(id); if (!found || found.kind !== \"search\") throw new Error(...)`。",
+     "createdAt": "2026-11-18T11:00:28Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM645bi6",
+  "isResolved": true,
+  "isOutdated": true,
+  "path": "packages/store/src/credentials.ts",
+  "line": null,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794997501849715-1-58f1b86d37e7db4a -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n新增的 process.env 兜底会破坏 opts.env 的隔离：调用方显式传了 env（比如 `env: {}` 或只带 ANS_LLM_* 的 env），本意是「这个 env 说了算」，现在却会静默借用宿主进程的 HOME/USERPROFILE。测试里传 `{ home: undefined, env: {...} }` 就会读到开发机上真实的 ~/.anysearch-cli 目录；GUI 宿主/MCP 与 CLI 之间也会因此出现「谁也没写过的第二个文件」。如果确实要覆盖 Linux 上 homedir() 忽略 HOME 的问题，应该由调用方在构造 env 时补上 HOME，而不是在这里偷偷回退到 process.env。建议去掉这两行，仅在 `!env.HOME && !env.USERPROFILE` 且调用方没传 env 时再考虑 homedir()。",
+     "createdAt": "2026-11-18T10:28:22Z"
+    },
+    {
+     "author": {
+      "login": "Xxx91n"
+     },
+     "body": "这条也成立，已经去掉：`resolveConfigHome` 不再碰 `process.env`，只解它收到的 env。理由是同一个——调用方传 env 就是它说了算。\n\n顺带核对了 `apps/mcp`：`ans-chat.tool.ts:205` 调 `resolveConfig({ warn })` 不传 env，走 `process.env`，所以\"部分 env\"的入口本来就不存在，上一轮加的兜底是在为一个不存在的场景写代码。\n\n测试改写了：宿主 HOME 指向另一个可读配置时，注入 env 的调用方既不能读那个文件、也不能读那个根目录。",
+     "createdAt": "2026-11-18T11:00:33Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646Yxi",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "apps/cli/src/secret-input.ts",
+  "line": 100,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-bfc212f5b6d0c5da -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n粘过的 key 到不了返回值。粘贴以闭合标记结束那一路（第 111 行 `value += pasteBuffer.slice(...)`）没有过滤；但如果终端只发开标记、payload 里带控制字节（终端噪音），Enter 时收尾的这段会 throw——也就是用户明明粘了带 ESC 的 key 会得到「粘贴没完成」，而不是走 `cleanSecret` 报「含控制字符」。这和新增注释「控制字节是终端噪音」自相矛盾：注释说控制字节不算证据，可一有控制字节就判成半截粘贴。要么让这段只在有 key 字节时才算「已收集」、控制字节直接丢掉，要么注释别这么写。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646Yxs",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 124,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-998d6cea1ae303fb -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n加了 ETIMEDOUT 但这条走的是下面的 `if (code) return \"...could not be read (...)\"`，读失败就是读失败，超时会被说成\"文件读不了\"，用户会去查文件而不是查 IO/网络挂载。要么把 ETIMEDOUT 单列一句提示，要么别加进白名单。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646Yx0",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 127,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-adb0cd8e84181a77 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n解析类错误里去掉了 errno 后缀，但 store 的 `could not read it (EACCES)` 不会命中上面的关键词，反而是 JSON 路径外的真实权限故障只剩下通用文案。反过来，当 raw 里只有 JSON 错误时没有 errno 也无所谓。建议这里保留 `(code ?? \"parse fault\")`，或者在匹配前先判 `code`，避免权限问题被当成\"文件格式坏\"让用户删文件。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646Yx3",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 136,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-1182963105ecc6f2 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n`cannot create` 太宽。credentials.ts 里 `refused(\"cannot create \" + dirname ...)` 把 mkdirSync 的任何 errno 都包进来（ENOSPC、ENOTDIR、ENAMETOOLONG 等），这里却统一报成\"文件夹拒绝访问（xxx）\"，真实原因被藏起来了；同时 `cannot create` 也可能命中 temp 文件创建失败。建议按 code 判断（EACCES/EPERM/EROFS 才归权限），其它走最后的通用分支。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646Yx9",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 139,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-3533e08d2efa8fe6 -->\n![bug · medium](https://img.shields.io/badge/bug-medium-orange)\n这个正则会匹配任何包含 \"ACL\" 子串的内容，而错误串里必然会带文件路径（`refusing to write the credential file <path>: ...`）。路径里只要有 `acl`/`dacl` 之类的片段就会误判成\"保护失败\"。建议锚定 store 实际抛出的文案，比如 `/\\bDACL\\b|POSIX mode|not a regular file|owned by another account/i`。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646YyB",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 191,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-56e1855ffb0ced7f -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n改成\"有 key 才记\"之后，anysearch 只配 endpoint 的降级臂在 `credentialSources` 里彻底不见了，消费方没法区分\"没配\"和\"配了但没 key\"。注释自己也说了它是 degraded arm，那就等于把降级信息丢了。看是否需要一个显式的 `degraded`/`endpointOnly` 标记，或至少保留一个提示来源。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646YyK",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 283,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-1ad39d8c5fe5846a -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n这里跟上面的注释直接打架：`CompositionResult.credentialSources` 的文档还说这是个 tagged union，“consumer 要在类型层面分清没人问 / 问了没 key / 问了但坏了”，并且 `CredentialSources` 的 JSDoc 也这么写。可现在“没人问”变成了 `undefined`，`{ status: \"unasked\" }` 已经删掉，类型层面依然能区分，但两处注释描述的是两套模型。另外那三百多行测试（`credential-wiring.test.ts`）里也还在引用 `unasked` 的旧语义。建议删掉 `CompositionResult` 字段注释里关于“三个状态”的那段，只保留“未传 seam 时为 undefined”。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646YyO",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/kernel/src/composition.ts",
+  "line": 288,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-ac80306776b1d00b -->\n![security · medium](https://img.shields.io/badge/security-medium-orange)\n这里把 warning 原文直写 stderr。store 侧的告警文案（parse fault / 坏记录等）会带上凭据文件的路径，而 `displayEndpoint` 只清洗了 endpoint，没有说明 warning 已脱敏。若其中有任何原始异常 message（例如带 key 片段的行内容），就违反了同文件对 classifyCredentialFault 的处理原则（CWE-532，见下方 catch 注释）。建议同样过一遍分类/清洗，或至少确认 credentials.ts 里所有 warning 都是固定文案不带动态内容。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646YyU",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 100,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-170c5f89f38e524d -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n这段校验基本查不出新东西：`kind === \"search\"` 这条，`assertCatalogMatchesSearchIds()` 已经把两边的搜索 provider 列表比过了，重复一遍只是多一道。真正没被检出来的是运行期缺陷：map 回调里 throw 不会在 `SEARCH_PROVIDER_ENV_KEYS` 求值时抛出，这个 const 拿到的会是一个 rejected value，异常直接变成 import 时的未处理拒绝（不同 Node 版本下只是一条警告），本模块「加载失败就带一个明确错误停掉」的承诺没兑现。要么删掉这段重复校验，要么在 map 外面把返回的 reject 同步抛出（例如先 `map` 成数组再统一检查）。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM646YyZ",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/store/src/credentials.ts",
+  "line": 187,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1794999530416475-1-fd31f7b33dd0c4a0 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n这里删掉了「caller env 没给 home 时退回 process.env」这一步，但注释和默认参数自相矛盾：`env` 默认就是 `process.env`，所以「只认传进来的 env、绝不碰 process.env」这句是假的。更要紧的是实际行为变了：调用方传一个不完整的 env（比如 MCP 那侧只带 `ANS_LLM_*`）时，以前会退回进程的 HOME，现在直接落到 `homedir()`；Linux 上 `homedir()` 读 /etc/passwd、不看 HOME，于是同一个用户会按 `HOME=/home/me` 写入、按 `homedir()` 去读，正好是这段注释想防的「读写两个文件」。而 `config-llm.ts` 新加的注释还写着「传 env 就是让模型配置和密钥存储落在同一个文件上」，实际上正是这条路径会让两者分叉。要么恢复 process.env 兜底，要么在注释里写清这个限制并确认没有只传部分 env 的调用方。",
+     "createdAt": "2026-11-18T11:01:19Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM647IS0",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 187,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1795001000100385-1-8cee5d240d1796b8 -->\n![bug · high](https://img.shields.io/badge/bug-high-red)\n这段主目录选择和同仓库另外两条读写路径对不上：`credentials.ts` 的 `resolveConfigHome()` / `resolveSearchCredentials()` 和 CLI 的 `ans auth set` / `ans auth status`（auth.ts:141、llm.ts:41）都是 env 里没 HOME 就回落到 `homedir()`。这里却在注入了 env 且没有 HOME/USERPROFILE 时返回 `null`，直接跳过用户配置和凭据文件。结果是同一个进程里「写的文件」和「读的文件」不是同一个：比如在 env 是自制对象的宿主（GUI、测试）里 set 后写进 `homedir()/.anysearch-cli/credentials.json`，解析时却读不到。建议直接复用 `resolveConfigHome(undefined, env)`，让读和写走同一套规则；如果确实要拒绝 `homedir()`，得在 `resolveConfigHome` 里统一改，而不是只在这一处加例外。\n\n**Suggestion:**\n```suggestion\n  const home = opts.home ?? resolveConfigHome(undefined, env);\n```",
+     "createdAt": "2026-11-18T11:25:07Z"
+    }
+   ]
+  }
+ },
+ {
+  "id": "PRRT_kwDOUIldFM647ITS",
+  "isResolved": false,
+  "isOutdated": false,
+  "path": "packages/store/src/config-llm.ts",
+  "line": 192,
+  "comments": {
+   "nodes": [
+    {
+     "author": {
+      "login": "review-fish"
+     },
+     "body": "<!-- ocr-1795001000100385-1-afd734bd5b46fec0 -->\n![maintainability · medium](https://img.shields.io/badge/maintainability-medium-orange)\n如果保留 `null` 这条路径，那它和文档/诊断不一致：`ans doctor` 用 `resolveConfigHome()`（会回落到 `homedir()`）去报凭据文件状态，这里却不读，用户看到 doctor 说「有文件」但实际解析不生效。另外注释用了 `null` 的技术化描述，读起来绕，建议改成一句大白话，比如「没有可用的主目录就不读用户文件」。",
+     "createdAt": "2026-11-18T11:25:07Z"
+    }
+   ]
+  }
+ }
+]

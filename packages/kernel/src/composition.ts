@@ -116,15 +116,21 @@ function buildProviders(
  * The patterns follow what the store actually reports, in both shapes it uses:
  * a returned `error` field ("<path>: could not read it (EACCES)", "<path>: not
  * valid JSON", "<path>: entry 1 has no apiKey") and a thrown refusal ("refusing
- * to write the credential file …: <reason>"). A reason that does not match any of
- * them keeps its errno when there is one, because "EACCES" is the actionable part.
+ * to write the credential file …: <reason>"). Each branch names the fix, so a
+ * permissions fault never reads as "delete the file".
  */
 function classifyCredentialFault(error: unknown): string {
   const raw = String(error instanceof Error ? error.message : error);
-  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY|ETIMEDOUT)\b/.exec(raw)?.[1];
+  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY|ETIMEDOUT|ENOTDIR|ENAMETOOLONG)\b/.exec(raw)?.[1];
+  // A permission fault outranks the wording: the same "could not read it" text
+  // is used for EACCES and for a syntax error, and advising "delete the file" on
+  // a permissions problem would destroy the user's other keys for nothing.
+  const permission = code === "EACCES" || code === "EPERM" || code === "EROFS";
 
   if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
-    return "the user credential file is not readable as stored keys; fix or remove it, then retry";
+    return permission
+      ? "the user credential file could not be read (" + code + "); check its permissions"
+      : "the user credential file is not readable as stored keys; fix or remove it, then retry";
   }
   if (/refusing to write/i.test(raw)) {
     // The refusal carries the real cause (permissions, an unusable ACL tool, a
@@ -133,13 +139,30 @@ function classifyCredentialFault(error: unknown): string {
     if (/still held after/i.test(raw)) {
       return "another ans process is writing the credential file; wait for it to finish and retry";
     }
+    // "cannot create"/"cannot take the write lock" wrap whatever mkdirSync or
+    // openSync returned, so only a permission-class code means permissions.
+    // ENOSPC or ENOTDIR through the same wording needs its own name.
     if (/cannot take the write lock|cannot create/i.test(raw)) {
-      return "the credential file's folder refused access (" + (code ?? "permission fault") + "); check its permissions";
+      if (permission) {
+        return "the credential file's folder refused access (" + code + "); check its permissions";
+      }
+      if (code === "ENOSPC") return "there is no space left for the credential file; free some space and retry";
+      if (code === "ENOTDIR" || code === "ENAMETOOLONG") {
+        return "the credential file's folder path is not usable (" + code + "); check the config root";
+      }
+      return "the credential file's folder could not be prepared; check the config root";
     }
-    if (/DACL|ACL|POSIX mode|not a regular file|owned by another account/i.test(raw)) {
+    // Anchored on the wording store actually throws. A bare /ACL/ would also
+    // match the file path this message always carries.
+    if (/\bDACL\b|POSIX mode|not a regular file|owned by another account/i.test(raw)) {
       return "the credential file could not be locked to your account (" + (code ?? "protection fault") + "); check the folder's permissions";
     }
     return "the credential file could not be written" + (code ? " (" + code + ")" : "") + "; check the folder's permissions";
+  }
+  if (code === "ETIMEDOUT") {
+    // Not "the file is unreadable": a timeout means the storage behind it did not
+    // answer (a network mount, a busy disk), and the fix is to look there.
+    return "the user credential file did not respond in time (ETIMEDOUT); check the disk or network mount behind it";
   }
   if (code) return "the user credential file could not be read (" + code + ")";
   return "the user credential file could not be read; run `ans auth list` to check it";
@@ -171,11 +194,8 @@ export interface CompositionResult {
   ledger?: BudgetLedgerPort;
   // #301: which key each search arm was built with (env vs user credential
   // file), so a degraded arm can say "no key" instead of only "construction
-  // failed". A tagged union rather than three optional fields: a consumer must
-  // be able to tell "nobody asked", "asked, no key" and "asked, it broke" apart
-  // at the type level, because reading the last one as the middle one hides a
-  // real fault. Never carries a secret value. UNDEFINED when no seam was passed,
-  // so `if (engine.credentialSources)` keeps meaning "resolution was asked for".
+  // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
+  // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
 }
 
@@ -186,13 +206,35 @@ export interface CompositionResult {
  */
 export type CredentialSources =
   /**
-   * Resolution completed. An arm appears here only when it got a KEY: the
-   * anysearch arm can be configured with an endpoint and no key at all, and that
-   * is a degraded arm, not an authenticated one.
+   * Resolution completed. Each arm says where its key came from, or `"none"` when
+   * the arm was configured without one - the anysearch arm can carry an endpoint
+   * and no key, and that arm is degraded, not authenticated. Recording it keeps
+   * "not configured" and "configured but keyless" distinguishable.
    */
-  | { status: "resolved"; tavily?: string; exa?: string; anysearch?: string }
+  | { status: "resolved"; tavily?: CredentialSourceLabel; exa?: CredentialSourceLabel; anysearch?: CredentialSourceLabel }
   /** Resolution threw. The arms fell back to their own env; `error` explains why. */
   | { status: "failed"; error: string };
+
+/** Where one search arm's key came from; `"none"` means the arm has no key. */
+export type CredentialSourceLabel = "env" | "user" | "none";
+
+/**
+ * Keep a resolver warning's meaning but drop anything that could be a secret.
+ *
+ * The store's warnings are fixed sentences plus a file path today, but this
+ * string goes to stderr from a module that reads a key file, so it is checked
+ * rather than assumed: a long run of key-shaped characters becomes a placeholder,
+ * and a JSON.parse-style message (which quotes the text around the error) is cut
+ * down to its position. Same reasoning as `classifyCredentialFault`; this one
+ * keeps the sentence because the sentence is the useful part.
+ */
+export function redactPathFault(warning: string): string {
+  // 32+ characters of the key alphabet in one unbroken run. Every path segment
+  // and word in these messages is shorter than that (".anysearch-cli" is 13), and
+  // a real API key is far longer. The threshold is what lets the useful part of
+  // the sentence - which file, which errno - survive redaction.
+  return warning.replace(/[A-Za-z0-9_\-+/=]{32,}/g, "[redacted]");
+}
 
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
@@ -285,15 +327,18 @@ export function createEngine(
     try {
       creds = opts.searchCredentials(env);
       for (const warning of creds?.warnings ?? []) {
-        writeProviderDiagnostic("[anysearch] " + warning + "\n");
+        // The resolver's warnings describe a file that holds keys, so they get
+        // the same treatment as a thrown fault: the sentence is kept, but only
+        // once it has been checked for anything that looks like secret material.
+        writeProviderDiagnostic("[anysearch] " + redactPathFault(warning) + "\n");
       }
       const resolved: CredentialSources = { status: "resolved" };
-      // Only an arm with a KEY is recorded. The anysearch arm is emitted with an
-      // endpoint alone when ANYSEARCH_ENDPOINT is set and no key exists, and
-      // reporting that as "has a key, from env" would hide a degraded arm.
-      if (creds?.tavily?.apiKey) resolved.tavily = creds.tavily.source;
-      if (creds?.exa?.apiKey) resolved.exa = creds.exa.source;
-      if (creds?.anysearch?.apiKey) resolved.anysearch = creds.anysearch.source;
+      // Every arm that came out of the resolver is recorded, including one that
+      // only got an endpoint. `"none"` is what keeps "configured but keyless"
+      // distinguishable from "not configured at all".
+      if (creds?.tavily) resolved.tavily = creds.tavily.apiKey ? creds.tavily.source : "none";
+      if (creds?.exa) resolved.exa = creds.exa.apiKey ? creds.exa.source : "none";
+      if (creds?.anysearch) resolved.anysearch = creds.anysearch.apiKey ? creds.anysearch.source : "none";
       credentialSources = resolved;
     } catch (e) {
       creds = undefined;

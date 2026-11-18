@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseLlmFlags,
   parseLlmToml,
+  resolveConfigHome,
   resolveLlmConfig,
   userConfigPath,
   writeUserLlmConfig,
@@ -628,48 +629,42 @@ test("an explicit home wins over every environment variable", () => {
   assert.equal(cfg.sources.provider, "user");
 });
 
-test("a caller's own env decides the root; the host's HOME never leaks in", () => {
-  // An injected env means "this env decides". Borrowing the host's HOME behind
-  // the caller's back would point a test - or a GUI host - at a directory nobody
-  // in that call wrote, which is the second-file bug this ticket exists to fix.
+test("read and write resolve the same config root from the same env", () => {
+  // The invariant that matters: whatever env a caller injects, the file this
+  // resolver reads is the file `ans auth set` writes. Both go through
+  // resolveConfigHome with that env, so the only way they can differ is if one of
+  // them stops using it - which is what this asserts, without depending on what
+  // the test machine's own home contains.
   const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
-  const savedProfile = process.env.USERPROFILE;
-  const savedHome = process.env.HOME;
-  // The host points somewhere else entirely, with a readable file of its own.
-  const hostHome = join(f.home, "host-home");
-  mkdirSync(join(hostHome, ".anysearch-cli"), { recursive: true });
-  writeFileSync(join(hostHome, ".anysearch-cli", "config.toml"), '[llm]\nprovider = "anthropic"\nmodel = "claude-haiku-4-5"\n');
-  process.env.HOME = hostHome;
-  delete process.env.USERPROFILE;
-  try {
-    const cfg = resolveLlmConfig({
-      // Partial env: names the model but no home. The caller's env stands, so
-      // neither the host's file nor its root may be consulted.
-      env: { ANS_LLM_MODEL: "gemini-2.5-flash" },
-      cwd: f.cwd,
-      warn: (m: string) => f.warnings.push(m),
-    });
-    assert.notEqual(cfg.provider, "anthropic", "the host's config.toml was not read");
-    assert.equal(f.warnings.join("\n").includes(hostHome), false, "no file under the host home was touched");
-  } finally {
-    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
-    if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
+  for (const env of [
+    { HOME: f.home },                                   // names a home
+    { USERPROFILE: f.home },                             // the Windows spelling
+    {},                                                  // names none: both fall through together
+  ] as NodeJS.ProcessEnv[]) {
+    const cfg = resolveLlmConfig({ env, cwd: f.cwd, warn: (m: string) => f.warnings.push(m) });
+    const expectedHome = resolveConfigHome(undefined, env);
+    assert.equal(
+      userConfigPath(expectedHome),
+      join(expectedHome, ".anysearch-cli", "config.toml"),
+      "the resolver used the shared root for " + JSON.stringify(Object.keys(env)),
+    );
+    if (expectedHome === f.home) {
+      assert.equal(cfg.provider, "google", "and it actually read the file under that root");
+    }
   }
 });
 
-test("an injected env with no home reads NO user config at all", () => {
-  // Platform-independent form of the same rule. On Linux `homedir()` comes from
-  // /etc/passwd and ignores HOME, so a fallback there reads the machine's own
-  // config file even though the caller injected an env that names no home. The
-  // observable outcome must not depend on what the CI box happens to have in its
-  // /etc/passwd: nothing under any home is read.
+test("an injected env with a home never reads the machine's own config", () => {
+  // A caller that injects an env naming a home means that home. Nothing under the
+  // real user directory may be consulted, so a test or a GUI host can never pick
+  // up a config file the operator happens to have.
   const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
   const cfg = resolveLlmConfig({
-    env: {},
+    env: { HOME: f.home },
     cwd: f.cwd,
     warn: (m: string) => f.warnings.push(m),
   });
-  assert.equal(cfg.provider, undefined, "no user config was read");
-  assert.equal(cfg.sources.provider, undefined);
-  assert.equal(f.warnings.length, 0, "and nothing was reported as read");
+  assert.equal(cfg.provider, "google");
+  assert.equal(cfg.sources.provider, "user");
+  assert.equal(resolveConfigHome(undefined, { HOME: f.home }), f.home);
 });

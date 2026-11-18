@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createLlmSession } from "../src/llm-init";
-import { createEngine } from "../src/composition";
+import { createEngine, redactPathFault } from "../src/composition";
 import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
@@ -297,7 +297,7 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
   });
   try {
     assert.ok(engine.retriever, "the engine was still assembled");
-    // `failed`, never `resolved` and never `unasked`: resolution THREW, so
+    // `failed`, never `resolved`: resolution THREW, so
     // nothing is known about any arm, and a consumer that read this as "checked,
     // found no keys" would hide the real fault from whoever diagnoses it.
     assert.equal(engine.credentialSources?.status, "failed", "the failure is its own state");
@@ -317,11 +317,12 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
   }
 });
 
-test("an endpoint without a key is not reported as an authenticated arm", () => {
+test("an endpoint without a key is reported as keyless, not as authenticated", () => {
   // `resolveSearchCredentials` emits the anysearch arm with an endpoint alone
   // when ANYSEARCH_ENDPOINT is set and no key exists (that is how the offline
-  // acceptance lane points the arm at a dead port). Recording its `source` would
-  // tell a consumer "this arm has a key, from env" and hide a degraded arm.
+  // acceptance lane points the arm at a dead port). Reporting `"env"` would say
+  // "this arm has a key"; reporting nothing would lose the fact that the arm IS
+  // configured. `"none"` is the honest answer.
   const engine = createEngine(undefined, {
     dbPath: ":memory:",
     domainsDirs: [],
@@ -332,8 +333,8 @@ test("an endpoint without a key is not reported as an authenticated arm", () => 
     assert.equal(engine.credentialSources?.status, "resolved");
     assert.equal(
       engine.credentialSources?.status === "resolved" ? engine.credentialSources.anysearch : "unset",
-      undefined,
-      "an endpoint with no key is not a key source",
+      "none",
+      "an endpoint with no key is a configured but keyless arm",
     );
   } finally {
     (engine.store as { close?: () => void }).close?.();
@@ -379,4 +380,97 @@ test("a credential fault is classified by cause, not flattened into one sentence
       engine.observation.close();
     }
   }
+});
+
+test("a permission fault on a parse-shaped message is not advice to delete the file", () => {
+  // The store uses the same "could not read it" wording for EACCES and for a
+  // syntax error. Telling a user to remove the file on a permissions problem
+  // would destroy every other key in it for nothing.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => {
+      throw new Error("/home/me/.anysearch-cli/credentials.json: not valid JSON (line 1 column 2): EACCES");
+    },
+  });
+  try {
+    const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(message, /EACCES/);
+    assert.doesNotMatch(message, /fix or remove/i, "a permissions fault is not a broken file");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a disk-full failure is not reported as a permissions problem", () => {
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => {
+      throw new Error("refusing to write the credential file /x: cannot create /x (ENOSPC). Set the key in the environment instead");
+    },
+  });
+  try {
+    const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(message, /no space left/i);
+    assert.doesNotMatch(message, /permission/i, "space is not permission");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a path containing 'acl' is not mistaken for a failed ACL check", () => {
+  // The refusal message always carries the file path, so a bare /ACL/ would match
+  // a folder named "acl-backup" and report a protection fault that never happened.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => {
+      throw new Error("refusing to write the credential file /home/me/acl-backup/credentials.json: cannot create /home/me/acl-backup (EACCES)");
+    },
+  });
+  try {
+    const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(message, /refused access \(EACCES\)/);
+    assert.doesNotMatch(message, /locked to your account/, "the path is not evidence of a DACL fault");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a timeout says the storage did not answer, not that the file is unreadable", () => {
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => { throw new Error("could not read it (ETIMEDOUT)"); },
+  });
+  try {
+    const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(message, /did not respond in time/);
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a warning carrying a key-shaped run is redacted before it reaches a log", () => {
+  // The resolver's warnings describe a file that holds keys, so a long run of the
+  // key alphabet is removed even though today's messages are fixed sentences.
+  const secret = "sk-live-abcdefghijklmnopqrstuvwxyz012345";
+  const redacted = redactPathFault("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
+  assert.ok(!redacted.includes(secret), "the key-shaped run is gone");
+  assert.match(redacted, /[redacted]/);
+  // The useful part survives: which file and which errno.
+  assert.match(redacted, /credentials.json/);
+  assert.match(redacted, /EACCES/);
+  // A normal path is not touched.
+  assert.equal(redactPathFault("/home/me/.anysearch-cli/credentials.json: not valid JSON"),
+    "/home/me/.anysearch-cli/credentials.json: not valid JSON");
 });
