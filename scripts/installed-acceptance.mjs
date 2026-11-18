@@ -14,6 +14,7 @@
 //   A. 装出来的 CLI：--version / doctor / consolidate 没范围要拒绝
 //   B. 装出来的 MCP：initialize + tools/list，然后真跑一轮 ans_chat
 //   C. 会话续接：第二轮请求里必须带着第一轮的问答
+//   C4. MCP 聊天的任务账：一次调用一个任务一份预算，取消之后收尾状态看得见
 //   D. 整理：dry-run 不落库，apply 写一条知识行，用量和费用如实报
 //   E. 内部搜索入库 → 另一个会话用 query_knowledge 把那行捞回来
 //   F. 旧一点的库：能打开、能迁移、原来的行还在、再开一次不报错
@@ -60,6 +61,8 @@ function skip(name, why) { skipped++; console.log("[SKIP] " + name + " — " + w
 const FACT = "Acme online support runs weekdays 9:00-17:00.";
 // 只有"范围外"那份材料才带的事实。这样它有没有混进知识行，可以查。
 const OUTSIDE_FACT = "UNRELATEDPARKING policy applies to the Berlin office only.";
+// #303: 只出现在"要取消这一轮"的问题里；端点看到它就把这一轮卡在模型调用上。
+const HOLD_MARKER = "HOLD-FOR-CANCEL-303";
 const requestLog = [];
 
 function sseChunk(delta, finish, usage) {
@@ -101,6 +104,15 @@ function classify(body) {
 const endpoint = createServer(async (req, res) => {
   let body = "";
   for await (const chunk of req) body += chunk;
+  // #303: this marker holds the turn open at the model call, which is the only
+  // moment a client can cancel meaningfully. The response is never sent: the
+  // client aborts, the socket closes, and the server has to finish its own
+  // late work without a reply to hand back.
+  if (body.includes(HOLD_MARKER)) {
+    requestLog.push({ role: "chat", body });
+    req.on("close", () => { try { res.destroy(); } catch { /* already gone */ } });
+    return;
+  }
   const role = classify(body);
   requestLog.push({ role, body });
   res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -221,19 +233,30 @@ function mcpClient(bin, env, tag) {
     for (const [, fn] of pending) fn({ error: { message: tag + ": MCP exited" } });
     pending.clear();
   });
-  const rpc = (method, params, ms = 240_000) => new Promise((res, rej) => {
+  const callAsync = (method, params, ms = 240_000) => {
     const id = nextId++;
-    const timer = setTimeout(() => { pending.delete(id); rej(new Error(tag + ": timeout on " + method + "\nstderr: " + stderr.slice(-400))); }, ms);
-    pending.set(id, (m) => { clearTimeout(timer); res(m); });
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
+    const promise = new Promise((res, rej) => {
+      const timer = setTimeout(() => { pending.delete(id); rej(new Error(tag + ": timeout on " + method + "\nstderr: " + stderr.slice(-400))); }, ms);
+      pending.set(id, (m) => { clearTimeout(timer); res(m); });
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+    });
+    return { id, promise };
+  };
+  const rpc = (method, params, ms) => callAsync(method, params, ms).promise;
+  // #303: cancellation is a notification, not a reply. Kept separate from rpc
+  // so a test can cancel the request it just started.
+  const notify = (method, params) => {
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, ...(params !== undefined ? { params } : {}) }) + "\n");
+  };
   const ready = async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: tag, version: "1" } });
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    notify("notifications/initialized");
     return init;
   };
   return {
     rpc,
+    callAsync,
+    notify,
     ready,
     /**
      * 停掉子进程，等它真的退出了才算完。
@@ -645,6 +668,113 @@ async function main() {
     const recentAfterMcp = await chatCli(["--continue", "FIRST-TURN-QUESTION"], projectA);
     check(makeSecondRecent.code === 0 && mcpContinued.result?.isError !== true && recentAfterMcp.code === 0 && handleOf(recentAfterMcp) === firstHandle,
       "MCP 续聊后 CLI 选到同项目里刚续过的会话", recentAfterMcp.out);
+
+    // ================= C4. MCP 聊天：一次调用一个任务一份预算 =================
+    //
+    // #303：装出来的 MCP 每收一次 ans_chat 就登记一个任务，账记在这次任务自己
+    // 那行上；会话句柄只负责恢复上下文。这里跑两轮对话、一次无句柄新建、一次
+    // 到上游之后才取消的调用，再从库里核对：四个任务都收尾了、三次完成的调用
+    // 各自记了账、取消那轮的预留结掉了而不是挂着、会话的账没被碰过。
+    console.log("\n== C4. installed MCP chat: one call, one task, one budget ==");
+    {
+      const mcpDb = join(work, "mcp-chat-budget.db");
+      writeDomain(domainsDir, "mcpchatbudget", [
+        ...DOMAIN_MIN("mcpchatbudget", "MCP-BUDGET-SYSTEM-PROMPT."),
+        "[budget]",
+        "tokenCap = 100000",
+        "callCap = 20",
+      ]);
+      const budgetProber = mcpClient(mcpBin, {
+        ...baseEnv, ANS_DOMAIN: "mcpchatbudget", ANS_DB_PATH: mcpDb,
+      }, "mcp-chat-budget");
+      clients.push(budgetProber);
+      await budgetProber.ready();
+
+      const m1 = await budgetProber.rpc("tools/call", { name: "ans_chat", arguments: { message: "FIRST-TURN-QUESTION" } });
+      check(m1.result?.isError !== true, "带预算域的 MCP 第一轮完成", textOf(m1).slice(0, 200));
+      const close1 = m1.result?.structuredContent?.closeout;
+      check(close1?.kind === "mcp.ans_chat" && close1?.state === "finished" && close1?.exitCode === 0,
+        "第一轮的回复里就交代了这次任务的收尾状态", JSON.stringify(close1));
+      const mcpSid = m1.result?.structuredContent?.sessionId;
+      check(typeof mcpSid === "string" && mcpSid.length > 0, "第一轮返回可续的会话句柄", String(mcpSid));
+
+      const m2 = await budgetProber.rpc("tools/call", { name: "ans_chat", arguments: { message: "SECOND-TURN-QUESTION", sessionId: mcpSid } });
+      check(/REPLY-TO-SECOND-TURN-QUESTION/.test(textOf(m2)),
+        "拿着句柄的第二轮答的是第二个问题", textOf(m2).slice(0, 160));
+      check(m2.result?.structuredContent?.sessionId === mcpSid, "第二轮还是同一个会话句柄");
+      const close2 = m2.result?.structuredContent?.closeout;
+      check(!!close2?.taskId && close2.taskId !== close1?.taskId,
+        "续聊是另一次任务，不吃上一轮的额度", JSON.stringify([close1?.taskId, close2?.taskId]));
+
+      const m3 = await budgetProber.rpc("tools/call", { name: "ans_chat", arguments: { message: "THIRD-TURN-QUESTION" } });
+      const mcpSid3 = m3.result?.structuredContent?.sessionId;
+      check(typeof mcpSid3 === "string" && mcpSid3 !== mcpSid,
+        "不带句柄再来一次就是新对话", String(mcpSid3));
+      const close3 = m3.result?.structuredContent?.closeout;
+
+      // 取消：请求发出后卡在模型调用上，客户端发 notifications/cancelled。
+      //
+      // 取消之后客户端拿不到回复——SDK 会把这次被取消的响应丢掉（见
+      // ans-chat.tool.ts 的取消注释）。所以这里不再等一条回包，改为看库：
+      // 收尾状态是记录说了算，不是客户端收到了什么。
+      const pending = budgetProber.callAsync("tools/call", {
+        name: "ans_chat",
+        arguments: { message: HOLD_MARKER + " cancel this turn" },
+      });
+      // 这条应答不会回来；挂一个吞掉的 catch，免得 240 秒超时把整轮打成未捕获错误。
+      pending.promise.catch(() => {});
+      // 等到这一轮真的到了上游再取消，否则取消的只是一次还没开始的调用。
+      const holdDeadline = Date.now() + 15000;
+      while (Date.now() < holdDeadline && !requestLog.some((r) => r.body.includes(HOLD_MARKER))) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      check(requestLog.some((r) => r.body.includes(HOLD_MARKER)), "取消之前这一轮已经到达上游");
+      budgetProber.notify("notifications/cancelled", { requestId: pending.id, reason: "acceptance cancel" });
+
+      const readTaskRows = () => {
+        const db = new Database(mcpDb, { readonly: true });
+        try {
+          return db.prepare(
+            "SELECT task_id as id, kind, ended_at as ended, exit_code as code FROM task_records ORDER BY rowid"
+          ).all();
+        } finally { db.close(); }
+      };
+      // 取消不等于活立刻干完：等到四个任务都写了结束时间，才说明迟到结算、
+      // 摘要和观测都做完了。等不到就是失败，不是"大概好了"。
+      let mcpTasks = [];
+      const settleDeadline = Date.now() + 60000;
+      while (Date.now() < settleDeadline) {
+        mcpTasks = readTaskRows();
+        if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      check(mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null),
+        "取消之后四个任务都等迟到工作做完再收尾", JSON.stringify(mcpTasks));
+      const cancelledTask = mcpTasks[3];
+      check(cancelledTask?.code === 1,
+        "取消那轮按未完成记账，不是假装跑完", JSON.stringify(cancelledTask));
+
+      const mcpCheck = new Database(mcpDb, { readonly: true });
+      let mcpBudgets = [], sessionRows;
+      try {
+        mcpBudgets = mcpCheck.prepare(
+          "SELECT task_id as id, billable_calls as calls, reserved_tokens as reserved FROM task_budgets ORDER BY rowid"
+        ).all();
+        sessionRows = mcpCheck.prepare("SELECT COUNT(*) as n FROM budget_ledger").get();
+      } finally { mcpCheck.close(); }
+      check(mcpTasks.every((t) => t.kind === "mcp.ans_chat"),
+        "四条任务的颜色都标着 MCP 聊天", JSON.stringify(mcpTasks.map((t) => t.kind)));
+      check(mcpTasks.filter((t) => t.code === 0).length === 3 && mcpTasks.filter((t) => t.code === 1).length === 1,
+        "三次完成记 0，取消那轮记 1", JSON.stringify(mcpTasks.map((t) => t.code)));
+      const budgetById = new Map(mcpBudgets.map((b) => [b.id, b]));
+      check(mcpBudgets.length === 4, "每次调用都有一份自己的任务预算", JSON.stringify(mcpBudgets));
+      check([close1, close2, close3].every((c) => (budgetById.get(c?.taskId)?.calls ?? 0) > 0),
+        "三次完成的调用各自记了至少一次调用", JSON.stringify(mcpBudgets));
+      check(mcpBudgets.every((b) => b.reserved === 0),
+        "没有预留挂在那里（取消那轮也结掉了）", JSON.stringify(mcpBudgets.map((b) => b.reserved)));
+      check(Number(sessionRows?.n) === 0,
+        "会话的账从头到尾没被 MCP 聊天碰过", JSON.stringify(sessionRows));
+    }
 
     // ================= C2. 冷启动：两个服务，一个全新的库 =================
     //

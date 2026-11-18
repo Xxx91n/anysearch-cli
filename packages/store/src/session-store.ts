@@ -93,6 +93,10 @@ import type {
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 import { TaskBudgetLedger } from "./task-budget.js";
+// #303: the task registry over this store's own connection — the MCP entry
+// registers one task per tool call, and it must write into the SAME durable
+// database the engine and the task budget use.
+import { TaskRegistry } from "./task-registry.js";
 // #310: the pre-migration snapshot runs before this constructor opens its
 // handle — the very first statement below (journal_mode = WAL) already rewrites
 // the physical file, so "back up before assembly" must precede openDatabase.
@@ -252,6 +256,13 @@ export interface SessionStore {
   // treats "declared [budget] but no seam / failed creation" as a fault the run
   // stops on, never a silent fall-back to the session form.
   createTaskBudgetLedger?(): TaskBudgetLedger;
+  // #303: the process's task registry over this same connection. The CLI opens
+  // its own registry because it registers before any engine exists; a host
+  // that already built the engine (MCP) writes task records through this seam
+  // instead, so a task and its budget row live in one database and one set of
+  // statements. Optional like the seams above: a hand-built store has no
+  // registry, and the caller then runs unregistered rather than inventing one.
+  createTaskRegistry?(): TaskRegistry;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -521,6 +532,8 @@ export class SqliteSessionStore implements SessionStore {
   // instance per store, cached the same way, so the engine's per-call routing
   // and the runtime's settle path share one set of prepared statements.
   private taskBudgetLedgerInstance?: TaskBudgetLedger;
+  // #303: one task registry per store, same caching as the ledgers above.
+  private taskRegistryInstance?: TaskRegistry;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
   // #277: the cross-script judge (optional, fail-open). It answers "are these
@@ -849,6 +862,24 @@ export class SqliteSessionStore implements SessionStore {
    */
   createTaskBudgetLedger(): TaskBudgetLedger {
     return (this.taskBudgetLedgerInstance ??= new TaskBudgetLedger(this.db));
+  }
+
+  /**
+   * #303: the task registry over this store's single connection.
+   *
+   * The MCP entry registers one task per tool call and ends it after the late
+   * work (settlement, background summaries, the observation write) has
+   * finished. Going through this seam instead of opening a second connection
+   * keeps the task record and the task's budget row in the same database and
+   * the same prepared statements, and it keeps test isolation automatic: a
+   * store built on a temp file registers tasks in that temp file.
+   *
+   * The returned registry must NOT be closed by the caller — the store owns
+   * the connection. `openTaskRegistry` (the CLI's path) owns its connection
+   * and closes it; this one does not.
+   */
+  createTaskRegistry(): TaskRegistry {
+    return (this.taskRegistryInstance ??= new TaskRegistry(this.db));
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).

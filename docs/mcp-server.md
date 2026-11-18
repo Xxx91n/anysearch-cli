@@ -188,6 +188,7 @@ The server follows the MCP rule that an execution failure is an
 | Case | `isError` | `structuredContent` |
 |------|-----------|---------------------|
 | Handler exception (the SDK turns an uncaught throw into an `isError` result); vertical-guard rejection (`verticalSubDomain`/`verticalParams` without `verticalDomain`); `ans_chat` runtime error or missing LLM configuration | `true` | absent — text content only |
+| `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed` and their error classes |
 | Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
@@ -201,7 +202,10 @@ Rules behind the table:
 - **Error results carry no `structuredContent`.** The error channel and the
   output schema stay separate. Error text names the tool and says what to
   do: search/recall paths prefix `<tool> error: `, while `ans_chat`'s
-  missing-configuration branch starts `ans_chat: `.
+  missing-configuration branch starts `ans_chat: `. One exception: a budget
+  stop carries `errorKind`/`budget` (and its task `closeout`), because it has
+  to be distinguishable from an upstream failure without matching on text
+  (#303). `errorKind` is a classification, not an output schema.
 - **Empty is not error; an outage is.** For a search that actually queried
   providers, `search_web` returns an error when every queried provider is in
   `providersFailed`. `research_web` returns an error when no provider answered
@@ -240,7 +244,11 @@ The MCP request signal is the one cancellation path for `search_web`,
 - `search_web` skips its post-search session write when cancelled.
   `research_web` stops after the aborted round. `ans_chat` aborts the agent
   loop and skips LLM construction, session minting, and budget settlement for
-  a request that was already cancelled.
+  a request that was already cancelled. A chat cancelled *while running* is a
+  different case (#303): the wait ends, but the task does not — late
+  settlement, background summaries and the observation write still finish
+  before its `task_records` row is closed (with exit 1), and no reply is
+  returned to the cancelled request.
 - `recall_memory` and `query_knowledge` do not read the request signal.
 - Cancellation is a transport outcome, not a new error shape that users see.
 
@@ -361,6 +369,51 @@ process. It lives in a process-level cache keyed by provider, model, base-URL
 fingerprint, API kind, and context window. A rotated `ANS_LLM_API_KEY`
 rebuilds the cached client. Conversation state, session handles, restore
 points, and budget state stay per call / per session.
+
+### Task closeout (#303)
+
+Every `ans_chat` call is one task: `mcp.ans_chat` in `task_records`. A result
+that carries `structuredContent` also carries `structuredContent.closeout`:
+
+| Field | Meaning |
+|-------|---------|
+| `taskId` | The task record this call ran as. |
+| `kind` | `mcp.ans_chat`. |
+| `state` | `"finished"` — the end row is written; `"open"` — the end write failed, so the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). |
+| `exitCode` | `0` completed, `1` failed or interrupted. |
+| `interrupted` | The answer stopped early (cancellation). |
+
+The closeout is written **after** the handler resolves — after
+`flushMemory()` (background summaries and late settlement) and after the
+observation write. That is why a cancelled turn does not read as "work still
+in flight": the task row only ends when that work is done. A cancelled
+request gets no reply at all (the SDK drops a response for an aborted request
+signal), so the record is what says the work finished.
+
+The conversation handle is no longer the owner of this run's quota (S5). With
+a task registered, `ans_chat` neither initializes nor releases the session's
+`[budget]` row; the run's calls, compaction, summaries and late settlement
+settle on the task's own `task_budgets` row. Resuming a conversation therefore
+spends none of its history. A budget that cannot be attached to a task (a
+store without the registry/budget seams, a registry that fails to open) does
+**not** fall open to unmetered when the domain declares `[budget]`: the call
+stops.
+
+### Budget stops in `ans_chat` (#303)
+
+A stop the runtime decided is machine-distinguishable from an upstream
+failure. This is the one error result that carries `structuredContent`
+(`errorKind` is a classification, not the success output schema):
+
+| `structuredContent.errorKind` | Cause | What happened |
+|-------------------------------|-------|---------------|
+| `budget-not-established` | The domain declares `[budget]` and the task budget could not be created (no registered task, no ledger seam, row creation failed). | Nothing was sent to the model. Fix registration/store or the caps — not a provider problem. |
+| `budget-rejected` | The task's own budget refused the run (tokens or calls). | Nothing was sent to the model. Raise `[budget]`; the next call starts a fresh task budget. |
+
+Both carry `structuredContent.budget` (`stopped`, `reason`, `detail`), the
+`taskId` when a task was registered, and a `usage` block that names why it has
+no figure. Generic upstream failures keep the bare `<tool> error: ` result
+shape with no `structuredContent`.
 
 ## Environment and auth
 

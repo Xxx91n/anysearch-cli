@@ -20,7 +20,22 @@ export type AgentEvent =
       usage?: RunUsage;
       context?: RunContextUsage;
     }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      /**
+       * #303: the machine-readable class of a stop the runtime itself decided,
+       * so a host can keep a budget refusal apart from a provider failure
+       * without reading the message text. Absent means "not a runtime-decided
+       * budget stop" — an upstream error, a cancellation, or a fault.
+       *
+       * - `budget-not-established`: the domain declared [budget] but the task
+       *   budget could not be created; nothing was called.
+       * - `budget-rejected`: the task's own budget refused the run (tokens or
+       *   calls); nothing was called for this refusal.
+       */
+      reason?: "budget-not-established" | "budget-rejected";
+    };
 
 /**
  * #264 (D9): one rebuild attempt as the caller sees it.

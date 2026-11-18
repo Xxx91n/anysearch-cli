@@ -31,6 +31,11 @@ export * from "@anysearch-cli/retriever";
 export * from "./composition";
 export * from "./llm-init";
 
+// #302/#303: one per-execution task-budget decision, shared by `ans chat` and
+// the MCP `ans_chat` tool — the two entries must not answer "was this run
+// metered?" differently.
+export * from "./task-budget";
+
 // Explicit consolidation seams (D4/D5): one summarize + fidelity gate + usage
 // ledger shared by `ans consolidate` and `ans_chat operation=consolidate`.
 export * from "./consolidation";

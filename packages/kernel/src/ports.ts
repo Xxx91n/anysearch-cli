@@ -31,8 +31,8 @@ export type Query = SearchRequest & {
   // task. Present: the engine reserves/settles its per-call budget on the
   // task's ledger, so one execution's internal searches belong to that
   // execution instead of accumulating on the conversation's session row.
-  // Absent: the construction-time session form, unchanged (MCP ans_chat,
-  // consolidate — #303/#304 migrate separately). Kernel-side extra: like the
+  // Absent: the construction-time session form, unchanged (the entries still
+  // on it, #304). Kernel-side extra: like the
   // other Query fields here it never crosses the provider boundary.
   taskBudget?: TaskBudgetScope;
   // T2 #177: per-search session id supplied by the composition path that owns a

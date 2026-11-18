@@ -125,6 +125,11 @@ function warnOnce(key: string, detail: string): void {
  * mid-session domain switch (or a long-lived MCP process whose config snapshot
  * predates the TOML edit) does not re-initialize caps until the next process
  * start.
+ *
+ * #303: `ans_chat` no longer calls this on the normal path — its runs bill the
+ * call's own task (`wireTaskBudget`). What remains here is the degraded path
+ * (a store with no task registry, so the run has no task to bill) and the
+ * direct callers/tests of `resolveAnsChatSession` that read the session form.
  */
 function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): boolean {
   if (budget) {
@@ -162,6 +167,12 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  * @param eng - Composition result carrying the session store.
  * @param requested - `AnsChatInput.sessionId`, already type-checked by AJV; the
  *   runtime guard here also covers direct callers and non-string test input.
+ * @param opts.sessionBudget - #303: false when this call has its own task budget
+ *   and the handle is context only. The session's [budget] row is then neither
+ *   initialized nor released — the conversation's history stays exactly as it
+ *   was, and nothing pretends the handle still owns this run's quota. Default
+ *   true: the unmigrated callers (and a degraded call that could not register a
+ *   task) keep the session form untouched.
  * @returns store + sessionId (and the engine's ledger, #178) only when the
  *   handle is usable; an empty object leaves the runtime's `store && sessionId`
  *   gate closed (single-shot / memory disabled).
@@ -169,8 +180,10 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
 export async function resolveAnsChatSession(
   eng: CompositionResult,
   requested?: unknown,
+  opts: { sessionBudget?: boolean } = {},
 ): Promise<AnsChatSessionWiring> {
   const store = eng.store;
+  const sessionBudget = opts.sessionBudget !== false;
   // SessionStorePort guarantees these, but a hand-built mock engine may not; a
   // loud fallback beats a TypeError in the tool handler.
   if (!store || typeof store.createSession !== "function" || typeof store.ensureSession !== "function") {
@@ -188,6 +201,7 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
+      if (!sessionBudget) return { store, sessionId: requested };
       const budgetReady = registerSessionBudget(store, requested, eng.config?.budget);
       return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
@@ -204,6 +218,7 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
+    if (!sessionBudget) return { store, sessionId: id };
     const budgetReady = registerSessionBudget(store, id, eng.config?.budget);
     return { store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
   } catch (e) {
@@ -279,6 +294,65 @@ export function buildAnsChatErrorResult(
       ...rebuilds.map((r) => ({ type: "text" as const, text: formatLine(r) })),
     ],
     structuredContent: { summaryRebuilds: rebuilds },
+  };
+}
+
+// ---- #303: a run stopped by its own task budget ----
+
+/** The two runtime-decided budget stops (#303), as the MCP surface names them. */
+export type AnsChatBudgetStop = "budget-not-established" | "budget-rejected";
+
+export interface AnsChatBudgetStopExtra {
+  taskId?: string;
+  /** What this run spent. A stop before the first provider call spends nothing, and the report says why it has no figure. */
+  usage?: unknown;
+}
+
+/**
+ * The result for a run the task budget stopped.
+ *
+ * Why this is not a plain `toolError`: #303 requires a budget refusal (and a
+ * budget that could not be established) to be distinguishable from an upstream
+ * failure without string matching. So the classification rides in
+ * `structuredContent.errorKind`, the stop reason is named in the text, and the
+ * result stays a normal MCP execution result (isError + content). This is the
+ * ONE error result that carries structuredContent — #204 keeps generic errors
+ * bare, and the budget stop is not an output-schema result: the block is a
+ * classification, not a report of work that happened.
+ *
+ * Both stops mean "nothing was called for this run": the runtime refuses before
+ * the first controlled call and says so in the text. The work that already
+ * happened (a resumed conversation, earlier tasks) is untouched.
+ */
+export function buildAnsChatBudgetResult(
+  kind: AnsChatBudgetStop,
+  detail: string,
+  extra: AnsChatBudgetStopExtra = {},
+): AnsChatToolResult {
+  const label = kind === "budget-not-established"
+    ? "this run's task budget could not be established"
+    : "this run was stopped by its task budget";
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: "ans_chat: " + label + " — " + detail +
+        "\nNothing was sent to the model for this run. The conversation itself is unchanged.",
+    }],
+    structuredContent: {
+      operation: "chat",
+      errorKind: kind,
+      budget: {
+        stopped: true,
+        // A refusal and an unbuildable budget are different things to fix:
+        // raise the caps vs. repair registration/store; the caller must not
+        // have to read prose to tell them apart.
+        reason: kind === "budget-not-established" ? "not-established" : "rejected",
+        detail,
+      },
+      ...(extra.taskId ? { taskId: extra.taskId } : {}),
+      ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
+    },
   };
 }
 

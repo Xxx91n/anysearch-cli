@@ -372,8 +372,11 @@ async function completeText(
     try {
       reservedCall = budget.ledger.reserveCalls(budget.sessionId, 1);
       if (!reservedCall) {
+        // #303: this text must not say "the session's budget" — the same seam
+        // now runs on a task budget when the caller has one (MCP consolidate),
+        // and naming the wrong account sends the user to the wrong place.
         throw new ConsolidationBudgetError(
-          "consolidation stopped: the session's call budget is exhausted (reserveCalls rejected)",
+          "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
       }
       reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
@@ -385,7 +388,7 @@ async function completeText(
         reservedCall = false;
         reservedTokens = 0;
         throw new ConsolidationBudgetError(
-          "consolidation stopped: the session's token budget cannot cover this model call (reserveTokens rejected)",
+          "consolidation stopped: the token budget cannot cover this model call (reserveTokens rejected)",
         );
       }
     } catch (e) {

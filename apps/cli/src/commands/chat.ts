@@ -166,14 +166,14 @@ export async function runChat(argv: string[]): Promise<number> {
   // #302: one execution, one budget. The task id comes from the dispatch-level
   // registration (index.ts registers every CLI command); wireChatMemory above
   // still registers the session row and refreshes the session budget as
-  // before — the conversation's history and the callers that have not
-  // migrated (MCP ans_chat, #303) keep the session form. This run's spend —
+  // before — the conversation's history and the entries still on the session
+  // form (#304) keep it. This run's spend —
   // the agent loop, compaction, summary/re-judge, late settlement and internal
   // searches — lands on the task's own budget row instead, so resuming this
   // conversation later spends none of the history's quota.
   // A declared [budget] that cannot be established here returns a fault, and
   // the runtime stops the run before any provider call (the old fail-open
-  // behavior stays for the session form until #303/#304).
+  // behavior stays for the session form until #304).
   const cliTask = currentCliTask();
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
   // Best-effort context link: which conversation this task ran under. The

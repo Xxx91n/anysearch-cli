@@ -293,10 +293,11 @@ function makeEnv(root: string, extra: Record<string, string> = {}): Record<strin
 }
 
 /**
- * A domain that declares `[budget]`, so a session gets a real budget_ledger
- * row and "the killed run settled nothing" is a statement about an actual
- * row rather than an empty table where `every()` passes by itself. The row
- * exists from the start: the test checks it exists before the kill.
+ * A domain that declares `[budget]`. #303 moved MCP chats to a per-call task
+ * budget, so this is what makes the killed run's task_budgets row real — and
+ * "the killed run settled nothing" a statement about an actual row rather than
+ * an empty table where `every()` passes by itself. The row is created when the
+ * call starts; the test checks it exists before the kill.
  */
 function budgetDomainDir(root: string): string {
   const dir = join(root, "domains");
@@ -316,6 +317,36 @@ function budgetDomainDir(root: string): string {
   ].join("\n"));
   return dir;
 }
+/**
+ * #303: an MCP chat bills its own task, so the rows that matter are the task's
+ * budget rows — not the conversation's `budget_ledger`. The task record's
+ * `ended_at` is read alongside, because "ended" is what says a run finished its
+ * late work (settlement, summaries, observation) rather than merely answering.
+ */
+function taskBudgetRows(dbPath: string): Array<{ taskId: string; reserved: number; spent: number; endedAt: string | null }> {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare(
+      "SELECT b.task_id as taskId, b.reserved_tokens as reserved, b.spent_tokens as spent, t.ended_at as endedAt " +
+      "FROM task_budgets b LEFT JOIN task_records t ON t.task_id = b.task_id ORDER BY b.rowid"
+    ).all() as Array<{ taskId: string; reserved: number; spent: number; endedAt: string | null }>;
+  } finally {
+    db.close();
+  }
+}
+
+/** The conversation's own history account, read so "not touched" is checkable. */
+function sessionLedgerRows(dbPath: string, sessionId: string): Array<{ reserved: number; spent: number }> {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare(
+      "SELECT reserved_tokens as reserved, spent_tokens as spent FROM budget_ledger WHERE session_id = ?"
+    ).all(sessionId) as Array<{ reserved: number; spent: number }>;
+  } finally {
+    db.close();
+  }
+}
+
 function conversationText(lines: any[]): { users: string[]; assistants: string[] } {
   const users: string[] = [];
   const assistants: string[] = [];
@@ -414,8 +445,8 @@ async function main() {
       resetEndpointState();
       const root = join(base, "c2");
       // Production lock windows on purpose: recovery must not need them.
-      // The domain declares [budget], so the session really has a
-      // budget_ledger row to make "nothing was settled" a real statement.
+      // The domain declares [budget], so the killed run really has a task
+      // budget row, which makes "nothing was settled" a real statement.
       const env = {
         ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl,
         ANS_DOMAIN: "lock-probe", ANS_DOMAINS_DIR: budgetDomainDir(root),
@@ -442,28 +473,23 @@ async function main() {
       assert(beforeKill.length === 1 && beforeKill[0].owner?.pid === a.child.pid,
         "C2: the lock names the hanging process before the kill");
 
-      // The budget row must exist BEFORE the kill, otherwise an empty table
-      // would satisfy every() vacuously.
-      const dbBefore = new Database(join(root, "anysearch.db"), { readonly: true });
-      const ledgerBefore = dbBefore.prepare(
-        "SELECT session_id, reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
-      ).all(shared) as Array<{ session_id: string; reserved_tokens: number; spent_tokens: number }>;
-      // #275: the killed run reserved real tokens, which is what makes "the
-      // recovery released them" a statement about a non-zero number instead of
-      // about a counter that was never moved. The owner row is read too, so the
-      // post-kill assertion below can tell "this run's reservation was
-      // released" apart from "the unowned sweep happened to clear a counter".
-      const reservationsBefore = dbBefore.prepare(
-        "SELECT owner_pid, dim, amount FROM budget_reservations WHERE session_id = ?"
-      ).all(shared) as Array<{ owner_pid: number; dim: string; amount: number }>;
-      dbBefore.close();
-      assert(ledgerBefore.length === 1,
-        "C2: the session has a real budget_ledger row before the kill (got " + JSON.stringify(ledgerBefore) + ")");
-      assert(Number(ledgerBefore[0]?.reserved_tokens) > 0,
-        "C2: the killed run holds a real reservation before the kill (got " + JSON.stringify(ledgerBefore) + ")");
-      assert(reservationsBefore.some((r) => r.owner_pid === a.child.pid && r.dim === "tokens"),
-        "C2/#275: the killed run recorded its reservation under its own pid (got "
-        + JSON.stringify(reservationsBefore) + ")");
+      // The killed run's reservation must exist BEFORE the kill, otherwise an
+      // empty table would satisfy every() vacuously. #303 moved MCP chats from
+      // the session's budget_ledger to their own task row; the conversation's
+      // history account is read too, so "the handle is context only" is a
+      // checked statement rather than a comment.
+      const budgetsBefore = taskBudgetRows(join(root, "anysearch.db"));
+      const ledgerBefore = sessionLedgerRows(join(root, "anysearch.db"), shared);
+      const hangingTask = budgetsBefore.find((b) => b.endedAt === null);
+      assert(hangingTask !== undefined,
+        "C2/#303: the hanging run has its own task budget row before the kill (got "
+        + JSON.stringify(budgetsBefore) + ")");
+      assert(Number(hangingTask?.reserved) > 0,
+        "C2: the killed run holds a real token reservation on its task row (got "
+        + JSON.stringify(budgetsBefore) + ")");
+      assert(ledgerBefore.length === 0,
+        "C2/#303: the conversation's own account was never opened by the run (got "
+        + JSON.stringify(ledgerBefore) + ")");
 
       a.child.kill("SIGKILL");
       for (const res of openResponses) { try { res.destroy(); } catch { /* already gone */ } }
@@ -472,16 +498,13 @@ async function main() {
       // Between the kill and the takeover nothing may be settled for the
       // killed run: no fake success, no "settled as 0" illusion.
       await sleep(400);
-      const db = new Database(join(root, "anysearch.db"), { readonly: true });
-      const ledgerMid = db.prepare(
-        "SELECT session_id, reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
-      ).all(shared) as Array<{ session_id: string; reserved_tokens: number; spent_tokens: number }>;
-      db.close();
+      const budgetsMid = taskBudgetRows(join(root, "anysearch.db"));
+      const killedTask = budgetsMid.find((b) => b.taskId === hangingTask?.taskId);
       // A killed run may leave its reservation or clear it, but it must never
       // book spend: spent_tokens is the count of what the provider actually
       // returned for a completed run.
-      assert(ledgerMid.length === 1 && Number(ledgerMid[0].spent_tokens) === 0,
-        "C2: the killed request settled no spend on a real row (ledger " + JSON.stringify(ledgerMid) + ")");
+      assert(killedTask !== undefined && Number(killedTask.spent) === 0,
+        "C2: the killed request settled no spend on its task row (got " + JSON.stringify(budgetsMid) + ")");
 
       const bRes = await b.chat("LOCK-B-AFTER-CRASH. The previous process died; continue the same session.", shared);
       const recoveryMs = Date.now() - bStart;
@@ -515,28 +538,27 @@ async function main() {
       assert(lockEntries(join(root, "pi")).length === 0,
         "C2: the reclaimed lock is cleaned up (exit " + JSON.stringify(killedExit) + ")");
 
-      // #275: the takeover released the killed run's reservation, so the session
-      // is not left looking exhausted. This is the defect the ticket measured
-      // (reserved_tokens = 12304 with spent_tokens = 0 after the takeover) and
-      // the recovery path is where it has to stop being true.
-      const dbAfter = new Database(join(root, "anysearch.db"), { readonly: true });
-      const ledgerAfter = dbAfter.prepare(
-        "SELECT reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
-      ).all(shared) as Array<{ reserved_tokens: number; spent_tokens: number }>;
-      const leftoverOwners = dbAfter.prepare(
-        "SELECT owner_pid, dim, amount FROM budget_reservations WHERE session_id = ?"
-      ).all(shared) as Array<{ owner_pid: number; dim: string; amount: number }>;
-      dbAfter.close();
-      // The recovering run reserved and then settled its own work, so zero is
-      // the only correct leftover. A surviving killed-owner row is the bug.
-      assert(ledgerAfter.length === 1 && Number(ledgerAfter[0].reserved_tokens) === 0,
-        "C2/#275: no reservation is left behind after the takeover (ledger "
+      // #275/#303: the takeover must not be blocked by the killed run's
+      // leftover reservation, and the killed run must not have booked spend.
+      // The task form makes that structural: the takeover is a NEW task with a
+      // NEW budget row, so the dead task's counter cannot eat its cap. What the
+      // test still checks is the fact the old bug denied — the recovering run
+      // really books its spend, and it is booked on its own row.
+      const budgetsAfter = taskBudgetRows(join(root, "anysearch.db"));
+      const finished = budgetsAfter.filter((b) => b.endedAt !== null);
+      const spent = finished.filter((b) => Number(b.spent) > 0);
+      const leftover = budgetsAfter.find((b) => b.taskId === hangingTask?.taskId);
+      const ledgerAfter = sessionLedgerRows(join(root, "anysearch.db"), shared);
+      assert(spent.length === 1,
+        "C2: exactly one finished task booked spend — the recovering run's own (got "
+        + JSON.stringify(budgetsAfter) + ")");
+      assert(spent[0]?.taskId !== hangingTask?.taskId,
+        "C2/#303: the takeover ran as a fresh task, so the killed run's leftover cannot block it");
+      assert(leftover !== undefined && Number(leftover.spent) === 0,
+        "C2: the killed task still shows no spend after the takeover (got " + JSON.stringify(leftover) + ")");
+      assert(ledgerAfter.length === 0,
+        "C2/#303: the conversation's history account stayed untouched throughout (got "
         + JSON.stringify(ledgerAfter) + ")");
-      assert(!leftoverOwners.some((r) => r.owner_pid === a.child.pid),
-        "C2/#275: the killed process owns no reservation after the takeover (got "
-        + JSON.stringify(leftoverOwners) + ")");
-      assert(Number(ledgerAfter[0]?.spent_tokens) > 0,
-        "C2: the recovering run's spend is booked on the same row");
 
       b.child.kill("SIGKILL");
       await b.exited;

@@ -412,8 +412,8 @@ export interface PiAgentRuntimeOptions {
    * loop's calls, compaction, the memory pipeline's summary/adjudication and
    * the late settlement — lands on the task's budget row, and internal
    * searches carry the scope so they stop accumulating on the session
-   * ledger. Absent: the session form, unchanged, for callers that have not
-   * migrated (#303/#304).
+   * ledger. Absent: the session form, unchanged, for the callers that have not
+   * migrated (#304: MCP search/research/standalone consolidate).
    */
   taskBudget?: TaskBudgetScope;
   /**
@@ -833,6 +833,7 @@ export class PiAgentRuntime {
         message:
           "Task budget not established: " + this.opts.taskBudgetFault +
           ". The run was not started; no provider call was made.",
+        reason: "budget-not-established",
       };
       return;
     }
@@ -1233,8 +1234,8 @@ export class PiAgentRuntime {
     // #302: a task-scoped budget is the new accounting form. The run bills its
     // task — the scope is the task id and the ledger is the task's own — so
     // resuming a conversation spends none of the history's quota. Callers
-    // without one (MCP ans_chat, consolidate) keep the session form and its
-    // old semantics untouched (#303/#304 migrate separately).
+    // without one (the entries still on the session form, #304) keep that
+    // form and its old semantics untouched.
     const taskBudget = this.opts.taskBudget;
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
@@ -1349,6 +1350,7 @@ export class PiAgentRuntime {
               (taskBudget ? "this task's budget" : "the session cap") +
               " cannot cover it. " +
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML)." + unownedHint,
+            reason: "budget-rejected",
           };
           return;
         }
@@ -1423,7 +1425,7 @@ export class PiAgentRuntime {
     // Per-call reserve, two forms (#178 / #302):
     // - session form: a soft gate — a rejection lets the run continue and the
     //   call is simply not billed (the token dimension is the hard stop there).
-    //   Kept unchanged for the callers that have not migrated (#303/#304).
+    //   Kept unchanged for the callers that have not migrated (#304).
     // - task form: a declared call quota is enforced consistently (S5) — a
     //   rejection stops this run before its first controlled call. The wiring
     //   established a budget for exactly this execution, so "unbilled but
@@ -1451,6 +1453,7 @@ export class PiAgentRuntime {
             message:
               "Call budget exhausted: this run needs 1 call reserved but the task's call quota is used up. " +
               "The run was not started; raise [budget] callCap and retry (the next run re-reads the domain TOML).",
+            reason: "budget-rejected",
           };
           return;
         }
