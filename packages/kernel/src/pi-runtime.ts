@@ -996,7 +996,10 @@ export class PiAgentRuntime {
         const forwarded = options && typeof options === "object"
           ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
           : options;
-        return providerStream(baseModel, context, forwarded);
+        const signal = perCallBudget
+          ? AbortSignal.any(options?.signal ? [runScope(), options.signal] : [runScope()])
+          : forwarded?.signal;
+        return providerStream(baseModel, context, perCallBudget ? { ...forwarded, signal } : forwarded);
       },
     });
     const sdkModel = modelRuntime.getModel(sdkProviderId, modelId);
@@ -1888,7 +1891,7 @@ export class PiAgentRuntime {
       try {
         const stream = streamFn(model, context, options);
         // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
-        const settlement = stream.result().then(message => settle(message.usage), () => settle());
+        const settlement = this.settleStreamUsage(stream, settle, options?.signal);
         this.taskBudgetSettlements.add(settlement);
         void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
         return stream;
@@ -1897,6 +1900,30 @@ export class PiAgentRuntime {
         throw error;
       }
     };
+  }
+
+  private settleStreamUsage(
+    stream: ReturnType<StreamFunction>,
+    settle: ReturnType<typeof reserveTaskModelCall>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return new Promise(resolve => {
+      let finished = false;
+      let abortTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (message?: AssistantMessage) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(abortTimer);
+        signal?.removeEventListener("abort", onAbort);
+        settle(message?.usage);
+        resolve();
+      };
+      // Design: 中断后给服务端一点时间回报用量 — 没回报就按预留结算，避免卡住退出。
+      const onAbort = () => { abortTimer = setTimeout(() => finish(), 1000); };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+      void stream.result().then(finish, () => finish());
+    });
   }
 
   /**

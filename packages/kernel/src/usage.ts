@@ -301,7 +301,12 @@ export function reserveTaskModelCall(
   }
   return (usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) => {
     // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
-    const tokens = typeof usage?.totalTokens === "number" && usage.totalTokens > 0 ? usage.totalTokens : estimate;
+    const reportedTokens = usage?.totalTokens;
+    const tokens = typeof reportedTokens === "number" && reportedTokens > 0 ? reportedTokens : estimate;
+    if (started && !reportedTokens) {
+      try { process.stderr.write("[task-budget] 模型未报告 token 用量，按预留的 " + estimate + " token 结算。\n"); }
+      catch { /* stderr unavailable */ }
+    }
     const cost = usage?.cost?.total ?? 0;
     try { ledger.settleCalls(taskId, 1, Number(started)); }
     catch (error) { reportBudgetFault("model call settlement", error); }

@@ -153,8 +153,10 @@ export async function runChat(argv: string[]): Promise<number> {
     ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger, requestedSessionId)
     : {};
 
-  if (requestedSessionId && !memory.sessionId) {
-    process.stderr.write("会话恢复失败，本次没有发送问题。\n");
+  if (!memory.sessionId && (printOnly || requestedSessionId)) {
+    process.stderr.write(requestedSessionId
+      ? "会话恢复失败，本次没有发送问题。\n"
+      : "无法保存这段会话，本次没有发送问题。\n");
     return 1;
   }
   // The attempt's project. A resumed conversation keeps the project it already

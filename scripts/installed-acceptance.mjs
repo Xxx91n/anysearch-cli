@@ -109,6 +109,7 @@ const endpoint = createServer(async (req, res) => {
   if (req.url === "/print-search") {
     const { id, method, params } = JSON.parse(body);
     if (method === "notifications/initialized") return res.writeHead(202).end();
+    if (method === "tools/call") requestLog.push({ role: "print-search", body });
     const url = params?.arguments?.query === "anysearch-cli GitHub repository" ? PRINT_SOURCE : PRINT_REROUND_SOURCE;
     const result = method === "initialize" ? { protocolVersion: params.protocolVersion } : {
       structuredContent: { results: [{ url, title: "Print source", snippet: "The print test source." }] },
@@ -692,6 +693,7 @@ async function main() {
     const beforeCapped = requestLog.length;
     const capped = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print-capped", printEnv);
     check(capped.code === 1 && capped.stdout === "" && /Call budget exhausted/.test(capped.stderr)
+      && requestLog.length - beforeCapped === 4
       && !requestLog.slice(beforeCapped).some((request) => request.role === "chat"),
       "-p 在工具调用后也检查额度，没额度就不再请求模型", capped.out);
     const requestStarted = new Promise((resolve) => { onPrintInterrupted = resolve; });
@@ -708,12 +710,13 @@ async function main() {
         "-p 撞上占用当场退出，没发送请求", busy.out);
     } finally {
       onPrintInterrupted = undefined;
-      active.child.kill("SIGKILL");
+      active.child.kill(process.platform === "win32" ? "SIGKILL" : "SIGINT");
       await active.result;
     }
     const interruptedPrint = await active.result;
     const interruptedPrintHandle = handleOf({ out: interruptedPrint.stderr });
-    check(!!interruptedPrintHandle && interruptedPrint.stdout === "",
+    check(!!interruptedPrintHandle && interruptedPrint.stdout === ""
+      && (process.platform === "win32" || interruptedPrint.code === 130),
       "-p 被打断时标准错误里有句柄，标准输出没有半截回答", interruptedPrint.out);
     const beforeResume = requestLog.length;
     const resumed = await chatCli(["-c"], printProject, "print", printEnv);
