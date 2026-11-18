@@ -1684,11 +1684,11 @@ export class PiAgentRuntime {
         const settleDelta = (): void =>
           settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
         this.lateSettlement = promptPromise!.then(settleDelta, settleDelta)
-          .then(() => undefined, (e: unknown) => {
-            // A failed late write is best-effort, but not silent: the host reads
-            // "failed" for it, so an operator needs the one line that tells "the
-            // write blew up" apart from "it decided there was nothing to add".
-            reportBudgetFault("late token settlement", e);
+          .then(() => undefined, () => {
+            // settleTokenDelta reports its own failures (reportBudgetFault) and
+            // does not throw; this handler only guarantees the promise never
+            // rejects into the host. Reporting here too would print the same
+            // failure twice.
           });
       }
       // Release the session listeners; the JSONL record is already durable.

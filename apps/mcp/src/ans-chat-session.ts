@@ -26,6 +26,7 @@ import type {
   BudgetLedgerPort,
   CompositionResult,
   ConsolidationUsage,
+  RuntimeErrorReason,
   SessionStorePort,
 } from "@anysearch-cli/kernel";
 import {
@@ -303,13 +304,6 @@ export function buildAnsChatErrorResult(
 
 // ---- #303: a run stopped by its own task budget ----
 
-/** The runtime's budget-stop union, named here for the MCP surface (#303).
- *  The union itself is the kernel's, so the emitter and the result builder cannot
- *  drift apart on a spelling. Every member is a budget stop today; if the
- *  runtime ever adds another reason, this surface decides then whether it earns
- *  the same result shape. */
-export type AnsChatBudgetStop = import("@anysearch-cli/kernel").RuntimeErrorReason;
-
 export interface AnsChatBudgetStopExtra {
   taskId?: string;
   /** What this run spent. A stop before the first provider call spends nothing, and the report says why it has no figure. */
@@ -338,7 +332,7 @@ export interface AnsChatBudgetStopExtra {
  * happened (a resumed conversation, earlier tasks) is untouched.
  */
 export function buildAnsChatBudgetResult(
-  kind: AnsChatBudgetStop,
+  kind: RuntimeErrorReason,
   detail: string,
   extra: AnsChatBudgetStopExtra = {},
 ): AnsChatToolResult {

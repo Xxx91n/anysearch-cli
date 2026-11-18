@@ -869,10 +869,12 @@ export class SqliteSessionStore implements SessionStore {
    *
    * Design: register tasks through the engine's own connection instead of
    * opening a second one — the task record and the task's budget row then live
-   * in one database and one set of prepared statements, and a test's temp store
-   * registers into its temp file without any extra isolation. The CLI opens its
-   * own registry (`openTaskRegistry`) because it registers before any engine
-   * exists; a host that already built the engine uses this seam.
+   * in one database, and a test's temp store registers into its temp file
+   * without any extra isolation. Each object still prepares its OWN statements
+   * on that shared connection (better-sqlite3 statements are per-handle, not
+   * per-database). The CLI opens its own registry (`openTaskRegistry`) because
+   * it registers before any engine exists; a host that already built the engine
+   * uses this seam.
    *
    * Ownership: the registry borrows this store's connection. Its `close()` is a
    * no-op, `SqliteSessionStore.close()` is what closes the handle, and a cached

@@ -78,8 +78,17 @@ export function wireTaskBudget(
     return { declared };
   };
   if (!taskId) {
-    // No registered task (registry failed to open, or the context is absent).
-    return stop("the main program registered no task to hold this run's budget", "— running unmetered");
+    // No registered task: the registry's own warning already said why (the CLI
+    // and the MCP entry both announce a broken registry), so this corner stays
+    // QUIET — a second line on every run would just be noise. A declared
+    // [budget] still stops.
+    return declared
+      ? {
+          declared,
+          taskBudgetFault: "the main program registered no task to hold this run's budget",
+          taskBudgetFaultReason: "budget-not-established",
+        }
+      : { declared };
   }
   // Design: name the missing STORE and the missing SEAM differently. Both stop a
   // declared run, but they point a debugger at different places, and "lacks
@@ -122,12 +131,12 @@ export function wireTaskBudget(
       ledger.initBudget(taskId, toBudgetCaps(budget));
     } catch (e: unknown) {
       // The FK on task_budgets makes "task was never registered" land here too
-      // — the establishment failure the runtime turns into a hard stop.
-      return {
-        declared,
-        taskBudgetFault: "task budget establishment failed: " + errText(e),
-        taskBudgetFaultReason: "budget-not-established",
-      };
+      // — the establishment failure the runtime turns into a hard stop. Only a
+      // declared budget can reach this, so the degraded text never prints.
+      return stop(
+        "task budget establishment failed: " + errText(e),
+        "could not establish its budget — falling back to the session form",
+      );
     }
   }
   return { declared, taskBudget: { taskId, ledger } };

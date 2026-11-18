@@ -224,9 +224,9 @@ export class TaskRegistry {
    * NO-OP instead of a throw. A stray `close()` from a teardown path must not
    * turn into an error mid-exit, and closing the store's connection from here
    * would break every later query — so the borrowed case does nothing and says
-   * so. The store owns that handle; `SqliteSessionStore.close()` is what closes
-   * it (and any later use of this registry then throws on the closed DB, which
-   * is the honest signal).
+   * so. That stays true after the store itself closed: the later call is still a
+   * no-op, and any later USE of this registry throws on the closed database,
+   * which is the honest signal.
    */
   close(): void {
     if (!this.ownsConnection) return;

@@ -211,6 +211,11 @@ function attachCloseout<R>(
   // Every other error stays bare. The task record is still written and ended in
   // all three cases — the row is where the closeout lives.
   if (verdict.isError && !verdict.budgetStop) return result;
+  // A handler is free to return a non-object (a future #304 tool might hand back
+  // a bare string): spreading one would silently replace it with an object and
+  // lose the original. Leave such a result exactly as it is — the task row is
+  // still written and ended above.
+  if (!result || typeof result !== "object") return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
     kind: identity.kind,
