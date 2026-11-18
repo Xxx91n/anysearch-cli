@@ -60,6 +60,20 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
   - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认不带 key 也能跑
   - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
 
+### key 录一次就够：`ans auth set`
+
+```bash
+ans auth set openai            # 输入时看不见，只存一次
+ans auth list                  # 看存了哪些、各自绑到哪个 provider 和端点
+ans auth remove openai         # 删掉这一条
+```
+
+- 存在 `~/.anysearch-cli/credentials.json`，**是明文**，不是加密，也不是系统钥匙串。文件里自己写明了这点。
+- 本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主；所以录一次就够了。
+- 环境变量仍然优先：`ANS_LLM_API_KEY`、或该 provider 自己的 `*_API_KEY`。
+- 每条绑定到具体的 provider；模型用的 key 还会绑定到当时的端点。换了端点或 provider 就不会发出去，要重新录。
+- 写之前按平台自己的方式建访问保护并核对：POSIX 看 600，Windows 看解析出来的 ACL（不是拿 POSIX mode 冒充）。建不起来就明确失败，不会宽松落盘。
+
 ## 域名与拒答
 
 *域名（domain）* 是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，

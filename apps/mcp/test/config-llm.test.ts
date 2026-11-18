@@ -15,7 +15,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
-import { resolveLlmConfig } from "@anysearch-cli/store";
+import { resolveLlmConfig, writeUserCredential } from "@anysearch-cli/store";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -274,7 +274,42 @@ async function main() {
         "env_key catalog: source reported as user");
     }
 
-    // 9. a resolver fault returns a structured isError result AND leaves an
+    // 9b. #301: a key stored in the user credential file reaches the MCP session
+    //     with NO environment variable at all — the GUI-host shape.
+    {
+      const fix = fixture('[llm]\nprovider = "openai"\nmodel = "gpt-5"\n');
+      writeUserCredential({ provider: "openai", apiKey: "sk-stored-mcp-0123456789" }, { home: fix.home });
+      const h = harness(fix, {});
+      await h.call();
+      assert(h.seen.length === 1, "stored key: one session was built");
+      assert(h.seen[0]?.apiKey === "sk-stored-mcp-0123456789",
+        "stored key: the credential file's key reaches the model session on MCP");
+    }
+
+    // 9c. #301: an explicit env key still beats the stored one on the MCP path.
+    {
+      const fix = fixture('[llm]\nprovider = "openai"\nmodel = "gpt-5"\n');
+      writeUserCredential({ provider: "openai", apiKey: "sk-stored-loses" }, { home: fix.home });
+      const h = harness(fix, { ANS_LLM_API_KEY: "sk-env-wins" });
+      await h.call();
+      assert(h.seen[0]?.apiKey === "sk-env-wins", "explicit env key beats the stored key on MCP");
+    }
+
+    // 9d. #301: a stored key bound to another endpoint is refused, so no secret
+    //     is sent to an endpoint it was not entered for.
+    {
+      const fix = fixture('[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://gw.example/v1"\napi = "chat"\n');
+      writeUserCredential({ provider: "openai", apiKey: "sk-default-endpoint" }, { home: fix.home });
+      const h = harness(fix, {});
+      await h.call();
+      assert(h.seen[0]?.baseUrl === "https://gw.example/v1", "endpoint binding: the custom endpoint is in effect");
+      assert(h.seen[0]?.apiKey === undefined, "endpoint binding: the mismatched stored key never reaches the session");
+      assert(fix.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")),
+        "endpoint binding: the refusal was reported");
+      assert(!fix.warnings.some((w) => w.includes("sk-default-endpoint")), "endpoint binding: the warning repeats no key");
+    }
+
+    // 10. a resolver fault returns a structured isError result AND leaves an
     //    observation — never a raw handler rejection that skips both (#300 review A).
     {
       const fix = fixture();

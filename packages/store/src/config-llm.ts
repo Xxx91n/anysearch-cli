@@ -5,21 +5,50 @@
 //   flag > env > project > user > default
 //   user    ~/.anysearch-cli/config.toml   [llm] section
 //   project .anysearch/config.toml         [llm] section, safety whitelist only
-// Secrets never land in files: files store an `env_key` indirection naming the
-// env var that holds the key; plaintext secret keys in either file are ignored
-// with a warning. Project files are further restricted to a non-security
-// whitelist so a malicious repo cannot redirect the endpoint or the secret
-// source (Codex project-key precedent).
+// Model config files never hold a secret VALUE: they store an `env_key`
+// indirection naming the env var that holds the key; plaintext secret keys in
+// either file are ignored with a warning. Project files are further restricted
+// to a non-security whitelist so a malicious repo cannot redirect the endpoint
+// or the secret source (Codex project-key precedent).
+// The key itself comes from, in order: ANS_LLM_API_KEY, the env var named by
+// `env_key`, then the user credential file (#301). The credential file is the
+// GUI-friendly path (a GUI host inherits no shell env) and its entries are
+// bound to a provider - and, for model providers, an endpoint - so a key
+// entered for one provider is never sent to another one.
 // The resolver reads env + files and passes values in; the kernel stays env-free
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import {
+  lookupModelCredential,
+  displayEndpoint,
+  modelEnvKeysFor,
+  normalizeBindingEndpoint,
+  providerForEnvKey,
+  readUserCredentials,
+  resolveConfigHome,
+  userCredentialsPath,
+} from "./credentials";
 
-export type LlmLayer = "cli" | "env" | "project" | "user";
+/** `credentials` = the user credential file (#301); every other layer is a config source. */
+export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
+
+/**
+ * How to name each layer in plain words, for any command that shows where a
+ * value came from. It lives next to `LlmLayer` because the labels ARE that
+ * type's vocabulary: `Record<LlmLayer, string>` means a new layer cannot ship
+ * without a label, and every caller looks up the label for the layer it got.
+ */
+export const KEY_SOURCE_LABELS: Record<LlmLayer, string> = {
+  cli: "command line",
+  env: "env",
+  project: "project file",
+  user: "env via [llm].env_key",
+  credentials: "stored file",
+};
 
 // Keys a project-level file may set under [llm]. Everything security-adjacent
 // (endpoint, wire protocol, secret source) is user-level only.
@@ -47,7 +76,7 @@ export interface ResolvedLlmConfig {
   model?: string;
   baseUrl?: string;
   api?: "chat" | "messages" | "responses";
-  /** Secret material resolved via env_key indirection or ANS_LLM_API_KEY; never from a file value. */
+  /** Secret material resolved via ANS_LLM_API_KEY, env_key indirection or the user credential file. */
   apiKey?: string;
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
@@ -58,12 +87,30 @@ export interface ResolvedLlmConfig {
 export interface ResolveLlmOpts {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
+  /**
+   * The config root. Omit it and the root is `resolveConfigHome(undefined, env)`:
+   * the same call the writers make, so a caller only gets a different file by
+   * passing a different `home` on purpose.
+   *
+   * An injected `env` is not isolation: if it names HOME/USERPROFILE the root
+   * follows it; if it names neither, `resolveConfigHome` lands on `homedir()`.
+   * A caller that needs a fixed root passes `home`. (The path helpers below take
+   * only a root, so they cannot follow a caller's `env` at all.)
+   */
   home?: string;
   flags?: LlmFlags;
   warn?: (msg: string) => void;
+  /**
+   * Turn OFF the user credential file (#301) for a caller that must only see
+   * env/config values (the acceptance lane's "no user store at all" case).
+   */
+  credentials?: boolean;
 }
 
-export function userConfigPath(home: string = homedir()): string {
+// Defaulting through `resolveConfigHome` (not `homedir()`) is what makes the
+// "one root" rule hold at the type level too: a caller that omits `home` writes
+// to the same file the resolver reads, on any host.
+export function userConfigPath(home: string = resolveConfigHome()): string {
   return join(home, ".anysearch-cli", "config.toml");
 }
 
@@ -142,7 +189,11 @@ function loadFile(
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  const home = opts.home ?? homedir();
+  // The config root comes from the SAME function every other reader and writer
+  // uses, applied to the same env. One rule, so the file this resolver reads and
+  // the file `ans auth set` writes are the same file by construction - including
+  // when the injected env names no home and both fall through to the platform's.
+  const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
@@ -203,36 +254,142 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     warn("[config] base_url set without api — custom endpoint will be ignored by commands that require the pair");
   }
 
-  // Secret resolution: env var wins; otherwise follow the user file's env_key
-  // indirection. env_key is user-level only (project whitelist drops it), so
-  // there is exactly one file layer to consult.
+  // Secret resolution, in order:
+  //   1. ANS_LLM_API_KEY            explicit override for this config
+  //   2. [llm].env_key              the user file names the env var to read
+  //   3. the provider's own env     OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY
+  //   4. the user credential file   #301, bound to provider + endpoint
+  //
+  // Step 3 exists because the credential file must never *shadow* an exported
+  // key. Without it, a stored key would be passed as the session's explicit
+  // apiKey and pi-ai would skip its own env fallback, so `OPENAI_API_KEY` would
+  // silently stop working for anyone who had also stored a key (spec S2:
+  // 明确环境凭据优先).
+  //
+  // Binding rule (spec S2, "using file credentials must check the matching
+  // provider/endpoint"). A secret that a FILE supplies is used only when the
+  // effective provider AND endpoint still match what that file declared for it:
+  //   - env_key: the binding is the provider the key was entered for. Two cases:
+  //     * the user file names a provider — that is the binding, and any other
+  //       layer (project file, env, CLI flag) selecting a different one blocks
+  //       the key. #120 did this for the project layer only; #301 extended it to
+  //       env/CLI, because the same key would otherwise reach the new provider
+  //       just as easily.
+  //     * the user file names NO provider but the env_key is a provider's
+  //       canonical variable name (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...) — the
+  //       NAME is the binding. Changing the provider from the env or a flag then
+  //       blocks it too. Leaving this open would keep a documented misroute: the
+  //       user file says "use ANTHROPIC_API_KEY" and an env change would send
+  //       that anthropic secret to google. (This is the boundary #301 was asked
+  //       to decide; the old behaviour is kept only for names that belong to no
+  //       known provider, e.g. MY_CUSTOM_KEY.)
+  //   - credentials.json: the entry stores its own provider + endpoint, and the
+  //     lookup matches both exactly.
+  //   - the provider's own env var is bound by its name alone: OPENAI_API_KEY
+  //     already means "the openai provider", which is the binding pi-ai applies
+  //     when we pass nothing.
+  // Blocked means apiKey and envKey both stay undefined - not just a warning.
   if (env.ANS_LLM_API_KEY) {
     resolved.apiKey = env.ANS_LLM_API_KEY;
     resolved.sources.apiKey = "env";
-  } else if (user.env_key) {
-    // Provider-binding guard (CodeRabbit #120): a user-declared provider that
-    // differs from the effective provider means env_key belongs to another
-    // provider — a project file must not be able to redirect that secret.
-    // An absent user.provider establishes no binding: env_key is accepted
-    // verbatim regardless of which layer picked the provider.
-    const mismatch =
-      resolved.sources.provider === "project" &&
-      user.provider !== undefined &&
-      user.provider !== resolved.provider;
-    if (mismatch) {
+  } else {
+    const userEndpoint = normalizeBindingEndpoint(user.base_url);
+    // An effective provider/endpoint that differs from what the user file bound
+    // the key to means the key belongs somewhere else. An absent effective
+    // provider has no target at all, so there is nothing to misroute.
+    const providerOwnedByEnvKey = user.env_key ? providerForEnvKey(user.env_key) : undefined;
+    const boundProvider = user.provider ?? providerOwnedByEnvKey;
+    const providerBoundElsewhere =
+      boundProvider !== undefined && resolved.provider !== undefined && boundProvider !== resolved.provider;
+    const endpointBoundElsewhere =
+      userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);
+
+    // A refused source must not come back through a later fallback: the env_key
+    // was blocked BECAUSE the effective provider (or endpoint) differs from what
+    // the file bound it to, and the provider's own env var is usually the very
+    // same variable. Without this guard the refusal would be decorative - the
+    // key would be refused here and re-read by the branch below.
+    //
+    // Every name the same provider's key can live under is refused, not just the
+    // one the file named: google's key is readable from both GOOGLE_API_KEY and
+    // GEMINI_API_KEY, so blocking one alias would let the same secret through
+    // the other.
+    const refusedSecretSources = new Set<string>();
+    const refuseEveryName = (envKey: string): void => {
+      refusedSecretSources.add(envKey);
+      const owner = providerForEnvKey(envKey);
+      if (owner) for (const name of modelEnvKeysFor(owner)) refusedSecretSources.add(name);
+    };
+
+    if (user.env_key && providerBoundElsewhere) {
+      refuseEveryName(user.env_key);
       warn(
-        "[config] [llm].env_key ignored: user file binds provider=" + user.provider +
-        " but project selected provider=" + resolved.provider +
+        "[config] [llm].env_key ignored: it is bound to provider=" + boundProvider +
+        (user.provider === undefined ? " (by the variable's own name)" : "") +
+        " but " + resolved.sources.provider + " selected provider=" + resolved.provider +
         " — refusing to send that secret to a different provider",
       );
-    } else {
-      resolved.envKey = user.env_key;
+    } else if (user.env_key && endpointBoundElsewhere) {
+      refuseEveryName(user.env_key);
+      warn(
+        "[config] [llm].env_key ignored: user file binds base_url=" + displayEndpoint(userEndpoint) +
+        " but " + resolved.sources.baseUrl + " selected a different endpoint" +
+        " — refusing to send that secret to a different endpoint",
+      );
+    } else if (user.env_key && !refusedSecretSources.has(user.env_key)) {
       const secret = env[user.env_key];
       if (secret) {
+        resolved.envKey = user.env_key;
         resolved.apiKey = secret;
         resolved.sources.apiKey = "user";
       } else {
+        // Not a dead end any more: the provider's own env var and the
+        // credential file are the next sources.
         warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
+      }
+    }
+
+    if (!resolved.apiKey && resolved.provider) {
+      // The env names belong to the provider, so a key found under any of them is
+      // provider-appropriate by construction — that is exactly the binding pi-ai
+      // would apply itself. `modelEnvKeysFor` includes pi-ai's own alternate
+      // names (google reads GEMINI_API_KEY), so this stays in step with what the
+      // client would have done on its own.
+      const providerSecret = modelEnvKeysFor(resolved.provider)
+        .filter((name) => !refusedSecretSources.has(name))
+        .map((name) => env[name]?.trim())
+        .find((value) => !!value);
+      if (providerSecret) {
+        resolved.apiKey = providerSecret;
+        resolved.sources.apiKey = "env";
+      }
+    }
+
+    if (!resolved.apiKey && opts.credentials !== false) {
+      const credsPath = userCredentialsPath(home);
+      const file = readUserCredentials({ filePath: credsPath });
+      if (file.error) {
+        // A broken credential file must be visible, never treated as "no keys"
+        // when it is the last remaining source.
+        warn("[config] " + file.error);
+      }
+      const lookup = lookupModelCredential(resolved.provider, resolved.baseUrl ?? null, file);
+      if (lookup.status === "found") {
+        resolved.apiKey = lookup.apiKey;
+        resolved.sources.apiKey = "credentials";
+      } else if (lookup.status === "endpoint-mismatch") {
+        // Name every stored endpoint. Reporting one (whichever the file sorted
+        // first) would send the user to fix the wrong binding.
+        const storedList = lookup.stored.length > 0
+          ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
+          : "(the provider default)";
+        warn(
+          "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
+          storedList + " but the effective endpoint is " +
+          displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl)) +
+          " — refusing to send that secret to a different endpoint; run `ans auth set " +
+          resolved.provider + "` for this endpoint (see `ans auth list` for what is stored)",
+        );
       }
     }
   }
@@ -280,7 +437,7 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },
-  home: string = homedir(),
+  home: string = resolveConfigHome(),
   warn: (msg: string) => void = (m) => process.stderr.write("[config] " + m + "\n"),
 ): string {
   const path = userConfigPath(home);
