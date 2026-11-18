@@ -23,7 +23,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
-import { lookupModelCredential, normalizeBindingEndpoint, readUserCredentials, userCredentialsPath } from "./credentials";
+import {
+  lookupModelCredential,
+  modelProviderEnvKeys,
+  normalizeBindingEndpoint,
+  readUserCredentials,
+  resolveConfigHome,
+  userCredentialsPath,
+} from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
@@ -58,12 +65,6 @@ export interface ResolvedLlmConfig {
   apiKey?: string;
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
-  /**
-   * The provider/endpoint binding the key is valid for. Always set when apiKey
-   * came from a bound source (the credential file, or an env_key whose user
-   * file also names a provider); undefined for an unbound env key.
-   */
-  apiKeyBinding?: { provider?: string; endpoint: string | null };
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
 }
@@ -160,10 +161,9 @@ function loadFile(
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  // home follows the same rule as the credential file (USERPROFILE on Windows,
-  // HOME elsewhere), so both always agree on which config root is in force. An
-  // exported-but-empty value falls through, matching this repo's convention.
-  const home = opts.home || env.USERPROFILE || env.HOME || homedir();
+  // home follows the same rule as the credential file (one shared resolver), so
+  // the model config and the key store always agree on the config root.
+  const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
@@ -224,8 +224,17 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     warn("[config] base_url set without api — custom endpoint will be ignored by commands that require the pair");
   }
 
-  // Secret resolution, in order: explicit env override, the user file's
-  // env_key indirection, then the user credential file (#301).
+  // Secret resolution, in order:
+  //   1. ANS_LLM_API_KEY            explicit override for this config
+  //   2. [llm].env_key              the user file names the env var to read
+  //   3. the provider's own env     OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY
+  //   4. the user credential file   #301, bound to provider + endpoint
+  //
+  // Step 3 exists because the credential file must never *shadow* an exported
+  // key. Without it, a stored key would be passed as the session's explicit
+  // apiKey and pi-ai would skip its own env fallback, so `OPENAI_API_KEY` would
+  // silently stop working for anyone who had also stored a key (spec S2:
+  // 明确环境凭据优先).
   //
   // Binding rule (spec S2, "using file credentials must check the matching
   // provider/endpoint"). A secret that a FILE supplies is used only when the
@@ -235,9 +244,13 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   //     file, env, CLI flag) that differs blocks the key instead of sending it
   //     to another provider's endpoint. #120 stopped at the project layer; #301
   //     extended it to env/CLI because the same key would otherwise reach the
-  //     new provider just as easily.
+  //     new provider just as easily. A file that names no provider establishes
+  //     no binding, so there is nothing to violate (same as #120).
   //   - credentials.json: the entry stores its own provider + endpoint, and the
   //     lookup matches both exactly.
+  //   - the provider's own env var is bound by its name alone: OPENAI_API_KEY
+  //     already means "the openai provider", which is the binding pi-ai applies
+  //     when we pass nothing.
   // Blocked means apiKey and envKey both stay undefined - not just a warning.
   if (env.ANS_LLM_API_KEY) {
     resolved.apiKey = env.ANS_LLM_API_KEY;
@@ -270,10 +283,21 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.envKey = user.env_key;
         resolved.apiKey = secret;
         resolved.sources.apiKey = "user";
-        resolved.apiKeyBinding = { provider: user.provider, endpoint: userEndpoint };
       } else {
-        // Not a dead end any more: the credential file is the next source.
+        // Not a dead end any more: the provider's own env var and the
+        // credential file are the next sources.
         warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
+      }
+    }
+
+    if (!resolved.apiKey && resolved.provider) {
+      // The env name belongs to the provider, so this key is provider-appropriate
+      // by construction — that is exactly the binding pi-ai would apply itself.
+      const providerEnvKey = modelProviderEnvKeys()[resolved.provider];
+      const providerSecret = providerEnvKey ? env[providerEnvKey]?.trim() : undefined;
+      if (providerEnvKey && providerSecret) {
+        resolved.apiKey = providerSecret;
+        resolved.sources.apiKey = "env";
       }
     }
 
@@ -289,10 +313,6 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       if (lookup.status === "found") {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
-        resolved.apiKeyBinding = {
-          provider: resolved.provider,
-          endpoint: normalizeBindingEndpoint(resolved.baseUrl),
-        };
       } else if (lookup.status === "endpoint-mismatch") {
         warn(
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to endpoint " +

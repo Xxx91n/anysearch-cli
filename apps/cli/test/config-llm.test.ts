@@ -357,7 +357,6 @@ test("a stored key for the current endpoint is used", () => {
   writeUserCredential({ provider: "openai", endpoint: "http://127.0.0.1:9/v1", apiKey: "sk-for-this-endpoint" }, { home: f.home });
   const cfg = resolveLlmConfig(f.opts({ env: {} }));
   assert.equal(cfg.apiKey, "sk-for-this-endpoint");
-  assert.deepEqual(cfg.apiKeyBinding, { provider: "openai", endpoint: "http://127.0.0.1:9/v1" });
 });
 
 test("an env-selected provider differing from the user file blocks env_key too", () => {
@@ -437,4 +436,32 @@ test("credentials:false ignores the file entirely", () => {
   writeUserCredential({ provider: "openai", apiKey: "sk-stored" }, { home: f.home });
   const cfg = resolveLlmConfig(f.opts({ env: {}, credentials: false }));
   assert.equal(cfg.apiKey, undefined);
+});
+
+test("the provider's own env var (OPENAI_API_KEY) still wins over the stored key", () => {
+  // Without this layer a stored key would be passed as the session's explicit
+  // apiKey, pi-ai would skip its own env fallback, and an exported
+  // OPENAI_API_KEY would silently stop working (spec S2: 明确环境凭据优先).
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-stored-loses" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: { OPENAI_API_KEY: "sk-env-wins" } }));
+  assert.equal(cfg.apiKey, "sk-env-wins");
+  assert.equal(cfg.sources.apiKey, "env");
+});
+
+test("a provider env var for a DIFFERENT provider is not used", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-stored-wins" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: { ANTHROPIC_API_KEY: "sk-ant-not-for-openai" } }));
+  assert.equal(cfg.apiKey, "sk-stored-wins");
+  assert.equal(cfg.sources.apiKey, "credentials");
+});
+
+test("an unset env_key does not stop the search for the provider's own env var", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({ env: { OPENAI_API_KEY: "sk-provider-env" } }));
+  assert.equal(cfg.apiKey, "sk-provider-env");
+  assert.equal(cfg.sources.apiKey, "env");
 });

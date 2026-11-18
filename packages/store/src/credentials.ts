@@ -66,15 +66,15 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
 
 /** Model providers only: the ids `ans llm` knows about, with their canonical env names. */
 export function modelProviderEnvKeys(): Record<string, string> {
-  return Object.fromEntries(
-    CREDENTIAL_PROVIDERS.filter((p) => p.kind === "model").map((p) => [p.id, p.envKey]),
-  );
+  return envKeysByKind("model");
 }
 
 /** Search providers only: the ids the retriever builds arms for. */
-export function searchProviderEnvKeys(): Record<string, string> {
+export const SEARCH_PROVIDER_ENV_KEYS: Record<string, string> = envKeysByKind("search");
+
+function envKeysByKind(kind: CredentialProviderInfo["kind"]): Record<string, string> {
   return Object.fromEntries(
-    CREDENTIAL_PROVIDERS.filter((p) => p.kind === "search").map((p) => [p.id, p.envKey]),
+    CREDENTIAL_PROVIDERS.filter((p) => p.kind === kind).map((p) => [p.id, p.envKey]),
   );
 }
 
@@ -100,6 +100,19 @@ export interface CredentialFileContents {
 
 export function userCredentialsPath(home: string = homedir()): string {
   return join(home, ".anysearch-cli", CREDENTIALS_FILENAME);
+}
+
+/**
+ * The user config root every credential/config reader must agree on: an
+ * explicit override, else USERPROFILE (Windows), else HOME, else the real home.
+ *
+ * One function because two readers that disagree would read different files -
+ * the resolver would look for the key the writer had just stored somewhere
+ * else. An exported-but-empty value falls through, matching this repo's
+ * convention for "set but blank means unset".
+ */
+export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
+  return explicit || env.USERPROFILE || env.HOME || homedir();
 }
 
 /**
@@ -169,41 +182,38 @@ export function resolveSearchCredentials(
   opts: { home?: string; filePath?: string } = {},
 ): ResolvedSearchCredentials {
   // The config root follows the same HOME/USERPROFILE convention the rest of the
-  // installation uses, so a test (or a GUI host with a redirected home) reads
-  // the file it actually wrote instead of the operator's real one. An exported
-  // but empty value falls through, like everywhere else in this repo.
-  const home = opts.home || env.USERPROFILE || env.HOME || homedir();
+  // installation uses (one shared resolver, so the reader and the writer can
+  // never disagree about which file is in force).
+  const home = resolveConfigHome(opts.home, env);
   const file = readUserCredentials({ ...opts, home });
   const warnings: string[] = [];
   if (file.error) warnings.push("[credentials] " + file.error + "; continuing without the user credential file");
   const out: ResolvedSearchCredentials = { warnings };
 
-  const findUser = (provider: string): string | undefined =>
-    file.bindings.find((b) => b.provider === provider)?.apiKey;
+  // One rule for all three arms: an explicit env value wins over the stored
+  // entry, and a missing key means the arm simply is not supplied (its SDK
+  // keeps whatever fallback it has).
+  const pick = (provider: "tavily" | "exa" | "anysearch"): { apiKey?: string; source: "env" | "user" } | undefined => {
+    const envKey = SEARCH_PROVIDER_ENV_KEYS[provider];
+    const fromEnv = envKey ? env[envKey]?.trim() : undefined;
+    if (fromEnv) return { apiKey: fromEnv, source: "env" };
+    const stored = file.bindings.find((b) => b.provider === provider)?.apiKey;
+    return stored ? { apiKey: stored, source: "user" } : undefined;
+  };
 
-  const tavilyEnv = env.TAVILY_API_KEY?.trim();
-  if (tavilyEnv) out.tavily = { apiKey: tavilyEnv, source: "env" };
-  else {
-    const stored = findUser("tavily");
-    if (stored) out.tavily = { apiKey: stored, source: "user" };
-  }
+  const tavily = pick("tavily");
+  if (tavily) out.tavily = tavily;
+  const exa = pick("exa");
+  if (exa) out.exa = exa;
 
-  const exaEnv = env.EXA_API_KEY?.trim();
-  if (exaEnv) out.exa = { apiKey: exaEnv, source: "env" };
-  else {
-    const stored = findUser("exa");
-    if (stored) out.exa = { apiKey: stored, source: "user" };
-  }
-
-  const ansEnv = env.ANYSEARCH_API_KEY?.trim();
+  // The anysearch arm also takes an endpoint. It is an env-only input (the
+  // adapter's default endpoint is baked in), and it is meaningful even with no
+  // key at all - that is how the offline acceptance lane points the arm at a
+  // dead port.
   const ansEndpoint = env.ANYSEARCH_ENDPOINT?.trim() || undefined;
-  if (ansEnv) out.anysearch = { apiKey: ansEnv, endpoint: ansEndpoint, source: "env" };
-  else {
-    const stored = findUser("anysearch");
-    // The adapter keeps its own default endpoint; only pass what the file names.
-    if (stored) out.anysearch = { apiKey: stored, endpoint: ansEndpoint, source: "user" };
-    else if (ansEndpoint) out.anysearch = { endpoint: ansEndpoint, source: "env" };
-  }
+  const anysearch = pick("anysearch");
+  if (anysearch) out.anysearch = { ...anysearch, endpoint: ansEndpoint };
+  else if (ansEndpoint) out.anysearch = { endpoint: ansEndpoint, source: "env" };
 
   return out;
 }
@@ -238,14 +248,19 @@ export function lookupModelCredential(
 // ---------------------------------------------------------------------------
 
 /**
- * Test seam: lets a unit test drive the platform gate, the protection step and
- * the icacls invocation without touching the real ACL of a real file (or the
- * privileges of the account running the test). Production leaves it unset.
+ * Test seam for two failure modes that cannot be produced deterministically on
+ * every host, and whose branches must still be covered:
+ *
+ * - `run`: a Windows host where the ACL tools are unusable (icacls missing, the
+ *   filesystem has no ACL support, the account lacks the right). The write has
+ *   to fail closed rather than publish a readable file.
+ * - `verify`: another process widening the file between publish and the final
+ *   check - a real race (someone chmods the file) with no deterministic trigger.
+ *
+ * Production leaves both unset and every write goes through the real tools.
  */
 export const credentialProtectionSeam: {
-  platform?: NodeJS.Platform;
   run?: (file: string, args: string[]) => string;
-  protect?: (path: string, platform: NodeJS.Platform) => void;
   verify?: (path: string, platform: NodeJS.Platform) => void;
 } = {};
 
@@ -261,7 +276,7 @@ function runTool(file: string, args: string[]): string {
 }
 
 function activePlatform(): NodeJS.Platform {
-  return credentialProtectionSeam.platform ?? process.platform;
+  return process.platform;
 }
 
 let cachedSid: string | undefined;
@@ -287,10 +302,6 @@ function allowedWindowsTrustees(sid: string): Set<string> {
 
 /** Lock the file to the current account. Windows: replace the DACL; POSIX: 0600. */
 function applyProtection(path: string, platform: NodeJS.Platform): void {
-  if (credentialProtectionSeam.protect) {
-    credentialProtectionSeam.protect(path, platform);
-    return;
-  }
   if (platform === "win32") {
     const sid = currentUserSid();
     runTool(system32Tool("icacls.exe"), [path, "/inheritance:r", "/grant:r", "*" + sid + ":(F)"]);
@@ -394,14 +405,14 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
  */
 function writeProtectedFile(path: string, content: string, platform: NodeJS.Platform): void {
   const dir = dirname(path);
-  const dirExisted = existsSync(dir);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  if (!dirExisted && platform !== "win32") {
-    try { chmodSync(dir, 0o700); } catch { /* the file check below is the real gate */ }
-  }
   const tmp = join(dir, ".credentials." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   let published = false;
   try {
+    const dirExisted = existsSync(dir);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (!dirExisted && platform !== "win32") {
+      try { chmodSync(dir, 0o700); } catch { /* the file check below is the real gate */ }
+    }
     writeFileSync(tmp, "", { encoding: "utf8", flag: "wx", mode: 0o600 });
     applyProtection(tmp, platform);
     verifyFileProtection(tmp, platform);
@@ -417,6 +428,9 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
       // another account can read. Recovering needs a new `ans auth set`.
       try { unlinkSync(path); } catch { /* best effort */ }
     }
+    // Every failure in this write - an unusable directory, a refused ACL tool, a
+    // failed verification - leaves by this one door, worded the same way. A raw
+    // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
     throw new Error(
       "refusing to write the credential file " + path + ": " + reason +
@@ -507,10 +521,3 @@ export function removeUserCredential(
   return true;
 }
 
-/** Delete the whole credential file. Returns false when it did not exist. */
-export function clearUserCredentials(opts: { home?: string; filePath?: string } = {}): boolean {
-  const path = opts.filePath ?? userCredentialsPath(opts.home);
-  if (!existsSync(path)) return false;
-  unlinkSync(path);
-  return true;
-}

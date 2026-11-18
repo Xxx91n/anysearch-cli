@@ -1203,8 +1203,8 @@ async function main() {
       // 列表和 doctor 都只说有没有、从哪来，不说值。
       const listed = runAns(["auth", "list"], { cwd: prefix, env: baseEnv });
       check(listed.code === 0, "ans auth list 正常退出", listed.out);
-      check(!listed.out.includes(credKey), "ans auth list 不打印密钥值", listed.out);
-      check(listed.out.includes(credKey.slice(-4)), "ans auth list 给出末四位便于分辨", listed.out);
+      check(!listed.out.includes(credKey) && !listed.out.includes(credKey.slice(-4)),
+        "ans auth list 不打印密钥值，连末几位也不打", listed.out);
       check(/\bopenai\b/.test(listed.out) && listed.out.includes(credEndpoint),
         "ans auth list 报出绑定到哪个 provider 和哪个端点", listed.out);
 

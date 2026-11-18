@@ -9,9 +9,12 @@
 //      resolver and handed to the real pi-ai session, which issues a real HTTP
 //      request to a local fake endpoint. The endpoint records the
 //      Authorization header, so "the key arrived" is observed on the wire.
-//   2. Search: the composition root builds the real Tavily/Exa/AnySearch arms
-//      with keys from the stored file (also with no environment), and a local
-//      fake search endpoint records the credential it receives.
+//   2. Search: the composition root builds the real anysearch arm from the
+//      stored file (again with no environment) and the test drives a real search
+//      through the engine against a local MCP endpoint, asserting the
+//      Authorization header on every request. The anysearch arm is the one whose
+//      endpoint is configurable (ANYSEARCH_ENDPOINT), so it is the arm that can
+//      prove the key reaches the wire rather than only the constructor.
 //
 // A fifth case proves a key bound to another endpoint is NOT sent.
 
@@ -28,7 +31,6 @@ import { createEngine } from "../src/composition";
 import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
-const STORED_EXA_KEY = "exa-stored-key-0123456789";
 const STORED_ANYS_KEY = "as-stored-key-0123456789";
 
 function tempHome(): { home: string; cleanup: () => void } {
@@ -167,25 +169,54 @@ test("a stored key bound to another endpoint is never sent", async () => {
   }
 });
 
-test("stored SEARCH keys reach the real provider arms built by createEngine", () => {
+test("stored SEARCH keys reach the real provider arms built by createEngine", async () => {
   const { home, cleanup } = tempHome();
   const scrub = scrubEnv();
   try {
-    writeUserCredential({ provider: "exa", apiKey: STORED_EXA_KEY }, { home });
     writeUserCredential({ provider: "anysearch", apiKey: STORED_ANYS_KEY }, { home });
 
-    // Point the resolution at the temp home by handing it the env the CLI/MCP
-    // wiring actually uses, so this exercises the same seam production uses.
-    const env: NodeJS.ProcessEnv = { ...scrub.env, USERPROFILE: home, HOME: home };
+    // A real local MCP endpoint. The anysearch arm is the one search client
+    // whose endpoint can be pointed at a test server (ANYSEARCH_ENDPOINT), so it
+    // is the arm that can prove the stored key reaches the WIRE — not merely the
+    // constructor. Requests are recorded, then answered with a minimal
+    // handshake + tools/call so the arm completes normally.
+    const seenAuth: (string | undefined)[] = [];
+    const server = createServer(async (req, res) => {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      seenAuth.push(req.headers["authorization"] as string | undefined);
+      let parsed: { id?: number; method?: string } = {};
+      try { parsed = JSON.parse(body); } catch { /* notification framing */ }
+      const reply = (result: unknown) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result }));
+      };
+      if (parsed.method === "initialize") {
+        return reply({ protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "stub", version: "1" } });
+      }
+      if (parsed.method === "notifications/initialized") {
+        res.writeHead(202);
+        return res.end();
+      }
+      if (parsed.method === "tools/call") {
+        return reply({ content: [{ type: "text", text: "## Search Results (0 results, 1ms)\n" }] });
+      }
+      return reply({});
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+
+    const env: NodeJS.ProcessEnv = {
+      ...scrub.env,
+      USERPROFILE: home,
+      HOME: home,
+      ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/mcp",
+    };
     const resolved = resolveSearchCredentials(env);
-    assert.equal(resolved.exa?.apiKey, STORED_EXA_KEY);
-    assert.equal(resolved.exa?.source, "user");
     assert.equal(resolved.anysearch?.apiKey, STORED_ANYS_KEY);
     assert.equal(resolved.anysearch?.source, "user");
-    assert.equal(resolved.tavily, undefined, "no tavily key anywhere - that arm stays keyless");
+    assert.equal(resolved.exa, undefined, "no exa key anywhere - that arm stays keyless");
 
-    // The composition root builds all three arms; with no env key the exa arm
-    // only succeeds because the stored credential was passed in.
     const engine = createEngine(undefined, {
       dbPath: ":memory:",
       domainsDirs: [],
@@ -193,14 +224,25 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", ()
       searchCredentials: (e) => resolveSearchCredentials(e),
     });
     try {
-      assert.equal(engine.credentialSources?.exa, "user", "the engine reports where the exa key came from");
-      assert.equal(engine.credentialSources?.anysearch, "user");
-      assert.equal(engine.providerBuildErrors.exa, undefined,
-        "exa built from the stored key (its SDK throws when it has no key at all)");
-      assert.deepEqual(engine.credentialWarnings, []);
+      assert.equal(engine.credentialSources?.anysearch, "user", "the engine reports where the anysearch key came from");
+      assert.equal(engine.providerBuildErrors.anysearch, undefined, "the anysearch arm built from the stored key");
+
+      // Drive the real arm through the engine: this is the search client the
+      // product assembles, and the assertion below reads the wire.
+      const envelope = await (engine.retriever as {
+        search: (q: { query: string; mode: string }) => Promise<unknown>;
+      }).search({ query: "credential wiring probe", mode: "fast" });
+      assert.ok(envelope, "the engine returned an envelope from the real arm");
+
+      assert.ok(seenAuth.length >= 3, "the arm made a real handshake plus a tool call (" + seenAuth.length + " requests)");
+      assert.ok(
+        seenAuth.every((h) => h === "Bearer " + STORED_ANYS_KEY),
+        "every request carried the STORED key on the wire: " + JSON.stringify(seenAuth),
+      );
     } finally {
       (engine.store as { close?: () => void }).close?.();
       engine.observation.close();
+      await new Promise<void>((r) => server.close(() => r()));
     }
   } finally {
     scrub.restore();

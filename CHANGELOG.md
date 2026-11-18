@@ -6,14 +6,14 @@
 
 - **用户凭据文件**（`~/.anysearch-cli/credentials.json`）：一次录入，本机同一账户的所有入口共用。文件里自带一句说明，写明它是明文、不是加密、也不是系统钥匙串。每条绑定到具体的 provider；模型用的 key 还绑定到录入时的端点，换了 provider 或端点就不发出去，要重新录。格式坏掉的文件不会被改写（那会丢别的 key），而是明确报错让人修或删。
 - **`ans auth set <provider> [--endpoint <url>]`**：密钥从 stdin 读，终端里输入不回声，脚本里可以从管道喂进去。它永远不出现在命令行参数里，所以也不会出现在进程列表里。
-- **`ans auth list` / `ans auth remove <provider>`**：列表只报「存了没有、绑到哪个 provider 和端点」，外加末四位用来分辨两把 key；移除一条，或最后一条删完连文件一起删掉。
+- **`ans auth list` / `ans auth remove <provider>`**：列表只报「存了没有、绑到哪个 provider 和端点」，一个密钥字符都不打印；移除一条，或最后一条删完连文件一起删掉。
 - **访问保护按平台各自的口径建立并核对**：POSIX 看 600；Windows 拿 `icacls /save` 导出的 DACL 解析着查——必须是受保护的、没有继承项、除了本账户（和管理员/SYSTEM）以外没有别的受托人。POSIX mode 不用来冒充 Windows 的 ACL 保证。保护建不起来或核对不过就明确失败，并且不会把明文留在盘上（发布后又核对失败时会把文件删掉）。
-- **`ans doctor`** 报出凭据文件的位置、里面有几条、以及每个搜索源当前用的是环境变量还是这个文件；文件坏掉记 FAIL 而不是当成「没有 key」。
+- **`ans doctor`** 报出凭据文件的位置、里面有几条、以及每个信息源当前用的是环境变量还是这个文件；文件坏掉记 FAIL 而不是当成「没有 key」。
 - **安装后验收新增 G 车道**：装出来的 `ans auth set` 录一次，然后在清空 `ANS_LLM_API_KEY` / `OPENAI_API_KEY` 的情况下，CLI 和 MCP 各跑一轮真实对话，断言上游收到的 `Authorization` 头就是录进去那把；再把环境值设成另一个值，断言它压过文件；同时查文件明文说明、平台访问保护、列表与 doctor 都不打印密钥值。
 
 ### Changed
 
-- **密钥来源顺序**：`ANS_LLM_API_KEY` > 用户配置里的 `env_key` 间接引用 > 用户凭据文件。前两者语义不变；`env_key` 指向的变量没设时，现在会继续往凭据文件找，不再直接放弃。
+- **密钥来源顺序**：`ANS_LLM_API_KEY` > 用户配置里的 `env_key` 间接引用 > 该 provider 自己的环境变量（`OPENAI_API_KEY` 等）> 用户凭据文件。前两者语义不变；`env_key` 指向的变量没设时，现在会继续往下找，不再直接放弃。第三层是必须的：没有它，存过 key 的人导出的 `OPENAI_API_KEY` 会被悄悄忽略（解析出来的 key 会当成显式值传下去，pi-ai 就不再回退自己的环境变量）。
 - **provider 绑定检查从「只有项目文件选 provider 时」扩到所有层**：原来只在 project 层改 provider 时拦截，把 provider 从 `ANS_LLM_PROVIDER` 或 `--llm.provider` 改掉则不拦，同一个 key 照样会发给另一家。现在 provider 由任何一层选定、只要和用户文件里声明的不同就拦。用户文件里声明了 `base_url` 的 `env_key` 同样按端点绑定，别的层把端点挪走也会拦。拦截就是不给 key（`apiKey`/`envKey` 都是空），不只是打一行警告。
 - **搜索臂的密钥在装配处解析并传进去**：`createEngine` 接受一个 `searchCredentials` 解析函数，CLI 和 MCP 都传同一份（环境优先，其次凭据文件）。Tavily/Exa/AnySearch 三个客户端因此能收到存起来的 key，而不是只能靠各 SDK 自己读环境变量。`CompositionResult` 多了 `credentialSources`（每个臂的 key 从哪来）和 `credentialWarnings`（解析时的说明，不含密钥值）。
 - **`ans llm`** 的 Sources 行会显示 `apiKey=credentials`；`ans llm check` 区分「环境给的 / env_key 间接引用 / 凭据文件」；`ans llm set` 的提示改成指向 `ans auth set`。
@@ -22,7 +22,7 @@
 
 - **Windows 的 ACL 路径只在本机（Windows 10/11，英文系统）实测过**：`icacls /save` 导出的 SDDL、`whoami /user` 的 CSV 解析、以及拒绝对继承项的判定都按实测格式写。非英文 locale 下 `icacls` 的措辞可能不同，但解析走的是 SDDL（语言无关），只有报错文本会变。远程 CI 的 windows-latest 会再验一遍。
 - **不新增系统钥匙串，不读别的软件的登录文件**：这次就是一份明文文件，规格 S2 明确要求这样，并明确不做 OAuth/系统钥匙串。
-- **搜索端点的绑定只覆盖模型 key**：Tavily/Exa 的端点由各自 SDK 固定，anysearch 走 `ANYSEARCH_ENDPOINT` 环境变量。给搜索 key 加端点绑定会引入一个规格没要求的产品选择，所以 `--endpoint` 对搜索源直接拒绝并说明。
+- **搜索端点的绑定只覆盖模型 key**：Tavily/Exa 的端点由各自 SDK 固定，anysearch 走 `ANYSEARCH_ENDPOINT` 环境变量。给搜索 key 加端点绑定会引入一个规格没要求的产品选择，所以 `--endpoint` 对搜索类信息源直接拒绝并说明。
 - **旧的 `~/.anysearch-cli/config.toml` 里的 `env_key` 仍然有效**：两种方式并存，没有迁移动作，也不需要用户改已有配置。
 
 ## Unreleased — #310: 旧库先备份再迁移，失败不丢数据

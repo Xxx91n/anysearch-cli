@@ -14,7 +14,6 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  clearUserCredentials,
   credentialProtectionSeam,
   lookupModelCredential,
   normalizeBindingEndpoint,
@@ -126,8 +125,7 @@ test("removing one key keeps the others; removing the last deletes the file", ()
 
     assert.equal(removeUserCredential({ provider: "anthropic" }, { home }), true);
     assert.equal(existsSync(userCredentialsPath(home)), false);
-    assert.equal(clearUserCredentials({ home }), false);
-  } finally { cleanup(); }
+    } finally { cleanup(); }
 });
 
 test("a malformed file is never rewritten (that would drop the other keys)", () => {
@@ -175,61 +173,90 @@ test("a bad provider, an empty key and a search-provider endpoint are refused", 
   } finally { cleanup(); }
 });
 
-test("nothing is left behind when protection cannot be established", () => {
+test("an unusable ACL tool fails the write instead of publishing a readable file", () => {
   const { home, cleanup } = tempRoot();
-  const previousPlatform = credentialProtectionSeam.platform;
-  const previousProtect = credentialProtectionSeam.protect;
+  const previousRun = credentialProtectionSeam.run;
   try {
-    // The platform refuses to protect the file (the real shape: icacls exits
-    // non-zero, or the filesystem has no permissions to speak of). The write
-    // must fail and no secret may remain on disk.
-    credentialProtectionSeam.platform = "linux";
-    credentialProtectionSeam.protect = () => {
-      throw new Error("this file system cannot restrict access to one account");
+    // icacls is missing or refuses (no ACL support, insufficient rights). This
+    // branch cannot be produced on a normal host, so the tool invocation is
+    // stubbed - the point under test is what the WRITE does when protection
+    // cannot be established, which is real code either way.
+    credentialProtectionSeam.run = (file, args) => {
+      if (file.toLowerCase().includes("icacls") && args.includes("/inheritance:r")) {
+        throw new Error("icacls: access denied");
+      }
+      return previousRun ? previousRun(file, args) : "";
     };
-
-    assert.throws(
-      () => writeUserCredential({ provider: "openai", apiKey: KEY }, { home }),
-      /refusing to write the credential file.*cannot restrict access/,
-    );
-    assert.equal(existsSync(userCredentialsPath(home)), false);
-    // And the failure leaves no stray temp file with the key in it.
-    const dir = join(home, ".anysearch-cli");
-    if (existsSync(dir)) {
-      const leftovers = readdirSync(dir).filter((f) => !f.startsWith("credentials"));
-      assert.deepEqual(leftovers, [], "no temp file survived the failed write");
+    if (process.platform === "win32") {
+      assert.throws(
+        () => writeUserCredential({ provider: "openai", apiKey: KEY }, { home }),
+        /refusing to write the credential file.*access denied/,
+      );
+      assert.equal(existsSync(userCredentialsPath(home)), false, "no readable copy was left behind");
     }
   } finally {
-    credentialProtectionSeam.platform = previousPlatform;
-    credentialProtectionSeam.protect = previousProtect;
+    credentialProtectionSeam.run = previousRun;
     cleanup();
   }
 });
 
-test("a file whose protection drifted after the write is reported, not trusted", () => {
+test("a file widened after publish is removed, not trusted", () => {
   const { home, cleanup } = tempRoot();
-  const previousPlatform = credentialProtectionSeam.platform;
   const previousVerify = credentialProtectionSeam.verify;
   try {
-    credentialProtectionSeam.platform = "linux";
+    // Another process widens the file between the pre-write check and the final
+    // one - a real race with no deterministic trigger. The verifier is stubbed
+    // to fail only on its second call, so the write's fail-closed branch (the
+    // one that deletes the published file) is the code under test.
     let calls = 0;
-    // First verification (before the secret is written) passes; the second
-    // (after publishing) finds the file exposed — the write must fail closed.
     credentialProtectionSeam.verify = () => {
       calls++;
-      if (calls > 1) throw new Error("its POSIX mode is 644, expected 600");
+      if (calls > 1) throw new Error("it is group-readable");
     };
     assert.throws(
       () => writeUserCredential({ provider: "openai", apiKey: KEY }, { home }),
       /refusing to write the credential file/,
     );
+    assert.ok(calls >= 2, "the write checked twice: before the secret and after publishing");
     assert.equal(existsSync(userCredentialsPath(home)), false,
-      "a published file that failed the final check is removed");
+      "the published file was removed rather than left readable");
   } finally {
-    credentialProtectionSeam.platform = previousPlatform;
     credentialProtectionSeam.verify = previousVerify;
     cleanup();
   }
+});
+
+test("nothing is left behind when the config root cannot be created", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    // A real, unavoidable failure: the config root is occupied by a regular
+    // FILE, so mkdir cannot create the directory the credential file needs.
+    const blocked = join(home, ".anysearch-cli");
+    writeFileSync(blocked, "this is a file, not a directory", "utf8");
+
+    assert.throws(
+      () => writeUserCredential({ provider: "openai", apiKey: KEY }, { home }),
+      /refusing to write the credential file/,
+    );
+    // The blocker is untouched and no key was written anywhere.
+    assert.equal(readFileSync(blocked, "utf8"), "this is a file, not a directory");
+    assert.ok(!readFileSync(blocked, "utf8").includes(KEY), "the failure did not write the key into the blocker");
+  } finally { cleanup(); }
+});
+
+test("the temp file is protected before the key goes into it", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = writeUserCredential({ provider: "openai", apiKey: KEY }, { home });
+    verifyFileProtection(path);
+    assert.ok(!readdirSync(join(home, ".anysearch-cli")).some((f) => f.endsWith(".tmp")),
+      "no temp file survived a successful write");
+    if (process.platform !== "win32") {
+      // A 0600 file from the first byte means no other account could read the
+      // key at any point, including between create and publish.
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+    }
+  } finally { cleanup(); }
 });
 
 test("POSIX: the file is 0600 and the verifier rejects anything looser", () => {

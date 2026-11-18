@@ -17,6 +17,7 @@ import {
   normalizeBindingEndpoint,
   readUserCredentials,
   removeUserCredential,
+  resolveConfigHome,
   resolveLlmConfig,
   resolveSearchCredentials,
   userCredentialsPath,
@@ -31,10 +32,9 @@ import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } fro
  */
 export const AUTH_IO: { input?: SecretInputIO["input"] } = {};
 
-/** Show at most the last four characters, and only when the key is long enough to make that safe. */
-function maskTail(key: string): string {
-  if (key.length <= 12) return "…";
-  return "…" + key.slice(-4);
+/** Show whether an entry exists, bound where — and it must never show the value. */
+function describeBinding(binding: { provider: string; endpoint: string | null }): string {
+  return binding.provider + "  " + (binding.endpoint ?? "(provider default endpoint)");
 }
 
 function usage(): number {
@@ -74,7 +74,9 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
 function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
   const search = resolveSearchCredentials(env);
   const llm = resolveLlmConfig({ env });
-  const stored = readUserCredentials({ home: env.USERPROFILE ?? env.HOME });
+  // Same config root the resolver uses, so the report describes the file that is
+  // actually in force (and a test's temp home is honoured).
+  const stored = readUserCredentials({ home: resolveConfigHome(undefined, env) });
   const lines: string[] = [];
 
   for (const info of CREDENTIAL_PROVIDERS) {
@@ -82,9 +84,12 @@ function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
     const binding = stored.bindings.find((b) => b.provider === info.id);
     let where: string;
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
-      // The effective model key is not always this provider's env var: an
-      // env_key indirection or a stored entry can supply it.
-      where = llm.sources.apiKey === "env" ? "env " + info.envKey
+      // Report where the EFFECTIVE model key came from. `env` covers two
+      // different variables, so name the one that is actually set: a
+      // cross-config override (ANS_LLM_API_KEY) is a different fact from "this
+      // provider's own variable is exported".
+      where = llm.sources.apiKey === "env"
+        ? (env.ANS_LLM_API_KEY?.trim() ? "env ANS_LLM_API_KEY" : "env " + info.envKey)
         : llm.sources.apiKey === "credentials" ? "stored file"
           : llm.sources.apiKey === "user" ? "env via [llm].env_key"
             : "set";
@@ -102,6 +107,13 @@ function statusLines(env: NodeJS.ProcessEnv = process.env): string[] {
   return lines;
 }
 
+/** One shared rejection so `set` and `remove` cannot drift apart. */
+function rejectUnknownProvider(provider: string): number {
+  process.stderr.write("Unknown provider: " + provider + "\n");
+  process.stderr.write("Available: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
+  return 2;
+}
+
 export async function runAuth(args: string[]): Promise<number> {
   const sub = args[0];
 
@@ -117,8 +129,7 @@ export async function runAuth(args: string[]): Promise<number> {
       console.log("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
       if (file.bindings.length > 0) {
         for (const binding of file.bindings) {
-          console.log("  " + binding.provider + "  " + maskTail(binding.apiKey) +
-            "  " + (binding.endpoint ?? "(provider default endpoint)"));
+          console.log("  " + describeBinding(binding));
         }
       } else if (!file.error) {
         console.log("  (no stored keys)");
@@ -141,11 +152,7 @@ export async function runAuth(args: string[]): Promise<number> {
     const provider = rest[0];
     if (!provider) return usage();
     const info = credentialProvider(provider);
-    if (!info) {
-      process.stderr.write("Unknown provider: " + provider + "\n");
-      process.stderr.write("Available: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
-      return 2;
-    }
+    if (!info) return rejectUnknownProvider(provider);
     if (endpoint !== null && info.kind !== "model") {
       process.stderr.write(
         provider + " is a search provider; --endpoint only applies to model providers " +
@@ -203,11 +210,7 @@ export async function runAuth(args: string[]): Promise<number> {
     }
     const provider = rest[0];
     if (!provider) return usage();
-    if (!credentialProvider(provider)) {
-      process.stderr.write("Unknown provider: " + provider + "\n");
-      process.stderr.write("Available: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
-      return 2;
-    }
+    if (!credentialProvider(provider)) return rejectUnknownProvider(provider);
     try {
       const removed = removeUserCredential({ provider, endpoint });
       if (!removed) {
@@ -229,4 +232,4 @@ export async function runAuth(args: string[]): Promise<number> {
 }
 
 // Exported for the tests: they assert the display never reveals a key.
-export const AUTH_INTERNALS = { maskTail, statusLines };
+export const AUTH_INTERNALS = { statusLines };

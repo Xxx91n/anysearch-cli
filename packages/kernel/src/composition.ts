@@ -134,9 +134,6 @@ export interface CompositionResult {
   // file), so a degraded arm can say "no key" instead of only "construction
   // failed". Never carries a secret value.
   credentialSources?: { tavily?: string; exa?: string; anysearch?: string };
-  // #301: notes from credential resolution (a broken credential file, an entry
-  // skipped for a mismatched binding). Worded for humans, never secret-bearing.
-  credentialWarnings?: string[];
 }
 
 // createEngine: build configured engine.
@@ -209,17 +206,17 @@ export function createEngine(
   const providerBuildErrors: Record<string, string> = {};
 
   // #301: resolve every search key ONCE for this engine, so all arms see the
-  // same answer and a degradation can be explained per arm.
+  // same answer and a degradation can be explained per arm. A warning about the
+  // credential file goes straight to stderr (MCP keeps stdout protocol-pure)
+  // and never carries a key value.
   let creds: CredentialSource;
-  const credentialWarnings: string[] = [];
   if (opts?.searchCredentials) {
     creds = opts.searchCredentials(env);
-    credentialWarnings.push(...(creds?.warnings ?? []));
+    for (const warning of creds?.warnings ?? []) {
+      writeProviderDiagnostic("[anysearch] " + warning.replace(/^\[credentials\]\s*/, "") + "\n");
+    }
   } else {
     creds = undefined;
-  }
-  for (const warning of credentialWarnings) {
-    writeProviderDiagnostic("[anysearch] " + warning.replace(/^\[credentials\]\s*/, "") + "\n");
   }
   const credentialSources: NonNullable<CompositionResult["credentialSources"]> = {};
   if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
@@ -340,6 +337,5 @@ export function createEngine(
     domainsDirs,
     ledger,
     credentialSources,
-    credentialWarnings,
   };
 }

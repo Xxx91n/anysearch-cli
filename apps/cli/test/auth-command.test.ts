@@ -79,7 +79,7 @@ test("ans auth set stores the piped key and prints no part of it", async () => {
   }
 });
 
-test("ans auth list shows the binding and only the last four characters", async () => {
+test("ans auth list shows the binding and nothing of the key", async () => {
   const { home, cleanup } = tempHome();
   const saved = process.env.HOME;
   const savedProfile = process.env.USERPROFILE;
@@ -89,9 +89,12 @@ test("ans auth list shows the binding and only the last four characters", async 
     await capture(() => runAuth(["set", "anthropic"]), KEY + "\n");
     const { code, out } = await capture(() => runAuth(["list"]));
     assert.equal(code, 0, out);
+    // Spec S2: a secret must not appear in terminal output — not even a suffix
+    // of it, which is still part of the secret.
     assert.ok(!out.includes(KEY), "list never prints the whole key");
-    assert.ok(out.includes(KEY.slice(-4)), "the tail helps tell two keys apart");
-    assert.match(out, /provider default endpoint/);
+    assert.ok(!out.includes(KEY.slice(-4)), "list does not print a suffix of the key either");
+    assert.match(out, /anthropic/);
+    assert.match(out, /provider default endpoint/, "the binding is what the user needs to see");
   } finally {
     if (saved === undefined) delete process.env.HOME; else process.env.HOME = saved;
     if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
@@ -220,10 +223,31 @@ test("status names the effective source per provider without printing values", a
   }
 });
 
-test("maskTail never reveals a short key", () => {
-  assert.equal(AUTH_INTERNALS.maskTail("short"), "…");
-  assert.equal(AUTH_INTERNALS.maskTail("0123456789ab"), "…");
-  const masked = AUTH_INTERNALS.maskTail(KEY);
-  assert.ok(masked.endsWith(KEY.slice(-4)));
-  assert.ok(!masked.includes(KEY.slice(0, 8)));
+// The `statusLines` helper is the one piece of `runAuth` a test needs directly:
+// it is what decides "where does this provider's key come from", and the point
+// of that report is that it stays true for every source.
+test("statusLines names the source for each provider and shows no key", () => {
+  const lines = AUTH_INTERNALS.statusLines({
+    EXA_API_KEY: "exa-from-env",
+    ANS_LLM_API_KEY: "sk-override",
+    ANS_LLM_PROVIDER: "openai",
+    ANS_LLM_MODEL: "gpt-5",
+  });
+  const joined = lines.join("\n");
+  assert.match(joined, /\[SET\]\s+exa\s+env EXA_API_KEY/);
+  // The effective model key came from ANS_LLM_API_KEY, not from OPENAI_API_KEY,
+  // and the report must not claim the wrong variable.
+  assert.match(joined, /\[SET\]\s+openai\s+env ANS_LLM_API_KEY/);
+  assert.match(joined, /\[EMPTY\]\s+anthropic/);
+  assert.ok(!joined.includes("exa-from-env") && !joined.includes("sk-override"),
+    "the status lines never carry a key value");
+});
+
+test("statusLines distinguishes the provider's own env var from the override", () => {
+  const lines = AUTH_INTERNALS.statusLines({
+    OPENAI_API_KEY: "sk-provider-own",
+    ANS_LLM_PROVIDER: "openai",
+    ANS_LLM_MODEL: "gpt-5",
+  });
+  assert.match(lines.join("\n"), /\[SET\]\s+openai\s+env OPENAI_API_KEY/);
 });
