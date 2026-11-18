@@ -299,21 +299,30 @@ export function reserveTaskModelCall(
     catch (settleError) { reportBudgetFault("model call settlement", settleError); }
     throw error;
   }
-  return (usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) => {
-    // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
-    const reportedTokens = usage?.totalTokens;
-    const hasUsableTokens = typeof reportedTokens === "number" && Number.isFinite(reportedTokens) && reportedTokens > 0;
-    const tokens = hasUsableTokens ? reportedTokens : estimate;
-    if (started && !hasUsableTokens) {
-      try { process.stderr.write("[anysearch] 任务预算：模型未报告 token 用量，按预留的 " + estimate + " token 结算。\n"); }
-      catch { /* stderr unavailable */ }
-    }
-    const cost = usage?.cost?.total ?? 0;
-    try { ledger.settleCalls(taskId, 1, Number(started)); }
-    catch (error) { reportBudgetFault("model call settlement", error); }
-    try { ledger.settleTokens(taskId, estimate, started ? tokens : 0); }
-    catch (error) { reportBudgetFault("model token settlement", error); }
-    try { if (started && cost > 0) ledger.settleUsd(taskId, 0, cost); }
-    catch (error) { reportBudgetFault("model cost settlement", error); }
+  let reservedTokens = estimate;
+  return {
+    coverTokens(required: number) {
+      const additional = required - reservedTokens;
+      if (additional <= 0) return;
+      if (!ledger.reserveTokens(taskId, additional)) throw new Error("Token budget exhausted.");
+      reservedTokens = required;
+    },
+    settle(usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) {
+      // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
+      const reportedTokens = usage?.totalTokens;
+      const hasUsableTokens = typeof reportedTokens === "number" && Number.isFinite(reportedTokens) && reportedTokens > 0;
+      const tokens = hasUsableTokens ? reportedTokens : reservedTokens;
+      if (started && !hasUsableTokens) {
+        try { process.stderr.write("[anysearch] 任务预算：模型未报告 token 用量，按预留的 " + reservedTokens + " token 结算。\n"); }
+        catch { /* stderr unavailable */ }
+      }
+      const cost = usage?.cost?.total ?? 0;
+      try { ledger.settleCalls(taskId, 1, Number(started)); }
+      catch (error) { reportBudgetFault("model call settlement", error); }
+      try { ledger.settleTokens(taskId, reservedTokens, started ? tokens : 0); }
+      catch (error) { reportBudgetFault("model token settlement", error); }
+      try { if (started && cost > 0) ledger.settleUsd(taskId, 0, cost); }
+      catch (error) { reportBudgetFault("model cost settlement", error); }
+    },
   };
 }

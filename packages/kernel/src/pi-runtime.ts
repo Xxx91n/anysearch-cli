@@ -1825,7 +1825,7 @@ export class PiAgentRuntime {
           new Promise<void>((resolve) => setTimeout(resolve, 1000)),
         ]);
       }
-      firstModelReservation?.(undefined, false);
+      firstModelReservation?.settle(undefined, false);
       finalizeBudget();
       if (billingWired && !promptStopped) {
         // #211: a cancelled run returns immediately — the caller is gone, so
@@ -1903,17 +1903,19 @@ export class PiAgentRuntime {
       const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
       const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
-      const settle = takeReservation?.() ??
-        reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
+      const requestedTokens = resolveTokenReserve(Math.ceil(inputTokens), outputTokens);
+      const reservation = takeReservation?.() ?? reserveTaskModelCall(budget, requestedTokens);
       let stream: ReturnType<StreamFunction>;
       try {
+        // The prepared request can carry extra context beyond the early estimate.
+        reservation.coverTokens(requestedTokens);
         stream = streamFn(model, context, { ...options, signal });
       } catch (error) {
-        settle(undefined, false);
+        reservation.settle(undefined, false);
         throw error;
       }
       // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
-      const settlement = this.settleStreamUsage(stream, settle, signal);
+      const settlement = this.settleStreamUsage(stream, reservation.settle, signal);
       this.taskBudgetSettlements.add(settlement);
       void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
       return stream;
@@ -1922,7 +1924,7 @@ export class PiAgentRuntime {
 
   private settleStreamUsage(
     stream: ReturnType<StreamFunction>,
-    settle: ReturnType<typeof reserveTaskModelCall>,
+    settle: ReturnType<typeof reserveTaskModelCall>["settle"],
     signal?: AbortSignal,
   ): Promise<void> {
     return new Promise(resolve => {
