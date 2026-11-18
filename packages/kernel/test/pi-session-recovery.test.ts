@@ -176,6 +176,7 @@ async function acceptsRepeatingAQuestionNotSentToTheModel() {
   for (const entries of [
     [question],
     [question, { type: "message", message: assistant([], "aborted") }],
+    [question, { type: "message", message: assistant([{ type: "text", text: "" }], "error") }],
   ]) {
     const dir = mkdtempSync(join(tmpdir(), "ans-318-retry-"));
     try {

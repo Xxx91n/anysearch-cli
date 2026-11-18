@@ -98,6 +98,12 @@ async function main() {
       "result: structuredContent carries the same handle",
     );
 
+    const notice = "上一轮没正常结束。";
+    const recovered = buildAnsChatResult("hello", "mcp-mint-0001", undefined, notice);
+    assert(recovered.content[0].text === notice + "\n\nhello", "result: recovery comes before the answer");
+    assert(recovered.content.at(-1)?.text === withHandle.content[1].text, "result: recovery keeps the handle last");
+    assert(recovered.structuredContent?.recoveryNotice === notice, "result: recovery is also available to structured clients");
+
     const empty = buildAnsChatResult("");
     assert(empty.content[0].text === "ans_chat: no response", "result: empty output keeps the fallback copy");
   }

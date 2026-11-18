@@ -434,18 +434,6 @@ export function registerAnsChat(
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatResult("");
         let recoveryNotice: string | undefined;
-        const withRecovery = (result: ReturnType<typeof buildAnsChatResult>) => {
-          if (!recoveryNotice) return result;
-          const notice = { type: "text" as const, text: recoveryNotice };
-          if (result.isError) return { ...result, content: [...result.content, notice] };
-          // Keep the answer and the trailing session handle in their usual blocks.
-          const [answer, ...trailing] = result.content;
-          return {
-            ...result,
-            content: [{ ...notice, text: answer ? recoveryNotice + "\n\n" + answer.text : recoveryNotice }, ...trailing],
-            structuredContent: { ...result.structuredContent, recoveryNotice },
-          };
-        };
         try {
           const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatResult("");
@@ -622,11 +610,11 @@ export function registerAnsChat(
           // The attempt already recorded itself as unfinished on the way out, so
           // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
-            return withRecovery(buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine));
+            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
-            return withRecovery(buildAnsChatResult("", memory.sessionId, {
+            return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
                 memorySummary: runtime.getMemoryUsage(),
@@ -635,12 +623,12 @@ export function registerAnsChat(
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-            }));
+            }, recoveryNotice);
           }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.
-          return withRecovery(buildAnsChatResult(output, memory.sessionId, {
+          return buildAnsChatResult(output, memory.sessionId, {
             usage: {
               run: runUsage ?? emptyRunUsage(["run usage"]),
               memorySummary: runtime.getMemoryUsage(),
@@ -648,11 +636,11 @@ export function registerAnsChat(
             context: runContext,
             toolCalls,
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-          }));
+          }, recoveryNotice);
         } catch (e) {
-          return withRecovery(buildAnsChatErrorResult(
-            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine,
-          ));
+          return buildAnsChatErrorResult(
+            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine, recoveryNotice,
+          );
         }
       }, {
         "anysearch.provider": providerName ?? "",

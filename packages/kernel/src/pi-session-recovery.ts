@@ -41,8 +41,12 @@ export function recoverPiSessionRecord(
       lastStopReason = message.stopReason;
       const content = Array.isArray(message.content) ? message.content : [];
       const failed = lastStopReason === "aborted" || lastStopReason === "error";
-      // PI can create an empty failure message before it reaches the model.
-      assistantSeen ||= !failed || content.length > 0;
+      // PI can write a failure with an empty text block before reaching the model.
+      assistantSeen ||= !failed || content.some((part) => {
+        if (part?.type === "text") return typeof part.text === "string" && !!part.text.trim();
+        if (part?.type === "thinking") return typeof part.thinking === "string" && !!part.thinking.trim();
+        return part?.type === "toolCall";
+      });
       // 旧记录只知道模型发过哪些工具请求，无法确认工具是否真的跑过。
       if (!modelCalled && !failed) {
         for (const part of content) {
@@ -73,7 +77,7 @@ export function recoverPiSessionRecord(
     "上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。",
     ...tools.map(({ id, name }) => `工具 ${displayId(name)}（${displayId(id)}）：结果未知，不要自动重跑。`),
   ].join("\n");
-  // Design: 提醒和工具状态写在同一行。写到一半被杀时整行作废，下一次还能补齐。
+  // Design: 提醒和工具状态写在同一行 — 写到一半被杀时整行作废，下一次还能补齐。
   record.appendCustomMessageEntry(PI_TURN_INTERRUPTED, notice, true, { tools });
   return notice;
 }

@@ -228,17 +228,23 @@ export interface AnsChatToolResult {
  * Design: the handle is returned in model-visible content (a trailing text
  * block) as well as structuredContent — the next call threads it as an ordinary
  * tool argument, and content-only proxies (e.g. the dsh native tool plane) never
- * see structuredContent. The answer text itself stays untouched.
+ * see structuredContent. A recovery notice goes before the answer.
  */
-export function buildAnsChatResult(output: string, sessionId?: string, extra?: Record<string, unknown>): AnsChatToolResult {
+export function buildAnsChatResult(
+  output: string,
+  sessionId?: string,
+  extra?: Record<string, unknown>,
+  recoveryNotice?: string,
+): AnsChatToolResult {
   // Usage and context are facts about this call, not properties of the handle.
   // A store-less run has no handle but still spent a model call, so the
   // metadata must survive without one. The handle is authoritative: spread
   // `extra` first so a caller-supplied key can never overwrite it.
-  const metadata = { ...(extra ?? {}), ...(sessionId ? { sessionId } : {}) };
+  const metadata = { ...(extra ?? {}), ...(sessionId ? { sessionId } : {}), ...(recoveryNotice ? { recoveryNotice } : {}) };
+  const answer = output || "ans_chat: no response";
   return {
     content: [
-      { type: "text", text: output || "ans_chat: no response" },
+      { type: "text", text: recoveryNotice ? recoveryNotice + "\n\n" + answer : answer },
       ...(sessionId
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
@@ -266,19 +272,16 @@ export function buildAnsChatErrorResult(
   detail: string,
   rebuilds: Array<{ anchorId: number; outcome: string; reasons: string[]; newAnchorId: number | null; cleared: boolean }>,
   formatLine: (r: any) => string,
+  recoveryNotice?: string,
 ): AnsChatToolResult {
-  const failure: AnsChatToolResult = {
-    isError: true,
-    content: [{ type: "text", text: "ans_chat error: " + detail }],
-  };
-  if (rebuilds.length === 0) return failure;
   return {
-    ...failure,
+    isError: true,
     content: [
-      ...failure.content,
+      { type: "text", text: "ans_chat error: " + detail },
       ...rebuilds.map((r) => ({ type: "text" as const, text: formatLine(r) })),
+      ...(recoveryNotice ? [{ type: "text" as const, text: recoveryNotice }] : []),
     ],
-    structuredContent: { summaryRebuilds: rebuilds },
+    ...(rebuilds.length > 0 ? { structuredContent: { summaryRebuilds: rebuilds } } : {}),
   };
 }
 

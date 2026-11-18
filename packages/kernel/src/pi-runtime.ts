@@ -965,11 +965,12 @@ export class PiAgentRuntime {
       // placeholder apiKey PI resolved for this synthetic provider is stripped
       // for the same reason — the caller's own auth must win.
       streamSimple: (_model, context, options) => {
+        runScope().throwIfAborted();
+        options?.signal?.throwIfAborted();
         // PI writes the question before asking the model. Startup compaction can
         // call a model earlier, before there is a new question to mark.
         if (recordWriteError) throw recordWriteError;
         if (persistentDir && questionWritten && !turnStarted) {
-          options?.signal?.throwIfAborted();
           recordStart(PI_TURN_STARTED);
           turnStarted = true;
         }
@@ -1142,6 +1143,7 @@ export class PiAgentRuntime {
     const recordedTools = persistentDir ? customTools.map((tool) => ({
       ...tool,
       execute(...args: Parameters<typeof tool.execute>) {
+        runScope().throwIfAborted();
         // PI has accepted the call and checked its arguments and policy by
         // the time it invokes execute. A request alone does not mean it ran.
         if (turnStarted) {
