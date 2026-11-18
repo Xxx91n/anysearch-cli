@@ -2,6 +2,9 @@
 // #300: the shared LLM config resolver lives here so CLI and MCP read model
 // settings through one set of rules (layers, whitelist, secret binding, sources).
 export * from "./config-llm";
+// #301: the user credential file — one plaintext, owner-only key store that the
+// CLI and a GUI host (no shell env) both read, bound to provider + endpoint.
+export * from "./credentials";
 export * from "./domain-schema";
 export * from "./session-store";
 export * from "./budget-ledger";

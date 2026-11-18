@@ -20,6 +20,7 @@ import { runConsolidate } from "./commands/consolidate";
 import { runAccessChain } from "./commands/access-chain";
 import { runSwitchState } from "./commands/switch-state";
 import { runHitl } from "./commands/hitl";
+import { runHost } from "./commands/host";
 import { rehydrateConfigEnv } from "./config-env";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 import { trackCliCommand } from "./cli-task-tracking";
@@ -39,7 +40,7 @@ const help = [
   "",
   "Commands:",
   "  doctor    Run smoke tests: provider ping + store check + domain validate",
-  "  auth      Show provider API key configuration status",
+  "  auth      Provider API keys: status, or store one once (ans auth set <provider>)",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",
@@ -48,6 +49,7 @@ const help = [
   "  recommend Suggest a domain for a free-text task (top-3 + confidence, never auto-switches)",
   " domain Switch Active Domain (cc-persona TOML)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
+  "  host      接入/修复/移除宿主接线（claude·codebuddy·codex·antigravity；只动自家条目）",
   " pref Manage T0 durable preferences (remember, pref review - /0025)",
   " memory Memory embeddings maintenance (backfill-vectors)",
   " access-chain Access-events tamper-evidence chain bootstrap",
@@ -84,7 +86,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain", "hitl"]);
+const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain", "hitl", "host"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command" + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See" + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -115,6 +117,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   "access-chain": runAccessChain,
   "switch-state": runSwitchState,
   hitl: runHitl,
+  host: runHost,
 };
 
 const handler = handlers[cmd];

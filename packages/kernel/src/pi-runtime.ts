@@ -1,5 +1,5 @@
 // PiAgentRuntime: full PI AgentSession driver for anysearch-cli.
-// Lives in packages/kernel; it maps PI session events to our 7 AgentEvent types
+// Lives in packages/kernel; it maps PI session events to AgentEvent
 // and consumes the Domain's 5 layers.
 // Budget metering (amended by #90/#103, #188): token/USD usage is accumulated
 // from session events and settled at the end of a run. The token dimension also
@@ -14,11 +14,14 @@
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import type { ChatAttemptContext } from "./chat-attempt";
+import { PI_TOOL_STARTED, PI_TURN_STARTED, PI_TURN_COMPLETED } from "./pi-session-recovery";
 import { findPiSessionRecord, judgePiSessionRecord, repairPiSessionTornTail } from "./pi-session";
 import {
   acquireSessionLock,
@@ -586,7 +589,7 @@ export function piSessionKey(sessionId: string): string {
   return "ans-" + createHash("sha256").update(sessionId).digest("hex").slice(0, 32);
 }
 
-function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: boolean }): void {
+function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: boolean }): string | undefined {
   switch (event.type) {
     case "message_start":
       state.textSeen = false;
@@ -594,7 +597,7 @@ function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: bo
     case "message_update": {
       const mapped = mapAssistantMessageEvent(event.assistantMessageEvent, state);
       if (mapped) buffer.push(mapped);
-      break;
+      return mapped?.type === "text" ? mapped.content : undefined;
     }
     case "tool_execution_start":
       buffer.push({ type: "tool_call", name: event.toolName, args: event.args });
@@ -609,6 +612,7 @@ function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: bo
       }
       break;
   }
+  return undefined;
 }
 
 export class PiAgentRuntime {
@@ -738,7 +742,7 @@ export class PiAgentRuntime {
   // parallel. The file lock only exists when the PI record is durable (#258):
   // an in-memory session cannot be shared with another process in the first
   // place (#266).
-  async *run(input: string): AsyncIterable<AgentEvent> {
+  async *run(input: string, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
     // Design: the queue and file lock share one deadline — the default is an
@@ -760,7 +764,7 @@ export class PiAgentRuntime {
           waitMs: Math.max(0, deadlineAt - Date.now()),
         });
       }
-      yield* this.runInternal(input);
+      yield* this.runInternal(input, attempt);
     } catch (e) {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
@@ -776,7 +780,7 @@ export class PiAgentRuntime {
     }
   }
 
-  private async *runInternal(input: string): AsyncIterable<AgentEvent> {
+  private async *runInternal(input: string, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
     // #211: a signal that is already aborted means the caller gave up before
     // this run began. Do not start a provider call, reserve budget, or touch
     // session state for a request nobody is waiting for.
@@ -901,6 +905,38 @@ export class PiAgentRuntime {
         ? this.opts.contextWindow
         : (Number(baseModel.contextWindow) > 0 ? Number(baseModel.contextWindow) : 128000);
     const sdkProviderId = "anysearch";
+    const persistentDir = this.opts.piSessionDir && sessionId ? this.opts.piSessionDir : undefined;
+    let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
+    let questionWritten = false;
+    let turnStarted = false;
+    let partialAnswer: AssistantMessage | undefined;
+    let partialText = "";
+    let recordWriteError: Error | undefined;
+    const writeSessionRecord = (append: () => void): void => {
+      if (recordWriteError) throw recordWriteError;
+      try {
+        append();
+      } catch (error) {
+        recordWriteError = error instanceof Error ? error : new Error(String(error));
+        const path = sessionManager.getSessionFile();
+        try {
+          if (path && sessionId) {
+            // PI can catch the error and append its own error message. Remove
+            // an unfinished entry first so that append starts on a new line.
+            const verdict = judgePiSessionRecord(path, piSessionKey(sessionId));
+            if (!verdict.ok) throw new Error(verdict.message);
+            if (verdict.tornTail && !repairPiSessionTornTail(path, verdict)) throw recordWriteError;
+          }
+        } catch {
+          // If the file cannot be repaired, detach PI's writer. A later open
+          // can still cut off the unfinished last line.
+          try { session.dispose(); } catch { /* already disposed */ }
+          agentDone = true;
+          wakeGenerator();
+        }
+        throw recordWriteError;
+      }
+    };
     // The one place the PI SDK is loaded: a run is the only thing that needs it.
     const sdk = await loadPiCodingAgent();
     const modelRuntime = await sdk.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
@@ -938,6 +974,19 @@ export class PiAgentRuntime {
       // placeholder apiKey PI resolved for this synthetic provider is stripped
       // for the same reason — the caller's own auth must win.
       streamSimple: (_model, context, options) => {
+        runScope().throwIfAborted();
+        options?.signal?.throwIfAborted();
+        // PI writes the question before asking the model. Startup compaction can
+        // call a model earlier, before there is a new question to mark.
+        if (recordWriteError) throw recordWriteError;
+        if (questionWritten) {
+          partialAnswer = undefined;
+          partialText = "";
+        }
+        if (persistentDir && questionWritten && !turnStarted) {
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_STARTED));
+          turnStarted = true;
+        }
         const forwarded = options && typeof options === "object"
           ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
           : options;
@@ -950,9 +999,7 @@ export class PiAgentRuntime {
     // Design: a session handle plus a session dir means PI keeps an append-only
     // record and a later run with the same handle resumes it; without either
     // there is nothing to key a record on, so the session stays in memory.
-    const persistentDir = this.opts.piSessionDir && sessionId ? this.opts.piSessionDir : undefined;
     const agentDir = persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent");
-    let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });
       const piKey = piSessionKey(sessionId!);
@@ -984,6 +1031,19 @@ export class PiAgentRuntime {
       // Recheck its id before handing any history or question to the model.
       if (found && sessionManager.getHeader()?.id !== piKey) {
         throw new Error("对话记录打开后发生变化，本次没有发送问题。");
+      }
+      if (found) {
+        const notice = attempt?.recoverRecord?.(sessionManager);
+        if (notice) {
+          try {
+            yield { type: "session_recovery", notice };
+          } finally {
+            // The caller may stop after reading the notice, before PI starts.
+            callerSignal?.removeEventListener("abort", onCallerAbort);
+          }
+          if (callerSignal?.aborted) return;
+          callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+        }
       }
     } else {
       sessionManager = sdk.SessionManager.inMemory(cwd);
@@ -1092,6 +1152,20 @@ export class PiAgentRuntime {
     });
     await resourceLoader.reload();
 
+    const customTools = activeTools as unknown as import("@earendil-works/pi-coding-agent").ToolDefinition[];
+    const recordedTools = persistentDir ? customTools.map((tool) => ({
+      ...tool,
+      execute(...args: Parameters<typeof tool.execute>) {
+        runScope().throwIfAborted();
+        // PI has accepted the call and checked its arguments and policy by
+        // the time it invokes execute. A request alone does not mean it ran.
+        if (turnStarted) {
+          args[2]?.throwIfAborted();
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TOOL_STARTED, { id: args[0], name: tool.name }));
+        }
+        return tool.execute(...args);
+      },
+    })) : customTools;
     const created = await sdk.createAgentSession({
       cwd,
       agentDir,
@@ -1103,7 +1177,7 @@ export class PiAgentRuntime {
       sessionManager,
       // The whitelist-filtered set is both the executable set and the declared
       // set, so PI cannot expose a tool the domain excluded.
-      customTools: activeTools as unknown as import("@earendil-works/pi-coding-agent").ToolDefinition[],
+      customTools: recordedTools,
       tools: activeTools.map((t) => t.name),
     });
     const session = created.session;
@@ -1189,13 +1263,30 @@ export class PiAgentRuntime {
     // session events -> our AgentEvent types.
     // text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
+    let finalAnswer: AssistantMessage | undefined;
     session.subscribe((event: any) => {
       // PI's own compaction is a real provider call: count it separate from the
       // run's assistant calls so the report can name both.
       if (event.type === "compaction_end" && event.result?.usage) {
         accumulateUsage(compactionUsage, { role: "assistant", usage: event.result.usage });
       }
-      mapSessionEvent(event, eventBuffer, mapState);
+      if (event.type === "message_end") {
+        if (event.message?.role === "user") questionWritten = true;
+        if (event.message?.role === "assistant") {
+          finalAnswer = event.message;
+          if (event.message.stopReason !== "aborted" && event.message.stopReason !== "error") {
+            partialAnswer = undefined;
+            partialText = "";
+          }
+        }
+      }
+      // Design: keep the streamed text separately — PI can replace the draft
+      // with an empty error when an aborted request unwinds.
+      const delta = mapSessionEvent(event, eventBuffer, mapState);
+      if (delta && event.message?.role === "assistant") {
+        partialAnswer = event.message;
+        partialText += delta;
+      }
       if (event.type === "agent_end") agentDone = true;
       if (event.type === "error") {
         agentError = event.error?.message || String(event.error || "Unknown error");
@@ -1508,6 +1599,7 @@ export class PiAgentRuntime {
       if (callerCancelled) return;
       // Wait for prompt() to fully resolve.
       await promptPromise;
+      if (recordWriteError) throw recordWriteError;
       if (callerCancelled) return;
       // Drain any events that arrived between agent_end and promptPromise resolution.
       while (eventBuffer.length > 0 && !callerCancelled) {
@@ -1583,9 +1675,16 @@ export class PiAgentRuntime {
       if (callerCancelled) return;
 
       // Final event.
-      if (agentError) {
-        yield { type: "error", message: agentError };
+      const modelError = finalAnswer?.stopReason === "error" || finalAnswer?.stopReason === "aborted"
+        ? finalAnswer.errorMessage || "模型请求没能完成。"
+        : undefined;
+      const failure = agentError || modelError;
+      if (failure) {
+        yield { type: "error", message: failure };
       } else {
+        if (turnStarted && agentDone && finalAnswer) {
+          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_COMPLETED));
+        }
         // The summary reports the same scope the ledger settles: main calls
         // plus PI's compaction. Reporting only the main total here would
         // contradict settleTokens the moment compaction runs (#178).
@@ -1693,6 +1792,24 @@ export class PiAgentRuntime {
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
+      // PI may still be waiting for a cancelled stream. Save text already
+      // received while the run still owns the write lock, after detaching PI's
+      // listener so a late provider event cannot save the same answer again.
+      if (turnStarted && partialAnswer && partialText && (callerCancelled || abortedEarly)) {
+        const leaf = sessionManager.getLeafEntry();
+        const message = leaf?.type === "message" ? leaf.message : undefined;
+        const savedText = message?.role === "assistant" && message.stopReason === "aborted"
+          ? message.content.map((part) => part.type === "text" ? part.text : "").join("")
+          : "";
+        if (!savedText.startsWith(partialText)) {
+          const interruptedAnswer: AssistantMessage = {
+            ...partialAnswer,
+            content: [{ type: "text", text: partialText }],
+            stopReason: "aborted",
+          };
+          writeSessionRecord(() => sessionManager.appendMessage(interruptedAnswer));
+        }
+      }
       // #259: drop the run's scope LAST, after every shutdown step above. A
       // kept scope would make a later run inherit this run's cancellation; a
       // scope dropped early is the opposite hole — an in-flight reround would

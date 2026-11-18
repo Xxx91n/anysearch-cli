@@ -3,7 +3,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb } from "@anysearch-cli/store";
+import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
 
 // B1: the domains-dir resolution chain for this CLI.
 // 1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
@@ -32,7 +32,14 @@ export function createPersistentEngine(domain?: string): CompositionResult {
   // a real exposure on a shared host. The shared helper is called BEFORE
   // createEngine so SQLite never creates files with the umask mode.
   ensureOwnerOnlyDb(dbPath);
-  const result = createEngine(domain, { dbPath, domainsDirs: domainSearchDirs() });
+  // #301: search keys may live in the user credential file, not only in the
+  // process env — a GUI host inherits no shell env, so resolving here is what
+  // makes "enter the key once" actually reach the real search clients.
+  const result = createEngine(domain, {
+    dbPath,
+    domainsDirs: domainSearchDirs(),
+    searchCredentials: resolveSearchCredentials,
+  });
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();
     result.observation.close();

@@ -547,6 +547,12 @@ for (const mode of ["complete", "no-source", "no-task"] as const) {
     "M4: structuredContent carries the report too");
 
   // No attempt means a bare failure: nothing invented to fill the slot.
+  const notice = "上一轮没正常结束。";
+  const withRecovery = buildAnsChatErrorResult("boom", [], formatSummaryRebuildLine, notice);
+  assert(withRecovery.content[0]?.text === "ans_chat error: boom", "P4: recovery keeps the error first");
+  assert(withRecovery.content[1]?.text === notice, "P4: recovery is visible in the error response");
+  assert(withRecovery.structuredContent?.recoveryNotice === notice, "P4: structured clients see the recovery notice");
+
   const bare = buildAnsChatErrorResult("boom", [], formatSummaryRebuildLine);
   assert(bare.content.length === 1, "M4: with no attempt the result is a bare error");
   assert(bare.structuredContent === undefined, "M4: and no empty summaryRebuilds array is invented");

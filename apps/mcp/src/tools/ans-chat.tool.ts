@@ -183,16 +183,17 @@ export function registerAnsChat(
       session: buildSession({
         provider: providerName, model: modelName, baseUrl, api, contextWindow,
         // Design: pass the resolved key for catalog providers AND custom
-        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers ANS_LLM_API_KEY
-        // and a user-file env_key indirection; gating it on baseUrl would make
-        // a working CLI config fail auth only on the MCP path (#300, greptile P1).
-        // Both sources are already provider-appropriate: ANS_LLM_API_KEY is an
-        // explicit override, and a user-file env_key passed the #120 binding
-        // guard in the resolver. pi-ai's `options.apiKey ?? auth.apiKey` then
-        // uses this key instead of the provider's own env — the same override
-        // the CLI has always applied. Widening the #120 guard beyond project
-        // files is a separate security change, not part of making both entries
-        // read config the same way (#300 review opinion B — user decision).
+        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers
+        // ANS_LLM_API_KEY, a user-file env_key indirection, and the user
+        // credential file (#301); gating it on baseUrl would make a working CLI
+        // config fail auth only on the MCP path (#300, greptile P1).
+        // Every source is already provider-appropriate: ANS_LLM_API_KEY is an
+        // explicit override, and both file sources passed the resolver's binding
+        // guard (env_key against the user file's provider/endpoint, a stored
+        // entry against its own recorded binding — #301 widened that guard to
+        // every layer, not just the project file). pi-ai's
+        // `options.apiKey ?? auth.apiKey` then uses this key instead of the
+        // provider's own env — the same override the CLI has always applied.
         apiKey,
       }),
     };
@@ -535,6 +536,7 @@ export function registerAnsChat(
           });
         }
         const taskBudgetScope = chatBudget.taskBudget;
+        let recoveryNotice: string | undefined;
         try {
           const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatCancelledResult();
@@ -676,8 +678,17 @@ export function registerAnsChat(
               sessionLock: sessionWiring.sessionLock,
             }, async (attempt) => {
               startedAttempt = attempt;
-              for await (const event of runtime.run(chatMessage)) {
-                if (event.type === "text") {
+              for await (const event of runtime.run(chatMessage, attempt)) {
+                if (event.type === "session_recovery") {
+                  recoveryNotice = event.notice;
+                  const progressToken = ctx?.mcpReq?._meta?.progressToken;
+                  if (ctx && progressToken !== undefined) {
+                    await ctx.mcpReq.notify({
+                      method: "notifications/progress",
+                      params: { progressToken, progress: 1, message: event.notice },
+                    }).catch(() => {}); // The final result still carries the notice.
+                  }
+                } else if (event.type === "text") {
                   output += event.content;
                 } else if (event.type === "tool_call") {
                   toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
@@ -731,20 +742,18 @@ export function registerAnsChat(
             // reading the message — and the spend already incurred is still
             // reported under `usage`, never hidden behind the error.
             if (runtimeErrorReason !== undefined) {
+              // A stop can land mid-stream, so wait for the late settlement
+              // before this call's task row is closed; no tail is a no-op.
+              await runtime.drainLateSettlement();
               return buildAnsChatBudgetResult(runtimeErrorReason, runtimeError, {
                 ...(task ? { taskId: task.taskId } : {}),
                 usage: {
-                  // Design: this note describes the ACCOUNTING, not the call
-                  // count. Today both budget stops happen before the first
-                  // provider call (the text says so), but a figure reported as
-                  // "unknown" must not double as a claim that zero was spent —
-                  // if a future stop lands mid-run, this wording stays true.
                   run: emptyRunUsage(["run usage: no provider figure was reported for this run"]),
                   memorySummary: runtime.getMemoryUsage(),
                 },
               });
             }
-            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
+            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
@@ -772,7 +781,7 @@ export function registerAnsChat(
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-            });
+            }, recoveryNotice);
           }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
@@ -785,9 +794,11 @@ export function registerAnsChat(
             context: runContext,
             toolCalls,
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-          });
+          }, recoveryNotice);
         } catch (e) {
-          return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          return buildAnsChatErrorResult(
+            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine, recoveryNotice,
+          );
         }
       }, {
         "anysearch.provider": providerName ?? "",

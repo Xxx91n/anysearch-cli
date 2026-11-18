@@ -23,6 +23,7 @@ export type RuntimeErrorReason = "budget-not-established" | "budget-rejected";
 
 export type AgentEvent =
   | { type: "text"; content: string }
+  | { type: "session_recovery"; notice: string }
   | { type: "tool_call"; name: string; args: unknown }
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }

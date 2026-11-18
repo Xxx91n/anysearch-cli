@@ -153,12 +153,6 @@ function mockStreamFn(_model: any, _context: any, _options?: any): any {
   assert(mockDomain.rag.adapter === "none", "rag adapter is none");
 }
 
-// Test 4: AgentEvent types are exactly 7.
-{
-  const eventTypes = ["text", "tool_call", "tool_result", "search", "search_result", "done", "error"];
-  assert(eventTypes.length === 7, "7 AgentEvent types");
-}
-
 // Test 5 removed: "constructor accepts ledger + sessionId" only asserted a
 // TypeScript-guaranteed call signature. The ledger/sessionId wiring is covered
 // by the real-run tests below (#103/#178/#188 reserve + settle assertions).
