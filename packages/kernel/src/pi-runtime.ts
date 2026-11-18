@@ -416,7 +416,7 @@ export interface PiAgentRuntimeOptions {
   taskBudgetFault?: string;
   /** Enforce the task's budget before each model request in scripted chat. */
   enforceTaskBudgetPerCall?: boolean;
-  /** Maximum wait for a run or a scripted model request. */
+  /** Timeout threshold for the run loop and deadline for a scripted model request. */
   timeoutMs?: number;
   /** Include the final answer and its search sources in the done event. */
   includeAnswer?: boolean;
@@ -917,15 +917,6 @@ export class PiAgentRuntime {
     let questionWritten = false;
     let turnStarted = false;
     let firstModelReservation: ReturnType<typeof reserveTaskModelCall> | undefined;
-    const providerStream = perCallBudget
-      ? this.budgetedModelStream(streamFn as StreamFunction, perCallBudget, () => {
-        // Startup compaction has its own request. Keep this reservation for the question.
-        if (!questionWritten) return undefined;
-        const reserve = firstModelReservation;
-        firstModelReservation = undefined;
-        return reserve;
-      })
-      : streamFn as StreamFunction;
     let partialAnswer: AssistantMessage | undefined;
     let partialText = "";
     let recordWriteError: Error | undefined;
@@ -954,6 +945,22 @@ export class PiAgentRuntime {
         throw recordWriteError;
       }
     };
+    const openProviderStream: StreamFunction = (providerModel, context, options) => {
+      if (persistentDir && questionWritten && !turnStarted) {
+        writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_STARTED));
+        turnStarted = true;
+      }
+      return (streamFn as StreamFunction)(providerModel, context, options);
+    };
+    const providerStream = perCallBudget
+      ? this.budgetedModelStream(openProviderStream, perCallBudget, () => {
+        // Startup compaction has its own request. Keep this reservation for the question.
+        if (!questionWritten) return undefined;
+        const reserve = firstModelReservation;
+        firstModelReservation = undefined;
+        return reserve;
+      })
+      : openProviderStream;
     // The one place the PI SDK is loaded: a run is the only thing that needs it.
     const sdk = await loadPiCodingAgent();
     const modelRuntime = await sdk.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
@@ -999,10 +1006,6 @@ export class PiAgentRuntime {
         if (questionWritten) {
           partialAnswer = undefined;
           partialText = "";
-        }
-        if (persistentDir && questionWritten && !turnStarted) {
-          writeSessionRecord(() => sessionManager.appendCustomEntry(PI_TURN_STARTED));
-          turnStarted = true;
         }
         const forwarded = options && typeof options === "object"
           ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
