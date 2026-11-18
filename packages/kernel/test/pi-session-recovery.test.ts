@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { SqliteSessionStore } from "@anysearch-cli/store";
 import { runChatAttempt, sessionLeasePath } from "../src/chat-attempt";
 import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
 import { judgePiSessionRecord, PI_SESSION_FORMAT_VERSION } from "../src/pi-session";
@@ -121,12 +122,16 @@ test("一次尝试在重放前补中断记录，第二次打开不重复补", as
     let completed = false;
     await runChatAttempt(options, async (attempt) => {
       for await (const event of runtime.run("新的明确问题", attempt)) {
-        if (event.type === "session_recovery") notices++;
+        if (event.type === "session_recovery") {
+          notices++;
+          assert.equal(readFileSync(path, "utf8"), recovered);
+          assert.equal(providerCalls, 0);
+        }
         if (event.type === "done") completed = true;
       }
       return { completed };
     });
-    assert.equal(notices, 0);
+    assert.equal(notices, 1);
     assert.equal(providerCalls, 1);
     assert.ok(completed);
     assert.equal(readFileSync(path, "utf8").split("anysearch:turn-interrupted").length, 2);
@@ -157,48 +162,56 @@ test("模型已经开始但还没有回答时补一次说明", async () => {
         return { completed: false };
       });
     }
-    assert.deepEqual(notices, ["上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。"]);
-    assert.equal(calls, 1);
+    assert.deepEqual(notices, [
+      "上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。",
+      "上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。",
+    ]);
+    assert.equal(calls, 0);
     assert.equal(readFileSync(path, "utf8").split("anysearch:turn-interrupted").length, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("只留下问题时可以直接再问，正常收尾的轮次不补说明", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ans-318-retry-"));
-  try {
-    const sessionId = "question-only";
-    const path = seedRecord(dir, sessionId, [question]);
-    const before = readFileSync(path, "utf8");
-    const runtime = chatRuntime(dir, sessionId, () => {
-      const record = readFileSync(path, "utf8");
-      assert.match(record.slice(before.length), /anysearch:turn-started/);
-      assert.doesNotMatch(record, /anysearch:turn-interrupted/);
-      return reply();
-    });
-    const options = { sessionId, piSessionDir: dir, projectRoot: null };
-    for (const expectedNotices of [["上一轮只留下了问题，可以直接再问一次。"], []]) {
-      const notices: string[] = [];
-      await runChatAttempt(options, async (attempt) => {
-        let completed = false;
-        for await (const event of runtime.run("上次的问题", attempt)) {
-          if (event.type === "session_recovery") {
-            notices.push(event.notice);
-            assert.equal(readFileSync(path, "utf8"), before);
-          }
-          if (event.type === "done") completed = true;
-        }
-        assert.ok(completed);
-        return { completed };
+for (const setup of [
+  { label: "只留下问题", entries: [question] },
+  { label: "发给模型前被取消", entries: [question, { type: "message", message: assistant([], "aborted") }] },
+]) {
+  test(setup.label + "时可以直接再问，正常收尾的轮次不补说明", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ans-318-retry-"));
+    try {
+      const sessionId = "question-only";
+      const path = seedRecord(dir, sessionId, setup.entries);
+      const before = readFileSync(path, "utf8");
+      const runtime = chatRuntime(dir, sessionId, () => {
+        const record = readFileSync(path, "utf8");
+        assert.match(record.slice(before.length), /anysearch:turn-started/);
+        assert.doesNotMatch(record, /anysearch:turn-interrupted/);
+        return reply();
       });
-      assert.deepEqual(notices, expectedNotices);
+      const options = { sessionId, piSessionDir: dir, projectRoot: null };
+      for (const expectedNotices of [["上一轮只留下了问题，可以直接再问一次。"], []]) {
+        const notices: string[] = [];
+        await runChatAttempt(options, async (attempt) => {
+          let completed = false;
+          for await (const event of runtime.run("上次的问题", attempt)) {
+            if (event.type === "session_recovery") {
+              notices.push(event.notice);
+              assert.equal(readFileSync(path, "utf8"), before);
+            }
+            if (event.type === "done") completed = true;
+          }
+          assert.ok(completed);
+          return { completed };
+        });
+        assert.deepEqual(notices, expectedNotices);
+      }
+      assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
-    assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  });
+}
 
 test("策略拒绝工具并正常收尾时，下一轮不报中断", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-318-tool-stop-"));
@@ -228,6 +241,76 @@ test("策略拒绝工具并正常收尾时，下一轮不报中断", async () =>
       });
     }
     assert.equal(calls, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("旧工具轮的数据库状态确认已收尾时，不补中断说明", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-318-legacy-tool-stop-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const sessionId = "legacy-tool-stop";
+    await store.ensureSession(sessionId, "chat");
+    store.recordChatProject(sessionId, null, true);
+    const path = seedRecord(dir, sessionId, [
+      question,
+      { type: "message", message: assistant([{
+        type: "toolCall", id: "blocked", name: "search", arguments: { query: "blocked" },
+      }], "toolUse") },
+      { type: "message", message: {
+        role: "toolResult", toolCallId: "blocked", toolName: "search",
+        content: [{ type: "text", text: "工具请求被拒绝" }], isError: true, timestamp: Date.now(),
+      } },
+    ]);
+    const runtime = chatRuntime(dir, sessionId, reply);
+    await runChatAttempt({ store, sessionId, piSessionDir: dir, projectRoot: null }, async (attempt) => {
+      let completed = false;
+      for await (const event of runtime.run("新问题", attempt)) {
+        assert.notEqual(event.type, "session_recovery");
+        if (event.type === "done") completed = true;
+      }
+      assert.ok(completed);
+      return { completed };
+    });
+    assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("模型返回错误时，本次和续聊都不把它当成正常收尾", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-318-model-error-"));
+  try {
+    const sessionId = "model-error";
+    const path = seedRecord(dir, sessionId, []);
+    const message = { ...assistant([], "error"), errorMessage: "模型拒绝了请求" };
+    const runtime = chatRuntime(dir, sessionId, () => ({
+      async *[Symbol.asyncIterator]() { yield { type: "error", reason: "error", error: message }; },
+      result: async () => message,
+    }));
+    const options = { sessionId, piSessionDir: dir, projectRoot: null };
+    const errors: string[] = [];
+    await runChatAttempt(options, async (attempt) => {
+      for await (const event of runtime.run("会报错的问题", attempt)) {
+        assert.notEqual(event.type, "done");
+        if (event.type === "error") errors.push(event.message);
+      }
+      return { completed: false };
+    });
+    assert.deepEqual(errors, ["模型拒绝了请求"]);
+    assert.doesNotMatch(readFileSync(path, "utf8"), /anysearch:turn-completed/);
+
+    const resumed = chatRuntime(dir, sessionId, reply);
+    await runChatAttempt(options, async (attempt) => {
+      for await (const event of resumed.run("新问题", attempt)) {
+        assert.equal(event.type, "session_recovery");
+        break;
+      }
+      return { completed: false };
+    });
+    assert.match(readFileSync(path, "utf8"), /anysearch:turn-interrupted/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

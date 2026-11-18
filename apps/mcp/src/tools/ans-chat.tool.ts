@@ -440,7 +440,7 @@ export function registerAnsChat(
           if (result.isError) return { ...result, content: [...result.content, notice] };
           return {
             ...result,
-            content: [notice, ...result.content],
+            content: [...result.content, notice],
             structuredContent: { ...result.structuredContent, recoveryNotice },
           };
         };

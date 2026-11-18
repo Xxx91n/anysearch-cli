@@ -1,3 +1,4 @@
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
 // One chat attempt (#299): lease -> record start -> run -> record result ->
 // hand the lease back.
 //
@@ -78,7 +79,7 @@ export interface ChatAttemptContext {
   /** The selected handle, including the new handle after a fork. */
   sessionId?: string;
   /** Append recovery facts after validating the record and before replaying it. */
-  recoverRecord?: typeof recoverPiSessionRecord;
+  recoverRecord?(record: SessionManager): string | undefined;
   /**
    * Say that the run really started. Call it once the attempt has done
    * something — a provider call, a tool call, a written record.
@@ -145,7 +146,8 @@ export async function runChatAttempt(
     }
   }
   try {
-    return await runBody(body, store, sessionId, projectRoot, recoverPiSessionRecord);
+    return await runBody(body, store, sessionId, projectRoot, (record) =>
+      recoverPiSessionRecord(record, () => store?.getChatSession?.(sessionId)?.isCompleted === 1));
   } finally {
     release();
   }

@@ -1249,7 +1249,7 @@ export class PiAgentRuntime {
     // text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
     let partialAnswer: AssistantMessage | undefined;
-    let finalStopReason: AssistantMessage["stopReason"] | undefined;
+    let finalAnswer: AssistantMessage | undefined;
     session.subscribe((event: any) => {
       // PI's own compaction is a real provider call: count it separate from the
       // run's assistant calls so the report can name both.
@@ -1263,7 +1263,7 @@ export class PiAgentRuntime {
         if (event.message?.role === "user") questionWritten = true;
         if (event.message?.role === "assistant") {
           partialAnswer = undefined;
-          finalStopReason = event.message.stopReason;
+          finalAnswer = event.message;
         }
       }
       mapSessionEvent(event, eventBuffer, mapState);
@@ -1653,10 +1653,14 @@ export class PiAgentRuntime {
       if (callerCancelled) return;
 
       // Final event.
-      if (agentError) {
-        yield { type: "error", message: agentError };
+      const modelError = finalAnswer?.stopReason === "error" || finalAnswer?.stopReason === "aborted"
+        ? finalAnswer.errorMessage || "模型请求没能完成。"
+        : undefined;
+      const failure = agentError || modelError;
+      if (failure) {
+        yield { type: "error", message: failure };
       } else {
-        if (turnStarted && agentDone && finalStopReason && finalStopReason !== "error" && finalStopReason !== "aborted") {
+        if (turnStarted && agentDone && finalAnswer) {
           sessionManager.appendCustomEntry(PI_TURN_COMPLETED);
         }
         // The summary reports the same scope the ledger settles: main calls
