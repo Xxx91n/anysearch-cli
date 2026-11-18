@@ -17,6 +17,8 @@ export type AgentEvent =
   | {
       type: "done";
       summary: string;
+      answer?: string;
+      sources?: string[];
       recovery?: string;
       usage?: RunUsage;
       context?: RunContextUsage;

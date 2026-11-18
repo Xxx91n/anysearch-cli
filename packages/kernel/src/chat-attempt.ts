@@ -79,7 +79,7 @@ export interface ChatAttemptContext {
   /** The selected handle, including the new handle after a fork. */
   sessionId?: string;
   /** Append recovery facts after validating the record and before replaying it. */
-  recoverRecord?(record: SessionManager): string | undefined;
+  recoverRecord?(record: SessionManager): ReturnType<typeof recoverPiSessionRecord>;
   /**
    * Say that the run really started. Call it once the attempt has done
    * something — a provider call, a tool call, a written record.

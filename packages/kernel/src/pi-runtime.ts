@@ -107,6 +107,10 @@ export class SearchSaturation {
     this.noNewStreak = fresh === 0 ? this.noNewStreak + 1 : 0;
   }
 
+  sources(): string[] {
+    return [...this.seen];
+  }
+
   exhausted(): boolean {
     return this.calls >= this.limits.maxCalls || this.noNewStreak >= this.limits.maxNoNewStreak;
   }
@@ -737,7 +741,7 @@ export class PiAgentRuntime {
   // parallel. The file lock only exists when the PI record is durable (#258):
   // an in-memory session cannot be shared with another process in the first
   // place (#266).
-  async *run(input: string, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
+  async *run(input: string | undefined, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
     // Design: the queue and file lock share one deadline — the default is an
@@ -775,7 +779,7 @@ export class PiAgentRuntime {
     }
   }
 
-  private async *runInternal(input: string, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
+  private async *runInternal(input: string | undefined, attempt?: ChatAttemptContext): AsyncIterable<AgentEvent> {
     // #211: a signal that is already aborted means the caller gave up before
     // this run began. Do not start a provider call, reserve budget, or touch
     // session state for a request nobody is waiting for.
@@ -994,6 +998,7 @@ export class PiAgentRuntime {
     // record and a later run with the same handle resumes it; without either
     // there is nothing to key a record on, so the session stays in memory.
     const agentDir = persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent");
+    let interruptedQuestion: string | undefined;
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });
       const piKey = piSessionKey(sessionId!);
@@ -1027,8 +1032,10 @@ export class PiAgentRuntime {
         throw new Error("对话记录打开后发生变化，本次没有发送问题。");
       }
       if (found) {
-        const notice = attempt?.recoverRecord?.(sessionManager);
-        if (notice) {
+        const interrupted = attempt?.recoverRecord?.(sessionManager);
+        if (interrupted) {
+          interruptedQuestion = interrupted.question;
+          const { notice } = interrupted;
           try {
             yield { type: "session_recovery", notice };
           } finally {
@@ -1041,6 +1048,17 @@ export class PiAgentRuntime {
       }
     } else {
       sessionManager = sdk.SessionManager.inMemory(cwd);
+    }
+    if (input === undefined) {
+      if (!interruptedQuestion?.trim()) {
+        callerSignal?.removeEventListener("abort", onCallerAbort);
+        stopRunScope("no interrupted question");
+        yield { type: "error", message: interruptedQuestion === undefined
+          ? "这段会话没有被打断的问题。"
+          : "上一轮的记录里没有可重问的文字。" };
+        return;
+      }
+      input = interruptedQuestion;
     }
     const piCompaction = this.opts.piCompaction ?? {};
     const settingsManager = sdk.SettingsManager.inMemory({
@@ -1697,6 +1715,10 @@ export class PiAgentRuntime {
         yield {
           type: "done",
           summary: `Agent completed${tokenSummary}`,
+          answer: finalAnswer && finalAnswer.stopReason !== "toolUse"
+            ? finalAnswer.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+            : undefined,
+          sources: saturation.sources(),
           ...(recovery ? { recovery } : {}),
           ...(context ? { context } : {}),
           usage: toRunUsage(usageTotals, compactionUsage),

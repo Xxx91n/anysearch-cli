@@ -10,7 +10,7 @@ import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions,
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
-import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
+import { resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
@@ -22,11 +22,13 @@ export async function runChat(argv: string[]): Promise<number> {
   let flags, options;
   try { ({ flags, options } = parseChatArgv(argv)); }
   catch (error: any) { process.stderr.write(error.message + "\n"); return 2; }
-  const query = options.query;
-  if (!query && !options.list) {
-    process.stderr.write('用法：ans chat [--continue | --session ID] "问题"\n查看会话：ans chat --list [--unassigned]\n');
+  const query = options.retryInterrupted ? undefined : options.query;
+  if (!options.retryInterrupted && !options.list && !(options.print ? query?.trim() : query)) {
+    process.stderr.write('用法：ans chat [-p] [--continue | --session ID] "问题"\n接着问被打断的那轮：ans chat -c [--session ID]\n查看会话：ans chat --list [--unassigned]\n');
     return 2;
   }
+  const printOnly = options.print || options.retryInterrupted;
+  const logProgress = printOnly ? console.error : console.log;
   const project = resolveProjectContext();
 
   // Initialize retriever + domain over the DURABLE store (#129).
@@ -103,7 +105,10 @@ export async function runChat(argv: string[]): Promise<number> {
       }
       return 0;
     }
-    requestedSessionId = selectChatSession(store, options, project.root, chatRecordReader(resolvePiSessionDir()));
+    // Scripted calls check the record after taking the lock. An active writer may
+    // still be creating it, and that should be reported as a busy session.
+    requestedSessionId = selectChatSession(store, options, project.root,
+      printOnly ? undefined : chatRecordReader(resolvePiSessionDir()));
     if (!durableStore && requestedSessionId) throw new Error("持久库不可用，无法恢复会话。");
   } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
 
@@ -152,7 +157,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // The attempt's project. A resumed conversation keeps the project it already
   // belongs to; a new one takes the directory it started in.
   const attemptProject = previousSession ? previousSession.projectRoot : project.root;
-  if (memory.sessionId) console.log("[session] " + memory.sessionId);
+  if (memory.sessionId) logProgress("[session] " + memory.sessionId);
   if (!project.root) process.stderr.write("[提示] 无法确定当前项目，不能自动选择最近会话。\n");
 
   // The attempt's lease and the runtime's run lock guard the same session, so
@@ -189,6 +194,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // runtime still takes its own run lock inside; this wraps it rather than
   // moving it, so the JSONL append keeps the guarantee it already had.
   let attemptExitCode = 0;
+  let printedAnswer = "";
   try {
     await runChatAttempt({
       store: durableStore ? store : undefined,
@@ -198,7 +204,7 @@ export async function runChat(argv: string[]): Promise<number> {
       // Same windows the run lock reads, so a shortened stale window applies to
       // an abandoned lease too.
       sessionLock: sessionWiring.sessionLock,
-      onBusy: chooseChatCollision,
+      onBusy: printOnly ? undefined : chooseChatCollision,
     }, async (attempt) => {
       startedAttempt = attempt;
       if (attempt.sessionId && attempt.sessionId !== memory.sessionId) {
@@ -230,7 +236,7 @@ export async function runChat(argv: string[]): Promise<number> {
         // reloader can still resolve inherited base TOMLs.
         domainsDirs: engine.domainsDirs,
         // CLI is the place that decides TTY; kernel decides isInteractive itself.
-        interactive: !process.env.ANS_NO_INTERACTIVE,
+        interactive: !printOnly && !process.env.ANS_NO_INTERACTIVE,
         model: session.model,
         // #113: real window for the L0 watermark; undefined for an unconfigured
         // custom endpoint -> absolute 128000 fallback.
@@ -242,6 +248,7 @@ export async function runChat(argv: string[]): Promise<number> {
         // uses so an explicit continuation restores the full conversation.
         // A store-less run has no resumable handle, so it stays in memory.
         ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
+        ...(printOnly ? { sessionLock: { ...sessionWiring.sessionLock, waitMs: 0 } } : {}),
         requirePiSessionRecord: !!requestedSessionId,
         // #299: the runtime names the exact moment the provider is reached. The
         // attempt is recorded from there, so a request cancelled before its first
@@ -256,8 +263,10 @@ export async function runChat(argv: string[]): Promise<number> {
         taskBudget: taskBudgetWiring.taskBudget,
         taskBudgetFault: taskBudgetWiring.taskBudgetFault,
       });
-      console.log("ans chat: " + query);
-      console.log("---");
+      if (!printOnly) {
+        console.log("ans chat: " + query);
+        console.log("---");
+      }
 
       let completed = false;
       // The body returns the attempt's outcome, not the process exit code: a
@@ -278,22 +287,29 @@ export async function runChat(argv: string[]): Promise<number> {
                 listenForInterrupt();
                 startedStreaming = true;
               }
-              process.stdout.write(event.content);
+              if (!printOnly) process.stdout.write(event.content);
               break;
             case "tool_call":
-              console.log("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
+              logProgress("\n[tool: " + event.name + "] " + JSON.stringify(event.args));
               break;
             case "tool_result":
-              console.log("[result: " + event.name + "]");
+              logProgress("[result: " + event.name + "]");
               break;
             case "search":
-              console.log("\n[search: " + event.query + "]");
+              logProgress("\n[search: " + event.query + "]");
               break;
             case "search_result":
-              console.log("[search done]");
+              logProgress("[search done]");
               break;
             case "done":
               completed = true;
+              if (printOnly) {
+                if (event.answer?.trim()) {
+                  const sources = event.sources?.length ? "\n\n来源\n- " + event.sources.join("\n- ") : "";
+                  printedAnswer = event.answer.trimEnd() + sources + "\n";
+                }
+                break;
+              }
               console.log("\n---");
               console.log(event.summary);
               if (event.recovery) console.log("\n" + event.recovery);
@@ -332,13 +348,13 @@ export async function runChat(argv: string[]): Promise<number> {
         // it was not. Read AFTER the drain (a rebuild is background work the drain
         // waits for) and say it in plain words, so an empty memory block is not read
         // as "there was never a summary".
-        for (const r of runtime.getSummaryRebuilds()) console.log(formatSummaryRebuildLine(r));
+        for (const r of runtime.getSummaryRebuilds()) logProgress(formatSummaryRebuildLine(r));
         // Summary calls are a separate, real cost; report them apart from the run.
         // The reuse/compress adjudication is its own book (D4 重判): one judgment
         // call must not read as a summary the summarizer never made.
         const memoryUsage = runtime.getMemoryUsage();
         if (memoryUsage && memoryUsage.calls > 0) {
-          console.log(
+          logProgress(
             "[usage] memory-summary calls=" + memoryUsage.calls +
             " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
             " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
@@ -347,7 +363,7 @@ export async function runChat(argv: string[]): Promise<number> {
         }
         const adjudicationUsage = memoryUsage?.adjudication;
         if (adjudicationUsage && adjudicationUsage.calls > 0) {
-          console.log(
+          logProgress(
             "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
             " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
             " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
@@ -364,7 +380,7 @@ export async function runChat(argv: string[]): Promise<number> {
         if (taskBudgetScope) {
           const taskBalance = taskBudgetScope.ledger.getBalance(taskBudgetScope.taskId);
           if (taskBalance) {
-            console.log(
+            logProgress(
               "[task-budget] this execution: tokens=" + taskBalance.spentTokens + "/" + taskBalance.tokenCap +
               " calls=" + taskBalance.billableCalls + "/" + taskBalance.callCap +
               " usd=" + taskBalance.spentUsd + "/" + taskBalance.usdCap +
@@ -382,7 +398,7 @@ export async function runChat(argv: string[]): Promise<number> {
         const sessionLedgerView = engine.ledger as { getBalance?: (sessionId: string) => BudgetBalance | null } | undefined;
         const sessionBalance = memory.sessionId ? sessionLedgerView?.getBalance?.(memory.sessionId) : null;
         if (sessionBalance) {
-          console.log(
+          logProgress(
             "[session-budget] conversation history: tokens=" + sessionBalance.spentTokens + "/" + sessionBalance.tokenCap +
             " calls=" + sessionBalance.billableCalls + "/" + sessionBalance.callCap +
             " usd=" + sessionBalance.spentUsd + "/" + sessionBalance.usdCap +
@@ -394,7 +410,11 @@ export async function runChat(argv: string[]): Promise<number> {
       // its end; a run that errored or was cancelled keeps the unfinished row.
       if (cancellation.signal.aborted) attemptExitCode = 130;
       else if (failed) attemptExitCode = 1;
-      return { completed: completed && !failed };
+      else if (printOnly && !printedAnswer) {
+        process.stderr.write("模型没有返回答案。\n");
+        attemptExitCode = 1;
+      }
+      return { completed: completed && !failed && !cancellation.signal.aborted };
     });
   } catch (error: any) {
     // One wording for "another attempt has this session right now". It is not a
@@ -408,5 +428,6 @@ export async function runChat(argv: string[]): Promise<number> {
     }
     throw error;
   }
+  if (printOnly && attemptExitCode === 0) process.stdout.write(printedAnswer);
   return attemptExitCode;
 }
