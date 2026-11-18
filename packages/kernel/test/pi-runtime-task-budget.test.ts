@@ -394,8 +394,10 @@ async function main() {
       "drain: a stream that never ends reports still-running, not settled");
     assert(elapsed >= 50 && elapsed < 2000,
       "drain: the wait is bounded by the caller's window (took " + elapsed + " ms)");
-    assert((runtime as any).lateSettlement === undefined,
-      "drain: a window that closed first drops the stale tail instead of leaving a later run waiting on it");
+    assert((runtime as any).lateSettlement === stuck,
+      "drain: a window that closed first keeps the tail — forgetting it would report settled for spend still in flight");
+    assert(await runtime.drainLateSettlement(20) === "still-running",
+      "drain: the same unanswered tail still reports still-running on a second call");
 
     // A tail whose write blew up: not "settled" — the spend was never booked.
     (runtime as any).lateSettlement = Promise.reject(new Error("probe late write failed"));

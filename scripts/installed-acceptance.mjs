@@ -229,11 +229,11 @@ function mcpClient(bin, env, tag) {
       if (!line.trim()) continue;
       let msg;
       try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.id !== undefined && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+      if (msg.id !== undefined && pending.has(msg.id)) { pending.get(msg.id).resolve(msg); pending.delete(msg.id); }
     }
   });
   child.once("exit", () => {
-    for (const [, fn] of pending) fn({ error: { message: tag + ": MCP exited" } });
+    for (const [, entry] of pending) entry.resolve({ error: { message: tag + ": MCP exited" } });
     pending.clear();
   });
   const callAsync = (method, params, ms = 240_000) => {
@@ -241,7 +241,10 @@ function mcpClient(bin, env, tag) {
     let timer;
     const promise = new Promise((res, rej) => {
       timer = setTimeout(() => { pending.delete(id); rej(new Error(tag + ": timeout on " + method + "\nstderr: " + stderr.slice(-400))); }, ms);
-      pending.set(id, (m) => { clearTimeout(timer); res(m); });
+      pending.set(id, {
+        resolve: (m) => { clearTimeout(timer); res(m); },
+        reject: (e) => { clearTimeout(timer); rej(e); },
+      });
       child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     });
     return { id, promise };
@@ -258,8 +261,8 @@ function mcpClient(bin, env, tag) {
    * section and could keep the process alive past a later failure.
    */
   const forget = (id) => {
-    const fn = pending.get(id);
-    if (fn) fn({ error: { message: tag + ": abandoned (cancelled)" } });
+    const entry = pending.get(id);
+    if (entry) entry.reject(new Error(tag + ": abandoned (cancelled)"));
     pending.delete(id);
   };
   const ready = async () => {
@@ -758,8 +761,9 @@ async function main() {
       }
 
       // 一条连接读到尾：每 100ms 新开一条会开合几百次，MCP 子进程一旦正好在写
-      // 还可能撞上 SQLITE_BUSY 把整条车道抛断。读失败就当"还没收尾"继续等，但
-      // 把最后一次错误留着——真正的 schema 问题不能伪装成"等超时"。
+      // 还可能撞上 SQLITE_BUSY 把整条车道抛断。锁/忙这类可重试的读失败就当"还
+      // 没收尾"继续等；别的读失败（schema 变了、库结构坏了）当场抛出，不伪装成
+      // 等超时。
       let lastReadError = null;
       let pollDb = null;
       const readTaskRows = () => {
@@ -770,10 +774,12 @@ async function main() {
           ).all();
         } catch (e) {
           lastReadError = e;
-          // 连接可能已经坏了（schema 变了、句柄失效）：丢掉它，下一轮重开，
-          // 免得拿着一条坏连接重试到 60 秒超时。
+          // 连接可能已经坏了（schema 变了、句柄失效）：丢掉它，下一轮重开。
           try { pollDb?.close(); } catch { /* already closed */ }
           pollDb = null;
+          // 只有锁/忙值得重试；改名了列、库结构坏了之类应该当场失败，
+          // 不能拖成 60 秒之后再报“没收尾”。
+          if (!/SQLITE_BUSY|database is locked|SQLITE_LOCKED/i.test(String(e))) throw e;
           return null;
         }
       };
@@ -786,7 +792,7 @@ async function main() {
           while (Date.now() < settleDeadline) {
             const rows = readTaskRows();
             if (rows) mcpTasks = rows;
-            if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
+            if (mcpTasks.length >= 4 && mcpTasks.every((t) => t.ended !== null)) break;
             await new Promise((r) => setTimeout(r, 100));
           }
         } finally {

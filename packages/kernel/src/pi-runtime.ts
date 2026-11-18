@@ -1676,31 +1676,20 @@ export class PiAgentRuntime {
         // the later delta when the prompt finally stops (best-effort if the
         // store is already closed).
         //
-        // #303: kept as a promise the host can wait on for a bounded window
-        // (drainLateSettlement) — the task row must not claim "settled" while
-        // this delta is still on its way back.
-        //
-        // Design: chain onto a previously pending tail instead of overwriting
-        // it. One runtime normally owns one run, but the field IS the contract:
-        // dropping an earlier delta would let drainLateSettlement answer
-        // "settled" while that delta is still pending.
-        const previousTail = this.lateSettlement;
+        // Design: one tail per run, not a growing chain. Both hosts build a
+        // runtime per run (MCP per call, CLI per command), so chaining would
+        // only keep a promise tree alive for a case that does not happen — and
+        // a host that never drains would keep every stalled prompt reachable.
+        // If a previous tail exists, it keeps running on its own.
         const settleDelta = (): void =>
           settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
-        this.lateSettlement = Promise.all([
-          // A FAILED previous tail must not short-circuit this run's delta:
-          // Promise.all rejects on the first rejection, which would settle this
-          // promise (and read as "settled") while the delta below is still in
-          // flight. Swallow the old failure here; the new one reports below.
-          (previousTail ?? Promise.resolve()).catch(() => undefined),
-          promptPromise!.then(settleDelta, settleDelta),
-        ]).then(() => undefined, (e: unknown) => {
-          // A failed late write is best-effort, but not silent: the host reads
-          // "settled" for it (the promise is no longer pending), so an operator
-          // needs the one line that tells "the write blew up" apart from "it
-          // decided there was nothing to add".
-          reportBudgetFault("late token settlement", e);
-        });
+        this.lateSettlement = promptPromise!.then(settleDelta, settleDelta)
+          .then(() => undefined, (e: unknown) => {
+            // A failed late write is best-effort, but not silent: the host reads
+            // "failed" for it, so an operator needs the one line that tells "the
+            // write blew up" apart from "it decided there was nothing to add".
+            reportBudgetFault("late token settlement", e);
+          });
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
@@ -1774,10 +1763,10 @@ export class PiAgentRuntime {
     );
     try {
       const state = await Promise.race([settled, expired]);
-      // A window that closed first leaves the promise running untracked — drop
-      // the reference so a later run on a reused runtime does not keep waiting
-      // on (and reporting) a tail that belongs to this one.
-      if (state === "still-running") clearIfStillOurs();
+      // Design: a window that closed first does NOT drop the reference. Forgetting
+      // it would let the next call answer "settled" for spend that is still on
+      // its way — the one direction this report must never lie in. The tail is
+      // cleared only when it actually settles (either way).
       return state;
     } finally {
       if (timer) clearTimeout(timer);

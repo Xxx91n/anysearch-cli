@@ -68,6 +68,22 @@ import { toolError, toolFailure } from "./failure.js";
 // (#266: an interrupted run must not read as free).
 const INTERRUPTED_RUN_MISSING = ["run usage: interrupted before the provider reported it"];
 
+// A resident MCP server would print the wiring's degradation line on EVERY call
+// while the store stays broken, so dedupe by the message with the per-call task
+// id stripped. Same discipline (and bound) as the session-wiring warnings.
+const WARNED_DEGRADATIONS_MAX = 16;
+const warnedDegradations = new Set<string>();
+
+function warnDegraded(message: string): void {
+  const key = message.replace(/^task \S+ /, "");
+  if (warnedDegradations.has(key)) return;
+  if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
+  warnedDegradations.add(key);
+  try {
+    process.stderr.write("[anysearch] " + message + "\n");
+  } catch { /* a dead stderr must not break the call */ }
+}
+
 export function registerAnsChat(
   server: McpServer,
   eng: CompositionResult,
@@ -258,8 +274,8 @@ export function registerAnsChat(
           (budgetWiringMemo ??= wireTaskBudget(eng.store, task?.taskId, eng.config?.budget, {
             // A degraded corner (no ledger to bill) must not look like a
             // healthy unmetered run; the wiring warns here and the run keeps
-            // the session form.
-            warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+            // the session form. Deduped: this process is long-lived.
+            warn: warnDegraded,
           }));
         const {
           message,
@@ -308,7 +324,7 @@ export function registerAnsChat(
             // Includes the degraded registry (no task registered) with a
             // declared [budget]: that corner stops here on purpose (S9's third
             // state) instead of quietly running the consolidation unmetered.
-            return buildAnsChatBudgetResult("budget-not-established", consolidateBudget.taskBudgetFault, {
+            return buildAnsChatBudgetResult(consolidateBudget.taskBudgetFaultReason ?? "budget-not-established", consolidateBudget.taskBudgetFault, {
               ...(task ? { taskId: task.taskId } : {}),
               // This stop is a consolidate call, not a chat: saying "chat" would
               // send a caller down the wrong branch (#303 review).
@@ -337,7 +353,7 @@ export function registerAnsChat(
           // over the same connection, so the row, the reserves and the settles
           // all see one set of statements.
           const metering: ConsolidationMetering = consolidateTaskBudget
-            ? (eng.config?.budget
+            ? (consolidateBudget.declared
               ? { metered: true, budget: { sessionId: consolidateTaskBudget.taskId, ledger: consolidateTaskBudget.ledger } }
               : { metered: false, reason: "no-declared-caps" })
             : await resolveConsolidationMetering({
@@ -512,7 +528,7 @@ export function registerAnsChat(
         // failure.
         const chatBudget = budgetWiring();
         if (chatBudget.taskBudgetFault) {
-          return buildAnsChatBudgetResult("budget-not-established", chatBudget.taskBudgetFault, {
+          return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", chatBudget.taskBudgetFault, {
             ...(task ? { taskId: task.taskId } : {}),
           });
         }

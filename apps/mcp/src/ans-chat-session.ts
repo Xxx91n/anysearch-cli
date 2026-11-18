@@ -303,9 +303,11 @@ export function buildAnsChatErrorResult(
 
 // ---- #303: a run stopped by its own task budget ----
 
-/** The two runtime-decided budget stops (#303), as the MCP surface names them.
+/** The runtime's budget-stop union, named here for the MCP surface (#303).
  *  The union itself is the kernel's, so the emitter and the result builder cannot
- *  drift apart on a spelling. */
+ *  drift apart on a spelling. Every member is a budget stop today; if the
+ *  runtime ever adds another reason, this surface decides then whether it earns
+ *  the same result shape. */
 export type AnsChatBudgetStop = import("@anysearch-cli/kernel").RuntimeErrorReason;
 
 export interface AnsChatBudgetStopExtra {

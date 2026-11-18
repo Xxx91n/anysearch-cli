@@ -1,43 +1,39 @@
 // #302/#303 — the per-execution task budget a host bills one run to.
 //
 // Design: one implementation, two hosts. The CLI (#302) and the MCP `ans_chat`
-// tool (#303) both need the same three-state decision, and answering it twice
-// is how the two entries would end up disagreeing about whether a run was
-// metered. The states, decided here:
+// tool (#303) need the same three-state answer, and answering it twice is how
+// the entries drift apart. Three states here:
 //
-// - undeclared (the domain has no [budget]): no task_budgets row is created and
-//   no caps are enforced — unmetered. The scope still travels, so an undeclared
-//   registered task's internal searches route to its no-row ledger (a pass)
-//   instead of billing the session.
-// - established: the row is created with the declared caps; the runtime
-//   enforces them on this execution's own budget.
-// - declared but failed (no registered task, or row creation threw): the
-//   wiring returns a fault, and the runtime stops the run before any controlled
-//   call. A declared constraint that cannot be established must not turn into
-//   uncontrolled calls.
+// - undeclared: no task_budgets row, no caps enforced (unmetered), and the scope
+//   still travels so an undeclared task's internal searches route to its no-row
+//   ledger instead of billing the session.
+// - established: the row carries the declared caps and the runtime enforces it.
+// - declared but failed: a fault, and the run stops before any controlled call.
 //
-// Degradation, said plainly: when NO task was registered (a broken registry, or
-// a host that never registered one) or the store cannot hand out a ledger, an
-// UNDECLARED domain returns an empty wiring and the run falls back to the
-// session form — the shape every unmigrated caller still runs, not a hidden
-// guarantee. "Cannot hand out a ledger" is a real corner, not an oversight: with
-// no ledger object there is nothing for the engine's per-call routing to bill,
-// so "the scope still travels" cannot hold there. A DECLARED domain in the same
-// corner returns a fault and stops instead.
+// Degradation: with no task, or no ledger to hand out, an UNDECLARED domain falls
+// back to the session form (the shape every unmigrated caller still runs) and
+// says so; a DECLARED one faults in the same corner.
 //
 // Run from tests: pnpm --filter @anysearch-cli/kernel test
 
 import { toBudgetCaps, type BudgetConfig, type TaskBudgetLedger } from "@anysearch-cli/store";
+import type { RuntimeErrorReason } from "./runtime";
 import type { SessionStorePort } from "./ports";
 
 export interface TaskBudgetWiring {
-  /** The established task budget; absent when undeclared or faulted. Typed
-   * concretely (not as TaskBudgetScope) because the hosts' final reports read
+  /** The established task budget; absent when faulted. Typed concretely (not as
+   * TaskBudgetScope) because the hosts' final reports read
    * `ledger.getBalance(taskId)` — a read seam the kernel port doesn't carry,
-   * since billing call sites never need it. */
+   * since billing call sites never need it. Present for an undeclared domain
+   * too (a no-row ledger); `declared` is what says whether caps were set. */
   taskBudget?: { taskId: string; ledger: TaskBudgetLedger };
+  /** THE domain declared `[budget]`. Read this instead of re-reading the config:
+   * the wiring already made that decision and a second read can disagree. */
+  declared: boolean;
   /** The reason a declared budget could not be established. */
   taskBudgetFault?: string;
+  /** The machine-readable class of the same fault, so callers stop guessing. */
+  taskBudgetFaultReason?: RuntimeErrorReason;
 }
 
 export interface WireTaskBudgetOptions {
@@ -62,6 +58,7 @@ export function wireTaskBudget(
   opts: WireTaskBudgetOptions = {},
 ): TaskBudgetWiring {
   const warn = opts.warn ?? (() => {});
+  const declared = budget !== undefined;
   // Design: one shape for every corner. A DECLARED constraint that cannot be
   // established is a fault (S9's third state: stop, never fall open); an
   // UNDECLARED domain in the same corner degrades to the session form and says
@@ -74,9 +71,11 @@ export function wireTaskBudget(
     try { warn(message); } catch { /* a dead stderr must not break the wiring */ }
   };
   const stop = (faultText: string, degradedText: string): TaskBudgetWiring => {
-    if (budget) return { taskBudgetFault: faultText };
+    if (declared) {
+      return { declared, taskBudgetFault: faultText, taskBudgetFaultReason: "budget-not-established" };
+    }
     say((taskId ? "task " + taskId + " " : "no registered task ") + degradedText);
-    return {};
+    return { declared };
   };
   if (!taskId) {
     // No registered task (registry failed to open, or the context is absent).
@@ -124,8 +123,12 @@ export function wireTaskBudget(
     } catch (e: unknown) {
       // The FK on task_budgets makes "task was never registered" land here too
       // — the establishment failure the runtime turns into a hard stop.
-      return { taskBudgetFault: "task budget establishment failed: " + errText(e) };
+      return {
+        declared,
+        taskBudgetFault: "task budget establishment failed: " + errText(e),
+        taskBudgetFaultReason: "budget-not-established",
+      };
     }
   }
-  return { taskBudget: { taskId, ledger } };
+  return { declared, taskBudget: { taskId, ledger } };
 }
