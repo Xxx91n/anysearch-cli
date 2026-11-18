@@ -153,10 +153,10 @@ function mockStreamFn(_model: any, _context: any, _options?: any): any {
   assert(mockDomain.rag.adapter === "none", "rag adapter is none");
 }
 
-// Test 4: AgentEvent types are exactly 7.
+// Test 4: AgentEvent types are exactly 8.
 {
-  const eventTypes = ["text", "tool_call", "tool_result", "search", "search_result", "done", "error"];
-  assert(eventTypes.length === 7, "7 AgentEvent types");
+  const eventTypes = ["text", "tool_call", "tool_result", "search", "search_result", "session_recovery", "done", "error"];
+  assert(eventTypes.length === 8, "8 AgentEvent types");
 }
 
 // Test 5 removed: "constructor accepts ledger + sessionId" only asserted a

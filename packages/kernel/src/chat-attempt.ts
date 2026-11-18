@@ -28,6 +28,7 @@
 import { join } from "node:path";
 import { piSessionKey } from "./pi-runtime";
 import { forkChatSession } from "./fork-session";
+import { recoverPiSessionRecord } from "./pi-session-recovery";
 import type { SessionStorePort } from "./ports";
 import {
   SESSION_LEASE_DIRNAME,
@@ -76,6 +77,8 @@ export interface ChatAttemptOptions {
 export interface ChatAttemptContext {
   /** The selected handle, including the new handle after a fork. */
   sessionId?: string;
+  /** Append recovery facts after validating the record and before replaying it. */
+  recoverRecord?: typeof recoverPiSessionRecord;
   /**
    * Say that the run really started. Call it once the attempt has done
    * something — a provider call, a tool call, a written record.
@@ -142,7 +145,7 @@ export async function runChatAttempt(
     }
   }
   try {
-    return await runBody(body, store, sessionId, projectRoot);
+    return await runBody(body, store, sessionId, projectRoot, recoverPiSessionRecord);
   } finally {
     release();
   }
@@ -161,12 +164,14 @@ async function runBody(
   store: SessionStorePort | undefined,
   sessionId: string | undefined,
   projectRoot: string | null,
+  recoverRecord?: ChatAttemptContext["recoverRecord"],
 ): Promise<ChatAttemptOutcome> {
   const record = store?.recordChatProject;
   const writable = !!(record && sessionId);
   let started = false;
   const ctx: ChatAttemptContext = {
     sessionId,
+    recoverRecord,
     markStarted() {
       if (started || !writable) return;
       started = true;

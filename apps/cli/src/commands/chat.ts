@@ -258,8 +258,11 @@ export async function runChat(argv: string[]): Promise<number> {
       // the code is applied after the lease is handed back.
       let failed = false;
       try {
-        for await (const event of runtime.run(query)) {
+        for await (const event of runtime.run(query, attempt)) {
           switch (event.type) {
+            case "session_recovery":
+              console.error(event.notice);
+              break;
             case "text":
               process.stdout.write(event.content);
               break;

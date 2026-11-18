@@ -519,6 +519,10 @@ export function registerAnsChat(
             signal,
           });
           let output = "";
+          let recoveryNotice: string | undefined;
+          const withRecovery = (result: ReturnType<typeof buildAnsChatResult>) => recoveryNotice
+            ? { ...result, content: [{ type: "text" as const, text: recoveryNotice }, ...result.content] }
+            : result;
           let runtimeError: string | undefined;
           let runUsage: unknown;
           let runContext: unknown;
@@ -552,8 +556,10 @@ export function registerAnsChat(
               sessionLock: sessionWiring.sessionLock,
             }, async (attempt) => {
               startedAttempt = attempt;
-              for await (const event of runtime.run(chatMessage)) {
-                if (event.type === "text") {
+              for await (const event of runtime.run(chatMessage, attempt)) {
+                if (event.type === "session_recovery") {
+                  recoveryNotice = event.notice;
+                } else if (event.type === "text") {
                   output += event.content;
                 } else if (event.type === "tool_call") {
                   toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
@@ -600,11 +606,11 @@ export function registerAnsChat(
           // The attempt already recorded itself as unfinished on the way out, so
           // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
-            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
+            return withRecovery(buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine));
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
-            return buildAnsChatResult("", memory.sessionId, {
+            return withRecovery(buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
                 memorySummary: runtime.getMemoryUsage(),
@@ -613,12 +619,12 @@ export function registerAnsChat(
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-            });
+            }));
           }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.
-          return buildAnsChatResult(output, memory.sessionId, {
+          return withRecovery(buildAnsChatResult(output, memory.sessionId, {
             usage: {
               run: runUsage ?? emptyRunUsage(["run usage"]),
               memorySummary: runtime.getMemoryUsage(),
@@ -626,7 +632,7 @@ export function registerAnsChat(
             context: runContext,
             toolCalls,
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-          });
+          }));
         } catch (e) {
           return toolError("ans_chat", e instanceof Error ? e.message : String(e));
         }
