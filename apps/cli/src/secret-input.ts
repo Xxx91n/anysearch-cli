@@ -86,15 +86,20 @@ async function readFromTerminal(
         // with its own ESC byte. Interpreting other escapes here would delete
         // part of a pasted key.
         //
-        // Enter is the exception, and only while nothing has been collected yet:
-        // that is a user pressing Enter with an empty paste (a terminal that sent
-        // the opening marker and no closing one), and without that exit the only
-        // way out would be Ctrl+C. A newline AFTER payload bytes is part of the
-        // payload - it means two lines were pasted - and stays in the value for
-        // `cleanSecret` to refuse out loud.
+        // A newline is the exit. Terminals that send the opening marker and
+        // never the closing one would otherwise leave Ctrl+C as the only way
+        // out. It is NOT treated as part of the key: `cleanSecret` trims a
+        // trailing newline (a pipe always ends with one), so returning the
+        // payload with the newline would silently store a shortened key when two
+        // lines were pasted. An empty buffer means the user pressed Enter on an
+        // empty paste, which is a plain "done"; a buffer with content means the
+        // paste never finished, which is said out loud.
         if (inPaste) {
-          if (pasteBuffer === "" && (ch === "\r" || ch === "\n")) {
+          if (ch === "\r" || ch === "\n") {
             inPaste = false;
+            if (pasteBuffer !== "") {
+              throw new Error("the paste did not finish before the line ended; paste only the key itself");
+            }
             output.write("\n");
             return value;
           }

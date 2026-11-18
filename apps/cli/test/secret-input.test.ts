@@ -55,15 +55,16 @@ test("a bracketed paste does not leak its markers into the key", async () => {
   assert.ok(!value.includes("201~"), "the closing marker is not part of the key");
 });
 
-test("a newline inside a paste does not end the read half-way", async () => {
+test("a newline after a paste payload is refused, never stored shortened", async () => {
   const { input } = fakeTty(["\u001b[200~sk-line-one\nsk-line-two\u001b[201~", "\r"]);
   const out = sink();
-  const value = await readSecret("key: ", { input, output: out.output });
-  // The paste is taken whole, newline included, and the read does not stop at
-  // it. `cleanSecret` then rejects the embedded newline instead of the command
-  // silently storing half a key.
-  assert.equal(value, "sk-line-one\nsk-line-two");
-  assert.throws(() => cleanSecret(value), /more than one line/);
+  // `cleanSecret` trims a trailing newline (a pipe always ends with one), so
+  // returning the payload after the newline would silently store "sk-line-one".
+  // The read says the paste did not finish instead.
+  await assert.rejects(
+    () => readSecret("key: ", { input, output: out.output }),
+    /the paste did not finish/,
+  );
 });
 
 test("an arrow key does not corrupt what was already typed", async () => {
@@ -155,13 +156,22 @@ test("an SS3 arrow key is dropped whole too", async () => {
   assert.equal(await readSecret("key: ", { input, output: out.output }), "sk-ab");
 });
 
-test("Enter with an empty paste finishes the read instead of hanging", async () => {
-  // A terminal that sends the opening marker and never the closing one would
-  // otherwise leave Ctrl+C as the only way out.
-  const { input } = fakeTty(["\u001b[200~", "\r", "sk-typed-after\r"]);
+test("Enter after a paste payload is refused instead of stored shortened", async () => {
+  // A terminal that sends the opening marker and never the closing one must not
+  // hang, and must not hand back a payload that later reads as a whole key.
+  const { input } = fakeTty(["\u001b[200~sk-pasted", "\r", "sk-typed-after\r"]);
   const out = sink();
-  const value = await readSecret("key: ", { input, output: out.output });
-  assert.equal(value, "");
+  await assert.rejects(
+    () => readSecret("key: ", { input, output: out.output }),
+    /the paste did not finish/,
+  );
+});
+
+test("Enter on an empty paste finishes the read", async () => {
+  // The plain "done" case: nothing was collected, so there is nothing to lose.
+  const { input } = fakeTty(["\u001b[200~", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "");
 });
 
 test("a control byte never silently joins the key", async () => {
