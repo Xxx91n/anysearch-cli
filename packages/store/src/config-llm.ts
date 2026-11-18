@@ -20,7 +20,6 @@
 // so callers can say where a value came from instead of guessing.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import {
@@ -88,6 +87,17 @@ export interface ResolvedLlmConfig {
 export interface ResolveLlmOpts {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
+  /**
+   * The config root. Omit it and the root is `resolveConfigHome(undefined, env)`
+   * - the same call every writer makes, so a caller can only get a different
+   * file by passing a different `home` on purpose.
+   *
+   * Note what an injected `env` does and does not control: it decides the key
+   * resolution and, if it names HOME/USERPROFILE, the root. It does NOT isolate
+   * the root - an env with neither name still falls through to the process env
+   * and then the platform's home, exactly like `ans auth` does. A test that
+   * wants isolation passes `home`.
+   */
   home?: string;
   flags?: LlmFlags;
   warn?: (msg: string) => void;
@@ -98,7 +108,10 @@ export interface ResolveLlmOpts {
   credentials?: boolean;
 }
 
-export function userConfigPath(home: string = homedir()): string {
+// Defaulting through `resolveConfigHome` (not `homedir()`) is what makes the
+// "one root" rule hold at the type level too: a caller that omits `home` writes
+// to the same file the resolver reads, on any host.
+export function userConfigPath(home: string = resolveConfigHome()): string {
   return join(home, ".anysearch-cli", "config.toml");
 }
 
@@ -425,7 +438,7 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },
-  home: string = homedir(),
+  home: string = resolveConfigHome(),
   warn: (msg: string) => void = (m) => process.stderr.write("[config] " + m + "\n"),
 ): string {
   const path = userConfigPath(home);

@@ -139,25 +139,28 @@ function classifyCredentialFault(error: unknown): string {
     if (/still held after/i.test(raw)) {
       return "another ans process is writing the credential file; wait for it to finish and retry";
     }
-    // "cannot create"/"cannot take the write lock" wrap whatever mkdirSync or
-    // openSync returned, so only a permission-class code means permissions.
-    // ENOSPC or ENOTDIR through the same wording needs its own name.
-    if (/cannot take the write lock|cannot create/i.test(raw)) {
-      if (permission) {
-        return "the credential file's folder refused access (" + code + "); check its permissions";
-      }
-      if (code === "ENOSPC") return "there is no space left for the credential file; free some space and retry";
-      if (code === "ENOTDIR" || code === "ENAMETOOLONG") {
-        return "the credential file's folder path is not usable (" + code + "); check the config root";
-      }
-      return "the credential file's folder could not be prepared; check the config root";
-    }
-    // Anchored on the wording store actually throws. A bare /ACL/ would also
-    // match the file path this message always carries.
+    // An ACL/protection fault is checked before the errno rules: it is thrown
+    // after the write itself succeeded, so an errno in the message says nothing
+    // about why the protection failed. Anchored on the wording store really
+    // throws - a bare /ACL/ would also match the file path every message carries.
     if (/\bDACL\b|POSIX mode|not a regular file|owned by another account/i.test(raw)) {
       return "the credential file could not be locked to your account (" + (code ?? "protection fault") + "); check the folder's permissions";
     }
-    return "the credential file could not be written" + (code ? " (" + code + ")" : "") + "; check the folder's permissions";
+    // Everything else is classified by errno, not by wording. `writeProtectedFile`
+    // re-throws the raw reason, so a message may carry an errno with no
+    // "cannot create" prefix at all; keying on the phrase would make these
+    // branches dead for the cases they exist for.
+    if (permission) {
+      return "the credential file's folder refused access (" + code + "); check its permissions";
+    }
+    if (code === "ENOSPC") return "there is no space left for the credential file; free some space and retry";
+    if (code === "ENOTDIR" || code === "ENAMETOOLONG") {
+      return "the credential file's folder path is not usable (" + code + "); check the config root";
+    }
+    if (code === "EMFILE" || code === "EBUSY") {
+      return "the credential file is busy (" + code + "); close other programs using it and retry";
+    }
+    return "the credential file could not be written; check the folder's permissions";
   }
   if (code === "ETIMEDOUT") {
     // Not "the file is unreadable": a timeout means the storage behind it did not
@@ -223,17 +226,30 @@ export type CredentialSourceLabel = "env" | "user" | "none";
  *
  * The store's warnings are fixed sentences plus a file path today, but this
  * string goes to stderr from a module that reads a key file, so it is checked
- * rather than assumed: a long run of key-shaped characters becomes a placeholder,
- * and a JSON.parse-style message (which quotes the text around the error) is cut
- * down to its position. Same reasoning as `classifyCredentialFault`; this one
- * keeps the sentence because the sentence is the useful part.
+ * rather than assumed. Two rules, and they are deliberately narrow:
+ *
+ * - a known key prefix followed by its body (`sk-…`, `tvly-…`, `exa-…`, `key-…`)
+ *   is redacted wherever it appears, short or long;
+ * - a bare run of the key alphabet is redacted only when no separator (`.`,
+ *   `/`, `:`, whitespace, `"`) interrupts it for 32+ characters. That is what
+ *   keeps a long path readable: `/home/someone/very-long-nas-mount/...` is broken
+ *   by slashes, so it survives, while an unbroken base64-shaped key does not.
+ *
+ * The first rule is what covers a SHORT key; a length threshold alone cannot,
+ * and a key split by a JSON message's quotes is still caught by its prefix.
  */
 export function redactPathFault(warning: string): string {
-  // 32+ characters of the key alphabet in one unbroken run. Every path segment
-  // and word in these messages is shorter than that (".anysearch-cli" is 13), and
-  // a real API key is far longer. The threshold is what lets the useful part of
-  // the sentence - which file, which errno - survive redaction.
-  return warning.replace(/[A-Za-z0-9_\-+/=]{32,}/g, "[redacted]");
+  return warning
+    // Prefix form: `sk-`, `sk_live_`, `tvly-`, `exa-`, `key-`, `api-` and the
+    // like, then the key body. The body stops at any separator (`/`, `.`, `:`,
+    // `"`, whitespace) so a path segment cannot be swallowed and a quoted key in
+    // a parse message is still caught. Eight body characters is short enough for
+    // real keys and long enough to miss ordinary words.
+    .replace(/\b(?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-]{8,}/gi, "[redacted]")
+    // Bare form: an unbroken run of 40+ key characters. `/` and `+` are left out
+    // on purpose - a path is made of them, and a key that contains one is still
+    // caught by the prefix rule above or by its remaining runs.
+    .replace(/[A-Za-z0-9_\-=]{40,}/g, "[redacted]");
 }
 
 // createEngine: build configured engine.
@@ -333,11 +349,13 @@ export function createEngine(
         writeProviderDiagnostic("[anysearch] " + redactPathFault(warning) + "\n");
       }
       const resolved: CredentialSources = { status: "resolved" };
-      // Every arm that came out of the resolver is recorded, including one that
-      // only got an endpoint. `"none"` is what keeps "configured but keyless"
-      // distinguishable from "not configured at all".
-      if (creds?.tavily) resolved.tavily = creds.tavily.apiKey ? creds.tavily.source : "none";
-      if (creds?.exa) resolved.exa = creds.exa.apiKey ? creds.exa.source : "none";
+      // The anysearch arm is the one the resolver emits WITHOUT a key when only
+      // ANYSEARCH_ENDPOINT is set, so `"none"` is meaningful there. tavily and
+      // exa are simply absent when they have no key - `pick()` omits the field
+      // entirely - so recording `"none"` for them would be a claim the resolver
+      // never makes. Absent stays absent.
+      if (creds?.tavily) resolved.tavily = creds.tavily.source;
+      if (creds?.exa) resolved.exa = creds.exa.source;
       if (creds?.anysearch) resolved.anysearch = creds.anysearch.apiKey ? creds.anysearch.source : "none";
       credentialSources = resolved;
     } catch (e) {

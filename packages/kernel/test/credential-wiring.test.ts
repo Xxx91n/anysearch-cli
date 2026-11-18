@@ -474,3 +474,47 @@ test("a warning carrying a key-shaped run is redacted before it reaches a log", 
   assert.equal(redactPathFault("/home/me/.anysearch-cli/credentials.json: not valid JSON"),
     "/home/me/.anysearch-cli/credentials.json: not valid JSON");
 });
+
+test("redaction catches short keys and keeps a long path readable", () => {
+  // A length threshold alone cannot catch a short key, and a long path is broken
+  // by slashes. Both directions are pinned here.
+  const short = redactPathFault("could not read it; value was sk-abc12345");
+  assert.ok(!short.includes("sk-abc12345"), "a short prefixed key is redacted too");
+  assert.match(short, /\[redacted\]/);
+
+  // A key split by a JSON message's quote is still caught by its prefix.
+  const split = redactPathFault('not valid JSON near "sk-abc12345xyz"');
+  assert.ok(!split.includes("sk-abc12345xyz"), "a quoted key body is redacted");
+
+  // A long path full of slashes is what the reader needs; it must survive.
+  const longPath = "/home/someone/very-long-nas-mount-name/projects/anysearch-cli/.anysearch-cli/credentials.json";
+  assert.equal(redactPathFault(longPath + ": not valid JSON"), longPath + ": not valid JSON");
+});
+
+test("an unbroken base64-shaped run is redacted", () => {
+  const key = "a".repeat(48);
+  const out = redactPathFault("/x: could not read it; value " + key);
+  assert.ok(!out.includes(key));
+  assert.match(out, /\[redacted\]/);
+});
+
+test("ENOTDIR is reported as a path fault, not as a permission fault", () => {
+  // `writeProtectedFile` re-throws the raw errno, so classification has to key on
+  // the code. A path that is not a directory is not fixed by changing modes.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => {
+      throw new Error("refusing to write the credential file /x: ENOTDIR: not a directory, mkdir '/x'");
+    },
+  });
+  try {
+    const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(message, /path is not usable \(ENOTDIR\)/);
+    assert.doesNotMatch(message, /permission|refused access/i);
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});

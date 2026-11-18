@@ -63,3 +63,7 @@ apps/cli/.build-stamp.json
 # Complete product outputs (#298), built from the existing module sources.
 /apps/cli/mcp/
 /apps/cli/plugin/
+
+# Local scratch output. Anything fetched from a tracker or an API and written to
+# the working tree for a look, never repo content.
+/threads.json
