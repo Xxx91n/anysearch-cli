@@ -77,18 +77,29 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
 ];
 
 /**
- * The search arms this resolver fills. It is declared, and the catalog below is
- * checked against it at load time: a search provider added to
- * CREDENTIAL_PROVIDERS without a line here stops the module with one named
- * error instead of being resolved by nobody and reported by nothing.
+ * The search arms this resolver fills. It is declared, and the catalog is
+ * checked against it at load time, so a provider added on one side only stops
+ * the module with one named error instead of being resolved by nobody.
  */
 export const SEARCH_PROVIDER_IDS = ["tavily", "exa", "anysearch"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
 assertCatalogMatchesSearchIds();
 
-/** Search providers only: the env var each one's key is read from. */
+/**
+ * Search providers only: the env var each one's key is read from.
+ *
+ * The `kind === "search"` check is not redundant with the assert above: that one
+ * compares the two lists, so a model provider that happens to share an id would
+ * pass it. Here the kind is what makes the id a search arm at all.
+ */
 export const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = Object.fromEntries(
-  SEARCH_PROVIDER_IDS.map((id) => [id, credentialProvider(id)!.envKey]),
+  SEARCH_PROVIDER_IDS.map((id) => {
+    const found = credentialProvider(id);
+    if (!found || found.kind !== "search") {
+      throw new Error("SEARCH_PROVIDER_IDS names " + id + " but CREDENTIAL_PROVIDERS has no search provider of that id");
+    }
+    return [id, found.envKey];
+  }),
 ) as Record<SearchProviderId, string>;
 
 /**
@@ -157,28 +168,22 @@ export function userCredentialsPath(home: string = resolveConfigHome()): string 
 }
 
 /**
- * The user config root every credential/config reader must agree on.
- *
- * An explicit override wins; otherwise the caller's env decides if it names a
- * home at all; otherwise the PROCESS env; only then the real home. The process
- * env step matters: `homedir()` on Linux reads /etc/passwd and ignores HOME, so
- * a caller that passes a partial env (an MCP call carrying only ANS_LLM_*) would
- * otherwise land on a different directory than the one the rest of the install
- * uses - a second file nobody wrote.
+ * The user config root every credential/config reader must agree on: an
+ * explicit override, else USERPROFILE (Windows), else HOME, else the real home.
  *
  * One function because two readers that disagree would read different files -
  * the resolver would look for the key the writer had just stored somewhere
  * else. An exported-but-empty value falls through, matching this repo's
  * convention for "set but blank means unset".
+ *
+ * This resolves ONLY the env it is given. It deliberately does not reach for
+ * `process.env`: a caller that passes its own env means "this env decides", and
+ * borrowing the host's HOME behind its back would point a test - or a GUI host -
+ * at a directory nobody in that call wrote. Callers that have no env of their
+ * own pass `process.env`.
  */
 export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
-  if (explicit) return explicit;
-  const fromCaller = env.USERPROFILE || env.HOME;
-  if (fromCaller) return fromCaller;
-  // The caller named no home, so fall through to what the process itself was
-  // given before reaching for the platform's user database.
-  const fromProcess = process.env.USERPROFILE || process.env.HOME;
-  return fromProcess || homedir();
+  return explicit || env.USERPROFILE || env.HOME || homedir();
 }
 
 /**

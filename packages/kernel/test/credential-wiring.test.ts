@@ -316,3 +316,67 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
     engine.observation.close();
   }
 });
+
+test("an endpoint without a key is not reported as an authenticated arm", () => {
+  // `resolveSearchCredentials` emits the anysearch arm with an endpoint alone
+  // when ANYSEARCH_ENDPOINT is set and no key exists (that is how the offline
+  // acceptance lane points the arm at a dead port). Recording its `source` would
+  // tell a consumer "this arm has a key, from env" and hide a degraded arm.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: { ANYSEARCH_ENDPOINT: "http://127.0.0.1:1" },
+    searchCredentials: (e) => resolveSearchCredentials(e),
+  });
+  try {
+    assert.equal(engine.credentialSources?.status, "resolved");
+    assert.equal(
+      engine.credentialSources?.status === "resolved" ? engine.credentialSources.anysearch : "unset",
+      undefined,
+      "an endpoint with no key is not a key source",
+    );
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("no seam passed leaves credentialSources absent, so a truthiness check still works", () => {
+  // Before #301 this field did not exist at all. Keeping "nobody asked" as
+  // `undefined` is what lets an existing `if (engine.credentialSources)` keep
+  // meaning "resolution was configured".
+  const engine = createEngine(undefined, { dbPath: ":memory:", domainsDirs: [], env: {} });
+  try {
+    assert.equal(engine.credentialSources, undefined);
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a credential fault is classified by cause, not flattened into one sentence", () => {
+  // Each refusal has a different fix, so the reported cause has to survive the
+  // classification: a held lock is not a permissions problem, and a broken file
+  // is neither.
+  const cases: Array<[string, RegExp]> = [
+    ["another ans process is holding it: refusing to write the credential file /x: another ans process is writing it (x.lock is still held after 5s)", /another ans process is writing/],
+    ["refusing to write the credential file /x: cannot take the write lock /x.lock (EACCES)", /folder refused access \(EACCES\)/],
+    ["refusing to write the credential file /x: its Windows DACL still allows BA", /could not be locked to your account/],
+    ["/x: not valid JSON (line 3 column 5); fix or remove the file", /not readable as stored keys/],
+  ];
+  for (const [raw, want] of cases) {
+    const engine = createEngine(undefined, {
+      dbPath: ":memory:",
+      domainsDirs: [],
+      env: {},
+      searchCredentials: () => { throw new Error(raw); },
+    });
+    try {
+      const message = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+      assert.match(message, want, "cause: " + raw);
+    } finally {
+      (engine.store as { close?: () => void }).close?.();
+      engine.observation.close();
+    }
+  }
+});

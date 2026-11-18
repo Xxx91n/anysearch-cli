@@ -178,10 +178,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
   // home follows the same rule as the credential file: one shared resolver, one
-  // env. `resolveConfigHome` itself falls back to the real home when the env
-  // names neither HOME nor USERPROFILE, so a caller that passes a partial env
-  // gets the SAME root the search credential resolver gives it - the two entry
-  // points cannot disagree about which config.toml is in force.
+  // env. Passing `env` rather than letting the helper default is what keeps the
+  // model config and the key store on the same file for any caller that injects
+  // its own environment.
   const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 

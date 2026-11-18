@@ -628,24 +628,29 @@ test("an explicit home wins over every environment variable", () => {
   assert.equal(cfg.sources.provider, "user");
 });
 
-test("an exported HOME still decides the root when the caller passes a partial env", () => {
-  // A caller that hands in only ANS_LLM_* (the MCP path) must not silently land
-  // on the platform's home: `homedir()` on Linux reads /etc/passwd and ignores
-  // HOME, which would be a second config file nobody wrote. The root resolver
-  // falls back to the process env before it reaches for homedir().
+test("a caller's own env decides the root; the host's HOME never leaks in", () => {
+  // An injected env means "this env decides". Borrowing the host's HOME behind
+  // the caller's back would point a test - or a GUI host - at a directory nobody
+  // in that call wrote, which is the second-file bug this ticket exists to fix.
   const f = fixture({ userToml: '[llm]\nprovider = "google"\nmodel = "gemini-2.5-flash"\n' });
   const savedProfile = process.env.USERPROFILE;
   const savedHome = process.env.HOME;
-  process.env.HOME = f.home;
+  // The host points somewhere else entirely, with a readable file of its own.
+  const hostHome = join(f.home, "host-home");
+  mkdirSync(join(hostHome, ".anysearch-cli"), { recursive: true });
+  writeFileSync(join(hostHome, ".anysearch-cli", "config.toml"), '[llm]\nprovider = "anthropic"\nmodel = "claude-haiku-4-5"\n');
+  process.env.HOME = hostHome;
   delete process.env.USERPROFILE;
   try {
     const cfg = resolveLlmConfig({
+      // Partial env: names the model but no home. The caller's env stands, so
+      // neither the host's file nor its root may be consulted.
       env: { ANS_LLM_MODEL: "gemini-2.5-flash" },
       cwd: f.cwd,
       warn: (m: string) => f.warnings.push(m),
     });
-    assert.equal(cfg.provider, "google", "the process env root was used, so the user file was read");
-    assert.equal(cfg.sources.provider, "user");
+    assert.notEqual(cfg.provider, "anthropic", "the host's config.toml was not read");
+    assert.equal(f.warnings.join("\n").includes(hostHome), false, "no file under the host home was touched");
   } finally {
     if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
     if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;

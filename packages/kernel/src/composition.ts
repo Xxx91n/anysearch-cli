@@ -109,18 +109,37 @@ function buildProviders(
 /**
  * Turn a credential-resolution failure into a sentence safe to show. The
  * resolver reads a file that holds keys, so its message is not assumed clean:
- * only a recognised category and a bare errno code are quoted, and each of them
- * points at the fix. Anything unrecognised becomes a fixed sentence - an
- * unknown message is exactly the case where a key fragment could ride along.
+ * only a recognised category and a bare errno code are quoted. Anything
+ * unrecognised becomes a fixed sentence - an unknown message is exactly the case
+ * where a key fragment could ride along.
+ *
+ * The patterns follow what the store actually reports, in both shapes it uses:
+ * a returned `error` field ("<path>: could not read it (EACCES)", "<path>: not
+ * valid JSON", "<path>: entry 1 has no apiKey") and a thrown refusal ("refusing
+ * to write the credential file …: <reason>"). A reason that does not match any of
+ * them keeps its errno when there is one, because "EACCES" is the actionable part.
  */
 function classifyCredentialFault(error: unknown): string {
   const raw = String(error instanceof Error ? error.message : error);
-  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY)\b/.exec(raw)?.[1];
-  if (/not valid JSON|missing the "bindings" list|has no apiKey|has no provider/i.test(raw)) {
-    return "the user credential file is not readable as stored keys (" + (code ?? "parse fault") + "); fix or remove it";
+  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY|ETIMEDOUT)\b/.exec(raw)?.[1];
+
+  if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
+    return "the user credential file is not readable as stored keys; fix or remove it, then retry";
   }
   if (/refusing to write/i.test(raw)) {
-    return "the credential file could not be written (" + (code ?? "write fault") + "); check the folder's permissions";
+    // The refusal carries the real cause (permissions, an unusable ACL tool, a
+    // failed protection check, a held lock). Keeping the category is what lets a
+    // user tell "fix the folder" from "another ans is writing it".
+    if (/still held after/i.test(raw)) {
+      return "another ans process is writing the credential file; wait for it to finish and retry";
+    }
+    if (/cannot take the write lock|cannot create/i.test(raw)) {
+      return "the credential file's folder refused access (" + (code ?? "permission fault") + "); check its permissions";
+    }
+    if (/DACL|ACL|POSIX mode|not a regular file|owned by another account/i.test(raw)) {
+      return "the credential file could not be locked to your account (" + (code ?? "protection fault") + "); check the folder's permissions";
+    }
+    return "the credential file could not be written" + (code ? " (" + code + ")" : "") + "; check the folder's permissions";
   }
   if (code) return "the user credential file could not be read (" + code + ")";
   return "the user credential file could not be read; run `ans auth list` to check it";
@@ -155,15 +174,22 @@ export interface CompositionResult {
   // failed". A tagged union rather than three optional fields: a consumer must
   // be able to tell "nobody asked", "asked, no key" and "asked, it broke" apart
   // at the type level, because reading the last one as the middle one hides a
-  // real fault. Never carries a secret value.
+  // real fault. Never carries a secret value. UNDEFINED when no seam was passed,
+  // so `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
 }
 
-/** The three outcomes of search-credential resolution. */
+/**
+ * What search-credential resolution concluded. `undefined` at the consumer means
+ * "nobody asked" (see the field above), so this type only covers the two cases
+ * where a resolution actually ran.
+ */
 export type CredentialSources =
-  /** No `searchCredentials` seam was passed; nothing was resolved. */
-  | { status: "unasked" }
-  /** Resolution completed; a key present here is the one that arm was built with. */
+  /**
+   * Resolution completed. An arm appears here only when it got a KEY: the
+   * anysearch arm can be configured with an endpoint and no key at all, and that
+   * is a degraded arm, not an authenticated one.
+   */
   | { status: "resolved"; tavily?: string; exa?: string; anysearch?: string }
   /** Resolution threw. The arms fell back to their own env; `error` explains why. */
   | { status: "failed"; error: string };
@@ -252,7 +278,9 @@ export function createEngine(
   // resolver (an unreadable file, a permission fault) must degrade to "each SDK
   // reads its own env", not kill the MCP process at startup.
   let creds: CredentialSource = undefined;
-  let credentialSources: CredentialSources = { status: "unasked" };
+  // undefined, not a status value: a consumer that asks "was resolution even
+  // configured?" still gets a falsy answer, which is what it got before #301.
+  let credentialSources: CredentialSources | undefined;
   if (opts?.searchCredentials) {
     try {
       creds = opts.searchCredentials(env);
@@ -260,9 +288,12 @@ export function createEngine(
         writeProviderDiagnostic("[anysearch] " + warning + "\n");
       }
       const resolved: CredentialSources = { status: "resolved" };
-      if (creds?.tavily) resolved.tavily = creds.tavily.source;
-      if (creds?.exa) resolved.exa = creds.exa.source;
-      if (creds?.anysearch) resolved.anysearch = creds.anysearch.source;
+      // Only an arm with a KEY is recorded. The anysearch arm is emitted with an
+      // endpoint alone when ANYSEARCH_ENDPOINT is set and no key exists, and
+      // reporting that as "has a key, from env" would hide a degraded arm.
+      if (creds?.tavily?.apiKey) resolved.tavily = creds.tavily.source;
+      if (creds?.exa?.apiKey) resolved.exa = creds.exa.source;
+      if (creds?.anysearch?.apiKey) resolved.anysearch = creds.anysearch.source;
       credentialSources = resolved;
     } catch (e) {
       creds = undefined;

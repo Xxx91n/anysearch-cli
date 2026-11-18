@@ -34,10 +34,9 @@ function envKeySet(provider: string): string | undefined {
 }
 
 export async function runLlm(args: string[]): Promise<number> {
-  // ONE root for the whole command, resolved the same way `ans auth` and the
-  // resolver resolve it. Passing it explicitly (instead of letting each reader
-  // default) is what keeps `ans llm`, `ans auth` and `--gate`'s write on the same
-  // file when HOME/USERPROFILE disagree with the platform's home.
+  // ONE root for the whole command, resolved from the process env - the same
+  // input `ans auth` resolves it from - and passed explicitly to the resolver and
+  // to the credential read, so the listing can never describe another file.
   const env = process.env;
   const home = resolveConfigHome(undefined, env);
   if (args.length === 0) {

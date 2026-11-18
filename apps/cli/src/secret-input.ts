@@ -90,7 +90,12 @@ async function readFromTerminal(
         if (inPaste) {
           if (ch === "\r" || ch === "\n") {
             inPaste = false;
-            if (pasteBuffer.trim() !== "") {
+            // "Nothing collected yet" and "the paste broke off" are decided by
+            // the same rule the rest of the reader uses: bytes that could ever
+            // be part of a key. Control bytes in the buffer are NOT evidence the
+            // user typed something - they are terminal noise, and calling that a
+            // half-finished paste would misreport what happened.
+            if (hasKeyBytes(pasteBuffer)) {
               throw new Error("the paste did not finish before the line ended; paste only the key itself");
             }
             pasteBuffer = "";
@@ -177,17 +182,30 @@ async function readFromTerminal(
 }
 
 /**
- * True for a character that may go into a key: an ASCII printable byte. The
- * iteration this is called from walks CODE POINTS, so a character outside the
- * BMP (an emoji, an extension-CJK glyph) is one `ch` of two UTF-16 units.
- * `charCodeAt(0)` would see only its high surrogate - 0xD800-0xDBFF, which passes
- * an ASCII range test - and the pair would end up in the key and later in an HTTP
- * header. Only the BMP range is accepted, and `cleanSecret` catches the rest.
+ * True when the buffer holds at least one byte that could be part of a key.
+ * One rule for both questions the reader asks of a paste buffer - "may I finish
+ * here?" and "did the user actually paste anything?" - so the two can never
+ * disagree about what counts as content.
+ */
+function hasKeyBytes(buffer: string): boolean {
+  for (const ch of buffer) if (isPrintable(ch)) return true;
+  return false;
+}
+
+/**
+ * True for a character that may go into a key: an ASCII printable byte.
+ *
+ * The iteration this is called from walks CODE POINTS, so a character outside
+ * the BMP arrives as one `ch` of two UTF-16 units; `charCodeAt(0)` would see only
+ * its high surrogate (0xD800-0xDBFF, inside an ASCII range test) and the pair
+ * would reach the key and later an HTTP header. The bound is 0x7e, not 0xffff:
+ * a key is ASCII, and letting an accepted-then-refused character into the value
+ * makes the terminal's reaction disagree with the error the user finally sees.
  */
 function isPrintable(ch: string): boolean {
   if (ch.length === 0) return false;
   const code = ch.codePointAt(0)!;
-  return code >= 0x20 && code !== 0x7f && code <= 0xffff;
+  return code >= 0x20 && code <= 0x7e;
 }
 
 /**
@@ -231,9 +249,9 @@ async function readPipedSecret(
  * ends up in.
  *
  * The non-ASCII check is the last line of defence, not the first: the terminal
- * reader already refuses characters outside the BMP, and a piped value never
- * sees that reader at all. A surrogate pair here would be split across two
- * bytes in the request header.
+ * reader already refuses those characters, and a piped value never sees that
+ * reader at all. A surrogate pair here would be split across two bytes in the
+ * request header.
  */
 export function cleanSecret(raw: string): string {
   const value = raw.trim();
