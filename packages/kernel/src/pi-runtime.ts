@@ -14,7 +14,7 @@
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, StreamFunction } from "@earendil-works/pi-ai";
+import { normalizeContext, resolveTranscript, type AssistantMessage, type StreamFunction } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
@@ -1903,17 +1903,17 @@ export class PiAgentRuntime {
       if (this.opts.signal) signals.push(this.opts.signal);
       const signal = AbortSignal.any(signals);
       signal.throwIfAborted();
-      let systemChars = "systemPrompt" in context && typeof context.systemPrompt === "string"
-        ? context.systemPrompt.length
-        : 0;
-      if ("tools" in context && Array.isArray(context.tools)) systemChars += JSON.stringify(context.tools).length;
-      // PI carries prompt sections and tool definitions next to the message body.
-      for (const message of context.messages) {
+      const compat = model.compat;
+      const keepsSystemHistory = !!compat && "supportsMidConvoSystemMessages" in compat
+        && compat.supportsMidConvoSystemMessages === true;
+      const { messages } = resolveTranscript(normalizeContext(context), keepsSystemHistory);
+      let systemChars = 0;
+      for (const message of messages) {
         if (message.role !== "system") continue;
         for (const section of Object.values(message.sections ?? {})) systemChars += section?.length ?? 0;
         if (message.toolsAdded?.length) systemChars += JSON.stringify(message.toolsAdded).length;
       }
-      const inputTokens = estimateTranscriptTokens(context.messages) + systemChars / 4;
+      const inputTokens = estimateTranscriptTokens(messages) + systemChars / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
       const requestedTokens = resolveTokenReserve(Math.ceil(inputTokens), outputTokens);
       const reservation = takeReservation?.() ?? reserveTaskModelCall(budget, requestedTokens);
