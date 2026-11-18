@@ -221,48 +221,60 @@ export type CredentialSourceLabel = "env" | "user" | "none";
 /**
  * Keep a resolver warning's meaning but drop anything that could be a secret.
  *
- * One predicate decides, and both rules use it: a run is a secret UNLESS it is
- * hyphen-joined lowercase words with short segments - the shape of a path
- * segment or a plain English phrase (`api-gateway-service`,
- * `very-long-nas-mount`). Keys have digits, upper case, symbols, or segments too
- * long to be words, so they never match that shape.
+ * Reworked to stop guessing: an earlier version decided by shape ("this looks
+ * like words, so it cannot be a key"), which let a lower-case key body through
+ * and ate directory names that contained a digit. The order is now explicit:
  *
- * Two runs are considered:
- * - after a known key prefix (`sk-`, `tvly-`, `api-`, …). The body may contain
- *   `/`, so a base64 key split by a slash is redacted whole. The prefix must not
- *   follow an identifier character, so `my_key_abc` is left alone;
- * - a bare run of 24+ key characters, without `/` (including it would join a
- *   whole path into one run and swallow it).
+ * 1. set every file path aside, because the message exists to say WHICH FILE
+ *    could not be read;
+ * 2. redact everything key-shaped in what is left, with no shape-based escape;
+ * 3. put the paths back.
+ *
+ * Step 2 redacts two forms: a known key prefix with a body of 8+ key characters
+ * (the body may cross `/` and `.`, so a base64 key split by either is removed
+ * whole), and any run of 20+ key characters. Both thresholds are deliberately
+ * low: over-redacting a warning costs a sentence, under-redacting costs a key.
  */
 export function redactPathFault(warning: string): string {
-  return warning
-    // Prefix form. The body may continue past `/`, because a base64 key can
-    // contain one and stopping there would leave the tail in the log. The
-    // continuation must look like key material, not like a path: a path segment
-    // after the slash has no digits and no symbols, which the predicate checks.
-    .replace(
-      /(^|[^A-Za-z0-9_])((?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-+=]+(?:\/[A-Za-z0-9_\-+=]+)*)/gi,
-      (_match, lead: string, body: string) => lead + (looksLikePathTail(body) ? body : "[redacted]"),
-    )
-    // Any 24+ character run, then the predicate decides. `looksLikeWords` is what
-    // keeps a path segment or an English phrase readable; everything else - a
-    // key, a hash, a base64 body - is dropped.
-    .replace(/[A-Za-z0-9_\-+=]{24,}/g, (run) => (looksLikeWords(run) ? run : "[redacted]"));
+  const paths: string[] = [];
+  // Placeholders are letters and digits only: a path contains backslashes, and a
+  // backslash inside a replacement string is an escape, not a character.
+  const token = (i: number) => "ZZPATH" + i + "ZZ";
+  const body = warning.replace(PATH_RE, (match, offset: number) => {
+    // A key can look exactly like a relative path (`sk-proj-ab12/cd34`). When
+    // the match continues a known key prefix, it is a key, not a path - leaving
+    // it unprotected is what lets the prefix rule below remove it whole.
+    if (KEY_PREFIX_AT_END.test(warning.slice(0, offset))) return match;
+    const kept = paths.length;
+    paths.push(match);
+    return token(kept);
+  });
+  const redacted = body
+    .replace(/(?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-+=/.!]{8,}/gi, "[redacted]")
+    .replace(/[A-Za-z0-9_\-+=]{20,}/g, "[redacted]");
+  return paths.reduce((text, path, i) => text.split(token(i)).join(path), redacted);
 }
 
-/** True when a prefixed run is really a path segment and its tail, not a key. */
-function looksLikePathTail(run: string): boolean {
-  const [head, ...rest] = run.split("/");
-  if (rest.length === 0) return looksLikeWords(head ?? "");
-  // A path: the head is words and every segment is words.
-  return looksLikeWords(head ?? "") && rest.every((seg) => looksLikeWords(seg) || /^[a-z]{2,}$/.test(seg));
-}
+const KEY_PREFIX_AT_END = /(?:sk|pk|rk|tvly|exa|key|api|tok)[-_]$/i;
 
-/** True for a shape that is words, not a key: lowercase hyphen-joined, short segments. */
-function looksLikeWords(run: string): boolean {
-  if (!/^[a-z]+(?:-[a-z]+)+$/.test(run)) return false;
-  return run.split("-").every((part) => part.length <= 20);
-}
+/**
+ * Real paths only. The relative branch needs a dot in the name or a known file
+ * extension, because a bare `a/b` is also the shape of a base64 key body - and
+ * protecting a key from redaction is the one failure this function cannot make.
+ * The match stops at whitespace or punctuation that ends a path in these
+ * messages, so `.../credentials.json: EACCES` keeps the errno outside the span.
+ */
+const PATH_RE = new RegExp(
+  [
+    // absolute POSIX or drive-letter path, any segments
+    "(?:[A-Za-z]:)?[\\\\/][A-Za-z0-9._~\\-\\\\/]*",
+    // relative path that is clearly a file: it carries an extension
+    "|\\b[A-Za-z0-9._\\-]+(?:[\\\\/][A-Za-z0-9._\\-]+)*[\\\\/][A-Za-z0-9._\\-]+\\.[A-Za-z0-9]{1,10}\\b",
+    // dotted file name with no directory part
+    "|\\b[A-Za-z0-9._\\-]+\\.(?:json|toml|lock|log|txt|ya?ml|db|sqlite|acl|tmp)\\b",
+  ].join(""),
+  "g",
+);
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).

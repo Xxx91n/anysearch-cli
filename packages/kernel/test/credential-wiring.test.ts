@@ -460,64 +460,53 @@ test("a timeout says the storage did not answer, not that the file is unreadable
   }
 });
 
-test("a warning carrying a key-shaped run is redacted before it reaches a log", () => {
-  // The resolver's warnings describe a file that holds keys, so a long run of the
-  // key alphabet is removed even though today's messages are fixed sentences.
-  const secret = "sk-live-abcdefghijklmnopqrstuvwxyz012345";
-  const redacted = redactPathFault("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
-  assert.ok(!redacted.includes(secret), "the key-shaped run is gone");
-  assert.match(redacted, /\[redacted\]/);
-  // The useful part survives: which file and which errno.
-  assert.match(redacted, /credentials.json/);
-  assert.match(redacted, /EACCES/);
-  // A normal path is not touched.
-  assert.equal(redactPathFault("/home/me/.anysearch-cli/credentials.json: not valid JSON"),
-    "/home/me/.anysearch-cli/credentials.json: not valid JSON");
-});
-
-test("redaction catches keys and keeps paths readable", () => {
-  // The one predicate is "hyphen-joined lowercase words with short segments".
-  // Every case below exists because a threshold or a character class alone got
-  // one of them wrong.
-  const mustGo = [
-    "value was sk-abcdefghijklmnopqrstuvwx",            // all letters, no digits
-    "value was sk-proj-abcd1234/efgh5678",              // a slash inside the key
-    "value was sk-abc12345",                            // short, known prefix
-    "bad value Aa1+" + "b".repeat(40),                  // base64 with +
-    "a".repeat(48),                                     // long bare run
-    "sk-live-abcdefghijklmnopqrstuvwxyz012345",
+test("a key is redacted under every shape a real one takes", () => {
+  // Each case below broke an earlier version of this function, so they stay.
+  const mustRedact = [
+    "value was sk-abcdefghijklmnopqrstuvwx",               // all letters, no digits
+    "value was sk-proj-abcd1234/efgh5678",                 // a slash inside the key
+    "sk-live-abcdefghijklmnopqrstuvwxyz012345",            // normal prefixed key
+    "env_key_sk-abc12345",                                 // preceded by an underscore
+    "x_token_sk-abc12345xyz",                              // the same, mid-identifier
+    "value was abcdefghij-klmnopqrst-uvwxyzab-cdefghij",   // 39 chars, words-shaped
+    "value was tvly-dev-alphabeticalonlybody",             // words-shaped behind a prefix
+    "a".repeat(48),                                        // a long bare run
+    "bad value Aa1+" + "b".repeat(40),                     // base64 with +
+    "value was Q7xR2mN8pL4vK1wZ9tY3",                      // 20 chars, no known prefix
   ];
-  for (const c of mustGo) {
-    const out = redactPathFault(c);
-    assert.ok(out.includes("[redacted]"), "must be redacted: " + c);
+  for (const input of mustRedact) {
+    assert.ok(redactPathFault(input).includes("[redacted]"), "must be redacted: " + input);
   }
+});
 
-  // A quoted key body in a JSON message is still caught.
-  const split = redactPathFault('not valid JSON near "sk-abc12345xyz"');
-  assert.ok(!split.includes("sk-abc12345xyz"), "a quoted key body is redacted");
-
-  // Paths are the reason this function exists; none of these may be touched.
-  const keep = [
-    "/home/me/projects/very-long-nas-mount-name-projects/x.json: EACCES",
-    "/srv/api-gateway-service/credentials.json: EACCES",
-    "/home/me/api-keys/credentials.json: EACCES",
-    "/home/me/.anysearch-cli/credentials.json: not valid JSON",
-    "/home/me/credentials.json: EACCES",
+test("a path survives, because the message exists to name the file", () => {
+  // A warning that cannot say which file failed is not worth printing. Every
+  // case here was eaten by an earlier version.
+  const mustSurvive = [
+    "/srv/api-gateway-service/v2/credentials.json: EACCES",
+    "/Users/me/dev/api-service/v2/.anysearch-cli/credentials.json: not valid JSON",
+    "/home/me/workspace/attributiongoldrevisions/credentials.json: EACCES",
+    "/home/me/.anysearch-cli/config.toml: not valid JSON",
+    "C:\\Users\\me\\.anysearch-cli\\credentials.json: EACCES",
   ];
-  for (const c of keep) assert.equal(redactPathFault(c), c, "path must stay readable: " + c);
+  for (const input of mustSurvive) {
+    assert.equal(redactPathFault(input), input, "path must stay readable: " + input);
+  }
+});
 
-  // An identifier that merely embeds a prefix is not a key.
+test("an identifier that merely embeds a prefix is left alone", () => {
   assert.equal(redactPathFault("my_key_abc123"), "my_key_abc123");
-  // A real key at the start of a word still goes.
-  assert.equal(redactPathFault("key_abc12345"), "[redacted]");
 });
 
-test("an unbroken base64-shaped run is redacted", () => {
-  const key = "a".repeat(48);
-  const out = redactPathFault("/x: could not read it; value " + key);
-  assert.ok(!out.includes(key));
+test("the useful part of a warning survives redaction", () => {
+  const secret = "sk-live-abcdefghijklmnopqrstuvwxyz012345";
+  const out = redactPathFault("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
+  assert.ok(!out.includes(secret), "the key is gone");
   assert.match(out, /\[redacted\]/);
+  assert.match(out, /credentials\.json/, "the file name is still there");
+  assert.match(out, /EACCES/, "and so is the errno");
 });
+
 
 test("ENOTDIR is reported as a path fault, not as a permission fault", () => {
   // `writeProtectedFile` re-throws the raw errno, so classification has to key on
