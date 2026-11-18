@@ -22,7 +22,7 @@
 //
 // Run: pnpm --filter @anysearch-cli/mcp test
 
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -106,6 +106,16 @@ function capture(eng: CompositionResult, state = createMcpToolState()): Captured
 
 interface EngineOpts {
   budget?: BudgetConfig;
+  /**
+   * #303: the domain TOML this engine would have loaded. The runtime re-reads
+   * that file at every run boundary and re-applies its [budget], so a test
+   * engine whose `config.budget` disagrees with the file on disk would have its
+   * caps replaced mid-test (the file wins). Pointing the engine at a temp
+   * domain keeps the two sources saying the same thing, which is also what
+   * production does.
+   */
+  domainName?: string;
+  domainsDirs?: string[];
   onSearch?: () => void;
 }
 
@@ -119,6 +129,8 @@ function makeEngine(store: unknown, opts: EngineOpts = {}): CompositionResult {
     },
     store,
     observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+    ...(opts.domainName ? { domainName: opts.domainName } : {}),
+    ...(opts.domainsDirs ? { domainsDirs: opts.domainsDirs } : {}),
     ...(opts.budget
       ? {
         config: {
@@ -225,6 +237,33 @@ async function main() {
   resetMcpTaskWarnings();
 
   try {
+    // The runtime re-reads a domain TOML at every run boundary and re-applies
+    // its [budget] (the file wins — that is how a cap raise takes effect
+    // without a restart). These temp domains make the file say exactly what
+    // each test engine's config says, which is also what production always has:
+    // the config came FROM that file.
+    const domainsDir = join(tempRoot, "domains");
+    mkdirSync(domainsDir, { recursive: true });
+    const writeDomainToml = (name: string, budgetLines: string[]): void => {
+      writeFileSync(join(domainsDir, name + ".toml"), [
+        'name = "' + name + '"',
+        "[sources]",
+        "enabled = []",
+        "[skills]",
+        'active = ["search"]',
+        "[rag]",
+        'adapter = "none"',
+        "[hooks]",
+        'toolWhitelist = ["search"]',
+        "[budget]",
+        ...budgetLines,
+        "",
+      ].join("\n"), "utf8");
+    };
+    writeDomainToml("taskbudget", ["tokenCap = 1000000", "callCap = 20"]);
+    writeDomainToml("refusedbudget", ["tokenCap = 1", "callCap = 5"]);
+    const domainOpts = (name: string) => ({ domainName: name, domainsDirs: [domainsDir] });
+
     // ============ 1-3. one call, one task, one budget ============
     {
       const dbPath = join(tempRoot, "one-task.db");
@@ -233,7 +272,10 @@ async function main() {
       const state = createMcpToolState({ createAnsChatSession: makeAnsweringFactory(seen).factory });
       // A declared [budget] is what makes "the run was charged" a statement
       // about a real row, and it is the shape that used to bill the session.
-      const eng = makeEngine(store, { budget: { tokenCap: 1_000_000, callCap: 20, outputReserveTokens: 4096 } });
+      const eng = makeEngine(store, {
+        ...domainOpts("taskbudget"),
+        budget: { tokenCap: 1_000_000, callCap: 20 },
+      });
       const handlers = capture(eng, state);
 
       const first = await handlers.ans_chat({ message: "FIRST-TURN" });
@@ -261,6 +303,8 @@ async function main() {
       assert(budgets.length === 1 && budgets[0]?.id === close1?.taskId,
         "1: this run has its own task budget row (got " + JSON.stringify(budgets) + ")");
       assert(Number(budgets[0]?.calls) > 0, "1: the model call was billed to the task (got " + JSON.stringify(budgets[0]) + ")");
+      assert(Number(budgets[0]?.configured) === 1,
+        "1: the row is a real capped row, not a pass-through (got " + JSON.stringify(budgets[0]) + ")");
       assert(Number(budgets[0]?.reserved) === 0,
         "1: the task's reservation was settled, not left in flight (got " + JSON.stringify(budgets[0]) + ")");
 
@@ -316,7 +360,10 @@ async function main() {
       const seen: Array<unknown> = [];
       const state = createMcpToolState({ createAnsChatSession: makeAnsweringFactory(seen).factory });
       // 1 token cannot cover the reserve, so the runtime refuses before the call.
-      const eng = makeEngine(store, { budget: { tokenCap: 1, callCap: 5, outputReserveTokens: 4096 } });
+      const eng = makeEngine(store, {
+        ...domainOpts("refusedbudget"),
+        budget: { tokenCap: 1, callCap: 5 },
+      });
       const handlers = capture(eng, state);
 
       const refused = await handlers.ans_chat({ message: "TOO-BIG" });
@@ -334,6 +381,11 @@ async function main() {
       const tasks = readRows<TaskRow>(refusedDb, TASKS_SQL);
       assert(tasks.length === 1 && !!tasks[0]?.ended && tasks[0]?.code === 1,
         "4: the task record carries exit 1 (got " + JSON.stringify(tasks) + ")");
+      const refusedBudgets = readRows<TaskBudgetRow>(refusedDb, TASK_BUDGETS_SQL);
+      assert(refusedBudgets.length === 1 && Number(refusedBudgets[0]?.configured) === 1
+        && Number(refusedBudgets[0]?.calls) === 0,
+        "4: the refused run left a capped row with no billable call (got "
+        + JSON.stringify(refusedBudgets) + ")");
     }
 
     // ============ 5. declared but not established is its own answer ============
@@ -367,7 +419,10 @@ async function main() {
       let started: () => void = () => {};
       const streamStarted = new Promise<void>((r) => { started = r; });
       const state = createMcpToolState({ createAnsChatSession: makeStalledFactory(() => started()) });
-      const eng = makeEngine(store, { budget: { tokenCap: 1_000_000, callCap: 20, outputReserveTokens: 4096 } });
+      const eng = makeEngine(store, {
+        ...domainOpts("taskbudget"),
+        budget: { tokenCap: 1_000_000, callCap: 20 },
+      });
       const handlers = capture(eng, state);
       const caller = new AbortController();
 
