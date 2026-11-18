@@ -220,8 +220,13 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
           resolve(value);
         };
         const onSettle = (): void => { if (inFlight === 0) finish(true); };
+        // NOT unref'd on purpose (#307 review, CI-caught on ubuntu): this timer
+        // is the only thing that can answer when the work never settles. An
+        // unref'd timer lets the event loop run dry while the promise is still
+        // pending, and the caller is then reported as "resolution still pending
+        // but the event loop has already resolved". The wait is bounded by
+        // design, so holding the loop for it is the correct cost.
         const timer = setTimeout(() => finish(false), timeoutMs);
-        timer.unref?.();
         waiters.add(onSettle);
       });
     },

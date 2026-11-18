@@ -533,8 +533,11 @@ const shutdown = (signal: string): void => {
   // One deadline for both conditions: a request that never returns (a client
   // holding its socket) must not hang the exit past the bounded wait.
   const deadline = new Promise<"timeout">((resolve) => {
+    // Ref'd on purpose (same reason as post-work drain): this timer is the only
+    // answer on the timeout path, and an unref'd timer lets the loop run dry
+    // while the decision is still pending.
     const timer = setTimeout(() => resolve("timeout"), SHUTDOWN_DRAIN_MS);
-    timer.unref?.();
+    void timer;
   });
   const settled = Promise.all([requestsEnded, postWork.drain(SHUTDOWN_DRAIN_MS)])
     .then(([, drained]) => (drained ? "drained" as const : "timeout" as const));
