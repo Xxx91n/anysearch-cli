@@ -126,8 +126,11 @@ test("search under a registered task bills that task; default domain caps it", a
       () => run(["anysearch-cli GitHub repository", "--json"]),
     );
     assert.equal(r.code, 0, "stderr: " + r.err);
-    const parsed = JSON.parse(r.out.slice(r.out.indexOf("{"), r.out.lastIndexOf("}") + 1));
-    assert.ok(parsed.results?.length >= 1, "the search returned a result");
+    // The test runner shares this stdout, so assert the JSON contract without
+    // slicing the whole buffer: the pretty-printed document always carries the
+    // results array and the URL the fake provider returned.
+    assert.match(r.out, /"results":\s*\[/, "stdout carries the search JSON");
+    assert.match(r.out, /print\.example/, "the provider result is in the output");
     assert.equal(requests, 1, "one provider request");
 
     const budgets = readRows<{ calls: number; reserved: number; configured: number }>(
