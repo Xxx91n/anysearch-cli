@@ -70,6 +70,8 @@ const HOLD_RELEASE_MS = 30_000;   // hold 住的响应兜底销毁
 const POLL_INTERVAL_MS = 100;     // 收尾轮询间隔
 const SETTLE_TIMEOUT_MS = 60_000; // 等四个任务都收尾
 const requestLog = [];
+// 取消那轮到没到上游：置一次标记就够，不用每轮把整份请求日志从头扫一遍。
+let holdArrived = false;
 
 function sseChunk(delta, finish, usage) {
   return "data: " + JSON.stringify({
@@ -116,9 +118,11 @@ const endpoint = createServer(async (req, res) => {
   // late work without a reply to hand back.
   if (body.includes(HOLD_MARKER)) {
     requestLog.push({ role: "chat", body });
+    holdArrived = true;
     // 取消要是没把连接拆掉，这条响应不能一直挂着把后面几段吊到 240 秒超时；
     // 30 秒兜底销毁，正常关闭时清掉这个计时器。
     const giveUp = setTimeout(() => { try { res.destroy(); } catch { /* already gone */ } }, HOLD_RELEASE_MS);
+    giveUp.unref();
     req.on("close", () => { clearTimeout(giveUp); try { res.destroy(); } catch { /* already gone */ } });
     return;
   }
@@ -275,7 +279,14 @@ function mcpClient(bin, env, tag) {
         resolve: (m) => { clearTimeout(timer); res(m); },
         reject: (e) => { clearTimeout(timer); rej(e); },
       });
-      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      try {
+        child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+      } catch (e) {
+        // 子进程已经死了：撤掉条目和计时器，别让这次调用挂到 240 秒超时。
+        clearTimeout(timer);
+        pending.delete(id);
+        rej(e);
+      }
     });
     return { id, promise };
   };
@@ -817,24 +828,28 @@ async function main() {
       pending.promise.catch(() => {});
       // 等到这一轮真的到了上游再取消，否则取消的只是一次还没开始的调用。
       // 轮询里每轮重新看一次日志（要等就得这样），超时的时候只报一次失败并说清原因。
-      const reachedUpstream = () => requestLog.some((r) => r.body.includes(HOLD_MARKER));
       const holdDeadline = Date.now() + HOLD_TIMEOUT_MS;
-      let arrived = reachedUpstream();
+      let arrived = holdArrived;
       while (!arrived && Date.now() < holdDeadline) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS / 2));
-        arrived = reachedUpstream();
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        arrived = holdArrived;
       }
-      check(arrived, "取消之前这一轮已经到达上游", "等了 15 秒还没看到 " + HOLD_MARKER + " 到端点");
-      // 没到上游时，后面那些断言全是空跑；只让第一条 check 报这个根因。
+      check(arrived, "取消之前这一轮已经到达上游",
+        "等了 " + HOLD_TIMEOUT_MS / 1000 + " 秒还没看到 " + HOLD_MARKER + " 到端点");
+      // 没到上游时，后面那些断言全是空跑；只让第一条 check 报这个根因，
+      // 其余的登记成跳过，汇总行的"跳了 N 项"才对得上。
       const onlyIfArrived = (cond, label, detail) => { if (arrived) check(cond, label, detail); };
+      if (!arrived) skip("C4 取消段的记账断言", "这一轮没到达上游，后面十几条没跑");
       // 没到达上游时这条 check 已经把失败说清楚了；对着空气取消、再等 60 秒收尾，
       // 只会把同一个失败重新报成"任务没收尾"。所以后面的取消与等待只在到达时做。
+      // SDK 按 params.requestId 找到这次请求的 AbortController 并 abort 掉
+      // （server 包 _oncancel），所以到达上游之后才发这条通知。
       if (arrived) {
         budgetProber.notify("notifications/cancelled", { requestId: pending.id, reason: "acceptance cancel" });
-        // 这条请求的应答永远不会来：把它的 pending 条目和 240 秒计时器一起撤掉，
-        // 否则一旦后面的断言先失败，挂着的计时器会把进程吊在那儿。
-        budgetProber.forget(pending.id);
       }
+      // 这条请求的应答永远不会来：不管到没到上游，都把它的 pending 条目和
+      // 240 秒计时器撤掉，否则后面的断言先失败时挂着的计时器会把进程吊住。
+      budgetProber.forget(pending.id);
 
       // 一条连接读到尾：每 100ms 新开一条会开合几百次，MCP 子进程一旦正好在写
       // 还可能撞上 SQLITE_BUSY 把整条车道抛断。锁/忙这类可重试的读失败就当"还
@@ -846,16 +861,19 @@ async function main() {
         try {
           pollDb ??= new Database(mcpDb, { readonly: true });
           return pollDb.prepare(
-            "SELECT task_id as id, kind, ended_at as ended, exit_code as code FROM task_records ORDER BY rowid"
+            "SELECT task_id as id, kind, ended_at as ended, exit_code as code FROM task_records WHERE kind = 'mcp.ans_chat' ORDER BY rowid"
           ).all();
         } catch (e) {
           lastReadError = e;
           // 连接可能已经坏了（schema 变了、句柄失效）：丢掉它，下一轮重开。
           try { pollDb?.close(); } catch { /* already closed */ }
           pollDb = null;
-          // 只有锁/忙值得重试；改名了列、库结构坏了之类应该当场失败，
-          // 不能拖成 60 秒之后再报“没收尾”。
-          if (!/SQLITE_BUSY|SQLITE_LOCKED|SQLITE_CANTOPEN|SQLITE_IOERR|database is locked/i.test(String(e))) throw e;
+          // 只有锁/忙值得重试。列改了名、库结构坏了这类读到一半的错，记成这条车道的
+          // 失败并停止轮询，不拖成 60 秒后的"没收尾"，也不把后面几段车道一起带走。
+          if (!/SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(String(e))) {
+            check(false, "任务表读得出来（不是库结构坏了）", String(e));
+            return [];
+          }
           return null;
         }
       };
@@ -874,6 +892,12 @@ async function main() {
         } finally {
           try { pollDb?.close(); } catch { /* already closed */ }
         }
+        if (mcpTasks.length !== 4 || mcpTasks.some((t) => t.ended === null)) {
+          check(false, "等四个任务都收尾",
+            "等了 " + SETTLE_TIMEOUT_MS / 1000 + " 秒；" +
+            (lastReadError ? "读库最近一次错误: " + String(lastReadError) : "读库没有报错") +
+            "；看到的行: " + JSON.stringify(mcpTasks));
+        }
       }
       onlyIfArrived(arrived && mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null && t.kind === "mcp.ans_chat"),
         "取消之后四个任务都等迟到工作做完再收尾，种类都标着 MCP 聊天",
@@ -884,7 +908,7 @@ async function main() {
       onlyIfArrived(succeededTaskIds.size === 3,
         "三次完成的调用都拿到了 closeout.taskId", JSON.stringify([close1?.taskId, close2?.taskId, close3?.taskId]));
       const cancelledTask = mcpTasks.find((t) => !succeededTaskIds.has(t.id));
-      onlyIfArrived(cancelledTask?.code === 1,
+      onlyIfArrived(succeededTaskIds.size === 3 && cancelledTask?.code === 1,
         "取消那轮按未完成记账，不是假装跑完", JSON.stringify(mcpTasks.map((t) => [t.id, t.code])));
 
       const mcpCheck = new Database(mcpDb, { readonly: true });
@@ -899,8 +923,12 @@ async function main() {
         "三次完成记 0，取消那轮记 1", JSON.stringify(mcpTasks.map((t) => t.code)));
       const budgetById = new Map(mcpBudgets.map((b) => [b.id, b]));
       onlyIfArrived(mcpBudgets.length === 4, "每次调用都有一份自己的任务预算", JSON.stringify(mcpBudgets));
-      onlyIfArrived([close1, close2, close3].every((c) => (budgetById.get(c?.taskId)?.calls ?? 0) > 0),
-        "三次完成的调用各自记了至少一次调用", JSON.stringify(mcpBudgets));
+      onlyIfArrived([close1, close2, close3].every((c) => {
+        const b = budgetById.get(c?.taskId);
+        return b !== undefined && b.calls > 0;
+      }),
+        "三次完成的调用各自记了至少一次调用",
+        JSON.stringify({ budgets: mcpBudgets, ids: [close1?.taskId, close2?.taskId, close3?.taskId] }));
       onlyIfArrived(mcpBudgets.every((b) => b.reserved === 0),
         "没有预留挂在那里（取消那轮也结掉了）", JSON.stringify(mcpBudgets.map((b) => b.reserved)));
       onlyIfArrived(Number(ledgerRows?.n) === 0,

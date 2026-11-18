@@ -35,6 +35,7 @@ import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-stat
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
 import { resetMcpTaskWarnings, withMcpTask } from "../src/mcp-task.js";
+import { resetAnsChatDegradedWarnings } from "../src/tools/ans-chat.tool.js";
 
 let passed = 0;
 let failed = 0;
@@ -242,6 +243,7 @@ async function main() {
   process.env.ANS_LLM_PROVIDER = "task-provider";
   process.env.ANS_LLM_MODEL = "task-model";
   resetMcpTaskWarnings();
+  resetAnsChatDegradedWarnings();
 
   try {
     // The runtime re-reads a domain TOML at every run boundary and re-applies

@@ -69,13 +69,17 @@ import { toolError, toolFailure } from "./failure.js";
 const INTERRUPTED_RUN_MISSING = ["run usage: interrupted before the provider reported it"];
 
 // A resident MCP server would print the wiring's degradation line on EVERY call
-// while the store stays broken, so dedupe by the message with the per-call task
-// id stripped. Same discipline (and bound) as the session-wiring warnings.
+// while the store stays broken, so dedupe by the corner the wiring names (not by
+// the message text, which carries a per-call task id).
 const WARNED_DEGRADATIONS_MAX = 16;
 const warnedDegradations = new Set<string>();
 
-function warnDegraded(message: string): void {
-  const key = message.replace(/^task \S+ /, "");
+/** Test hook: forget which wiring degradations were already announced. */
+export function resetAnsChatDegradedWarnings(): void {
+  warnedDegradations.clear();
+}
+
+function warnDegraded(message: string, key: string): void {
   if (warnedDegradations.has(key)) return;
   if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
   warnedDegradations.add(key);
@@ -335,43 +339,34 @@ export function registerAnsChat(
             });
           }
           const consolidateTaskBudget = consolidateBudget.taskBudget;
-          // Budget (D4). The rule lives in the kernel, so this tool and the CLI
-          // cannot answer "was this run charged?" differently.
-          //
-          // Design: #303 — with a task budget established, the run is charged to
-          // THIS call's task, not to the session that happens to own the
-          // selected materials. A memory-list scope has no owning session at
-          // all, and charging the first one would misattribute the spend; the
-          // task form is what makes that a non-question. The session form below
+          // With a task budget, the run is charged to THIS call's task, not to
+          // the session that happens to own the selected materials (a memory
+          // list has no owning session at all). The task form also does NOT
+          // release caps on that session: this call no longer bills it, and
+          // mutating another conversation's row as a side effect is the
+          // cross-session write this ticket removes. The session form below
           // stays for the degraded call (no task registered), unchanged.
-          //
-          // Deliberate omission: the task form does NOT release caps on the
-          // scope session (the session form's `no-declared-caps` branch used
-          // to). This call no longer bills that session, and mutating another
-          // conversation's budget row as a side effect of a consolidate is the
-          // kind of cross-session write #303 removes; its historical row stays
-          // as it was.
-          //
-          // Design: the engine's own ledger is reused rather than a second one —
-          // over the same connection, so the row, the reserves and the settles
-          // all see one set of statements.
-          const metering: ConsolidationMetering = consolidateTaskBudget
-            ? (consolidateBudget.declared
-              ? { metered: true, budget: { sessionId: consolidateTaskBudget.taskId, ledger: consolidateTaskBudget.ledger } }
-              : { metered: false, reason: "no-declared-caps" })
-            : await resolveConsolidationMetering({
-                store: store as never,
-                scope,
-                domain: eng.config,
-                toCaps: (b) => toBudgetCaps(b as BudgetConfig),
-                domainLabel: "consolidate",
-                ...(eng.ledger ? { ledger: eng.ledger } : {}),
-                warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
-              });
-          // Design: the awaits above open a window the earlier check cannot see.
-          // A request cancelled while waiting for the meter or the LLM session
-          // must not go on to spend money and commit memory, so every wait is
-          // followed by the same check.
+          let metering: ConsolidationMetering;
+          if (!consolidateTaskBudget) {
+            metering = await resolveConsolidationMetering({
+              store: store as never,
+              scope,
+              domain: eng.config,
+              toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+              domainLabel: "consolidate",
+              ...(eng.ledger ? { ledger: eng.ledger } : {}),
+              warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+            });
+          } else if (consolidateBudget.declared) {
+            metering = { metered: true, budget: { sessionId: consolidateTaskBudget.taskId, ledger: consolidateTaskBudget.ledger } };
+          } else {
+            // The task has a budget row but it carries no caps (an undeclared
+            // [budget] domain): nothing to enforce, and nothing to release.
+            metering = { metered: false, reason: "no-declared-caps" };
+          }
+          // The awaits above open a window the earlier check cannot see: a
+          // request cancelled while waiting for the meter must not go on to
+          // spend money and commit memory.
           if (signal?.aborted) return buildAnsChatCancelledResult();
           const budget = metering.metered ? metering.budget : undefined;
 
@@ -524,22 +519,23 @@ export function registerAnsChat(
         // aborted request signal, and on the HTTP seam the abort fires only
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatCancelledResult();
-        // #303: this run's own task budget, resolved once the call is really
-        // going to start. A declared budget that cannot be established stops
-        // here — before the LLM client, the session mint and any provider call
-        // — and the answer stays machine-distinguishable from an upstream
-        // failure.
-        const chatBudget = budgetWiring();
-        if (chatBudget.taskBudgetFault) {
-          return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", chatBudget.taskBudgetFault, {
-            ...(task ? { taskId: task.taskId } : {}),
-          });
-        }
-        const taskBudgetScope = chatBudget.taskBudget;
         let recoveryNotice: string | undefined;
         try {
           const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatCancelledResult();
+          // #303: this run's own task budget, resolved once the call is really
+          // going to start — a caller that cancelled while the LLM client was
+          // being built leaves no budget row behind. A declared budget that
+          // cannot be established stops here, before the session mint and any
+          // provider call, and the answer stays machine-distinguishable from an
+          // upstream failure.
+          const chatBudget = budgetWiring();
+          if (chatBudget.taskBudgetFault) {
+            return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", chatBudget.taskBudgetFault, {
+              ...(task ? { taskId: task.taskId } : {}),
+            });
+          }
+          const taskBudgetScope = chatBudget.taskBudget;
           const domain = eng.config ?? {
             sources: { enabled: [] },
             prompts: [],
@@ -748,7 +744,10 @@ export function registerAnsChat(
               return buildAnsChatBudgetResult(runtimeErrorReason, runtimeError, {
                 ...(task ? { taskId: task.taskId } : {}),
                 usage: {
-                  run: emptyRunUsage(["run usage: no provider figure was reported for this run"]),
+                  // The accounting this call can speak for: a budget stop ends
+                  // the run without a settled figure, and the task row still
+                  // holds whatever was actually spent.
+                  run: emptyRunUsage(["run usage: the budget stop ended the run without a settled figure"]),
                   memorySummary: runtime.getMemoryUsage(),
                 },
               });

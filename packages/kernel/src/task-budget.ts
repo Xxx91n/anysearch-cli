@@ -1,20 +1,15 @@
-// #302/#303 — the per-execution task budget a host bills one run to.
+// The per-execution task budget `ans chat` and MCP `ans_chat` bill one run to.
 //
-// Design: one implementation, two hosts. The CLI (#302) and the MCP `ans_chat`
-// tool (#303) need the same three-state answer, and answering it twice is how
-// the entries drift apart. Three states here:
+// Three states:
+// - undeclared: no task_budgets row and no caps. The scope still travels, so the
+//   run's internal calls route to its task instead of the session.
+// - established: the row carries the declared caps and the runtime enforces them.
+// - declared but failed: a fault; the run stops before any controlled call.
 //
-// - undeclared: no task_budgets row, no caps enforced (unmetered), and the scope
-//   still travels so an undeclared task's internal searches route to its no-row
-//   ledger instead of billing the session.
-// - established: the row carries the declared caps and the runtime enforces it.
-// - declared but failed: a fault, and the run stops before any controlled call.
-//
-// Degradation: with no task, or no ledger to hand out, an UNDECLARED domain falls
-// back to the session form (the shape every unmigrated caller still runs) and
-// says so; a DECLARED one faults in the same corner.
-//
-// Run from tests: pnpm --filter @anysearch-cli/kernel test
+// Degradation: with no task to bill, or no ledger to hand out, an UNDECLARED
+// domain falls back to the session form and says so once; a DECLARED one faults
+// in the same corner. The scope travels only in the established case — the
+// fallback has no ledger object to route anything to.
 
 import { toBudgetCaps, type BudgetConfig, type TaskBudgetLedger } from "@anysearch-cli/store";
 import type { RuntimeErrorReason } from "./runtime";
@@ -36,15 +31,33 @@ export interface TaskBudgetWiring {
   taskBudgetFaultReason?: RuntimeErrorReason;
 }
 
+/**
+ * The runtime reasons that mean "a budget stopped this run".
+ *
+ * Keyed by the kernel union, so adding a reason there is a type error here until
+ * this table says whether it is a stop. The task wrapper uses it to decide which
+ * error result carries a closeout.
+ */
+const BUDGET_STOP_REASONS: Record<RuntimeErrorReason, true> = {
+  "budget-not-established": true,
+  "budget-rejected": true,
+};
+
+export function isBudgetStopReason(value: unknown): value is RuntimeErrorReason {
+  return typeof value === "string" && Object.hasOwn(BUDGET_STOP_REASONS, value);
+}
+
 export interface WireTaskBudgetOptions {
   /**
    * Where a degradation is reported. Called for the corner that would otherwise
-   * be invisible: an UNDECLARED domain with a registered task whose store cannot
-   * hand out a ledger — the run then falls back to the session form, which is
-   * indistinguishable from "correctly unmetered" without a line somewhere.
-   * Defaults to a no-op so unit tests stay quiet.
+   * be invisible: an UNDECLARED domain whose store cannot hand out a ledger —
+   * the run then falls back to the session form, which is indistinguishable from
+   * "correctly unmetered" without a line somewhere.
+   *
+   * `key` names that corner without the task id, so a long-lived host can dedupe
+   * without parsing the message. Defaults to a no-op so unit tests stay quiet.
    */
-  warn?: (message: string) => void;
+  warn?: (message: string, key: string) => void;
 }
 
 function errText(e: unknown): string {
@@ -59,22 +72,20 @@ export function wireTaskBudget(
 ): TaskBudgetWiring {
   const warn = opts.warn ?? (() => {});
   const declared = budget !== undefined;
-  // Design: one shape for every corner. A DECLARED constraint that cannot be
-  // established is a fault (S9's third state: stop, never fall open); an
-  // UNDECLARED domain in the same corner degrades to the session form and says
-  // so once. Four hand-written copies of that pair is exactly the drift the
-  // header argues against, so they all go through `stop`.
+  // One shape for every corner: a declared cap that cannot be established is a
+  // fault (stop, never fail open); the same corner with no declaration degrades
+  // to the session form and says so once.
   //
-  // The warn call is isolated: it writes to stderr, and a closed pipe (EPIPE on
-  // a piped `ans chat`) must not abort the command it is only trying to inform.
-  const say = (message: string): void => {
-    try { warn(message); } catch { /* a dead stderr must not break the wiring */ }
+  // The warn call is isolated: the sink is caller-supplied and writes to stderr,
+  // and neither a dead pipe nor a sink bug may abort the command.
+  const say = (message: string, key: string): void => {
+    try { warn(message, key); } catch { /* a dead stderr must not break the wiring */ }
   };
-  const stop = (faultText: string, degradedText: string): TaskBudgetWiring => {
+  const stop = (faultText: string, degradedText: string, key: string): TaskBudgetWiring => {
     if (declared) {
       return { declared, taskBudgetFault: faultText, taskBudgetFaultReason: "budget-not-established" };
     }
-    say((taskId ? "task " + taskId + " " : "no registered task ") + degradedText);
+    say("task " + taskId + " " + degradedText, key);
     return { declared };
   };
   if (!taskId) {
@@ -90,53 +101,44 @@ export function wireTaskBudget(
         }
       : { declared };
   }
-  // Design: name the missing STORE and the missing SEAM differently. Both stop a
-  // declared run, but they point a debugger at different places, and "lacks
-  // createTaskBudgetLedger" about an absent store would send it to the wrong one.
+  // Name the missing STORE and the missing SEAM differently. Both stop a
+  // declared run, but they point a debugger at different places.
   if (!store) {
     return stop(
       "no session store to hold this run's budget",
       "has no store to bill — falling back to the session form",
+      "no-store",
     );
   }
   let ledger: TaskBudgetLedger | undefined;
   try {
-    // Optional seam, same discipline as initBudget: a hand-built store without
-    // it cannot hold a task budget, which for a declared [budget] is a fault —
-    // the same reading chat-memory.ts gives "store lacks initBudget".
+    // Optional seam, same discipline as initBudget: a hand-built store without it
+    // cannot hold a task budget, which for a declared [budget] is a fault.
     ledger = store.createTaskBudgetLedger?.();
   } catch (e: unknown) {
-    // The task ledger cannot even be constructed (broken store connection).
-    // With a declared budget this is "declared but failed to establish".
-    // Without one there is no constraint, and the runtime reports any later
-    // ledger fault by name — the broken-store corner must not crash the
-    // wiring itself.
+    // The ledger cannot even be constructed (broken store connection). Declared:
+    // "declared but failed to establish". Undeclared: the runtime reports any
+    // later ledger fault by name, so the wiring must not crash here.
     return stop(
       "task budget ledger unavailable: " + errText(e),
       "has no usable ledger (" + errText(e) + ") — falling back to the session form",
+      "no-ledger",
     );
   }
   if (!ledger) {
-    // Declared: the store cannot hold a task budget. Undeclared: no ledger
-    // object means there is nothing for the engine's per-call routing to bill,
-    // so the declared "scope still travels" cannot hold here — say so once
-    // instead of looking exactly like a healthy unmetered run.
     return stop(
       "session store lacks createTaskBudgetLedger",
       "has no ledger seam — internal calls bill the session form",
+      "no-ledger",
     );
   }
   if (budget) {
     try {
       ledger.initBudget(taskId, toBudgetCaps(budget));
     } catch (e: unknown) {
-      // The FK on task_budgets makes "task was never registered" land here too
-      // — the establishment failure the runtime turns into a hard stop. Only a
-      // declared budget can reach this, so the degraded text never prints.
-      return stop(
-        "task budget establishment failed: " + errText(e),
-        "could not establish its budget — falling back to the session form",
-      );
+      // The FK on task_budgets makes "task was never registered" land here too.
+      // Only a declared budget reaches this, so there is no degraded text.
+      return stop("task budget establishment failed: " + errText(e), "", "establish-failed");
     }
   }
   return { declared, taskBudget: { taskId, ledger } };

@@ -256,12 +256,10 @@ export interface SessionStore {
   // treats "declared [budget] but no seam / failed creation" as a fault the run
   // stops on, never a silent fall-back to the session form.
   createTaskBudgetLedger?(): TaskBudgetLedger;
-  // #303: the process's task registry over this same connection. The CLI opens
-  // its own registry because it registers before any engine exists; a host
-  // that already built the engine (MCP) writes task records through this seam
-  // instead, so a task and its budget row live in one database and one set of
-  // statements. Optional like the seams above: a hand-built store has no
-  // registry, and the caller then runs unregistered rather than inventing one.
+  // #303: the process's task registry over this same connection, so the task
+  // row lands in the database its budget row is written to. Optional like the
+  // seams above: a hand-built store has no registry, and the caller then runs
+  // unregistered rather than inventing one.
   createTaskRegistry?(): TaskRegistry;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
@@ -865,21 +863,15 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   /**
-   * #303: the task registry over this store's single connection.
+   * The task registry over this store's single connection, so a task row and its
+   * budget row live in the same database (and a test's temp store registers into
+   * its temp file). Each object still prepares its own statements — they are per
+   * handle, not per database. The CLI opens its own registry
+   * (`openTaskRegistry`) because it registers before any engine exists; a host
+   * that already built the engine uses this seam.
    *
-   * Design: register tasks through the engine's own connection instead of
-   * opening a second one — the task record and the task's budget row then live
-   * in one database, and a test's temp store registers into its temp file
-   * without any extra isolation. Each object still prepares its OWN statements
-   * on that shared connection (better-sqlite3 statements are per-handle, not
-   * per-database). The CLI opens its own registry (`openTaskRegistry`) because
-   * it registers before any engine exists; a host that already built the engine
-   * uses this seam.
-   *
-   * Ownership: the registry borrows this store's connection. Its `close()` is a
-   * no-op, `SqliteSessionStore.close()` is what closes the handle, and a cached
-   * registry used after that close throws on the closed database — a loud
-   * signal, not a silent no-op that pretends the rows were written.
+   * The registry borrows this store's connection: its `close()` is a no-op and
+   * `SqliteSessionStore.close()` closes the handle.
    */
   createTaskRegistry(): TaskRegistry {
     return (this.taskRegistryInstance ??= new TaskRegistry(this.db, { ownsConnection: false }));

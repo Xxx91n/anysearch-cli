@@ -218,15 +218,12 @@ export class TaskRegistry {
   }
 
   /**
-   * Close the connection this registry OWNS.
+   * Close the connection this registry opened.
    *
-   * Design: a borrowed registry (the session store's seam, #303) is a documented
-   * NO-OP instead of a throw. A stray `close()` from a teardown path must not
-   * turn into an error mid-exit, and closing the store's connection from here
-   * would break every later query — so the borrowed case does nothing and says
-   * so. That stays true after the store itself closed: the later call is still a
-   * no-op, and any later USE of this registry throws on the closed database,
-   * which is the honest signal.
+   * A registry borrowed from the session store does nothing here: the store owns
+   * that handle and closes it. Calling this twice is a no-op either way, and
+   * using a borrowed registry after the store closed throws on the closed
+   * database rather than silently pretending a write happened.
    */
   close(): void {
     if (!this.ownsConnection) return;

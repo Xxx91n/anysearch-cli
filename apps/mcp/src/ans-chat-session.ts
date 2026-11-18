@@ -47,11 +47,6 @@ export interface AnsChatSessionWiring {
   // ledger that could settle against an absent row or abort `agent.prompt`
   // (#178, CodeRabbit #200).
   ledger?: BudgetLedgerPort;
-  /** Which accounting form this wiring drives. "session": the runtime bills the
-   * conversation through . "context": the handle only restores context
-   * and the run bills its own task ( is then undefined). Absent when
-   * there is no usable handle at all. */
-  mode?: "session" | "context";
 }
 
 // Wire contract mirrors AnsChatInput.sessionId (tool-schemas.ts): visible ASCII,
@@ -181,10 +176,9 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  *   form every unmigrated caller still runs).
  * @returns the store and handle when they are usable. On the session form the
  *   engine ledger travels with them (#178); on the context form the ledger is
- *   undefined and the run bills its task instead. The returned field "mode"
- *   says which form this is. With no usable handle, store and sessionId are
- *   absent, which closes the runtime's store-and-sessionId gate (single-shot /
- *   no memory).
+ *   undefined and the run bills its own task instead. With no usable handle,
+ *   store and sessionId are absent, which closes the runtime's
+ *   store-and-sessionId gate (single-shot / no memory).
  */
 export async function resolveAnsChatSession(
   eng: CompositionResult,
@@ -210,9 +204,9 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
-      if (!sessionBudget) return { mode: "context", store, sessionId: requested };
+      if (!sessionBudget) return { store, sessionId: requested };
       const budgetReady = registerSessionBudget(store, requested, eng.config?.budget);
-      return { mode: "session", store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
+      return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       warnOnce("register:" + msg, "session row registration failed (" + msg + ") — memory wiring unavailable");
@@ -227,9 +221,9 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
-    if (!sessionBudget) return { mode: "context", store, sessionId: id };
+    if (!sessionBudget) return { store, sessionId: id };
     const budgetReady = registerSessionBudget(store, id, eng.config?.budget);
-    return { mode: "session", store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
+    return { store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnOnce("mint:" + msg, "createSession failed (" + msg + ") — continuing without memory");
@@ -355,9 +349,15 @@ export function buildAnsChatBudgetResult(
   // itself as "ans_chat: ..." while structuredContent says consolidate is a
   // contradiction for anyone reading logs.
   const toolLabel = operation === "consolidate" ? "ans_chat consolidate" : "ans_chat";
+  // Say what the stop cost the caller without claiming more than is known: an
+  // unbuildable budget stops before anything runs; a refusal stops at the call
+  // it could not reserve, so earlier spend stays on the task's row.
+  const tail = kind === "budget-not-established"
+    ? "\nNo model request was sent for this run."
+    : "\nThe run stopped at the call its budget refused; anything already spent stays on the task's row.";
   const unchanged = operation === "consolidate"
-    ? "\nNothing was sent to the model for this run. No knowledge was written."
-    : "\nNothing was sent to the model for this run. The conversation itself is unchanged.";
+    ? tail + " No knowledge was written."
+    : tail + " The conversation itself is unchanged.";
   return {
     isError: true,
     content: [{
@@ -387,12 +387,12 @@ export function buildAnsChatBudgetResult(
  * The answer for a call the caller cancelled before (or while) the run was
  * being set up.
  *
- * Same text as an empty result, plus `interrupted: true`. The marker is for the
- * RECORD, not the chat: the task wrapper reads it to end the task as unfinished.
- * Without it a cancelled request would be written as a clean exit-0 completion,
- * which is exactly the "cancelled equals finished" reading #303 removes. The SDK
- * drops the response for a cancelled request anyway, so no caller sees this
- * payload — the task row is what says what happened.
+ * The text says plainly that nothing was answered, and
+ * `structuredContent.interrupted` is what the task wrapper reads to end the task
+ * as unfinished. Without that marker a cancelled request would be written as a
+ * clean exit-0 completion, which is the "cancelled equals finished" reading this
+ * ticket removes. The SDK drops the response for a cancelled request, so no
+ * caller sees this payload — the task row is what says what happened.
  */
 export function buildAnsChatCancelledResult(): AnsChatToolResult {
   // Built directly, not through buildAnsChatResult: a content-only host would

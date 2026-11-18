@@ -176,11 +176,13 @@ export async function runChat(argv: string[]): Promise<number> {
   // behavior stays for the session form until #304).
   const cliTask = currentCliTask();
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget, {
-    // A degraded corner (no ledger to bill) must not look like a healthy
-    // unmetered run; the wiring warns here and the run keeps the session form.
-    // Same `[warn]` prefix as every other CLI warning — these lines land in the
-    // same stderr stream.
-    warn: (m) => process.stderr.write("[warn] " + m + "\n"),
+    // Every corner where an UNDECLARED domain cannot be metered prints here, so
+    // a degraded run never looks like a healthy unmetered one. The `[warn]`
+    // prefix matches the CLI's other warnings; a dead stderr must not abort the
+    // command, which is why the write is guarded.
+    warn: (m) => {
+      try { process.stderr.write("[warn] " + m + "\n"); } catch { /* a dead stderr must not break the run */ }
+    },
   });
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics

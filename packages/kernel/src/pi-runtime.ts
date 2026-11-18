@@ -623,11 +623,13 @@ export class PiAgentRuntime {
   // the ledger caps, but the next run's reloader sees no new file change. Keep
   // the detection until the next run boundary consumes it.
   private pendingBudgetRefresh = false;
-  // #303: the late token settlement a cancelled run schedules when its provider
-  // stream never closed. Kept here so a host can give it a bounded window
-  // before closing the task row — without making the run itself wait on a
-  // stream that may never end.
+  // The late token settlement a cancelled run schedules when its provider stream
+  // never closed. Kept here so a host can give it a bounded window before it
+  // closes the task row — without making the run itself wait on a stream that
+  // may never end.
   private lateSettlement?: Promise<void>;
+  /** The last late settlement's write failed; `drainLateSettlement` reports it. */
+  private lateWriteFailed = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
   // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
@@ -1496,25 +1498,28 @@ export class PiAgentRuntime {
         reportBudgetFault("token settlement", e);
       }
     };
-    // #188 (CodeRabbit): late usage from a stalled prompt is added as a delta
-    // after the reservation was already released, so an exiting process cannot
-    // leave reserved_tokens behind.
-    const settleTokenDelta = (finalActual: number): void => {
-      if (!billingWired) return;
+    // Late usage from a stalled prompt is added as a delta after the reservation
+    // was already released, so an exiting process cannot leave reserved_tokens
+    // behind. Returns false when the write failed, so the host can report that
+    // instead of claiming the row is final.
+    const settleTokenDelta = (finalActual: number): boolean => {
+      if (!billingWired) return true;
       if (!tokenSettled) {
         // The reservation release itself failed earlier; retry the full settle
         // (release + actual) rather than recording spend with the reservation
         // still held.
         settleTokenReserve(finalActual);
-        return;
+        return tokenSettled;
       }
       const delta = Math.max(0, finalActual - settledTokens);
-      if (delta <= 0) return;
+      if (delta <= 0) return true;
       try {
         billingLedger!.settleTokens(billingId!, 0, delta);
         settledTokens = finalActual;
+        return true;
       } catch (e) {
         reportBudgetFault("token settlement", e);
+        return false;
       }
     };
 
@@ -1775,20 +1780,20 @@ export class PiAgentRuntime {
         // the later delta when the prompt finally stops (best-effort if the
         // store is already closed).
         //
-        // Design: one tail per run, not a growing chain. Both hosts build a
-        // runtime per run (MCP per call, CLI per command), so chaining would
-        // only keep a promise tree alive for a case that does not happen — and
-        // a host that never drains would keep every stalled prompt reachable.
-        // If a previous tail exists, it keeps running on its own.
-        const settleDelta = (): void =>
-          settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
-        this.lateSettlement = promptPromise!.then(settleDelta, settleDelta)
-          .then(() => undefined, () => {
-            // settleTokenDelta reports its own failures (reportBudgetFault) and
-            // does not throw; this handler only guarantees the promise never
-            // rejects into the host. Reporting here too would print the same
-            // failure twice.
-          });
+        // One tail per run, not a growing chain: both hosts build a runtime per
+        // run, so a later run replaces this reference rather than chaining onto
+        // a tree nobody waits for. The failure flag is what lets
+        // drainLateSettlement tell "settled" from a failed write.
+        this.lateWriteFailed = false;
+        const settleDelta = (): void => {
+          this.lateWriteFailed = !settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
+        };
+        this.lateSettlement = promptPromise!.then(settleDelta, settleDelta).then(
+          () => undefined,
+          // settleDelta does not throw; this only keeps a surprise rejection from
+          // becoming an unhandled one in a host that never drains.
+          () => { this.lateWriteFailed = true; },
+        );
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
@@ -1840,20 +1845,19 @@ export class PiAgentRuntime {
   }
 
   /**
-   * #303: give the late settlement a bounded window before closing the task.
+   * Give the late settlement a bounded window before closing the task row.
    *
-   * A cancelled run whose provider stream never closed releases its reservation
-   * conservatively and books the provider's real figure later, when the stream
-   * finally ends (#188). That late write lands on the same task row, so a host
-   * that wants the row to be final before it writes `ended_at` has to wait for
-   * it — but never unboundedly: the stream may never end.
+   * A cancelled run whose provider stream never closed books the provider's real
+   * figure later, when the stream finally ends (#188). That write lands on the
+   * same task row, so a host that wants the row final before writing `ended_at`
+   * has to wait for it — but never unboundedly: the stream may never end.
    *
    * @param ms how long to wait. Small on purpose: cancellation must stay
    *   snappy (#211), and a provider that never ends is not helped by a longer
-   *   wait — it just delays the answer. Default 250 ms.
+   *   wait. Default 250 ms.
    * @returns "settled" when there is no late settlement or it finished inside
    *   the window; "still-running" when the window closed with it on its way;
-   *   "failed" when the write itself threw — a caller must not report that as
+   *   "failed" when the write itself failed — a caller must not report that as
    *   a final row, because the spend was never booked.
    */
   async drainLateSettlement(ms = 250): Promise<"settled" | "still-running" | "failed"> {
@@ -1862,28 +1866,24 @@ export class PiAgentRuntime {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<"still-running">((resolve) => {
       timer = setTimeout(() => resolve("still-running"), ms);
+      // A waiting caller must not be the reason a process stays alive.
+      timer.unref?.();
     });
-    // Design: handle the rejection HERE rather than relying on the writer having
-    // swallowed it. A failed late write is no longer pending either, and this
-    // method must never throw out of a closeout path — whatever put the promise
-    // in the field (tests do it directly).
-    //
-    // Clear only the promise THIS call captured: a second run on the same
-    // runtime may already have installed its own tail, and clearing that one
-    // would report the wrong answer for it.
+    // A failed tail is no longer pending, and this method must never throw out
+    // of a closeout path. Clear only the tail THIS call captured: a later run
+    // may already have installed its own.
     const clearIfStillOurs = (): void => {
       if (this.lateSettlement === pending) this.lateSettlement = undefined;
     };
     const settled: Promise<"settled" | "failed"> = pending.then(
-      () => { clearIfStillOurs(); return "settled"; },
+      () => { clearIfStillOurs(); return this.lateWriteFailed ? "failed" : "settled"; },
       () => { clearIfStillOurs(); return "failed"; },
     );
     try {
       const state = await Promise.race([settled, expired]);
-      // Design: a window that closed first does NOT drop the reference. Forgetting
-      // it would let the next call answer "settled" for spend that is still on
-      // its way — the one direction this report must never lie in. The tail is
-      // cleared only when it actually settles (either way).
+      // An expired window keeps the reference: dropping it would let the next
+      // call answer "settled" for spend still in flight. The tail is cleared
+      // only when it actually settles (either way).
       return state;
     } finally {
       if (timer) clearTimeout(timer);

@@ -1,16 +1,16 @@
-// #303 — one MCP tool call is one task.
+// One MCP tool call is one task.
 //
 // A resident server's lifetime is a process fact, not work; what an upgrade has
 // to wait out is one tool call, including its late work (background summaries,
 // settlement, the observation write). So the task row is ended AFTER the handler
 // resolves — a cancellation ends the wait, not the work. Registration is
 // fail-open like the CLI's; a declared [budget] that cannot be attached is the
-// one thing that stops the run. `withMcpTask` is also the migration point for
-// the tools still on the session form (#304).
+// one thing that stops the run. A standalone `ans-mcp` entry still registers no
+// process record of its own (#309).
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { CompositionResult } from "@anysearch-cli/kernel";
-import type { RegisteredTask } from "@anysearch-cli/store";
+import { isBudgetStopReason, type CompositionResult } from "@anysearch-cli/kernel";
+import type { RegisteredTask, TaskRegistry } from "@anysearch-cli/store";
 
 /** The task this MCP tool call runs under. Read via `currentMcpTask()`. */
 export interface McpTaskIdentity {
@@ -21,15 +21,7 @@ export interface McpTaskIdentity {
   attachSession(sessionId: string): void;
 }
 
-/**
- * What the caller is told about the task's end (#303).
- *
- * The end is written only after the handler resolved, which means the background
- * summaries and the observation write are done. One tail can still land
- * afterwards: a provider stream that never closed books its usage later (#188),
- * and `structuredContent.lateSettlement` says whether that already happened or
- * is still on its way.
- */
+/** What the caller is told about the task's end. */
 export interface McpTaskCloseout {
   taskId: string;
   kind: string;
@@ -88,34 +80,39 @@ function warnOnce(key: string, detail: string): void {
   }
 }
 
-/**
- * Register this tool call as a business task.
- *
- * The registry comes from the store seam, so the task record and the task's
- * budget row are written through the engine's own connection (one database,
- * one set of statements) and a test's temp store registers into its temp file.
- */
-export function trackMcpToolCall(eng: CompositionResult, toolName: string): Tracking {
-  const kind = "mcp." + toolName;
-  let record: RegisteredTask | undefined;
+/** Register this call, or say why it runs unregistered and return undefined. */
+function registerTask(eng: CompositionResult, kind: string): RegisteredTask | undefined {
+  let registry: TaskRegistry | undefined;
   try {
-    const registry = eng.store?.createTaskRegistry?.();
-    if (!registry) {
-      warnOnce("no-seam", "store has no task registry seam — running unregistered");
-      return { finish: () => false };
-    }
-    record = registry.registerTask({ kind, role: "business", entry: "mcp" });
+    // The registry comes from the store seam, so the task record and its budget
+    // row are written through the engine's own connection.
+    registry = eng.store?.createTaskRegistry?.();
+  } catch (e: unknown) {
+    warnOnce("seam:" + errText(e),
+      "task registry unavailable (" + errText(e) + ") — running unregistered");
+    return undefined;
+  }
+  if (!registry) {
+    warnOnce("no-seam", "store has no task registry seam — running unregistered");
+    return undefined;
+  }
+  try {
+    return registry.registerTask({ kind, role: "business", entry: "mcp" });
   } catch (e: unknown) {
     warnOnce("register:" + errText(e),
       "task registration failed (" + errText(e) + ") — running unregistered");
-    return { finish: () => false };
+    return undefined;
   }
-  if (!record) {
-    // Unreachable in practice (registerTask either returns or throws), kept so
-    // the writer below never runs on an absent record.
-    return { finish: () => false };
-  }
-  const task: RegisteredTask = record;
+}
+
+/**
+ * Register this tool call as a business task. An unregistered call still runs:
+ * a broken registry never breaks the tool.
+ */
+export function trackMcpToolCall(eng: CompositionResult, toolName: string): Tracking {
+  const kind = "mcp." + toolName;
+  const task = registerTask(eng, kind);
+  if (!task) return { finish: () => false };
   let finished = false;
   let wroteEnd = false;
   return {
@@ -153,21 +150,23 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
 interface ResultVerdict {
   isError: boolean;
   interrupted: boolean;
-  /** A budget stop — the one error shape that carries a closeout (#303). */
+  /** A budget stop — the one error shape that carries a closeout. */
   budgetStop: boolean;
   structuredContent?: Record<string, unknown>;
 }
 
 function readVerdict(result: unknown): ResultVerdict {
+  // Design: the handler owns the result's shape (the SDK's callback result is an
+  // open object), so this reads defensively rather than trusting a type the
+  // wrapper cannot check.
   const readable = result && typeof result === "object"
     ? (result as { isError?: boolean; structuredContent?: Record<string, unknown> })
     : undefined;
   const structuredContent = readable?.structuredContent;
-  const errorKind = structuredContent?.errorKind;
   return {
     isError: readable?.isError === true,
     interrupted: structuredContent?.interrupted === true,
-    budgetStop: errorKind === "budget-rejected" || errorKind === "budget-not-established",
+    budgetStop: isBudgetStopReason(structuredContent?.errorKind),
     ...(structuredContent ? { structuredContent } : {}),
   };
 }
@@ -179,22 +178,16 @@ function attachCloseout<R>(
   wroteEnd: boolean,
   exitCode: number,
 ): R {
-  // Design: #204 keeps ERROR results out of the success output schema. Only two
-  // error shapes carry structuredContent at all, and a closeout belongs on just
-  // one of them:
-  // - a budget stop (`errorKind`) is the exception #303 adds, because it must
-  //   be machine-distinguishable from an upstream failure — it gets the
-  //   closeout;
-  // - the summary-rebuild report (#264) is an error that already carries
-  //   `summaryRebuilds`; mixing a task block in would change a shape clients
-  //   parse, so it is left alone.
-  // Every other error stays bare. The task record is still written and ended in
-  // all three cases — the row is where the closeout lives.
+  // #204 keeps ERROR results out of the success output schema. Only two error
+  // shapes carry structuredContent at all: a budget stop (the exception this
+  // ticket adds, because it must be machine-distinguishable from an upstream
+  // failure) and the summary-rebuild report (#264), whose shape clients already
+  // parse. Every other error stays bare; the task row is still written and
+  // ended in all cases.
   if (verdict.isError && !verdict.budgetStop) return result;
   // A handler is free to return a non-object (a future #304 tool might hand back
   // a bare string): spreading one would silently replace it with an object and
-  // lose the original. Leave such a result exactly as it is — the task row is
-  // still written and ended above.
+  // lose the original. Leave such a result exactly as it is.
   if (!result || typeof result !== "object") return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
@@ -203,6 +196,9 @@ function attachCloseout<R>(
     exitCode,
     interrupted: verdict.interrupted,
   };
+  // The MCP callback result type is opaque to this module (the SDK declares an
+  // open object), which is why the round-trip through Record goes through
+  // `unknown`.
   return {
     ...(result as unknown as Record<string, unknown>),
     structuredContent: { ...(verdict.structuredContent ?? {}), closeout },
@@ -214,22 +210,20 @@ function attachCloseout<R>(
  *
  * Order matters and is the whole contract:
  * 1. register (fail-open: a broken registry never breaks the call),
- * 2. run the handler inside the task context so it can read `currentMcpTask()`
- *    — one channel, not a parameter and a context that could disagree,
+ * 2. run the handler inside the task context so it can read `currentMcpTask()`,
  * 3. await it — this is the late work; `flushMemory()` and `observeTool()` are
  *    inside there,
  * 4. write the task's end with the outcome's exit code,
- * 5. hand the closeout back in the result.
+ * 5. hand the closeout back in the result (best-effort; a shape surprise in the
+ *    handler's result must not undo the row that was just written).
  *
  * A handler that throws ends the task as failed (exit 1) and the error
  * propagates unchanged — the wrapper does not turn a throw into a result.
  *
  * Handler contract: a handler that stops early because the caller cancelled
  * must say so in its result (`structuredContent.interrupted: true`). The
- * wrapper cannot infer it — a bare empty result looks identical to a real one,
- * and treating the request signal as the answer would misreport an answer that
- * completed just as the caller hung up. `ans_chat` does this on every
- * cancellation path (`buildAnsChatCancelledResult`); a tool that migrates later
+ * wrapper cannot infer it — a bare empty result looks identical to a real one.
+ * `ans_chat` does this on every cancellation path; a tool that migrates later
  * (#304) must do the same.
  */
 export async function withMcpTask<R>(
@@ -243,20 +237,31 @@ export async function withMcpTask<R>(
   try {
     result = identity ? await storage.run(identity, handler) : await handler();
   } catch (e) {
-    // Design: a throw anywhere in the handler — the run itself or its late work
-    // — ends the task as failed, because that is what the caller sees: the SDK
-    // turns an uncaught throw into an error result. The run's own usage was
-    // already settled on the way out (flushMemory / the runtime's finally), so
-    // the record's exit 1 is about the failed CALL, not about a lost bill.
+    // A throw anywhere in the handler — the run itself or its late work — ends
+    // the task as failed, because that is what the caller sees: the SDK turns an
+    // uncaught throw into an error result. The run's own usage was already
+    // settled on the way out, so exit 1 is about the failed CALL, not lost spend.
     tracking.finish(1);
     throw e;
   }
-  const verdict = readVerdict(result);
-  // Design: an interrupted answer is not a completed task — the run stopped
-  // before its final answer, so the record carries exit 1 even though the tool
-  // result is not an error (#211 keeps the handle and reports unknown usage).
-  // A later admission (#309) must not read a cut-off turn as clean work.
+  let verdict: ResultVerdict;
+  try {
+    verdict = readVerdict(result);
+  } catch {
+    // An unreadable result is treated as a failed call: the row records exit 1
+    // and the caller still gets the handler's own result unchanged.
+    tracking.finish(1);
+    return result;
+  }
+  // An interrupted answer is not a completed task — the run stopped before its
+  // final answer, so the record carries exit 1 even though the tool result is
+  // not an error (#211 keeps the handle and reports unknown usage).
   const exitCode = verdict.isError || verdict.interrupted ? 1 : 0;
   const wroteEnd = tracking.finish(exitCode);
-  return identity ? attachCloseout(result, identity, verdict, wroteEnd, exitCode) : result;
+  if (!identity) return result;
+  try {
+    return attachCloseout(result, identity, verdict, wroteEnd, exitCode);
+  } catch {
+    return result;
+  }
 }

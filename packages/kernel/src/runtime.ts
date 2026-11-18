@@ -8,16 +8,15 @@ import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort } from
 import type { CostSource } from "./usage";
 
 /**
- * #303: the machine-readable class of a stop the runtime itself decided, so a
- * host can keep a budget refusal apart from a provider failure without reading
- * the message text. Named here once and used by the emitter (pi-runtime), the
- * MCP result builder and the task wrapper, so a typo at an emit site is a type
- * error instead of a silently unclassified error.
+ * The machine-readable class of a stop the runtime itself decided, so a host can
+ * tell a budget stop apart from a provider failure without parsing the message.
+ * Emitted by pi-runtime and read by the MCP result builder and the task wrapper.
  *
- * - `budget-not-established`: the domain declared [budget] but the task budget
+ * - `budget-not-established`: the domain declared [budget] but the budget row
  *   could not be created; nothing was called.
- * - `budget-rejected`: the task's own budget refused the run (tokens or calls);
- *   nothing was called for this refusal.
+ * - `budget-rejected`: the budget refused the run (tokens or calls). On the task
+ *   form this is the task's own budget; on the session form it is the session
+ *   row's cap. Nothing was called for this refusal.
  */
 export type RuntimeErrorReason = "budget-not-established" | "budget-rejected";
 

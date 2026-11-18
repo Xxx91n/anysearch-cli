@@ -412,7 +412,7 @@ Two cancellation details worth knowing:
   `structuredContent.lateSettlement` (a sibling of `closeout`, not a field
   inside it): `"settled"` — the task row is final; `"still-running"` — the
   provider never ended and the delta will land on the task row afterwards;
-  `"failed"` — the write threw, so the row is ended but the spend was not
+  `"failed"` — the write failed, so the row is ended but the spend was not
   booked (the runtime logs the failure too). It never waits unboundedly.
 - Any cancelled request's task is recorded as unfinished (`exitCode: 1`),
   including one cancelled before its run started, where no provider call was
@@ -436,7 +436,7 @@ failure. This is the one error result that carries `structuredContent`
 | `structuredContent.errorKind` | Cause | What happened |
 |-------------------------------|-------|---------------|
 | `budget-not-established` | The domain declares `[budget]` and the task budget could not be created (no registered task, no ledger seam, row creation failed). | Nothing was sent to the model. Fix registration/store or the caps — not a provider problem. |
-| `budget-rejected` | The task's own budget refused the run (tokens or calls). | Nothing was sent to the model. Raise `[budget]`; the next call starts a fresh task budget. |
+| `budget-rejected` | The budget refused the run (tokens or calls): the task's own budget here, the session row's cap on the unmigrated session form. | The run stopped at the call the budget refused. Anything already spent stays on the task's row — raise `[budget]`; the next call starts a fresh task budget. |
 
 Both carry `structuredContent.operation` (`chat` or `consolidate`),
 `structuredContent.budget` (`stopped`, `reason`, `detail`), the `taskId` when a

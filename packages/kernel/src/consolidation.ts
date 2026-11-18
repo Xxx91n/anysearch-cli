@@ -72,6 +72,9 @@ export const MISSING_CONSOLIDATION_COST = "consolidation cost (price unknown)";
  * unmetered instead of being charged to a session the caller never named.
  */
 export interface ConsolidationBudget {
+  /** The ledger's key for this run: a session id on the session form, a task id
+   * on the task form (MCP `ans_chat operation=consolidate`). Only used as the
+   * row key against `ledger` — never resolved back to a session. */
   sessionId: string;
   ledger: BudgetLedgerPort;
 }
@@ -110,7 +113,7 @@ export const CONSOLIDATION_UNMETERED_TEXT: Record<ConsolidationUnmeteredReason, 
   "no-scope-session": "a memory-list scope has no owning session to charge",
   "several-scope-sessions": "several session owners cannot share one run's spend, and charging the first would misattribute it",
   "no-declared-caps": "this session declared no [budget] caps, so these calls were not charged to a cap",
-  "budget-setup-failed": "the session's budget row or caps could not be registered",
+  "budget-setup-failed": "this run's budget row or caps could not be registered",
 };
 
 /** A rejected reserve. The store counts it and stops spending; it is not a summary fault. */
@@ -372,9 +375,8 @@ async function completeText(
     try {
       reservedCall = budget.ledger.reserveCalls(budget.sessionId, 1);
       if (!reservedCall) {
-        // #303: this text must not say "the session's budget" — the same seam
-        // now runs on a task budget when the caller has one (MCP consolidate),
-        // and naming the wrong account sends the user to the wrong place.
+        // This seam bills either a task budget or the session ledger, so the
+        // message names neither.
         throw new ConsolidationBudgetError(
           "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
