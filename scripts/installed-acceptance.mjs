@@ -77,8 +77,9 @@ function sseText(text) {
     "data: [DONE]\n\n",
   ].join("");
 }
-function sseToolCall(name, args) {
+function sseToolCall(name, args, preamble) {
   return [
+    ...(preamble ? [sseChunk({ role: "assistant", content: preamble }, null)] : []),
     sseChunk({ role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_" + requestLog.length, type: "function", function: { name, arguments: "" } }] }, null),
     sseChunk({ tool_calls: [{ index: 0, function: { arguments: args } }] }, null),
     sseChunk({}, "tool_calls", { prompt_tokens: 40, completion_tokens: 8, total_tokens: 48, prompt_tokens_details: { cached_tokens: 0 } }),
@@ -99,15 +100,38 @@ function classify(body) {
   return "chat";
 }
 
+const PRINT_SOURCE = "https://print.example/source";
+const PRINT_REROUND_SOURCE = "https://print.example/second-source";
+let onPrintInterrupted;
 const endpoint = createServer(async (req, res) => {
   let body = "";
   for await (const chunk of req) body += chunk;
-  const role = classify(body);
+  if (req.url === "/print-search") {
+    let request;
+    try { request = JSON.parse(body); }
+    catch { return res.writeHead(400).end("Invalid JSON"); }
+    if (!request || typeof request.method !== "string") return res.writeHead(400).end("Missing method");
+    const { id, method, params } = request;
+    if (method === "notifications/initialized") return res.writeHead(202).end();
+    if (method === "tools/call") requestLog.push({ role: "print-search", body });
+    const url = params?.arguments?.query === "anysearch-cli GitHub repository" ? PRINT_SOURCE : PRINT_REROUND_SOURCE;
+    const result = method === "initialize" ? { protocolVersion: params?.protocolVersion } : {
+      structuredContent: { results: [{ url, title: "Print source", snippet: "The print test source." }] },
+    };
+    return res.writeHead(200, { "Content-Type": "application/json" })
+      .end(JSON.stringify({ jsonrpc: "2.0", id, result }));
+  }
+  const isPrintGap = body.includes("What is missing? Write a single search query") && body.includes("Print source");
+  const role = isPrintGap ? "print-gap" : classify(body);
   // #301: 认证头也记下来。凭据车道要证明"存进去的 key 真的到了上游"，
   // 只看请求体不行——密钥在头里，不在体里。
   requestLog.push({ role, body, authorization: req.headers["authorization"] });
   res.writeHead(200, { "Content-Type": "text/event-stream" });
-  if (role === "toolcall") return res.end(sseToolCall("search", JSON.stringify({ query: "anysearch-cli GitHub repository" })));
+  if (role === "toolcall") {
+    return res.end(sseToolCall("search", JSON.stringify({ query: "anysearch-cli GitHub repository" }),
+      body.includes("PRINT-SEARCH-QUESTION") ? "我先搜一下。" : undefined));
+  }
+  if (role === "print-gap") return res.end(sseText("Find the second print source"));
   if (role === "consolidate") return res.end(sseText(FACT));
   // 回最新一轮的问题。后面那次请求如果带着这句话，就说明会话记录真的接上了；
   // 写死一句固定回答不行，因为全新会话也会出现同一个常量。
@@ -116,6 +140,12 @@ const endpoint = createServer(async (req, res) => {
   // 第一轮的问题，按原文匹配会一直回第一轮的标记，于是"重复问第一轮"也能
   // 通过续接检查。
   const marker = latestUserMarker(body);
+  if (marker === "PRINT-INTERRUPTED-QUESTION" && onPrintInterrupted) {
+    res.write(sseChunk({ role: "assistant", content: "PRINT-PARTIAL" }, null));
+    onPrintInterrupted();
+    return;
+  }
+  if (marker === "PRINT-EMPTY-QUESTION") return res.end(sseText(""));
   if (marker === "CANCEL-STREAM-QUESTION") {
     res.write(sseChunk({ role: "assistant", content: "CANCEL-STREAM-PARTIAL" }, null));
     return;
@@ -147,15 +177,16 @@ function latestUserMarker(body) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || m.role !== "user") continue;
-    const text = typeof m.content === "string"
-      ? m.content
-      : Array.isArray(m.content)
-        ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
-        : "";
-    const marker = (text.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION)/) ?? [])[1];
+    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
+}
+
+function messageText(message) {
+  if (typeof message?.content === "string") return message.content;
+  if (!Array.isArray(message?.content)) return "";
+  return message.content.map((part) => (typeof part === "string" ? part : part?.text ?? "")).join(" ");
 }
 
 /**
@@ -544,16 +575,19 @@ async function main() {
 
     // #299: reuse the existing two-turn material through the installed CLI.
     // Async children keep this process free to serve the same SSE endpoint.
-    async function chatCli(args, cwd, domain = "probe", extraEnv = {}, interruptOnText) {
-      return await new Promise((resolve, reject) => {
-        const env = { ...baseEnv, ANS_DOMAIN: domain, ANS_SESSION_ID: "cli-wiring-session-129", ...extraEnv };
-        const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    function startChatCli(args, cwd, domain = "probe", extraEnv = {}, interruptOnText) {
+      const env = { ...baseEnv, ANS_DOMAIN: domain, ANS_SESSION_ID: "cli-wiring-session-129", ...extraEnv };
+      const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+      const result = new Promise((resolve, reject) => {
         let out = "";
+        let stdout = "";
+        let stderr = "";
         let interrupted = false;
         let caughtSignals;
         child.stdout.on("data", (chunk) => {
+          stdout += chunk;
           out += chunk;
-          if (interruptOnText && !interrupted && out.includes(interruptOnText)) {
+          if (interruptOnText && !interrupted && stdout.includes(interruptOnText)) {
             interrupted = true;
             if (process.platform === "linux") {
               try {
@@ -564,11 +598,17 @@ async function main() {
             child.kill("SIGINT");
           }
         });
-        child.stderr.on("data", (chunk) => { out += chunk; });
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk) => { stderr += chunk; out += chunk; });
         const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
         child.on("error", (error) => { clearTimeout(timer); reject(error); });
-        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, caughtSignals, out }); });
+        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, caughtSignals, out, stdout, stderr }); });
       });
+      return { child, result };
+    }
+    function chatCli(...args) {
+      return startChatCli(...args).result;
     }
     const projectA = join(work, "project-a");
     const projectB = join(work, "project-b");
@@ -628,6 +668,104 @@ async function main() {
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
           "从 Ctrl-C 中断的会话续聊时先看到提醒", resumed.out);
       }
+    }
+
+    console.log("\n== CLI print and interrupted turn ==");
+    const printProject = join(work, "project-print");
+    mkdirSync(join(printProject, ".git"), { recursive: true });
+    for (const [name, callCap] of [["print", 20], ["print-capped", 4]]) {
+      const domain = DOMAIN_MIN(name, "PRINT-SYSTEM-PROMPT.");
+      domain[1] = 'sources = { enabled = ["anysearch"], urlAllowlist = ["print.example"] }';
+      writeDomain(domainsDir, name, [...domain, "[budget]", "tokenCap = 20000", "callCap = " + callCap]);
+    }
+    writeDomain(domainsDir, "print-denied", [
+      ...DOMAIN_MIN("print-denied", "PRINT-DENIED."), "[budget]", "callCap = 0",
+    ]);
+    const printEnv = {
+      ANS_DB_PATH: join(work, "print.db"),
+      ANS_PI_SESSION_DIR: join(work, "print-pi"),
+      ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/print-search",
+      ANYSEARCH_API_KEY: "print-test-key",
+    };
+    const printed = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print", printEnv);
+    check(printed.code === 0 && printed.stdout === "REPLY-TO-PRINT-SEARCH-QUESTION\n\n来源\n- " + PRINT_SOURCE + "\n- " + PRINT_REROUND_SOURCE + "\n",
+      "-p 只输出答案和两次检索的来源", printed.out);
+    let requestsBefore = requestLog.length;
+    const denied = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print-denied", printEnv);
+    check(denied.code === 1 && denied.stdout === "" && /Call budget exhausted/.test(denied.stderr)
+      && requestLog.length === requestsBefore,
+      "-p 额度不足时报错，标准输出为空", denied.out);
+    const blockedDbParent = join(work, "not-a-db-directory");
+    writeFileSync(blockedDbParent, "");
+    requestsBefore = requestLog.length;
+    const untracked = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
+      ...printEnv, ANS_DB_PATH: join(blockedDbParent, "print.db"),
+    });
+    check(untracked.code === 1 && untracked.stdout === "" && /读取领域或打开持久库失败/.test(untracked.stderr)
+      && requestLog.length === requestsBefore, "-p 打不开持久库时退出非零，标准输出为空", untracked.out);
+    requestsBefore = requestLog.length;
+    const unconfigured = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
+      ...printEnv, ANS_LLM_PROVIDER: "", ANS_LLM_MODEL: "", ANS_LLM_BASE_URL: "", ANS_LLM_API: "", ANS_LLM_API_KEY: "",
+    });
+    check(unconfigured.code === 3 && unconfigured.stdout === "" && /not configured/.test(unconfigured.stderr)
+      && requestLog.length === requestsBefore,
+      "-p 没配模型时退出非零，标准输出为空", unconfigured.out);
+    requestsBefore = requestLog.length;
+    const finished = await chatCli(["-c"], printProject, "print", printEnv);
+    check(finished.code === 1 && finished.stdout === "" && /没有被打断的问题/.test(finished.stderr)
+      && requestLog.length === requestsBefore, "-c 遇到已完成的对话说明原因，不发送请求", finished.out);
+    const empty = await chatCli(["-p", "PRINT-EMPTY-QUESTION"], printProject, "print", printEnv);
+    check(empty.code === 1 && empty.stdout === "" && /没有返回答案/.test(empty.stderr),
+      "-p 收到空回答时退出非零，标准输出为空", empty.out);
+
+    const beforeCapped = requestLog.length;
+    const capped = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print-capped", printEnv);
+    check(capped.code === 1 && capped.stdout === "" && /Call budget exhausted/.test(capped.stderr)
+      && requestLog.length - beforeCapped === 4
+      && !requestLog.slice(beforeCapped).some((request) => request.role === "chat"),
+      "-p 在工具调用后也检查额度，没额度就不再请求模型", capped.out);
+    const requestStarted = new Promise((resolve) => { onPrintInterrupted = resolve; });
+    const active = startChatCli(["-p", "PRINT-INTERRUPTED-QUESTION"], printProject, "print", printEnv);
+    try {
+      await Promise.race([requestStarted, active.result.then(({ out }) => { throw new Error(out); })]);
+      const beforeBusy = requestLog.length;
+      const startedWaiting = Date.now();
+      const busy = await chatCli(["-p", "--continue", "SECOND-TURN-QUESTION"], printProject, "print", {
+        ...printEnv, ANS_PI_LOCK_TIMEOUT_MS: "60000",
+      });
+      check(busy.code === 1 && busy.stdout === "" && /正在别处运行/.test(busy.stderr)
+        && requestLog.length === beforeBusy && Date.now() - startedWaiting < 30_000,
+        "-p 撞上占用当场退出，没发送请求", busy.out);
+    } finally {
+      onPrintInterrupted = undefined;
+      active.child.kill(process.platform === "win32" ? "SIGKILL" : "SIGINT");
+      await active.result;
+    }
+    const interruptedPrint = await active.result;
+    const interruptedPrintHandle = handleOf({ out: interruptedPrint.stderr });
+    check(!!interruptedPrintHandle && interruptedPrint.stdout === ""
+      && (process.platform === "win32" || interruptedPrint.code === 130),
+      "-p 被打断时标准错误里有句柄，标准输出没有半截回答", interruptedPrint.out);
+    const beforeResume = requestLog.length;
+    const resumed = await chatCli(["-c"], printProject, "print", printEnv);
+    const resumedMessages = JSON.parse(requestLog[beforeResume]?.body ?? "{}").messages ?? [];
+    const resumedQuestions = resumedMessages.filter((message) => message.role === "user").map(messageText);
+    check(resumed.code === 0 && resumed.stdout === "REPLY-TO-PRINT-INTERRUPTED-QUESTION\n"
+      && /上一轮没正常结束/.test(resumed.stderr) && handleOf({ out: resumed.stderr }) === interruptedPrintHandle,
+      "-c 用原句柄重问被打断的问题", resumed.out);
+    check(resumedQuestions.filter((question) => question === "PRINT-INTERRUPTED-QUESTION").length === 2
+      && resumedQuestions.at(-1) === "PRINT-INTERRUPTED-QUESTION",
+      "-c 的模型请求保留原问题，并原样重问", JSON.stringify(resumedQuestions));
+    const printCheck = new Database(printEnv.ANS_DB_PATH, { readonly: true });
+    try {
+      const spent = printCheck.prepare(
+        "SELECT b.spent_tokens, b.billable_calls FROM task_budgets b JOIN task_records t USING (task_id) WHERE t.kind = 'cli.chat' AND t.exit_code = 0 ORDER BY b.billable_calls DESC"
+      ).all();
+      check(spent.length === 2 && spent.every((row) => row.spent_tokens > 0 && row.billable_calls > 0)
+        && spent[0]?.billable_calls >= 5,
+        "-p 和 -c 各自记入本次任务预算，-p 也记了补搜前的模型调用", JSON.stringify(spent));
+    } finally {
+      printCheck.close();
     }
 
     // ================= B/C. MCP：初始化、对话、显式续接 =================

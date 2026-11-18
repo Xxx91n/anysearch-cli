@@ -9,6 +9,7 @@
 // dimension that never arrived is named instead of zero-filled.
 
 import type { RunUsage } from "./runtime";
+import type { TaskBudgetScope } from "./ports";
 
 /** Where a cost figure came from. `mixed` spans a provider figure and an estimate. */
 export type CostSource = "provider" | "estimated" | "unknown" | "mixed";
@@ -272,5 +273,61 @@ export function emptyRunUsage(missing: string[]): RunUsage {
     compactionCostUsd: 0,
     compactionCostSource: "unknown",
     missing,
+  };
+}
+
+/** Send budget faults to stderr so they stay out of command output and MCP replies. */
+export function reportBudgetFault(stage: string, e: unknown): void {
+  try {
+    process.stderr.write(
+      "[anysearch] budget " + stage + " failed: " +
+      (e instanceof Error ? e.message : String(e)) + "\n",
+    );
+  } catch { /* stderr unavailable */ }
+}
+
+/** Reserve one model request. Throws before dispatch if the budget cannot cover it. */
+export function reserveTaskModelCall(
+  { taskId, ledger }: TaskBudgetScope,
+  estimate: number,
+) {
+  if (!ledger.reserveCalls(taskId, 1)) throw new Error("Call budget exhausted.");
+  try {
+    if (!ledger.reserveTokens(taskId, estimate)) {
+      throw new Error("Token budget exhausted. This request needs " + estimate + " tokens. Raise [budget] tokenCap and retry.");
+    }
+  } catch (error) {
+    try { ledger.settleCalls(taskId, 1, 0); }
+    catch (settleError) { reportBudgetFault("model call settlement", settleError); }
+    throw error;
+  }
+  let reservedTokens = estimate;
+  return {
+    coverTokens(required: number) {
+      const additional = required - reservedTokens;
+      if (additional <= 0) return;
+      if (!ledger.reserveTokens(taskId, additional)) {
+        throw new Error("Token budget exhausted. This request needs " + required + " tokens, with " + reservedTokens +
+          " already reserved. Raise [budget] tokenCap and retry.");
+      }
+      reservedTokens = required;
+    },
+    settle(usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) {
+      // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
+      const reportedTokens = usage?.totalTokens;
+      const hasUsableTokens = typeof reportedTokens === "number" && Number.isFinite(reportedTokens) && reportedTokens > 0;
+      const tokens = hasUsableTokens ? reportedTokens : reservedTokens;
+      if (started && !hasUsableTokens) {
+        try { process.stderr.write("[anysearch] 任务预算：模型未报告 token 用量，按预留的 " + reservedTokens + " token 结算。\n"); }
+        catch { /* stderr unavailable */ }
+      }
+      const cost = usage?.cost?.total ?? 0;
+      try { ledger.settleCalls(taskId, 1, Number(started)); }
+      catch (error) { reportBudgetFault("model call settlement", error); }
+      try { ledger.settleTokens(taskId, reservedTokens, started ? tokens : 0); }
+      catch (error) { reportBudgetFault("model token settlement", error); }
+      try { if (started && cost > 0) ledger.settleUsd(taskId, 0, cost); }
+      catch (error) { reportBudgetFault("model cost settlement", error); }
+    },
   };
 }

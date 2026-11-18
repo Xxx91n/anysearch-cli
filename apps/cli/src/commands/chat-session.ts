@@ -5,6 +5,8 @@ import { parseLlmFlags } from "../config-llm";
 export interface ChatOptions {
   query: string;
   continueLatest: boolean;
+  print: boolean;
+  retryInterrupted: boolean;
   sessionId?: string;
   list: boolean;
   unassigned: boolean;
@@ -18,12 +20,14 @@ export function parseChatArgv(argv: string[]) {
 }
 
 export function parseChatOptions(args: string[]): ChatOptions {
-  const options: ChatOptions = { query: "", continueLatest: false, list: false, unassigned: false };
+  const options: ChatOptions = { query: "", continueLatest: false, print: false, retryInterrupted: false, list: false, unassigned: false };
   const query: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--") { query.push(...args.slice(i + 1)); break; }
     if (arg === "--continue") options.continueLatest = true;
+    else if (arg === "-p") options.print = true;
+    else if (arg === "-c") options.retryInterrupted = true;
     else if (arg === "--list") options.list = true;
     else if (arg === "--unassigned") options.unassigned = true;
     else if (arg === "--session" || arg.startsWith("--session=")) {
@@ -35,7 +39,10 @@ export function parseChatOptions(args: string[]): ChatOptions {
   }
   if (options.continueLatest && options.sessionId) throw new Error("--continue 和 --session 只能选一个。");
   if (options.unassigned && !options.list) throw new Error("--unassigned 请和 --list 一起用。");
-  if (options.list && (options.continueLatest || options.sessionId || query.length)) throw new Error("查看会话列表时，不要同时提问或续聊。");
+  if (options.retryInterrupted && (options.print || options.continueLatest || query.length)) {
+    throw new Error("-c 会接着问被打断的那轮，请不要再传问题、-p 或 --continue。");
+  }
+  if (options.list && (options.continueLatest || options.sessionId || options.print || options.retryInterrupted || query.length)) throw new Error("查看会话列表时，不要同时提问或续聊。");
   options.query = query.join(" ");
   return options;
 }
@@ -46,20 +53,22 @@ export function parseChatOptions(args: string[]): ChatOptions {
  * 读记录是传进来的函数，所以这里不碰文件系统。拒绝时把原因带上：坏了第几行、
  * 格式比本版新、还是身份对不上。坏了和从来没有，是两句话，都不会被当成新对话。
  */
-export function selectChatSession(store: SessionStorePort, options: ChatOptions, projectRoot: string | null, readRecord: (id: string) => PiSessionRecordVerdict): string | undefined {
-  if (options.continueLatest) {
+export function selectChatSession(store: SessionStorePort, options: ChatOptions, projectRoot: string | null, readRecord?: (id: string) => PiSessionRecordVerdict): string | undefined {
+  if (options.continueLatest || (options.retryInterrupted && !options.sessionId)) {
     if (!projectRoot) throw new Error("无法确定当前项目。请用 --list --unassigned 查看旧会话，再用 --session ID 续聊。");
     if (!store.listChatSessions) throw new Error("当前存储不支持查看会话。");
     const latest = store.listChatSessions(projectRoot)[0];
-    if (!latest) throw new Error("当前项目还没有会话。直接提问就会新建对话。");
-    const verdict = readRecord(latest.id);
-    if (!verdict.ok) throw new Error("最近会话不能续聊（" + latest.id + "）：" + verdict.message);
+    if (!latest) {
+      throw new Error(options.retryInterrupted ? "当前项目没有可续的会话。" : "当前项目还没有会话。直接提问就会新建对话。");
+    }
+    const verdict = readRecord?.(latest.id);
+    if (verdict && !verdict.ok) throw new Error("最近会话不能续聊（" + latest.id + "）：" + verdict.message);
     return latest.id;
   }
   if (options.sessionId) {
     if (!store.getChatSession?.(options.sessionId)) throw new Error("找不到这个会话：" + options.sessionId);
-    const verdict = readRecord(options.sessionId);
-    if (!verdict.ok) throw new Error("这段会话不能续聊（" + options.sessionId + "）：" + verdict.message);
+    const verdict = readRecord?.(options.sessionId);
+    if (verdict && !verdict.ok) throw new Error("这段会话不能续聊（" + options.sessionId + "）：" + verdict.message);
     return options.sessionId;
   }
   return undefined;
