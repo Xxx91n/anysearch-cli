@@ -256,6 +256,11 @@ export async function withMcpTask<R>(
   try {
     result = identity ? await storage.run(identity, handler) : await handler();
   } catch (e) {
+    // Design: a throw anywhere in the handler — the run itself or its late work
+    // — ends the task as failed, because that is what the caller sees: the SDK
+    // turns an uncaught throw into an error result. The run's own usage was
+    // already settled on the way out (flushMemory / the runtime's finally), so
+    // the record's exit 1 is about the failed CALL, not about a lost bill.
     tracking.finish(1);
     throw e;
   }

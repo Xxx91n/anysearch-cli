@@ -78,6 +78,24 @@ async function main() {
         "3b: an undeclared domain with no store is still the unmetered session form");
     }
 
+    // 3c. #303: a degraded corner must SAY it is degraded — otherwise "store
+    //     could not hand out a ledger" looks exactly like a healthy unmetered
+    //     run (review finding).
+    {
+      const lines: string[] = [];
+      const noSeamStore = {} as never;
+      const wiring = wireChatTaskBudget(noSeamStore, "cli-no-ledger", undefined, {
+        warn: (m: string) => lines.push(m),
+      });
+      check(wiring.taskBudget === undefined && wiring.taskBudgetFault === undefined,
+        "3c: undeclared + no ledger seam stays the unmetered session form");
+      check(lines.length === 1 && /no ledger seam/.test(lines[0] ?? ""),
+        "3c: and it warns once instead of looking healthy (got " + JSON.stringify(lines) + ")");
+      const declared = wireChatTaskBudget(noSeamStore, "cli-no-ledger", budget, { warn: () => {} });
+      check(/lacks createTaskBudgetLedger/.test(declared.taskBudgetFault ?? ""),
+        "3c: a declared budget in the same corner is still the seam fault");
+    }
+
     // 4. Undeclared + task: the scope still travels, but no row exists —
     //    unmetered for this task, and never a fall-back to the session form.
     {

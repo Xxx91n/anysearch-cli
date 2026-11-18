@@ -254,7 +254,12 @@ export function registerAnsChat(
         // run-boundary re-read (#188), which re-applies them to the task row.
         let budgetWiringMemo: ReturnType<typeof wireTaskBudget> | undefined;
         const budgetWiring = (): ReturnType<typeof wireTaskBudget> =>
-          (budgetWiringMemo ??= wireTaskBudget(eng.store, task?.taskId, eng.config?.budget));
+          (budgetWiringMemo ??= wireTaskBudget(eng.store, task?.taskId, eng.config?.budget, {
+            // A degraded corner (no ledger to bill) must not look like a
+            // healthy unmetered run; the wiring warns here and the run keeps
+            // the session form.
+            warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+          }));
         const {
           message,
           sessionId: requestedSessionId,

@@ -110,7 +110,10 @@ const endpoint = createServer(async (req, res) => {
   // late work without a reply to hand back.
   if (body.includes(HOLD_MARKER)) {
     requestLog.push({ role: "chat", body });
-    req.on("close", () => { try { res.destroy(); } catch { /* already gone */ } });
+    // 取消要是没把连接拆掉，这条响应不能一直挂着把后面几段吊到 240 秒超时；
+    // 30 秒兜底销毁，正常关闭时清掉这个计时器。
+    const giveUp = setTimeout(() => { try { res.destroy(); } catch { /* already gone */ } }, 30_000);
+    req.on("close", () => { clearTimeout(giveUp); try { res.destroy(); } catch { /* already gone */ } });
     return;
   }
   const role = classify(body);
@@ -754,40 +757,41 @@ async function main() {
       // 还可能撞上 SQLITE_BUSY 把整条车道抛断。读失败就当"还没收尾"继续等，但
       // 把最后一次错误留着——真正的 schema 问题不能伪装成"等超时"。
       let lastReadError = null;
+      let pollDb = null;
       const readTaskRows = () => {
-        let db;
         try {
-          db = new Database(mcpDb, { readonly: true });
-        } catch (e) {
-          lastReadError = e;
-          return null;
-        }
-        try {
-          return db.prepare(
+          pollDb ??= new Database(mcpDb, { readonly: true });
+          return pollDb.prepare(
             "SELECT task_id as id, kind, ended_at as ended, exit_code as code FROM task_records ORDER BY rowid"
           ).all();
         } catch (e) {
           lastReadError = e;
           return null;
-        } finally { db.close(); }
+        }
       };
       // 取消不等于活立刻干完：等到四个任务都写了结束时间，才说明迟到结算、
       // 摘要和观测都做完了。等不到就是失败，不是"大概好了"。
       let mcpTasks = [];
       const settleDeadline = Date.now() + 60000;
-      while (Date.now() < settleDeadline) {
-        const rows = readTaskRows();
-        if (rows) mcpTasks = rows;
-        if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
-        await new Promise((r) => setTimeout(r, 100));
+      try {
+        while (Date.now() < settleDeadline) {
+          const rows = readTaskRows();
+          if (rows) mcpTasks = rows;
+          if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      } finally {
+        try { pollDb?.close(); } catch { /* already closed */ }
       }
       check(mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null && t.kind === "mcp.ans_chat"),
         "取消之后四个任务都等迟到工作做完再收尾，种类都标着 MCP 聊天",
         JSON.stringify(mcpTasks) + (lastReadError ? " lastReadError=" + String(lastReadError) : ""));
-      // 按退出码认那一条，不按位置：位置依赖"这里只有四行"和 rowid 顺序。
-      const cancelledTask = mcpTasks.find((t) => t.code !== 0);
+      // 取消那轮按「不是那三次成功的任务号」认，比按位置或按退出码都稳：
+      // 位置依赖行序，退出码在别的行也可能非 0。
+      const succeededTaskIds = new Set([close1?.taskId, close2?.taskId, close3?.taskId]);
+      const cancelledTask = mcpTasks.find((t) => !succeededTaskIds.has(t.id));
       check(cancelledTask?.code === 1,
-        "取消那轮按未完成记账，不是假装跑完", JSON.stringify(mcpTasks.map((t) => [t.kind, t.code])));
+        "取消那轮按未完成记账，不是假装跑完", JSON.stringify(mcpTasks.map((t) => [t.id, t.code])));
 
       const mcpCheck = new Database(mcpDb, { readonly: true });
       let mcpBudgets = [], ledgerRows;

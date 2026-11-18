@@ -344,6 +344,10 @@ export function buildAnsChatBudgetResult(
     ? "this run's task budget could not be established"
     : "this run was stopped by its task budget";
   const operation = extra.operation ?? "chat";
+  // The prose prefix follows the operation: a consolidate stop that announces
+  // itself as "ans_chat: ..." while structuredContent says consolidate is a
+  // contradiction for anyone reading logs.
+  const toolLabel = operation === "consolidate" ? "ans_chat consolidate" : "ans_chat";
   const unchanged = operation === "consolidate"
     ? "\nNothing was sent to the model for this run. No knowledge was written."
     : "\nNothing was sent to the model for this run. The conversation itself is unchanged.";
@@ -351,7 +355,7 @@ export function buildAnsChatBudgetResult(
     isError: true,
     content: [{
       type: "text",
-      text: "ans_chat: " + label + " — " + detail + unchanged,
+      text: toolLabel + ": " + label + " — " + detail + unchanged,
     }],
     structuredContent: {
       operation,

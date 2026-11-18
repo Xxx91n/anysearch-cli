@@ -175,7 +175,11 @@ export async function runChat(argv: string[]): Promise<number> {
   // the runtime stops the run before any provider call (the old fail-open
   // behavior stays for the session form until #304).
   const cliTask = currentCliTask();
-  const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
+  const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget, {
+    // A degraded corner (no ledger to bill) must not look like a healthy
+    // unmetered run; the wiring warns here and the run keeps the session form.
+    warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+  });
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics
   // and upgrade admission (#309) will want to read off the task record.

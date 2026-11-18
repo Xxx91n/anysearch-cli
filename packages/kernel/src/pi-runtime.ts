@@ -1688,7 +1688,11 @@ export class PiAgentRuntime {
         const settleDelta = (): void =>
           settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
         this.lateSettlement = Promise.all([
-          previousTail ?? Promise.resolve(),
+          // A FAILED previous tail must not short-circuit this run's delta:
+          // Promise.all rejects on the first rejection, which would settle this
+          // promise (and read as "settled") while the delta below is still in
+          // flight. Swallow the old failure here; the new one reports below.
+          (previousTail ?? Promise.resolve()).catch(() => undefined),
           promptPromise!.then(settleDelta, settleDelta),
         ]).then(() => undefined, (e: unknown) => {
           // A failed late write is best-effort, but not silent: the host reads

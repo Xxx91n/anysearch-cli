@@ -40,6 +40,17 @@ export interface TaskBudgetWiring {
   taskBudgetFault?: string;
 }
 
+export interface WireTaskBudgetOptions {
+  /**
+   * Where a degradation is reported. Called for the corner that would otherwise
+   * be invisible: an UNDECLARED domain with a registered task whose store cannot
+   * hand out a ledger — the run then falls back to the session form, which is
+   * indistinguishable from "correctly unmetered" without a line somewhere.
+   * Defaults to a no-op so unit tests stay quiet.
+   */
+  warn?: (message: string) => void;
+}
+
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -48,7 +59,9 @@ export function wireTaskBudget(
   store: SessionStorePort | undefined,
   taskId: string | undefined,
   budget: BudgetConfig | undefined,
+  opts: WireTaskBudgetOptions = {},
 ): TaskBudgetWiring {
+  const warn = opts.warn ?? (() => {});
   if (!taskId) {
     // No registered task (registry failed to open, or the context is absent).
     // Undeclared: nothing to establish, the run is unmetered. Declared: the
@@ -62,6 +75,7 @@ export function wireTaskBudget(
   // declared run, but they point a debugger at different places, and "lacks
   // createTaskBudgetLedger" about an absent store would send it to the wrong one.
   if (!store) {
+    if (!budget) warn("task " + taskId + " has no store to bill — falling back to the session form");
     return budget ? { taskBudgetFault: "no session store to hold this run's budget" } : {};
   }
   let ledger: TaskBudgetLedger | undefined;
@@ -76,6 +90,7 @@ export function wireTaskBudget(
     // Without one there is no constraint, and the runtime reports any later
     // ledger fault by name — the broken-store corner must not crash the
     // wiring itself.
+    if (!budget) warn("task " + taskId + " has no usable ledger (" + errText(e) + ") — falling back to the session form");
     return budget
       ? { taskBudgetFault: "task budget ledger unavailable: " + errText(e) }
       : {};
@@ -83,7 +98,15 @@ export function wireTaskBudget(
   if (budget && !ledger) {
     return { taskBudgetFault: "session store lacks createTaskBudgetLedger" };
   }
-  if (budget && ledger) {
+  if (!ledger) {
+    // Undeclared + a store that cannot hand out a ledger: no ledger object
+    // means there is nothing for the engine's per-call routing to bill, so the
+    // declared "scope still travels" cannot hold here. Say so once instead of
+    // looking exactly like a healthy unmetered run.
+    warn("task " + taskId + " has no ledger seam — internal calls bill the session form");
+    return {};
+  }
+  if (budget) {
     try {
       ledger.initBudget(taskId, toBudgetCaps(budget));
     } catch (e: unknown) {
@@ -92,5 +115,5 @@ export function wireTaskBudget(
       return { taskBudgetFault: "task budget establishment failed: " + errText(e) };
     }
   }
-  return ledger ? { taskBudget: { taskId, ledger } } : {};
+  return { taskBudget: { taskId, ledger } };
 }
