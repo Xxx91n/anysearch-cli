@@ -376,18 +376,20 @@ const LOCK_STALE_MS = 10_000;
  */
 function withCredentialLock<T>(path: string, fn: () => T): T {
   const lockPath = path + ".lock";
-  // The lock lives next to the file it guards, and on a first-ever write that
-  // directory does not exist yet. Every failure here leaves by the caller's one
-  // door, so the user sees the same "refusing to write the credential file"
-  // sentence whatever step failed.
+  // Every failure in this function leaves by the same door as a failed write, so
+  // the user sees one actionable sentence whatever step failed - including "the
+  // folder is not writable", which is the most common real cause and used to
+  // escape as a bare EACCES from the lock file (found by the installed-product
+  // lane in CI: a read-only config directory must fail with this message, not
+  // with an errno).
+  const refused = (reason: string): Error => new Error(
+    "refusing to write the credential file " + path + ": " + reason +
+    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
+  );
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
-    throw new Error(
-      "refusing to write the credential file " + path + ": cannot create " + dirname(lockPath) +
-      " (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + "). " +
-      "Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-    );
+    throw refused("cannot create " + dirname(lockPath) + " (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")");
   }
   const deadline = Date.now() + LOCK_WAIT_MS;
   let fd: number | undefined;
@@ -396,7 +398,12 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
       fd = openSync(lockPath, "wx", 0o600);
       break;
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        // EACCES/EROFS here means the directory refuses the lock file - the same
+        // root cause as a refused write, so it gets the same actionable door.
+        throw refused("cannot take the write lock " + lockPath + " (" + (code ?? "I/O error") + ")");
+      }
       let stale = false;
       try {
         stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS;
@@ -409,9 +416,9 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
         continue;
       }
       if (Date.now() >= deadline) {
-        throw new Error(
-          "another ans process is writing the credential file (" + lockPath + "); " +
-          "wait for it to finish, or delete that file if no ans process is running",
+        throw refused(
+          "another ans process is writing it (" + lockPath + " is still held after " +
+          Math.round(LOCK_WAIT_MS / 1000) + "s)",
         );
       }
       sleepMs(20);

@@ -439,7 +439,7 @@ test("a stuck lock reports who is holding it instead of writing anyway", () => {
     writeFileSync(path + ".lock", "12345", "utf8");
     assert.throws(
       () => writeUserCredential({ provider: "openai", apiKey: "k" }, { home }),
-      /another ans process is writing the credential file/,
+      /refusing to write the credential file.*another ans process is writing it/,
     );
     assert.equal(existsSync(path), false, "nothing was written while the lock was held");
   } finally { cleanup(); }
@@ -459,4 +459,27 @@ test("an abandoned lock is reclaimed so a killed process cannot wedge the file",
     assert.deepEqual(readUserCredentials({ home }).bindings.map((b) => b.provider), ["openai"]);
     assert.equal(existsSync(path + ".lock"), false, "the lock was released");
   } finally { cleanup(); }
+});
+
+test("a read-only config directory fails with the actionable sentence, not a bare EACCES", () => {
+  // This is the case the installed-product lane hit in CI: the directory exists
+  // but refuses new files, so the lock file itself cannot be created. The user
+  // must see "refusing to write the credential file", not an errno.
+  if (process.platform === "win32") return; // directory modes do not restrict writes this way on Windows
+  const { home, cleanup } = tempRoot();
+  const dir = join(home, ".anysearch-cli");
+  try {
+    mkdirSync(dir, { recursive: true });
+    chmodSync(dir, 0o500);
+    assert.throws(
+      () => writeUserCredential({ provider: "openai", apiKey: KEY }, { home }),
+      /refusing to write the credential file.*(EACCES|cannot take the write lock)/,
+    );
+    assert.equal(existsSync(join(dir, "credentials.json")), false);
+    // Nothing was left behind, not even a lock file.
+    assert.equal(existsSync(join(dir, "credentials.json.lock")), false);
+  } finally {
+    try { chmodSync(dir, 0o700); } catch { /* already restored */ }
+    cleanup();
+  }
 });
