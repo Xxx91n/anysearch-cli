@@ -72,6 +72,9 @@ export const MISSING_CONSOLIDATION_COST = "consolidation cost (price unknown)";
  * unmetered instead of being charged to a session the caller never named.
  */
 export interface ConsolidationBudget {
+  /** The ledger's key for this run: a session id on the session form, a task id
+   * on the task form (MCP `ans_chat operation=consolidate`). Only used as the
+   * row key against `ledger` — never resolved back to a session. */
   sessionId: string;
   ledger: BudgetLedgerPort;
 }
@@ -109,8 +112,8 @@ export type ConsolidationUnmeteredReason =
 export const CONSOLIDATION_UNMETERED_TEXT: Record<ConsolidationUnmeteredReason, string> = {
   "no-scope-session": "a memory-list scope has no owning session to charge",
   "several-scope-sessions": "several session owners cannot share one run's spend, and charging the first would misattribute it",
-  "no-declared-caps": "this session declared no [budget] caps, so these calls were not charged to a cap",
-  "budget-setup-failed": "the session's budget row or caps could not be registered",
+  "no-declared-caps": "this run declared no [budget] caps, so these calls were not charged to a cap",
+  "budget-setup-failed": "this run's budget row or caps could not be registered",
 };
 
 /** A rejected reserve. The store counts it and stops spending; it is not a summary fault. */
@@ -372,8 +375,10 @@ async function completeText(
     try {
       reservedCall = budget.ledger.reserveCalls(budget.sessionId, 1);
       if (!reservedCall) {
+        // This seam bills either a task budget or the session ledger, so the
+        // message names neither.
         throw new ConsolidationBudgetError(
-          "consolidation stopped: the session's call budget is exhausted (reserveCalls rejected)",
+          "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
       }
       reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
@@ -385,7 +390,7 @@ async function completeText(
         reservedCall = false;
         reservedTokens = 0;
         throw new ConsolidationBudgetError(
-          "consolidation stopped: the session's token budget cannot cover this model call (reserveTokens rejected)",
+          "consolidation stopped: the token budget cannot cover this model call (reserveTokens rejected)",
         );
       }
     } catch (e) {

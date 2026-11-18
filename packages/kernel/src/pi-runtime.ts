@@ -402,8 +402,8 @@ export interface PiAgentRuntimeOptions {
    * loop's calls, compaction, the memory pipeline's summary/adjudication and
    * the late settlement — lands on the task's budget row, and internal
    * searches carry the scope so they stop accumulating on the session
-   * ledger. Absent: the session form, unchanged, for callers that have not
-   * migrated (#303/#304).
+   * ledger. Absent: the session form, unchanged, for the callers that have not
+   * migrated (#304: MCP search/research/standalone consolidate).
    */
   taskBudget?: TaskBudgetScope;
   /**
@@ -622,6 +622,13 @@ export class PiAgentRuntime {
   // the ledger caps, but the next run's reloader sees no new file change. Keep
   // the detection until the next run boundary consumes it.
   private pendingBudgetRefresh = false;
+  // The late token settlement a cancelled run schedules when its provider stream
+  // never closed. Kept here so a host can give it a bounded window before it
+  // closes the task row — without making the run itself wait on a stream that
+  // may never end.
+  private lateSettlement?: Promise<void>;
+  /** The last late settlement's write failed; `drainLateSettlement` reports it. */
+  private lateWriteFailed = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
   // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
@@ -842,6 +849,7 @@ export class PiAgentRuntime {
         message:
           "Task budget not established: " + this.opts.taskBudgetFault +
           ". The run was not started; no provider call was made.",
+        reason: "budget-not-established",
       };
       return;
     }
@@ -1372,11 +1380,9 @@ export class PiAgentRuntime {
     // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
     //
-    // #302: a task-scoped budget is the new accounting form. The run bills its
-    // task — the scope is the task id and the ledger is the task's own — so
-    // resuming a conversation spends none of the history's quota. Callers
-    // without one (MCP ans_chat, consolidate) keep the session form and its
-    // old semantics untouched (#303/#304 migrate separately).
+    // A task-scoped budget is the new accounting form: the run bills its task,
+    // so resuming a conversation spends none of its history. The entries still
+    // on the session form (#304) keep their old semantics untouched.
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
     const billingWired = !!this.billingScope && !perCallBudget;
@@ -1497,6 +1503,7 @@ export class PiAgentRuntime {
               (taskBudget ? "this task's budget" : "the session cap") +
               " cannot cover it. " +
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML)." + unownedHint,
+            reason: "budget-rejected",
           };
           return;
         }
@@ -1546,32 +1553,35 @@ export class PiAgentRuntime {
         reportBudgetFault("token settlement", e);
       }
     };
-    // #188 (CodeRabbit): late usage from a stalled prompt is added as a delta
-    // after the reservation was already released, so an exiting process cannot
-    // leave reserved_tokens behind.
-    const settleTokenDelta = (finalActual: number): void => {
-      if (!billingWired) return;
+    // Late usage from a stalled prompt is added as a delta after the reservation
+    // was already released, so an exiting process cannot leave reserved_tokens
+    // behind. Returns false when the write failed, so the host can report that
+    // instead of claiming the row is final.
+    const settleTokenDelta = (finalActual: number): boolean => {
+      if (!billingWired) return true;
       if (!tokenSettled) {
         // The reservation release itself failed earlier; retry the full settle
         // (release + actual) rather than recording spend with the reservation
         // still held.
         settleTokenReserve(finalActual);
-        return;
+        return tokenSettled;
       }
       const delta = Math.max(0, finalActual - settledTokens);
-      if (delta <= 0) return;
+      if (delta <= 0) return true;
       try {
         billingLedger!.settleTokens(billingId!, 0, delta);
         settledTokens = finalActual;
+        return true;
       } catch (e) {
         reportBudgetFault("token settlement", e);
+        return false;
       }
     };
 
     // Per-call reserve, two forms (#178 / #302):
     // - session form: a soft gate — a rejection lets the run continue and the
     //   call is simply not billed (the token dimension is the hard stop there).
-    //   Kept unchanged for the callers that have not migrated (#303/#304).
+    //   Kept unchanged for the callers that have not migrated (#304).
     // - task form: a declared call quota is enforced consistently (S5) — a
     //   rejection stops this run before its first controlled call. The wiring
     //   established a budget for exactly this execution, so "unbilled but
@@ -1599,6 +1609,7 @@ export class PiAgentRuntime {
             message:
               "Call budget exhausted: this run needs 1 call reserved but the task's call quota is used up. " +
               "The run was not started; raise [budget] callCap and retry (the next run re-reads the domain TOML).",
+            reason: "budget-rejected",
           };
           return;
         }
@@ -1836,9 +1847,20 @@ export class PiAgentRuntime {
         // Provider still running: the reservation was released above; add only
         // the later delta when the prompt finally stops (best-effort if the
         // store is already closed).
-        void promptPromise!.then(
-          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
-          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
+        //
+        // One tail per run, not a growing chain: both hosts build a runtime per
+        // run, so a later run replaces this reference rather than chaining onto
+        // a tree nobody waits for. The failure flag is what lets
+        // drainLateSettlement tell "settled" from a failed write.
+        this.lateWriteFailed = false;
+        const settleDelta = (): void => {
+          this.lateWriteFailed = !settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens);
+        };
+        this.lateSettlement = promptPromise!.then(settleDelta, settleDelta).then(
+          () => undefined,
+          // settleDelta does not throw; this only keeps a surprise rejection from
+          // becoming an unhandled one in a host that never drains.
+          () => { this.lateWriteFailed = true; },
         );
       }
       // Release the session listeners; the JSONL record is already durable.
@@ -1956,6 +1978,52 @@ export class PiAgentRuntime {
       if (signal?.aborted) onAbort();
       void stream.result().then(finish, () => finish());
     });
+  }
+
+  /**
+   * Give the late settlement a bounded window before closing the task row.
+   *
+   * A cancelled run whose provider stream never closed books the provider's real
+   * figure later, when the stream finally ends (#188). That write lands on the
+   * same task row, so a host that wants the row final before writing `ended_at`
+   * has to wait for it — but never unboundedly: the stream may never end.
+   *
+   * @param ms how long to wait. Small on purpose: cancellation must stay
+   *   snappy (#211), and a provider that never ends is not helped by a longer
+   *   wait. Default 250 ms.
+   * @returns "settled" when there is no late settlement or it finished inside
+   *   the window; "still-running" when the window closed with it on its way;
+   *   "failed" when the write itself failed — a caller must not report that as
+   *   a final row, because the spend was never booked.
+   */
+  async drainLateSettlement(ms = 250): Promise<"settled" | "still-running" | "failed"> {
+    const pending = this.lateSettlement;
+    if (!pending) return "settled";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<"still-running">((resolve) => {
+      timer = setTimeout(() => resolve("still-running"), ms);
+      // A waiting caller must not be the reason a process stays alive.
+      timer.unref?.();
+    });
+    // A failed tail is no longer pending, and this method must never throw out
+    // of a closeout path. Clear only the tail THIS call captured: a later run
+    // may already have installed its own.
+    const clearIfStillOurs = (): void => {
+      if (this.lateSettlement === pending) this.lateSettlement = undefined;
+    };
+    const settled: Promise<"settled" | "failed"> = pending.then(
+      () => { clearIfStillOurs(); return this.lateWriteFailed ? "failed" : "settled"; },
+      () => { clearIfStillOurs(); return "failed"; },
+    );
+    try {
+      const state = await Promise.race([settled, expired]);
+      // An expired window keeps the reference: dropping it would let the next
+      // call answer "settled" for spend still in flight. The tail is cleared
+      // only when it actually settles (either way).
+      return state;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**

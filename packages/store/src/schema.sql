@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS task_records (
   -- status/diagnostic/config operations that stay usable while admission is
   -- paused (#309 decides policy, this column is the fact it reads).
   role TEXT NOT NULL CHECK (role IN ('business', 'management')),
-  -- Which entry process ran it: 'cli' today, 'mcp' once #303 migrates it.
+  -- Which entry process ran it: 'cli', or 'mcp' for one tool call (#303).
   entry TEXT NOT NULL,
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
   owner_host TEXT NOT NULL,
@@ -260,10 +260,12 @@ CREATE INDEX IF NOT EXISTS idx_process_records_open ON process_records(ended_at)
 
 -- #302: the per-execution budget row — the compatible new accounting form.
 -- Same reserve/settle shape and the same non-negative counters as
--- budget_ledger, but keyed by task_id: one chat execution gets its own
--- budget, so resuming a conversation does not consume the history's quota
--- and the history's own row (budget_ledger) is left untouched for callers
--- that have not migrated yet (MCP ans_chat, consolidate — #303/#304).
+-- budget_ledger, but keyed by task_id: one execution gets its own budget, so
+-- resuming a conversation does not consume the history's quota and the
+-- history's own row (budget_ledger) is left untouched. `ans chat` bills here
+-- since #302, `ans_chat` over MCP since #303; the entries that have not
+-- migrated yet (MCP search/research/standalone consolidate) still use the
+-- session form (#304).
 --
 -- No budget_reservations twin and no dead-owner reclaim on purpose: a task's
 -- budget is created fresh for that execution and nothing ever reserves

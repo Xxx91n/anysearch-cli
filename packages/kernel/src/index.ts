@@ -31,6 +31,9 @@ export * from "@anysearch-cli/retriever";
 export * from "./composition";
 export * from "./llm-init";
 
+// One per-execution task-budget decision, shared by `ans chat` and `ans_chat`.
+export * from "./task-budget";
+
 // Explicit consolidation seams (D4/D5): one summarize + fidelity gate + usage
 // ledger shared by `ans consolidate` and `ans_chat operation=consolidate`.
 export * from "./consolidation";

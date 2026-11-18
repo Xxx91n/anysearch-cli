@@ -31,7 +31,10 @@ import {
   KernelJsonSchemas,
   KernelToolDescriptions,
   formatSummaryRebuildLine,
+  wireTaskBudget,
+  type ConsolidationMetering,
   type LlmSession,
+  type RuntimeErrorReason,
   type SummaryRebuildReport,
 } from "@anysearch-cli/kernel";
 import {
@@ -44,6 +47,8 @@ import {
 } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import {
+  buildAnsChatBudgetResult,
+  buildAnsChatCancelledResult,
   buildAnsChatConsolidateResult,
   buildAnsChatErrorResult,
   buildAnsChatResult,
@@ -51,6 +56,7 @@ import {
   isValidSessionHandle,
   classifyContinuation,
 } from "../ans-chat-session.js";
+import { currentMcpTask, withMcpTask } from "../mcp-task.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -61,6 +67,26 @@ import { toolError, toolFailure } from "./failure.js";
 // together so the interruption path and any future one report the same story
 // (#266: an interrupted run must not read as free).
 const INTERRUPTED_RUN_MISSING = ["run usage: interrupted before the provider reported it"];
+
+// A resident MCP server would print the wiring's degradation line on EVERY call
+// while the store stays broken, so dedupe by the corner the wiring names (not by
+// the message text, which carries a per-call task id).
+const WARNED_DEGRADATIONS_MAX = 16;
+const warnedDegradations = new Set<string>();
+
+/** Test hook: forget which wiring degradations were already announced. */
+export function resetAnsChatDegradedWarnings(): void {
+  warnedDegradations.clear();
+}
+
+function warnDegraded(message: string, key: string): void {
+  if (warnedDegradations.has(key)) return;
+  if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
+  warnedDegradations.add(key);
+  try {
+    process.stderr.write("[anysearch] " + message + "\n");
+  } catch { /* a dead stderr must not break the call */ }
+}
 
 export function registerAnsChat(
   server: McpServer,
@@ -212,11 +238,15 @@ export function registerAnsChat(
         // an observation and return a structured tool error, carrying whatever
         // warnings were collected before the fault (#300 review).
         const detail = e instanceof Error ? e.message : String(e);
-        return observeTool(eng, "ans_chat", ctx, async () =>
-          toolError("ans_chat", "config resolution failed: " + detail), {
-            "anysearch.llm.configError": detail,
-            "anysearch.llm.configWarnings": configWarnings.length,
-          });
+        // #303: even a call that never reaches the model is one task — it ran,
+        // it ends. Wrapped here rather than around the whole handler so the
+        // registration covers the observation too (see mcp-task.ts).
+        return withMcpTask(eng, "ans_chat", () =>
+          observeTool(eng, "ans_chat", ctx, async () =>
+            toolError("ans_chat", "config resolution failed: " + detail), {
+              "anysearch.llm.configError": detail,
+              "anysearch.llm.configWarnings": configWarnings.length,
+            }));
       }
       const providerName = cfg.provider;
       const modelName = cfg.model;
@@ -224,7 +254,36 @@ export function registerAnsChat(
       // signal (stdio notifications/cancelled) or the stateless-HTTP request
       // signal (response stream closed). The runtime aborts the agent loop.
       const signal = requestSignal(ctx);
-      return observeTool(eng, "ans_chat", ctx, async (span) => {
+      // #303: the whole run — observation included — executes as one task.
+      // The task row is ended only after the handler resolves, i.e. after the
+      // late settlement (flushMemory) and the observation write, so a cancelled
+      // request never leaves a finished-looking task with work still in flight.
+      return withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
+        // A caller that already cancelled does no run-side work here — no
+        // budget row, no session mint, no provider call. The task row itself is
+        // written either way by the wrapper: a cancelled call still happened,
+        // and the record says so (exit 1). The per-branch checks below stay as
+        // the guards for the awaits that open a window later on.
+        if (signal?.aborted) return buildAnsChatCancelledResult();
+        // #303: this call's own task budget. The conversation handle below
+        // restores context; the quota belongs to this execution.
+        const task = currentMcpTask();
+        // Resolved lazily, at the point a run is really about to start: a call
+        // rejected for its arguments or for a missing model config must not
+        // leave a budget row behind. Memoized so the consolidate and chat
+        // branches of THIS handler (exactly one runs per call) read one
+        // decision — establishing twice would refresh the same caps twice. The
+        // caps are the DOMAIN's, snapshotted at first use; a TOML edited between
+        // this snapshot and the run still takes effect through the runtime's own
+        // run-boundary re-read (#188), which re-applies them to the task row.
+        let budgetWiringMemo: ReturnType<typeof wireTaskBudget> | undefined;
+        const budgetWiring = (): ReturnType<typeof wireTaskBudget> =>
+          (budgetWiringMemo ??= wireTaskBudget(eng.store, task?.taskId, eng.config?.budget, {
+            // A degraded corner (no ledger to bill) must not look like a
+            // healthy unmetered run; the wiring warns here and the run keeps
+            // the session form. Deduped: this process is long-lived.
+            warn: warnDegraded,
+          }));
         const {
           message,
           sessionId: requestedSessionId,
@@ -249,7 +308,7 @@ export function registerAnsChat(
           if (!store || typeof store.consolidateMemory !== "function") {
             return toolFailure("ans_chat: consolidation requires the session store, which this server did not wire.");
           }
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           let scope: ReturnType<typeof resolveConsolidateScope>;
           try {
             scope = resolveConsolidateScope({
@@ -262,34 +321,60 @@ export function registerAnsChat(
             }
             throw e;
           }
-          if (signal?.aborted) return buildAnsChatResult("");
-          // Budget (D4). The rule lives in the kernel, so this tool and the CLI
-          // cannot answer "was this run charged?" differently.
-          //
-          // Design: the engine's own ledger is reused rather than a second one —
-          // over the same connection, so the session's [budget] row, the
-          // reserves and the settles all see one set of statements.
-          const metering = await resolveConsolidationMetering({
-            store: store as never,
-            scope,
-            domain: eng.config,
-            toCaps: (b) => toBudgetCaps(b as BudgetConfig),
-            domainLabel: "consolidate",
-            ...(eng.ledger ? { ledger: eng.ledger } : {}),
-            warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
-          });
-          // Design: the awaits above open a window the earlier check cannot see.
-          // A request cancelled while waiting for the meter or the LLM session
-          // must not go on to spend money and commit memory, so every wait is
-          // followed by the same check.
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
+          // #303: S9's third state — the domain declared [budget] and the task
+          // budget could not be established. Stop before any controlled call,
+          // and keep the answer machine-distinguishable from an upstream
+          // failure instead of falling back to the session form.
+          const consolidateBudget = budgetWiring();
+          if (consolidateBudget.taskBudgetFault) {
+            // Includes the degraded registry (no task registered) with a
+            // declared [budget]: that corner stops here on purpose (S9's third
+            // state) instead of quietly running the consolidation unmetered.
+            return buildAnsChatBudgetResult(consolidateBudget.taskBudgetFaultReason ?? "budget-not-established", consolidateBudget.taskBudgetFault, {
+              ...(task ? { taskId: task.taskId } : {}),
+              // This stop is a consolidate call, not a chat: saying "chat" would
+              // send a caller down the wrong branch (#303 review).
+              operation: "consolidate",
+            });
+          }
+          const consolidateTaskBudget = consolidateBudget.taskBudget;
+          // With a task budget, the run is charged to THIS call's task, not to
+          // the session that happens to own the selected materials (a memory
+          // list has no owning session at all). The task form also does NOT
+          // release caps on that session: this call no longer bills it, and
+          // mutating another conversation's row as a side effect is the
+          // cross-session write this ticket removes. The session form below
+          // stays for the degraded call (no task registered), unchanged.
+          let metering: ConsolidationMetering;
+          if (!consolidateTaskBudget) {
+            metering = await resolveConsolidationMetering({
+              store: store as never,
+              scope,
+              domain: eng.config,
+              toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+              domainLabel: "consolidate",
+              ...(eng.ledger ? { ledger: eng.ledger } : {}),
+              warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+            });
+          } else if (consolidateBudget.declared) {
+            metering = { metered: true, budget: { sessionId: consolidateTaskBudget.taskId, ledger: consolidateTaskBudget.ledger } };
+          } else {
+            // The task has a budget row but it carries no caps (an undeclared
+            // [budget] domain): nothing to enforce, and nothing to release.
+            metering = { metered: false, reason: "no-declared-caps" };
+          }
+          // The awaits above open a window the earlier check cannot see: a
+          // request cancelled while waiting for the meter must not go on to
+          // spend money and commit memory.
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           const budget = metering.metered ? metering.budget : undefined;
 
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
           if (providerName && modelName) {
             try {
               const llm = await getLlmSession(cfg);
-              if (signal?.aborted) return buildAnsChatResult("");
+              if (signal?.aborted) return buildAnsChatCancelledResult();
               // The seams carry this request's own usage counter and budget
               // binding. They are handed to the run as a per-call dependency
               // instead of being written onto the shared store: two concurrent
@@ -351,7 +436,7 @@ export function registerAnsChat(
               content: [
                 {
                   type: "text" as const,
-                  text: "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
+                  text: "ans_chat consolidate: stopped by this run's budget (" + report.budgetRejected +
                     " model call(s) refused); " +
                     (report.add + report.update === 0
                       ? "nothing was written."
@@ -433,11 +518,24 @@ export function registerAnsChat(
         // not user-visible either way: the SDK drops the response for its
         // aborted request signal, and on the HTTP seam the abort fires only
         // after the response socket has closed.
-        if (signal?.aborted) return buildAnsChatResult("");
+        if (signal?.aborted) return buildAnsChatCancelledResult();
         let recoveryNotice: string | undefined;
         try {
           const session = await getLlmSession(cfg);
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
+          // #303: this run's own task budget, resolved once the call is really
+          // going to start — a caller that cancelled while the LLM client was
+          // being built leaves no budget row behind. A declared budget that
+          // cannot be established stops here, before the session mint and any
+          // provider call, and the answer stays machine-distinguishable from an
+          // upstream failure.
+          const chatBudget = budgetWiring();
+          if (chatBudget.taskBudgetFault) {
+            return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", chatBudget.taskBudgetFault, {
+              ...(task ? { taskId: task.taskId } : {}),
+            });
+          }
+          const taskBudgetScope = chatBudget.taskBudget;
           const domain = eng.config ?? {
             sources: { enabled: [] },
             prompts: [],
@@ -473,12 +571,22 @@ export function registerAnsChat(
           // #265's recovery path answers it — `summary-rebuild-mcp.test.ts`
           // seeds exactly that shape and requires it to work.
           const mustResume = continuation.mustResume;
-          const memory = await resolveAnsChatSession(eng, requestedSessionId);
+          // Design: #303 — the handle restores context only. With a task
+          // registered, the session's own [budget] row is neither refreshed nor
+          // released; this run bills its task and the conversation's history
+          // stays untouched (S5: a handle no longer doubles as the execution's
+          // quota owner). Without a task (degraded registry) the old session
+          // form runs unchanged.
+          const memory = await resolveAnsChatSession(eng, requestedSessionId, { sessionBudget: !taskBudgetScope });
           // Design: refuse a tracked continuation when wiring fails — #132's
           // fail-open path would otherwise answer without its recorded history.
           if (mustResume && (!memory.store || memory.sessionId !== requestedSessionId)) {
             return toolFailure("ans_chat: 会话恢复失败，本次没有发送问题。");
           }
+          // Best-effort context link: which conversation this task ran under.
+          // The task bills on its own, but diagnostics and upgrade admission
+          // (#309) read this off the task record.
+          if (task && memory.sessionId) task.attachSession(memory.sessionId);
           // The attempt's lease and the runtime's run lock guard the same
           // session, so they read the SAME windows: a shortened
           // ANS_PI_LOCK_STALE_MS applies to an abandoned lease too.
@@ -519,9 +627,16 @@ export function registerAnsChat(
             span,
             // #211: cancellation of the MCP request aborts this agent run.
             signal,
+            // This execution's own budget: the agent loop, compaction, the
+            // memory pipeline and the late settlement all bill the task's row.
+            // Absent on a degraded call, which runs the session form.
+            taskBudget: taskBudgetScope,
           });
           let output = "";
           let runtimeError: string | undefined;
+          // #303: the runtime's own classification of a budget stop, so this
+          // surface never has to match on message text.
+          let runtimeErrorReason: RuntimeErrorReason | undefined;
           let runUsage: unknown;
           let runContext: unknown;
           // A `done` event is the runtime's own signal that the loop finished.
@@ -577,6 +692,7 @@ export function registerAnsChat(
                   if (event.recovery) output += "\n" + event.recovery;
                 } else if (event.type === "error") {
                   runtimeError = event.message;
+                  runtimeErrorReason = event.reason;
                 }
               }
               // A run that ended before the provider was ever called (a
@@ -611,16 +727,51 @@ export function registerAnsChat(
           // The attempt already recorded itself as unfinished on the way out, so
           // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
+            // #303: a stop the runtime decided is a budget answer, not an
+            // upstream failure. The classification travels in
+            // structuredContent.errorKind so a host can tell them apart without
+            // reading the message — and the spend already incurred is still
+            // reported under `usage`, never hidden behind the error.
+            if (runtimeErrorReason !== undefined) {
+              // A stop can land mid-stream, so wait for the late settlement
+              // before this call's task row is closed; no tail is a no-op.
+              await runtime.drainLateSettlement();
+              return buildAnsChatBudgetResult(runtimeErrorReason, runtimeError, {
+                ...(task ? { taskId: task.taskId } : {}),
+                usage: {
+                  // The accounting this call can speak for: a budget stop ends
+                  // the run without a settled figure, and the task row still
+                  // holds whatever was actually spent.
+                  run: emptyRunUsage(["run usage: the budget stop ended the run without a settled figure"]),
+                  memorySummary: runtime.getMemoryUsage(),
+                },
+              });
+            }
             return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
+            // #303: give the late settlement a bounded window before closing the
+            // task. A tail can only exist here: it is scheduled when a run ends
+            // with its provider stream still open (#188), which is exactly an
+            // interrupted run. A pre-prompt stop (budget refusal) never started a
+            // prompt, and a completed/errored run's prompt settled — both have
+            // no tail, so no other branch pays this wait. When the window closes
+            // first the answer says so instead of claiming the row stopped
+            // moving (the generic error path can name no such field — #204 —
+            // and the runtime logs a failed late write instead).
+            const lateSettled = await runtime.drainLateSettlement();
             return buildAnsChatResult("", memory.sessionId, {
               usage: {
                 run: emptyRunUsage(INTERRUPTED_RUN_MISSING),
                 memorySummary: runtime.getMemoryUsage(),
               },
               interrupted: true,
+              // #303: whether the provider's final usage already landed on the
+              // task row ("settled"), is still on its way because the stream
+              // never closed ("still-running"), or the write itself failed
+              // ("failed" — the row is ended but the spend was not booked).
+              lateSettlement: lateSettled,
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
@@ -655,7 +806,11 @@ export function registerAnsChat(
         "anysearch.llm.baseUrl.source": cfg.sources.baseUrl ?? "",
         "anysearch.llm.api.source": cfg.sources.api ?? "",
         "anysearch.llm.configWarnings": configWarnings.length,
-      });
+        // Design: #303 — the observation row names the task it belongs to, so a
+        // cancelled or budget-stopped call's trace can be tied back to the task
+        // record instead of living as an unattributed MCP span.
+        "anysearch.task.id": currentMcpTask()?.taskId ?? "",
+      }));
     }
   );
 }

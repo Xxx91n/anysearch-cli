@@ -363,6 +363,60 @@ async function main() {
     }
   }
 
+  // --- 7. #303: the late settlement window is bounded, and says which happened ---
+  //
+  // A cancelled run whose provider stream never closed books its real figure
+  // later (#188), on the same task row. The host waits a bounded window before
+  // closing the task and needs a yes/no answer, because the stream may never
+  // end. Driving the drain directly pins both halves; whether pi-agent-core
+  // settles an aborted prompt at all differs per platform, which is why the
+  // scheduling itself is not asserted here.
+  {
+    const runtime = new PiAgentRuntime({
+      retriever: new ScopeRetriever(),
+      domain: mockDomain,
+      model: { id: "m" } as any,
+      streamFn: usageStreamFn(150, 0) as any,
+      taskBudget: { taskId: "t-303-late", ledger: new ScopeLedger() },
+    });
+
+    // Nothing scheduled: waiting is a no-op, no false "still running".
+    assert(await runtime.drainLateSettlement(50) === "settled",
+      "drain: no late settlement reports settled at once");
+
+    // A tail that never ends: the window closes and the answer says "not yet".
+    const stuck = new Promise<void>(() => { /* never settles */ });
+    (runtime as any).lateSettlement = stuck;
+    const t0 = Date.now();
+    const stuckResult = await runtime.drainLateSettlement(60);
+    const elapsed = Date.now() - t0;
+    assert(stuckResult === "still-running",
+      "drain: a stream that never ends reports still-running, not settled");
+    assert(elapsed >= 50 && elapsed < 2000,
+      "drain: the wait is bounded by the caller's window (took " + elapsed + " ms)");
+    assert((runtime as any).lateSettlement === stuck,
+      "drain: a window that closed first keeps the tail — forgetting it would report settled for spend still in flight");
+    assert(await runtime.drainLateSettlement(20) === "still-running",
+      "drain: the same unanswered tail still reports still-running on a second call");
+
+    // A tail whose write blew up: not "settled" — the spend was never booked.
+    (runtime as any).lateSettlement = Promise.reject(new Error("probe late write failed"));
+    assert(await runtime.drainLateSettlement(200) === "failed",
+      "drain: a rejected late write reports failed, not settled");
+    assert((runtime as any).lateSettlement === undefined,
+      "drain: the rejected tail is cleared too");
+
+    // A tail that lands inside the window: settled, and the handle is cleared.
+    let release: () => void = () => {};
+    const landing = new Promise<void>((resolve) => { release = resolve; });
+    (runtime as any).lateSettlement = landing;
+    const waiting = runtime.drainLateSettlement(2000);
+    release();
+    assert(await waiting === "settled", "drain: a tail that lands inside the window reports settled");
+    assert((runtime as any).lateSettlement === undefined,
+      "drain: a cleared tail is not waited on twice");
+  }
+
   console.log("\npi-runtime task-budget tests: " + passed + " passed, " + failed + " failed");
   if (failed > 0) process.exit(1);
 }

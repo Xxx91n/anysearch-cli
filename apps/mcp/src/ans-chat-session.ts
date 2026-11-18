@@ -26,7 +26,10 @@ import type {
   BudgetLedgerPort,
   CompositionResult,
   ConsolidationUsage,
+  RunUsage,
+  RuntimeErrorReason,
   SessionStorePort,
+  SummaryUsage,
 } from "@anysearch-cli/kernel";
 import {
   formatConsolidateScope,
@@ -125,6 +128,11 @@ function warnOnce(key: string, detail: string): void {
  * mid-session domain switch (or a long-lived MCP process whose config snapshot
  * predates the TOML edit) does not re-initialize caps until the next process
  * start.
+ *
+ * #303: `ans_chat` no longer calls this on the normal path — its runs bill the
+ * call's own task (`wireTaskBudget`). What remains here is the degraded path
+ * (a store with no task registry, so the run has no task to bill) and the
+ * direct callers/tests of `resolveAnsChatSession` that read the session form.
  */
 function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): boolean {
   if (budget) {
@@ -162,15 +170,23 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  * @param eng - Composition result carrying the session store.
  * @param requested - `AnsChatInput.sessionId`, already type-checked by AJV; the
  *   runtime guard here also covers direct callers and non-string test input.
- * @returns store + sessionId (and the engine's ledger, #178) only when the
- *   handle is usable; an empty object leaves the runtime's `store && sessionId`
- *   gate closed (single-shot / memory disabled).
+ * @param opts.sessionBudget - false when this call already has its own task
+ *   budget: the handle then only restores context, and the session's [budget]
+ *   row is neither initialized nor released. Defaults to true (the session
+ *   form every unmigrated caller still runs).
+ * @returns the store and handle when they are usable. On the session form the
+ *   engine ledger travels with them (#178); on the context form the ledger is
+ *   undefined and the run bills its own task instead. With no usable handle,
+ *   store and sessionId are absent, which closes the runtime's
+ *   store-and-sessionId gate (single-shot / no memory).
  */
 export async function resolveAnsChatSession(
   eng: CompositionResult,
   requested?: unknown,
+  opts: { sessionBudget?: boolean } = {},
 ): Promise<AnsChatSessionWiring> {
   const store = eng.store;
+  const sessionBudget = opts.sessionBudget !== false;
   // SessionStorePort guarantees these, but a hand-built mock engine may not; a
   // loud fallback beats a TypeError in the tool handler.
   if (!store || typeof store.createSession !== "function" || typeof store.ensureSession !== "function") {
@@ -188,6 +204,7 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
+      if (!sessionBudget) return { store, sessionId: requested };
       const budgetReady = registerSessionBudget(store, requested, eng.config?.budget);
       return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
@@ -204,6 +221,7 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
+    if (!sessionBudget) return { store, sessionId: id };
     const budgetReady = registerSessionBudget(store, id, eng.config?.budget);
     return { store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
   } catch (e) {
@@ -286,6 +304,103 @@ export function buildAnsChatErrorResult(
       ...(recoveryNotice ? [{ type: "text" as const, text: recoveryNotice }] : []),
     ],
     ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
+  };
+}
+
+// ---- #303: a run stopped by its own task budget ----
+
+export interface AnsChatBudgetStopExtra {
+  taskId?: string;
+  /** What this run spent. A stop before the first provider call spends nothing, and the report says why it has no figure. */
+  usage?: { run: RunUsage; memorySummary: SummaryUsage | null };
+  /**
+   * Which operation was stopped. The same builder serves both, and saying
+   * "chat" about a consolidate call would send a caller down the wrong branch.
+   */
+  operation?: "chat" | "consolidate";
+}
+
+/**
+ * The result for a run the task budget stopped.
+ *
+ * Why this is not a plain `toolError`: #303 requires a budget refusal (and a
+ * budget that could not be established) to be distinguishable from an upstream
+ * failure without string matching. So the classification rides in
+ * `structuredContent.errorKind`, the stop reason is named in the text, and the
+ * result stays a normal MCP execution result (isError + content). This is the
+ * ONE error result that carries structuredContent — #204 keeps generic errors
+ * bare, and the budget stop is not an output-schema result: the block is a
+ * classification, not a report of work that happened.
+ *
+ * Both stops mean "nothing was called for this run": the runtime refuses before
+ * the first controlled call and says so in the text. The work that already
+ * happened (a resumed conversation, earlier tasks) is untouched.
+ */
+export function buildAnsChatBudgetResult(
+  kind: RuntimeErrorReason,
+  detail: string,
+  extra: AnsChatBudgetStopExtra = {},
+): AnsChatToolResult {
+  const label = kind === "budget-not-established"
+    ? "this run's task budget could not be established"
+    : "this run was stopped by its task budget";
+  const operation = extra.operation ?? "chat";
+  // The prose prefix follows the operation: a consolidate stop that announces
+  // itself as "ans_chat: ..." while structuredContent says consolidate is a
+  // contradiction for anyone reading logs.
+  const toolLabel = operation === "consolidate" ? "ans_chat consolidate" : "ans_chat";
+  // Say what the stop cost the caller without claiming more than is known: an
+  // unbuildable budget stops before anything runs; a refusal stops at the call
+  // it could not reserve, so earlier spend stays on the task's row.
+  const tail = kind === "budget-not-established"
+    ? "\nNo model request was sent for this run."
+    : "\nThe run stopped at the call its budget refused; anything already spent stays on the task's row.";
+  const unchanged = operation === "consolidate"
+    ? tail + " No knowledge was written."
+    : tail + " The conversation itself is unchanged.";
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: toolLabel + ": " + label + " — " + detail + unchanged,
+    }],
+    structuredContent: {
+      operation,
+      errorKind: kind,
+      budget: {
+        stopped: true,
+        // A refusal and an unbuildable budget are different things to fix:
+        // raise the caps vs. repair registration/store; the caller must not
+        // have to read prose to tell them apart.
+        reason: kind === "budget-not-established" ? "not-established" : "rejected",
+        detail,
+      },
+      ...(extra.taskId ? { taskId: extra.taskId } : {}),
+      ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
+    },
+  };
+}
+
+// ---- #303: a request that was cancelled before its run started ----
+
+/**
+ * The answer for a call the caller cancelled before (or while) the run was
+ * being set up.
+ *
+ * The text says plainly that nothing was answered, and
+ * `structuredContent.interrupted` is what the task wrapper reads to end the task
+ * as unfinished. Without that marker a cancelled request would be written as a
+ * clean exit-0 completion, which is the "cancelled equals finished" reading this
+ * ticket removes. The SDK drops the response for a cancelled request, so no
+ * caller sees this payload — the task row is what says what happened.
+ */
+export function buildAnsChatCancelledResult(): AnsChatToolResult {
+  // Built directly, not through buildAnsChatResult: a content-only host would
+  // otherwise read that builder's empty-result fallback ("ans_chat: no
+  // response") as a successful empty answer.
+  return {
+    content: [{ type: "text", text: "ans_chat: cancelled — no answer was produced for this request." }],
+    structuredContent: { interrupted: true },
   };
 }
 

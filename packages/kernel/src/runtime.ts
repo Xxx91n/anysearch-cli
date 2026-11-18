@@ -7,6 +7,19 @@
 import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort } from "./ports";
 import type { CostSource } from "./usage";
 
+/**
+ * The machine-readable class of a stop the runtime itself decided, so a host can
+ * tell a budget stop apart from a provider failure without parsing the message.
+ * Emitted by pi-runtime and read by the MCP result builder and the task wrapper.
+ *
+ * - `budget-not-established`: the domain declared [budget] but the budget row
+ *   could not be created; nothing was called.
+ * - `budget-rejected`: the budget refused the run (tokens or calls). On the task
+ *   form this is the task's own budget; on the session form it is the session
+ *   row's cap. Nothing was called for this refusal.
+ */
+export type RuntimeErrorReason = "budget-not-established" | "budget-rejected";
+
 export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "session_recovery"; notice: string }
@@ -23,7 +36,12 @@ export type AgentEvent =
       usage?: RunUsage;
       context?: RunContextUsage;
     }
-  | { type: "error"; message: string };
+  | {
+      type: "error";
+      message: string;
+      /** Absent means "not a runtime-decided budget stop". */
+      reason?: RuntimeErrorReason;
+    };
 
 /**
  * #264 (D9): one rebuild attempt as the caller sees it.
