@@ -103,6 +103,10 @@ function slowProvider(text: string, delayMs: number) {
       role: "assistant", content: [{ type: "text", text }],
       api: "openai-completions", provider: "probe", model: "probe-model",
       stopReason: "stop", timestamp: Date.now(),
+      usage: {
+        input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
     };
     return {
       async *[Symbol.asyncIterator]() {

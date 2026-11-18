@@ -32,6 +32,7 @@
 // 退出码 0 = 能跑的几条都过了；1 = 真的有失败。
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -112,7 +113,12 @@ const endpoint = createServer(async (req, res) => {
   // 要取最后一条用户消息，不能取整段文字里第一个匹配：续接时请求里还留着
   // 第一轮的问题，按原文匹配会一直回第一轮的标记，于是"重复问第一轮"也能
   // 通过续接检查。
-  res.end(sseText("REPLY-TO-" + (latestUserMarker(body) ?? "UNKNOWN-TURN")));
+  const marker = latestUserMarker(body);
+  if (marker === "CANCEL-STREAM-QUESTION") {
+    res.write(sseChunk({ role: "assistant", content: "CANCEL-STREAM-PARTIAL" }, null));
+    return;
+  }
+  res.end(sseText("REPLY-TO-" + (marker ?? "UNKNOWN-TURN")));
 });
 
 /** 取最新一条用户消息里的轮次标记；没有就返回 undefined。 */
@@ -127,7 +133,7 @@ function latestUserMarker(body) {
       : Array.isArray(m.content)
         ? m.content.map((c) => (typeof c === "string" ? c : c?.text ?? "")).join(" ")
         : "";
-    const marker = (text.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION)/) ?? [])[1];
+    const marker = (text.match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
@@ -519,16 +525,30 @@ async function main() {
 
     // #299: reuse the existing two-turn material through the installed CLI.
     // Async children keep this process free to serve the same SSE endpoint.
-    async function chatCli(args, cwd, domain = "probe", extraEnv = {}) {
+    async function chatCli(args, cwd, domain = "probe", extraEnv = {}, interruptOnText) {
       return await new Promise((resolve, reject) => {
         const env = { ...baseEnv, ANS_DOMAIN: domain, ANS_SESSION_ID: "cli-wiring-session-129", ...extraEnv };
         const child = spawn(process.execPath, [cliEntry, "chat", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
         let out = "";
-        child.stdout.on("data", (chunk) => { out += chunk; });
+        let interrupted = false;
+        let caughtSignals;
+        child.stdout.on("data", (chunk) => {
+          out += chunk;
+          if (interruptOnText && !interrupted && out.includes(interruptOnText)) {
+            interrupted = true;
+            if (process.platform === "linux") {
+              try {
+                const status = readFileSync("/proc/" + child.pid + "/status", "utf8");
+                caughtSignals = status.match(/^SigCgt:\s*(\w+)/m)?.[1];
+              } catch { /* the subprocess may already have exited */ }
+            }
+            child.kill("SIGINT");
+          }
+        });
         child.stderr.on("data", (chunk) => { out += chunk; });
         const timer = setTimeout(() => { child.kill(); reject(new Error("CLI chat timed out")); }, 60_000);
         child.on("error", (error) => { clearTimeout(timer); reject(error); });
-        child.on("close", (code) => { clearTimeout(timer); resolve({ code, out }); });
+        child.on("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, caughtSignals, out }); });
       });
     }
     const projectA = join(work, "project-a");
@@ -564,6 +584,32 @@ async function main() {
     const bList = await chatCli(["--list"], projectB);
     check(bList.code === 0 && !bList.out.includes(firstHandle ?? "missing") && !bList.out.includes(secondHandle ?? "missing"),
       "跨目录恢复不会把原会话搬进 B 的最近列表", bList.out);
+
+    if (process.platform === "win32") {
+      skip("CLI 收到 Ctrl-C 后保存半截回答", "Windows 的 child.kill 不会模拟终端 Ctrl-C");
+    } else {
+      const interrupted = await chatCli(["CANCEL-STREAM-QUESTION"], projectA, "probe", {}, "CANCEL-STREAM-PARTIAL");
+      const interruptedHandle = handleOf(interrupted);
+      const key = "ans-" + createHash("sha256").update(interruptedHandle ?? "").digest("hex").slice(0, 32);
+      const file = readdirSync(baseEnv.ANS_PI_SESSION_DIR).find((name) => name.endsWith("_" + key + ".jsonl"));
+      const entries = file
+        ? readFileSync(join(baseEnv.ANS_PI_SESSION_DIR, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line))
+        : [];
+      const answers = entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant")
+        .map((entry) => ({
+          stopReason: entry.message.stopReason,
+          text: entry.message.content.map((part) => part.type === "text" ? part.text : "").join(""),
+        }));
+      const saved = answers.some((answer) =>
+        answer.stopReason === "aborted" && answer.text === "CANCEL-STREAM-PARTIAL");
+      check(interrupted.code === 130 && saved, "CLI 收到 Ctrl-C 后保存半截回答",
+        JSON.stringify({ code: interrupted.code, signal: interrupted.signal, caughtSignals: interrupted.caughtSignals, answers }) + "\n" + interrupted.out);
+      if (interruptedHandle) {
+        const resumed = await chatCli(["--session", interruptedHandle, "SECOND-TURN-QUESTION"], projectA);
+        check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
+          "从 Ctrl-C 中断的会话续聊时先看到提醒", resumed.out);
+      }
+    }
 
     // ================= B/C. MCP：初始化、对话、显式续接 =================
     console.log("\n== B/C. installed MCP: initialize -> chat -> resume ==");

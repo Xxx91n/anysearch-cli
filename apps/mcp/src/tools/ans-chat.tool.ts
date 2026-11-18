@@ -433,6 +433,7 @@ export function registerAnsChat(
         // aborted request signal, and on the HTTP seam the abort fires only
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatResult("");
+        let recoveryNotice: string | undefined;
         try {
           const session = await getLlmSession(cfg);
           if (signal?.aborted) return buildAnsChatResult("");
@@ -552,8 +553,17 @@ export function registerAnsChat(
               sessionLock: sessionWiring.sessionLock,
             }, async (attempt) => {
               startedAttempt = attempt;
-              for await (const event of runtime.run(chatMessage)) {
-                if (event.type === "text") {
+              for await (const event of runtime.run(chatMessage, attempt)) {
+                if (event.type === "session_recovery") {
+                  recoveryNotice = event.notice;
+                  const progressToken = ctx?.mcpReq?._meta?.progressToken;
+                  if (ctx && progressToken !== undefined) {
+                    await ctx.mcpReq.notify({
+                      method: "notifications/progress",
+                      params: { progressToken, progress: 1, message: event.notice },
+                    }).catch(() => {}); // The final result still carries the notice.
+                  }
+                } else if (event.type === "text") {
                   output += event.content;
                 } else if (event.type === "tool_call") {
                   toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
@@ -600,7 +610,7 @@ export function registerAnsChat(
           // The attempt already recorded itself as unfinished on the way out, so
           // nothing here needs to write that state a second time.
           if (runtimeError !== undefined) {
-            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine);
+            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
@@ -613,7 +623,7 @@ export function registerAnsChat(
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-            });
+            }, recoveryNotice);
           }
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
@@ -626,9 +636,11 @@ export function registerAnsChat(
             context: runContext,
             toolCalls,
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
-          });
+          }, recoveryNotice);
         } catch (e) {
-          return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          return buildAnsChatErrorResult(
+            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine, recoveryNotice,
+          );
         }
       }, {
         "anysearch.provider": providerName ?? "",
