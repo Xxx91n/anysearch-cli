@@ -34,7 +34,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
-import { resetMcpTaskWarnings } from "../src/mcp-task.js";
+import { resetMcpTaskWarnings, withMcpTask } from "../src/mcp-task.js";
 
 let passed = 0;
 let failed = 0;
@@ -501,6 +501,40 @@ async function main() {
       const tasks = readRows<TaskRow>(dbPath, TASKS_SQL);
       assert(tasks.length === 1 && !!tasks[0]?.ended && tasks[0]?.code === 1,
         "6b: the task row says unfinished (got " + JSON.stringify(tasks) + ")");
+    }
+
+    // ===== 8. an error keeps its shape: no closeout on a rebuild failure =====
+    //
+    // The review's point: `attachCloseout` used to fire on any error that
+    // happened to carry structuredContent, so `buildAnsChatErrorResult` with
+    // summaryRebuilds would grow a task block. A client parsing that error must
+    // see the same shape as before; the task row is the record.
+    {
+      const dbPath = join(tempRoot, "error-shape.db");
+      const store = new SqliteSessionStore(dbPath);
+      const eng = makeEngine(store);
+
+      const rebuildError = await withMcpTask(eng, "probe_tool", async () => ({
+        isError: true,
+        content: [{ type: "text", text: "probe_tool error: rebuild failed" }],
+        structuredContent: { summaryRebuilds: [{ anchorId: 1, outcome: "failed", reasons: ["probe"], newAnchorId: null, cleared: false }] },
+      }));
+      assert(rebuildError?.structuredContent?.closeout === undefined,
+        "8: a rebuild-report error keeps its shape — no closeout is mixed in");
+      assert(Array.isArray(rebuildError?.structuredContent?.summaryRebuilds),
+        "8: the rebuild report survives untouched");
+
+      const success = await withMcpTask(eng, "probe_tool", async () => ({
+        content: [{ type: "text", text: "ok" }],
+      }));
+      assert(success?.structuredContent?.closeout !== undefined,
+        "8: a successful result still carries the closeout");
+
+      const tasks = readRows<TaskRow>(dbPath, TASKS_SQL);
+      assert(tasks.length === 2 && tasks.every((t) => !!t.ended),
+        "8: both calls were registered and closed, closeout or not (got " + JSON.stringify(tasks) + ")");
+      assert(tasks[0]?.code === 1 && tasks[1]?.code === 0,
+        "8: failed one exit 1, successful one exit 0 (got " + JSON.stringify(tasks.map((t) => t.code)) + ")");
     }
 
     // ---- #322: nothing reached the operator's real home ----

@@ -202,10 +202,15 @@ Rules behind the table:
 - **Error results carry no `structuredContent`.** The error channel and the
   output schema stay separate. Error text names the tool and says what to
   do: search/recall paths prefix `<tool> error: `, while `ans_chat`'s
-  missing-configuration branch starts `ans_chat: `. One exception: a budget
-  stop carries `errorKind`/`budget` (and its task `closeout`), because it has
-  to be distinguishable from an upstream failure without matching on text
-  (#303). `errorKind` is a classification, not an output schema.
+  missing-configuration branch starts `ans_chat: `. Two documented exceptions
+  exist, and they are different kinds of block:
+  - a budget stop carries `errorKind`/`budget` (and its task `closeout`),
+    because it has to be distinguishable from an upstream failure without
+    matching on text (#303). `errorKind` is a classification, not an output
+    schema;
+  - `ans_chat`'s summary-rebuild report (#264) is an error that carries
+    `summaryRebuilds`. It is left exactly as it is — no task `closeout` is mixed
+    into it, so a client parsing that error sees the same shape as before.
 - **Empty is not error; an outage is.** For a search that actually queried
   providers, `search_web` returns an error when every queried provider is in
   `providersFailed`. `research_web` returns an error when no provider answered
@@ -384,11 +389,12 @@ was registered, a result that carries `structuredContent` also carries
 | `exitCode` | `0` completed, `1` failed or interrupted. |
 | `interrupted` | The answer stopped early (cancellation). |
 
-Two results deliberately carry no closeout, and both are the #204 rule, not an
-omission:
+Two results deliberately carry no closeout, and neither is an omission:
 
-- A generic error result (a config fault, a refused continuation) stays bare.
-  Its task record is still written and ended — read the row for the closeout.
+- Any error except a budget stop. A generic error result (a config fault, a
+  refused continuation) stays bare; the summary-rebuild report keeps its
+  `summaryRebuilds`-only shape (#264) and does not grow a task block. In both
+  cases the task record is still written and ended — read the row.
 - A store without the registry seam runs unregistered (a stderr warning), so
   there is no task and nothing to report.
 

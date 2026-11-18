@@ -156,6 +156,8 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
 interface ResultVerdict {
   isError: boolean;
   interrupted: boolean;
+  /** A budget stop — the one error shape that carries a closeout (#303). */
+  budgetStop: boolean;
   structuredContent?: Record<string, unknown>;
 }
 
@@ -164,9 +166,11 @@ function readVerdict(result: unknown): ResultVerdict {
     ? (result as { isError?: boolean; structuredContent?: Record<string, unknown> })
     : undefined;
   const structuredContent = readable?.structuredContent;
+  const errorKind = structuredContent?.errorKind;
   return {
     isError: readable?.isError === true,
     interrupted: structuredContent?.interrupted === true,
+    budgetStop: errorKind === "budget-rejected" || errorKind === "budget-not-established",
     ...(structuredContent ? { structuredContent } : {}),
   };
 }
@@ -178,15 +182,18 @@ function attachCloseout<R>(
   wroteEnd: boolean,
   exitCode: number,
 ): R {
-  // Design: #204 keeps ERROR results free of structuredContent (the error
-  // channel and the output schema stay apart). A budget stop is the one
-  // exception, because #303 requires it to be machine-distinguishable from an
-  // upstream failure — that result already carries its own structuredContent
-  // and gets the closeout added to it. A generic error result (a config fault,
-  // a refused continuation) stays bare: its task record is still written and
-  // ended, and that row — not the reply — is where the closeout lives. Attaching
-  // one here would either break #204 or invent a second error shape.
-  if (verdict.isError && verdict.structuredContent === undefined) return result;
+  // Design: #204 keeps ERROR results out of the success output schema. Only two
+  // error shapes carry structuredContent at all, and a closeout belongs on just
+  // one of them:
+  // - a budget stop (`errorKind`) is the exception #303 adds, because it must
+  //   be machine-distinguishable from an upstream failure — it gets the
+  //   closeout;
+  // - the summary-rebuild report (#264) is an error that already carries
+  //   `summaryRebuilds`; mixing a task block in would change a shape clients
+  //   parse, so it is left alone.
+  // Every other error stays bare. The task record is still written and ended in
+  // all three cases — the row is where the closeout lives.
+  if (verdict.isError && !verdict.budgetStop) return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
     kind: identity.kind,
