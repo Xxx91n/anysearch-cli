@@ -88,6 +88,8 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
   } catch { /* fail-open: queue write failure must not crash the agent loop */ }
 }
 
+const DEFAULT_AGENT_TIMEOUT_MS = 300_000;
+
 // r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
 // On adversarial questions the model kept re-searching (46–62 calls per question in
 // r18) until timeout. Track the URLs each search returns; once `maxNoNewStreak`
@@ -414,6 +416,8 @@ export interface PiAgentRuntimeOptions {
   taskBudgetFault?: string;
   /** Enforce the task's budget before each model request in scripted chat. */
   enforceTaskBudgetPerCall?: boolean;
+  /** Maximum wait for a run or a scripted model request. */
+  timeoutMs?: number;
   /** Include the final answer and its search sources in the done event. */
   includeAnswer?: boolean;
 }
@@ -806,7 +810,7 @@ export class PiAgentRuntime {
 
     // SECURITY: timeout to prevent agent loop hang (CWE-400, CWE-840).
     // ponytail: 5-minute default, override via opts.timeoutMs.
-    const timeoutMs = (this.opts as any).timeoutMs ?? 300000;
+    const timeoutMs = this.opts.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS;
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
 
@@ -915,6 +919,8 @@ export class PiAgentRuntime {
     let firstModelReservation: ReturnType<typeof reserveTaskModelCall> | undefined;
     const providerStream = perCallBudget
       ? this.budgetedModelStream(streamFn as StreamFunction, perCallBudget, () => {
+        // Startup compaction has its own request. Keep this reservation for the question.
+        if (!questionWritten) return undefined;
         const reserve = firstModelReservation;
         firstModelReservation = undefined;
         return reserve;
@@ -1889,28 +1895,28 @@ export class PiAgentRuntime {
     takeReservation?: () => ReturnType<typeof reserveTaskModelCall> | undefined,
   ): StreamFunction {
     return (model, context, options) => {
-      const callerSignal = this.opts.signal;
-      const requestSignal = options?.signal;
-      const signal = callerSignal && requestSignal
-        ? AbortSignal.any([callerSignal, requestSignal])
-        : callerSignal ?? requestSignal;
-      signal?.throwIfAborted();
+      const signals = [AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS)];
+      if (options?.signal) signals.push(options.signal);
+      if (this.opts.signal) signals.push(this.opts.signal);
+      const signal = AbortSignal.any(signals);
+      signal.throwIfAborted();
       const systemPrompt = "systemPrompt" in context && typeof context.systemPrompt === "string" ? context.systemPrompt : "";
       const inputTokens = estimateTranscriptTokens(context.messages) + systemPrompt.length / 4;
       const outputTokens = options?.maxTokens ?? resolveOutputReserveTokens(this.opts.domain.budget);
       const settle = takeReservation?.() ??
         reserveTaskModelCall(budget, resolveTokenReserve(Math.ceil(inputTokens), outputTokens));
+      let stream: ReturnType<StreamFunction>;
       try {
-        const stream = streamFn(model, context, signal === requestSignal ? options : { ...options, signal });
-        // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
-        const settlement = this.settleStreamUsage(stream, settle, signal);
-        this.taskBudgetSettlements.add(settlement);
-        void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
-        return stream;
+        stream = streamFn(model, context, { ...options, signal });
       } catch (error) {
-        settle();
+        settle(undefined, false);
         throw error;
       }
+      // Design: 每次请求一结束就记账 — 后续请求按实际用量检查剩余额度。
+      const settlement = this.settleStreamUsage(stream, settle, signal);
+      this.taskBudgetSettlements.add(settlement);
+      void settlement.then(() => this.taskBudgetSettlements.delete(settlement));
+      return stream;
     };
   }
 

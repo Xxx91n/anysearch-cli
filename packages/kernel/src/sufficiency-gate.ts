@@ -142,7 +142,10 @@ export class SufficiencyEvaluator {
       for await (const chunk of stream) {
         if (chunk?.type === "text_delta" && typeof chunk.delta === "string") gapQuery += chunk.delta;
         else if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
-        else if (chunk?.type === "error") return empty;
+        else if (chunk?.type === "error") {
+          if (!scope?.aborted) process.stderr.write("[anysearch] 补搜前的模型请求失败，已跳过补搜。\n");
+          return empty;
+        }
         else if (chunk?.delta) gapQuery += chunk.delta;
       }
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");

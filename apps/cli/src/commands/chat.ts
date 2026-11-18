@@ -57,7 +57,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // the fallback below.
     if (isDomainSchemaError(e)) throw e;
     if (printOnly) {
-      console.error("无法为这次提问建立任务预算，读取领域或打开持久库失败。" + (e?.message || String(e)));
+      console.error("读取领域或打开持久库失败。" + (e?.message || String(e)));
       return 1;
     }
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
@@ -188,7 +188,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget);
   // Design: 脚本模式需要能按任务记账 — 持久库出错时，不能换个库放行付费请求。
   const taskBudgetFault = taskBudgetWiring.taskBudgetFault ??
-    (printOnly && !taskBudgetWiring.taskBudget ? "无法为这次提问建立任务预算" : undefined);
+    (printOnly && !taskBudgetWiring.taskBudget ? "no task budget scope was established" : undefined);
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics
   // and upgrade admission (#309) will want to read off the task record.
@@ -312,6 +312,7 @@ export async function runChat(argv: string[]): Promise<number> {
               logProgress("[search done]");
               break;
             case "done":
+              // 完成记录说的是模型这一轮是否跑完。脚本退出码还要看有没有答案。
               completed = true;
               if (printOnly) {
                 if (event.answer?.trim()) {
@@ -355,8 +356,11 @@ export async function runChat(argv: string[]): Promise<number> {
         // returning here without waiting loses the rolling_summary / l2_recall write.
         try {
           await runtime.flushMemory();
+        } catch (error) {
+          if (printedAnswer) process.stderr.write("模型已答完，但收尾出错，本次没有输出答案。\n");
+          throw error;
         } finally {
-          process.off("SIGINT", interrupt);
+          if (printOnly) process.off("SIGINT", interrupt);
         }
         // #264 (D9): a suspended summary was either rebuilt from current sources or
         // it was not. Read AFTER the drain (a rebuild is background work the drain
@@ -422,8 +426,10 @@ export async function runChat(argv: string[]): Promise<number> {
       }
       // The attempt's own record now says finished only when the run reached
       // its end; a run that errored or was cancelled keeps the unfinished row.
-      if (cancellation.signal.aborted) attemptExitCode = 130;
-      else if (failed) attemptExitCode = 1;
+      if (cancellation.signal.aborted) {
+        if (printedAnswer) process.stderr.write("模型已答完，但收尾时被中断，本次没有输出答案。\n");
+        attemptExitCode = 130;
+      } else if (failed) attemptExitCode = 1;
       else if (printOnly && !printedAnswer) {
         process.stderr.write("模型没有返回答案。\n");
         attemptExitCode = 1;

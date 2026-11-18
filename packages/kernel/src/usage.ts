@@ -286,7 +286,7 @@ export function reportBudgetFault(stage: string, e: unknown): void {
   } catch { /* stderr unavailable */ }
 }
 
-/** Reserve one model request. The caller settles it when the provider finishes. */
+/** Reserve one model request. Throws before dispatch if the budget cannot cover it. */
 export function reserveTaskModelCall(
   { taskId, ledger }: TaskBudgetScope,
   estimate: number,
@@ -302,9 +302,10 @@ export function reserveTaskModelCall(
   return (usage?: { totalTokens?: number; cost?: { total?: number } }, started = true) => {
     // PI supplies a zero before the provider has reported usage. Keep the estimate in that case.
     const reportedTokens = usage?.totalTokens;
-    const tokens = typeof reportedTokens === "number" && reportedTokens > 0 ? reportedTokens : estimate;
-    if (started && !reportedTokens) {
-      try { process.stderr.write("[task-budget] 模型未报告 token 用量，按预留的 " + estimate + " token 结算。\n"); }
+    const hasUsableTokens = typeof reportedTokens === "number" && Number.isFinite(reportedTokens) && reportedTokens > 0;
+    const tokens = hasUsableTokens ? reportedTokens : estimate;
+    if (started && !hasUsableTokens) {
+      try { process.stderr.write("[anysearch] 任务预算：模型未报告 token 用量，按预留的 " + estimate + " token 结算。\n"); }
       catch { /* stderr unavailable */ }
     }
     const cost = usage?.cost?.total ?? 0;

@@ -107,11 +107,15 @@ const endpoint = createServer(async (req, res) => {
   let body = "";
   for await (const chunk of req) body += chunk;
   if (req.url === "/print-search") {
-    const { id, method, params } = JSON.parse(body);
+    let request;
+    try { request = JSON.parse(body); }
+    catch { return res.writeHead(400).end("Invalid JSON"); }
+    if (!request || typeof request.method !== "string") return res.writeHead(400).end("Missing method");
+    const { id, method, params } = request;
     if (method === "notifications/initialized") return res.writeHead(202).end();
     if (method === "tools/call") requestLog.push({ role: "print-search", body });
     const url = params?.arguments?.query === "anysearch-cli GitHub repository" ? PRINT_SOURCE : PRINT_REROUND_SOURCE;
-    const result = method === "initialize" ? { protocolVersion: params.protocolVersion } : {
+    const result = method === "initialize" ? { protocolVersion: params?.protocolVersion } : {
       structuredContent: { results: [{ url, title: "Print source", snippet: "The print test source." }] },
     };
     return res.writeHead(200, { "Content-Type": "application/json" })
@@ -667,25 +671,30 @@ async function main() {
     const printed = await chatCli(["-p", "TOOL-CALL-PLEASE PRINT-SEARCH-QUESTION"], printProject, "print", printEnv);
     check(printed.code === 0 && printed.stdout === "REPLY-TO-PRINT-SEARCH-QUESTION\n\n来源\n- " + PRINT_SOURCE + "\n- " + PRINT_REROUND_SOURCE + "\n",
       "-p 只输出答案和两次检索的来源", printed.out);
-    const beforePrintFailures = requestLog.length;
+    let requestsBefore = requestLog.length;
     const denied = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print-denied", printEnv);
-    check(denied.code === 1 && denied.stdout === "" && /Call budget exhausted/.test(denied.stderr),
+    check(denied.code === 1 && denied.stdout === "" && /Call budget exhausted/.test(denied.stderr)
+      && requestLog.length === requestsBefore,
       "-p 额度不足时报错，标准输出为空", denied.out);
     const blockedDbParent = join(work, "not-a-db-directory");
     writeFileSync(blockedDbParent, "");
+    requestsBefore = requestLog.length;
     const untracked = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
       ...printEnv, ANS_DB_PATH: join(blockedDbParent, "print.db"),
     });
-    check(untracked.code === 1 && untracked.stdout === "" && /无法为这次提问建立任务预算/.test(untracked.stderr),
-      "-p 无法建立任务预算时退出非零，标准输出为空", untracked.out);
+    check(untracked.code === 1 && untracked.stdout === "" && /读取领域或打开持久库失败/.test(untracked.stderr)
+      && requestLog.length === requestsBefore, "-p 打不开持久库时退出非零，标准输出为空", untracked.out);
+    requestsBefore = requestLog.length;
     const unconfigured = await chatCli(["-p", "FIRST-TURN-QUESTION"], printProject, "print", {
       ...printEnv, ANS_LLM_PROVIDER: "", ANS_LLM_MODEL: "", ANS_LLM_BASE_URL: "", ANS_LLM_API: "", ANS_LLM_API_KEY: "",
     });
-    check(unconfigured.code === 3 && unconfigured.stdout === "" && /not configured/.test(unconfigured.stderr),
+    check(unconfigured.code === 3 && unconfigured.stdout === "" && /not configured/.test(unconfigured.stderr)
+      && requestLog.length === requestsBefore,
       "-p 没配模型时退出非零，标准输出为空", unconfigured.out);
+    requestsBefore = requestLog.length;
     const finished = await chatCli(["-c"], printProject, "print", printEnv);
     check(finished.code === 1 && finished.stdout === "" && /没有被打断的问题/.test(finished.stderr)
-      && requestLog.length === beforePrintFailures, "-c 遇到已完成的对话说明原因，不发送请求", finished.out);
+      && requestLog.length === requestsBefore, "-c 遇到已完成的对话说明原因，不发送请求", finished.out);
     const empty = await chatCli(["-p", "PRINT-EMPTY-QUESTION"], printProject, "print", printEnv);
     check(empty.code === 1 && empty.stdout === "" && /没有返回答案/.test(empty.stderr),
       "-p 收到空回答时退出非零，标准输出为空", empty.out);
