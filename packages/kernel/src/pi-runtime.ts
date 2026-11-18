@@ -1745,16 +1745,17 @@ export class PiAgentRuntime {
    * @param ms how long to wait. Small on purpose: cancellation must stay
    *   snappy (#211), and a provider that never ends is not helped by a longer
    *   wait — it just delays the answer. Default 250 ms.
-   * @returns true when there is no late settlement, or it finished inside the
-   *   window. false means it is still on its way and will land after the task
-   *   row is closed — the caller must say so instead of pretending otherwise.
+   * @returns "settled" when there is no late settlement or it finished inside
+   *   the window; "still-running" when the window closed with it on its way;
+   *   "failed" when the write itself threw — a caller must not report that as
+   *   a final row, because the spend was never booked.
    */
-  async drainLateSettlement(ms = 250): Promise<boolean> {
+  async drainLateSettlement(ms = 250): Promise<"settled" | "still-running" | "failed"> {
     const pending = this.lateSettlement;
-    if (!pending) return true;
+    if (!pending) return "settled";
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = new Promise<false>((resolve) => {
-      timer = setTimeout(() => resolve(false), ms);
+    const expired = new Promise<"still-running">((resolve) => {
+      timer = setTimeout(() => resolve("still-running"), ms);
     });
     // Design: handle the rejection HERE rather than relying on the writer having
     // swallowed it. A failed late write is no longer pending either, and this
@@ -1763,19 +1764,21 @@ export class PiAgentRuntime {
     //
     // Clear only the promise THIS call captured: a second run on the same
     // runtime may already have installed its own tail, and clearing that one
-    // would report "settled" while its delta is still pending.
+    // would report the wrong answer for it.
     const clearIfStillOurs = (): void => {
       if (this.lateSettlement === pending) this.lateSettlement = undefined;
     };
-    const done = pending.then(() => {
-      clearIfStillOurs();
-      return true as const;
-    }, () => {
-      clearIfStillOurs();
-      return true as const;
-    });
+    const settled: Promise<"settled" | "failed"> = pending.then(
+      () => { clearIfStillOurs(); return "settled"; },
+      () => { clearIfStillOurs(); return "failed"; },
+    );
     try {
-      return await Promise.race([done, expired]);
+      const state = await Promise.race([settled, expired]);
+      // A window that closed first leaves the promise running untracked — drop
+      // the reference so a later run on a reused runtime does not keep waiting
+      // on (and reporting) a tail that belongs to this one.
+      if (state === "still-running") clearIfStillOurs();
+      return state;
     } finally {
       if (timer) clearTimeout(timer);
     }

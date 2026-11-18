@@ -748,10 +748,14 @@ async function main() {
         arrived = reachedUpstream();
       }
       check(arrived, "取消之前这一轮已经到达上游", "等了 15 秒还没看到 " + HOLD_MARKER + " 到端点");
-      budgetProber.notify("notifications/cancelled", { requestId: pending.id, reason: "acceptance cancel" });
-      // 这条请求的应答永远不会来：把它的 pending 条目和 240 秒计时器一起撤掉，
-      // 否则一旦后面的断言先失败，挂着的计时器会把进程吊在那儿。
-      budgetProber.forget(pending.id);
+      // 没到达上游时这条 check 已经把失败说清楚了；对着空气取消、再等 60 秒收尾，
+      // 只会把同一个失败重新报成"任务没收尾"。所以后面的取消与等待只在到达时做。
+      if (arrived) {
+        budgetProber.notify("notifications/cancelled", { requestId: pending.id, reason: "acceptance cancel" });
+        // 这条请求的应答永远不会来：把它的 pending 条目和 240 秒计时器一起撤掉，
+        // 否则一旦后面的断言先失败，挂着的计时器会把进程吊在那儿。
+        budgetProber.forget(pending.id);
+      }
 
       // 一条连接读到尾：每 100ms 新开一条会开合几百次，MCP 子进程一旦正好在写
       // 还可能撞上 SQLITE_BUSY 把整条车道抛断。读失败就当"还没收尾"继续等，但
@@ -766,29 +770,37 @@ async function main() {
           ).all();
         } catch (e) {
           lastReadError = e;
+          // 连接可能已经坏了（schema 变了、句柄失效）：丢掉它，下一轮重开，
+          // 免得拿着一条坏连接重试到 60 秒超时。
+          try { pollDb?.close(); } catch { /* already closed */ }
+          pollDb = null;
           return null;
         }
       };
       // 取消不等于活立刻干完：等到四个任务都写了结束时间，才说明迟到结算、
       // 摘要和观测都做完了。等不到就是失败，不是"大概好了"。
       let mcpTasks = [];
-      const settleDeadline = Date.now() + 60000;
-      try {
-        while (Date.now() < settleDeadline) {
-          const rows = readTaskRows();
-          if (rows) mcpTasks = rows;
-          if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
-          await new Promise((r) => setTimeout(r, 100));
+      if (arrived) {
+        const settleDeadline = Date.now() + 60000;
+        try {
+          while (Date.now() < settleDeadline) {
+            const rows = readTaskRows();
+            if (rows) mcpTasks = rows;
+            if (mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null)) break;
+            await new Promise((r) => setTimeout(r, 100));
+          }
+        } finally {
+          try { pollDb?.close(); } catch { /* already closed */ }
         }
-      } finally {
-        try { pollDb?.close(); } catch { /* already closed */ }
       }
-      check(mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null && t.kind === "mcp.ans_chat"),
+      check(arrived && mcpTasks.length === 4 && mcpTasks.every((t) => t.ended !== null && t.kind === "mcp.ans_chat"),
         "取消之后四个任务都等迟到工作做完再收尾，种类都标着 MCP 聊天",
         JSON.stringify(mcpTasks) + (lastReadError ? " lastReadError=" + String(lastReadError) : ""));
       // 取消那轮按「不是那三次成功的任务号」认，比按位置或按退出码都稳：
       // 位置依赖行序，退出码在别的行也可能非 0。
-      const succeededTaskIds = new Set([close1?.taskId, close2?.taskId, close3?.taskId]);
+      const succeededTaskIds = new Set([close1?.taskId, close2?.taskId, close3?.taskId].filter(Boolean));
+      check(succeededTaskIds.size === 3,
+        "三次完成的调用都拿到了 closeout.taskId", JSON.stringify([close1?.taskId, close2?.taskId, close3?.taskId]));
       const cancelledTask = mcpTasks.find((t) => !succeededTaskIds.has(t.id));
       check(cancelledTask?.code === 1,
         "取消那轮按未完成记账，不是假装跑完", JSON.stringify(mcpTasks.map((t) => [t.id, t.code])));

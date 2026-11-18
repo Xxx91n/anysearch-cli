@@ -381,7 +381,7 @@ async function main() {
     });
 
     // Nothing scheduled: waiting is a no-op, no false "still running".
-    assert(await runtime.drainLateSettlement(50) === true,
+    assert(await runtime.drainLateSettlement(50) === "settled",
       "drain: no late settlement reports settled at once");
 
     // A tail that never ends: the window closes and the answer says "not yet".
@@ -390,12 +390,19 @@ async function main() {
     const t0 = Date.now();
     const stuckResult = await runtime.drainLateSettlement(60);
     const elapsed = Date.now() - t0;
-    assert(stuckResult === false,
+    assert(stuckResult === "still-running",
       "drain: a stream that never ends reports still-running, not settled");
     assert(elapsed >= 50 && elapsed < 2000,
       "drain: the wait is bounded by the caller's window (took " + elapsed + " ms)");
-    assert((runtime as any).lateSettlement === stuck,
-      "drain: a pending tail is kept, so a later call can still wait on it");
+    assert((runtime as any).lateSettlement === undefined,
+      "drain: a window that closed first drops the stale tail instead of leaving a later run waiting on it");
+
+    // A tail whose write blew up: not "settled" — the spend was never booked.
+    (runtime as any).lateSettlement = Promise.reject(new Error("probe late write failed"));
+    assert(await runtime.drainLateSettlement(200) === "failed",
+      "drain: a rejected late write reports failed, not settled");
+    assert((runtime as any).lateSettlement === undefined,
+      "drain: the rejected tail is cleared too");
 
     // A tail that lands inside the window: settled, and the handle is cleared.
     let release: () => void = () => {};
@@ -403,7 +410,7 @@ async function main() {
     (runtime as any).lateSettlement = landing;
     const waiting = runtime.drainLateSettlement(2000);
     release();
-    assert(await waiting === true, "drain: a tail that lands inside the window reports settled");
+    assert(await waiting === "settled", "drain: a tail that lands inside the window reports settled");
     assert((runtime as any).lateSettlement === undefined,
       "drain: a cleared tail is not waited on twice");
   }

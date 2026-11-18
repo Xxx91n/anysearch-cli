@@ -178,7 +178,9 @@ export async function runChat(argv: string[]): Promise<number> {
   const taskBudgetWiring = wireChatTaskBudget(store, cliTask?.taskId, domain.budget, {
     // A degraded corner (no ledger to bill) must not look like a healthy
     // unmetered run; the wiring warns here and the run keeps the session form.
-    warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+    // Same `[warn]` prefix as every other CLI warning — these lines land in the
+    // same stderr stream.
+    warn: (m) => process.stderr.write("[warn] " + m + "\n"),
   });
   // Best-effort context link: which conversation this task ran under. The
   // task bills on its own, but "which session was this" is what diagnostics

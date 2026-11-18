@@ -247,7 +247,8 @@ export function registerAnsChat(
         const task = currentMcpTask();
         // Resolved lazily, at the point a run is really about to start: a call
         // rejected for its arguments or for a missing model config must not
-        // leave a budget row behind. Memoized so both operations read one
+        // leave a budget row behind. Memoized so the consolidate and chat
+        // branches of THIS handler (exactly one runs per call) read one
         // decision — establishing twice would refresh the same caps twice. The
         // caps are the DOMAIN's, snapshotted at first use; a TOML edited between
         // this snapshot and the run still takes effect through the runtime's own
@@ -304,6 +305,9 @@ export function registerAnsChat(
           // failure instead of falling back to the session form.
           const consolidateBudget = budgetWiring();
           if (consolidateBudget.taskBudgetFault) {
+            // Includes the degraded registry (no task registered) with a
+            // declared [budget]: that corner stops here on purpose (S9's third
+            // state) instead of quietly running the consolidation unmetered.
             return buildAnsChatBudgetResult("budget-not-established", consolidateBudget.taskBudgetFault, {
               ...(task ? { taskId: task.taskId } : {}),
               // This stop is a consolidate call, not a chat: saying "chat" would
@@ -743,11 +747,10 @@ export function registerAnsChat(
               },
               interrupted: true,
               // #303: whether the provider's final usage already landed on the
-              // task row ("settled") or is still on its way because the stream
-              // never closed ("still-running"). A "still-running" here means a
-              // later write will touch the task's budget row — visible, not
-              // hidden.
-              lateSettlement: lateSettled ? "settled" : "still-running",
+              // task row ("settled"), is still on its way because the stream
+              // never closed ("still-running"), or the write itself failed
+              // ("failed" — the row is ended but the spend was not booked).
+              lateSettlement: lateSettled,
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),

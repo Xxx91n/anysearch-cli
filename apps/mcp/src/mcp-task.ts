@@ -76,7 +76,9 @@ interface Tracking {
 const storage = new AsyncLocalStorage<McpTaskIdentity>();
 
 export function currentMcpTask(): McpTaskIdentity | undefined {
-  return storage?.getStore();
+  // No optional chain on purpose: `storage` is a module constant, so the only
+  // two answers are "no identity in this async context" or a live one.
+  return storage.getStore();
 }
 
 // Dedupe per failure reason, same discipline (and bound) as the ans_chat

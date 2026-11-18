@@ -388,7 +388,14 @@ export function buildAnsChatBudgetResult(
  * payload — the task row is what says what happened.
  */
 export function buildAnsChatCancelledResult(): AnsChatToolResult {
-  return buildAnsChatResult("", undefined, { interrupted: true });
+  const result = buildAnsChatResult("", undefined, { interrupted: true });
+  return {
+    ...result,
+    // The empty-result fallback ("ans_chat: no response") reads as a successful
+    // empty answer to a content-only host. Say what happened instead; a host
+    // that reads structuredContent gets `interrupted: true` either way.
+    content: [{ type: "text" as const, text: "ans_chat: cancelled — no answer was produced for this request." }],
+  };
 }
 
 // ---- consolidation result (D5 / Q18 / Q19) ----

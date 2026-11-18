@@ -8,7 +8,4 @@
 //
 // Run from tests: pnpm --filter @anysearch-cli/cli test
 
-export {
-  wireTaskBudget as wireChatTaskBudget,
-  type TaskBudgetWiring as ChatTaskBudgetWiring,
-} from "@anysearch-cli/kernel";
+export { wireTaskBudget as wireChatTaskBudget } from "@anysearch-cli/kernel";

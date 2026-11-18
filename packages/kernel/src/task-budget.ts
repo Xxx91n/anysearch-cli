@@ -62,21 +62,34 @@ export function wireTaskBudget(
   opts: WireTaskBudgetOptions = {},
 ): TaskBudgetWiring {
   const warn = opts.warn ?? (() => {});
+  // Design: one shape for every corner. A DECLARED constraint that cannot be
+  // established is a fault (S9's third state: stop, never fall open); an
+  // UNDECLARED domain in the same corner degrades to the session form and says
+  // so once. Four hand-written copies of that pair is exactly the drift the
+  // header argues against, so they all go through `stop`.
+  //
+  // The warn call is isolated: it writes to stderr, and a closed pipe (EPIPE on
+  // a piped `ans chat`) must not abort the command it is only trying to inform.
+  const say = (message: string): void => {
+    try { warn(message); } catch { /* a dead stderr must not break the wiring */ }
+  };
+  const stop = (faultText: string, degradedText: string): TaskBudgetWiring => {
+    if (budget) return { taskBudgetFault: faultText };
+    say((taskId ? "task " + taskId + " " : "no registered task ") + degradedText);
+    return {};
+  };
   if (!taskId) {
     // No registered task (registry failed to open, or the context is absent).
-    // Undeclared: nothing to establish, the run is unmetered. Declared: the
-    // constraint exists and cannot be attached to anything — stop, do not
-    // fall open to unmetered.
-    return budget
-      ? { taskBudgetFault: "the main program registered no task to hold this run's budget" }
-      : {};
+    return stop("the main program registered no task to hold this run's budget", "— running unmetered");
   }
   // Design: name the missing STORE and the missing SEAM differently. Both stop a
   // declared run, but they point a debugger at different places, and "lacks
   // createTaskBudgetLedger" about an absent store would send it to the wrong one.
   if (!store) {
-    if (!budget) warn("task " + taskId + " has no store to bill — falling back to the session form");
-    return budget ? { taskBudgetFault: "no session store to hold this run's budget" } : {};
+    return stop(
+      "no session store to hold this run's budget",
+      "has no store to bill — falling back to the session form",
+    );
   }
   let ledger: TaskBudgetLedger | undefined;
   try {
@@ -90,21 +103,20 @@ export function wireTaskBudget(
     // Without one there is no constraint, and the runtime reports any later
     // ledger fault by name — the broken-store corner must not crash the
     // wiring itself.
-    if (!budget) warn("task " + taskId + " has no usable ledger (" + errText(e) + ") — falling back to the session form");
-    return budget
-      ? { taskBudgetFault: "task budget ledger unavailable: " + errText(e) }
-      : {};
-  }
-  if (budget && !ledger) {
-    return { taskBudgetFault: "session store lacks createTaskBudgetLedger" };
+    return stop(
+      "task budget ledger unavailable: " + errText(e),
+      "has no usable ledger (" + errText(e) + ") — falling back to the session form",
+    );
   }
   if (!ledger) {
-    // Undeclared + a store that cannot hand out a ledger: no ledger object
-    // means there is nothing for the engine's per-call routing to bill, so the
-    // declared "scope still travels" cannot hold here. Say so once instead of
-    // looking exactly like a healthy unmetered run.
-    warn("task " + taskId + " has no ledger seam — internal calls bill the session form");
-    return {};
+    // Declared: the store cannot hold a task budget. Undeclared: no ledger
+    // object means there is nothing for the engine's per-call routing to bill,
+    // so the declared "scope still travels" cannot hold here — say so once
+    // instead of looking exactly like a healthy unmetered run.
+    return stop(
+      "session store lacks createTaskBudgetLedger",
+      "has no ledger seam — internal calls bill the session form",
+    );
   }
   if (budget) {
     try {

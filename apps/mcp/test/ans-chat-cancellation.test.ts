@@ -247,8 +247,8 @@ async function main() {
       const result = await handler({ message: "already gone" }, { mcpReq: { signal: caller.signal } });
       assert(rec.streamCalls === 0, "2: a pre-aborted call starts no LLM stream");
       assert(rec.creates === 0, "2: a pre-aborted call mints no session row");
-      assert(String(result?.content?.[0]?.text ?? "").includes("no response"),
-        "2: a pre-aborted call returns no completion summary");
+      assert(/cancelled/i.test(String(result?.content?.[0]?.text ?? "")),
+        "2: a pre-aborted call says it was cancelled, not that it answered");
     }
 
     // ---- 3. HTTP seam: closing the response stream aborts the stalled chat ----

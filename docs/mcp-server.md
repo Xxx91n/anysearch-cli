@@ -411,8 +411,9 @@ Two cancellation details worth knowing:
   before writing the closeout, and the interrupted answer says which happened in
   `structuredContent.lateSettlement` (a sibling of `closeout`, not a field
   inside it): `"settled"` — the task row is final; `"still-running"` — the
-  provider never ended and the delta will land on the task row afterwards. It
-  never waits unboundedly.
+  provider never ended and the delta will land on the task row afterwards;
+  `"failed"` — the write threw, so the row is ended but the spend was not
+  booked (the runtime logs the failure too). It never waits unboundedly.
 - Any cancelled request's task is recorded as unfinished (`exitCode: 1`),
   including one cancelled before its run started, where no provider call was
   made. "Cancelled" is not "completed without output".

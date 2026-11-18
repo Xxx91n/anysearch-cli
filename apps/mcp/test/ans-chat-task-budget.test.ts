@@ -455,7 +455,7 @@ async function main() {
       // landed on the task row. It is "still-running" here (the stalled stream
       // never ends), which is exactly the case a bare `interrupted: true` hid.
       const lateSettlement = result?.structuredContent?.lateSettlement;
-      assert(lateSettlement === "settled" || lateSettlement === "still-running",
+      assert(lateSettlement === "settled" || lateSettlement === "still-running" || lateSettlement === "failed",
         "6: the answer says whether the late settlement already landed (got "
         + JSON.stringify(lateSettlement) + ")");
       const close = result?.structuredContent?.closeout;
