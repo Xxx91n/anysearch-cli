@@ -4,7 +4,8 @@
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { wireTaskBudget, isTaskBudgetRejectedError } from "@anysearch-cli/kernel";
-import { createPersistentEngine } from "../db";
+import { loadDomainByNameIn } from "@anysearch-cli/store";
+import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
 import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "./search-abstain";
@@ -116,7 +117,25 @@ export async function runSearch(args: string[]): Promise<number> {
   // this run, not a session (a bare search has none). A declared budget that
   // cannot be established stops before any provider request; an undeclared one
   // travels a no-row scope and caps nothing.
-  const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, config?.budget, {
+  //
+  // Design: resolve the budget from ANS_DOMAIN || "default", like `ans chat`
+  // and `ans consolidate` — an unset ANS_DOMAIN keeps the historical full
+  // fanout for provider selection, but it must not silently drop the default
+  // domain's declared cap. The engine's own config is absent in that case, so
+  // the default TOML is read once for the budget only.
+  let budgetDomain: { budget?: ReturnType<typeof loadDomainByNameIn>["budget"] } | undefined = config;
+  if (!budgetDomain) {
+    try {
+      budgetDomain = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs());
+    } catch (e) {
+      // Same fail-open contract as `ans chat`: an unreadable domain leaves the
+      // run unmetered, and the warning says so instead of implying a cap.
+      process.stderr.write(
+        "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); search runs unmetered\n",
+      );
+    }
+  }
+  const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, budgetDomain?.budget, {
     warn: (m) => process.stderr.write("[warn] " + m + "\n"),
   });
   if (budgetWiring.taskBudgetFault) {
@@ -250,7 +269,6 @@ export async function runSearch(args: string[]): Promise<number> {
     // instead of reporting it as an upstream error.
     if (isTaskBudgetRejectedError(e)) {
       process.stderr.write("ans search: stopped by this run's task budget — " + e.message + "\n");
-      if (providerAbsentLine) console.error(providerAbsentLine);
       return 1;
     }
     console.error("ans search error: " + e.message);

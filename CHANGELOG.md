@@ -4,7 +4,7 @@
 
 ### Added
 
-- **CLI 搜索按次记账**：`ans search` 的一次执行就是一个任务（`cli.search`），Active Domain 声明 `[budget]` 时额度记在这份任务预算上。声明了预算却建不起来，请求发出去之前就停；额度拒绝时也停在发给搜索源之前，并说明是任务预算拦下的。
+- **CLI 搜索按次记账**：`ans search` 的一次执行就是一个任务（`cli.search`），Active Domain 声明 `[budget]` 时额度记在这份任务预算上。没设 `ANS_DOMAIN` 时和 `ans chat`、`ans consolidate` 一样按 `default` 域读预算，不会因为历史的全量扇出把默认域的额度悄悄丢掉。声明了预算却建不起来，请求发出去之前就停；额度拒绝时也停在发给搜索源之前，并说明是任务预算拦下的。
 - **MCP 的 `search_web` / `research_web` 也按次记账**：每次工具调用登记一个任务（`mcp.search_web` / `mcp.research_web`），`research_web` 的多轮检索共用同一份任务预算，不会每轮重新开账。回复里的 `structuredContent.closeout` 让调用方看得见这次是哪个任务、记录收没收尾。
 - **预算停的回复可区分**：两个搜索工具的 `structuredContent.errorKind` 和 `ans_chat` 一致——`budget-rejected`（额度不够）与 `budget-not-established`（声明了却建不起来）。被拒绝的那一次调用不会发上游请求；研究前面已经跑过的轮次照实结算留在任务行上。
 - **引擎的额度拒绝有了类型**：以前只抛一句普通错误文本，现在抛 `TaskBudgetRejectedError`（`budget-rejected`），CLI 和 MCP 不用再猜文字。错误文案没变。
@@ -18,6 +18,7 @@
 ### Known limits
 
 - **搜索只有调用次数维度有用**：纯检索不产生 token/美元用量，所以任务预算上的 token/美元金额字段对搜索没有意义；额度控制靠 `callCap`。
+- **运行途中的账目异常仍按旧约定放行**：预留在运行中抛异常（不是"额度不够"的拒绝）时，整理那条路会退回这一笔的预留、不再计量这一次调用（#200 的旧约定，本票没改）。"声明了预算却建不起来"和"额度拒绝"这两种都会停。
 - **MCP 服务的域配置在启动时定下**：服务起来之后改 TOML 的 `[budget]` 不会热更新到已在跑的服务（#112 的已知限制），要重启才生效；CLI 每次执行都重新读。
 - **独立整理的整体验收不在本票**：本票只验自己的入口；和其他票组合起来的整体行为按总规格在最终验收里核对。
 

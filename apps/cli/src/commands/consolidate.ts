@@ -215,6 +215,10 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // #304: a declared [budget] that cannot be established stops before any
   // model call. Falling back to the session form here would be exactly the
   // "keep going unmetered" the spec forbids for a declared constraint.
+  //
+  // Design: prefer the run's own task over the materials' sessions — a memory
+  // list has no owner, and charging "the first of several sessions" misattributes
+  // a run that spans chats. The session form stays only for the no-task fallback.
   const taskBudgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, domainForBudget?.budget, {
     warn: (m) => process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n"),
   });
@@ -461,7 +465,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // shows what landed; the exit code carries "not finished".
   if (r.budgetRejected > 0) {
     process.stderr.write(
-      "ans consolidate: stopped by the session budget (" + r.budgetRejected +
+      "ans consolidate: stopped by this run's budget (" + r.budgetRejected +
         " call(s) refused); " +
         (r.add + r.update === 0 ? "nothing was written." : "the rest of the scope was not processed.") + "\n",
     );

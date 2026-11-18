@@ -15,6 +15,10 @@
 //
 // Materials from several sessions or no session at all do not change any of
 // this: the run bills its own task, so there is no "first chat" to charge.
+//
+// Design: one shared wiring for both search tools — two copies would drift on
+// "was this call metered?" and "why did it stop?", the same failure the kernel's
+// wireTaskBudget exists to prevent.
 
 import {
   wireTaskBudget,

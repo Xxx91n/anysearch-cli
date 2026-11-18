@@ -48,6 +48,12 @@ writeFileSync(join(domainsDir, "nobudget.toml"), [
 ].join("\n") + "\n", "utf8");
 
 const dbPath = join(dir, "cli.db");
+const ENV_KEYS = [
+  "ANS_DB_PATH", "ANS_DOMAINS_DIR", "ANS_DOMAIN", "USERPROFILE", "HOME",
+  "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANS_LLM_API_KEY",
+];
+const previousEnv: Record<string, string | undefined> = {};
+for (const key of ENV_KEYS) previousEnv[key] = process.env[key];
 process.env.ANS_DB_PATH = dbPath;
 process.env.ANS_DOMAINS_DIR = domainsDir;
 process.env.ANS_DOMAIN = "taskbudget";
@@ -165,5 +171,9 @@ test("undeclared domain: the run says it is unmetered and invents no row", async
 });
 
 test.after(() => {
+  for (const key of ENV_KEYS) {
+    if (previousEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = previousEnv[key];
+  }
   try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
 });

@@ -9,9 +9,10 @@
 // - declared but failed: a fault; the run stops before any controlled call.
 //
 // Degradation: with no task to bill, or no ledger to hand out, an UNDECLARED
-// domain falls back to the session form and says so once; a DECLARED one faults
-// in the same corner. The scope travels only in the established case — the
-// fallback has no ledger object to route anything to.
+// domain runs without a task budget and says so once; a DECLARED one faults in
+// the same corner (chat keeps its session form where one is wired — a bare
+// search has no session, so it is simply unmetered). The scope travels only in
+// the established case — the fallback has no ledger object to route anything to.
 
 import { toBudgetCaps, type BudgetConfig, type TaskBudgetLedger } from "@anysearch-cli/store";
 import type { RuntimeErrorReason } from "./runtime";
@@ -108,7 +109,7 @@ export function wireTaskBudget(
   if (!store) {
     return stop(
       "no session store to hold this run's budget",
-      "has no store to bill — falling back to the session form",
+      "has no store to bill — this run runs without a task budget",
       "no-store",
     );
   }
@@ -123,14 +124,14 @@ export function wireTaskBudget(
     // later ledger fault by name, so the wiring must not crash here.
     return stop(
       "task budget ledger unavailable: " + errText(e),
-      "has no usable ledger (" + errText(e) + ") — falling back to the session form",
+      "has no usable ledger (" + errText(e) + ") — this run runs without a task budget",
       "no-ledger",
     );
   }
   if (!ledger) {
     return stop(
       "session store lacks createTaskBudgetLedger",
-      "has no ledger seam — internal calls bill the session form",
+      "has no ledger seam — this run runs without a task budget",
       "no-ledger",
     );
   }

@@ -4,8 +4,11 @@
 // ("Budget exceeded: ..."), but as a plain Error. The CLI and the MCP search
 // tools need to tell that refusal apart from an upstream outage without
 // parsing prose, so the stop is a named class carrying the same machine code
-// the agent runtime already emits ("budget-rejected"). The message text is
-// unchanged on purpose: existing callers and logs keep the wording they had.
+// the agent runtime already emits ("budget-rejected").
+//
+// Design: a typed class instead of matching message text — the message stays
+// byte-identical on purpose, so existing logs and assertions keep the wording
+// they had while hosts branch on the type.
 
 export class TaskBudgetRejectedError extends Error {
   readonly reason = "budget-rejected" as const;
