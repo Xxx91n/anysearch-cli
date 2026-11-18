@@ -43,13 +43,20 @@ export interface PostWorkOutcome {
   exitCode: number;
 }
 
-export interface PostWorkOptions {
+export interface PostWorkOptions<T = unknown> {
   /** Context handle the HTTP request carried (x-anysearch-session-id), if any. */
   sessionId?: string;
   /** The task this work belongs to, when the caller could name one. */
   parentTaskId?: string;
-  /** Where a degradation is reported. Defaults to stderr with a fixed prefix. */
-  warn?: (message: string) => void;
+  /**
+   * Whether the work's own result says it failed.
+   *
+   * #307 review: work that reports a failure by RETURNING (a write helper that
+   * stays fail-open, a per-entry loop that counts rejected rows) would otherwise
+   * end the task as exit 0 — a record claiming success over a reported problem.
+   * A work function that throws needs nothing here.
+   */
+  isFailure?: (result: T) => boolean;
 }
 
 const WARNED_MAX = 32;
@@ -94,7 +101,7 @@ export interface PostWorkTracker {
    * the end write is a statement about the work, never about the request
    * starting. A throw ends the task as failed (exit 1) and propagates unchanged.
    */
-  run<T>(kind: string, opts: PostWorkOptions, work: () => T | Promise<T>): Promise<{ result: T; outcome: PostWorkOutcome }>;
+  run<T>(kind: string, opts: PostWorkOptions<T>, work: () => T | Promise<T>): Promise<{ result: T; outcome: PostWorkOutcome }>;
   /** Register this service's own lifetime as a process record (not a task). */
   start(): void;
   /** How many units are running right now. */
@@ -136,8 +143,7 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
         warnOnce("process registration failed (" + errText(e) + ") — this service runs unrecorded");
       }
     },
-    async run<T>(kind: string, opts: PostWorkOptions, work: () => T | Promise<T>): Promise<{ result: T; outcome: PostWorkOutcome }> {
-      const warn = opts.warn ?? warnOnce;
+    async run<T>(kind: string, opts: PostWorkOptions<T>, work: () => T | Promise<T>): Promise<{ result: T; outcome: PostWorkOutcome }> {
       let task: RegisteredTask | undefined;
       if (registry) {
         try {
@@ -152,7 +158,7 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
             try { task.attachSession(opts.sessionId); } catch { /* best-effort link */ }
           }
         } catch (e: unknown) {
-          warn("post-work task registration failed for " + kind + " (" + errText(e) + ") — running unregistered");
+          warnOnce("post-work task registration failed for " + kind + " (" + errText(e) + ") — running unregistered");
           task = undefined;
         }
       }
@@ -172,7 +178,7 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
           task!.finish({ exitCode });
         } catch (e: unknown) {
           state = "open";
-          warn("post-work task " + task!.taskId + " (" + kind + ") end write failed with exit " + exitCode +
+          warnOnce("post-work task " + task!.taskId + " (" + kind + ") end write failed with exit " + exitCode +
             " (" + errText(e) + ") — the record stays open");
         }
         return { taskId: task!.taskId, parentLink: task!.parentLink, state, exitCode };
@@ -186,7 +192,11 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
           close(1);
           throw e;
         }
-        return { result, outcome: close(0) };
+        // A work function that reports its failure by returning still has to
+        // end the row as failed — otherwise the record claims success over a
+        // reported problem (#307 review).
+        const failed = opts.isFailure ? opts.isFailure(result) : false;
+        return { result, outcome: close(failed ? 1 : 0) };
       } finally {
         settle();
       }

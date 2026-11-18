@@ -165,6 +165,22 @@ test("post-work tracker: a failing unit ends the row with exit 1 and rethrows", 
   }
 });
 
+test("post-work tracker: work that reports failure by returning ends exit 1 (#307 review)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-postwork-isFailure-"));
+  const dbPath = join(dir, "anysearch.db");
+  const registry = openTaskRegistry(dbPath);
+  const tracker = createPostWorkTracker(registry);
+  try {
+    const { outcome } = await tracker.run("server.policy_audit", { isFailure: (written: boolean) => !written }, () => false);
+    assert.equal(outcome.exitCode, 1, "a fail-open helper reporting a failed write ends the row as failed");
+    const { outcome: ok } = await tracker.run("server.policy_audit", { isFailure: (written: boolean) => !written }, () => true);
+    assert.equal(ok.exitCode, 0, "a landed write ends exit 0");
+  } finally {
+    tracker.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("post-work tracker: drain waits for a running unit, and says so when it cannot", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-postwork-drain-"));
   const dbPath = join(dir, "anysearch.db");
@@ -201,7 +217,7 @@ test("post-work tracker: drain waits for a running unit, and says so when it can
   }
 });
 
-test("real service: /index and /policy leave ended follow-up rows before answering", async () => {
+test("real service: /index and /policy leave follow-up rows before answering", async () => {
   const root = project("live");
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-home-"));
   const durableDb = join(home, "anysearch.db");
@@ -311,12 +327,21 @@ test("real service: /index and /policy leave ended follow-up rows before answeri
 
     const auditDb = new Database(durableDb, { readonly: true });
     try {
-      const auditRows = auditDb.prepare(
-        "SELECT kind, origin, parent_task_id as parent, ended_at as ended, exit_code as code FROM task_records WHERE kind = 'server.policy_audit'",
-      ).all() as Array<{ origin: string; parent: string | null; ended: string | null; code: number }>;
+      // The audit runs BEHIND the answer (#307 review): waiting for it would
+      // spend the hook's 3-second policy budget on a store write. So poll for
+      // the row to settle rather than reading it the instant the response lands.
+      const deadline = Date.now() + 10000;
+      let auditRows: Array<{ origin: string; parent: string | null; ended: string | null; code: number }> = [];
+      while (Date.now() < deadline) {
+        auditRows = auditDb.prepare(
+          "SELECT kind, origin, parent_task_id as parent, ended_at as ended, exit_code as code FROM task_records WHERE kind = 'server.policy_audit'",
+        ).all() as Array<{ origin: string; parent: string | null; ended: string | null; code: number }>;
+        if (auditRows.length > 0 && auditRows.every((r) => r.ended !== null)) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       assert.ok(auditRows.length >= 1, "the policy audit left a task row (the changed-version read)");
       assert.ok(auditRows.every((r) => r.ended !== null && r.code === 0),
-        "every audit row is ended by the time the response arrived");
+        "every audit row settles, and a landed write records success");
       assert.ok(auditRows.every((r) => r.origin === "follow-up" && r.parent === null),
         "an audit that names no parent records no link");
     } finally {

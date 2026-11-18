@@ -422,16 +422,21 @@ Two cancellation details worth knowing:
 
 The MCP tool call is not the only place a task row comes from. The hook IPC
 service (`ans-plugin-server`) also writes to the durable DB — the project-index
-rows behind `POST /index`, the config audit behind `GET /policy`, and
-`POST /purge`. Each of those runs as its own task row, and the service answers
-only after that row ends:
+rows behind `POST /index` and the config audit behind `GET /policy`. Each of
+those runs as its own task row:
 
 | Field | Value |
 |-------|-------|
-| `kind` | `server.project_index`, `server.policy_audit`, or `server.project_purge` |
+| `kind` | `server.project_index` or `server.policy_audit` |
 | `entry` | `server` |
 | `origin` | `follow-up` — work that exists because another request finished, not a new request |
 | `parent_task_id` | The task this tail belongs to, when a real row is named. A parent id that is not in this database is recorded as **no link** (never a dangling reference); the registry reports `parentLink: "unknown"` for it and `"none"` when no parent was named at all |
+
+`/index` answers only after its row ends. The `/policy` audit runs behind the
+answer instead: the hook that reads the policy has a 3-second budget, and making
+its answer wait on a store write would turn a slow audit into "policy
+unreachable". `/purge` is not post-work of another request — it keeps its old
+synchronous behaviour and no follow-up row.
 
 The distinction matters to an upgrade coordinator (#309): an entry with
 `origin = "independent"` is a request waiting or running, while `origin =

@@ -265,7 +265,8 @@ CREATE TABLE IF NOT EXISTS process_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pid INTEGER NOT NULL CHECK (pid > 0),
   owner_host TEXT NOT NULL,
-  -- 'cli' | 'mcp' — the entry whose lifetime this row records.
+  -- 'cli' | 'mcp' | 'server' — the entry whose lifetime this row records.
+  -- 'server' is the hook IPC service (#307), which now owns post-work.
   entry TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   -- NULL = still running; set when the process reports its own exit. A

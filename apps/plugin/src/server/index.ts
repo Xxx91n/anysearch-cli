@@ -32,7 +32,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { clearServerRegistry, installDataDir, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
-import { createPostWorkTracker, openPostWorkRegistry } from "./post-work.js";
+import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
@@ -214,23 +214,47 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 /**
- * #307: run one request's post-work under a follow-up task and wait for it.
+ * #307: run one request's post-work under a follow-up task.
  *
- * The wait is the point: a response sent before the write settled is exactly
- * the "hook service has nothing running" reading this ticket removes. A
- * failure inside the work ends the row with exit 1 and propagates, so the
- * caller answers with a real error status instead of a success it cannot
- * support. An id that cannot be named is passed as undefined — the registry
- * records "no link" rather than an invented parent.
+ * The task row exists before the work runs and ends after it settles, so the
+ * record never claims an end over work still in flight. Callers decide whether
+ * the HTTP answer waits for it:
+ * - `/index` already wrote synchronously before answering, so waiting keeps
+ *   the old contract;
+ * - `/policy` used to answer without waiting, and the hook that reads it has a
+ *   3-second budget while a contended audit write can take longer. Making the
+ *   answer wait would turn a slow audit into a stale policy on the hook side,
+ *   so there the row stays open behind the answer and the shutdown drain is
+ *   what stops it from being dropped.
+ *
+ * `isFailure` lets a work function report a failure by returning it (the audit
+ * helper stays fail-open; the per-entry index loop counts rejected rows) —
+ * without it those paths would end the row as exit 0 over a reported problem.
  */
 function runPostWork<T>(
   kind: string,
   sessionId: string,
   work: () => T | Promise<T>,
-  parentTaskId?: string,
-): Promise<T> {
-  return postWork.run(kind, { sessionId, ...(parentTaskId ? { parentTaskId } : {}) }, work)
-    .then(({ result }) => result);
+  opts: { parentTaskId?: string; isFailure?: (result: T) => boolean } = {},
+): Promise<{ result: T; outcome: PostWorkOutcome }> {
+  return postWork.run<T>(kind, {
+    sessionId,
+    ...(opts.parentTaskId ? { parentTaskId: opts.parentTaskId } : {}),
+    ...(opts.isFailure ? { isFailure: opts.isFailure } : {}),
+  }, work);
+}
+
+/** Run post-work behind an answer that must not wait for it; faults are logged, never swallowed. */
+function runPostWorkInBackground<T>(
+  kind: string,
+  sessionId: string,
+  work: () => T | Promise<T>,
+  opts: { isFailure?: (result: T) => boolean } = {},
+): void {
+  void runPostWork(kind, sessionId, work, opts).catch((e: unknown) => {
+    // The task row already records the failure; this line is for the operator.
+    try { process.stderr.write("[anysearch] post-work " + kind + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n"); } catch { /* dead stderr */ }
+  });
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -279,15 +303,23 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         try { ensureOwnerOnlyDb(OBS_DB); } catch { /* best-effort */ }
       }
       // #307: the audit rows are this request's post-work. They used to be
-      // fire-and-forget, so the response could return while the write was still
-      // in flight and an upgrade could not see the tail at all. Now each audit
-      // runs inside a follow-up task and the response waits for its end.
+      // fire-and-forget, so nothing could tell whether they landed and an
+      // upgrade could not see them at all. They now run under a follow-up task
+      // whose end says whether the write really happened.
+      //
+      // The answer does NOT wait for them: the hook that reads this policy has
+      // a 3-second budget, while an audit write opens its own connection and
+      // can wait on a contended store. Making the answer wait would turn a
+      // slow audit into "policy unreachable" on the hook side — a behaviour
+      // change to the URL gate, which this ticket has no business making. The
+      // row stays open behind the answer, and the shutdown drain is what stops
+      // it being dropped.
       const incoming = parseAndValidateHeaders(req);
       if (policy.envHostsIgnored) {
         process.stderr.write("[anysearch] WARN: ANS_URL_ALLOWLIST set but ANS_ALLOW_ENV_OVERRIDE not enabled; env hosts ignored\n");
         if (!envIgnoredAudited) {
           envIgnoredAudited = true;
-          await runPostWork("server.policy_audit", incoming.sessionId, () =>
+          runPostWorkInBackground("server.policy_audit", incoming.sessionId, () =>
             emitConfigChangeAudit(OBS_DB, {
               actor: "server", source: "env", path: tomlPath,
               change: { before: null, after: "config:env_override_ignored" },
@@ -295,7 +327,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
               traceId: incoming.traceId,
               sessionId: incoming.sessionId,
             }),
-          );
+            // The audit helper stays fail-open by contract; its return value
+            // is what says whether the row landed.
+            { isFailure: (written) => !written });
         }
       }
       if (policy.envHostsApplied > 0) {
@@ -310,7 +344,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // headers so the audit row links back to the same logical request the
         // caller initiated. traceparentValid=false means the client sent garbage;
         // parseAndValidateHeaders already substituted a fresh random traceId.
-        await runPostWork("server.policy_audit", incoming.sessionId, () =>
+        runPostWorkInBackground("server.policy_audit", incoming.sessionId, () =>
           emitConfigChangeAudit(OBS_DB, {
             actor: "server", source: "toml", path: tomlPath,
             change: { before, after: policy.policyVersion },
@@ -318,7 +352,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             traceId: incoming.traceId,
             sessionId: incoming.sessionId,
           }),
-        );
+          { isFailure: (written) => !written });
       }
       const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion, project: project.root };
       // writePolicyCache stamps materialized_at alongside the
@@ -348,18 +382,24 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const entries: Array<Record<string, unknown>> = Array.isArray(body.entries)
         ? (body.entries as Array<Record<string, unknown>>)
         : [];
-      // #307: the write is this hook's post-work. The response is sent after
-      // the follow-up task ends, so a hook that received 200 can rely on the
-      // rows being durable, and an upgrade see the task while it runs.
+      // #307: the write is this hook's post-work. The response waits for the
+      // follow-up task to end, so a hook that received 200 can rely on the rows
+      // being durable, and an upgrade sees the task while it runs.
       // The parent id is whatever the caller could name (dsh passes its own
       // tool-call task); the registry verifies it and records "unknown" instead
       // of a dangling link when the row is not here.
+      //
+      // A per-entry failure stays fail-open (one bad row must not drop the rest),
+      // but the count travels out of the work so the task row ends exit 1 when
+      // nothing could be written — a record claiming success over a fully
+      // rejected write is the failure this ticket exists to stop.
       const incoming = parseAndValidateHeaders(req);
       const parentTaskId = typeof body.parentTaskId === "string" && body.parentTaskId.trim()
         ? body.parentTaskId.trim()
         : undefined;
-      let indexed = 0;
-      await runPostWork("server.project_index", incoming.sessionId, () => {
+      const written = await runPostWork("server.project_index", incoming.sessionId, () => {
+        let failed = 0;
+        let indexed = 0;
         for (const entry of entries) {
           try {
             const title = String(entry.title || "");
@@ -376,10 +416,20 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
                 : createHash("sha256").update(entryUrl + title).digest("hex").slice(0, 16),
             });
             indexed++;
-          } catch { /* fail-open per entry */ }
+          } catch { failed++; }
         }
-      }, parentTaskId);
-      sendJson(res, 200, { indexed, total: entries.length, project: project.root });
+        return { indexed, failed };
+      }, {
+        ...(parentTaskId ? { parentTaskId } : {}),
+        // No entries is not a failure (the hook distills nothing to index).
+        isFailure: (result) => result.failed > 0 && result.indexed === 0,
+      });
+      sendJson(res, 200, {
+        indexed: written.result.indexed,
+        failed: written.result.failed,
+        total: entries.length,
+        project: project.root,
+      });
       return;
     }
 
@@ -387,11 +437,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       const project = resolveProject(body.projectPath);
       if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
-      // #307: a purge is a write too — same lifecycle, same rule that the
-      // response waits for the row's end.
-      const incoming = parseAndValidateHeaders(req);
-      const deleted = await runPostWork("server.project_purge", incoming.sessionId,
-        () => store.purgeProject(project.root));
+      // #307 scope: purge is a caller-initiated action, not post-work of another
+      // request — wrapping it as a follow-up would label a new request as a
+      // tail, the exact distinction this ticket makes. It keeps its old
+      // synchronous behaviour.
+      const deleted = store.purgeProject(project.root);
       sendJson(res, 200, { deleted, project: project.root });
       return;
     }
@@ -454,10 +504,11 @@ bind(REQUESTED_PORT, true);
 // #307: this service now owns post-work, so a stop signal must not cut a write
 // in half. The order is: stop accepting new connections, wait for the units
 // already running (bounded), then close resources and write the process end.
-// A wait that times out says so on stderr and leaves the rows open — an
-// unfinished post-work row is a blocker an upgrade reads (#309), which is the
-// honest outcome; closing the DB under a live write would corrupt the file
-// instead.
+// When the wait times out the process exits WITHOUT closing the stores: the
+// work is still holding them, and closing a database under a live write
+// corrupts the file. The open task row is the honest signal an upgrade reads
+// (#309) — "this service did not finish its tail" — and the OS reclaims the
+// handles when the process ends.
 const SHUTDOWN_DRAIN_MS = Number(process.env.ANS_SHUTDOWN_DRAIN_MS || 10000);
 let shuttingDown = false;
 const shutdown = (signal: string): void => {
@@ -468,13 +519,17 @@ const shutdown = (signal: string): void => {
     if (!drained) {
       process.stderr.write(
         "[anysearch] " + signal + ": " + postWork.pending() + " post-work unit(s) still running after " +
-        SHUTDOWN_DRAIN_MS + "ms — leaving their task rows open (an upgrade reports them as blockers)\n",
+        SHUTDOWN_DRAIN_MS + "ms — exiting without closing stores; their task rows stay open " +
+        "(an upgrade reports them as blockers)\n",
       );
+      // No store.close()/postWork.stop() on this path: the live work still
+      // owns the handles.
+      process.exit(1);
     }
     store.close();
     clearServerRegistry();
     postWork.stop();
-    process.exit(drained ? 0 : 1);
+    process.exit(0);
   });
 };
 process.on("SIGINT", () => shutdown("SIGINT"));

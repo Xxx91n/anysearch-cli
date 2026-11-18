@@ -97,15 +97,17 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 | `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
 | `tools/post-execute` | appends the distilled result summary to `additionalContexts`, and (#307) sends the awaited project-index write (`POST /index`). The host waits for that write, so it belongs to the call instead of becoming a tail nobody owns. |
 | `tools/result` | unused since #307: the host does not await this notification, so a write there would be a task with no owner. The index write moved into the awaited post-execute above. |
-| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle. The MCP call's own task id (`structuredContent.closeout.taskId`) rides the tool VALUE, so the index write can name it as its parent. |
+| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle. Where the MCP tool reports its own task (`ans_chat` does, through `structuredContent.closeout`; the other four do not report a task today, #303/#304), the id rides the tool VALUE so the index write can name it as its parent. |
 
 How those writes are accounted for (#307). A hook process lives for one tool
 event; the write it asks for runs in the long-lived anysearch service, which
 registers it as a follow-up task (`entry = "server"`, `origin = "follow-up"`)
-in the shared durable DB and answers only after that task's row ends. An
-upgrade coordinator therefore sees the tail while it runs instead of reading an
-idle service, and a caller that names no parent gets no invented link — the
-registry records "unknown parent" rather than a dangling id.
+in the shared durable DB. `/index` answers only after that task's row ends; the
+`/policy` audit runs behind the answer instead, because waiting would spend the
+hook's 3-second policy budget on a store write. An upgrade coordinator therefore
+sees the tail while it runs instead of reading an idle service, and a caller that
+names no parent gets no invented link — the registry records "unknown parent"
+rather than a dangling id.
 
 Server endpoints used: `GET /policy?project=<root>`, `POST /recall`, and
 `POST /index` on the published address (`ANS_SERVER_URL` overrides it; the
