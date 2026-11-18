@@ -1,4 +1,3 @@
-import type { SessionManager } from "@earendil-works/pi-coding-agent";
 // One chat attempt (#299): lease -> record start -> run -> record result ->
 // hand the lease back.
 //
@@ -27,6 +26,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 // the same lease boundary as the ordinary attempt.
 
 import { join } from "node:path";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { piSessionKey } from "./pi-runtime";
 import { forkChatSession } from "./fork-session";
 import { recoverPiSessionRecord } from "./pi-session-recovery";

@@ -13,15 +13,15 @@
 // anysearch side keeps only the research store and its anchors.
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ChatAttemptContext } from "./chat-attempt";
-import { PI_TOOL_STARTED, PI_TURN_STARTED, PI_TURN_COMPLETED } from "./pi-session-recovery";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import type { ChatAttemptContext } from "./chat-attempt";
+import { PI_TOOL_STARTED, PI_TURN_STARTED, PI_TURN_COMPLETED } from "./pi-session-recovery";
 import { findPiSessionRecord, judgePiSessionRecord, repairPiSessionTornTail } from "./pi-session";
 import {
   acquireSessionLock,

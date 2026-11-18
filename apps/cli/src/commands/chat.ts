@@ -274,8 +274,7 @@ export async function runChat(argv: string[]): Promise<number> {
               break;
             case "text":
               if (!startedStreaming) {
-                // Design: renew the signal watcher after lazy provider setup —
-                // the installed CLI must catch SIGINT once output is visible.
+                // Design: 输出前重新监听 SIGINT — 模型初始化后要确保 Ctrl-C 能走收尾。
                 listenForInterrupt();
                 startedStreaming = true;
               }

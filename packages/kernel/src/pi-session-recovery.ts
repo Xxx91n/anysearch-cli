@@ -95,7 +95,7 @@ export function recoverPiSessionRecord(
     "上一轮没正常结束。没收到结果的工具状态未知，继续前请先核对现场。",
     ...tools.map(({ id, name }) => `工具 ${displayId(name)}（${displayId(id)}）：结果未知，不要自动重跑。`),
   ].join("\n");
-  // Design: 提醒和工具状态写在同一行 — 写到一半被杀时整行作废，下一次还能补齐。
+  // Design: 提醒和工具状态一起写 — 这条记录没写完，下次就会整条重补。
   record.appendCustomMessageEntry(PI_TURN_INTERRUPTED, notice, true, { tools });
   return notice;
 }
