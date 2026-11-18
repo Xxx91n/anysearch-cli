@@ -218,8 +218,9 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // model call. Falling back to the session form here would be exactly the
   // "keep going unmetered" the spec forbids for a declared constraint. The
   // session form below stays only for the no-task fallback.
-  const budgetWarn = (m: string): void =>
+  const budgetWarn = (m: string): void => {
     process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n");
+  };
   const taskBudgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, domainForBudget?.budget, {
     warn: budgetWarn,
   });
