@@ -161,16 +161,17 @@ export function registerAnsChat(
       session: buildSession({
         provider: providerName, model: modelName, baseUrl, api, contextWindow,
         // Design: pass the resolved key for catalog providers AND custom
-        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers ANS_LLM_API_KEY
-        // and a user-file env_key indirection; gating it on baseUrl would make
-        // a working CLI config fail auth only on the MCP path (#300, greptile P1).
-        // Both sources are already provider-appropriate: ANS_LLM_API_KEY is an
-        // explicit override, and a user-file env_key passed the #120 binding
-        // guard in the resolver. pi-ai's `options.apiKey ?? auth.apiKey` then
-        // uses this key instead of the provider's own env — the same override
-        // the CLI has always applied. Widening the #120 guard beyond project
-        // files is a separate security change, not part of making both entries
-        // read config the same way (#300 review opinion B — user decision).
+        // endpoints, exactly like CLI chat.ts. cfg.apiKey covers
+        // ANS_LLM_API_KEY, a user-file env_key indirection, and the user
+        // credential file (#301); gating it on baseUrl would make a working CLI
+        // config fail auth only on the MCP path (#300, greptile P1).
+        // Every source is already provider-appropriate: ANS_LLM_API_KEY is an
+        // explicit override, and both file sources passed the resolver's binding
+        // guard (env_key against the user file's provider/endpoint, a stored
+        // entry against its own recorded binding — #301 widened that guard to
+        // every layer, not just the project file). pi-ai's
+        // `options.apiKey ?? auth.apiKey` then uses this key instead of the
+        // provider's own env — the same override the CLI has always applied.
         apiKey,
       }),
     };

@@ -19,6 +19,8 @@ import {
   domainTomlPath,
   resolvePolicyFromSchema,
   isDomainSchemaError,
+  resolveSearchCredentials,
+  type ResolvedSearchCredentials,
 } from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
@@ -30,10 +32,17 @@ import type { AttributionCalibration } from "./calibrate";
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
 // unexpected construction bugs degrade identically (the arm is absent either
 // way); only the message wording differs (the former hints at the key env).
-const PROVIDER_CONSTRUCTORS: Record<string, () => SearchProvider> = {
-  tavily: () => new TavilyProvider(),
-  exa: () => new ExaProvider(),
-  anysearch: () => new AnySearchProvider(),
+//
+// #301: the credential passed in comes from the shared resolver (explicit env
+// first, then the user credential file), so a GUI host with no shell env still
+// authenticates. The constructors keep their own env fallback as a last resort;
+// an argument always wins over it.
+type CredentialSource = ResolvedSearchCredentials | undefined;
+
+const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
+  tavily: (creds) => new TavilyProvider(creds?.tavily?.apiKey),
+  exa: (creds) => new ExaProvider(creds?.exa?.apiKey),
+  anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 
 // Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
@@ -61,11 +70,15 @@ function writeProviderDiagnostic(message: string): void {
 // providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
 // protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
 // concern, not a construction failure).
-function buildProvider(id: string, providerBuildErrors: Record<string, string>): SearchProvider | undefined {
+function buildProvider(
+  id: string,
+  providerBuildErrors: Record<string, string>,
+  creds: CredentialSource,
+): SearchProvider | undefined {
   const construct = PROVIDER_CONSTRUCTORS[id];
   if (!construct) return undefined;
   try {
-    return construct();
+    return construct(creds);
   } catch (error) {
     // Constructor error text is never recorded verbatim: constructors receive
     // the API key, and runtime error messages can embed it (e.g. Node's
@@ -83,10 +96,76 @@ function buildProvider(id: string, providerBuildErrors: Record<string, string>):
   }
 }
 
-function buildProviders(ids: string[], providerBuildErrors: Record<string, string>): SearchProvider[] {
+function buildProviders(
+  ids: string[],
+  providerBuildErrors: Record<string, string>,
+  creds: CredentialSource,
+): SearchProvider[] {
   return ids
-    .map((id) => buildProvider(id, providerBuildErrors))
+    .map((id) => buildProvider(id, providerBuildErrors, creds))
     .filter((p): p is SearchProvider => p !== undefined);
+}
+
+/**
+ * Turn a credential-resolution failure into a sentence safe to show. Only a
+ * recognised category and a bare errno are quoted: this text comes from a module
+ * that reads a key file, so an unrecognised message is exactly the case where a
+ * key fragment could ride along. Each branch names the fix, so a permissions
+ * fault never reads as "delete the file".
+ */
+function classifyCredentialFault(error: unknown): string {
+  const raw = String(error instanceof Error ? error.message : error);
+  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|ENFILE|EBUSY|ETIMEDOUT|ENOTDIR|ENAMETOOLONG)\b/.exec(raw)?.[1];
+  // A permission fault outranks the wording: the same "could not read it" text
+  // is used for EACCES and for a syntax error, and advising "delete the file" on
+  // a permissions problem would destroy the user's other keys for nothing.
+  const permission = code === "EACCES" || code === "EPERM" || code === "EROFS";
+
+  if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
+    return permission
+      ? "the user credential file could not be read (" + code + "); check its permissions"
+      : "the user credential file is not readable as stored keys; fix or remove it, then retry";
+  }
+  if (/refusing to write/i.test(raw)) {
+    // The refusal carries the real cause (permissions, an unusable ACL tool, a
+    // failed protection check, a held lock). Keeping the category is what lets a
+    // user tell "fix the folder" from "another ans is writing it".
+    if (/still held after/i.test(raw)) {
+      return "another ans process is writing the credential file; wait for it to finish and retry";
+    }
+    // An ACL/protection fault is checked before the errno rules: it is thrown
+    // after the write itself succeeded, so an errno in the message says nothing
+    // about why the protection failed. Anchored on the wording store really
+    // throws - a bare /ACL/ would also match the file path every message carries.
+    if (/\bDACL\b|POSIX mode|not a regular file|owned by another account/i.test(raw)) {
+      return "the credential file could not be locked to your account (" + (code ?? "protection fault") + "); check the folder's permissions";
+    }
+    // Everything else is classified by errno, not by wording. `writeProtectedFile`
+    // re-throws the raw reason, so a message may carry an errno with no
+    // "cannot create" prefix at all; keying on the phrase would make these
+    // branches dead for the cases they exist for.
+    if (permission) {
+      return "the credential file's folder refused access (" + code + "); check its permissions";
+    }
+    if (code === "ENOSPC") return "there is no space left for the credential file; free some space and retry";
+    if (code === "ENOTDIR" || code === "ENAMETOOLONG") {
+      return "the credential file's folder path is not usable (" + code + "); check the config root";
+    }
+    if (code === "EMFILE" || code === "ENFILE") {
+      return "this process has too many files open to write the credential file (" + code + "); close some and retry";
+    }
+    if (code === "EBUSY") {
+      return "the credential file is in use (" + code + "); retry in a moment";
+    }
+    return "the credential file could not be written; check the folder's permissions";
+  }
+  if (code === "ETIMEDOUT") {
+    // Not "the file is unreadable": a timeout means the storage behind it did not
+    // answer (a network mount, a busy disk), and the fix is to look there.
+    return "the user credential file did not respond in time (ETIMEDOUT); check the disk or network mount behind it";
+  }
+  if (code) return "the user credential file could not be read (" + code + ")";
+  return "the user credential file could not be read; run `ans auth list` to check it";
 }
 
 export interface CompositionResult {
@@ -113,8 +192,89 @@ export interface CompositionResult {
   // so a base TOML in a host-specific dir stays resolvable on a live re-read.
   domainsDirs?: string[];
   ledger?: BudgetLedgerPort;
+  // #301: which key each search arm was built with (env vs user credential
+  // file), so a degraded arm can say "no key" instead of only "construction
+  // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
+  // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
+  credentialSources?: CredentialSources;
 }
 
+/**
+ * What search-credential resolution concluded. `undefined` at the consumer means
+ * "nobody asked" (see the field above), so this type only covers the two cases
+ * where a resolution actually ran.
+ */
+export type CredentialSources =
+  /**
+   * Resolution completed. Each arm says where its key came from, or `"none"` when
+   * the arm was configured without one - the anysearch arm can carry an endpoint
+   * and no key, and that arm is degraded, not authenticated. Recording it keeps
+   * "not configured" and "configured but keyless" distinguishable.
+   */
+  | { status: "resolved"; tavily?: CredentialSourceLabel; exa?: CredentialSourceLabel; anysearch?: CredentialSourceLabel }
+  /** Resolution threw. The arms fell back to their own env; `error` explains why. */
+  | { status: "failed"; error: string };
+
+/** Where one search arm's key came from; `"none"` means the arm has no key. */
+export type CredentialSourceLabel = "env" | "user" | "none";
+
+/**
+ * Keep a resolver warning's meaning but drop anything that could be a secret.
+ *
+ * Reworked to stop guessing: an earlier version decided by shape ("this looks
+ * like words, so it cannot be a key"), which let a lower-case key body through
+ * and ate directory names that contained a digit. The order is now explicit:
+ *
+ * 1. set every file path aside, because the message exists to say WHICH FILE
+ *    could not be read;
+ * 2. redact everything key-shaped in what is left, with no shape-based escape;
+ * 3. put the paths back.
+ *
+ * Step 2 redacts two forms: a known key prefix with a body of 8+ key characters
+ * (the body may cross `/` and `.`, so a base64 key split by either is removed
+ * whole), and any run of 20+ key characters. Both thresholds are deliberately
+ * low: over-redacting a warning costs a sentence, under-redacting costs a key.
+ */
+export function redactPathFault(warning: string): string {
+  const paths: string[] = [];
+  // Placeholders are letters and digits only: a path contains backslashes, and a
+  // backslash inside a replacement string is an escape, not a character.
+  const token = (i: number) => "ZZPATH" + i + "ZZ";
+  const body = warning.replace(PATH_RE, (match, offset: number) => {
+    // A key can look exactly like a relative path (`sk-proj-ab12/cd34`). When
+    // the match continues a known key prefix, it is a key, not a path - leaving
+    // it unprotected is what lets the prefix rule below remove it whole.
+    if (KEY_PREFIX_AT_END.test(warning.slice(0, offset))) return match;
+    const kept = paths.length;
+    paths.push(match);
+    return token(kept);
+  });
+  const redacted = body
+    .replace(/(?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-+=/.!]{8,}/gi, "[redacted]")
+    .replace(/[A-Za-z0-9_\-+=]{20,}/g, "[redacted]");
+  return paths.reduce((text, path, i) => text.split(token(i)).join(path), redacted);
+}
+
+const KEY_PREFIX_AT_END = /(?:sk|pk|rk|tvly|exa|key|api|tok)[-_]$/i;
+
+/**
+ * Real paths only. The relative branch needs a dot in the name or a known file
+ * extension, because a bare `a/b` is also the shape of a base64 key body - and
+ * protecting a key from redaction is the one failure this function cannot make.
+ * The match stops at whitespace or punctuation that ends a path in these
+ * messages, so `.../credentials.json: EACCES` keeps the errno outside the span.
+ */
+const PATH_RE = new RegExp(
+  [
+    // absolute POSIX or drive-letter path, any segments
+    "(?:[A-Za-z]:)?[\\\\/][A-Za-z0-9._~\\-\\\\/]*",
+    // relative path that is clearly a file: it carries an extension
+    "|\\b[A-Za-z0-9._\\-]+(?:[\\\\/][A-Za-z0-9._\\-]+)*[\\\\/][A-Za-z0-9._\\-]+\\.[A-Za-z0-9]{1,10}\\b",
+    // dotted file name with no directory part
+    "|\\b[A-Za-z0-9._\\-]+\\.(?:json|toml|lock|log|txt|ya?ml|db|sqlite|acl|tmp)\\b",
+  ].join(""),
+  "g",
+);
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).
@@ -159,13 +319,78 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
+export function createEngine(
+  domain?: string,
+  opts?: {
+    dbPath?: string;
+    attributionCalibration?: AttributionCalibration;
+    domainsDirs?: string[];
+    /**
+     * #301: where the search arms' keys come from. Pass the shared resolution
+     * (env first, then the user credential file) so a host without a shell env
+     * still authenticates; omit it and each SDK falls back to its own env var,
+     * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
+     */
+    searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
+    /**
+     * Env handed to `searchCredentials`. NOTHING else in createEngine reads it -
+     * domain dirs, the reloader and the calibration root still resolve through
+     * process.env. Passing it therefore controls exactly one thing: where the
+     * search keys come from (which is what a test needs). Do not pass it
+     * expecting a fully isolated engine.
+     */
+    env?: NodeJS.ProcessEnv;
+  },
+): CompositionResult {
   // #188 (CodeRabbit): keep the exact dirs the loader used (including the
   // default env/cwd chain), so a later reload still finds inherited bases even
   // if ANS_DOMAINS_DIR changes after construction.
   const domainsDirs = opts?.domainsDirs ?? defaultDomainsDirs();
+  const env = opts?.env ?? process.env;
   let providers: SearchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
+
+  // #301: resolve every search key ONCE for this engine, so all arms see the
+  // same answer and a degradation can be explained per arm. A warning about the
+  // credential file goes straight to stderr (MCP keeps stdout protocol-pure)
+  // and never carries a key value.
+  //
+  // The resolution is fail-open like every other arm of this build: a throwing
+  // resolver (an unreadable file, a permission fault) must degrade to "each SDK
+  // reads its own env", not kill the MCP process at startup.
+  let creds: CredentialSource = undefined;
+  // undefined, not a status value: a consumer that asks "was resolution even
+  // configured?" still gets a falsy answer, which is what it got before #301.
+  let credentialSources: CredentialSources | undefined;
+  if (opts?.searchCredentials) {
+    try {
+      creds = opts.searchCredentials(env);
+      for (const warning of creds?.warnings ?? []) {
+        // Same rule as a thrown fault: the sentence is useful, so it is kept,
+        // but only after anything key-shaped has been removed.
+        writeProviderDiagnostic("[anysearch] " + redactPathFault(warning) + "\n");
+      }
+      const resolved: CredentialSources = { status: "resolved" };
+      // `"none"` is only meaningful for anysearch: it is the one arm the resolver
+      // emits without a key (an endpoint alone). tavily and exa are simply absent
+      // when keyless, so nothing is recorded for them.
+      if (creds?.tavily) resolved.tavily = creds.tavily.source;
+      if (creds?.exa) resolved.exa = creds.exa.source;
+      if (creds?.anysearch) resolved.anysearch = creds.anysearch.apiKey ? creds.anysearch.source : "none";
+      credentialSources = resolved;
+    } catch (e) {
+      creds = undefined;
+      // Classified, never forwarded: this text reaches stderr and the engine
+      // result, and it comes from a module that reads a key file (CWE-532, same
+      // rule as buildProvider above).
+      const reason = classifyCredentialFault(e);
+      credentialSources = { status: "failed", error: reason };
+      writeProviderDiagnostic(
+        "[anysearch] search credentials could not be resolved: " + reason +
+        " — falling back to each SDK's own env var\n",
+      );
+    }
+  }
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
   // request-time domain URL policy resolver — wired only when
@@ -189,7 +414,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
-      providers = buildProviders(enabled, providerBuildErrors);
+      providers = buildProviders(enabled, providerBuildErrors, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // keeps last-known-good on a bad reload (plugin server reuses this pattern).
@@ -218,10 +443,10 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // explicit policy (incl. the URL allowlist trust boundary). "Domain not
       // found" stays fail-open — absent domain ≠ broken domain.
       if (isDomainSchemaError(e)) throw e;
-      providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
+      providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
     }
   } else {
-    providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
+    providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
   }
 
   // explicit override wins; otherwise resolve the active head on disk.
@@ -270,5 +495,16 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, domainName: domain, domainsDirs, ledger };
+  return {
+    retriever,
+    config,
+    store,
+    observation,
+    calibration: attributionCalibration,
+    providerBuildErrors,
+    domainName: domain,
+    domainsDirs,
+    ledger,
+    credentialSources,
+  };
 }
