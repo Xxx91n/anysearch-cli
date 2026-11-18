@@ -413,7 +413,7 @@ async function preservesPartialAnswersOnCancellation() {
 async function replaysPartialAnswersWithTheirNotice() {
   const dir = mkdtempSync(join(tmpdir(), "ans-partial-context-"));
   const sessionId = "partial-context";
-  const notice = "这是上一轮被打断留下的半截回答，不要当成完整回答。";
+  const notice = "这条回答当时被打断，只留下半截，不要当成完整回答。";
   const complete = { type: "message", message: assistant([{ type: "text", text: "完整回答" }]) };
   const followUp = {
     type: "message",

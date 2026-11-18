@@ -89,7 +89,7 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
 }
 
 const DEFAULT_AGENT_TIMEOUT_MS = 300_000;
-const PARTIAL_ANSWER_NOTICE = "这是上一轮被打断留下的半截回答，不要当成完整回答。";
+const PARTIAL_ANSWER_NOTICE = "这条回答当时被打断，只留下半截，不要当成完整回答。";
 
 function markPartialAnswer(message: AgentMessage): AgentMessage {
   if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
