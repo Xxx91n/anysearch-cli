@@ -472,6 +472,37 @@ async function main() {
         + JSON.stringify(budgets) + ")");
     }
 
+    // ====== 6b. cancelled before the run started: still not a clean finish ======
+    //
+    // The review's point: the early "already cancelled" returns used to hand
+    // back a plain empty result, so the task was written as exit 0 — a request
+    // that never ran read as a completed one. No provider call happens here,
+    // and the record still has to say "unfinished".
+    {
+      const dbPath = join(tempRoot, "pre-aborted.db");
+      const store = new SqliteSessionStore(dbPath);
+      const seen: Array<unknown> = [];
+      const state = createMcpToolState({ createAnsChatSession: makeAnsweringFactory(seen).factory });
+      const eng = makeEngine(store, {
+        ...domainOpts("taskbudget"),
+        budget: { tokenCap: 1_000_000, callCap: 20 },
+      });
+      const handlers = capture(eng, state);
+      const caller = new AbortController();
+      caller.abort("gone before the handler");
+
+      const res = await handlers.ans_chat({ message: "PRE-ABORTED" }, { mcpReq: { signal: caller.signal } });
+      assert(res?.structuredContent?.interrupted === true,
+        "6b: a pre-aborted call marks its answer interrupted (got "
+        + JSON.stringify(res?.structuredContent?.closeout) + ")");
+      assert(res?.structuredContent?.closeout?.exitCode === 1,
+        "6b: the task closes as unfinished, not as a clean completion");
+      assert(seen.length === 0, "6b: no provider call was made (got " + seen.length + ")");
+      const tasks = readRows<TaskRow>(dbPath, TASKS_SQL);
+      assert(tasks.length === 1 && !!tasks[0]?.ended && tasks[0]?.code === 1,
+        "6b: the task row says unfinished (got " + JSON.stringify(tasks) + ")");
+    }
+
     // ---- #322: nothing reached the operator's real home ----
     const realAfter = piRecords(realPiDir);
     assert(realBefore.join("|") === realAfter.join("|"),

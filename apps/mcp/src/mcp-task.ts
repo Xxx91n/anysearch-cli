@@ -182,7 +182,10 @@ function attachCloseout<R>(
   // channel and the output schema stay apart). A budget stop is the one
   // exception, because #303 requires it to be machine-distinguishable from an
   // upstream failure — that result already carries its own structuredContent
-  // and gets the closeout added to it. A generic error result stays bare.
+  // and gets the closeout added to it. A generic error result (a config fault,
+  // a refused continuation) stays bare: its task record is still written and
+  // ended, and that row — not the reply — is where the closeout lives. Attaching
+  // one here would either break #204 or invent a second error shape.
   if (verdict.isError && verdict.structuredContent === undefined) return result;
   const closeout: McpTaskCloseout = {
     taskId: identity.taskId,
@@ -211,6 +214,14 @@ function attachCloseout<R>(
  *
  * A handler that throws ends the task as failed (exit 1) and the error
  * propagates unchanged — the wrapper does not turn a throw into a result.
+ *
+ * Handler contract: a handler that stops early because the caller cancelled
+ * must say so in its result (`structuredContent.interrupted: true`). The
+ * wrapper cannot infer it — a bare empty result looks identical to a real one,
+ * and treating the request signal as the answer would misreport an answer that
+ * completed just as the caller hung up. `ans_chat` does this on every
+ * cancellation path (`buildAnsChatCancelledResult`); a tool that migrates later
+ * (#304) must do the same.
  */
 export async function withMcpTask<R>(
   eng: CompositionResult,

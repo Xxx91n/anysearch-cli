@@ -374,9 +374,7 @@ points, and budget state stay per call / per session.
 
 Every `ans_chat` call is one task: `mcp.ans_chat` in `task_records`. When a task
 was registered, a result that carries `structuredContent` also carries
-`structuredContent.closeout`. A store without the registry seam runs
-unregistered (a stderr warning), and then there is no closeout to report —
-nothing was written to claim otherwise.
+`structuredContent.closeout`:
 
 | Field | Meaning |
 |-------|---------|
@@ -385,6 +383,14 @@ nothing was written to claim otherwise.
 | `state` | `"finished"` — the end row is written; `"open"` — the end write failed, so the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). |
 | `exitCode` | `0` completed, `1` failed or interrupted. |
 | `interrupted` | The answer stopped early (cancellation). |
+
+Two results deliberately carry no closeout, and both are the #204 rule, not an
+omission:
+
+- A generic error result (a config fault, a refused continuation) stays bare.
+  Its task record is still written and ended — read the row for the closeout.
+- A store without the registry seam runs unregistered (a stderr warning), so
+  there is no task and nothing to report.
 
 The closeout is written **after** the handler resolves — after
 `flushMemory()` (background summaries) and after the observation write. A
