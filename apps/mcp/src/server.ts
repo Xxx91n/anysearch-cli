@@ -8,7 +8,7 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb } from "@anysearch-cli/store";
+import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
@@ -57,7 +57,13 @@ export function createDefaultEngine(): CompositionResult {
   const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
   const domainsDirs = defaultDomainsDirs();
   domainsDirs.push(join(self, "..", "domains"));
-  return createEngine(process.env.ANS_DOMAIN, { dbPath, domainsDirs });
+  // #301: the same user credential file the CLI reads, so a GUI host that
+  // starts this server without a shell env still authenticates its search arms.
+  return createEngine(process.env.ANS_DOMAIN, {
+    dbPath,
+    domainsDirs,
+    searchCredentials: (env) => resolveSearchCredentials(env),
+  });
 }
 
 // buildServer: factory function. Each connection gets a fresh server instance.

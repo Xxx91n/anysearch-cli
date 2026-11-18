@@ -3,17 +3,23 @@
 // existing CLI imports and tests keep their paths. The implementation, the
 // project whitelist, the provider/secret binding guard and the per-field
 // source report all live in the store module — there is exactly one copy.
+// #301: the user credential file accessors are re-exported the same way.
 
 export {
   parseLlmFlags,
   parseLlmToml,
   projectConfigPath,
+  readUserCredentials,
   resolveLlmConfig,
   userConfigPath,
+  userCredentialsPath,
+  writeUserCredential,
   writeUserLlmConfig,
 } from "@anysearch-cli/store";
 
 export type {
+  CredentialBinding,
+  CredentialFileContents,
   LlmFileConfig,
   LlmFlags,
   LlmLayer,

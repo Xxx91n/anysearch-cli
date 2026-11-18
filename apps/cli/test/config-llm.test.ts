@@ -315,3 +315,126 @@ test("kernel llm-init keeps zero env reads (LlmSession deep-module contract)", (
   );
   assert.ok(!src.includes("process.env"), "llm-init.ts must not read process.env");
 });
+
+// ---------------------------------------------------------------------------
+// #301: the user credential file is the third key source, and the provider
+// binding now covers the env and CLI-flag layers too (it used to fire only for
+// a project-selected provider). These tests run the real stored file, not a
+// stand-in: only the home directory differs.
+// ---------------------------------------------------------------------------
+
+import { writeUserCredential, userCredentialsPath as credPath } from "../src/config-llm.js";
+
+test("the stored key authenticates the model when NO env variable exists (GUI case)", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-stored-only" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: {} }));
+  assert.equal(cfg.apiKey, "sk-stored-only");
+  assert.equal(cfg.sources.apiKey, "credentials");
+  assert.equal(cfg.provider, "openai");
+});
+
+test("an explicit env key beats the stored key", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-stored" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: { ANS_LLM_API_KEY: "sk-env" } }));
+  assert.equal(cfg.apiKey, "sk-env");
+  assert.equal(cfg.sources.apiKey, "env");
+});
+
+test("a stored key bound to another endpoint is refused, not sent", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "http://127.0.0.1:9/v1"\napi = "chat"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-default-endpoint-only" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: {} }));
+  assert.equal(cfg.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
+  // The warning names the file, never the key.
+  assert.ok(!f.warnings.some((w) => w.includes("sk-default-endpoint-only")));
+});
+
+test("a stored key for the current endpoint is used", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "http://127.0.0.1:9/v1"\napi = "chat"\n' });
+  writeUserCredential({ provider: "openai", endpoint: "http://127.0.0.1:9/v1", apiKey: "sk-for-this-endpoint" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: {} }));
+  assert.equal(cfg.apiKey, "sk-for-this-endpoint");
+  assert.deepEqual(cfg.apiKeyBinding, { provider: "openai", endpoint: "http://127.0.0.1:9/v1" });
+});
+
+test("an env-selected provider differing from the user file blocks env_key too", () => {
+  // #120 only covered a PROJECT-selected provider. Choosing the provider from
+  // the env would have sent the same anthropic key to openai (#301 acceptance:
+  // the binding must cover the layers that can redirect the secret).
+  const f = fixture({
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5", ANTHROPIC_API_KEY: "sk-ant" },
+  }));
+  assert.equal(cfg.provider, "openai");
+  assert.equal(cfg.apiKey, undefined);
+  assert.equal(cfg.envKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different provider")));
+});
+
+test("a CLI-flag-selected provider differing from the user file blocks env_key too", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANTHROPIC_API_KEY: "sk-ant" },
+    flags: { provider: "google" },
+  }));
+  assert.equal(cfg.provider, "google");
+  assert.equal(cfg.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different provider")));
+});
+
+test("the same provider selected from env keeps env_key working", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant" },
+  }));
+  assert.equal(cfg.apiKey, "sk-ant");
+  assert.equal(cfg.envKey, "ANTHROPIC_API_KEY");
+});
+
+test("a user-file base_url bound env_key is refused when another layer moves the endpoint", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://user.example/v1"\napi = "chat"\nenv_key = "MY_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_BASE_URL: "https://other.example/v1", MY_KEY: "sk-bound" },
+  }));
+  assert.equal(cfg.baseUrl, "https://other.example/v1");
+  assert.equal(cfg.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
+});
+
+test("an unset env_key falls through to the stored key instead of stopping", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',
+  });
+  writeUserCredential({ provider: "openai", apiKey: "sk-from-store" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: {} }));
+  assert.equal(cfg.apiKey, "sk-from-store");
+  assert.equal(cfg.sources.apiKey, "credentials");
+  assert.ok(f.warnings.some((w) => w.includes("NOT_EXPORTED") && w.includes("not set")));
+});
+
+test("a broken credential file is reported instead of reading as 'no keys'", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  mkdirSync(join(f.home, ".anysearch-cli"), { recursive: true });
+  writeFileSync(credPath(f.home), "{ not json", "utf8");
+  const cfg = resolveLlmConfig(f.opts({ env: {} }));
+  assert.equal(cfg.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("not valid JSON")));
+});
+
+test("credentials:false ignores the file entirely", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential({ provider: "openai", apiKey: "sk-stored" }, { home: f.home });
+  const cfg = resolveLlmConfig(f.opts({ env: {}, credentials: false }));
+  assert.equal(cfg.apiKey, undefined);
+});

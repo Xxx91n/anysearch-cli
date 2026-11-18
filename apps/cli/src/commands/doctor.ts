@@ -2,7 +2,7 @@
 // CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE } from "@anysearch-cli/store";
+import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, resolveSearchCredentials } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
@@ -109,6 +109,24 @@ export async function runDoctor(): Promise<number> {
   for (const key of envKeys) {
     const val = process.env[key];
     check("  " + key, true, val ? "set" : "not set (optional)");
+  }
+  // #301: a key may also come from the user credential file, which is what a
+  // GUI host without a shell env reads. Show the effective source per provider,
+  // never the value, and say so when the file itself is unusable.
+  {
+    const { userCredentialsPath, readUserCredentials } = await import("@anysearch-cli/store");
+    const resolved = resolveSearchCredentials();
+    const path = userCredentialsPath();
+    const file = readUserCredentials();
+    if (file.error) check("  user credential file", false, file.error + " — fix or remove it, then run `ans auth set <provider>`");
+    else check("  user credential file", true, existsSync(path) ? path + " (" + file.bindings.length + " key(s), plain text)" : path + " (not created yet)");
+    for (const provider of ["tavily", "exa", "anysearch"] as const) {
+      const entry = resolved[provider];
+      if (!entry) continue;
+      const source = entry.source === "env" ? "env" : "user credential file";
+      check("  " + provider + " key source", true, source);
+    }
+    for (const warning of resolved.warnings) check("  " + warning.replace(/^\[credentials\]\s*/, ""), false);
   }
   check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN || "not set (default)");
   check("  ANS_DOMAINS_DIR", true, process.env.ANS_DOMAINS_DIR?.trim() || "not set (resolution chain in [6])");

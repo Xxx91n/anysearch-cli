@@ -19,6 +19,8 @@ import {
   domainTomlPath,
   resolvePolicyFromSchema,
   isDomainSchemaError,
+  resolveSearchCredentials,
+  type ResolvedSearchCredentials,
 } from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
@@ -30,10 +32,17 @@ import type { AttributionCalibration } from "./calibrate";
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
 // unexpected construction bugs degrade identically (the arm is absent either
 // way); only the message wording differs (the former hints at the key env).
-const PROVIDER_CONSTRUCTORS: Record<string, () => SearchProvider> = {
-  tavily: () => new TavilyProvider(),
-  exa: () => new ExaProvider(),
-  anysearch: () => new AnySearchProvider(),
+//
+// #301: the credential passed in comes from the shared resolver (explicit env
+// first, then the user credential file), so a GUI host with no shell env still
+// authenticates. The constructors keep their own env fallback as a last resort;
+// an argument always wins over it.
+type CredentialSource = ResolvedSearchCredentials | undefined;
+
+const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
+  tavily: (creds) => new TavilyProvider(creds?.tavily?.apiKey),
+  exa: (creds) => new ExaProvider(creds?.exa?.apiKey),
+  anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 
 // Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
@@ -61,11 +70,15 @@ function writeProviderDiagnostic(message: string): void {
 // providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
 // protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
 // concern, not a construction failure).
-function buildProvider(id: string, providerBuildErrors: Record<string, string>): SearchProvider | undefined {
+function buildProvider(
+  id: string,
+  providerBuildErrors: Record<string, string>,
+  creds: CredentialSource,
+): SearchProvider | undefined {
   const construct = PROVIDER_CONSTRUCTORS[id];
   if (!construct) return undefined;
   try {
-    return construct();
+    return construct(creds);
   } catch (error) {
     // Constructor error text is never recorded verbatim: constructors receive
     // the API key, and runtime error messages can embed it (e.g. Node's
@@ -83,9 +96,13 @@ function buildProvider(id: string, providerBuildErrors: Record<string, string>):
   }
 }
 
-function buildProviders(ids: string[], providerBuildErrors: Record<string, string>): SearchProvider[] {
+function buildProviders(
+  ids: string[],
+  providerBuildErrors: Record<string, string>,
+  creds: CredentialSource,
+): SearchProvider[] {
   return ids
-    .map((id) => buildProvider(id, providerBuildErrors))
+    .map((id) => buildProvider(id, providerBuildErrors, creds))
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
@@ -113,6 +130,13 @@ export interface CompositionResult {
   // so a base TOML in a host-specific dir stays resolvable on a live re-read.
   domainsDirs?: string[];
   ledger?: BudgetLedgerPort;
+  // #301: which key each search arm was built with (env vs user credential
+  // file), so a degraded arm can say "no key" instead of only "construction
+  // failed". Never carries a secret value.
+  credentialSources?: { tavily?: string; exa?: string; anysearch?: string };
+  // #301: notes from credential resolution (a broken credential file, an entry
+  // skipped for a mismatched binding). Worded for humans, never secret-bearing.
+  credentialWarnings?: string[];
 }
 
 // createEngine: build configured engine.
@@ -159,13 +183,48 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
+export function createEngine(
+  domain?: string,
+  opts?: {
+    dbPath?: string;
+    attributionCalibration?: AttributionCalibration;
+    domainsDirs?: string[];
+    /**
+     * #301: where the search arms' keys come from. Pass the shared resolution
+     * (env first, then the user credential file) so a host without a shell env
+     * still authenticates; omit it and each SDK falls back to its own env var,
+     * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
+     */
+    searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
+    /** env for the search-credential resolution and the db path; defaults to process.env. */
+    env?: NodeJS.ProcessEnv;
+  },
+): CompositionResult {
   // #188 (CodeRabbit): keep the exact dirs the loader used (including the
   // default env/cwd chain), so a later reload still finds inherited bases even
   // if ANS_DOMAINS_DIR changes after construction.
   const domainsDirs = opts?.domainsDirs ?? defaultDomainsDirs();
+  const env = opts?.env ?? process.env;
   let providers: SearchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
+
+  // #301: resolve every search key ONCE for this engine, so all arms see the
+  // same answer and a degradation can be explained per arm.
+  let creds: CredentialSource;
+  const credentialWarnings: string[] = [];
+  if (opts?.searchCredentials) {
+    creds = opts.searchCredentials(env);
+    credentialWarnings.push(...(creds?.warnings ?? []));
+  } else {
+    creds = undefined;
+  }
+  for (const warning of credentialWarnings) {
+    writeProviderDiagnostic("[anysearch] " + warning.replace(/^\[credentials\]\s*/, "") + "\n");
+  }
+  const credentialSources: NonNullable<CompositionResult["credentialSources"]> = {};
+  if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
+  if (creds?.exa) credentialSources.exa = creds.exa.source;
+  if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
   // request-time domain URL policy resolver — wired only when
@@ -189,7 +248,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
-      providers = buildProviders(enabled, providerBuildErrors);
+      providers = buildProviders(enabled, providerBuildErrors, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // keeps last-known-good on a bad reload (plugin server reuses this pattern).
@@ -218,10 +277,10 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // explicit policy (incl. the URL allowlist trust boundary). "Domain not
       // found" stays fail-open — absent domain ≠ broken domain.
       if (isDomainSchemaError(e)) throw e;
-      providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
+      providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
     }
   } else {
-    providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
+    providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
   }
 
   // explicit override wins; otherwise resolve the active head on disk.
@@ -270,5 +329,17 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, domainName: domain, domainsDirs, ledger };
+  return {
+    retriever,
+    config,
+    store,
+    observation,
+    calibration: attributionCalibration,
+    providerBuildErrors,
+    domainName: domain,
+    domainsDirs,
+    ledger,
+    credentialSources,
+    credentialWarnings,
+  };
 }

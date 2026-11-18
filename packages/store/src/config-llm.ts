@@ -5,11 +5,16 @@
 //   flag > env > project > user > default
 //   user    ~/.anysearch-cli/config.toml   [llm] section
 //   project .anysearch/config.toml         [llm] section, safety whitelist only
-// Secrets never land in files: files store an `env_key` indirection naming the
-// env var that holds the key; plaintext secret keys in either file are ignored
-// with a warning. Project files are further restricted to a non-security
-// whitelist so a malicious repo cannot redirect the endpoint or the secret
-// source (Codex project-key precedent).
+// Model config files never hold a secret VALUE: they store an `env_key`
+// indirection naming the env var that holds the key; plaintext secret keys in
+// either file are ignored with a warning. Project files are further restricted
+// to a non-security whitelist so a malicious repo cannot redirect the endpoint
+// or the secret source (Codex project-key precedent).
+// The key itself comes from, in order: ANS_LLM_API_KEY, the env var named by
+// `env_key`, then the user credential file (#301). The credential file is the
+// GUI-friendly path (a GUI host inherits no shell env) and its entries are
+// bound to a provider - and, for model providers, an endpoint - so a key
+// entered for one provider is never sent to another one.
 // The resolver reads env + files and passes values in; the kernel stays env-free
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.
@@ -18,8 +23,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { lookupModelCredential, normalizeBindingEndpoint, readUserCredentials, userCredentialsPath } from "./credentials";
 
-export type LlmLayer = "cli" | "env" | "project" | "user";
+/** `credentials` = the user credential file (#301); every other layer is a config source. */
+export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
 
 // Keys a project-level file may set under [llm]. Everything security-adjacent
 // (endpoint, wire protocol, secret source) is user-level only.
@@ -47,10 +54,16 @@ export interface ResolvedLlmConfig {
   model?: string;
   baseUrl?: string;
   api?: "chat" | "messages" | "responses";
-  /** Secret material resolved via env_key indirection or ANS_LLM_API_KEY; never from a file value. */
+  /** Secret material resolved via ANS_LLM_API_KEY, env_key indirection or the user credential file. */
   apiKey?: string;
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
+  /**
+   * The provider/endpoint binding the key is valid for. Always set when apiKey
+   * came from a bound source (the credential file, or an env_key whose user
+   * file also names a provider); undefined for an unbound env key.
+   */
+  apiKeyBinding?: { provider?: string; endpoint: string | null };
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
 }
@@ -61,6 +74,11 @@ export interface ResolveLlmOpts {
   home?: string;
   flags?: LlmFlags;
   warn?: (msg: string) => void;
+  /**
+   * Turn OFF the user credential file (#301) for a caller that must only see
+   * env/config values (the acceptance lane's "no user store at all" case).
+   */
+  credentials?: boolean;
 }
 
 export function userConfigPath(home: string = homedir()): string {
@@ -142,7 +160,10 @@ function loadFile(
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
-  const home = opts.home ?? homedir();
+  // home follows the same rule as the credential file (USERPROFILE on Windows,
+  // HOME elsewhere), so both always agree on which config root is in force. An
+  // exported-but-empty value falls through, matching this repo's convention.
+  const home = opts.home || env.USERPROFILE || env.HOME || homedir();
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
   const user = loadFile(userConfigPath(home), "user", warn);
@@ -203,36 +224,83 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     warn("[config] base_url set without api — custom endpoint will be ignored by commands that require the pair");
   }
 
-  // Secret resolution: env var wins; otherwise follow the user file's env_key
-  // indirection. env_key is user-level only (project whitelist drops it), so
-  // there is exactly one file layer to consult.
+  // Secret resolution, in order: explicit env override, the user file's
+  // env_key indirection, then the user credential file (#301).
+  //
+  // Binding rule (spec S2, "using file credentials must check the matching
+  // provider/endpoint"). A secret that a FILE supplies is used only when the
+  // effective provider AND endpoint still match what that file declared for it:
+  //   - env_key: the user file's provider (if it names one) and base_url (if it
+  //     sets one) are the binding. A provider chosen by ANY other layer (project
+  //     file, env, CLI flag) that differs blocks the key instead of sending it
+  //     to another provider's endpoint. #120 stopped at the project layer; #301
+  //     extended it to env/CLI because the same key would otherwise reach the
+  //     new provider just as easily.
+  //   - credentials.json: the entry stores its own provider + endpoint, and the
+  //     lookup matches both exactly.
+  // Blocked means apiKey and envKey both stay undefined - not just a warning.
   if (env.ANS_LLM_API_KEY) {
     resolved.apiKey = env.ANS_LLM_API_KEY;
     resolved.sources.apiKey = "env";
-  } else if (user.env_key) {
-    // Provider-binding guard (CodeRabbit #120): a user-declared provider that
-    // differs from the effective provider means env_key belongs to another
-    // provider — a project file must not be able to redirect that secret.
-    // An absent user.provider establishes no binding: env_key is accepted
-    // verbatim regardless of which layer picked the provider.
-    const mismatch =
-      resolved.sources.provider === "project" &&
-      user.provider !== undefined &&
-      user.provider !== resolved.provider;
-    if (mismatch) {
+  } else {
+    const userEndpoint = normalizeBindingEndpoint(user.base_url);
+    // An effective provider/endpoint that differs from what the user file bound
+    // the key to means the key belongs somewhere else. An absent effective
+    // provider has no target at all, so there is nothing to misroute.
+    const providerBoundElsewhere =
+      user.provider !== undefined && resolved.provider !== undefined && user.provider !== resolved.provider;
+    const endpointBoundElsewhere =
+      userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);
+
+    if (user.env_key && providerBoundElsewhere) {
       warn(
         "[config] [llm].env_key ignored: user file binds provider=" + user.provider +
-        " but project selected provider=" + resolved.provider +
+        " but " + resolved.sources.provider + " selected provider=" + resolved.provider +
         " — refusing to send that secret to a different provider",
       );
-    } else {
-      resolved.envKey = user.env_key;
+    } else if (user.env_key && endpointBoundElsewhere) {
+      warn(
+        "[config] [llm].env_key ignored: user file binds base_url=" + userEndpoint +
+        " but " + resolved.sources.baseUrl + " selected a different endpoint" +
+        " — refusing to send that secret to a different endpoint",
+      );
+    } else if (user.env_key) {
       const secret = env[user.env_key];
       if (secret) {
+        resolved.envKey = user.env_key;
         resolved.apiKey = secret;
         resolved.sources.apiKey = "user";
+        resolved.apiKeyBinding = { provider: user.provider, endpoint: userEndpoint };
       } else {
+        // Not a dead end any more: the credential file is the next source.
         warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
+      }
+    }
+
+    if (!resolved.apiKey && opts.credentials !== false) {
+      const credsPath = userCredentialsPath(home);
+      const file = readUserCredentials({ filePath: credsPath });
+      if (file.error) {
+        // A broken credential file must be visible, never treated as "no keys"
+        // when it is the last remaining source.
+        warn("[config] " + file.error);
+      }
+      const lookup = lookupModelCredential(resolved.provider, resolved.baseUrl ?? null, file);
+      if (lookup.status === "found") {
+        resolved.apiKey = lookup.apiKey;
+        resolved.sources.apiKey = "credentials";
+        resolved.apiKeyBinding = {
+          provider: resolved.provider,
+          endpoint: normalizeBindingEndpoint(resolved.baseUrl),
+        };
+      } else if (lookup.status === "endpoint-mismatch") {
+        warn(
+          "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to endpoint " +
+          String(lookup.stored ?? "(the provider default)") + " but the effective endpoint is " +
+          String(normalizeBindingEndpoint(resolved.baseUrl) ?? "(the provider default)") +
+          " — refusing to send that secret to a different endpoint; run `ans auth set " +
+          resolved.provider + "` for this endpoint",
+        );
       }
     }
   }

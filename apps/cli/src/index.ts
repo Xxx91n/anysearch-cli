@@ -39,7 +39,7 @@ const help = [
   "",
   "Commands:",
   "  doctor    Run smoke tests: provider ping + store check + domain validate",
-  "  auth      Show provider API key configuration status",
+  "  auth      Provider API keys: status, or store one once (ans auth set <provider>)",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",

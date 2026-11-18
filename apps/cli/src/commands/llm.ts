@@ -1,12 +1,30 @@
 // ans llm: configure LLM providers (via @earendil-works/pi-ai).
 // List / set / check LLM providers.
 // #108: `set` persists to the layered TOML config (~/.anysearch-cli/config.toml);
-// env still overrides the file; secrets stay in env vars referenced by env_key.
+// env still overrides the file; secrets stay out of that file.
+// #301: the key itself can now live in the user credential file (`ans auth set`),
+// which a GUI host without a shell env also reads. Resolution order for the key
+// is ANS_LLM_API_KEY > [llm].env_key > the credential file.
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { createModels } from "@earendil-works/pi-ai";
 import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
-import { resolveLlmConfig, userConfigPath, projectConfigPath, writeUserLlmConfig } from "../config-llm";
+import {
+  readUserCredentials,
+  userCredentialsPath as credentialsPath,
+  resolveLlmConfig,
+  userConfigPath,
+  projectConfigPath,
+  writeUserLlmConfig,
+} from "../config-llm";
+
+/** Which stored entries exist for this provider, as plain words (never a key). */
+function storedBindings(provider: string): string[] {
+  const file = readUserCredentials();
+  return file.bindings
+    .filter((b) => b.provider === provider)
+    .map((b) => b.endpoint ?? "(provider default endpoint)");
+}
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
@@ -17,22 +35,31 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
     // #300: name where EVERY effective value came from, not just provider/model.
-    // Sources are layer labels (flag/env/project/user), never the secret itself.
+    // Sources are layer labels (flag/env/project/user/credentials), never the secret itself.
     console.log("Sources: provider=" + src("provider") + " model=" + src("model") +
       " baseUrl=" + src("baseUrl") + " api=" + src("api") + " apiKey=" + src("apiKey"));
     console.log("Files: user " + userConfigPath() + " | project " + projectConfigPath());
+    console.log("Credentials: " + credentialsPath() + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
     for (const [name, models] of Object.entries(MODELS)) {
       const apiKey = API_KEYS[name] || "UNKNOWN";
-      // env_key indirection counts as auth only for the configured provider —
-      // the secret belongs to whichever provider the file selected.
+      // Both sources count as auth, but each only for the provider it belongs
+      // to: an env_key belongs to the provider the file selected, and a stored
+      // entry is bound to its own provider and endpoint.
+      const stored = storedBindings(name);
       const set = !!process.env[apiKey] || (name === cfg.provider && !!cfg.apiKey);
-      console.log("  " + name + " [" + (set ? "AUTH" : "NO KEY") + "] - " + models.join(", "));
+      const label = set ? "AUTH" : stored.length > 0 ? "AUTH (stored)" : "NO KEY";
+      console.log("  " + name + " [" + label + "] - " + models.join(", "));
+      if (!set && stored.length > 0) {
+        // Say why a stored key did not count: it is bound to another endpoint.
+        console.log("      stored for: " + stored.join(", ") + " — the effective endpoint differs");
+      }
     }
     console.log("");
     console.log("Commands:");
     console.log("  ans llm set [provider] [model]  Set default LLM provider + model");
+    console.log("  ans auth set <provider>         Store the key once (plain text, owner-only)");
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
     return 0;
@@ -66,7 +93,8 @@ export async function runLlm(args: string[]): Promise<number> {
       process.stderr.write((e?.message || String(e)) + "\n");
       return 1;
     }
-    console.log("Secrets stay in env vars — reference one in the file via env_key = \"" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + "\".");
+    console.log("Secrets stay out of the config file — store one once with: ans auth set " + provider + ".");
+    console.log("An env value (" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + " / ANS_LLM_API_KEY) still wins over the stored key.");
     console.log("");
     try {
       await PROVIDER_FACTORIES[provider]();
@@ -81,18 +109,29 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
+    const cfg = resolveLlmConfig();
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
       const apiKey = API_KEYS[name] || "UNKNOWN";
       const keySet = !!process.env[apiKey];
+      const fromStore = storedBindings(name);
+      // The effective key for the selected provider can come from env, an
+      // env_key indirection, or the stored file; other providers count only
+      // their own env var and their own stored entries.
+      const effective = name === cfg.provider && !!cfg.apiKey;
+      const where = keySet ? "KEY SET (" + apiKey + ")"
+        : effective ? "KEY SET (" + (cfg.sources.apiKey === "credentials" ? "stored file" :
+          cfg.sources.apiKey === "user" ? "env_key" : "resolved") + ")"
+          : fromStore.length > 0 ? "KEY SET (stored file)" : "NO KEY";
       try {
         await factoryFn();
-        console.log("  " + name + ": [" + (keySet ? "KEY SET" : "NO KEY") + "]");
+        console.log("  " + name + ": [" + where + "]");
       } catch (e: any) {
         console.log("  " + name + ": [ERROR] " + (e?.message || String(e)));
       }
     }
     console.log("");
-    console.log("Set keys via: export OPENAI_API_KEY=sk-xxx");
+    console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
+    console.log("Or set an env var: export OPENAI_API_KEY=...");
     return 0;
   }
 
