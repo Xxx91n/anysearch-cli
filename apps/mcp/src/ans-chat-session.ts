@@ -306,6 +306,11 @@ export interface AnsChatBudgetStopExtra {
   taskId?: string;
   /** What this run spent. A stop before the first provider call spends nothing, and the report says why it has no figure. */
   usage?: unknown;
+  /**
+   * Which operation was stopped. The same builder serves both, and saying
+   * "chat" about a consolidate call would send a caller down the wrong branch.
+   */
+  operation?: "chat" | "consolidate";
 }
 
 /**
@@ -332,15 +337,18 @@ export function buildAnsChatBudgetResult(
   const label = kind === "budget-not-established"
     ? "this run's task budget could not be established"
     : "this run was stopped by its task budget";
+  const operation = extra.operation ?? "chat";
+  const unchanged = operation === "consolidate"
+    ? "\nNothing was sent to the model for this run. No knowledge was written."
+    : "\nNothing was sent to the model for this run. The conversation itself is unchanged.";
   return {
     isError: true,
     content: [{
       type: "text",
-      text: "ans_chat: " + label + " — " + detail +
-        "\nNothing was sent to the model for this run. The conversation itself is unchanged.",
+      text: "ans_chat: " + label + " — " + detail + unchanged,
     }],
     structuredContent: {
-      operation: "chat",
+      operation,
       errorKind: kind,
       budget: {
         stopped: true,
@@ -354,6 +362,23 @@ export function buildAnsChatBudgetResult(
       ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
     },
   };
+}
+
+// ---- #303: a request that was cancelled before its run started ----
+
+/**
+ * The answer for a call the caller cancelled before (or while) the run was
+ * being set up.
+ *
+ * Same text as an empty result, plus `interrupted: true`. The marker is for the
+ * RECORD, not the chat: the task wrapper reads it to end the task as unfinished.
+ * Without it a cancelled request would be written as a clean exit-0 completion,
+ * which is exactly the "cancelled equals finished" reading #303 removes. The SDK
+ * drops the response for a cancelled request anyway, so no caller sees this
+ * payload — the task row is what says what happened.
+ */
+export function buildAnsChatCancelledResult(sessionId?: string): AnsChatToolResult {
+  return buildAnsChatResult("", sessionId, { interrupted: true });
 }
 
 // ---- consolidation result (D5 / Q18 / Q19) ----

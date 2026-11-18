@@ -435,6 +435,13 @@ async function main() {
       ]);
 
       assert(result?.structuredContent?.interrupted === true, "6: the answer says it was interrupted");
+      // #303: the answer has to name whether the provider's final usage already
+      // landed on the task row. It is "still-running" here (the stalled stream
+      // never ends), which is exactly the case a bare `interrupted: true` hid.
+      const lateSettlement = result?.structuredContent?.lateSettlement;
+      assert(lateSettlement === "settled" || lateSettlement === "still-running",
+        "6: the answer says whether the late settlement already landed (got "
+        + JSON.stringify(lateSettlement) + ")");
       const close = result?.structuredContent?.closeout;
       assert(close?.state === "finished",
         "6/#303: the task closes only after its late settlement/summary drained (got " + JSON.stringify(close) + ")");

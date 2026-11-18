@@ -47,6 +47,7 @@ import {
 import { createHash } from "node:crypto";
 import {
   buildAnsChatBudgetResult,
+  buildAnsChatCancelledResult,
   buildAnsChatConsolidateResult,
   buildAnsChatErrorResult,
   buildAnsChatResult,
@@ -239,7 +240,7 @@ export function registerAnsChat(
         // A caller that already cancelled writes nothing — not even a budget
         // row. The per-branch checks below stay as the guards for the awaits
         // that open a window later on.
-        if (signal?.aborted) return buildAnsChatResult("");
+        if (signal?.aborted) return buildAnsChatCancelledResult();
         // #303: this call's own task budget. The conversation handle below
         // restores context; the quota belongs to this execution.
         const task = currentMcpTask();
@@ -274,7 +275,7 @@ export function registerAnsChat(
           if (!store || typeof store.consolidateMemory !== "function") {
             return toolFailure("ans_chat: consolidation requires the session store, which this server did not wire.");
           }
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           let scope: ReturnType<typeof resolveConsolidateScope>;
           try {
             scope = resolveConsolidateScope({
@@ -287,7 +288,7 @@ export function registerAnsChat(
             }
             throw e;
           }
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           // #303: S9's third state — the domain declared [budget] and the task
           // budget could not be established. Stop before any controlled call,
           // and keep the answer machine-distinguishable from an upstream
@@ -296,6 +297,9 @@ export function registerAnsChat(
           if (consolidateBudget.taskBudgetFault) {
             return buildAnsChatBudgetResult("budget-not-established", consolidateBudget.taskBudgetFault, {
               ...(task ? { taskId: task.taskId } : {}),
+              // This stop is a consolidate call, not a chat: saying "chat" would
+              // send a caller down the wrong branch (#303 review).
+              operation: "consolidate",
             });
           }
           const consolidateTaskBudget = consolidateBudget.taskBudget;
@@ -329,14 +333,14 @@ export function registerAnsChat(
           // A request cancelled while waiting for the meter or the LLM session
           // must not go on to spend money and commit memory, so every wait is
           // followed by the same check.
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           const budget = metering.metered ? metering.budget : undefined;
 
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
           if (providerName && modelName) {
             try {
               const llm = await getLlmSession(cfg);
-              if (signal?.aborted) return buildAnsChatResult("");
+              if (signal?.aborted) return buildAnsChatCancelledResult();
               // The seams carry this request's own usage counter and budget
               // binding. They are handed to the run as a per-call dependency
               // instead of being written onto the shared store: two concurrent
@@ -480,7 +484,7 @@ export function registerAnsChat(
         // not user-visible either way: the SDK drops the response for its
         // aborted request signal, and on the HTTP seam the abort fires only
         // after the response socket has closed.
-        if (signal?.aborted) return buildAnsChatResult("");
+        if (signal?.aborted) return buildAnsChatCancelledResult();
         // #303: this run's own task budget, resolved once the call is really
         // going to start. A declared budget that cannot be established stops
         // here — before the LLM client, the session mint and any provider call
@@ -495,7 +499,7 @@ export function registerAnsChat(
         const taskBudgetScope = chatBudget.taskBudget;
         try {
           const session = await getLlmSession(cfg);
-          if (signal?.aborted) return buildAnsChatResult("");
+          if (signal?.aborted) return buildAnsChatCancelledResult();
           const domain = eng.config ?? {
             sources: { enabled: [] },
             prompts: [],
@@ -672,6 +676,13 @@ export function registerAnsChat(
           // real spend unrecorded and later read as free. Fail-open: a drain
           // fault is reported by the runtime, never turned into a tool failure.
           await runtime.flushMemory().catch(() => {});
+          // #303: a cancelled run whose provider stream never closed schedules
+          // one late settlement of its own (#188). Give it a short, bounded
+          // window (the runtime's default; cancellation must stay snappy, #211)
+          // so the task row is final before its closeout — and when the window
+          // closes first, the answer says so instead of claiming the row
+          // stopped moving.
+          const lateSettled = await runtime.drainLateSettlement();
           // #264 (D9): read the rebuild attempts ONLY after the drain — a rebuild
           // is background work flushMemory() waits for, so reading earlier would
           // describe an attempt that had not run.
@@ -709,6 +720,12 @@ export function registerAnsChat(
                 memorySummary: runtime.getMemoryUsage(),
               },
               interrupted: true,
+              // #303: whether the provider's final usage already landed on the
+              // task row ("settled") or is still on its way because the stream
+              // never closed ("still-running"). A "still-running" here means a
+              // later write will touch the task's budget row — visible, not
+              // hidden.
+              lateSettlement: lateSettled ? "settled" : "still-running",
               // #264: the background rebuild did finish, so its outcome is a fact
               // about this call, not part of the dropped answer text.
               ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),

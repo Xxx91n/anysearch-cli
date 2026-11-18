@@ -619,6 +619,11 @@ export class PiAgentRuntime {
   // the ledger caps, but the next run's reloader sees no new file change. Keep
   // the detection until the next run boundary consumes it.
   private pendingBudgetRefresh = false;
+  // #303: the late token settlement a cancelled run schedules when its provider
+  // stream never closed. Kept here so a host can give it a bounded window
+  // before closing the task row — without making the run itself wait on a
+  // stream that may never end.
+  private lateSettlement?: Promise<void>;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
   // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
@@ -1670,10 +1675,14 @@ export class PiAgentRuntime {
         // Provider still running: the reservation was released above; add only
         // the later delta when the prompt finally stops (best-effort if the
         // store is already closed).
-        void promptPromise!.then(
+        //
+        // #303: kept as a promise the host can wait on for a bounded window
+        // (drainLateSettlement) — the task row must not claim "settled" while
+        // this delta is still on its way back.
+        this.lateSettlement = promptPromise!.then(
           () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
           () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
-        );
+        ).catch(() => { /* the delta write is best-effort by design */ });
       }
       // Release the session listeners; the JSONL record is already durable.
       try { session.dispose(); } catch { /* already disposed */ }
@@ -1704,6 +1713,38 @@ export class PiAgentRuntime {
     if (!this.pipeline) return;
     await this.pipeline.flush();
     await this.settleMemoryUsage();
+  }
+
+  /**
+   * #303: give the late settlement a bounded window before closing the task.
+   *
+   * A cancelled run whose provider stream never closed releases its reservation
+   * conservatively and books the provider's real figure later, when the stream
+   * finally ends (#188). That late write lands on the same task row, so a host
+   * that wants the row to be final before it writes `ended_at` has to wait for
+   * it — but never unboundedly: the stream may never end.
+   *
+   * @param ms how long to wait. Small on purpose: cancellation must stay
+   *   snappy (#211), and a provider that never ends is not helped by a longer
+   *   wait — it just delays the answer. Default 250 ms.
+   * @returns true when there is no late settlement, or it finished inside the
+   *   window. false means it is still on its way and will land after the task
+   *   row is closed — the caller must say so instead of pretending otherwise.
+   */
+  async drainLateSettlement(ms = 250): Promise<boolean> {
+    const pending = this.lateSettlement;
+    if (!pending) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms);
+    });
+    try {
+      const done = await Promise.race([pending.then(() => true as const), expired]);
+      if (done) this.lateSettlement = undefined;
+      return done;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**

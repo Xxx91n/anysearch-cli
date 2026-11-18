@@ -382,6 +382,7 @@ that carries `structuredContent` also carries `structuredContent.closeout`:
 | `state` | `"finished"` — the end row is written; `"open"` — the end write failed, so the record stays open (an upgrade sees it as a blocker instead of reading a missing row as "nothing was running"). |
 | `exitCode` | `0` completed, `1` failed or interrupted. |
 | `interrupted` | The answer stopped early (cancellation). |
+| `lateSettlement` | On an interrupted answer only: `"settled"` (the provider's final usage already reached the task row) or `"still-running"` (the stream never closed; the delta lands later). |
 
 The closeout is written **after** the handler resolves — after
 `flushMemory()` (background summaries and late settlement) and after the
@@ -389,6 +390,19 @@ observation write. That is why a cancelled turn does not read as "work still
 in flight": the task row only ends when that work is done. A cancelled
 request gets no reply at all (the SDK drops a response for an aborted request
 signal), so the record is what says the work finished.
+
+Two cancellation details worth knowing:
+
+- A run whose provider stream never closed books its real usage later (#188).
+  `ans_chat` gives that tail a short bounded window (250 ms — cancellation has
+  to stay snappy, and a stream that never ends is not helped by waiting longer)
+  before writing the closeout, and the interrupted result says which happened:
+  `structuredContent.lateSettlement` is `"settled"` (the row is final) or
+  `"still-running"` (the provider never ended; the delta will land on the task
+  row afterwards). It never waits unboundedly.
+- Any cancelled request's task is recorded as unfinished (`exitCode: 1`),
+  including one cancelled before its run started, where no provider call was
+  made. "Cancelled" is not "completed without output".
 
 The conversation handle is no longer the owner of this run's quota (S5). With
 a task registered, `ans_chat` neither initializes nor releases the session's
