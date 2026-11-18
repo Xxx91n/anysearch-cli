@@ -224,7 +224,11 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
       searchCredentials: (e) => resolveSearchCredentials(e),
     });
     try {
-      assert.equal(engine.credentialSources?.anysearch, "user", "the engine reports where the anysearch key came from");
+      assert.equal(
+        engine.credentialSources?.status === "resolved" ? engine.credentialSources.anysearch : undefined,
+        "user",
+        "the engine reports where the anysearch key came from",
+      );
       assert.equal(engine.providerBuildErrors.anysearch, undefined, "the anysearch arm built from the stored key");
 
       // Drive the real arm through the engine: this is the search client the
@@ -267,7 +271,10 @@ test("a search arm with no stored key and no env still degrades by name, never p
       // exa refuses to construct without a key, and that stays a named
       // degradation instead of a silent skip.
       assert.ok(engine.providerBuildErrors.exa, "the keyless exa arm reports a named failure");
-      assert.equal(engine.credentialSources?.exa, undefined);
+      assert.equal(
+        engine.credentialSources?.status === "resolved" ? engine.credentialSources.exa : undefined,
+        undefined,
+      );
     } finally {
       (engine.store as { close?: () => void }).close?.();
       engine.observation.close();
@@ -290,11 +297,16 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
   });
   try {
     assert.ok(engine.retriever, "the engine was still assembled");
-    // A third shape, not `{}`: resolution THREW, so nothing is known about any
-    // arm. Reporting `{}` would tell a consumer "checked, found no keys" and hide
-    // the real fault from whoever tries to diagnose it.
-    assert.equal(engine.credentialSources?.error, "EACCES: credentials.json is unreadable",
-      "the failure is reported, not flattened into an empty result");
+    // `failed`, never `resolved` and never `unasked`: resolution THREW, so
+    // nothing is known about any arm, and a consumer that read this as "checked,
+    // found no keys" would hide the real fault from whoever diagnoses it.
+    assert.equal(engine.credentialSources?.status, "failed", "the failure is its own state");
+    // The message is classified, not forwarded verbatim: the resolver reads a
+    // credential file, so its raw error text is not assumed free of a key.
+    const failed = engine.credentialSources?.status === "failed" ? engine.credentialSources.error : "";
+    assert.match(failed, /could not be read/);
+    assert.doesNotMatch(failed, /credentials\.json is unreadable/, "the raw message is not forwarded");
+    assert.doesNotMatch(failed, /EACCES: credentials\.json/, "a path-and-message fragment is not forwarded");
     // The point is only that the throw did not propagate: the arms are built as
     // if no credentials were supplied, which is the pre-#301 path.
     assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",

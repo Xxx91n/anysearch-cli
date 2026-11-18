@@ -1,25 +1,18 @@
-// Secret input for `ans auth set` (#301).
+// Reads a provider API key without putting it anywhere it could be seen.
 //
-// Spec S2: the secret must never appear in terminal echo, logs, error details,
-// config previews or command arguments. So the key is never a command-line
-// argument - it is read from stdin:
+// The key is never a command-line argument: it comes from stdin, so it misses
+// the shell history, the process list, and every log that echoes an argv. Two
+// transports:
+//   - terminal: raw mode, nothing echoed, so even the length stays hidden;
+//   - pipe / here-string: the whole stream is read, which is what makes
+//     `printf '%s' "$KEY" | ans auth set openai` work from a script.
 //
-//   - terminal: characters are read in raw mode and nothing is echoed, so even
-//     the length is hidden.
-//   - pipe / here-string: the whole stream is read, so scripted use works
-//     (`printf '%s' "$KEY" | ans auth set openai`) without the key showing up
-//     in the process list, which is exactly what an argument would do.
-//
-// What the terminal path accepts and what it drops:
-//   - printable bytes are kept, DEL and BS delete the last byte;
-//   - Enter finishes the read;
-//   - Ctrl+C cancels;
-//   - a bracketed paste keeps its payload whole, including newlines and escape
-//     bytes inside it, and drops only the `ESC [ 200 ~` / `ESC [ 201 ~` markers;
-//   - any other escape sequence (arrow keys, Home, End) is dropped whole - its
-//     parameter and final bytes never reach the key.
-// `cleanSecret` then rejects what a paste accident still produces: an empty
-// value, an embedded newline, or control characters.
+// The terminal path keeps printable characters (DEL and BS delete the last
+// one), finishes on Enter, cancels on Ctrl+C, and drops terminal control
+// sequences whole so none of their bytes reach the key. A bracketed paste keeps
+// its payload and drops only its `ESC [ 200 ~` / `ESC [ 201 ~` markers.
+// `cleanSecret` then turns anything that is clearly a paste accident - empty,
+// two lines, control characters - into an error instead of a stored key.
 
 import type { Readable, Writable } from "node:stream";
 
@@ -91,15 +84,16 @@ async function readFromTerminal(
         // out. It is NOT treated as part of the key: `cleanSecret` trims a
         // trailing newline (a pipe always ends with one), so returning the
         // payload with the newline would silently store a shortened key when two
-        // lines were pasted. An empty buffer means the user pressed Enter on an
-        // empty paste, which is a plain "done"; a buffer with content means the
-        // paste never finished, which is said out loud.
+        // lines were pasted. A blank buffer means nothing was collected yet -
+        // a plain "done"; content that is not blank means the paste never
+        // finished, which is said out loud.
         if (inPaste) {
           if (ch === "\r" || ch === "\n") {
             inPaste = false;
-            if (pasteBuffer !== "") {
+            if (pasteBuffer.trim() !== "") {
               throw new Error("the paste did not finish before the line ended; paste only the key itself");
             }
+            pasteBuffer = "";
             output.write("\n");
             return value;
           }
@@ -183,13 +177,17 @@ async function readFromTerminal(
 }
 
 /**
- * True for a byte that may go into a key: anything from the space upward except
- * DEL. Compared by code point, not by string order - `ch >= " "` is a lexical
- * comparison and would let DEL and other control bytes through.
+ * True for a character that may go into a key: an ASCII printable byte. The
+ * iteration this is called from walks CODE POINTS, so a character outside the
+ * BMP (an emoji, an extension-CJK glyph) is one `ch` of two UTF-16 units.
+ * `charCodeAt(0)` would see only its high surrogate - 0xD800-0xDBFF, which passes
+ * an ASCII range test - and the pair would end up in the key and later in an HTTP
+ * header. Only the BMP range is accepted, and `cleanSecret` catches the rest.
  */
 function isPrintable(ch: string): boolean {
-  const code = ch.charCodeAt(0);
-  return code >= 0x20 && code !== 0x7f;
+  if (ch.length === 0) return false;
+  const code = ch.codePointAt(0)!;
+  return code >= 0x20 && code !== 0x7f && code <= 0xffff;
 }
 
 /**
@@ -231,6 +229,11 @@ async function readPipedSecret(
  * them. A key with an interior newline is always an accident (two lines
  * pasted), and a key with control characters would break the HTTP header it
  * ends up in.
+ *
+ * The non-ASCII check is the last line of defence, not the first: the terminal
+ * reader already refuses characters outside the BMP, and a piped value never
+ * sees that reader at all. A surrogate pair here would be split across two
+ * bytes in the request header.
  */
 export function cleanSecret(raw: string): string {
   const value = raw.trim();
@@ -240,6 +243,9 @@ export function cleanSecret(raw: string): string {
   }
   if (/[\u0000-\u001f\u007f]/.test(value)) {
     throw new Error("the key contains control characters; paste the key itself, not terminal escape codes");
+  }
+  if (/[^\u0020-\u007e]/.test(value)) {
+    throw new Error("the key contains characters outside plain ASCII; a key is letters, digits and punctuation only");
   }
   return value;
 }

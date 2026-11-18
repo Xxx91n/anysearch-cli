@@ -197,3 +197,30 @@ test("raw mode is restored even when the read throws", async () => {
   await assert.rejects(() => readSecret("key: ", { input, output: out.output }));
   assert.deepEqual(rawModes, [true, false], "raw mode was turned on and then off");
 });
+
+test("a paste containing only blank lines can still be finished with Enter", async () => {
+  // `pasteBuffer !== ""` would be true for "\n\n", so an unclosed paste of blank
+  // lines would strand the user on Ctrl+C. Blank content means nothing was
+  // collected, so Enter is a plain "done".
+  const { input } = fakeTty(["\u001b[200~", "\n", "\r"]);
+  const out = sink();
+  assert.equal(await readSecret("key: ", { input, output: out.output }), "");
+});
+
+test("a character outside the BMP never reaches the key", async () => {
+  // The reader walks code points but the old test read only the high surrogate,
+  // which sits inside the ASCII range and would let the pair through into a
+  // request header. A key is plain ASCII, so it is refused.
+  const { input } = fakeTty(["sk-", "\u{1F600}", "abc", "\r"]);
+  const out = sink();
+  const value = await readSecret("key: ", { input, output: out.output });
+  assert.equal(value, "sk-abc");
+});
+
+test("cleanSecret refuses non-ASCII even when it arrives through a pipe", async () => {
+  // Piped input never passes the terminal reader, so the last defence has to
+  // hold on its own.
+  assert.throws(() => cleanSecret("sk-\u00e9key"), /outside plain ASCII/);
+  assert.throws(() => cleanSecret("sk-\u{1F600}key"), /outside plain ASCII/);
+  assert.equal(cleanSecret("sk-abc_123-XYZ.~+/="), "sk-abc_123-XYZ.~+/=");
+});

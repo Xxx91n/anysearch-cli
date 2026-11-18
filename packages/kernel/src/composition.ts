@@ -106,6 +106,26 @@ function buildProviders(
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
+/**
+ * Turn a credential-resolution failure into a sentence safe to show. The
+ * resolver reads a file that holds keys, so its message is not assumed clean:
+ * only a recognised category and a bare errno code are quoted, and each of them
+ * points at the fix. Anything unrecognised becomes a fixed sentence - an
+ * unknown message is exactly the case where a key fragment could ride along.
+ */
+function classifyCredentialFault(error: unknown): string {
+  const raw = String(error instanceof Error ? error.message : error);
+  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY)\b/.exec(raw)?.[1];
+  if (/not valid JSON|missing the "bindings" list|has no apiKey|has no provider/i.test(raw)) {
+    return "the user credential file is not readable as stored keys (" + (code ?? "parse fault") + "); fix or remove it";
+  }
+  if (/refusing to write/i.test(raw)) {
+    return "the credential file could not be written (" + (code ?? "write fault") + "); check the folder's permissions";
+  }
+  if (code) return "the user credential file could not be read (" + code + ")";
+  return "the user credential file could not be read; run `ans auth list` to check it";
+}
+
 export interface CompositionResult {
   retriever: RetrieverPort;
   config?: DomainConfigPort;
@@ -132,18 +152,21 @@ export interface CompositionResult {
   ledger?: BudgetLedgerPort;
   // #301: which key each search arm was built with (env vs user credential
   // file), so a degraded arm can say "no key" instead of only "construction
-  // failed". Never carries a secret value. UNDEFINED when no credential
-  // resolution was configured at all, which is a different fact from "resolution
-  // ran and no arm got a key" (that one is an empty object), and `error` is a
-  // third: resolution was attempted and THREW, so nothing is known about any arm.
-  credentialSources?: {
-    tavily?: string;
-    exa?: string;
-    anysearch?: string;
-    /** Set when resolution threw; a consumer must not read this as "no keys". */
-    error?: string;
-  };
+  // failed". A tagged union rather than three optional fields: a consumer must
+  // be able to tell "nobody asked", "asked, no key" and "asked, it broke" apart
+  // at the type level, because reading the last one as the middle one hides a
+  // real fault. Never carries a secret value.
+  credentialSources?: CredentialSources;
 }
+
+/** The three outcomes of search-credential resolution. */
+export type CredentialSources =
+  /** No `searchCredentials` seam was passed; nothing was resolved. */
+  | { status: "unasked" }
+  /** Resolution completed; a key present here is the one that arm was built with. */
+  | { status: "resolved"; tavily?: string; exa?: string; anysearch?: string }
+  /** Resolution threw. The arms fell back to their own env; `error` explains why. */
+  | { status: "failed"; error: string };
 
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
@@ -229,29 +252,26 @@ export function createEngine(
   // resolver (an unreadable file, a permission fault) must degrade to "each SDK
   // reads its own env", not kill the MCP process at startup.
   let creds: CredentialSource = undefined;
-  // undefined = nobody asked for credential resolution; {} = resolution ran and
-  // no arm came out with a key; `{error}` = resolution threw. Consumers that
-  // explain a degraded arm need to tell those three apart, so the catch does not
-  // reuse the empty shape.
-  let credentialSources: CompositionResult["credentialSources"];
+  let credentialSources: CredentialSources = { status: "unasked" };
   if (opts?.searchCredentials) {
     try {
       creds = opts.searchCredentials(env);
       for (const warning of creds?.warnings ?? []) {
         writeProviderDiagnostic("[anysearch] " + warning + "\n");
       }
-      credentialSources = {};
-      if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
-      if (creds?.exa) credentialSources.exa = creds.exa.source;
-      if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
+      const resolved: CredentialSources = { status: "resolved" };
+      if (creds?.tavily) resolved.tavily = creds.tavily.source;
+      if (creds?.exa) resolved.exa = creds.exa.source;
+      if (creds?.anysearch) resolved.anysearch = creds.anysearch.source;
+      credentialSources = resolved;
     } catch (e) {
       creds = undefined;
-      // Trim by code point after shortening, so a multi-byte character is never
-      // cut in half and printed as a broken tail.
-      const reason = Array.from(String(e instanceof Error ? e.message : e)).slice(0, 200).join("");
-      // Resolution THREW: nothing is known about any arm, which an empty object
-      // would misreport as "checked, found no keys" and hide the real fault.
-      credentialSources = { error: reason };
+      // The raw message is classified, never forwarded: this string can reach
+      // stderr and (through the engine result) an MCP payload, and the resolver
+      // reads a credential file, so its error text must not be trusted to be
+      // free of a key fragment (CWE-532; same rule as buildProvider above).
+      const reason = classifyCredentialFault(e);
+      credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
         " — falling back to each SDK's own env var\n",

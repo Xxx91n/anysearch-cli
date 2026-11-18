@@ -38,11 +38,10 @@ import {
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
 
 /**
- * How to name a layer in plain words, for any command that shows where a value
- * came from. It lives next to `LlmLayer` because the labels ARE that type's
- * vocabulary; a caller only looks up the label for the layer it got back.
- * `cli`, `project` and `default` are spelled by the caller, which knows which
- * flag or file it means.
+ * How to name each layer in plain words, for any command that shows where a
+ * value came from. It lives next to `LlmLayer` because the labels ARE that
+ * type's vocabulary: `Record<LlmLayer, string>` means a new layer cannot ship
+ * without a label, and every caller looks up the label for the layer it got.
  */
 export const KEY_SOURCE_LABELS: Record<LlmLayer, string> = {
   cli: "command line",

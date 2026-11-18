@@ -77,31 +77,25 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderInfo[] = [
 ];
 
 /**
- * The search arms this resolver fills, in one place. It is DECLARED and the
- * catalog is checked against it at load time: a provider added to
- * CREDENTIAL_PROVIDERS with kind "search" but not listed here stops the module
- * with a named error, instead of being resolved by nobody and reported by
- * nothing.
+ * The search arms this resolver fills. It is declared, and the catalog below is
+ * checked against it at load time: a search provider added to
+ * CREDENTIAL_PROVIDERS without a line here stops the module with one named
+ * error instead of being resolved by nobody and reported by nothing.
  */
 export const SEARCH_PROVIDER_IDS = ["tavily", "exa", "anysearch"] as const;
 export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
+assertCatalogMatchesSearchIds();
 
 /** Search providers only: the env var each one's key is read from. */
 export const SEARCH_PROVIDER_ENV_KEYS: Record<SearchProviderId, string> = Object.fromEntries(
-  SEARCH_PROVIDER_IDS.map((id) => {
-    const found = CREDENTIAL_PROVIDERS.find((p) => p.id === id && p.kind === "search");
-    if (!found) {
-      throw new Error("SEARCH_PROVIDER_IDS names " + id + " but CREDENTIAL_PROVIDERS has no search provider of that id");
-    }
-    return [id, found.envKey];
-  }),
+  SEARCH_PROVIDER_IDS.map((id) => [id, credentialProvider(id)!.envKey]),
 ) as Record<SearchProviderId, string>;
-assertCatalogMatchesSearchIds();
 
 /**
  * A search provider in the catalog that no arm resolves is a silent hole: doctor
  * would list it, `resolveSearchCredentials` would never fill it, and nothing
- * would say why. Fail at import instead.
+ * would say why. Fail at import instead, with ONE wording for the whole class of
+ * mismatch so a reader never has to work out which of two messages applies.
  */
 function assertCatalogMatchesSearchIds(): void {
   const catalog = CREDENTIAL_PROVIDERS.filter((p) => p.kind === "search").map((p) => p.id).sort();
@@ -163,8 +157,14 @@ export function userCredentialsPath(home: string = resolveConfigHome()): string 
 }
 
 /**
- * The user config root every credential/config reader must agree on: an
- * explicit override, else USERPROFILE (Windows), else HOME, else the real home.
+ * The user config root every credential/config reader must agree on.
+ *
+ * An explicit override wins; otherwise the caller's env decides if it names a
+ * home at all; otherwise the PROCESS env; only then the real home. The process
+ * env step matters: `homedir()` on Linux reads /etc/passwd and ignores HOME, so
+ * a caller that passes a partial env (an MCP call carrying only ANS_LLM_*) would
+ * otherwise land on a different directory than the one the rest of the install
+ * uses - a second file nobody wrote.
  *
  * One function because two readers that disagree would read different files -
  * the resolver would look for the key the writer had just stored somewhere
@@ -172,7 +172,13 @@ export function userCredentialsPath(home: string = resolveConfigHome()): string 
  * convention for "set but blank means unset".
  */
 export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
-  return explicit || env.USERPROFILE || env.HOME || homedir();
+  if (explicit) return explicit;
+  const fromCaller = env.USERPROFILE || env.HOME;
+  if (fromCaller) return fromCaller;
+  // The caller named no home, so fall through to what the process itself was
+  // given before reaching for the platform's user database.
+  const fromProcess = process.env.USERPROFILE || process.env.HOME;
+  return fromProcess || homedir();
 }
 
 /**
