@@ -415,6 +415,9 @@ async function replaysPartialAnswersWithTheirNotice() {
   const sessionId = "partial-context";
   const notice = "这条回答当时被打断，只留下半截，不要当成完整回答。";
   const complete = { type: "message", message: assistant([{ type: "text", text: "完整回答" }]) };
+  const firstPart = { type: "text", text: "答到一半", textSignature: '{"v":1,"id":"msg_first","phase":"commentary"}' };
+  const secondPart = { type: "text", text: "还有一截", textSignature: '{"v":1,"id":"msg_second","phase":"final_answer"}' };
+  const markedContent = [{ ...firstPart, text: notice + "\n\n答到一半" }, secondPart];
   const followUp = {
     type: "message",
     message: { ...question.message, content: [{ type: "text", text: "会被打断的问题" }] },
@@ -422,7 +425,7 @@ async function replaysPartialAnswersWithTheirNotice() {
   try {
     for (const compacted of [false, true]) {
       async function nextRequest(stopReason: string) {
-        const saved = assistant([{ type: "text", text: "答到一半" }], stopReason);
+        const saved = assistant([firstPart, secondPart], stopReason);
         const path = seedRecord(dir, sessionId, [
           question, complete, followUp, { type: "message", message: saved },
           { type: "message", message: assistant([], "aborted") },
@@ -445,7 +448,7 @@ async function replaysPartialAnswersWithTheirNotice() {
           assert.equal(requests.length, 2);
           const marked = requests[1]!.messages.filter((message) => JSON.stringify(message.content).includes(notice));
           assert.deepEqual(marked.map(({ role, content }) => ({ role, content })), [
-            { role: "assistant", content: [{ type: "text", text: notice + "\n\n答到一半" }] },
+            { role: "assistant", content: markedContent },
           ]);
         }
         const record = readFileSync(path, "utf8");
@@ -458,7 +461,7 @@ async function replaysPartialAnswersWithTheirNotice() {
       const expected = completeRequest.map((message) => (
         message.role === "assistant" && Array.isArray(message.content) &&
         message.content.some((part) => part.type === "text" && part.text === "答到一半")
-          ? { ...message, content: [{ type: "text", text: notice + "\n\n答到一半" }] }
+          ? { ...message, content: markedContent }
           : message
       ));
       assert.notDeepEqual(expected, completeRequest);

@@ -98,13 +98,12 @@ function markPartialAnswer(message: AgentMessage): AgentMessage {
   if (firstText === -1) return message;
   // Design: mark the visible text at replay time — PI drops aborted messages
   // from requests, and the saved record still needs the original stop reason.
+  const part = textParts[firstText]!;
+  textParts[firstText] = { ...part, text: PARTIAL_ANSWER_NOTICE + "\n\n" + part.text };
   return {
     ...message,
     stopReason: "stop",
-    content: textParts.map(({ text }, index) => ({
-      type: "text",
-      text: index === firstText ? PARTIAL_ANSWER_NOTICE + "\n\n" + text : text,
-    })),
+    content: textParts,
   };
 }
 
