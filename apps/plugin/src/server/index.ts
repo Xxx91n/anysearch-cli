@@ -9,12 +9,13 @@
 // GET /policy?project=<root> — URL policy for that explicit project
 // Bearer token auth on all endpoints.
 //
-// #307: the index write, the policy audit and the purge are this service's
-// POST-WORK. Each runs under a follow-up task row (role=business,
-// origin=follow-up, entry=server) in the shared durable DB, and the response
-// waits for the row's end. That is what lets upgrade admission (#309) see a
-// hook's tail instead of reading an idle service, and it replaces the old
-// fire-and-forget audit writes whose completion nothing could observe.
+// #307: the index write and the policy audit are this service's POST-WORK.
+// Both run under a follow-up task row (role=business, origin=follow-up,
+// entry=server) in the shared durable DB. They differ in who waits:
+// `/index` answers only after its row ends; the `/policy` audit runs BEHIND
+// the answer (the hook's 3-second policy budget must not be spent on a store
+// write). `/purge` is a caller-initiated request, not a tail, so it keeps its
+// synchronous behaviour and registers no follow-up task.
 //
 // Design: every project-scoped request names its project and the server
 // refuses one that cannot — a shared long-running process cannot tell the
@@ -68,8 +69,8 @@ const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db")
 const postWork = createPostWorkTracker(openPostWorkRegistry(OBS_DB));
 postWork.start();
 
-// CWE-732: tighten OBS_DB to owner-only before emitConfigChangeAudit opens it.
-// Lazy: only needed when /policy writes an audit row, not for /recall or /index.
+// OBS_DB permissions are tightened at startup by openPostWorkRegistry below,
+// and again lazily before the first /policy audit write (best-effort, once).
 let obsDbEnsured = false;
 
 interface ProjectPolicy {
@@ -502,29 +503,45 @@ bind(REQUESTED_PORT, true);
 
 // Graceful shutdown.
 // #307: this service now owns post-work, so a stop signal must not cut a write
-// in half. The order is: stop accepting new connections, wait for the units
-// already running (bounded), then close resources and write the process end.
-// When the wait times out the process exits WITHOUT closing the stores: the
-// work is still holding them, and closing a database under a live write
-// corrupts the file. The open task row is the honest signal an upgrade reads
-// (#309) — "this service did not finish its tail" — and the OS reclaims the
-// handles when the process ends.
+// in half. "In flight" has two parts and both must settle before the exit:
+// - requests still being handled (a SIGTERM can land while a handler is inside
+//   `await readBody(req)`, before any post-work task exists — draining only the
+//   registered units would miss it and kill that request's work);
+// - post-work units already registered (the rows already written).
+// Only when BOTH settle cleanly are the stores closed. On timeout the process
+// exits WITHOUT closing them: the work still holds the handles, and closing a
+// database under a live write corrupts the file. The open task row is the
+// honest signal an upgrade reads (#309) — "this service did not finish its
+// tail" — and the OS reclaims the handles when the process ends.
 const SHUTDOWN_DRAIN_MS = Number(process.env.ANS_SHUTDOWN_DRAIN_MS || 10000);
 let shuttingDown = false;
+const reportIncomplete = (signal: string): void => {
+  process.stderr.write(
+    "[anysearch] " + signal + ": post-work still running after " + SHUTDOWN_DRAIN_MS +
+    "ms (" + postWork.pending() + " registered unit(s)) — exiting without closing stores; " +
+    "open task rows stay as blockers an upgrade reports\n",
+  );
+  // No store.close()/postWork.stop() here: the live work still owns the handles.
+  process.exit(1);
+};
 const shutdown = (signal: string): void => {
   if (shuttingDown) return; // a second signal must not restart the teardown
   shuttingDown = true;
-  server.close();
-  void postWork.drain(SHUTDOWN_DRAIN_MS).then((drained) => {
-    if (!drained) {
-      process.stderr.write(
-        "[anysearch] " + signal + ": " + postWork.pending() + " post-work unit(s) still running after " +
-        SHUTDOWN_DRAIN_MS + "ms — exiting without closing stores; their task rows stay open " +
-        "(an upgrade reports them as blockers)\n",
-      );
-      // No store.close()/postWork.stop() on this path: the live work still
-      // owns the handles.
-      process.exit(1);
+  // The callback fires when every open connection has ended, i.e. every
+  // handler that was running has returned.
+  const requestsEnded = new Promise<void>((resolve) => server.close(() => resolve()));
+  // One deadline for both conditions: a request that never returns (a client
+  // holding its socket) must not hang the exit past the bounded wait.
+  const deadline = new Promise<"timeout">((resolve) => {
+    const timer = setTimeout(() => resolve("timeout"), SHUTDOWN_DRAIN_MS);
+    timer.unref?.();
+  });
+  const settled = Promise.all([requestsEnded, postWork.drain(SHUTDOWN_DRAIN_MS)])
+    .then(([, drained]) => (drained ? "drained" as const : "timeout" as const));
+  void Promise.race([settled, deadline]).then((outcome) => {
+    if (outcome !== "drained") {
+      reportIncomplete(signal);
+      return;
     }
     store.close();
     clearServerRegistry();

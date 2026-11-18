@@ -11,7 +11,9 @@
 // Shape of the fix:
 // - every post-work unit registers a task row (role=business, origin=follow-up)
 //   in the shared durable DB, and its END is written only after the work
-//   finished (or failed) — the HTTP response is sent after that.
+//   finished (or failed). Whether the HTTP answer waits for that end is the
+//   caller's choice: `/index` waits, the `/policy` audit runs behind the
+//   answer (the hook's policy budget must not be spent on a store write).
 // - the row is a follow-up, not a new independent request: a reader can tell
 //   "this exists because another call finished" from "a caller asked for this".
 // - the parent link is written only when a real parent row is named; the hook
@@ -67,8 +69,10 @@ function warnOnce(message: string): void {
   if (warned.size >= WARNED_MAX) warned.clear();
   warned.add(message);
   // The service's stdout is not a host protocol (only the hooks write stdout),
-  // but stderr is where every other warning in this process goes.
-  try { process.stderr.write("[anysearch] " + message + "\n"); } catch { /* dead stderr */ }
+  // but stderr is where every other warning in this process goes. The label
+  // names this subsystem so a post-work degradation is not read as some other
+  // entry's line (each entry keeps its own prefix by design).
+  try { process.stderr.write("[anysearch] post-work: " + message + "\n"); } catch { /* dead stderr */ }
 }
 
 function errText(e: unknown): string {
