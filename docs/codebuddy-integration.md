@@ -93,6 +93,13 @@ Shipped template: `@anysearch-cli/plugin/configs/codebuddy/hooks.json`.
 One adapter entry serves all three events. It dispatches on `hook_event_name`
 itself. `$(npm root -g)` resolves the global install inside Git Bash.
 
+> `ans host connect codebuddy` writes the same events with the command
+> `ans-hook-codebuddy` instead of the `node "$(npm root -g)/..."` line above:
+> the complete install (`npm i -g @anysearch-cli/cli`) ships that bin on PATH,
+> so the plugin package does not have to be installed globally. The template
+> here keeps the verified long form; both reach the same adapter
+> (`dist/hooks/adapters/codebuddy.cjs`).
+
 What each event does:
 
 | Event | Behavior |
@@ -106,3 +113,4 @@ What each event does:
 The hooks are fail-open. If the server is down, a key is missing, or stdin is
 bad, the hook exits 0 and the host keeps running. Hooks never block
 CodeBuddy.
+
