@@ -254,9 +254,11 @@ export function registerAnsChat(
       // late settlement (flushMemory) and the observation write, so a cancelled
       // request never leaves a finished-looking task with work still in flight.
       return withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
-        // A caller that already cancelled writes nothing — not even a budget
-        // row. The per-branch checks below stay as the guards for the awaits
-        // that open a window later on.
+        // A caller that already cancelled does no run-side work here — no
+        // budget row, no session mint, no provider call. The task row itself is
+        // written either way by the wrapper: a cancelled call still happened,
+        // and the record says so (exit 1). The per-branch checks below stay as
+        // the guards for the awaits that open a window later on.
         if (signal?.aborted) return buildAnsChatCancelledResult();
         // #303: this call's own task budget. The conversation handle below
         // restores context; the quota belongs to this execution.
