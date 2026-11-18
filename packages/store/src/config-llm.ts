@@ -93,10 +93,9 @@ export interface ResolveLlmOpts {
    * passing a different `home` on purpose.
    *
    * An injected `env` is not isolation: if it names HOME/USERPROFILE the root
-   * follows it, and if it names neither the root falls through to the process
-   * env and then the platform's home. A caller that needs a fixed root passes
-   * `home`. (The path helpers below default to `process.env`, not to the caller's
-   * `env` - they take only a root.)
+   * follows it; if it names neither, `resolveConfigHome` lands on `homedir()`.
+   * A caller that needs a fixed root passes `home`. (The path helpers below take
+   * only a root, so they cannot follow a caller's `env` at all.)
    */
   home?: string;
   flags?: LlmFlags;

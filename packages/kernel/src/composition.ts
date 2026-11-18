@@ -115,7 +115,7 @@ function buildProviders(
  */
 function classifyCredentialFault(error: unknown): string {
   const raw = String(error instanceof Error ? error.message : error);
-  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|EBUSY|ETIMEDOUT|ENOTDIR|ENAMETOOLONG)\b/.exec(raw)?.[1];
+  const code = /\b(EACCES|EPERM|ENOENT|EISDIR|EROFS|ENOSPC|EMFILE|ENFILE|EBUSY|ETIMEDOUT|ENOTDIR|ENAMETOOLONG)\b/.exec(raw)?.[1];
   // A permission fault outranks the wording: the same "could not read it" text
   // is used for EACCES and for a syntax error, and advising "delete the file" on
   // a permissions problem would destroy the user's other keys for nothing.
@@ -221,31 +221,48 @@ export type CredentialSourceLabel = "env" | "user" | "none";
 /**
  * Keep a resolver warning's meaning but drop anything that could be a secret.
  *
- * Two shapes are removed, and both are anchored so ordinary text survives:
+ * One predicate decides, and both rules use it: a run is a secret UNLESS it is
+ * hyphen-joined lowercase words with short segments - the shape of a path
+ * segment or a plain English phrase (`api-gateway-service`,
+ * `very-long-nas-mount`). Keys have digits, upper case, symbols, or segments too
+ * long to be words, so they never match that shape.
  *
- * - a key prefix (`sk-`, `tvly-`, `api-`, …) that starts at a word boundary and
- *   is followed by a body containing a digit or a symbol. A path segment like
- *   `api-gateway-service` has neither, so the file name the reader needs stays;
- * - a run of 32+ key characters, `+` included. `/` is the one character left
- *   out, because it is what makes a path a path; a key containing `/` still
- *   loses the rest of its run, and its prefix rule above catches the whole thing.
+ * Two runs are considered:
+ * - after a known key prefix (`sk-`, `tvly-`, `api-`, …). The body may contain
+ *   `/`, so a base64 key split by a slash is redacted whole. The prefix must not
+ *   follow an identifier character, so `my_key_abc` is left alone;
+ * - a bare run of 24+ key characters, without `/` (including it would join a
+ *   whole path into one run and swallow it).
  */
 export function redactPathFault(warning: string): string {
   return warning
-    // Prefix form. `(^|[^A-Za-z0-9])` rather than `\b`: `_` is a word character,
-    // so `\b` would match inside `my_key_abc` and behave differently either side
-    // of an underscore. The body must carry a digit or symbol - a key always
-    // does, a pair of English words joined by a hyphen never does.
+    // Prefix form. The body may continue past `/`, because a base64 key can
+    // contain one and stopping there would leave the tail in the log. The
+    // continuation must look like key material, not like a path: a path segment
+    // after the slash has no digits and no symbols, which the predicate checks.
     .replace(
-      /(^|[^A-Za-z0-9])((?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-]*[0-9_+=][A-Za-z0-9_\-]*)/gi,
-      "$1[redacted]",
+      /(^|[^A-Za-z0-9_])((?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-+=]+(?:\/[A-Za-z0-9_\-+=]+)*)/gi,
+      (_match, lead: string, body: string) => lead + (looksLikePathTail(body) ? body : "[redacted]"),
     )
-    // Bare form: an unbroken key run. `+` is kept in the class because a path
-    // never contains it and a base64 key often does; `/` is excluded because
-    // dropping it would swallow every path.
-    .replace(/[A-Za-z0-9_\-+=]{32,}/g, "[redacted]");
+    // Any 24+ character run, then the predicate decides. `looksLikeWords` is what
+    // keeps a path segment or an English phrase readable; everything else - a
+    // key, a hash, a base64 body - is dropped.
+    .replace(/[A-Za-z0-9_\-+=]{24,}/g, (run) => (looksLikeWords(run) ? run : "[redacted]"));
 }
 
+/** True when a prefixed run is really a path segment and its tail, not a key. */
+function looksLikePathTail(run: string): boolean {
+  const [head, ...rest] = run.split("/");
+  if (rest.length === 0) return looksLikeWords(head ?? "");
+  // A path: the head is words and every segment is words.
+  return looksLikeWords(head ?? "") && rest.every((seg) => looksLikeWords(seg) || /^[a-z]{2,}$/.test(seg));
+}
+
+/** True for a shape that is words, not a key: lowercase hyphen-joined, short segments. */
+function looksLikeWords(run: string): boolean {
+  if (!/^[a-z]+(?:-[a-z]+)+$/.test(run)) return false;
+  return run.split("-").every((part) => part.length <= 20);
+}
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).

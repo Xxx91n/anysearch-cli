@@ -466,7 +466,7 @@ test("a warning carrying a key-shaped run is redacted before it reaches a log", 
   const secret = "sk-live-abcdefghijklmnopqrstuvwxyz012345";
   const redacted = redactPathFault("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
   assert.ok(!redacted.includes(secret), "the key-shaped run is gone");
-  assert.match(redacted, /[redacted]/);
+  assert.match(redacted, /\[redacted\]/);
   // The useful part survives: which file and which errno.
   assert.match(redacted, /credentials.json/);
   assert.match(redacted, /EACCES/);
@@ -476,39 +476,40 @@ test("a warning carrying a key-shaped run is redacted before it reaches a log", 
 });
 
 test("redaction catches keys and keeps paths readable", () => {
-  // A length threshold alone cannot catch a short key, and a long path is broken
-  // by slashes. Both directions are pinned here, plus the two shapes where a
-  // single regex would get it wrong.
-  const short = redactPathFault("could not read it; value was sk-abc12345");
-  assert.ok(!short.includes("sk-abc12345"), "a short prefixed key is redacted too");
-  assert.match(short, /[redacted]/);
+  // The one predicate is "hyphen-joined lowercase words with short segments".
+  // Every case below exists because a threshold or a character class alone got
+  // one of them wrong.
+  const mustGo = [
+    "value was sk-abcdefghijklmnopqrstuvwx",            // all letters, no digits
+    "value was sk-proj-abcd1234/efgh5678",              // a slash inside the key
+    "value was sk-abc12345",                            // short, known prefix
+    "bad value Aa1+" + "b".repeat(40),                  // base64 with +
+    "a".repeat(48),                                     // long bare run
+    "sk-live-abcdefghijklmnopqrstuvwxyz012345",
+  ];
+  for (const c of mustGo) {
+    const out = redactPathFault(c);
+    assert.ok(out.includes("[redacted]"), "must be redacted: " + c);
+  }
 
-  // A key split by a JSON message's quote is still caught by its prefix.
+  // A quoted key body in a JSON message is still caught.
   const split = redactPathFault('not valid JSON near "sk-abc12345xyz"');
   assert.ok(!split.includes("sk-abc12345xyz"), "a quoted key body is redacted");
 
-  // A long path full of slashes is what the reader needs; it must survive.
-  const longPath = "/home/someone/very-long-nas-mount-name/projects/anysearch-cli/.anysearch-cli/credentials.json";
-  assert.equal(redactPathFault(longPath + ": not valid JSON"), longPath + ": not valid JSON");
+  // Paths are the reason this function exists; none of these may be touched.
+  const keep = [
+    "/home/me/projects/very-long-nas-mount-name-projects/x.json: EACCES",
+    "/srv/api-gateway-service/credentials.json: EACCES",
+    "/home/me/api-keys/credentials.json: EACCES",
+    "/home/me/.anysearch-cli/credentials.json: not valid JSON",
+    "/home/me/credentials.json: EACCES",
+  ];
+  for (const c of keep) assert.equal(redactPathFault(c), c, "path must stay readable: " + c);
 
-  // A path segment that merely starts with a key prefix is not a key: no digits,
-  // no symbols, so the file name stays readable.
-  const apiPath = "/home/me/projects/api-gateway-service/.anysearch-cli/credentials.json";
-  assert.equal(redactPathFault(apiPath + ": EACCES"), apiPath + ": EACCES");
-  const exaPath = "/srv/exa-proxy-cache/credentials.json: EACCES";
-  assert.equal(redactPathFault(exaPath), exaPath);
-});
-
-test("a base64 key with no known prefix and a + or / inside is still redacted", () => {
-  // The bare rule has to survive the characters a real base64 key contains. A
-  // run split by "+" must not leave both halves under the threshold.
-  const withPlus = "Aa1+" + "b".repeat(40);
-  const outPlus = redactPathFault("/x: bad value " + withPlus);
-  assert.ok(!outPlus.includes("b".repeat(40)), "the body after + is redacted");
-
-  const withSlash = "/x: bad value " + "c".repeat(40) + "/" + "d".repeat(40);
-  const outSlash = redactPathFault(withSlash);
-  assert.ok(!outSlash.includes("d".repeat(40)), "the body after / is redacted");
+  // An identifier that merely embeds a prefix is not a key.
+  assert.equal(redactPathFault("my_key_abc123"), "my_key_abc123");
+  // A real key at the start of a word still goes.
+  assert.equal(redactPathFault("key_abc12345"), "[redacted]");
 });
 
 test("an unbroken base64-shaped run is redacted", () => {

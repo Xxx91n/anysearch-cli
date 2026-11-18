@@ -64,5 +64,5 @@ apps/cli/.build-stamp.json
 /apps/cli/mcp/
 /apps/cli/plugin/
 
-# 本地抓下来看一眼的临时文件，不入库
+# local scratch — tracker/API dumps fetched for a look, never repo content.
 /threads.json
