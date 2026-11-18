@@ -28,13 +28,17 @@ import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -180,14 +184,29 @@ function stripAuthorityAndQuery(value: string): string {
   return at >= 0 ? withoutQuery.slice(at + 1) : withoutQuery;
 }
 
-function asBinding(raw: unknown): CredentialBinding | null {
-  if (typeof raw !== "object" || raw === null) return null;
+/**
+ * Validate one stored record. Returns the binding, or a reason it cannot be
+ * trusted. A record is never silently dropped: writing back a filtered list
+ * would permanently erase the user's other keys (#301 review P1).
+ */
+function parseBinding(raw: unknown, index: number): { binding: CredentialBinding } | { problem: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { problem: "entry " + (index + 1) + " is not an object" };
+  }
   const rec = raw as Record<string, unknown>;
   const provider = typeof rec["provider"] === "string" ? rec["provider"].trim().toLowerCase() : "";
+  if (!provider) return { problem: "entry " + (index + 1) + " has no provider" };
   const apiKey = typeof rec["apiKey"] === "string" ? rec["apiKey"].trim() : "";
-  if (!provider || !apiKey) return null;
-  const endpoint = typeof rec["endpoint"] === "string" ? normalizeBindingEndpoint(rec["endpoint"]) : null;
-  return { provider, endpoint, apiKey };
+  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + provider + ") has no apiKey" };
+  // An endpoint that is present but not a string cannot be silently reshaped
+  // into "the provider default" - that would change which host the key is sent
+  // to, which is exactly what the binding is supposed to prevent.
+  const rawEndpoint = rec["endpoint"];
+  if (rawEndpoint !== undefined && rawEndpoint !== null && typeof rawEndpoint !== "string") {
+    return { problem: "entry " + (index + 1) + " (" + provider + ") has a non-string endpoint" };
+  }
+  const endpoint = typeof rawEndpoint === "string" ? normalizeBindingEndpoint(rawEndpoint) : null;
+  return { binding: { provider, endpoint, apiKey } };
 }
 
 /** Read the credential file. A missing file is simply "no keys"; a broken one reports why. */
@@ -223,7 +242,21 @@ export function readUserCredentials(
   if (!Array.isArray(list)) {
     return { bindings: [], error: path + ": missing the \"bindings\" list" };
   }
-  const bindings = list.map(asBinding).filter((b): b is CredentialBinding => b !== null);
+  // A record that cannot be trusted makes the WHOLE file untrusted: returning
+  // the readable ones would let the next write replace the file with a filtered
+  // list and permanently erase the bad record (and whatever it held). Report it
+  // instead, so the user fixes or removes the file knowingly.
+  const bindings: CredentialBinding[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const parsedEntry = parseBinding(list[i], i);
+    if ("problem" in parsedEntry) {
+      return {
+        bindings: [],
+        error: path + ": " + parsedEntry.problem + "; fix or remove the file, then retry",
+      };
+    }
+    bindings.push(parsedEntry.binding);
+  }
   return { bindings };
 }
 
@@ -286,7 +319,8 @@ export function resolveSearchCredentials(
 /** Outcome of looking one provider up in the credential file. */
 export type CredentialLookup =
   | { status: "found"; apiKey: string }
-  | { status: "endpoint-mismatch"; stored: string | null }
+  /** Every endpoint the provider has a stored key for; empty means "the provider default". */
+  | { status: "endpoint-mismatch"; stored: string[] }
   | { status: "absent" };
 
 /**
@@ -304,8 +338,97 @@ export function lookupModelCredential(
   const forProvider = file.bindings.filter((b) => b.provider === provider.trim().toLowerCase());
   const exact = forProvider.find((b) => b.endpoint === wanted);
   if (exact) return { status: "found", apiKey: exact.apiKey };
-  if (forProvider.length > 0) return { status: "endpoint-mismatch", stored: forProvider[0]!.endpoint };
+  // Report ALL stored endpoints, not just the first: the file sorts them
+  // lexicographically, so naming one would tell the user their key is bound to
+  // an arbitrary host and invite them to "fix" the wrong thing.
+  if (forProvider.length > 0) {
+    return { status: "endpoint-mismatch", stored: forProvider.map((b) => b.endpoint).filter((e): e is string => e !== null) };
+  }
   return { status: "absent" };
+}
+
+// ---------------------------------------------------------------------------
+// Cross-process mutation lock
+// ---------------------------------------------------------------------------
+
+/**
+ * How long to keep trying for the mutation lock before giving up, and how long
+ * before an existing lock is assumed abandoned. Writing a key is a
+ * sub-millisecond read-modify-write, so a lock older than the stale window means
+ * its owner died; waiting forever would hang a command, and stealing silently
+ * would reintroduce the very race this lock prevents.
+ */
+const LOCK_WAIT_MS = 5_000;
+const LOCK_STALE_MS = 10_000;
+
+/**
+ * Take an exclusive lock for a read-modify-write of the credential file.
+ *
+ * Without it, two `ans auth set` processes can each read the same old file, add
+ * their own entry, and replace the whole file - the later writer silently
+ * deleting the other's key while both report success (#301 review P1). Rename
+ * atomicity does not help: it makes each write complete, not the read+write pair
+ * atomic.
+ *
+ * `openSync(..., "wx")` is the atomic step (O_CREAT|O_EXCL): exactly one creator
+ * wins. A lock whose mtime is older than the stale window is treated as
+ * abandoned and removed, which bounds recovery from a killed process.
+ */
+function withCredentialLock<T>(path: string, fn: () => T): T {
+  const lockPath = path + ".lock";
+  // The lock lives next to the file it guards, and on a first-ever write that
+  // directory does not exist yet. Every failure here leaves by the caller's one
+  // door, so the user sees the same "refusing to write the credential file"
+  // sentence whatever step failed.
+  try {
+    mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
+  } catch (e) {
+    throw new Error(
+      "refusing to write the credential file " + path + ": cannot create " + dirname(lockPath) +
+      " (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + "). " +
+      "Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
+    );
+  }
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let fd: number | undefined;
+  for (;;) {
+    try {
+      fd = openSync(lockPath, "wx", 0o600);
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      let stale = false;
+      try {
+        stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS;
+      } catch {
+        // It vanished between the failed create and the stat: retry at once.
+        continue;
+      }
+      if (stale) {
+        try { unlinkSync(lockPath); } catch { /* another waiter won the removal */ }
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          "another ans process is writing the credential file (" + lockPath + "); " +
+          "wait for it to finish, or delete that file if no ans process is running",
+        );
+      }
+      sleepMs(20);
+    }
+  }
+  try {
+    writeSync(fd, String(process.pid));
+    return fn();
+  } finally {
+    try { closeSync(fd); } catch { /* already closed */ }
+    try { unlinkSync(lockPath); } catch { /* already gone */ }
+  }
+}
+
+/** Blocking sleep without a dependency; Node allows Atomics.wait on the main thread. */
+function sleepMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -555,14 +678,19 @@ export function writeUserCredential(
   }
 
   const path = opts.filePath ?? userCredentialsPath(opts.home);
-  const existing = readUserCredentials({ filePath: path });
-  if (existing.error) {
-    throw new Error(existing.error + "; fix or remove that file, then retry - rewriting it would drop the other keys");
-  }
-  const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
-  kept.push({ provider: info.id, endpoint, apiKey });
-  writeProtectedFile(path, serialize(kept), activePlatform());
-  return path;
+  // The lock covers the WHOLE read-modify-write, not just the file replacement:
+  // two writers that both read the old file would otherwise each replace it with
+  // their own view, deleting the other's key (#301 review P1).
+  return withCredentialLock(path, () => {
+    const existing = readUserCredentials({ filePath: path });
+    if (existing.error) {
+      throw new Error(existing.error + "; fix or remove that file, then retry - rewriting it would drop the other keys");
+    }
+    const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
+    kept.push({ provider: info.id, endpoint, apiKey });
+    writeProtectedFile(path, serialize(kept), activePlatform());
+    return path;
+  });
 }
 
 /** Remove one key. Returns false when there was nothing to remove. */
@@ -571,18 +699,22 @@ export function removeUserCredential(
   opts: { home?: string; filePath?: string } = {},
 ): boolean {
   const path = opts.filePath ?? userCredentialsPath(opts.home);
-  const existing = readUserCredentials({ filePath: path });
-  if (existing.error) throw new Error(existing.error + "; fix or remove that file, then retry");
   const endpoint = normalizeBindingEndpoint(input.endpoint);
-  const kept = existing.bindings.filter(
-    (b) => !(b.provider === input.provider && b.endpoint === endpoint),
-  );
-  if (kept.length === existing.bindings.length) return false;
-  if (kept.length === 0) {
-    try { unlinkSync(path); } catch { /* already gone */ }
+  // Same lock as the write: a removal racing a write could otherwise resurrect a
+  // key that was just deleted, or delete one that was just added (#301 review P1).
+  return withCredentialLock(path, () => {
+    const existing = readUserCredentials({ filePath: path });
+    if (existing.error) throw new Error(existing.error + "; fix or remove that file, then retry");
+    const kept = existing.bindings.filter(
+      (b) => !(b.provider === input.provider && b.endpoint === endpoint),
+    );
+    if (kept.length === existing.bindings.length) return false;
+    if (kept.length === 0) {
+      try { unlinkSync(path); } catch { /* already gone */ }
+      return true;
+    }
+    writeProtectedFile(path, serialize(kept), activePlatform());
     return true;
-  }
-  writeProtectedFile(path, serialize(kept), activePlatform());
-  return true;
+  });
 }
 

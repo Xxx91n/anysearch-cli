@@ -62,7 +62,7 @@ export function createDefaultEngine(): CompositionResult {
   return createEngine(process.env.ANS_DOMAIN, {
     dbPath,
     domainsDirs,
-    searchCredentials: (env) => resolveSearchCredentials(env),
+    searchCredentials: resolveSearchCredentials,
   });
 }
 

@@ -251,3 +251,70 @@ test("statusLines distinguishes the provider's own env var from the override", (
   });
   assert.match(lines.join("\n"), /\[SET\]\s+openai\s+env OPENAI_API_KEY/);
 });
+
+test("--endpoint with an empty value is refused, not silently treated as the default", async () => {
+  // Silently falling back would store the key bound somewhere the user did not
+  // ask for, and they would find out only when auth stopped working elsewhere.
+  const { home, cleanup } = tempHome();
+  const saved = process.env.HOME;
+  const savedProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    for (const args of [["set", "openai", "--endpoint="], ["set", "openai", "--endpoint", ""]]) {
+      const { code, out } = await capture(() => runAuth(args), KEY + "\n");
+      assert.equal(code, 2, "args " + JSON.stringify(args) + ": " + out);
+      assert.match(out, /must not be empty/);
+    }
+    assert.equal(readUserCredentials().bindings.length, 0, "nothing was stored");
+  } finally {
+    if (saved === undefined) delete process.env.HOME; else process.env.HOME = saved;
+    if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
+    cleanup();
+  }
+});
+
+test("--endpoint followed by another flag is refused", async () => {
+  const { home, cleanup } = tempHome();
+  const saved = process.env.HOME;
+  const savedProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    const { code, out } = await capture(() => runAuth(["set", "openai", "--endpoint", "--foo"]), KEY + "\n");
+    assert.equal(code, 2, out);
+    assert.match(out, /requires a URL/);
+    assert.equal(readUserCredentials().bindings.length, 0);
+  } finally {
+    if (saved === undefined) delete process.env.HOME; else process.env.HOME = saved;
+    if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
+    cleanup();
+  }
+});
+
+test("the endpoint shown on write and on remove carries no credentials", async () => {
+  const { home, cleanup } = tempHome();
+  const saved = process.env.HOME;
+  const savedProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    const secretEndpoint = "https://user:s3cret@gw.example/v1?api_key=sk-in-url";
+    const setRun = await capture(() => runAuth(["set", "openai", "--endpoint", secretEndpoint]), KEY + "\n");
+    assert.equal(setRun.code, 0, setRun.out);
+    assert.ok(!setRun.out.includes("s3cret"), "the password is not echoed: " + setRun.out);
+    assert.ok(!setRun.out.includes("sk-in-url"), "the query secret is not echoed: " + setRun.out);
+
+    const listed = await capture(() => runAuth(["list"]));
+    assert.ok(!listed.out.includes("s3cret") && !listed.out.includes("sk-in-url"),
+      "list shows the host, not the credentials: " + listed.out);
+
+    const removed = await capture(() => runAuth(["remove", "openai", "--endpoint", secretEndpoint]));
+    assert.equal(removed.code, 0, removed.out);
+    assert.ok(!removed.out.includes("s3cret") && !removed.out.includes("sk-in-url"), removed.out);
+  } finally {
+    if (saved === undefined) delete process.env.HOME; else process.env.HOME = saved;
+    if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
+    cleanup();
+  }
+});

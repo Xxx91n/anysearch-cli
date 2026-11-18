@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -342,4 +342,121 @@ test("an endpoint carrying credentials is shown without them", () => {
   // Not a parseable URL: keep the host part only.
   assert.ok(!displayEndpoint("gw.example/v1?token=sk-x").includes("sk-x"));
   assert.ok(!displayEndpoint("user:pass@gw.example/v1").includes("pass"));
+});
+
+// ---------------------------------------------------------------------------
+// Review findings on PR #333 — each one is a regression test, written so
+// re-breaking the fix fails here rather than in production.
+// ---------------------------------------------------------------------------
+
+test("a record missing apiKey is reported, never silently dropped on the next write", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    // Valid JSON, one good record and one broken: a rewrite that kept only the
+    // good one would permanently erase the other (review P1).
+    writeFileSync(path, JSON.stringify({
+      bindings: [
+        { provider: "openai", apiKey: "good-key" },
+        { provider: "anthropic" },
+      ],
+    }), "utf8");
+
+    const file = readUserCredentials({ home });
+    assert.ok(file.error, "the broken record is reported");
+    assert.match(file.error!, /entry 2 \(anthropic\) has no apiKey/);
+    assert.deepEqual(file.bindings, [], "no partial view is handed out");
+
+    assert.throws(
+      () => writeUserCredential({ provider: "google", apiKey: "g-key" }, { home }),
+      /has no apiKey.*fix or remove the file/,
+    );
+    // The file is untouched: the broken record (and anything beside it) survives.
+    assert.match(readFileSync(path, "utf8"), /anthropic/);
+  } finally { cleanup(); }
+});
+
+test("a non-string endpoint is reported instead of being reshaped to the default", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    // An endpoint of the wrong type must not silently become "the provider
+    // default" - that would change which host the key is sent to.
+    writeFileSync(path, JSON.stringify({ bindings: [{ provider: "openai", apiKey: "k", endpoint: 42 }] }), "utf8");
+    const file = readUserCredentials({ home });
+    assert.ok(file.error);
+    assert.match(file.error!, /non-string endpoint/);
+  } finally { cleanup(); }
+});
+
+test("two concurrent writers both keep their key (the lock covers read-modify-write)", async () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    // Distinct providers, started at the same time. Without the cross-process
+    // lock each reads the empty file, adds its own entry and replaces the whole
+    // file - the loser's key vanishes while both report success (review P1).
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    const script = join(home, "writer.mjs");
+    writeFileSync(script, [
+      'import { writeUserCredential } from ' + JSON.stringify(
+        new URL("../src/credentials.ts", import.meta.url).href,
+      ) + ";",
+      "const [home, provider, key] = process.argv.slice(2);",
+      "writeUserCredential({ provider, apiKey: key }, { home });",
+    ].join("\n"), "utf8");
+
+    const { spawn } = await import("node:child_process");
+    const runs = [
+      ["tavily", "tvly-child-1"],
+      ["exa", "exa-child-2"],
+    ].map(([provider, key]) => new Promise<number>((resolve, reject) => {
+      const child = spawn(process.execPath, ["--import", "tsx", script, home, provider, key], {
+        env: { ...process.env, NODE_OPTIONS: "" },
+        stdio: "ignore",
+      });
+      child.once("error", reject);
+      child.once("close", (code) => resolve(code ?? 1));
+    }));
+    const codes = await Promise.all(runs);
+    assert.deepEqual(codes, [0, 0], "both writers succeeded");
+
+    const file = readUserCredentials({ home });
+    assert.equal(file.error, undefined);
+    const providers = file.bindings.map((b) => b.provider).sort();
+    assert.deepEqual(providers, ["exa", "tavily"], "neither writer's key was lost");
+  } finally { cleanup(); }
+});
+
+test("a stuck lock reports who is holding it instead of writing anyway", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    // A fresh lock (well inside the stale window) belongs to a live process.
+    writeFileSync(path + ".lock", "12345", "utf8");
+    assert.throws(
+      () => writeUserCredential({ provider: "openai", apiKey: "k" }, { home }),
+      /another ans process is writing the credential file/,
+    );
+    assert.equal(existsSync(path), false, "nothing was written while the lock was held");
+  } finally { cleanup(); }
+});
+
+test("an abandoned lock is reclaimed so a killed process cannot wedge the file", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    writeFileSync(path + ".lock", "99999", "utf8");
+    // Age it past the stale window: a lock older than that means its owner died.
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(path + ".lock", old, old);
+    const written = writeUserCredential({ provider: "openai", apiKey: "k" }, { home });
+    assert.equal(written, path);
+    assert.deepEqual(readUserCredentials({ home }).bindings.map((b) => b.provider), ["openai"]);
+    assert.equal(existsSync(path + ".lock"), false, "the lock was released");
+  } finally { cleanup(); }
 });

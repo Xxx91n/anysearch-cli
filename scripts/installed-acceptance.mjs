@@ -117,6 +117,23 @@ const endpoint = createServer(async (req, res) => {
   res.end(sseText("REPLY-TO-" + (latestUserMarker(body) ?? "UNKNOWN-TURN")));
 });
 
+/**
+ * 只描述认证头对不对，绝不把它们打印出来。
+ *
+ * 理由很直接：这条车道自己就在断言“任何输出里都没有密钥值”。可 check() 的第三个
+ * 参数在断言失败时会原样打进控制台，所以这里要是直接 JSON.stringify 认证头，
+ * 一红就把明文密钥写进 CI 日志——正好破掉自己那条规定（#301 审查 P1）。
+ */
+function describeAuthHeaders(calls, expected) {
+  const matching = calls.filter((r) => r.authorization === expected).length;
+  const distinct = new Set(calls.map((r) => {
+    if (!r.authorization) return "(none)";
+    // 保留前缀，抹掉凭据本身，这样报告仍然能看出“带没带 Bearer”。
+    return r.authorization.startsWith("Bearer ") ? "Bearer <redacted>" : "(non-bearer)";
+  }));
+  return matching + "/" + calls.length + " matched; shapes seen: " + [...distinct].join(", ");
+}
+
 /** 取最新一条用户消息里的轮次标记；没有就返回 undefined。 */
 function latestUserMarker(body) {
   let messages = [];
@@ -1106,12 +1123,13 @@ async function main() {
     console.log("\n== G. credentials: enter once, CLI + MCP use it with no env ==");
     {
       const credKey = "sk-stored-acceptance-0123456789";
-      // 这一车道的 HOME 已经在沙箱里，所以凭据文件落在沙箱内，不碰操作者的
-      // 真实 ~/.anysearch-cli。
-      const credPath = join(work, ".anysearch-cli", "credentials.json");
       // baseEnv 把模型端点指到本地假服务，所以录入时也用同一个端点绑定它。
       // 绑定错了正好会被解析器拦下——这也顺带说明绑定是真的在起作用。
+      // 先确认它有值：不然 --endpoint undefined 会让绑定和后面按端点精确匹配的
+      // remove 都变成空断言（删 undefined 什么都删得到，或者因为别的原因失败）。
       const credEndpoint = llmEnv.ANS_LLM_BASE_URL;
+      check(typeof credEndpoint === "string" && credEndpoint.length > 0,
+        "车道环境里 ANS_LLM_BASE_URL 必须已设置，否则绑定断言是空的", String(credEndpoint));
 
       // 录入走 stdin：key 从管道进去，不出现在命令行参数里。
       // GUI 宿主的形状：没有 OPENAI_API_KEY，也没有 ANS_LLM_API_KEY。
@@ -1131,8 +1149,16 @@ async function main() {
       });
       check(entered.code === 0, "装出来的 ans auth set 把 key 存进用户凭据文件", entered.out);
       check(!entered.out.includes(credKey), "录入过程的输出里没有密钥值本身", entered.out);
-      check(existsSync(credPath), "凭据文件落在沙箱的用户配置目录里", credPath);
-      if (existsSync(credPath)) {
+
+      // 路径从产品自己报的地方取，不重打一遍字面量：如果实现换了目录解析
+      // （XDG/APPDATA 任一），硬编码的路径会让 existsSync 变 false，后面所有
+      // 保护断言静默跳过，通道照样绿——那条断言就名存实亡了。
+      const listedEarly = runAns(["auth", "list"], { cwd: prefix, env: baseEnv });
+      const credPath = /Credential file:\s*(\S.*?)\s*$/m.exec(listedEarly.out)?.[1];
+      check(typeof credPath === "string" && credPath.length > 0,
+        "ans auth list 报出了凭据文件的真实路径", listedEarly.out.slice(0, 400));
+      check(!!credPath && existsSync(credPath), "报出来的路径上真的有那个文件", String(credPath));
+      if (credPath && existsSync(credPath)) {
         const raw = readFileSync(credPath, "utf8");
         check(raw.includes(credKey), "文件内容就是录进去的那把 key");
         // 明文性质必须写在文件里，打开的人一眼能看见。
@@ -1168,7 +1194,7 @@ async function main() {
       const credCalls = requestLog.slice(beforeCred).filter((r) => r.role === "chat");
       check(credCalls.length > 0 && credCalls.every((r) => r.authorization === "Bearer " + credKey),
         "上游收到的正是文件里那把 key（看 Authorization 头）",
-        JSON.stringify(credCalls.map((r) => r.authorization)));
+        describeAuthHeaders(credCalls, "Bearer " + credKey));
 
       // 环境显式值优先：同一个文件还在，把环境密钥设成别的值，上游就必须换成它。
       const beforeEnvWin = requestLog.length;
@@ -1179,7 +1205,7 @@ async function main() {
       const envCalls = requestLog.slice(beforeEnvWin).filter((r) => r.role === "chat");
       check(envCalls.length > 0 && envCalls.every((r) => r.authorization === "Bearer sk-env-override-9876543210"),
         "显式环境值压过文件里的 key",
-        JSON.stringify(envCalls.map((r) => r.authorization)));
+        describeAuthHeaders(envCalls, "Bearer sk-env-override-9876543210"));
 
       // GUI 形状的 MCP：只留 provider/model/base_url/api，key 全部清掉。
       const credMcp = mcpClient(mcpBin, {
@@ -1197,7 +1223,7 @@ async function main() {
       const mcpCredCalls = requestLog.slice(beforeMcpCred).filter((r) => r.role === "chat");
       check(mcpCredCalls.length > 0 && mcpCredCalls.every((r) => r.authorization === "Bearer " + credKey),
         "MCP 的上游请求带的是同一把存起来的 key",
-        JSON.stringify(mcpCredCalls.map((r) => r.authorization)));
+        describeAuthHeaders(mcpCredCalls, "Bearer " + credKey));
       await credMcp.kill();
 
       // 列表和 doctor 都只说有没有、从哪来，不说值。
@@ -1233,25 +1259,34 @@ async function main() {
       // （POSIX 用只读目录；Windows 上目录权限语义不同，这条只在 POSIX 查。）
       if (process.platform !== "win32") {
         const tightHome = join(work, "tight-home");
-        mkdirSync(join(tightHome, ".anysearch-cli"), { recursive: true });
-        chmodSync(join(tightHome, ".anysearch-cli"), 0o500);
-        const denied = await new Promise((resolve) => {
-          const child = spawn(process.execPath, [cliEntry, "auth", "set", "openai"], {
-            cwd: prefix,
-            env: { ...baseEnv, HOME: tightHome, USERPROFILE: tightHome },
-            stdio: ["pipe", "pipe", "pipe"],
+        const tightConfig = join(tightHome, ".anysearch-cli");
+        mkdirSync(tightConfig, { recursive: true });
+        chmodSync(tightConfig, 0o500);
+        try {
+          const denied = await new Promise((resolve) => {
+            const child = spawn(process.execPath, [cliEntry, "auth", "set", "openai"], {
+              cwd: prefix,
+              env: { ...baseEnv, HOME: tightHome, USERPROFILE: tightHome },
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            let out = "";
+            child.stdout.on("data", (d) => { out += d.toString(); });
+            child.stderr.on("data", (d) => { out += d.toString(); });
+            child.stdin.end(credKey + "\n");
+            const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out }); }, 30_000);
+            child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
           });
-          let out = "";
-          child.stdout.on("data", (d) => { out += d.toString(); });
-          child.stderr.on("data", (d) => { out += d.toString(); });
-          child.stdin.end(credKey + "\n");
-          const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out }); }, 30_000);
-          child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
-        });
-        chmodSync(join(tightHome, ".anysearch-cli"), 0o700);
-        check(denied.code !== 0, "建不起访问保护时写入明确失败", denied.out);
-        check(!existsSync(join(tightHome, ".anysearch-cli", "credentials.json")),
-          "失败时没有把明文留在盘上");
+          // 不是只看非零退出：随便一个崩溃也是非零。必须看到产品自己那句
+          // “refusing to write the credential file”，才说明是保护建不起来这条路。
+          check(denied.code !== 0 && /refusing to write the credential file/.test(denied.out),
+            "建不起访问保护时写入明确失败，并说明是写入被拒", denied.out.slice(0, 400));
+          check(!existsSync(join(tightConfig, "credentials.json")),
+            "失败时没有把明文留在盘上");
+        } finally {
+          // 恢复权限必须在 finally 里：spawn 抛错时留着 0o500 的目录会让后面的
+          // rmSync(work) 删不掉整个沙箱。
+          chmodSync(tightConfig, 0o700);
+        }
       } else {
         skip("建不起访问保护时不宽松落盘", "Windows 上没有等价的只读目录手法，ACL 校验已在上面的 icacls 断言里覆盖");
       }

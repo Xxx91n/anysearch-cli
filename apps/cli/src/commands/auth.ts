@@ -63,8 +63,15 @@ function takeEndpoint(args: string[]): { endpoint: string | null; rest: string[]
     const name = eq >= 0 ? a.slice(0, eq) : a;
     if (name === "--endpoint") {
       const value = eq >= 0 ? a.slice(eq + 1) : args[++i];
+      // `--endpoint --foo` must not silently swallow the flag as a URL, and an
+      // empty value must not quietly fall back to the default endpoint - either
+      // would store a key bound somewhere the user did not ask for.
       if (value === undefined) throw new Error("--endpoint requires a URL");
-      endpoint = normalizeBindingEndpoint(value);
+      if (value === "" || value === undefined) throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
+      if (value.startsWith("-")) throw new Error("--endpoint requires a URL, got the flag " + value);
+      const normalized = normalizeBindingEndpoint(value);
+      if (normalized === null) throw new Error("--endpoint must not be empty; omit it to use the provider's default endpoint");
+      endpoint = normalized;
       continue;
     }
     rest.push(a);
@@ -162,9 +169,10 @@ export async function runAuth(args: string[]): Promise<number> {
       return 2;
     }
 
-    const target = endpoint ?? (info.kind === "model" ? "the provider's default endpoint" : "the provider's fixed endpoint");
-    process.stderr.write(
-      "Storing the " + provider + " key in " + userCredentialsPath() + " for " + target + ".\n" +
+    const target = endpoint !== null
+      ? displayEndpoint(endpoint)
+      : (info.kind === "model" ? "the provider's default endpoint" : "the provider's fixed endpoint");
+    process.stderr.write("Storing the " + provider + " key in " + userCredentialsPath() + " for " + target + ".\n" +
       "The file is PLAIN TEXT (not encrypted, not a system keychain); it is locked to your account.\n",
     );
     let raw: string;
@@ -216,10 +224,11 @@ export async function runAuth(args: string[]): Promise<number> {
       const removed = removeUserCredential({ provider, endpoint });
       if (!removed) {
         process.stderr.write("Nothing stored for " + provider +
-          (endpoint ? " at " + endpoint : "") + ".\n");
+          (endpoint ? " at " + displayEndpoint(endpoint) : " at the provider default endpoint") + ".\n");
         return 1;
       }
-      console.log("Removed the " + provider + " key" + (endpoint ? " for " + endpoint : "") +
+      console.log("Removed the " + provider + " key" +
+        (endpoint ? " for " + displayEndpoint(endpoint) : " for the provider default endpoint") +
         " from " + userCredentialsPath() + ".");
       return 0;
     } catch (e) {

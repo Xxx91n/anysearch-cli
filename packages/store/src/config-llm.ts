@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import {
   lookupModelCredential,
+  displayEndpoint,
   modelEnvKeysFor,
   normalizeBindingEndpoint,
   providerForEnvKey,
@@ -275,7 +276,16 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     const endpointBoundElsewhere =
       userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);
 
+    // A refused source must not come back through a later fallback: the
+    // env_key was blocked BECAUSE the effective endpoint (or provider) differs
+    // from what the file bound it to, and the provider's own env var is usually
+    // the very same variable. Without this flag the guard would be decorative -
+    // the key would be refused, then re-read one branch later and sent anyway
+    // (#301 review P1).
+    let refusedSecretSources: Set<string> = new Set();
+
     if (user.env_key && providerBoundElsewhere) {
+      refusedSecretSources.add(user.env_key);
       warn(
         "[config] [llm].env_key ignored: it is bound to provider=" + boundProvider +
         (user.provider === undefined ? " (by the variable's own name)" : "") +
@@ -283,8 +293,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         " — refusing to send that secret to a different provider",
       );
     } else if (user.env_key && endpointBoundElsewhere) {
+      refusedSecretSources.add(user.env_key);
       warn(
-        "[config] [llm].env_key ignored: user file binds base_url=" + userEndpoint +
+        "[config] [llm].env_key ignored: user file binds base_url=" + displayEndpoint(userEndpoint) +
         " but " + resolved.sources.baseUrl + " selected a different endpoint" +
         " — refusing to send that secret to a different endpoint",
       );
@@ -308,6 +319,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       // names (google reads GEMINI_API_KEY), so this stays in step with what the
       // client would have done on its own.
       const providerSecret = modelEnvKeysFor(resolved.provider)
+        .filter((name) => !refusedSecretSources.has(name))
         .map((name) => env[name]?.trim())
         .find((value) => !!value);
       if (providerSecret) {
@@ -329,12 +341,17 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
       } else if (lookup.status === "endpoint-mismatch") {
+        // Name every stored endpoint. Reporting one (whichever the file sorted
+        // first) would send the user to fix the wrong binding.
+        const storedList = lookup.stored.length > 0
+          ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
+          : "(the provider default)";
         warn(
-          "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to endpoint " +
-          String(lookup.stored ?? "(the provider default)") + " but the effective endpoint is " +
-          String(normalizeBindingEndpoint(resolved.baseUrl) ?? "(the provider default)") +
+          "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
+          storedList + " but the effective endpoint is " +
+          displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl)) +
           " — refusing to send that secret to a different endpoint; run `ans auth set " +
-          resolved.provider + "` for this endpoint",
+          resolved.provider + "` for this endpoint (see `ans auth list` for what is stored)",
         );
       }
     }

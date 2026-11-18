@@ -38,7 +38,7 @@ export function createPersistentEngine(domain?: string): CompositionResult {
   const result = createEngine(domain, {
     dbPath,
     domainsDirs: domainSearchDirs(),
-    searchCredentials: (env) => resolveSearchCredentials(env),
+    searchCredentials: resolveSearchCredentials,
   });
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();

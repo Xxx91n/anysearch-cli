@@ -49,23 +49,53 @@ export async function readSecret(prompt: string, io: SecretInputIO = {}): Promis
   input.setRawMode(true);
   input.resume();
   let value = "";
+  // A terminal paste arrives wrapped in bracketed-paste markers:
+  //   ESC [ 200 ~ <payload> ESC [ 201 ~
+  // Dropping only the ESC bytes leaves the literal "[200~" glued to the key, and
+  // `cleanSecret` would accept it - the stored key is then silently wrong and
+  // auth fails later with no hint. Track the markers and drop them whole.
+  //
+  // The marker match starts ONLY at an ESC (`marker` non-null). Payload
+  // characters inside a paste must flow straight into `value`; matching them
+  // against the closing marker would swallow ordinary characters.
+  let marker: { wanted: string; seen: string; onMatch: () => void } | null = null;
+  let inPaste = false;
   try {
     for await (const chunk of input) {
       const text = String(chunk);
       for (const ch of text) {
         if (ch === "\u0003") throw new SecretInputCancelled(); // Ctrl+C
+        if (marker) {
+          marker.seen += ch;
+          if (marker.wanted.startsWith(marker.seen)) {
+            if (marker.seen === marker.wanted) {
+              const done = marker;
+              marker = null;
+              done.onMatch();
+            }
+            continue;
+          }
+          // Not this marker after all: it was some other escape sequence (arrow
+          // key, function key). Drop what was collected for it.
+          marker = null;
+          continue;
+        }
+        if (ch === "\u001b") {
+          marker = inPaste
+            ? { wanted: "[201~", seen: "", onMatch: () => { inPaste = false; } }
+            : { wanted: "[200~", seen: "", onMatch: () => { inPaste = true; } };
+          continue;
+        }
         if (ch === "\r" || ch === "\n") {
+          if (inPaste) {
+            // A newline inside a paste must not end the read half-way.
+            continue;
+          }
           output.write("\n");
           return value;
         }
         if (ch === "\u007f" || ch === "\b") {
           value = value.slice(0, -1);
-          continue;
-        }
-        if (ch === "\u001b") {
-          // An escape sequence (arrow key, paste marker). Pastes arrive as a
-          // bracketed sequence with the payload between the markers; keep
-          // printable characters and drop the control bytes.
           continue;
         }
         if (ch >= " ") value += ch;

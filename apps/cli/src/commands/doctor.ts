@@ -2,7 +2,7 @@
 // CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, resolveSearchCredentials } from "@anysearch-cli/store";
+import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveSearchCredentials, userCredentialsPath } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
@@ -114,7 +114,6 @@ export async function runDoctor(): Promise<number> {
   // GUI host without a shell env reads. Show the effective source per provider,
   // never the value, and say so when the file itself is unusable.
   {
-    const { userCredentialsPath, readUserCredentials } = await import("@anysearch-cli/store");
     const resolved = resolveSearchCredentials();
     const path = userCredentialsPath();
     const file = readUserCredentials();

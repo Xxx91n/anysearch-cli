@@ -6,6 +6,7 @@
 // #301: the user credential file accessors are re-exported the same way.
 
 export {
+  displayEndpoint,
   parseLlmFlags,
   parseLlmToml,
   projectConfigPath,

@@ -536,3 +536,33 @@ test("an explicit user-file provider wins over the variable-name inference", () 
   assert.equal(cfg.provider, "google");
   assert.equal(cfg.apiKey, "key-for-google", "the file's explicit provider is the binding");
 });
+
+test("a key refused by the endpoint binding is not re-read by the provider fallback", () => {
+  // Review P1 on PR #333. The user file binds OPENAI_API_KEY to address A; the
+  // env moves the endpoint to B. The endpoint guard refuses the key - and then
+  // the provider's-own-env layer used to find the very same variable and hand it
+  // to B anyway, making the guard decorative.
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://a.example/v1"\napi = "chat"\nenv_key = "OPENAI_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_BASE_URL: "https://b.example/v1", OPENAI_API_KEY: "sk-bound-to-a" },
+  }));
+  assert.equal(cfg.baseUrl, "https://b.example/v1");
+  assert.equal(cfg.apiKey, undefined, "the refused key must not come back from the provider fallback");
+  assert.equal(cfg.sources.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
+  assert.ok(!f.warnings.join("\n").includes("sk-bound-to-a"));
+});
+
+test("a provider-refused key name is not re-read either", () => {
+  const f = fixture({
+    userToml: '[llm]\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "anthropic", ANS_LLM_MODEL: "x", ANTHROPIC_API_KEY: "sk-ant" },
+    flags: { provider: "google" },
+  }));
+  assert.equal(cfg.provider, "google");
+  assert.equal(cfg.apiKey, undefined, "a key refused for the provider mismatch stays refused");
+});

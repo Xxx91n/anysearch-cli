@@ -4,12 +4,13 @@
 // env still overrides the file; secrets stay out of that file.
 // #301: the key itself can now live in the user credential file (`ans auth set`),
 // which a GUI host without a shell env also reads. Resolution order for the key
-// is ANS_LLM_API_KEY > [llm].env_key > the credential file.
+// is ANS_LLM_API_KEY > [llm].env_key > the provider's own env var > the credential file.
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { createModels } from "@earendil-works/pi-ai";
 import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import {
+  displayEndpoint,
   readUserCredentials,
   userCredentialsPath as credentialsPath,
   resolveLlmConfig,
@@ -19,11 +20,10 @@ import {
 } from "../config-llm";
 
 /** Which stored entries exist for this provider, as plain words (never a key). */
-function storedBindings(provider: string): string[] {
-  const file = readUserCredentials();
+function storedBindings(file: ReturnType<typeof readUserCredentials>, provider: string): string[] {
   return file.bindings
     .filter((b) => b.provider === provider)
-    .map((b) => b.endpoint ?? "(provider default endpoint)");
+    .map((b) => displayEndpoint(b.endpoint));
 }
 
 export async function runLlm(args: string[]): Promise<number> {
@@ -42,18 +42,24 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Credentials: " + credentialsPath() + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
+    // One read for the whole listing: `storedBindings` re-read and re-parsed the
+    // file, and this loop called it once per provider.
+    const storedFile = readUserCredentials();
     for (const [name, models] of Object.entries(MODELS)) {
-      const apiKey = API_KEYS[name] || "UNKNOWN";
-      // Both sources count as auth, but each only for the provider it belongs
-      // to: an env_key belongs to the provider the file selected, and a stored
-      // entry is bound to its own provider and endpoint.
-      const stored = storedBindings(name);
-      const set = !!process.env[apiKey] || (name === cfg.provider && !!cfg.apiKey);
-      const label = set ? "AUTH" : stored.length > 0 ? "AUTH (stored)" : "NO KEY";
+      const envVarName = API_KEYS[name] || "UNKNOWN";
+      const stored = storedBindings(storedFile, name);
+      // Three distinct facts, kept distinct: the env var is set for this
+      // provider; this provider's key is the one in effect; or only a stored
+      // binding exists and is not being used.
+      const envSet = !!process.env[envVarName];
+      const effective = name === cfg.provider && !!cfg.apiKey;
+      const label = envSet || effective ? "AUTH" : stored.length > 0 ? "NO KEY (stored, not in effect)" : "NO KEY";
       console.log("  " + name + " [" + label + "] - " + models.join(", "));
-      if (!set && stored.length > 0) {
-        // Say why a stored key did not count: it is bound to another endpoint.
-        console.log("      stored for: " + stored.join(", ") + " — the effective endpoint differs");
+      if (stored.length > 0 && !effective) {
+        // Name the binding without claiming a cause that was never checked: the
+        // entry may be for another provider, another endpoint, or simply not the
+        // selected provider. Saying "the endpoint differs" was a guess.
+        console.log("      stored for: " + stored.join(", "));
       }
     }
     console.log("");
@@ -101,7 +107,8 @@ export async function runLlm(args: string[]): Promise<number> {
       console.log("[OK] Provider " + provider + " factory loaded successfully.");
     } catch (e: any) {
       console.log("[WARN] Provider factory failed: " + (e?.message || String(e)));
-      console.log("Make sure the SDK is installed and API key is set.");
+      console.log("Make sure the SDK is installed.");
+      console.log("If the provider needs a key: ans auth set " + provider + "   (or export " + (API_KEYS[provider] || "ITS_API_KEY") + ")");
     }
     return 0;
   }
@@ -110,18 +117,22 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("ans llm check - Auth status");
     console.log("---");
     const cfg = resolveLlmConfig();
+    // One read for the whole loop (the per-provider helper re-read the file).
+    const storedFile = readUserCredentials();
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
-      const apiKey = API_KEYS[name] || "UNKNOWN";
-      const keySet = !!process.env[apiKey];
-      const fromStore = storedBindings(name);
-      // The effective key for the selected provider can come from env, an
-      // env_key indirection, or the stored file; other providers count only
-      // their own env var and their own stored entries.
+      const envVarName = API_KEYS[name] || "UNKNOWN";
+      const ownEnvSet = !!process.env[envVarName];
+      const fromStore = storedFile.bindings.some((b) => b.provider === name);
+      // Where the key in effect came from, spelled out rather than collapsed into
+      // "resolved": the resolver's source label IS the answer, and the env case
+      // covers two different variables.
       const effective = name === cfg.provider && !!cfg.apiKey;
-      const where = keySet ? "KEY SET (" + apiKey + ")"
-        : effective ? "KEY SET (" + (cfg.sources.apiKey === "credentials" ? "stored file" :
-          cfg.sources.apiKey === "user" ? "env_key" : "resolved") + ")"
-          : fromStore.length > 0 ? "KEY SET (stored file)" : "NO KEY";
+      const resolvedFrom = cfg.sources.apiKey === "credentials" ? "stored file"
+        : cfg.sources.apiKey === "user" ? "env via [llm].env_key"
+          : cfg.sources.apiKey === "env" ? "env" : "resolved";
+      const where = ownEnvSet ? "KEY SET (" + envVarName + ")"
+        : effective ? "KEY SET (" + resolvedFrom + ")"
+          : fromStore ? "KEY SET (stored file, not in effect)" : "NO KEY";
       try {
         await factoryFn();
         console.log("  " + name + ": [" + where + "]");

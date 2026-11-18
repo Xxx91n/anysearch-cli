@@ -132,7 +132,9 @@ export interface CompositionResult {
   ledger?: BudgetLedgerPort;
   // #301: which key each search arm was built with (env vs user credential
   // file), so a degraded arm can say "no key" instead of only "construction
-  // failed". Never carries a secret value.
+  // failed". Never carries a secret value. UNDEFINED when no credential
+  // resolution was configured at all, which is a different fact from "resolution
+  // ran and no arm got a key" (that one is an empty object).
   credentialSources?: { tavily?: string; exa?: string; anysearch?: string };
 }
 
@@ -193,7 +195,7 @@ export function createEngine(
      * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
-    /** env for the search-credential resolution and the db path; defaults to process.env. */
+    /** env handed to `searchCredentials`; defaults to process.env. Nothing else in createEngine reads it. */
     env?: NodeJS.ProcessEnv;
   },
 ): CompositionResult {
@@ -210,18 +212,22 @@ export function createEngine(
   // credential file goes straight to stderr (MCP keeps stdout protocol-pure)
   // and never carries a key value.
   let creds: CredentialSource;
+  // undefined = nobody asked for credential resolution; {} = resolution ran and
+  // no arm came out with a key. Consumers that report why an arm degraded need
+  // to tell those apart.
+  let credentialSources: CompositionResult["credentialSources"];
   if (opts?.searchCredentials) {
     creds = opts.searchCredentials(env);
     for (const warning of creds?.warnings ?? []) {
       writeProviderDiagnostic("[anysearch] " + warning.replace(/^\[credentials\]\s*/, "") + "\n");
     }
+    credentialSources = {};
+    if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
+    if (creds?.exa) credentialSources.exa = creds.exa.source;
+    if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
   } else {
     creds = undefined;
   }
-  const credentialSources: NonNullable<CompositionResult["credentialSources"]> = {};
-  if (creds?.tavily) credentialSources.tavily = creds.tavily.source;
-  if (creds?.exa) credentialSources.exa = creds.exa.source;
-  if (creds?.anysearch) credentialSources.anysearch = creds.anysearch.source;
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
   // request-time domain URL policy resolver — wired only when
