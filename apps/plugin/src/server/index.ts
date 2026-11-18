@@ -69,7 +69,7 @@ const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db")
 const postWork = createPostWorkTracker(openPostWorkRegistry(OBS_DB));
 postWork.start();
 
-// OBS_DB permissions are tightened at startup by openPostWorkRegistry below,
+// OBS_DB permissions are tightened at startup by openPostWorkRegistry above,
 // and again lazily before the first /policy audit write (best-effort, once).
 let obsDbEnsured = false;
 
@@ -222,11 +222,10 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
  * the HTTP answer waits for it:
  * - `/index` already wrote synchronously before answering, so waiting keeps
  *   the old contract;
- * - `/policy` used to answer without waiting, and the hook that reads it has a
- *   3-second budget while a contended audit write can take longer. Making the
- *   answer wait would turn a slow audit into a stale policy on the hook side,
- *   so there the row stays open behind the answer and the shutdown drain is
- *   what stops it from being dropped.
+ * - `/policy` must NOT wait: the hook that reads it has a 3-second budget while
+ *   a contended audit write can take longer, so waiting would turn a slow audit
+ *   into "policy unreachable" on the hook side. `runPostWorkLater` is the
+ *   deferral for that case.
  *
  * `isFailure` lets a work function report a failure by returning it (the audit
  * helper stays fail-open; the per-entry index loop counts rejected rows) —
@@ -245,16 +244,31 @@ function runPostWork<T>(
   }, work);
 }
 
-/** Run post-work behind an answer that must not wait for it; faults are logged, never swallowed. */
-function runPostWorkInBackground<T>(
+/**
+ * Start post-work only AFTER this turn returns to the event loop, so the HTTP
+ * answer goes out first (#307 review).
+ *
+ * Why the extra hop is required: `postWork.run` begins with a synchronous
+ * SQLite INSERT and `emitConfigChangeAudit` constructs its store synchronously.
+ * Merely not awaiting the promise still runs all of that inside the handler,
+ * before the response is written — the "runs behind the answer" claim would be
+ * false and the hook's 3-second policy budget would pay for it. Deferring to a
+ * macrotask puts the whole unit after `sendJson`.
+ *
+ * `drain()` still sees the unit: the registration happens inside the deferred
+ * body, and the shutdown wait is what keeps a stop signal from dropping it.
+ */
+function runPostWorkLater<T>(
   kind: string,
   sessionId: string,
   work: () => T | Promise<T>,
   opts: { isFailure?: (result: T) => boolean } = {},
 ): void {
-  void runPostWork(kind, sessionId, work, opts).catch((e: unknown) => {
-    // The task row already records the failure; this line is for the operator.
-    try { process.stderr.write("[anysearch] post-work " + kind + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n"); } catch { /* dead stderr */ }
+  setImmediate(() => {
+    void runPostWork(kind, sessionId, work, opts).catch((e: unknown) => {
+      // The task row already records the failure; this line is for the operator.
+      try { process.stderr.write("[anysearch] post-work " + kind + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n"); } catch { /* dead stderr */ }
+    });
   });
 }
 
@@ -308,19 +322,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // upgrade could not see them at all. They now run under a follow-up task
       // whose end says whether the write really happened.
       //
-      // The answer does NOT wait for them: the hook that reads this policy has
-      // a 3-second budget, while an audit write opens its own connection and
-      // can wait on a contended store. Making the answer wait would turn a
-      // slow audit into "policy unreachable" on the hook side — a behaviour
-      // change to the URL gate, which this ticket has no business making. The
-      // row stays open behind the answer, and the shutdown drain is what stops
-      // it being dropped.
+      // The answer does NOT wait: the hook that reads this policy has a
+      // 3-second budget, while an audit write opens its own connection and can
+      // wait on a contended store. `runPostWorkLater` puts the WHOLE unit —
+      // the row insert included — after this turn returns, so none of it runs
+      // before the response is written.
       const incoming = parseAndValidateHeaders(req);
       if (policy.envHostsIgnored) {
         process.stderr.write("[anysearch] WARN: ANS_URL_ALLOWLIST set but ANS_ALLOW_ENV_OVERRIDE not enabled; env hosts ignored\n");
         if (!envIgnoredAudited) {
           envIgnoredAudited = true;
-          runPostWorkInBackground("server.policy_audit", incoming.sessionId, () =>
+          runPostWorkLater("server.policy_audit", incoming.sessionId, () =>
             emitConfigChangeAudit(OBS_DB, {
               actor: "server", source: "env", path: tomlPath,
               change: { before: null, after: "config:env_override_ignored" },
@@ -345,7 +357,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // headers so the audit row links back to the same logical request the
         // caller initiated. traceparentValid=false means the client sent garbage;
         // parseAndValidateHeaders already substituted a fresh random traceId.
-        runPostWorkInBackground("server.policy_audit", incoming.sessionId, () =>
+        runPostWorkLater("server.policy_audit", incoming.sessionId, () =>
           emitConfigChangeAudit(OBS_DB, {
             actor: "server", source: "toml", path: tomlPath,
             change: { before, after: policy.policyVersion },
@@ -501,48 +513,60 @@ function bind(port: number, allowFallback: boolean): void {
 }
 bind(REQUESTED_PORT, true);
 
-// Graceful shutdown.
-// #307: this service now owns post-work, so a stop signal must not cut a write
-// in half. "In flight" has two parts and both must settle before the exit:
-// - requests still being handled (a SIGTERM can land while a handler is inside
-//   `await readBody(req)`, before any post-work task exists — draining only the
-//   registered units would miss it and kill that request's work);
-// - post-work units already registered (the rows already written).
-// Only when BOTH settle cleanly are the stores closed. On timeout the process
-// exits WITHOUT closing them: the work still holds the handles, and closing a
-// database under a live write corrupts the file. The open task row is the
-// honest signal an upgrade reads (#309) — "this service did not finish its
-// tail" — and the OS reclaims the handles when the process ends.
-const SHUTDOWN_DRAIN_MS = Number(process.env.ANS_SHUTDOWN_DRAIN_MS || 10000);
+// Graceful shutdown: a stop signal must finish what is already running.
+//
+// Two things count as in flight — requests being handled (a handler can sit in
+// `await readBody` before any task exists) and registered post-work units.
+// Only when both settle does the process close its stores. On timeout it exits
+// WITHOUT closing them: the work still holds the handles, and closing a
+// database under a live write corrupts the file. The open row is then the
+// blocker an upgrade reads.
+const parseDrainMs = (raw: string | undefined): number => {
+  const fallback = 10000;
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  // A bad value must not silently turn every SIGTERM into "timeout, exit 1,
+  // stores left open" (NaN/-1 both make setTimeout fire immediately).
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    try {
+      process.stderr.write("[anysearch] ANS_SHUTDOWN_DRAIN_MS=" + raw + " is not a positive number; using " + fallback + "ms\n");
+    } catch { /* dead stderr */ }
+    return fallback;
+  }
+  return parsed;
+};
+const SHUTDOWN_DRAIN_MS = parseDrainMs(process.env.ANS_SHUTDOWN_DRAIN_MS);
 let shuttingDown = false;
+let requestsClosed = false;
 const reportIncomplete = (signal: string): void => {
+  // Say WHICH part is still running: a stuck request and a running post-work
+  // unit send the operator to different places, and reporting "0 registered
+  // units still running" would misdirect the search.
+  const detail = postWork.pending() > 0
+    ? postWork.pending() + " post-work unit(s) still running"
+    : "requests still in flight (no post-work unit is running)";
   process.stderr.write(
-    "[anysearch] " + signal + ": post-work still running after " + SHUTDOWN_DRAIN_MS +
-    "ms (" + postWork.pending() + " registered unit(s)) — exiting without closing stores; " +
-    "open task rows stay as blockers an upgrade reports\n",
+    "[anysearch] " + signal + ": " + detail + " after " + SHUTDOWN_DRAIN_MS +
+    "ms — exiting without closing stores; open task rows stay as blockers an upgrade reports\n",
   );
+  // Drop this process's published address too: leaving server.json pointing at a
+  // pid that is gone is self-healing (readers probe the pid), but the success
+  // path clears it, and a failed stop should not read differently in the file.
+  try { clearServerRegistry(); } catch { /* best-effort */ }
   // No store.close()/postWork.stop() here: the live work still owns the handles.
   process.exit(1);
 };
 const shutdown = (signal: string): void => {
   if (shuttingDown) return; // a second signal must not restart the teardown
   shuttingDown = true;
-  // The callback fires when every open connection has ended, i.e. every
-  // handler that was running has returned.
-  const requestsEnded = new Promise<void>((resolve) => server.close(() => resolve()));
-  // One deadline for both conditions: a request that never returns (a client
-  // holding its socket) must not hang the exit past the bounded wait.
-  const deadline = new Promise<"timeout">((resolve) => {
-    // Ref'd on purpose (same reason as post-work drain): this timer is the only
-    // answer on the timeout path, and an unref'd timer lets the loop run dry
-    // while the decision is still pending.
-    const timer = setTimeout(() => resolve("timeout"), SHUTDOWN_DRAIN_MS);
-    void timer;
-  });
-  const settled = Promise.all([requestsEnded, postWork.drain(SHUTDOWN_DRAIN_MS)])
-    .then(([, drained]) => (drained ? "drained" as const : "timeout" as const));
-  void Promise.race([settled, deadline]).then((outcome) => {
-    if (outcome !== "drained") {
+  // Both conditions share one deadline: a client holding its socket must not
+  // hang the exit past the bounded wait.
+  let drainedUnits = false;
+  const requestsEnded = new Promise<void>((resolve) => server.close(() => { requestsClosed = true; resolve(); }));
+  const unitsEnded = postWork.drain(SHUTDOWN_DRAIN_MS).then((ok) => { drainedUnits = ok; });
+  const deadline = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS));
+  void Promise.race([Promise.all([requestsEnded, unitsEnded]), deadline]).then(() => {
+    if (!drainedUnits || !requestsClosed) {
       reportIncomplete(signal);
       return;
     }

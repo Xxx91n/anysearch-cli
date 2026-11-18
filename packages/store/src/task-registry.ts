@@ -195,14 +195,27 @@ export class TaskRegistry {
   }): RegisteredTask {
     const taskId = req.entry + "-" + randomUUID();
     const origin: TaskOrigin = req.origin ?? "independent";
-    const parentTaskId = origin === "follow-up" && req.parentTaskId && this.taskById(req.parentTaskId)
-      ? req.parentTaskId
-      : null;
-    const parentLink: RegisteredTask["parentLink"] = parentTaskId
-      ? "linked"
-      : origin === "follow-up" && req.parentTaskId
-        ? "unknown"
-        : "none";
+    // A parent id on INDEPENDENT work is a caller bug: nothing links a root task
+    // to another root. Say so instead of dropping it silently — the caller then
+    // sees a thrown error, not a row that quietly lost its attribution.
+    if (origin !== "follow-up" && req.parentTaskId) {
+      throw new Error(
+        "registerTask: parentTaskId is only meaningful for follow-up work (kind=" + req.kind +
+        ", origin=" + origin + "); pass origin: \"follow-up\" or omit the parent",
+      );
+    }
+    // The parent id comes from outside this process, so it is verified before it
+    // is written: a row that does not exist here records NO link.
+    let parentTaskId: string | null = null;
+    let parentLink: RegisteredTask["parentLink"] = "none";
+    if (req.parentTaskId) {
+      if (this.taskById(req.parentTaskId)) {
+        parentTaskId = req.parentTaskId;
+        parentLink = "linked";
+      } else {
+        parentLink = "unknown";
+      }
+    }
     this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host, origin, parentTaskId);
     if (req.sessionId) this.stmts.attachSession.run(req.sessionId, taskId);
     let finished = false;

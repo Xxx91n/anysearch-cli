@@ -1,19 +1,24 @@
 // Shared "index this tool output" call for every host adapter.
 //
-// Each host wraps hooks differently, but the IPC body is the same: the
-// resolved project root, the tool name, the distilled entries, and the host
-// session id. Keeping it here means a project-less hook behaves the same on
-// every host, and there is one place to keep the request shape honest.
-//
-// #307: an optional parent task travels with the body, so a host that already
-// holds a task id (dsh's own tool call) can say "this index write is the tail
-// of THAT task". The service verifies the id and records "unknown" instead of
-// a dangling link when the row is not in its database — the field is a
-// best-effort attribution, never a promise.
+// One IPC body for every host: project root, tool name, distilled entries,
+// session id, and (dsh) the task this write belongs to. A project-less hook
+// behaves the same everywhere because the shape lives here.
 import { callServer, type HookDecision } from "./core.js";
 import { resolveServerEndpoint } from "../server/token.js";
 
 type IndexEntries = NonNullable<HookDecision["indexEntries"]>;
+
+/**
+ * How long an index write may hold up its caller.
+ *
+ * The 5-second IPC default is a budget for the hook itself, not for a write
+ * that rides inside a host's tool call. #307 made this write awaited (it used
+ * to be fire-and-forget), so the ceiling became visible as a tail on every
+ * `ans_*` call; 2 seconds is enough for the INSERT + rows + UPDATE the service
+ * does, and a slower write still lands server-side (fail-open means the caller
+ * stops waiting, not that the write is abandoned).
+ */
+const INDEX_WRITE_TIMEOUT_MS = 2000;
 
 export async function indexToProject(
   projectRoot: string | null,
@@ -29,5 +34,5 @@ export async function indexToProject(
     toolName,
     entries,
     ...(parentTaskId ? { parentTaskId } : {}),
-  }, { sessionId }).catch(() => null);
+  }, { sessionId, timeoutMs: INDEX_WRITE_TIMEOUT_MS }).catch(() => null);
 }

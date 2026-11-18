@@ -181,6 +181,26 @@ test("post-work tracker: work that reports failure by returning ends exit 1 (#30
   }
 });
 
+test("post-work tracker: a parent id on independent work is a caller bug, not a silent drop", async () => {
+  // #307 review: the earlier shape dropped parentTaskId when origin was left at
+  // its default, so a caller that meant "follow-up" got "none" with no signal.
+  const dir = mkdtempSync(join(tmpdir(), "ans-postwork-origin-"));
+  const dbPath = join(dir, "anysearch.db");
+  const registry = openTaskRegistry(dbPath);
+  try {
+    const root = registry.registerTask({ kind: "cli.chat", role: "business", entry: "cli" });
+    assert.throws(
+      () => registry.registerTask({ kind: "server.project_index", role: "business", entry: "server", parentTaskId: root.taskId }),
+      /only meaningful for follow-up work/,
+      "an independent task must not accept a parent id quietly",
+    );
+    root.finish({ exitCode: 0 });
+  } finally {
+    registry.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("post-work tracker: drain waits for a running unit, and says so when it cannot", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-postwork-drain-"));
   const dbPath = join(dir, "anysearch.db");
@@ -217,7 +237,7 @@ test("post-work tracker: drain waits for a running unit, and says so when it can
   }
 });
 
-test("real service: /index and /policy leave follow-up rows before answering", async () => {
+test("real service: /index settles before the answer, /policy's audit behind it", async () => {
   const root = project("live");
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-home-"));
   const durableDb = join(home, "anysearch.db");
@@ -325,11 +345,24 @@ test("real service: /index and /policy leave follow-up rows before answering", a
     });
     assert.equal(changed.status, 200);
 
+    // #307 review: the audit must START after the answer, not before it.
+    // Reading immediately after the response is the sharpest available check:
+    // if the whole unit (the row INSERT included) had run inside the handler,
+    // the row would already exist here.
+    const rightAfter = new Database(durableDb, { readonly: true });
+    try {
+      const ready = rightAfter.prepare(
+        "SELECT COUNT(*) AS n FROM task_records WHERE kind = 'server.policy_audit' AND ended_at IS NOT NULL",
+      ).get() as { n: number };
+      assert.equal(ready.n, 0,
+        "the audit row is not written before the policy answer (it runs behind it)");
+    } finally {
+      rightAfter.close();
+    }
+
     const auditDb = new Database(durableDb, { readonly: true });
     try {
-      // The audit runs BEHIND the answer (#307 review): waiting for it would
-      // spend the hook's 3-second policy budget on a store write. So poll for
-      // the row to settle rather than reading it the instant the response lands.
+      // It settles shortly after; poll rather than racing the deferral.
       const deadline = Date.now() + 10000;
       let auditRows: Array<{ origin: string; parent: string | null; ended: string | null; code: number }> = [];
       while (Date.now() < deadline) {

@@ -1,33 +1,15 @@
-// #307: the hook service's own post-work, run under the same task lifecycle as
-// every other entry point.
+// 钩子服务自己的后置工作（#307）。
 //
-// A hook process lives for one tool event and exits; the work it asks for (a
-// project-index write, the policy audit that rides a /policy read) runs HERE,
-// in the long-lived service. Before #307 those writes had no task record at
-// all, so an upgrade could not tell "the hook service is still writing" from
-// "nothing is running" — and the policy audit was fire-and-forget, so the
-// response could return before its row landed.
+// 钩子进程一次工具事件就退出，它要办的活（写项目索引、读策略时补审计）在
+// 这个长驻服务里办。以前这两件事没有任务记录，升级看不出服务里还有活在跑。
 //
-// Shape of the fix:
-// - every post-work unit registers a task row (role=business, origin=follow-up)
-//   in the shared durable DB, and its END is written only after the work
-//   finished (or failed). Whether the HTTP answer waits for that end is the
-//   caller's choice: `/index` waits, the `/policy` audit runs behind the
-//   answer (the hook's policy budget must not be spent on a store write).
-// - the row is a follow-up, not a new independent request: a reader can tell
-//   "this exists because another call finished" from "a caller asked for this".
-// - the parent link is written only when a real parent row is named; the hook
-//   service cannot see another process's task id today, so a follow-up usually
-//   records no link rather than an invented one (the registry verifies the id
-//   and degrades to "unknown" when the row does not exist).
-// - a follow-up registration never waits for the parent to end and is allowed
-//   while it is still open: late work belongs to the task that caused it, and
-//   #309's admission decides about NEW independent tasks, not about the tail of
-//   an old one.
+// 做了三件事：
+// - 每个单元登记一条 origin=follow-up 的任务行，干完或失败才写结束（失败记 1）；
+// - /index 等这条行收尾再回话，/policy 的审计等回话出去之后才开工；
+// - registry 打不开就照常干活，只在 stderr 说一句，服务不停。
 //
-// Failure behavior: a broken registry must not break the service. Registration
-// and the end write are fail-open (a stderr line names what degraded); the work
-// itself runs either way. This mirrors the CLI (#302) and MCP (#303) wiring.
+// 后置工作不是新请求：它因为别的请求结束才存在，可以等父任务结束之后再开始。
+// 父任务号只记真有的那行，查不到就记「不知道」，不编。
 
 import { ensureOwnerOnlyDb, openTaskRegistry, type RegisteredProcess, type RegisteredTask, type TaskRegistry } from "@anysearch-cli/store";
 
