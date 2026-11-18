@@ -24,6 +24,7 @@ import {
   verifyFileProtection,
   writeUserCredential,
 } from "../src/credentials";
+import { resolveLlmConfig } from "../src/config-llm";
 
 function tempRoot(): { home: string; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), "ans-cred-"));
@@ -143,6 +144,32 @@ test("a malformed file is never rewritten (that would drop the other keys)", () 
     // Resolution reports the fault instead of pretending there are no keys.
     const resolved = resolveSearchCredentials({}, { home });
     assert.ok(resolved.warnings.some((w) => w.includes("not valid JSON")));
+  } finally { cleanup(); }
+});
+
+test("the parse error never quotes the file's contents", () => {
+  // SECURITY (spec S2: 秘密不出现在...错误详情). JSON.parse's own message
+  // quotes ~10 characters around the error, and in this file those characters
+  // are usually part of a key. A user hand-editing the file would otherwise get
+  // their key echoed back by `ans auth list`, doctor, or the resolver's warning.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    // A realistic hand-edit accident: a missing quote right after the key.
+    writeFileSync(path, '{ "bindings": [ { "provider": "openai", "apiKey": "sk-live-SECRET-DO-NOT-PRINT" } ]', "utf8");
+
+    const file = readUserCredentials({ home });
+    assert.ok(file.error, "a broken file reports an error");
+    assert.ok(!file.error!.includes("SECRET"), "the error must not quote the key: " + file.error);
+    assert.ok(!file.error!.includes("sk-live"), "not even the key prefix: " + file.error);
+    assert.match(file.error!, /not valid JSON/);
+
+    // And the same holds for the resolver's warning, which is what the CLI and
+    // MCP entries print.
+    const warnings: string[] = [];
+    resolveLlmConfig({ home, cwd: home, env: {}, warn: (m) => warnings.push(m) });
+    assert.ok(!warnings.join("\n").includes("SECRET"), "the resolver warning must not quote the key");
   } finally { cleanup(); }
 });
 

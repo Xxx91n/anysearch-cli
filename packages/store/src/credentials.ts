@@ -146,13 +146,24 @@ export function readUserCredentials(
   try {
     raw = readFileSync(path, "utf8");
   } catch (e) {
-    return { bindings: [], error: path + ": could not read (" + (e as Error).message + ")" };
+    // Same rule as the parse error: the file's contents never reach the output.
+    return { bindings: [], error: path + ": could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")" };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    return { bindings: [], error: path + ": not valid JSON (" + (e as Error).message + ")" };
+    // SECURITY: a JSON.parse message quotes the text around the error, which in
+    // this file is usually a key. Report only the position - the reader
+    // (`ans auth list`, doctor, the resolver's warning) goes to stderr, and spec
+    // S2 forbids a secret in error details. Node's message carries "(line N
+    // column M)" for a syntax error; keep that and drop the rest.
+    const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
+    return {
+      bindings: [],
+      error: path + ": not valid JSON" + (position ? " (" + position + ")" : "") +
+        "; fix or remove the file, then retry",
+    };
   }
   const list = (parsed as Record<string, unknown> | null)?.["bindings"];
   if (!Array.isArray(list)) {

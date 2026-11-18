@@ -239,13 +239,20 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   // Binding rule (spec S2, "using file credentials must check the matching
   // provider/endpoint"). A secret that a FILE supplies is used only when the
   // effective provider AND endpoint still match what that file declared for it:
-  //   - env_key: the user file's provider (if it names one) and base_url (if it
-  //     sets one) are the binding. A provider chosen by ANY other layer (project
-  //     file, env, CLI flag) that differs blocks the key instead of sending it
-  //     to another provider's endpoint. #120 stopped at the project layer; #301
-  //     extended it to env/CLI because the same key would otherwise reach the
-  //     new provider just as easily. A file that names no provider establishes
-  //     no binding, so there is nothing to violate (same as #120).
+  //   - env_key: the binding is the provider the key was entered for. Two cases:
+  //     * the user file names a provider — that is the binding, and any other
+  //       layer (project file, env, CLI flag) selecting a different one blocks
+  //       the key. #120 did this for the project layer only; #301 extended it to
+  //       env/CLI, because the same key would otherwise reach the new provider
+  //       just as easily.
+  //     * the user file names NO provider but the env_key is a provider's
+  //       canonical variable name (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...) — the
+  //       NAME is the binding. Changing the provider from the env or a flag then
+  //       blocks it too. Leaving this open would keep a documented misroute: the
+  //       user file says "use ANTHROPIC_API_KEY" and an env change would send
+  //       that anthropic secret to google. (This is the boundary #301 was asked
+  //       to decide; the old behaviour is kept only for names that belong to no
+  //       known provider, e.g. MY_CUSTOM_KEY.)
   //   - credentials.json: the entry stores its own provider + endpoint, and the
   //     lookup matches both exactly.
   //   - the provider's own env var is bound by its name alone: OPENAI_API_KEY
@@ -260,14 +267,19 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     // An effective provider/endpoint that differs from what the user file bound
     // the key to means the key belongs somewhere else. An absent effective
     // provider has no target at all, so there is nothing to misroute.
+    const providerOwnedByEnvKey = user.env_key
+      ? Object.entries(modelProviderEnvKeys()).find(([, envName]) => envName === user.env_key)?.[0]
+      : undefined;
+    const boundProvider = user.provider ?? providerOwnedByEnvKey;
     const providerBoundElsewhere =
-      user.provider !== undefined && resolved.provider !== undefined && user.provider !== resolved.provider;
+      boundProvider !== undefined && resolved.provider !== undefined && boundProvider !== resolved.provider;
     const endpointBoundElsewhere =
       userEndpoint !== null && userEndpoint !== normalizeBindingEndpoint(resolved.baseUrl);
 
     if (user.env_key && providerBoundElsewhere) {
       warn(
-        "[config] [llm].env_key ignored: user file binds provider=" + user.provider +
+        "[config] [llm].env_key ignored: it is bound to provider=" + boundProvider +
+        (user.provider === undefined ? " (by the variable's own name)" : "") +
         " but " + resolved.sources.provider + " selected provider=" + resolved.provider +
         " — refusing to send that secret to a different provider",
       );

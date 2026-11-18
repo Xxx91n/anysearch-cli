@@ -198,14 +198,47 @@ test("project-selected provider differing from user provider blocks the env_key 
   assert.ok(f.warnings.some(w => w.includes("refusing to send that secret")));
 });
 
-test("project provider with absent user provider keeps env_key verbatim", () => {
+test("project provider with a non-provider env_key name keeps env_key verbatim", () => {
+  // #301 migrated this expectation. The old rule was "no user.provider means no
+  // binding, so accept the key regardless of who picked the provider". That left
+  // a documented misroute: the file says "use MY_ANYTHING_KEY" and an env or flag
+  // change of provider would send it to a different vendor. The new rule binds by
+  // the VARIABLE'S NAME when it is a known provider's canonical variable, and
+  // keeps the old verbatim behaviour only for names that belong to no provider —
+  // which is what MY_ANYTHING_KEY is. So this case still passes, now for a stated
+  // reason rather than by omission.
   const f = fixture({
     userToml: '[llm]\nmodel = "m"\nenv_key = "MY_ANYTHING_KEY"\n',
     projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n',
   });
   const cfg = resolveLlmConfig(f.opts({ env: { MY_ANYTHING_KEY: "sk-ok" } }));
-  assert.equal(cfg.apiKey, "sk-ok"); // no user.provider → no binding to violate
+  assert.equal(cfg.apiKey, "sk-ok");
   assert.equal(cfg.envKey, "MY_ANYTHING_KEY");
+});
+
+test("a provider-named env_key with no user provider is bound by its name (#301)", () => {
+  // The same shape, but the variable name belongs to anthropic. Selecting another
+  // provider must now block it — this is the boundary #301 was asked to decide.
+  const f = fixture({
+    userToml: '[llm]\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+    projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({ env: { ANTHROPIC_API_KEY: "sk-ant-real" } }));
+  assert.equal(cfg.apiKey, undefined);
+  assert.equal(cfg.envKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("bound to provider=anthropic")));
+  assert.ok(!f.warnings.join("\n").includes("sk-ant-real"), "the warning repeats no key");
+});
+
+test("a provider-named env_key still works when the effective provider matches it", () => {
+  const f = fixture({
+    userToml: '[llm]\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-ok" },
+  }));
+  assert.equal(cfg.apiKey, "sk-ant-ok");
+  assert.equal(cfg.envKey, "ANTHROPIC_API_KEY");
 });
 
 test("writeUserLlmConfig drops env_key when the provider changes (cross-provider secret)", () => {

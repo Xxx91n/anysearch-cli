@@ -1217,9 +1217,16 @@ async function main() {
         "doctor 报出凭据文件的位置并说明是明文", credDoctor.out.slice(0, 600));
       check(!credDoctor.out.includes(credKey), "doctor 不打印密钥值");
 
-      // 移除：删掉这一条，文件随之消失，CLI 也不再能用它。
-      const removed = runAns(["auth", "remove", "openai"], { cwd: prefix, env: baseEnv });
-      check(removed.code === 0, "ans auth remove 删掉录入的那把 key", removed.out);
+      // 移除：存的时候绑了端点，删也要带同一个端点——(provider, endpoint) 是
+      // 精确匹配，不带端点指的是"provider 默认端点"那一条，不会误删别的。
+      // 这里先把两种情况都验一遍：不带端点删不掉（说明匹配是精确的），带上
+      // 端点才真的删掉、文件随之消失。
+      const wrongEndpoint = runAns(["auth", "remove", "openai"], { cwd: prefix, env: baseEnv });
+      check(wrongEndpoint.code === 1 && existsSync(credPath),
+        "移除时不带端点删不到绑了端点的那一条，文件仍在", wrongEndpoint.out);
+
+      const removed = runAns(["auth", "remove", "openai", "--endpoint", credEndpoint], { cwd: prefix, env: baseEnv });
+      check(removed.code === 0, "ans auth remove 带上端点后删掉录入的那把 key", removed.out);
       check(!existsSync(credPath), "最后一条删掉后文件本身也删掉", credPath);
 
       // 建不起访问保护时不许宽松落盘：把目标目录换成一个不可写的位置。

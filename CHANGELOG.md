@@ -14,8 +14,8 @@
 ### Changed
 
 - **密钥来源顺序**：`ANS_LLM_API_KEY` > 用户配置里的 `env_key` 间接引用 > 该 provider 自己的环境变量（`OPENAI_API_KEY` 等）> 用户凭据文件。前两者语义不变；`env_key` 指向的变量没设时，现在会继续往下找，不再直接放弃。第三层是必须的：没有它，存过 key 的人导出的 `OPENAI_API_KEY` 会被悄悄忽略（解析出来的 key 会当成显式值传下去，pi-ai 就不再回退自己的环境变量）。
-- **provider 绑定检查从「只有项目文件选 provider 时」扩到所有层**：原来只在 project 层改 provider 时拦截，把 provider 从 `ANS_LLM_PROVIDER` 或 `--llm.provider` 改掉则不拦，同一个 key 照样会发给另一家。现在 provider 由任何一层选定、只要和用户文件里声明的不同就拦。用户文件里声明了 `base_url` 的 `env_key` 同样按端点绑定，别的层把端点挪走也会拦。拦截就是不给 key（`apiKey`/`envKey` 都是空），不只是打一行警告。
-- **搜索臂的密钥在装配处解析并传进去**：`createEngine` 接受一个 `searchCredentials` 解析函数，CLI 和 MCP 都传同一份（环境优先，其次凭据文件）。Tavily/Exa/AnySearch 三个客户端因此能收到存起来的 key，而不是只能靠各 SDK 自己读环境变量。`CompositionResult` 多了 `credentialSources`（每个臂的 key 从哪来）和 `credentialWarnings`（解析时的说明，不含密钥值）。
+- **provider 绑定检查从「只有项目文件选 provider 时」扩到所有层**：原来只在 project 层改 provider 时拦截，把 provider 从 `ANS_LLM_PROVIDER` 或 `--llm.provider` 改掉则不拦，同一个 key 照样会发给另一家。现在按两层定：用户文件声明了 provider，就以它为准；没声明但 `env_key` 写的是某家规范变量名（`ANTHROPIC_API_KEY` 等），就以这个变量名代表的 provider 为准。两种情况只要和实际生效的 provider 不同就拦。用户文件里声明了 `base_url` 的 `env_key` 同样按端点绑定，别的层把端点挪走也会拦。拦截就是不给 key（`apiKey`/`envKey` 都是空），不只是打一行警告。名字不属于任何已知 provider 的自定义变量（如 `MY_CUSTOM_KEY`）维持旧行为。
+- **搜索臂的密钥在装配处解析并传进去**：`createEngine` 接受一个 `searchCredentials` 解析函数，CLI 和 MCP 都传同一份（环境优先，其次凭据文件）。Tavily/Exa/AnySearch 三个客户端因此能收到存起来的 key，而不是只能靠各 SDK 自己读环境变量。`CompositionResult` 多了 `credentialSources`（每个臂的 key 从哪来，不含密钥值）；凭据文件本身的告警直接写 stderr，不进返回值。
 - **`ans llm`** 的 Sources 行会显示 `apiKey=credentials`；`ans llm check` 区分「环境给的 / env_key 间接引用 / 凭据文件」；`ans llm set` 的提示改成指向 `ans auth set`。
 
 ### Known limits
