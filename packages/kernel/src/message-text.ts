@@ -8,6 +8,16 @@
 // injected text. These helpers make "read the text" and "append text" total
 // over both shapes, and refuse to guess, so a caller can stand down instead.
 
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+
+// Design: omit interrupted prose from summaries — a summary could repeat it
+// as a conclusion. Keep the tool records that explain what happened.
+export function omitPartialAnswerFromSummary(message: AgentMessage): AgentMessage {
+  if (message?.role !== "assistant" || message.stopReason !== "aborted") return message;
+  const content = Array.isArray(message.content) ? message.content : [];
+  return { ...message, content: content.filter((part) => part?.type !== "text") };
+}
+
 /** A message's text channel, plus the shape the write-back has to keep. */
 export interface TextTarget {
   /** Text as the model would read it (text blocks joined, non-text blocks skipped). */

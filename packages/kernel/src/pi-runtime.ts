@@ -30,7 +30,7 @@ import {
   SESSION_LOCKS_DIRNAME,
   type SessionLockWindows,
 } from "./session-lock";
-import { estimateTranscriptTokens } from "./message-text";
+import { estimateTranscriptTokens, omitPartialAnswerFromSummary } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, reportBudgetFault, reserveTaskModelCall, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
@@ -93,6 +93,8 @@ const PARTIAL_ANSWER_NOTICE = "这条回答当时被打断，只留下半截，�
 
 function markPartialAnswer(message: AgentMessage): AgentMessage {
   if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
+  // Send only visible text. Unfinished tool calls and reasoning blocks can
+  // make a provider reject the next request.
   const textParts = message.content.filter((part) => part.type === "text");
   const firstText = textParts.findIndex((part) => part.text.trim());
   if (firstText === -1) return message;
@@ -105,11 +107,6 @@ function markPartialAnswer(message: AgentMessage): AgentMessage {
     stopReason: "stop",
     content: textParts,
   };
-}
-
-function omitPartialAnswerFromSummary(message: AgentMessage): AgentMessage {
-  if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
-  return { ...message, content: message.content.filter((part) => part.type !== "text") };
 }
 
 // r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
@@ -1146,7 +1143,6 @@ export class PiAgentRuntime {
       });
       pi.on("context_with_system", (event) => ({ messages: event.messages.map(markPartialAnswer) }));
       pi.on("session_before_compact", (event) => {
-        // Design: leave partial text out of the summary — it could read as a conclusion there.
         const preparation = event.preparation;
         preparation.messagesToSummarize = preparation.messagesToSummarize.map(omitPartialAnswerFromSummary);
         preparation.turnPrefixMessages = preparation.turnPrefixMessages.map(omitPartialAnswerFromSummary);

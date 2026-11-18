@@ -367,6 +367,42 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(callLog.count === 0, "consolidate: low watermark bypasses adjudication (no streamFn call)");
 }
 
+// A later turn can summarize an earlier interrupted answer. Keep its tools,
+// but ensure the half-finished answer cannot be copied into session memory.
+{
+  const store = new MockStore();
+  let prompt = "";
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    models: { getModel: () => undefined },
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" },
+    streamFn: (_model: unknown, context: import("@earendil-works/pi-ai").TranscriptContext) => {
+      prompt = JSON.stringify(context.messages);
+      return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: "已完成内容的摘要" }] }) };
+    },
+    sessionId: "s1",
+  });
+  const interrupted = {
+    role: "assistant", stopReason: "aborted", content: [
+      { type: "text", text: "这段半截原文不进摘要" },
+      { type: "toolCall", id: "search-1", name: "search", arguments: { query: "前一轮的搜索" } },
+    ],
+  };
+  await pipeline.consolidate([
+    interrupted,
+    { role: "toolResult", toolCallId: "search-1", content: [{ type: "text", text: "前一轮的结果" }] },
+    { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "后续的完整回答" }] },
+  ], 200000, true);
+  await pipeline.flush();
+  assert(prompt.includes("后续的完整回答") && prompt.includes("前一轮的搜索") && prompt.includes("前一轮的结果"),
+    "滚动摘要的请求保留完整回答和工具记录");
+  assert(!prompt.includes("这段半截原文不进摘要"), "滚动摘要的请求略过半截原文");
+  assert(interrupted.content[0].text === "这段半截原文不进摘要", "生成滚动摘要时保留原消息");
+  assert(store.saveAnchorCalls.some((call) => call.type === "rolling_summary"), "滚动摘要正常写入");
+}
+
 // Test: post-search (below watermark) triggers adjudication (streamFn called).
 {
   const callLog = { count: 0 };
