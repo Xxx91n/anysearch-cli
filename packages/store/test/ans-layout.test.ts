@@ -203,3 +203,33 @@ test("an entry left behind is retried on the next run", () => {
     assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=old\n");
   } finally { box.done(); }
 });
+
+test("a database that appears in the old root after the move is still snapshotted", () => {
+  const box = sandbox();
+  try {
+    // An empty pre-#323 root records "nothing to do" — and that record is not a
+    // promise the root stays empty.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    const first = ensureAnsLayout(box.env, () => {});
+    assert.ok(first);
+    assert.deepEqual(first.moved, []);
+    assert.ok(existsSync(ansLayoutMarkerPath(box.env)));
+
+    // Something else on the machine writes a database there afterwards, such as
+    // an older `ans` that still calls that directory home — it recreates the
+    // directory the move deleted.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "late");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.ok(record.moved.some((m) => m.how === "snapshot"), "the late database is carried over as a snapshot");
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "late");
+    assert.equal(
+      readMarkerValue(join(box.home, ".anysearch", "anysearch.db")),
+      "late",
+      "the old file stays where it is, as the pre-upgrade copy",
+    );
+  } finally { box.done(); }
+});

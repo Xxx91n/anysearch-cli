@@ -2118,6 +2118,53 @@ async function main() {
       check(!existsSync(join(legacyHome, ".anysearch")), "旧数据目录搬空后删掉了");
       check(existsSync(join(legacyHome, ".ans", ".layout.json")), "搬迁结果记在 .layout.json 里");
     }
+
+    // ================= H2. 旧目录里的数据库：在线备份复制，不搬主文件 =================
+    console.log("\n== H2. a database in the old directory is snapshotted, not renamed ==");
+    {
+      // 数据库是唯一不能改名搬的东西：正在跑的插件服务可能开着它，把主文件从
+      // -wal 底下挪走就是损坏数据库的经典做法。所以这里验的是「复制一份、旧
+      // 文件留着当副本」，而不是「搬走了」。
+      const dbHome = join(work, "legacy-db-home");
+      const legacyDb = join(dbHome, ".anysearch", "anysearch.db");
+      mkdirSync(join(dbHome, ".anysearch"), { recursive: true });
+      const warm = runAns(["consolidate", "--session", "legacy-warm"], {
+        cwd: prefix,
+        env: { ...baseEnv, USERPROFILE: dbHome, HOME: dbHome, ANS_DB_PATH: legacyDb, ANS_DOMAIN: "probe" },
+      });
+      check(warm.code === 0, "旧目录里的库能建起来", warm.out.slice(0, 400));
+      {
+        const db = new Database(legacyDb);
+        try {
+          db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run("legacy-session", "probe");
+          db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source) VALUES (?,?,?,?,?)")
+            .run("legacy-session", "https://legacy.example/y", "LEGACY-ROW-TITLE", "LEGACY-ROW-SNIPPET", "exa");
+        } finally { db.close(); }
+      }
+
+      // 不带 ANS_DB_PATH：让产品自己按布局找库，这样搬迁才会碰到它。
+      const { ANS_DB_PATH: _dropDb, ANS_PI_SESSION_DIR: _dropPi, ...noExplicitPaths } = baseEnv;
+      const moved = runAns(["domain"], {
+        cwd: prefix,
+        env: { ...noExplicitPaths, USERPROFILE: dbHome, HOME: dbHome, ANS_DOMAIN: "probe" },
+      });
+      check(moved.code === 0, "旧目录里的库在场时 ans domain 退出码 0", moved.out.slice(0, 400));
+
+      const newDb = join(dbHome, ".ans", "anysearch.db");
+      check(existsSync(newDb), "库被复制进了 .ans", newDb);
+      if (existsSync(newDb)) {
+        const db = new Database(newDb, { readonly: true });
+        try {
+          const row = db.prepare("SELECT title FROM retrieval_results WHERE title = ?").get("LEGACY-ROW-TITLE");
+          check(Boolean(row), "复制出来的库里旧数据还在");
+        } finally { db.close(); }
+      }
+      check(existsSync(legacyDb), "旧库文件原地留着，当作升级前的副本", legacyDb);
+      const layout = JSON.parse(readFileSync(join(dbHome, ".ans", ".layout.json"), "utf8"));
+      check(layout.moved.some((m) => m.how === "snapshot" && /anysearch\.db$/.test(m.from)),
+        "搬迁记录把这条标成 snapshot（在线备份），不是改名");
+      check(layout.pending.length === 0, "没有留下没搬成的条目");
+    }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));
     endpoint.close();

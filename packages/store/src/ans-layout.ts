@@ -191,8 +191,16 @@ export function ensureAnsLayout(
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;
 
+  // No "already recorded, skip the scan" shortcut. The record describes what
+  // the move found, not a promise that the old directory stays empty: an older
+  // `ans` on the same machine, or a tool that still writes `~/.anysearch`, can
+  // drop a file there after the marker exists. A skipped scan would leave that
+  // file unmigrated forever, which for a database means the snapshot this
+  // module exists to take never happens. The scan itself is the steady-state
+  // fast path — both directories are gone after a clean move, so the loop below
+  // costs two `existsSync` calls and the `unchanged` check keeps the marker
+  // from being rewritten.
   const recorded = readAnsLayoutRecord(env);
-  if (recorded && recorded.pending.length === 0) return recorded;
 
   const home = ansHomeDir(env);
   try {
