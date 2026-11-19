@@ -1511,7 +1511,12 @@ async function main() {
         check(openChatTasks() === 1, "N4：回答出来了但任务行还开着（这就是收尾窗口）", "open=" + openChatTasks());
 
         // ---- 2. 收尾没完时升级预检：关准入、报阻塞、拒新任务 ----
-        const waiting = runAns(["upgrade", "wait", "--timeout", "8000"], { cwd: prefix, env: settleEnv });
+        //
+        // 必须走异步版（runAnsAsync），不能走 runAns 的 spawnSync：假模型端点
+        // 就跑在本进程里，同步 spawn 会把事件循环堵住整整一个 timeout，那样被
+        // 挂住的那一轮永远不可能在 wait 返回前收尾——测出来的只会是"超时"，
+        // 而不是升级预检的真实行为。上限放宽到 60 秒没有代价：阻塞一空它就退出。
+        const waiting = runAnsAsync(["upgrade", "wait", "--timeout", "60000"], { cwd: prefix, env: settleEnv });
         const gateDeadline = Date.now() + 10_000;
         while (!gateIsClosed() && Date.now() < gateDeadline) {
           await new Promise((r) => setTimeout(r, 50));
