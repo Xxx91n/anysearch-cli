@@ -6,6 +6,7 @@ import { parse as tomlParse } from "smol-toml";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, validate, type DomainSchema, type RawDomain } from "./domain-schema";
 import { join } from "node:path";
+import { ansProjectDomainsDir } from "./ans-paths.js";
 
 // Parse a TOML string into a RawDomain object.
 export function parseDomainToml(toml: string): RawDomain {
@@ -166,7 +167,7 @@ export function loadDomainByNameIn(
 export function defaultDomainsDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const dirs: string[] = [];
   if (env.ANS_DOMAINS_DIR?.trim()) dirs.push(env.ANS_DOMAINS_DIR.trim());
-  dirs.push(join(process.cwd(), DOMAINS_DIR));
+  dirs.push(ansProjectDomainsDir());
   return dirs;
 }
 

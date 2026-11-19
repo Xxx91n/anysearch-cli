@@ -223,6 +223,19 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
 // Project scope
 // ---------------------------------------------------------------------------
 
+/**
+ * The project's own domain TOMLs.
+ *
+ * Outside the layout root on purpose: these are files the operator writes by
+ * hand, and `ans hitl --allow-url` appends to them. They keep the location they
+ * had before #323 (`ANS_DOMAINS_DIR` still overrides it); the only thing this
+ * module decides is that the answer is named here rather than re-derived at
+ * every call site.
+ */
+export function ansProjectDomainsDir(cwd: string = process.cwd()): string {
+  return join(cwd, "domains");
+}
+
 /** The project-level `[llm]` config, and the marker that makes a directory a project. */
 export function ansProjectConfigPath(cwd: string = process.cwd()): string {
   return pathInUse(

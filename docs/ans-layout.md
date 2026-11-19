@@ -28,7 +28,7 @@
 | `skills/` | 用户级装好的技能 |
 | `MEMORY.md` | 用户级记忆投影（每次重新生成） |
 | `models/` | 嵌入模型缓存 |
-| `pi-sessions/` | 对话记录，跟着库走 |
+| `pi-sessions/` | 对话记录，跟着布局根走（只有显式设 `ANS_DB_PATH` 时才放到库旁边） |
 | `attribution-gold-revisions/` | 归因校准的版本根 |
 | `host-wiring/` | 宿主接入的操作日志和写前备份 |
 | `.layout.json` | 这次改名搬了什么、什么没搬、为什么 |
@@ -45,6 +45,8 @@
 | `MEMORY.md` | 项目级记忆投影 |
 | `pi-agent/` | PI 的项目内临时目录 |
 | `host-wiring/` | 项目级接入日志和备份 |
+
+项目根下还有一个目录**故意不在 `.ans` 里**：`<项目>/domains/`，放你自己写的领域 TOML，`ans hitl --allow-url` 会往里追加。那是手写文件，`ANS_DOMAINS_DIR` 也一直能指到别处，所以位置照旧；它由 `ans-paths.ts` 的 `ansProjectDomainsDir()` 定名，不散落在调用点上。
 
 ## 旧目录怎么处理
 

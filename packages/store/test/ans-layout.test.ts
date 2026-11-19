@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
@@ -187,6 +187,29 @@ test("the home directory in another case is still the home directory", { skip: p
       "the user pass is the one that moved it",
     );
     assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
+  } finally { box.done(); }
+});
+
+test("a junction to the home directory is still the home directory", { skip: process.platform !== "win32" }, () => {
+  const box = sandbox();
+  try {
+    // USERPROFILE may itself be a junction while the shell sits in the real
+    // directory. Both spellings are the same place, so the user pass owns the
+    // old roots. Get it wrong and the project pass claims them, then tells the
+    // operator their only database is a leftover they can delete.
+    const realHome = join(box.home, "real");
+    const link = join(box.home, "link");
+    mkdirSync(realHome, { recursive: true });
+    symlinkSync(realHome, link, "junction");
+    mkdirSync(join(realHome, ".anysearch"), { recursive: true });
+    writeFileSync(join(realHome, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+
+    const said: string[] = [];
+    const record = ensureAnsLayout({ USERPROFILE: link, HOME: link }, (m) => said.push(m), realHome);
+    assert.ok(record, "the user pass handled the home directory");
+    assert.deepEqual(record.moved.map((m) => m.how), ["moved"]);
+    assert.doesNotMatch(said.join(""), /没有搬/, "nothing was reported as a leftover");
+    assert.equal(readFileSync(join(realHome, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
   } finally { box.done(); }
 });
 

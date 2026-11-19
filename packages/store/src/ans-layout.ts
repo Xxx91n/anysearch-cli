@@ -20,9 +20,11 @@
 // left, and why — so "did the rename finish" is a question with an answer on
 // disk instead of a guess.
 //
-// Project scope has no marker: a project directory holds no database, so the
-// move is a plain rename that is safe to retry on every run, and a marker file
-// in every project would be a worse trade than a few `stat` calls.
+// Project scope has no marker: what moves there is never a database of the new
+// layout's, so the move is a plain rename that is safe to retry on every run,
+// and a marker file in every project would be a worse trade than a few `stat`
+// calls. A database found in one is a leftover from an older layout; it stays
+// where it is, with a message saying why (see projectDatabaseNotice).
 //
 // This module pulls better-sqlite3 through migration-backup, so it is imported
 // by the CLI, MCP and plugin-server entries only. Hook bundles stay on
@@ -40,11 +42,13 @@ import {
   rmdirSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   ANS_DB_FILENAME,
   ANS_PROJECT_INDEX_FILENAME,
+  ansDbPath,
   ansHomeDir,
+  ansProjectIndexDbPath,
   ansProjectDir,
   legacyHomeDirs,
   legacyProjectDirs,
@@ -129,10 +133,21 @@ function sameDir(left: string, right: string): boolean {
 }
 
 function canonicalPath(target: string): string {
-  try {
-    return realpathSync.native(target);
-  } catch {
-    return resolve(target);
+  const resolved = resolve(target);
+  const missing: string[] = [];
+  let head = resolved;
+  for (;;) {
+    try {
+      // The nearest existing ancestor is what the filesystem can answer for.
+      // `~/.ans` itself usually does not exist yet, and resolving only the leaf
+      // would leave a junction in the parent unexpanded.
+      return join(realpathSync.native(head), ...missing.reverse());
+    } catch {
+      const parent = dirname(head);
+      if (parent === head) return resolved;
+      missing.push(basename(head));
+      head = parent;
+    }
   }
 }
 
@@ -153,16 +168,32 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
 }
 
 /**
+ * What to say about a database found in a project's pre-#323 directory.
+ *
+ * A leftover either way: the product keeps both databases in the user root, so
+ * the new layout has no place for this file, and moving it would present stale
+ * rows as live ones. The two files are pointed at by different variables, and
+ * naming the wrong one would send an operator's session data into the index.
+ */
+function projectDatabaseNotice(path: string, entry: string, env: NodeJS.ProcessEnv): string {
+  const isIndex = entry === ANS_PROJECT_INDEX_FILENAME;
+  const live = isIndex ? ansProjectIndexDbPath(env) : ansDbPath(env);
+  const override = isIndex ? "ANS_PROJECT_DB" : "ANS_DB_PATH";
+  return "[anysearch] " + path + " 没有搬：现在这个库在 " + live + "，不在项目目录里。" +
+    "这份是旧布局留下的，产品不再读它，确认不要了可以删掉，或用 " + override + " 指过去。\n";
+}
+
+/**
  * Move one project's pre-#323 directories into `<project>/.ans`.
  *
- * No marker and no database of its own: a project directory holds neither, so
+ * No marker, and nothing in it that the new layout keeps at project scope, so
  * this is a plain rename that is safe to retry. A name that already exists in
- * the new directory is kept and reported, never overwritten. A database found
- * here is a leftover: the product keeps the project index in the user root, so
- * it has no counterpart in the new layout and moving it would present dead rows
- * as live ones. It stays put, with a message saying so.
+ * the new directory is kept and reported, never overwritten. A database is the
+ * exception: the product keeps both of them in the user root, so a file here has
+ * no counterpart to move to, and renaming it would present dead rows as live
+ * ones. It stays put, with a message saying so.
  */
-function adoptProjectLayout(cwd: string, warn: (message: string) => void): void {
+function adoptProjectLayout(cwd: string, env: NodeJS.ProcessEnv, warn: (message: string) => void): void {
   const target = ansProjectDir(cwd);
   for (const dir of legacyProjectDirs(cwd)) {
     if (!existsSync(dir)) continue;
@@ -174,15 +205,16 @@ function adoptProjectLayout(cwd: string, warn: (message: string) => void): void 
       continue;
     }
     for (const entry of entries) {
-      // A project directory holds no database. If one is here anyway, it is not
-      // ours to rename: a live WAL database moved out from under its -wal is
-      // the corruption this module exists to avoid.
-      if (DATABASE_ENTRIES.has(entry) || DATABASE_SIDECAR.test(entry)) {
-        warn(
-          "[anysearch] " + join(dir, entry) + " 没有搬：新的索引库在 ~/.ans/project-index.db，" +
-          "按项目分列，不在项目目录里。这份是旧布局留下的，产品不再读它，" +
-          "确认不要了可以删掉，或用 ANS_PROJECT_DB 指过去。\n",
-        );
+      // A database here has no place in the new layout and is not ours to
+      // rename: a live WAL database moved out from under its -wal is the
+      // corruption this module exists to avoid, and the product reads the user
+      // root anyway, so a moved copy would only look live.
+      if (DATABASE_SIDECAR.test(entry)) {
+        warn("[anysearch] " + join(dir, entry) + " 没有搬：它是旧库的附随文件，跟着库留在原处。\n");
+        continue;
+      }
+      if (DATABASE_ENTRIES.has(entry)) {
+        warn(projectDatabaseNotice(join(dir, entry), entry, env));
         continue;
       }
       const from = join(dir, entry);
@@ -223,7 +255,7 @@ export function ensureAnsLayout(
   // project roots ARE the user roots. Letting the project pass handle them would
   // rename the databases instead of snapshotting them — the one thing this
   // module exists to prevent — so the user branch owns that case.
-  if (!sameDir(ansProjectDir(cwd), ansHomeDir(env))) adoptProjectLayout(cwd, warn);
+  if (!sameDir(ansProjectDir(cwd), ansHomeDir(env))) adoptProjectLayout(cwd, env, warn);
 
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;

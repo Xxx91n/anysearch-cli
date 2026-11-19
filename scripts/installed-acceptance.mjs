@@ -231,7 +231,7 @@ function latestUserMarker(body) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || m.role !== "user") continue;
-    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
+    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|LEGACY-FIRST-QUESTION|LEGACY-SECOND-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
@@ -2114,8 +2114,8 @@ async function main() {
         "token 的值一个字节都没变");
       check(existsSync(join(legacyHome, ".ans", "config.toml")), "用户配置搬进了 .ans");
       check(existsSync(join(legacyHome, ".ans", "config.env")), "领域选择搬进了 .ans");
-      check(!existsSync(join(legacyHome, ".anysearch-cli")), "旧配置目录搬空后删掉了");
-      check(!existsSync(join(legacyHome, ".anysearch")), "旧数据目录搬空后删掉了");
+      check(!existsSync(join(legacyHome, ".anysearch-cli")), "旧的 .anysearch-cli 搬空后删掉了");
+      check(!existsSync(join(legacyHome, ".anysearch")), "旧的 .anysearch 搬空后删掉了");
       check(existsSync(join(legacyHome, ".ans", ".layout.json")), "搬迁结果记在 .layout.json 里");
     }
 
@@ -2164,6 +2164,51 @@ async function main() {
       check(layout.moved.some((m) => m.how === "snapshot" && /anysearch\.db$/.test(m.from)),
         "搬迁记录把这条标成 snapshot（在线备份），不是改名");
       check(layout.pending.length === 0, "没有留下没搬成的条目");
+    }
+
+    // ================= H3. 升级前开始的对话，升级后能接着聊 =================
+    console.log("\n== H3. a conversation started before the upgrade continues after it ==");
+    {
+      // 验收单上写的是「历史会话仍能续聊」。H2 只证明库里的行还在；这一段真的
+      // 用旧库开一段对话，升级以后再问一句，看上游请求里有没有上一轮的内容。
+      const resumeHome = join(work, "legacy-chat-home");
+      const legacyDb = join(resumeHome, ".anysearch", "anysearch.db");
+      mkdirSync(join(resumeHome, ".anysearch"), { recursive: true });
+      const chatProject = join(work, "legacy-chat-project");
+      mkdirSync(join(chatProject, ".git"), { recursive: true });
+      const { ANS_PI_SESSION_DIR: _dropPi, ...chatEnv } = baseEnv;
+      const beforeUpgrade = {
+        ...chatEnv,
+        USERPROFILE: resumeHome,
+        HOME: resumeHome,
+        ANS_DB_PATH: legacyDb,
+        ANS_DOMAIN: "probe",
+      };
+
+      const firstTurn = await runAnsAsync(["chat", "LEGACY-FIRST-QUESTION"], { cwd: chatProject, env: beforeUpgrade });
+      check(firstTurn.code === 0 && firstTurn.out.includes("REPLY-TO-LEGACY-FIRST-QUESTION"),
+        "升级前那一轮能跑完并落库", firstTurn.out.slice(0, 400));
+
+      // 不带 ANS_DB_PATH：让产品按布局自己找库，搬迁才会碰到这一段对话。
+      const { ANS_DB_PATH: _dropDb, ...layoutPicked } = chatEnv;
+      const upgraded = runAns(["domain"], {
+        cwd: chatProject,
+        env: { ...layoutPicked, USERPROFILE: resumeHome, HOME: resumeHome, ANS_DOMAIN: "probe" },
+      });
+      check(upgraded.code === 0, "会话库在场时升级运行退出码 0", upgraded.out.slice(0, 400));
+
+      const beforeSecond = requestLog.length;
+      const secondTurn = await runAnsAsync(["chat", "--continue", "LEGACY-SECOND-QUESTION"], {
+        cwd: chatProject,
+        env: { ...layoutPicked, USERPROFILE: resumeHome, HOME: resumeHome, ANS_DOMAIN: "probe" },
+      });
+      check(secondTurn.code === 0 && secondTurn.out.includes("REPLY-TO-LEGACY-SECOND-QUESTION"),
+        "升级后能接着同一条会话问下一句", secondTurn.out.slice(0, 400));
+      const resumedBody = requestLog.slice(beforeSecond).filter((r) => r.role === "chat").pop()?.body ?? "";
+      check(resumedBody.includes("LEGACY-FIRST-QUESTION"),
+        "续聊的上游请求里带着升级前那一轮的内容");
+      check(existsSync(join(resumeHome, ".ans", "anysearch.db")),
+        "这段对话读的是搬到 .ans 的库");
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

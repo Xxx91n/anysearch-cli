@@ -252,8 +252,9 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     // --- snapshot the original via SQLite's own backup path ---
     tmpPath = backupFile + tmpSuffix() + ".tmp";
     withInitBusyRetry("pre-migration backup", () => {
-      // A previous failed attempt inside the retry loop leaves the target
-      // behind and "VACUUM INTO" refuses to overwrite it — clear first.
+      // A previous attempt inside the retry loop can leave its output behind
+      // (a process killed mid-vacuum leaves a file SQLite never cleaned), and
+      // "VACUUM INTO" refuses to overwrite an existing file — clear first.
       try { rmSync(tmpPath, { force: true }); } catch { /* nothing to clear */ }
       // The snapshot file is born with SQLite's default mode (0666&~umask) —
       // readable by others for the whole vacuum. Tighten the umask around it
@@ -458,6 +459,20 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
   }
 }
 
+/** Whether `path` holds a database SQLite can read, as opposed to a torn leftover. */
+function opensAsDatabase(path: string): boolean {
+  let db: Database.Database | undefined;
+  try {
+    db = openDatabase(path, { readonly: true, timeout: 1000 });
+    db.prepare("PRAGMA schema_version").get();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { db?.close(); } catch { /* already closed */ }
+  }
+}
+
 /**
  * #323: publish a consistent copy of `from` at `to` for the directory rename.
  *
@@ -484,17 +499,19 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
     try {
       withInitBusyRetry("layout adoption", () => {
         // A process that held the lock first may have published the snapshot
-        // while this one waited. Its file is the winner and this one stops:
-        // vacuuming over it would replace a completed copy with a second one,
-        // the swap this module's publish path refuses to make. VACUUM INTO
-        // either completes or fails atomically, so an existing file here is
-        // never a torn leftover from a crashed attempt.
-        if (existsSync(to)) {
+        // while this one waited. Its file is the winner: vacuuming over it
+        // would replace a completed copy with a second one, the swap this
+        // module's publish path refuses to make. A file that will not open is
+        // not a published copy — a process killed mid-vacuum leaves one — so it
+        // is cleared instead of adopted, and the failure cannot masquerade as a
+        // finished move.
+        if (existsSync(to) && opensAsDatabase(to)) {
           written = false;
           return;
         }
-        written = true;
+        try { rmSync(to, { force: true }); } catch { /* nothing to clear */ }
         conn.prepare("VACUUM INTO ?").run(to);
+        written = true;
       }, initDeadline);
     } finally {
       process.umask(prevUmask);
