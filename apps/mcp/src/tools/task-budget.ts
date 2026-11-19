@@ -23,7 +23,7 @@
 import {
   wireTaskBudget,
   type CompositionResult,
-  type RuntimeErrorReason,
+  type BudgetStopReason,
   type TaskBudgetWiring,
 } from "@anysearch-cli/kernel";
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -90,7 +90,7 @@ export function beginToolBudget(
  */
 export function toolBudgetStop(
   toolName: string,
-  kind: RuntimeErrorReason,
+  kind: BudgetStopReason,
   detail: string,
 ): CallToolResult {
   const notEstablished = kind === "budget-not-established";

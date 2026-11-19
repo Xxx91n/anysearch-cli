@@ -47,11 +47,28 @@ try {
   assert.ok(threw.includes("Domain schema:") && threw.includes("urlAllowlist"),
     "malformed urlAllowlist propagates (got: " + threw.slice(0, 200) + ")");
 
-  // Missing domain stays fail-open full-fanout — absent ≠ broken.
-  const r = createEngine("no-such-domain-here", { domainsDirs: [dir], dbPath: ":memory:" });
-  assert.ok(r.retriever, "missing domain still resolves to full-fanout engine");
-  (r.store as { close?: () => void }).close?.();
-  r.observation.close();
+  // #306 (migrated from "missing domain stays fail-open"): a name the caller
+  // passed IS a declaration, so an unresolvable one stops the build instead of
+  // quietly fanning out to every provider with no allowlist. The old assertion
+  // here asserted the opposite and was replaced by this stricter one plus the
+  // convention-default case below, which keeps the legal fallback.
+  let missing = "";
+  try { createEngine("no-such-domain-here", { domainsDirs: [dir], dbPath: ":memory:" }); }
+  catch (e) { missing = String(e); }
+  assert.ok(missing.includes("no-such-domain-here"),
+    "declared-but-missing domain stops the build (got: " + missing.slice(0, 200) + ")");
+  assert.ok(missing.includes("没找到"),
+    "the message says the TOML was not found (got: " + missing.slice(0, 200) + ")");
+
+  // A convention default (the product's own "default", not something the
+  // operator named) still falls back: absent ≠ broken, and chat must keep
+  // answering on an install whose default TOML is missing.
+  const fallback = createEngine("no-such-domain-here", {
+    domainsDirs: [dir], dbPath: ":memory:", domainDeclared: false,
+  });
+  assert.ok(fallback.retriever, "undeclared convention default still resolves to a full-fanout engine");
+  (fallback.store as { close?: () => void }).close?.();
+  fallback.observation.close();
 
   // Well-formed vertical TOML resolves cleanly.
   fs.writeFileSync(path.join(dir, "goodvert.toml"), [

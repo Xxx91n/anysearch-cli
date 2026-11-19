@@ -51,6 +51,7 @@ import {
   buildAnsChatBudgetResult,
   buildAnsChatCancelledResult,
   buildAnsChatConsolidateResult,
+  buildAnsChatDomainResult,
   buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
@@ -732,6 +733,12 @@ export function registerAnsChat(
             // structuredContent.errorKind so a host can tell them apart without
             // reading the message — and the spend already incurred is still
             // reported under `usage`, never hidden behind the error.
+            if (runtimeErrorReason === "domain-not-established") {
+              // #306: a broken Active Domain is not a budget answer. Nothing
+              // was called, and the fix is to repair the TOML, so it gets its
+              // own classification instead of "raise your cap".
+              return buildAnsChatDomainResult(runtimeError, { operation: "chat" });
+            }
             if (runtimeErrorReason !== undefined) {
               // A stop can land mid-stream, so wait for the late settlement
               // before this call's task row is closed; no tail is a no-op.

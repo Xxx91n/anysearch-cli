@@ -25,7 +25,13 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
 // Teardown registry lives in ./teardown (pure leaf).
 import { registerTeardown } from "./teardown";
 
-export function createPersistentEngine(domain?: string): CompositionResult {
+export function createPersistentEngine(
+  domain?: string,
+  // #306: `domainDeclared: false` says the name is the caller's convention
+  // default, so a missing TOML keeps the old no-filtering fallback instead of
+  // stopping the command. Omitted means the name is a real declaration.
+  opts?: { domainDeclared?: boolean },
+): CompositionResult {
   const dbPath = resolveDbPath();
   // Owner-only permissions (dir 0700, file 0600) — CWE-732 mitigation.
   // #129 moved `ans chat` onto this store, which made the wider default umask
@@ -39,6 +45,7 @@ export function createPersistentEngine(domain?: string): CompositionResult {
     dbPath,
     domainsDirs: domainSearchDirs(),
     searchCredentials: resolveSearchCredentials,
+    ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
   });
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();

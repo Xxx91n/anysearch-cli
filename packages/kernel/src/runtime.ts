@@ -18,7 +18,18 @@ import type { CostSource } from "./usage";
  *   form this is the task's own budget; on the session form it is the session
  *   row's cap. Nothing was called for this refusal.
  */
-export type RuntimeErrorReason = "budget-not-established" | "budget-rejected";
+export type BudgetStopReason = "budget-not-established" | "budget-rejected";
+
+/**
+ * #306: a declared Active Domain that could not be read at the run boundary.
+ * Kept out of `BudgetStopReason` because it is not an accounting answer: the
+ * run stopped because the constraint it was supposed to obey cannot be
+ * confirmed, and telling the caller to raise a cap would send them to the
+ * wrong place.
+ */
+export type DomainStopReason = "domain-not-established";
+
+export type RuntimeErrorReason = BudgetStopReason | DomainStopReason;
 
 export type AgentEvent =
   | { type: "text"; content: string }

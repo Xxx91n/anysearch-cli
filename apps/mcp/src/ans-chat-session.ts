@@ -27,7 +27,7 @@ import type {
   CompositionResult,
   ConsolidationUsage,
   RunUsage,
-  RuntimeErrorReason,
+  BudgetStopReason,
   SessionStorePort,
   SummaryUsage,
 } from "@anysearch-cli/kernel";
@@ -337,7 +337,9 @@ export interface AnsChatBudgetStopExtra {
  * happened (a resumed conversation, earlier tasks) is untouched.
  */
 export function buildAnsChatBudgetResult(
-  kind: RuntimeErrorReason,
+  // #306: narrowed from RuntimeErrorReason. A domain stop is a different answer
+  // (see buildAnsChatDomainResult) and must not be reported as a cap to raise.
+  kind: BudgetStopReason,
   detail: string,
   extra: AnsChatBudgetStopExtra = {},
 ): AnsChatToolResult {
@@ -377,6 +379,37 @@ export function buildAnsChatBudgetResult(
       },
       ...(extra.taskId ? { taskId: extra.taskId } : {}),
       ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
+    },
+  };
+}
+
+// ---- #306: a run stopped because its declared domain could not be read ----
+
+/**
+ * The result for a run the Active Domain stopped.
+ *
+ * Not a `toolError`: #306 requires "the constraint is broken" to be
+ * distinguishable from "the provider failed" without string matching, and the
+ * caller's next step is completely different — repair the TOML, not retry. It
+ * is also not a budget answer: telling someone to raise a cap would send them
+ * to the wrong place.
+ */
+export function buildAnsChatDomainResult(
+  detail: string,
+  extra: { operation?: "chat" | "consolidate" } = {},
+): AnsChatToolResult {
+  const operation = extra.operation ?? "chat";
+  const toolLabel = operation === "consolidate" ? "ans_chat consolidate" : "ans_chat";
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: toolLabel + ": 这次没跑起来 —— " + detail,
+    }],
+    structuredContent: {
+      operation,
+      errorKind: "domain-not-established",
+      domain: { stopped: true, detail },
     },
   };
 }

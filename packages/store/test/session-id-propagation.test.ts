@@ -22,7 +22,7 @@ import {
   OBSERVATION_SCHEMA_VERSION,
   OBSERVATION_USER_VERSION,
 } from "../src/observation";
-import { emitConfigChangeAudit, writePolicyCache, readPolicyCacheEnvelope, resolveUrlPolicy } from "../src/url-policy";
+import { emitConfigChangeAudit, writePolicyCache, readPolicyCacheEnvelope, resolveUrlPolicy, domainSourceVersions, policyCacheApplies } from "../src/url-policy";
 import { readSessionId, writeSessionId } from "../src/session-id";
 
 // this test focuses on the store-side evidence:
@@ -201,16 +201,23 @@ async function main() {
   {
     const dir = mkdtempSync(join(tmpdir(), "pol-"));
     const cache = join(dir, "policy.json");
+    const toml = join(dir, "domain.toml");
+    await import("node:fs").then((m) => m.writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n', "utf8"));
     const policy = resolveUrlPolicy({ tomlHosts: ["a.example", "b.example"], denyHosts: ["evil.example"] });
 
     // T9 (a): writePolicyCache stamps materialized_at ISO-8601
-    writePolicyCache(cache, policy);
+    writePolicyCache(cache, policy, { projectRoot: dir, sources: domainSourceVersions(toml) });
     const envelope = readPolicyCacheEnvelope(cache);
     check("T9(a): envelope not null", envelope !== null);
     check("T9(a): allow list persisted", JSON.stringify(envelope?.allow) === JSON.stringify(policy.allow));
     check("T9(a): deny list persisted", JSON.stringify(envelope?.deny) === JSON.stringify(policy.deny));
     check("T9(a): policy_version persisted", envelope?.policy_version === policy.policyVersion);
     check("T9(a): materialized_at is ISO-8601", typeof envelope?.materialized_at === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(envelope!.materialized_at));
+    // #306: the envelope names the project and the declaration files it came
+    // from, so a later reader can check it instead of trusting it.
+    check("T9(a): project recorded", envelope?.project_root === dir);
+    check("T9(a): source versions recorded", envelope?.sources.length === 1 && envelope.sources[0]!.path === toml);
+    check("T9(a): fresh envelope applies to its own project", policyCacheApplies(envelope!, { projectRoot: dir }).ok);
 
     // T9 (b): missing cache -> null (so server startup knows to fail-closed on no fallback)
     const noCache = readPolicyCacheEnvelope(join(dir, "missing.json"));
@@ -221,6 +228,27 @@ async function main() {
     await import("node:fs").then((m) => m.writeFileSync(oldPath, JSON.stringify({ allow: [], deny: [], policy_version: "old" })));
     const oldEnv = readPolicyCacheEnvelope(oldPath);
     check("T9(c): old-shape cache (no materialized_at) -> null", oldEnv === null);
+
+    // #306: a cache without provenance cannot be confirmed for any project, so
+    // it is treated as unreadable rather than as a policy to fall back to.
+    const noProvenance = join(dir, "no-provenance.json");
+    await import("node:fs").then((m) => m.writeFileSync(noProvenance, JSON.stringify({
+      allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion,
+      materialized_at: new Date().toISOString(),
+    })));
+    check("T9(c): cache without provenance -> null", readPolicyCacheEnvelope(noProvenance) === null);
+
+    // #306: a cache copied into another project does not answer for it.
+    const other = mkdtempSync(join(tmpdir(), "pol-other-"));
+    try {
+      check("T9(d): cache from another project does not apply",
+        !policyCacheApplies(envelope!, { projectRoot: other }).ok);
+    } finally { rmSync(other, { recursive: true, force: true }); }
+
+    // #306: a TOML edit after materialization makes the cache unconfirmable.
+    await import("node:fs").then((m) => m.writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n# edited\n', "utf8"));
+    const afterEdit = policyCacheApplies(envelope!, { projectRoot: dir });
+    check("T9(d): TOML edited after caching -> does not apply", !afterEdit.ok);
 
     rmSync(dir, { recursive: true, force: true });
   }

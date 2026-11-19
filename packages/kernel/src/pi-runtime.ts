@@ -45,7 +45,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
-import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps, type DomainReloadResult } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -635,7 +635,7 @@ function displaySourceUrl(result: NormalizedResult): string {
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly taskBudgetSettlements = new Set<Promise<void>>();
-  private readonly domainReloader: (() => unknown) | null;
+  private readonly domainReloader: (() => DomainReloadResult) | null;
   private warnedEnvIgnored = false;
   // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
   // the ledger caps, but the next run's reloader sees no new file change. Keep
@@ -842,10 +842,27 @@ export class PiAgentRuntime {
 
     // #188: re-read the Active Domain at the run boundary so a live TOML edit
     // (budget raise, output-reserve override) takes effect on the next run
-    // instead of waiting for a process restart. Fail-open: a bad/partial TOML
-    // keeps the last known good domain, mirroring beforeToolCall's reload.
-    const reloadedDomain = this.domainReloader ? this.domainReloader() : null;
-    if (reloadedDomain) (this.opts as { domain: DomainConfigPort }).domain = reloadedDomain as DomainConfigPort;
+    // instead of waiting for a process restart.
+    //
+    // #306: "unchanged" and "could not be read" are different answers now. A
+    // failed re-read means the declaration this run is supposed to obey cannot
+    // be confirmed, so the run stops before any controlled call instead of
+    // silently continuing on the last copy the process happens to hold.
+    const domainProbe = this.domainReloader ? this.domainReloader() : null;
+    if (domainProbe?.kind === "reloaded") {
+      (this.opts as { domain: DomainConfigPort }).domain = domainProbe.schema as DomainConfigPort;
+    }
+    if (domainProbe?.kind === "failed") {
+      stopRunScope("domain constraint fault");
+      yield {
+        type: "error",
+        message:
+          "领域配置读不出来，这次没跑：" + domainProbe.reason +
+          "。改回能读的 TOML 再试，或者用 ans domain 换一个领域。",
+        reason: "domain-not-established",
+      };
+      return;
+    }
 
     // `store` is not destructured: the billing gate reads the constructor's
     // billingScope (#302) and the FTS sync reads this.opts.store directly, so
@@ -1152,10 +1169,21 @@ export class PiAgentRuntime {
         if (event.toolName === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
           return { block: true, reason: saturation.reason() };
         }
-        // lazy mtime-checked re-read; bad TOML keeps last known good.
-        const reloaded = this.domainReloader ? this.domainReloader() : null;
-        if (reloaded) {
-          (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
+        // lazy mtime-checked re-read. #306: a re-read that fails blocks this
+        // tool call outright — the allowlist this call would be checked against
+        // can no longer be confirmed, and "the old copy is probably fine" is
+        // exactly the guess the ticket rules out.
+        const domainProbe = this.domainReloader ? this.domainReloader() : null;
+        if (domainProbe?.kind === "failed") {
+          return {
+            block: true,
+            reason: "领域配置读不出来，先停手：" + domainProbe.reason +
+              "。改回能读的 TOML 再试，或者用 ans domain 换一个领域。",
+            terminate: true,
+          };
+        }
+        if (domainProbe?.kind === "reloaded") {
+          (this.opts as { domain: DomainConfigPort }).domain = domainProbe.schema as DomainConfigPort;
           // The next run's mtime probe will see no change; remember this one so
           // the budget caps still refresh at that run boundary.
           this.pendingBudgetRefresh = true;
@@ -1450,7 +1478,7 @@ export class PiAgentRuntime {
     // because a per-request host may have built the runtime after the edit;
     // later probes are mtime-gated, so this costs one parse and at most one
     // initBudget upsert per runtime.
-    const budgetChanged = !!reloadedDomain || this.pendingBudgetRefresh;
+    const budgetChanged = domainProbe?.kind === "reloaded" || this.pendingBudgetRefresh;
     if (budgetChanged && this.billingScope) {
       try {
         if (domain.budget) {

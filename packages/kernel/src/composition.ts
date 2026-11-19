@@ -11,19 +11,23 @@ import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   defaultDomainsDirs,
-  loadDomainByNameIn,
   SqliteObservationStore,
   SqliteSessionStore,
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
   resolvePolicyFromSchema,
-  isDomainSchemaError,
   resolveSearchCredentials,
   type ResolvedSearchCredentials,
 } from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
+import {
+  describeDomainFallback,
+  DomainConstraintError,
+  resolveDomainConstraint,
+  type DomainConstraint,
+} from "./domain-constraint";
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
@@ -340,6 +344,13 @@ export function createEngine(
      * expecting a fully isolated engine.
      */
     env?: NodeJS.ProcessEnv;
+    /**
+     * #306: false says `domain` is the caller's convention default rather than
+     * something the operator named. A missing default then keeps the old
+     * no-filtering fallback; a declared name that is missing stops the build.
+     * Omitted means declared — passing a name is a request for that domain.
+     */
+    domainDeclared?: boolean;
   },
 ): CompositionResult {
   // #188 (CodeRabbit): keep the exact dirs the loader used (including the
@@ -405,25 +416,52 @@ export function createEngine(
   let repoVertical: (() => SearchRequest["vertical"]) | undefined;
 
   if (domain) {
-    try {
-      // B1: resolution chain — caller-supplied domains dirs (builtin package
-      // dir etc.) then the ANS_DOMAINS_DIR/CWD defaults. Missing domain stays
-      // fail-open full-fanout; schema errors keep today's semantics.
-      const dirs = domainsDirs;
-      const schema = loadDomainByNameIn(domain, dirs);
+    // #306: one three-state answer instead of a try/catch that turns every
+    // absence into a full fanout. `declared: false` is the caller saying "this
+    // name is my convention default, not something the operator asked for" — a
+    // missing default keeps the old fallback, a broken one never does.
+    const constraint = resolveDomainConstraint({
+      name: domain,
+      declared: opts?.domainDeclared !== false,
+      dirs: domainsDirs,
+    });
+    if (constraint.state === "failed") {
+      if (constraint.fatal) throw new DomainConstraintError(constraint);
+      process.stderr.write("[anysearch] " + describeDomainFallback(constraint) + "\n");
+    }
+    if (constraint.state === "established") {
+      const schema = constraint.schema;
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
       providers = buildProviders(enabled, providerBuildErrors, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
-      // keeps last-known-good on a bad reload (plugin server reuses this pattern).
-      const tomlPath = domainTomlPath(process.cwd(), domain, dirs);
-      const reload = createDomainReloader(tomlPath, dirs);
+      // reports a failed re-read instead of hiding it behind "unchanged".
+      const tomlPath = domainTomlPath(process.cwd(), domain, domainsDirs);
+      const reload = createDomainReloader(tomlPath, domainsDirs);
       let liveSchema = schema;
+      // #306: once a re-read fails, the declared constraint can no longer be
+      // confirmed, so every request-time read fails closed until the file is
+      // readable again. Keeping last-known-good here would mean a policy the
+      // operator just replaced stays in force with only a stderr line to say so.
+      let liveFault: Extract<DomainConstraint, { state: "failed" }> | undefined;
       const live = () => {
-        const reloaded = reload();
-        if (reloaded) liveSchema = reloaded;
+        const probe = reload();
+        if (probe.kind === "reloaded") {
+          liveSchema = probe.schema;
+          liveFault = undefined;
+        } else if (probe.kind === "failed") {
+          liveFault = {
+            state: "failed",
+            name: domain,
+            declared: opts?.domainDeclared !== false,
+            fault: "broken",
+            reason: probe.reason,
+            fatal: true,
+          };
+        }
+        if (liveFault) throw new DomainConstraintError(liveFault);
         return liveSchema;
       };
       urlPolicy = () => resolvePolicyFromSchema(live());
@@ -433,16 +471,7 @@ export function createEngine(
         const v = live().sources.vertical;
         return v ? { domain: v.domain, ...(v.sub_domain ? { subDomain: v.sub_domain } : {}) } : undefined;
       };
-    } catch (e) {
-      // configuration errors fail fast — an invalid sources.weights must not be
-      // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
-      // rework: the predicate is the whole
-      // "Domain schema:" family, not a single field — a malformed sources.vertical
-      // (or urlAllowlist/compaction/…) is the same silent-drop class: the domain
-      // is configured but broken, so swallowing it would discard the operator's
-      // explicit policy (incl. the URL allowlist trust boundary). "Domain not
-      // found" stays fail-open — absent domain ≠ broken domain.
-      if (isDomainSchemaError(e)) throw e;
+    } else {
       providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
     }
   } else {

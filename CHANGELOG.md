@@ -1,3 +1,26 @@
+## Unreleased — #306: 领域先验证再切换，约束失效不再悄悄放行
+
+一句话说清：**以前 `ans domain` 先把名字写进配置、再去读 TOML，读不到也照样返回 0，之后每条命令都变成"全网、不过滤"，而你还以为领域在生效；长跑进程里 TOML 改坏了也继续用旧的那份。现在只有两种结局：领域真的建起来、按它执行，或者直接停下说清哪里坏了，不会悄悄降级。**
+
+### Added
+
+- **三态判断，不再是"有没有 config"**：`resolveDomainConstraint` 把当前领域分成没指定、已建立、声明了但建不起来三种（内核 `domain-constraint.ts`）。CLI 搜索/聊天/整理、MCP、`ans doctor` 都问同一处，不再各自从 `undefined` 或"重读返回 null"去猜。没指定领域仍然是合法状态——全量扇出、不做网址过滤，跟以前一样。
+- **`ans domain <名字>` 先完整验证再落盘**：文件、继承链、每个字段都通过才写配置。名字不存在、TOML 读不出来、配置文件写不进去，都返回非零，原来的选择一个字都不动，也不会再打印"persisted"然后告诉你"其实是全网"。
+- **运行途中 TOML 读坏就停这一次**：重载器以前把"没变化"和"读坏了"都返回 null，调用方只能继续用内存里的旧策略。现在三种结果分开回报，读坏了这次运行不开始、工具调用也直接拦住，提示改回能读的 TOML 或者换个领域。改回来就恢复，不是一坏到底。
+- **钩子的网址规则缓存要能自证有效才会用**：缓存文件现在记着是哪个项目、从哪几个 TOML（含 base 继承链）按当时的版本写下来的。项目对不上、TOML 改过、或者缓存是老格式没这些信息，都不认，改问用户；真用上了会在理由里写清"规则来自某个时间的缓存"。
+- **测试**：`apps/cli/test/domain-constraint.test.ts`（三态；切换成功才落盘；名字不存在/TOML 坏/配置写不进都失败且保留旧选择；当前领域坏了 `ans domain` 不带参数也返回非零）；`packages/store/test/url-policy.test.ts` 把重载器的旧断言换成"读坏要返回 failed、修好后能重新加载"；`packages/store/test/session-id-propagation.test.ts` 加缓存出处与适用性断言；`apps/plugin/test/policy.test.ts` 加"另一个项目的缓存不借、TOML 改过后不认、没有出处的老缓存不认"；`packages/kernel/test/pi-runtime.test.ts` 加"运行中 TOML 读坏，这次运行不发模型请求并以 `domain-not-established` 结束"。
+
+### Changed
+
+- **声明了但找不到的领域不再当成没声明**：`createEngine("<名字>")` 以前把 `Domain not found` 当"缺省"，直接全量扇出并丢掉操作者配的白名单；现在这算失败，直接报错。产品自己的 `default` 约定是另一回事：`domainDeclared: false` 的调用方（`ans chat` 没设 `ANS_DOMAIN` 时）仍然退回全量扇出，只是会明说丢掉了什么。`packages/kernel/test/composition-vertical.test.ts` 里"缺领域仍然全量扇出"那条旧断言就是按这个改写并加严的，没有删掉。
+- **`ans doctor` 的领域一节跟着改口径**：原来是"not found on the resolution chain (silent full-fanout)"，现在分得清"声明了会停"和"没指定所以继续全量"。
+
+### Known limits
+
+- **只覆盖领域这一路约束**：预算和网址策略本身的三态已经在 #302/#304 里建立，本票没有重做它们；网址策略那一路只补了"缓存能不能用"。
+- **钩子是否把提示给人看，取决于宿主**：钩子按宿主协议回 `ask`/`deny` 并把缓存出处写进理由，宿主愿不愿意显示不在本仓控制范围内。
+- **`apps/plugin` 的两个钩子契约测试需要先构建 `dist/hooks`**：没有构建产物时它们会因为找不到 `dist/hooks/adapters/*.cjs` 而失败，这是构建前置条件，不是本票的行为变化。
+
 ## Unreleased — #304: 搜索、研究和独立整理也各记各的任务
 
 一句话说清：**以前只有聊天按次记账，搜索、研究和整理还是会话形式——材料来自几个聊天时整理干脆不算钱，裸搜索更是完全没有账；现在 CLI 搜索、MCP 搜索/研究、独立整理都各自登记任务，花费记在这次任务自己的预算上，额度不够就停在上游之前，已经花掉的照实留着。**

@@ -22,6 +22,9 @@ import {
   MISSING_CONSOLIDATION_CACHE,
   MISSING_CONSOLIDATION_COST,
   resolveDbPath,
+  describeDomainFailure,
+  describeDomainFallback,
+  resolveDomainConstraint,
   type ConsolidationMetering,
 } from "@anysearch-cli/kernel";
 import {
@@ -29,7 +32,6 @@ import {
   resolveConsolidateScope,
   ConsolidateScopeError,
   formatConsolidateScope,
-  loadDomainByNameIn,
   toBudgetCaps,
   type BudgetConfig,
   type ConsolidateReport,
@@ -204,16 +206,23 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // that spans chats. Registering the Active Domain's caps on that task is what
   // makes the cap real — a ledger whose row was never written passes every
   // reserve, so a run that skipped this would claim a cap it does not have.
-  let domainForBudget: ReturnType<typeof loadDomainByNameIn> | undefined;
-  try {
-    domainForBudget = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs());
-  } catch (e) {
-    // Same fail-open contract `ans chat` uses: a missing/broken domain leaves
-    // the run unmetered, not broken. The metering result says so.
-    process.stderr.write(
-      "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); consolidation runs unmetered\n",
-    );
+  // #306: the same three-state answer `ans search` and `ans chat` ask for.
+  // A declared domain that cannot be read stops the run; the convention
+  // default being absent is a legal undeclared run with no caps to enforce.
+  const declaredDomain = process.env.ANS_DOMAIN?.trim() || undefined;
+  const budgetConstraint = resolveDomainConstraint({
+    name: declaredDomain ?? "default",
+    declared: !!declaredDomain,
+    dirs: domainSearchDirs(),
+  });
+  if (budgetConstraint.state === "failed" && budgetConstraint.fatal) {
+    process.stderr.write("ans consolidate: " + describeDomainFailure(budgetConstraint) + "\n");
+    return 1;
   }
+  if (budgetConstraint.state === "failed") {
+    process.stderr.write("[warn] " + describeDomainFallback(budgetConstraint) + "\n");
+  }
+  const domainForBudget = budgetConstraint.state === "established" ? budgetConstraint.schema : undefined;
   // #304: a declared [budget] that cannot be established stops before any
   // model call. Falling back to the session form here would be exactly the
   // "keep going unmetered" the spec forbids for a declared constraint. The

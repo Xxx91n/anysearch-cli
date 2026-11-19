@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, DomainConstraintError, isDomainConstraintError, resolveDomainConstraint } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -36,7 +36,19 @@ export async function runChat(argv: string[]): Promise<number> {
   // ~/.anysearch/anysearch.db) instead of createEngine — the latter falls back to
   // ":memory:", which would make the newly wired RAG adapter recall nothing at
   // all ("connected but always empty" is harder to diagnose than no wiring).
-  const domainName = process.env.ANS_DOMAIN || "default";
+  // #306: three states, not one `||`. A name the operator declared (env or the
+  // persisted selection) that cannot be resolved stops the command; the
+  // product's own "default" convention falling back is the legal behaviour it
+  // had before, and the engine says so on stderr.
+  const declaredDomain = process.env.ANS_DOMAIN?.trim() || undefined;
+  const domainName = declaredDomain ?? "default";
+  const constraint = resolveDomainConstraint({
+    name: domainName,
+    declared: !!declaredDomain,
+    dirs: domainSearchDirs(),
+  });
+  if (constraint.state === "failed" && constraint.fatal) throw new DomainConstraintError(constraint);
+
   let engine: CompositionResult;
   let domain: DomainConfigPort;
   // sessions.domain is metadata only; record the domain actually in use so a
@@ -46,7 +58,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // store must not be registered as a resumable session.
   let durableStore = true;
   try {
-    engine = createPersistentEngine(domainName);
+    engine = createPersistentEngine(domainName, { domainDeclared: !!declaredDomain });
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     // A configured-but-broken domain is a configuration error, not an
@@ -55,7 +67,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // Same predicate as createEngine; the CLI top-level handler prints the
     // error and exits non-zero (#162). Missing domains and DB/IO faults keep
     // the fallback below.
-    if (isDomainSchemaError(e)) throw e;
+    if (isDomainSchemaError(e) || isDomainConstraintError(e)) throw e;
     if (printOnly) {
       console.error("读取领域或打开持久库失败。 " + (e?.message || String(e)));
       return 1;

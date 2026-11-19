@@ -49,7 +49,7 @@ const DB_PATH = projectIndexDbPath();
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
-import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFromToml, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
+import { domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
@@ -80,36 +80,42 @@ interface ProjectPolicy {
   policy: UrlPolicy;
   tomlPath: string;
   cachePath: string;
+  /** The declaration files this policy was read from, for the cache envelope. */
+  sources: PolicySourceVersion[];
 }
 
 // A project's URL policy is read from that project's own domains TOML. The
 // parse is per request (event-driven, no TTL), and the materialized cache sits
 // inside the same project so a hook in project B never consumes A's rules.
-// Missing TOML falls back to the project's own cached copy (with a WARN);
-// unreadable TOML with no cache throws and the request fails closed.
+//
+// #306: a cached copy is only used when it can be shown to still describe this
+// project's current declaration — same project, same TOML versions. A parse
+// failure means the declaration just changed, so the cache is by definition
+// older than the thing that broke: the request fails closed instead of
+// answering with rules nobody confirmed.
 function readProjectPolicy(projectRoot: string): ProjectPolicy {
   const tomlPath = domainTomlPath(projectRoot);
   const cachePath = join(projectRoot, ".anysearch-cli", "policy.json");
   if (existsSync(tomlPath)) {
     try {
-      return { policy: loadPolicyFromToml(tomlPath), tomlPath, cachePath };
+      return { policy: loadPolicyFromToml(tomlPath), tomlPath, cachePath, sources: domainSourceVersions(tomlPath) };
     } catch (e) {
-      // OPA pattern: keep last known good, signal it.
       const cached = readPolicyCacheEnvelope(cachePath);
       if (cached) {
-        process.stderr.write("[anysearch] WARN: domain TOML parse failed at startup; using cached policy materialized_at=" + cached.materialized_at + ": " + (e instanceof Error ? e.message : String(e)) + "\n");
-        return { policy: resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny }), tomlPath, cachePath };
+        const applies = policyCacheApplies(cached, { projectRoot });
+        if (applies.ok) {
+          process.stderr.write("[anysearch] WARN: domain TOML parse failed; using cached policy materialized_at=" + cached.materialized_at + ": " + (e instanceof Error ? e.message : String(e)) + "\n");
+          return { policy: resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny }), tomlPath, cachePath, sources: cached.sources };
+        }
+        process.stderr.write("[anysearch] cached policy rejected (" + applies.reason + "); refusing to answer for " + projectRoot + "\n");
       }
-      throw e; // no cache -> fail-closed (D3)
+      throw e; // no usable cache -> fail-closed (D3)
     }
   }
-  // No TOML -> cached fallback path (same WARN semantics).
-  const cached = readPolicyCacheEnvelope(cachePath);
-  if (cached) {
-    process.stderr.write("[anysearch] WARN: domain TOML absent; using cached policy materialized_at=" + cached.materialized_at + "\n");
-    return { policy: resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny }), tomlPath, cachePath };
-  }
-  return { policy: resolveUrlPolicy({ tomlHosts: [] }), tomlPath, cachePath };
+  // No TOML at all: nobody declared a URL policy for this project, which is a
+  // legal state — an empty allowlist makes the hook ask about every URL rather
+  // than inventing rules from a cache for a file that is gone.
+  return { policy: resolveUrlPolicy({ tomlHosts: [] }), tomlPath, cachePath, sources: domainSourceVersions(tomlPath) };
 }
 // Last policy version seen per project, so the audit row names the project
 // whose rules changed.
@@ -312,7 +318,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // process's start directory. No project = no policy answer.
       const project = resolveProject(url.searchParams.get("project"));
       if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
-      const { policy, tomlPath, cachePath } = readProjectPolicy(project.root);
+      const { policy, tomlPath, cachePath, sources } = readProjectPolicy(project.root);
       // Ensure OBS_DB permissions before any audit write (best-effort, once).
       if (!obsDbEnsured) {
         obsDbEnsured = true;
@@ -371,7 +377,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion, project: project.root };
       // writePolicyCache stamps materialized_at alongside the
       // policy body so the hook fallback can surface staleness.
-      writePolicyCache(cachePath, policy);
+      writePolicyCache(cachePath, policy, { projectRoot: project.root, sources });
       sendJson(res, 200, body);
       return;
     }

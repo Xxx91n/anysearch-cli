@@ -235,6 +235,16 @@ export function isDomainSchemaError(e: unknown): boolean {
   return e instanceof Error && e.message.startsWith("Domain schema:");
 }
 
+// #306: the other half of the same question — "the domain was not found at all
+// on the resolution chain". Kept apart from isDomainSchemaError because the two
+// need different answers at the entry points: a found-but-broken domain is
+// always a fault, while an absent one is only a fault when the operator named
+// it. `loadDomainByNameIn` is the one raiser; matching its message here keeps
+// every caller from string-matching on its own.
+export function isDomainNotFoundError(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith("Domain not found:");
+}
+
 // Validate a resolved schema. Throws on invalid.
 
 export function validate(schema: DomainSchema): void {
