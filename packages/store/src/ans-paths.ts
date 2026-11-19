@@ -15,11 +15,12 @@
 // for itself. Both families now resolve to one directory per scope, and every
 // file's home is named here.
 //
-// Old names are still READ, never written. Each resolver returns the new file
-// when it exists, the old one when only that exists, and the new path
-// otherwise, so an upgrade never starts from an empty config or an empty
-// database. Moving the old files is `ans-layout.ts`'s job; this module only
-// guarantees nothing is lost meanwhile.
+// Each resolver returns the file currently in use: the new one when it exists,
+// the old one when only that exists, and the new path otherwise. So an upgrade
+// never starts from an empty config or an empty database, and a writer lands on
+// the same file its reader does instead of splitting one setting across two.
+// Moving the old files is `ans-layout.ts`'s job; this module only guarantees
+// nothing is lost meanwhile.
 //
 // Builtins only, like local-service.ts: hook bundles are esbuild-bundled and
 // must not pull the store index's native dependencies.
@@ -35,11 +36,27 @@ export const LEGACY_DATA_DIR_NAME = ".anysearch";
 /** Pre-#323 user config root (config.toml, token, session, skills). */
 export const LEGACY_CONFIG_DIR_NAME = ".anysearch-cli";
 
-// Same fallback chain as `resolveConfigHome` in credentials.ts: an explicit
-// env home, else the platform's. Two different answers here would put the
-// config file and the credential file in different directories.
+/**
+ * The user config root every credential/config reader must agree on: an
+ * explicit override, else USERPROFILE (Windows), else HOME, else the real home.
+ *
+ * One function because two readers that disagree would read different files -
+ * the resolver would look for the key the writer had just stored somewhere
+ * else. An exported-but-empty value falls through, matching this repo's
+ * convention for "set but blank means unset".
+ *
+ * This resolves ONLY the env it is given. It deliberately does not reach for
+ * `process.env`: a caller that passes its own env means "this env decides", and
+ * borrowing the host's HOME behind its back would point a test - or a GUI host -
+ * at a directory nobody in that call wrote. Callers that have no env of their
+ * own pass `process.env`.
+ */
+export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
+  return explicit || env.USERPROFILE || env.HOME || homedir();
+}
+
 function homeOf(env: NodeJS.ProcessEnv): string {
-  return env.USERPROFILE || env.HOME || homedir();
+  return resolveConfigHome(undefined, env);
 }
 
 /** User root: `~/.ans`. */
@@ -68,14 +85,15 @@ export function legacyProjectDirs(cwd: string = process.cwd()): string[] {
 }
 
 /**
- * Read `next` when it exists, else `legacy` when that exists, else `next`.
+ * The path currently in use: `next` when it exists, else `legacy` when that
+ * exists, else `next`.
  *
  * Every resolver below goes through this, which is what makes "the old file
  * still works" a property of the layout rather than a rule each caller has to
  * remember. A writer that lands on the old path is not a bug: it keeps one
  * file instead of splitting the same setting across two.
  */
-export function legacyReadPath(next: string, legacy: string): string {
+export function pathInUse(next: string, legacy: string): string {
   if (existsSync(next)) return next;
   if (existsSync(legacy)) return legacy;
   return next;
@@ -92,7 +110,7 @@ export const ANS_PROJECT_INDEX_FILENAME = "project-index.db";
 
 /** The durable database. */
 export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), ANS_DB_FILENAME),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, ANS_DB_FILENAME),
   );
@@ -100,7 +118,7 @@ export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
 
 /** The shared project index. */
 export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), ANS_PROJECT_INDEX_FILENAME),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, ANS_PROJECT_INDEX_FILENAME),
   );
@@ -108,7 +126,7 @@ export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): str
 
 /** Attribution calibration revisions. */
 export function ansAttributionRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "attribution-gold-revisions"),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, "attribution-gold-revisions"),
   );
@@ -116,7 +134,7 @@ export function ansAttributionRoot(env: NodeJS.ProcessEnv = process.env): string
 
 /** The CLI's persisted key=value config (`config.env`). */
 export function ansConfigEnvPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "config.env"),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, "config.env"),
   );
@@ -124,7 +142,7 @@ export function ansConfigEnvPath(env: NodeJS.ProcessEnv = process.env): string {
 
 /** The user-level `[llm]` config. */
 export function ansUserConfigPathFor(home: string): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDirFor(home), "config.toml"),
     join(home, LEGACY_CONFIG_DIR_NAME, "config.toml"),
   );
@@ -132,7 +150,7 @@ export function ansUserConfigPathFor(home: string): string {
 
 /** The plaintext, owner-only provider credential file. */
 export function ansCredentialsPathFor(home: string): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDirFor(home), "credentials.json"),
     join(home, LEGACY_CONFIG_DIR_NAME, "credentials.json"),
   );
@@ -140,7 +158,7 @@ export function ansCredentialsPathFor(home: string): string {
 
 /** The installation's one server token. */
 export function ansServerTokenPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "server-token"),
     join(homeOf(env), LEGACY_CONFIG_DIR_NAME, "server-token"),
   );
@@ -148,7 +166,7 @@ export function ansServerTokenPath(env: NodeJS.ProcessEnv = process.env): string
 
 /** The address record the running plugin server publishes. */
 export function ansServerRegistryPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "server.json"),
     join(homeOf(env), LEGACY_CONFIG_DIR_NAME, "server.json"),
   );
@@ -156,7 +174,7 @@ export function ansServerRegistryPath(env: NodeJS.ProcessEnv = process.env): str
 
 /** The observation session anchor. */
 export function ansSessionPath(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "session"),
     join(homeOf(env), LEGACY_CONFIG_DIR_NAME, "session"),
   );
@@ -164,7 +182,7 @@ export function ansSessionPath(env: NodeJS.ProcessEnv = process.env): string {
 
 /** User-scope installed skills. */
 export function ansUserSkillsDirFor(home: string): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDirFor(home), "skills"),
     join(home, LEGACY_CONFIG_DIR_NAME, "skills"),
   );
@@ -186,7 +204,7 @@ export function ansModelCacheDir(env: NodeJS.ProcessEnv = process.env): string {
 
 /** User-scope host-wiring journal and backups. */
 export function ansUserWiringDirFor(home: string): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDirFor(home), "host-wiring"),
     join(home, LEGACY_CONFIG_DIR_NAME, "host-wiring"),
   );
@@ -197,13 +215,13 @@ export function ansUserWiringDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
- * Conversation records. They live beside the database, so they follow it across
- * the rename; the pre-#323 directory is still read when the move has not
- * happened yet, which is what keeps a half-finished migration from hiding
- * history.
+ * Conversation records. They live under the layout root, not beside the
+ * database, so a migration that moved the directory but could not copy the
+ * database still leaves history readable. The pre-#323 directory is read when
+ * the new one is absent.
  */
 export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansHomeDir(env), "pi-sessions"),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, "pi-sessions"),
   );
@@ -215,7 +233,7 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
 
 /** The project-level `[llm]` config, and the marker that makes a directory a project. */
 export function ansProjectConfigPath(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "config.toml"),
     join(cwd, LEGACY_DATA_DIR_NAME, "config.toml"),
   );
@@ -223,7 +241,7 @@ export function ansProjectConfigPath(cwd: string = process.cwd()): string {
 
 /** Project-scope installed skills. */
 export function ansProjectSkillsDir(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "skills"),
     join(cwd, LEGACY_DATA_DIR_NAME, "skills"),
   );
@@ -231,7 +249,7 @@ export function ansProjectSkillsDir(cwd: string = process.cwd()): string {
 
 /** The hook-side URL policy cache. */
 export function ansProjectPolicyPath(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "policy.json"),
     join(cwd, LEGACY_CONFIG_DIR_NAME, "policy.json"),
   );
@@ -239,7 +257,7 @@ export function ansProjectPolicyPath(cwd: string = process.cwd()): string {
 
 /** The headless HITL queue. */
 export function ansProjectHitlPath(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "hitl.pending"),
     join(cwd, LEGACY_CONFIG_DIR_NAME, "hitl.pending"),
   );
@@ -247,7 +265,7 @@ export function ansProjectHitlPath(cwd: string = process.cwd()): string {
 
 /** The user's routing-card override. */
 export function ansProjectRoutingCardPath(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "routing-card.json"),
     join(cwd, LEGACY_DATA_DIR_NAME, "routing-card.json"),
   );
@@ -265,7 +283,7 @@ export function ansProjectPiAgentDir(cwd: string = process.cwd()): string {
 
 /** Project-scope host-wiring journal and backups. */
 export function ansProjectWiringDir(cwd: string = process.cwd()): string {
-  return legacyReadPath(
+  return pathInUse(
     join(ansProjectDir(cwd), "host-wiring"),
     join(cwd, LEGACY_DATA_DIR_NAME, "host-wiring"),
   );

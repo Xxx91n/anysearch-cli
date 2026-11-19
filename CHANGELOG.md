@@ -4,7 +4,7 @@
 
 ### Added
 
-- **一个地方定义布局**：`packages/store/src/ans-paths.ts` 是唯一的目录和文件位置定义，CLI、MCP、插件服务、钩子包都从这里取。以前 30 多个文件各自拼 `.anysearch` / `.anysearch-cli`，现在没有了。
+- **一个地方定义布局**：`packages/store/src/ans-paths.ts` 是唯一的目录和文件位置定义，CLI、MCP、插件服务、钩子包都从这里取。以前 30 多个文件各自拼 `.anysearch` / `.anysearch-cli`，现在产品代码里没有了。`scripts/` 下的发布脚本没法 import TypeScript，所以另有一个 `scripts/ans-home.mjs`，照抄同样的两条规则；`scripts/installed-acceptance.mjs` 仍然自己拼旧名字，因为它要造出旧目录来验升级。
 - **一次性的目录搬迁**：`packages/store/src/ans-layout.ts` 的 `ensureAnsLayout()` 在 CLI、MCP、插件服务启动时各跑一次。普通文件用改名搬，跨盘时改成「复制 → 删源」；搬空的旧目录删掉，没搬空的留着。
 - **数据库用在线备份复制，不搬**：正在跑的插件服务可能开着库，把主文件从 `-wal` 底下挪走会损坏数据库。所以用 `VACUUM INTO`（和 #310 同一套机制）复制一份到新位置，**旧文件原地留着**，当作升级前的副本，删不删由人决定。
 - **搬迁结果写在盘上**：`~/.ans/.layout.json` 记着搬了什么、从哪来、用什么方式（`moved` / `copied` / `snapshot`），以及哪些没搬成、为什么。没搬成的条目下次运行会再试。

@@ -2,9 +2,9 @@
 // The script re-enters under workspace-local tsx for extensionless TS imports.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ansUserDirPath } from "./ans-home.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -35,7 +35,7 @@ async function run() {
   // the CLI/MCP reader agree without an env override.
   const defaultRoot =
     line === "attribution-gold"
-      ? path.join(os.homedir(), ".ans", "attribution-gold-revisions")
+      ? ansUserDirPath("attribution-gold-revisions")
       : path.join(root, "packages", "store", "calibration-revisions");
   const revisionRoot = process.env[rootEnv]
     ? path.resolve(process.env[rootEnv])

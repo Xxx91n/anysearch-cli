@@ -141,6 +141,13 @@ function adoptProjectLayout(cwd: string, warn: (message: string) => void): void 
       continue;
     }
     for (const entry of entries) {
+      // A project directory holds no database. If one is here anyway, it is not
+      // ours to rename: a live WAL database moved out from under its -wal is
+      // the corruption this module exists to avoid.
+      if (DATABASE_ENTRIES.has(entry) || DATABASE_SIDECAR.test(entry)) {
+        warn("[anysearch] " + join(dir, entry) + " 没有搬：项目目录里不该有数据库，留给用户自己处理。\n");
+        continue;
+      }
       const from = join(dir, entry);
       const to = join(target, entry);
       if (existsSync(to)) {
@@ -175,7 +182,11 @@ export function ensureAnsLayout(
   warn: (message: string) => void = (message) => process.stderr.write(message),
   cwd: string = process.cwd(),
 ): AnsLayoutRecord | undefined {
-  adoptProjectLayout(cwd, warn);
+  // `ans` run from the home directory is a normal thing to do, and there the
+  // project roots ARE the user roots. Letting the project pass handle them would
+  // rename the databases instead of snapshotting them — the one thing this
+  // module exists to prevent — so the user branch owns that case.
+  if (ansProjectDir(cwd) !== ansHomeDir(env)) adoptProjectLayout(cwd, warn);
 
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;

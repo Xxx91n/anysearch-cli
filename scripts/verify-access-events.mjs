@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { ansDbPath } from "./ans-home.mjs";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "packages", "store", "package.json"));
@@ -59,11 +60,7 @@ function main() {
   const flagIdx = process.argv.indexOf("--db");
   const flagValue = flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined;
   if (flagIdx !== -1 && (!flagValue || flagValue.startsWith("--"))) fail("usage: --db <path> (flag present but value missing) — fail-closed, refusing silent fallback");
-  const home = process.env.USERPROFILE || process.env.HOME || ".";
-  const defaultDb = [".ans", ".anysearch"]
-    .map((dir) => path.join(home, dir, "anysearch.db"))
-    .find((candidate) => fs.existsSync(candidate)) ?? path.join(home, ".ans", "anysearch.db");
-  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? defaultDb;
+  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? ansDbPath();
   const t0 = performance.now();
   if (!fs.existsSync(dbPath)) {
     process.stdout.write(JSON.stringify({ verdict: "NO_DATABASE", dbPath }) + "\n");

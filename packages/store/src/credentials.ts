@@ -40,9 +40,10 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { ansCredentialsPathFor } from "./ans-paths.js";
+import { ansCredentialsPathFor, resolveConfigHome } from "./ans-paths.js";
+
+export { resolveConfigHome };
 
 export const CREDENTIALS_FILENAME = "credentials.json";
 
@@ -166,25 +167,6 @@ export interface CredentialFileContents {
  */
 export function userCredentialsPath(home: string = resolveConfigHome()): string {
   return ansCredentialsPathFor(home);
-}
-
-/**
- * The user config root every credential/config reader must agree on: an
- * explicit override, else USERPROFILE (Windows), else HOME, else the real home.
- *
- * One function because two readers that disagree would read different files -
- * the resolver would look for the key the writer had just stored somewhere
- * else. An exported-but-empty value falls through, matching this repo's
- * convention for "set but blank means unset".
- *
- * This resolves ONLY the env it is given. It deliberately does not reach for
- * `process.env`: a caller that passes its own env means "this env decides", and
- * borrowing the host's HOME behind its back would point a test - or a GUI host -
- * at a directory nobody in that call wrote. Callers that have no env of their
- * own pass `process.env`.
- */
-export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
-  return explicit || env.USERPROFILE || env.HOME || homedir();
 }
 
 /**

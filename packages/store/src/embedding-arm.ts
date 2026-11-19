@@ -23,9 +23,10 @@ type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 let modPromise: Promise<EmbeddingModule | null> | undefined;
 let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModuleForTest)
 
-// #323: the model cache lives under the product's layout root. The embedding
-// package is a zero-dependency leaf that cannot import ans-paths, so it takes
-// the directory from here before its first embed.
+// Design: the model cache directory is handed to the embedding package instead
+// of being defined there. That package is a zero-dependency leaf that cannot
+// import ans-paths, and a second literal would be a second answer to "where is
+// the cache" (#323).
 function withCacheDir(m: EmbeddingModule): EmbeddingModule {
   m.setModelCacheDir?.(ansModelCacheDir());
   return m;

@@ -155,6 +155,20 @@ test("a name that already exists in ~/.ans is kept and reported, never overwritt
   } finally { box.done(); }
 });
 
+test("run from the home directory, the database is snapshotted and not renamed", () => {
+  const box = sandbox();
+  try {
+    // In the home directory the project roots ARE the user roots. If the project
+    // pass handled it, the database would be renamed out from under its -wal.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "history");
+    ensureAnsLayout(box.env, () => {}, box.home);
+
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
+    assert.ok(existsSync(join(box.home, ".anysearch", "anysearch.db")), "the pre-upgrade copy stays");
+  } finally { box.done(); }
+});
+
 test("a second run is a no-op once everything moved", () => {
   const box = sandbox();
   try {

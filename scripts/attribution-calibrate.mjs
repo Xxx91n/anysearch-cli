@@ -4,9 +4,9 @@
 // on select, the gate and sens/spec cross-check run on held-out eval.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ansUserDirPath } from "./ans-home.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -81,7 +81,7 @@ async function run() {
   // a bundle written here is what the CLI/MCP actually loads.
   const revisionRoot = process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT
     ? path.resolve(process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT)
-    : path.join(os.homedir(), ".ans", "attribution-gold-revisions");
+    : ansUserDirPath("attribution-gold-revisions");
   const storable = selectSamples.length ? fitResult.params : { a: 1, b: 1, c: 0 };
   const { digest: bundleDigest } = bundles.writeCalibrationBundle(
     revisionRoot,

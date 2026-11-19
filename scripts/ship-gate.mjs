@@ -29,6 +29,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
+import { ansDbPath } from "./ans-home.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import { createRequire } from "node:module";
@@ -182,7 +183,7 @@ function stepAccessChainVerify() {
   if (explicitDb !== undefined) {
     if (!explicitDb || !fs.existsSync(explicitDb)) fail("ANS_DB_PATH is set but the database does not exist: " + explicitDb + " — misconfiguration, fail-closed");
     object = "consumed";
-  } else if (["\.ans", "\.anysearch"].some((dir) => fs.existsSync(path.join(process.env.USERPROFILE || process.env.HOME || ".", dir, "anysearch.db")))) {
+  } else if (fs.existsSync(ansDbPath())) {
     object = "consumed";
   } else {
     object = "gate-built";
