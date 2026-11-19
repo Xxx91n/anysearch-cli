@@ -286,8 +286,9 @@ export const RECALL_SOURCE_SCAN_FROM = 0;
 // #263: the dependency scan and the summarizer call must read the SAME message
 // membership. The caller hands in the live agent-state array and two `await`s
 // separate the scan from the model call, so an append in that window would give
-// the summary a fact its sources never saw. Copy the list now, removing only
-// interrupted answer text from the messages used to build the summary.
+// the summary a fact its sources never saw. Remove half-finished text from
+// interrupted or failed answers without changing message positions, which the
+// gap scan uses. Reuse the other messages. Exported so tests can check the copy.
 export function snapshotMessages(messages: any[]): any[] {
   return messages.map(omitPartialAnswerFromSummary);
 }

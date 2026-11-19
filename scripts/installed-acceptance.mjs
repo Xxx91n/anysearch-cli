@@ -727,6 +727,8 @@ async function main() {
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
           "从 Ctrl-C 中断的会话续聊时先看到提醒", resumed.out);
         const request = JSON.parse(requestLog.slice(beforeResume).find((r) => r.role === "chat")?.body ?? "{}");
+        // This is the exact text the installed runtime must send. If the
+        // wording changes in PARTIAL_ANSWER_NOTICE, update this expectation too.
         const notice = "这条回答当时被打断，只留下半截，不要当成完整回答。";
         const expected = notice + "\n\nCANCEL-STREAM-PARTIAL";
         const messages = request.messages ?? [];
