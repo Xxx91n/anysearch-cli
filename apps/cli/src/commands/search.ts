@@ -3,9 +3,8 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, type DomainConfigPort, type DomainConstraint } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import type { DomainSchema } from "@anysearch-cli/store";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
@@ -139,20 +138,17 @@ export async function runSearch(args: string[]): Promise<number> {
   // second time and could disagree with the copy the providers were built from.
   // The undeclared case needs its own read: the engine loads nothing then, and
   // the default domain's [budget] still has to be attached.
-  const budgetConstraint: DomainConstraint = config
-    ? { state: "established", name: active.name, schema: config as unknown as DomainSchema }
+  const defaultDomain = config
+    ? null
     : resolveDomainConstraint({ name: active.name, declared: active.declared, dirs: domainSearchDirs() });
-  if (budgetConstraint.state === "failed" && budgetConstraint.fatal) {
-    throw new DomainConstraintError(budgetConstraint);
+  if (defaultDomain?.state === "failed" && defaultDomain.fatal) {
+    throw new DomainConstraintError(defaultDomain);
   }
-  if (budgetConstraint.state === "failed") {
-    process.stderr.write("[warn] " + describeDomainFallback(budgetConstraint) + "\n");
+  if (defaultDomain?.state === "failed") {
+    process.stderr.write("[warn] " + describeDomainFallback(defaultDomain) + "\n");
   }
-  // Prefer the engine's own snapshot — the one its providers were built from —
-  // and fall back to the convention default's TOML, which a bare search does not
-  // otherwise load.
-  const budgetDomain: DomainConfigPort | undefined =
-    budgetConstraint.state === "established" ? budgetConstraint.schema as DomainConfigPort : undefined;
+  const budgetDomain: DomainConfigPort | undefined = config
+    ?? (defaultDomain?.state === "established" ? defaultDomain.schema as DomainConfigPort : undefined);
   const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, budgetDomain?.budget, {
     warn: (m) => process.stderr.write("[warn] " + m + "\n"),
     fallbackText: "this run is unmetered",

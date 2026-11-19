@@ -599,10 +599,11 @@ export function registerAnsChat(
             retriever: eng.retriever,
             domain,
             ...memory,
-            domainTomlPath: domainTomlPath(undefined, eng.domainName, eng.domainsDirs),
-            // The flag rides with the engine's own domain name, so one call
-            // cannot pair today's declaration with a TOML path fixed at startup.
-            domainDeclared: eng.domainDeclared === true,
+            domainTomlPath: domainTomlPath(undefined, eng.domainName ?? "default", eng.domainsDirs),
+            // The flag and the path both come from the engine: an engine built
+            // with no domain name never declared one, so a missing TOML is the
+            // legal fallback even if the host sets ANS_DOMAIN after startup.
+            domainDeclared: eng.domainName !== undefined && eng.domainDeclared === true,
             // #188: same dirs the engine loaded the domain from, so a base TOML
             // in the packaged domains dir stays resolvable on a live re-read.
             domainsDirs: eng.domainsDirs,

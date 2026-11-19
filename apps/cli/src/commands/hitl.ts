@@ -37,7 +37,7 @@ function readQueue(): HitlEntry[] {
 // semantics preserved). Returns true on write.
 function allowHost(host: string): boolean {
   const domainName = resolveActiveDomain().name;
-  const tomlPath = domainTomlPath(process.cwd(), domainName);
+  const tomlPath = domainTomlPath(process.cwd(), domainName, domainSearchDirs());
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
   const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];
   const src = readFileSync(tomlPath, "utf8");

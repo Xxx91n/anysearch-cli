@@ -422,8 +422,9 @@ export function createEngine(
 
   // Passing a name is itself a request for that domain unless the caller says
   // the name is its convention default (see `domainDeclared`); read once so the
-  // build and the request-time re-read cannot disagree.
-  const domainDeclared = opts?.domainDeclared !== false;
+  // build and the request-time re-read cannot disagree. No name at all means
+  // nobody declared one, whatever the caller passed.
+  const domainDeclared = Boolean(domain) && opts?.domainDeclared !== false;
   if (domain) {
     // #306: one three-state answer instead of a try/catch that turns every
     // absence into a full fanout. `declared: false` is the caller saying "this

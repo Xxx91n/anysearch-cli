@@ -257,10 +257,9 @@ export async function runChat(argv: string[]): Promise<number> {
         // the real `ans chat` path instead of being silently skipped.
         ...memory,
         // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
-        domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
-        // #306: only a named domain makes a missing TOML a fault; the `default`
-        // convention falling away is the legal fallback.
-        domainDeclared: active.declared,
+        domainTomlPath: domainTomlPath(undefined, engine.domainName ?? "default", engine.domainsDirs),
+        // Only a domain the engine actually loaded makes a missing TOML a fault.
+        domainDeclared: engine.domainName !== undefined && engine.domainDeclared === true,
         // #188: same dirs the engine loaded the domain from, so the run-boundary
         // reloader can still resolve inherited base TOMLs.
         domainsDirs: engine.domainsDirs,
