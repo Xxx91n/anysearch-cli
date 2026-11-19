@@ -173,3 +173,22 @@ test("a refused cap stops before the provider request", async () => {
     registry.close();
   }
 });
+
+test("a broken default domain TOML fails closed instead of dropping its budget", async () => {
+  // A configured-but-broken domain is not an absence: treating it as "no
+  // budget" would ignore a declared cap while still fanning out.
+  writeFileSync(join(domainsDir, "default.toml"), 'name = "default"\nsources = { enabled = [ }\n', "utf8");
+  const before = requests;
+  const registry = openTaskRegistry(dbPath);
+  try {
+    const task = registry.registerTask({ kind: "cli.search", role: "business", entry: "cli" });
+    await assert.rejects(
+      withTask(task, () => run(["anysearch-cli GitHub repository"])),
+      /Domain schema:/,
+    );
+    assert.equal(requests, before, "no provider request was sent");
+  } finally {
+    registry.close();
+    writeDefaultDomain(20);
+  }
+});
