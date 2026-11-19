@@ -3,7 +3,7 @@
 // `ans hitl review` lists the queue; `--allow-url <host>` pre-authorizes a host by writing
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
@@ -39,6 +39,19 @@ function allowHost(host: string): boolean {
   const domainName = resolveActiveDomain().name;
   const tomlPath = domainTomlPath(process.cwd(), domainName, domainSearchDirs());
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
+  // Only the operator's own dirs are writable. A domain that exists only in the
+  // packaged `domains/` dir is shared by every project on the machine and is
+  // replaced on upgrade (and read-only in a global install), so writing the host
+  // there either edits everyone's rules or fails with a raw EACCES.
+  const writableDirs = [process.env.ANS_DOMAINS_DIR?.trim(), join(process.cwd(), "domains")]
+    .filter((d): d is string => !!d)
+    .map((d) => resolve(d));
+  if (!writableDirs.includes(resolve(dirname(tomlPath)))) {
+    throw new Error(
+      "领域 " + domainName + " 的 TOML 只在随包目录里（" + tomlPath + "），那份是全机共用、升级会覆盖的，不能往里写。"
+      + "把它复制到 " + join(process.cwd(), "domains") + "，或者设置 ANS_DOMAINS_DIR 指向你自己的目录，再跑一次。",
+    );
+  }
   const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];
   const src = readFileSync(tomlPath, "utf8");
   const lines = src.split("\n");
