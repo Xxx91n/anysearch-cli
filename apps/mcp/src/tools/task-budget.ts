@@ -83,12 +83,6 @@ export function beginToolBudget(
 }
 
 /**
- * The structured answer for a budget stop: isError carries "this call did not
- * finish", and structuredContent carries the machine-readable class. The task
- * wrapper attaches the closeout to exactly this shape (#303), so a host can
- * tell a budget stop from an upstream failure without reading prose.
- */
-/**
  * #306: the result for a call refused because the Active Domain could not be
  * read. Same shape as a budget stop (a classification the host can switch on
  * without reading prose) for the same reason — but the caller's next move is to
@@ -106,6 +100,12 @@ export function toolDomainStop(toolName: string, detail: string): CallToolResult
   };
 }
 
+/**
+ * The structured answer for a budget stop: isError carries "this call did not
+ * finish", and structuredContent carries the machine-readable class. The task
+ * wrapper attaches the closeout to exactly this shape (#303), so a host can
+ * tell a budget stop from an upstream failure without reading prose.
+ */
 export function toolBudgetStop(
   toolName: string,
   kind: BudgetStopReason,

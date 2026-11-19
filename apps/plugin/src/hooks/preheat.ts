@@ -28,6 +28,7 @@ interface PolicyCache {
   /** Present on a materialized cache; absent on a live server answer. */
   materialized_at?: string;
   project_root?: string;
+  domain_name?: string;
   sources?: PolicyCacheSource[];
 }
 
@@ -79,11 +80,14 @@ function realpathOrSelf(path: string): string {
 // the TOML declares. So the envelope must name the project and the files it was
 // materialized from, and every one of those files must still have the same
 // version. Anything less is a guess, and a guess here is a URL decision.
-function usableCache(parsed: Partial<PolicyCache>, projectRoot: string): PolicyCache | null {
+function usableCache(parsed: Partial<PolicyCache>, projectRoot: string, domainName: string): PolicyCache | null {
   if (!Array.isArray(parsed.allow) || !Array.isArray(parsed.deny) || typeof parsed.policy_version !== "string") return null;
   if (canonicalVersion(parsed.allow, parsed.deny) !== parsed.policy_version) return null;
   if (typeof parsed.project_root !== "string" || !parsed.project_root) return null;
   if (realpathOrSelf(parsed.project_root) !== realpathOrSelf(projectRoot)) return null;
+  // Same project, same files, a different Active Domain: the cached allowlist
+  // describes a declaration this project no longer uses.
+  if (parsed.domain_name !== domainName) return null;
   if (!Array.isArray(parsed.sources) || parsed.sources.length === 0) return null;
   for (const source of parsed.sources) {
     if (!source || typeof source.path !== "string" || typeof source.version !== "string") return null;
@@ -98,6 +102,8 @@ function usableCache(parsed: Partial<PolicyCache>, projectRoot: string): PolicyC
 // source is usable — the caller then asks instead of allowing. Both the request and the
 // fallback are scoped to projectRoot, so one project's rules never answer another.
 export async function readPolicy(serverUrl: string, token: string, projectRoot: string): Promise<ResolvedPolicy | null> {
+  // The domain the hook is asking about is the one this host process would use.
+  const domainName = process.env.ANS_DOMAIN?.trim() || "default";
   try {
     const res = await fetch(serverUrl + "/policy?project=" + encodeURIComponent(projectRoot), {
       headers: { Authorization: "Bearer " + token },
@@ -112,7 +118,7 @@ export async function readPolicy(serverUrl: string, token: string, projectRoot: 
   } catch { /* server unreachable -> cache fallback */ }
   let cached: PolicyCache | null = null;
   try {
-    cached = usableCache(JSON.parse(readFileSync(policyCachePath(projectRoot), "utf8")) as Partial<PolicyCache>, projectRoot);
+    cached = usableCache(JSON.parse(readFileSync(policyCachePath(projectRoot), "utf8")) as Partial<PolicyCache>, projectRoot, domainName);
   } catch { /* no readable cache */ }
   if (!cached) return null;
   // Say it out loud: the rules in force come from a copy, not from the project's

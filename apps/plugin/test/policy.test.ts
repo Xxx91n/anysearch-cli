@@ -42,7 +42,12 @@ delete process.env.ANS_SERVER_REGISTRY;
 // one — a cache with no source cannot be confirmed and is rejected.
 const domainToml = join(realpathSync(dir), "domains", "default.toml");
 mkdirSync(join(realpathSync(dir), "domains"), { recursive: true });
-writeFileSync(domainToml, 'name = "default"\\n[rag]\\nadapter = "none"\\n', "utf8");
+writeFileSync(domainToml, [
+  'name = "default"',
+  '[rag]',
+  'adapter = "none"',
+  '',
+].join("\n"), "utf8");
 function tomlVersion(): string {
   const s = statSync(domainToml);
   return s.mtimeMs + ":" + s.ctimeMs;
@@ -61,6 +66,7 @@ function envelope(body: { allow: string[]; deny: string[]; policy_version: strin
     ...body,
     materialized_at: new Date().toISOString(),
     project_root: realpathSync(dir),
+    domain_name: "default",
     sources: [{ path: domainToml, version: tomlVersion() }],
     ...overrides,
   };
@@ -123,9 +129,23 @@ async function main() {
   writeCache(envelope(goodPolicy, { sources: [{ path: domainToml, version: "0:0" }] }));
   assert("cache whose declaration changed -> null", (await readPolicy(DEAD, "", dir)) === null);
 
+  // 4c2. #306: same project, same untouched files, a different Active Domain —
+  // the cached allowlist belongs to the declaration the project no longer uses.
+  writeCache(envelope(goodPolicy, { domain_name: "other" }));
+  assert("cache from another Active Domain -> null", (await readPolicy(DEAD, "", dir)) === null);
+
   // 4d. #306: an envelope with no provenance cannot be confirmed for anyone.
   writeCache(goodPolicy);
   assert("cache without provenance -> null", (await readPolicy(DEAD, "", dir)) === null);
+
+  // 4e2. #306: when the cache ALLOWS a host there is no ask and no deny, so the
+  // notice has to ride additionalContext — otherwise the user never learns that
+  // a snapshot, not the current declaration, let it through.
+  writeCache(envelope(goodPolicy));
+  const dAllowedFromCache = await makePreToolUseDecision(input("https://good.example/x"));
+  assert("allowed-from-cache carries a notice",
+    dAllowedFromCache.permission === undefined &&
+    String(dAllowedFromCache.additionalContext ?? "").includes("缓存"));
 
   // 4e. the ask reason names the cache when a cached rule is what asked.
   writeCache(envelope(goodPolicy));

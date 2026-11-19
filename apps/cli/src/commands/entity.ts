@@ -9,6 +9,7 @@
 
 import { createPersistentEngine } from "../db";
 import type { SqliteSessionStore } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/kernel";
 
 // The store surface this command drives. Taken from the concrete store rather
 // than the port: the port marks the #277 methods optional so hand-built mocks
@@ -57,7 +58,8 @@ function printHelp(): void {
 export async function runEntity(args: string[]): Promise<number> {
   const sub = args[0];
   if (!sub || sub === "--help" || sub === "-h") { printHelp(); return 0; }
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
+  const active = resolveActiveDomain();
+  const eng = createPersistentEngine(active.name, { domainDeclared: active.declared });
   const store = eng.store as unknown as EntityStore;
 
   if (sub === "merge") {

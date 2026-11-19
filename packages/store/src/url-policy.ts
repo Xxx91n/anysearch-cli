@@ -216,12 +216,20 @@ export interface MaterializedPolicy {
   materialized_at: string; // ISO-8601 UTC
   /** Real path of the project this policy belongs to. */
   project_root: string;
+  /**
+   * The Active Domain name it was read under. Project + file versions alone are
+   * not enough: switching A to B, where both files exist and neither changes,
+   * leaves A's TOML untouched and its cache "unmoved" — yet it no longer
+   * describes what the project declares.
+   */
+  domain_name: string;
   /** The TOML and its base chain at materialization. */
   sources: PolicySourceVersion[];
 }
 
 export interface PolicyCacheProvenance {
   projectRoot: string;
+  domainName: string;
   sources: PolicySourceVersion[];
 }
 
@@ -232,6 +240,7 @@ export function writePolicyCache(cachePath: string, policy: UrlPolicy, provenanc
     policy_version: policy.policyVersion,
     materialized_at: new Date().toISOString(),
     project_root: provenance.projectRoot,
+    domain_name: provenance.domainName,
     sources: provenance.sources,
   };
   atomicWriteFile(cachePath, JSON.stringify(envelope, null, 2) + "\n");
@@ -250,6 +259,7 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
     if (!Array.isArray(raw.allow) || !Array.isArray(raw.deny) || typeof raw.policy_version !== "string") return null;
     if (typeof raw.materialized_at !== "string") return null;
     if (typeof raw.project_root !== "string" || raw.project_root.length === 0) return null;
+    if (typeof raw.domain_name !== "string" || raw.domain_name.length === 0) return null;
     if (!Array.isArray(raw.sources) || raw.sources.length === 0) return null;
     const sourcesOk = raw.sources.every((s) => s && typeof s.path === "string" && typeof s.version === "string");
     if (!sourcesOk) return null;
@@ -260,22 +270,26 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 }
 
 // Can this cached policy still be trusted to describe the current project?
-// Two things have to hold, and neither is a guess:
+// Three things have to hold, and none is a guess:
 //   1. it was materialized for THIS project (a cache copied into another
 //      project's .anysearch-cli must not answer for it);
-//   2. every file it was materialized from still has the same version, so the
+//   2. it names the Active Domain the caller is running now;
+//   3. every file it was materialized from still has the same version, so the
 //      declaration it encodes has not moved since.
 // Anything else — including a file that appeared where there was none — means
 // the cache cannot be confirmed, and the caller must ask instead of consuming.
 export function policyCacheApplies(
   envelope: MaterializedPolicy,
-  ctx: { projectRoot: string },
+  ctx: { projectRoot: string; domainName: string },
 ): { ok: true } | { ok: false; reason: string } {
   const real = (p: string): string => {
     try { return realpathSync(p); } catch { return p; }
   };
   if (real(envelope.project_root) !== real(ctx.projectRoot)) {
     return { ok: false, reason: "cached policy was materialized for a different project" };
+  }
+  if (envelope.domain_name !== ctx.domainName) {
+    return { ok: false, reason: "cached policy was materialized under domain \"" + envelope.domain_name + "\", not \"" + ctx.domainName + "\"" };
   }
   for (const source of envelope.sources) {
     if (fileVersion(source.path) !== source.version) {

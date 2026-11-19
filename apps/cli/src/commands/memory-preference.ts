@@ -8,6 +8,7 @@
 import { createPersistentEngine } from "../db";
 import { writeProjection } from "@anysearch-cli/kernel";
 import type { T0PreferenceInput } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/kernel";
 
 function printHelp(): void {
   process.stdout.write(
@@ -47,7 +48,8 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     }
   }
 
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
+  const active = resolveActiveDomain();
+  const eng = createPersistentEngine(active.name, { domainDeclared: active.declared });
 
   if (sub === "list") {
     const rows = await eng.store.listPreferences(process.cwd());

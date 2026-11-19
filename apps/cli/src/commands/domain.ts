@@ -103,7 +103,6 @@ export async function runDomain(args: string[]): Promise<number> {
     console.log("领域已换成：" + newDomain);
     console.log("  记在 " + configPath() + " 里，下次也用它");
     printResolved(constraint);
-    console.log("");
     return 0;
   }
   process.stderr.write("没换成 " + newDomain + "：没有可用的领域配置。\n");

@@ -51,7 +51,6 @@ import {
   buildAnsChatBudgetResult,
   buildAnsChatCancelledResult,
   buildAnsChatConsolidateResult,
-  buildAnsChatDomainResult,
   buildAnsChatErrorResult,
   buildAnsChatResult,
   resolveAnsChatSession,
@@ -63,6 +62,7 @@ import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from ".
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
+import { toolDomainStop } from "./task-budget.js";
 
 // A cut-off run's accounting dimensions: the provider never sent a final
 // usage figure, so the run's tokens, cache and cost are all unknown. Named
@@ -737,7 +737,7 @@ export function registerAnsChat(
               // #306: a broken Active Domain is not a budget answer. Nothing
               // was called, and the fix is to repair the TOML, so it gets its
               // own classification instead of "raise your cap".
-              return buildAnsChatDomainResult(runtimeError);
+              return toolDomainStop("ans_chat", runtimeError);
             }
             if (runtimeErrorReason !== undefined) {
               // A stop can land mid-stream, so wait for the late settlement

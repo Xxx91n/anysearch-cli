@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, DomainConstraintError, isDomainConstraintError, resolveActiveDomain, resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError, resolveActiveDomain } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -40,14 +40,11 @@ export async function runChat(argv: string[]): Promise<number> {
   // persisted selection) that cannot be resolved stops the command; the
   // product's own "default" convention falling back is the legal behaviour it
   // had before, and the engine says so on stderr.
+  // `active.declared` is what tells the engine whether a missing TOML is a fault
+  // or the product's own default convention; the engine refuses the first and
+  // falls back on the second, so this path does not re-decide it.
   const active = resolveActiveDomain();
   const domainName = active.name;
-  const constraint = resolveDomainConstraint({
-    name: active.name,
-    declared: active.declared,
-    dirs: domainSearchDirs(),
-  });
-  if (constraint.state === "failed" && constraint.fatal) throw new DomainConstraintError(constraint);
 
   let engine: CompositionResult;
   let domain: DomainConfigPort;

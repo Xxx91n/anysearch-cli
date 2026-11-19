@@ -202,11 +202,11 @@ async function main() {
     const dir = mkdtempSync(join(tmpdir(), "pol-"));
     const cache = join(dir, "policy.json");
     const toml = join(dir, "domain.toml");
-    await import("node:fs").then((m) => m.writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n', "utf8"));
+    writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n', "utf8");
     const policy = resolveUrlPolicy({ tomlHosts: ["a.example", "b.example"], denyHosts: ["evil.example"] });
 
     // T9 (a): writePolicyCache stamps materialized_at ISO-8601
-    writePolicyCache(cache, policy, { projectRoot: dir, sources: domainSourceVersions(toml) });
+    writePolicyCache(cache, policy, { projectRoot: dir, domainName: "pol", sources: domainSourceVersions(toml) });
     const envelope = readPolicyCacheEnvelope(cache);
     check("T9(a): envelope not null", envelope !== null);
     check("T9(a): allow list persisted", JSON.stringify(envelope?.allow) === JSON.stringify(policy.allow));
@@ -217,7 +217,12 @@ async function main() {
     // from, so a later reader can check it instead of trusting it.
     check("T9(a): project recorded", envelope?.project_root === dir);
     check("T9(a): source versions recorded", envelope?.sources.length === 1 && envelope.sources[0]!.path === toml);
-    check("T9(a): fresh envelope applies to its own project", policyCacheApplies(envelope!, { projectRoot: dir }).ok);
+    check("T9(a): domain recorded", envelope?.domain_name === "pol");
+    check("T9(a): fresh envelope applies to its own project", policyCacheApplies(envelope!, { projectRoot: dir, domainName: "pol" }).ok);
+    // #306: the project can switch domains without either TOML moving. The cache
+    // was written under "pol", so it says nothing about "other".
+    check("T9(a): a different Active Domain does not apply",
+      !policyCacheApplies(envelope!, { projectRoot: dir, domainName: "other" }).ok);
 
     // T9 (b): missing cache -> null (so server startup knows to fail-closed on no fallback)
     const noCache = readPolicyCacheEnvelope(join(dir, "missing.json"));
@@ -232,22 +237,22 @@ async function main() {
     // #306: a cache without provenance cannot be confirmed for any project, so
     // it is treated as unreadable rather than as a policy to fall back to.
     const noProvenance = join(dir, "no-provenance.json");
-    await import("node:fs").then((m) => m.writeFileSync(noProvenance, JSON.stringify({
+    writeFileSync(noProvenance, JSON.stringify({
       allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion,
       materialized_at: new Date().toISOString(),
-    })));
+    }));
     check("T9(c): cache without provenance -> null", readPolicyCacheEnvelope(noProvenance) === null);
 
     // #306: a cache copied into another project does not answer for it.
     const other = mkdtempSync(join(tmpdir(), "pol-other-"));
     try {
       check("T9(d): cache from another project does not apply",
-        !policyCacheApplies(envelope!, { projectRoot: other }).ok);
+        !policyCacheApplies(envelope!, { projectRoot: other, domainName: "pol" }).ok);
     } finally { rmSync(other, { recursive: true, force: true }); }
 
     // #306: a TOML edit after materialization makes the cache unconfirmable.
-    await import("node:fs").then((m) => m.writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n# edited\n', "utf8"));
-    const afterEdit = policyCacheApplies(envelope!, { projectRoot: dir });
+    writeFileSync(toml, 'name = "pol"\n[rag]\nadapter = "none"\n# edited\n', "utf8");
+    const afterEdit = policyCacheApplies(envelope!, { projectRoot: dir, domainName: "pol" });
     check("T9(d): TOML edited after caching -> does not apply", !afterEdit.ok);
 
     rmSync(dir, { recursive: true, force: true });

@@ -121,14 +121,16 @@ export async function runSearch(args: string[]): Promise<number> {
   // cannot be established stops before any provider request; an undeclared one
   // travels a no-row scope and caps nothing.
   //
-  // Design: resolve the budget from ANS_DOMAIN || "default", like `ans chat`
-  // and `ans consolidate` — an unset ANS_DOMAIN keeps the historical full
-  // fanout for provider selection, but it must not silently drop the default
-  // domain's declared cap. The engine's own config is absent in that case, so
-  // the default TOML is read once for the budget only.
-  // #306: the same three-state answer every entry asks for. Declared and
-  // unusable stops the run before any provider request; the convention default
-  // being absent is a legal undeclared run, which just has no caps to enforce.
+  // #306: the budget is resolved through the same three-state answer `ans chat`
+  // and `ans consolidate` ask for. An unset ANS_DOMAIN keeps the historical
+  // full fanout for provider selection, but it must not silently drop the
+  // default domain's declared cap — the engine's own config is absent in that
+  // case, so the default TOML is read once here, for the budget only.
+  //
+  // The fatal branch is not redundant for a bare search: the engine only loads
+  // a domain when one was declared, so a BROKEN `default.toml` is invisible to
+  // it here. Refusing it is the point — treating it as "no budget" would ignore
+  // a declared cap while still fanning out to every provider.
   const budgetConstraint = resolveDomainConstraint({
     name: active.name,
     declared: active.declared,
