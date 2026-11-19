@@ -219,10 +219,13 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
       // claim two units are stuck when one is.
       scheduled += 1;
       setImmediate(() => {
+        // Move the count from `scheduled` to `inFlight` in ONE synchronous
+        // step: run() takes its own count before its first await, so the
+        // drain waiter never observes a moment with neither bucket holding the
+        // unit. Do NOT wake the waiters here — waking them after `scheduled -= 1`
+        // but before run() counted read `total() === 0` and let the shutdown
+        // close the store under a unit that was about to write.
         scheduled -= 1;
-        // A unit leaving the scheduled bucket may be the last one, so wake the
-        // drain waiters before the work even starts.
-        if (inFlight === 0) release();
         void this.run<T>(kind, opts, work)
           .catch((e: unknown) => {
             // run() already ended the row (or the registry failed); this line is

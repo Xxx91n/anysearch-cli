@@ -140,6 +140,41 @@ test("post-work tracker: an unknown parent is recorded as no link, not a dead po
   }
 });
 
+test("post-work tracker: the scheduled→running handoff never lets drain through early", async () => {
+  // Review-fish finding: when `scheduled` hit 0 and `release()` ran before
+  // run() took its count, drain resolved true and the shutdown closed the store
+  // under a unit that was about to write. The handoff must be one synchronous
+  // step: at no point is the unit in neither bucket.
+  const dir = mkdtempSync(join(tmpdir(), "ans-postwork-handoff-"));
+  const dbPath = join(dir, "anysearch.db");
+  const registry = openTaskRegistry(dbPath);
+  const tracker = createPostWorkTracker(registry);
+  let settled = false;
+  let workDone = false;
+  try {
+    tracker.runLater("server.project_index", {}, () => { workDone = true; return "done"; });
+    assert.equal(tracker.pending(), 1, "counted while only scheduled");
+
+    // Watch pending() across the handoff. Reading 0 while the work has NOT yet
+    // run means a drain in that instant would have closed the store under it.
+    let sawEmptyBeforeWork = false;
+    const poll = setInterval(() => {
+      if (!workDone && tracker.pending() === 0) sawEmptyBeforeWork = true;
+    }, 1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    clearInterval(poll);
+    assert.equal(workDone, true, "the work ran");
+    assert.equal(sawEmptyBeforeWork, false, "pending never read 0 before the work even started");
+    // Let the last poll observe the real settle.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    settled = true;
+    assert.equal(tracker.pending(), 0, "it does read 0 once everything settled");
+  } finally {
+    tracker.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("post-work tracker: a failing unit ends the row with exit 1 and rethrows", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-postwork-unit3-"));
   const dbPath = join(dir, "anysearch.db");

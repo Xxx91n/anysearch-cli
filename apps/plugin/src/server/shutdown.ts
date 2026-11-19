@@ -42,13 +42,20 @@ export interface ShutdownDeps {
 export async function runShutdown(deps: ShutdownDeps): Promise<void> {
   let requestsClosed = false;
   let drainedUnits = false;
-  const requestsEnded = deps.closeServer().then(() => { requestsClosed = true; });
-  const unitsEnded = deps.drainPostWork(deps.drainMs).then((ok) => { drainedUnits = ok; });
-  // 共用同一个上限：客户端挂着 socket 不能把退出无限拖下去。
+  // 共用一个上限：客户端挂着 socket 不能把退出无限拖下去。
   const deadline = new Promise<void>((resolve) => setTimeout(resolve, deps.drainMs));
 
+  // 顺序是「先等请求收完，再等后置工作」。不能反过来：请求还在处理时，
+  // 它的后置工作可能刚排上队、任务行还没建，那一刻 drain 看到 0 条就放行，
+  // 关库正好盖在它要开始的写上面。等请求全收完，剩下的就都是已经排队的活。
+  // 两个 await 都在同一个上限内，超时一起放弃。
   try {
-    await Promise.race([Promise.all([requestsEnded, unitsEnded]), deadline]);
+    const allDone = (async (): Promise<void> => {
+      await deps.closeServer();
+      requestsClosed = true;
+      drainedUnits = await deps.drainPostWork(deps.drainMs);
+    })();
+    await Promise.race([allDone, deadline]);
   } catch {
     // 某一项自己抛了（drain 或 closeServer 失败）。这就是「没干净结束」，
     // 往下走失败分支；不吞掉的话 index.ts 那边是 `void runShutdown(...)`，
@@ -56,17 +63,15 @@ export async function runShutdown(deps: ShutdownDeps): Promise<void> {
   }
 
   if (!drainedUnits || !requestsClosed) {
-    // 说清楚卡在哪：卡住的请求和还在跑的后置工作，查的地方不一样。
-    // 次数只读一次——读两次的话，两次之间那条活刚好结束，
-    // 就会印出「0 条还在跑」，正是这段要避免的误导。
-    // drain 自己抛了时两边都说不准（不知道是算不出来还是真的没完），
-    // 那就只说「没收拾干净」，不冒充知道是哪一个。
+    // 按「先后顺序」判断，因为 drain 现在排在请求之后：请求没收完时 drain
+    // 根本还没跑，`drainedUnits` 是 false 并不代表 drain 失败。
     const pending = deps.pendingPostWork();
     let detail: string;
-    if (pending > 0) {
+    if (!requestsClosed) {
+      detail = "requests still in flight (" +
+        (pending > 0 ? pending + " post-work unit(s) still running" : "no post-work unit is running") + ")";
+    } else if (pending > 0) {
       detail = pending + " post-work unit(s) still running";
-    } else if (drainedUnits) {
-      detail = "requests still in flight (no post-work unit is running)";
     } else {
       detail = "the stop did not settle (post-work drain failed)";
     }

@@ -58,13 +58,17 @@ test("shutdown: post-work still running → stores NOT closed, says which part, 
 test("shutdown: a request stuck in flight (no unit running) is named as such", async () => {
   // The old text said "post-work still running (0 unit(s))", which sent the
   // reader looking at the wrong thing.
+  // closeServer never resolves; drain is asked only AFTER the requests close,
+  // so it must not even be called here — that is the ordering under test.
+  let drained = false;
   const { deps, calls, exits, lines } = recorder({
-    closeServer: () => new Promise<void>(() => { /* never resolves: client holds the socket */ }),
-    drainPostWork: async () => true,
+    closeServer: () => new Promise<void>(() => { /* client holds the socket */ }),
+    drainPostWork: async () => { drained = true; return true; },
     pendingPostWork: () => 0,
   });
   await runShutdown(deps);
   assert.ok(!calls.includes("closeStores"));
+  assert.equal(drained, false, "drain is not consulted before the requests settle");
   assert.deepEqual(exits, [1]);
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /requests still in flight/);
