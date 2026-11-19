@@ -1,6 +1,6 @@
 // golden: hook readPolicy pull-through semantics (+ cache integrity, failing-server fallback).
 // Run: npx tsx apps/plugin/test/policy.test.ts
-import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,12 +37,39 @@ process.env.ANS_SERVER_URL = DEAD;
 process.env.ANS_SERVER_TOKEN = "policy-test-token";
 delete process.env.ANS_SERVER_REGISTRY;
 
+// #306: the project's declaration the cache is materialized from. Its version
+// is what makes the cache provably still applicable, so the fixture has to have
+// one — a cache with no source cannot be confirmed and is rejected.
+const domainToml = join(realpathSync(dir), "domains", "default.toml");
+mkdirSync(join(realpathSync(dir), "domains"), { recursive: true });
+writeFileSync(domainToml, [
+  'name = "default"',
+  '[rag]',
+  'adapter = "none"',
+  '',
+].join("\n"), "utf8");
+function tomlVersion(): string {
+  const s = statSync(domainToml);
+  return s.mtimeMs + ":" + s.ctimeMs;
+}
+
 const GOOD = { allow: ["good.example"], deny: ["denied.example"] };
 const goodPolicy = { ...GOOD, policy_version: canonicalVersion(GOOD.allow, GOOD.deny) };
 const cacheFile = join(realpathSync(dir), ".anysearch-cli", "policy.json");
 function writeCache(p: unknown) {
   mkdirSync(join(realpathSync(dir), ".anysearch-cli"), { recursive: true });
   writeFileSync(cacheFile, JSON.stringify(p), "utf8");
+}
+// The envelope the server writes: policy body + where it came from.
+function envelope(body: { allow: string[]; deny: string[]; policy_version: string }, overrides: Record<string, unknown> = {}) {
+  return {
+    ...body,
+    materialized_at: new Date().toISOString(),
+    project_root: realpathSync(dir),
+    domain_name: "default",
+    sources: [{ path: domainToml, version: tomlVersion() }],
+    ...overrides,
+  };
 }
 
 const input = (url: string) => ({
@@ -72,10 +99,12 @@ async function main() {
   const d1 = await makePreToolUseDecision(input("https://unknown-site.example/path"));
   assert("no policy + URL -> ask (fail-closed)", d1.permission === "ask");
 
-  // 2. good cache (integrity-verifiable): consumed when server is down
-  writeCache(goodPolicy);
+  // 2. good cache (integrity-verifiable, still applicable): consumed when server is down
+  writeCache(envelope(goodPolicy));
   const p2 = await readPolicy(DEAD, "", dir);
   assert("good cache consumed when server down", p2 !== null && p2.policy_version === goodPolicy.policy_version);
+  assert("cache answer says it came from the cache", p2?.from === "cache");
+  assert("cache answer carries its materialized_at", typeof p2?.materialized_at === "string");
 
   const dAllow = await makePreToolUseDecision(input("https://good.example/x"));
   assert("allowed host -> no ask/deny", dAllow.permission === undefined);
@@ -88,25 +117,57 @@ async function main() {
   assert("unallowed host -> ask", dAsk.permission === "ask");
 
   // 4. tampered cache: content replaced but self-declared version kept -> rejected
-  writeCache({ allow: [], deny: [], policy_version: goodPolicy.policy_version });
+  writeCache(envelope({ allow: [], deny: [], policy_version: goodPolicy.policy_version }));
   const p4 = await readPolicy(DEAD, "", dir);
   assert("tampered cache (hash mismatch) -> null, fail-closed", p4 === null);
 
-  // restore the good cache for the remaining steps
+  // 4b. #306: a cache written for another project is not this project's answer.
+  writeCache(envelope(goodPolicy, { project_root: join(tmpdir(), "some-other-project") }));
+  assert("cache from another project -> null", (await readPolicy(DEAD, "", dir)) === null);
+
+  // 4c. #306: a TOML edited after materialization makes the cache unconfirmable.
+  writeCache(envelope(goodPolicy, { sources: [{ path: domainToml, version: "0:0" }] }));
+  assert("cache whose declaration changed -> null", (await readPolicy(DEAD, "", dir)) === null);
+
+  // 4c2. #306: same project, same untouched files, a different Active Domain —
+  // the cached allowlist belongs to the declaration the project no longer uses.
+  writeCache(envelope(goodPolicy, { domain_name: "other" }));
+  assert("cache from another Active Domain -> null", (await readPolicy(DEAD, "", dir)) === null);
+
+  // 4d. #306: an envelope with no provenance cannot be confirmed for anyone.
   writeCache(goodPolicy);
+  assert("cache without provenance -> null", (await readPolicy(DEAD, "", dir)) === null);
+
+  // 4e2. #306: when the cache ALLOWS a host there is no ask and no deny, so the
+  // notice has to ride additionalContext — otherwise the user never learns that
+  // a snapshot, not the current declaration, let it through.
+  writeCache(envelope(goodPolicy));
+  const dAllowedFromCache = await makePreToolUseDecision(input("https://good.example/x"));
+  assert("allowed-from-cache carries a notice",
+    dAllowedFromCache.permission === undefined &&
+    String(dAllowedFromCache.additionalContext ?? "").includes("缓存"));
+
+  // 4e. the ask reason names the cache when a cached rule is what asked.
+  writeCache(envelope(goodPolicy));
+  const dCached = await makePreToolUseDecision(input("https://other.example/x"));
+  assert("cached-policy ask mentions the cache",
+    dCached.permission === "ask" && String(dCached.permissionReason).includes("缓存"));
+
+  // restore the good cache for the remaining steps
+  writeCache(envelope(goodPolicy));
 
   // 5. server reachable: fresh response is authoritative even when versions match
   const fresh = { allow: ["fresh.example"], deny: [], policy_version: canonicalVersion(["fresh.example"], []) };
   await withServer(200, fresh, async (url) => {
     // poison the cache
-    writeCache({ allow: ["stale.example"], deny: ["stale.example"], policy_version: canonicalVersion(["stale.example"], ["stale.example"]) });
+    writeCache(envelope({ allow: ["stale.example"], deny: ["stale.example"], policy_version: canonicalVersion(["stale.example"], ["stale.example"]) }));
     const p = await readPolicy(url, "", dir);
     assert("server reachable -> fresh wins (no version-equal early return)", p !== null && p.allow.join() === "fresh.example");
   });
 
   // 6. server reachable but failing (5xx): falls back to good cache, not null
   await withServer(500, { error: "policy parse failed" }, async (url) => {
-    writeCache(goodPolicy);
+    writeCache(envelope(goodPolicy));
     const p = await readPolicy(url, "", dir);
     assert("5xx + good cache -> cache fallback", p !== null && p.policy_version === goodPolicy.policy_version);
   });

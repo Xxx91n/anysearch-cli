@@ -105,19 +105,21 @@ assert("atomicWriteFile materializes content, no .tmp left",
 
 // --- mtime reloader (D5) ---
 const rel = createDomainReloader(tomlPath);
-assert("reloader: unchanged mtime -> null", rel() === null);
+assert("reloader: unchanged mtime -> unchanged", rel().kind === "unchanged");
 writeFileSync(tomlPath, readFileSync(tomlPath, "utf8").replace("ok.example.com", "ok2.example.com"), "utf8");
 const future = Date.now() / 1000 + 2;
 utimesSync(tomlPath, future, future);
 const reloaded = rel();
-assert("reloader: changed mtime -> reloaded schema", reloaded === null ? false : (reloaded.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
+assert("reloader: changed mtime -> reloaded schema",
+  reloaded.kind === "reloaded" && (reloaded.schema.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
 // #188: forceFirst returns the current file on the first probe even when the
 // mtime matches the construction snapshot (per-request runtime built after an
-// edit), then falls back to the normal unchanged -> null contract.
+// edit), then falls back to the normal unchanged contract.
 const forcedRel = createDomainReloader(tomlPath, undefined, { forceFirst: true });
+const forced = forcedRel();
 assert("reloader: forceFirst returns the current schema on the first probe",
-  (forcedRel()?.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
-assert("reloader: forceFirst only forces the first probe", forcedRel() === null);
+  forced.kind === "reloaded" && (forced.schema.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
+assert("reloader: forceFirst only forces the first probe", forcedRel().kind === "unchanged");
 // --- hostname format validation (fail-closed at load, D7 equal strictness) ---
 {
   let threw2 = "";
@@ -127,17 +129,25 @@ assert("reloader: forceFirst only forces the first probe", forcedRel() === null)
 }
 assert("valid env host lists pass unchanged", parseEnvHosts(" A.com ,b.com ").join(",") === "a.com,b.com");
 
-// --- bad TOML -> keep last known good + explicit stderr WARN (once per change) ---
+// --- bad TOML -> a FAILED probe, not a silent "unchanged" (#306) ---
 writeFileSync(tomlPath, "not = [valid toml", "utf8");
 const future2 = Date.now() / 1000 + 4;
 utimesSync(tomlPath, future2, future2);
 let warns = 0;
 const origWrite = process.stderr.write.bind(process.stderr);
 process.stderr.write = ((chunk: unknown) => { warns++; return true; }) as typeof process.stderr.write;
-const stillNull = rel();
+const badProbe = rel();
 process.stderr.write = origWrite;
-assert("reloader: bad TOML returns null (keep last known good)", stillNull === null);
+// The old contract returned null here, which read exactly like "nothing
+// changed" and let the caller keep enforcing a policy it could no longer read.
+assert("reloader: bad TOML -> failed, not unchanged", badProbe.kind === "failed");
+assert("reloader: failed probe carries the reason", badProbe.kind === "failed" && badProbe.reason.length > 0);
 assert("reloader: bad TOML emits stderr WARN exactly once", warns === 1);
+// A repaired file is picked up again: the failure is a state, not a latch.
+writeFileSync(tomlPath, readFileSync(tomlPath, "utf8").replace("not = [valid toml", 'name = "policy-test"\n[rag]\nadapter = "none"'), "utf8");
+const future3 = Date.now() / 1000 + 6;
+utimesSync(tomlPath, future3, future3);
+assert("reloader: repaired TOML -> reloaded again", rel().kind === "reloaded");
 rmSync(tmpDir, { recursive: true, force: true });
 
 console.log("url-policy tests: " + passed + " passed, " + failed + " failed");

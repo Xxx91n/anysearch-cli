@@ -150,8 +150,8 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
 interface ResultVerdict {
   isError: boolean;
   interrupted: boolean;
-  /** A budget stop — the one error shape that carries a closeout. */
-  budgetStop: boolean;
+  /** A budget or domain stop: an error the handler classified for the host. */
+  classifiedStop: boolean;
   structuredContent?: Record<string, unknown>;
 }
 
@@ -163,10 +163,14 @@ function readVerdict(result: unknown): ResultVerdict {
     ? (result as { isError?: boolean; structuredContent?: Record<string, unknown> })
     : undefined;
   const structuredContent = readable?.structuredContent;
+  // Only a stop classification earns a closeout. An error that carries other
+  // structuredContent (the rebuild report, for one) keeps its shape untouched.
+  const errorKind = structuredContent?.errorKind;
+  const classifiedStop = isBudgetStopReason(errorKind) || errorKind === "domain-not-established";
   return {
     isError: readable?.isError === true,
     interrupted: structuredContent?.interrupted === true,
-    budgetStop: isBudgetStopReason(structuredContent?.errorKind),
+    classifiedStop,
     ...(structuredContent ? { structuredContent } : {}),
   };
 }
@@ -178,11 +182,11 @@ function attachCloseout<R>(
   wroteEnd: boolean,
   exitCode: number,
 ): R {
-  // #204 keeps ERROR results out of the success output schema. Only a budget
-  // stop carries structuredContent on an error (it must stay machine-
-  // distinguishable), so only it gets a closeout; every other error stays bare.
-  // The task row is written and ended in all cases.
-  if (verdict.isError && !verdict.budgetStop) return result;
+  // #204 keeps ERROR results out of the success output schema. A classified
+  // stop (budget or domain) carries structuredContent and gets the closeout so
+  // the caller knows which task it belonged to; every other error stays bare,
+  // including one that carries structuredContent for its own reasons.
+  if (verdict.isError && !verdict.classifiedStop) return result;
   // A handler may still return a bare string; spreading one would replace it
   // with an object. Leave non-object results exactly as they are.
   if (!result || typeof result !== "object") return result;

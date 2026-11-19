@@ -1417,9 +1417,11 @@ function makeMockStreamFn(decision: string): any {
     // the in-memory domain, and mark the budget refresh pending.
     writeFileSync(tomlPath, toml(100_000));
     utimesSync(tomlPath, Date.now() / 1000 + 2, Date.now() / 1000 + 2);
-    const reloaded = (runtime as any).domainReloader();
-    assert(reloaded !== null, "#188: the mid-run reload sees the new file");
-    (runtime as any).opts.domain = reloaded;
+    // #306: the probe reports three outcomes; the mid-run path assigns the
+    // schema of a successful re-read.
+    const probe = (runtime as any).domainReloader();
+    assert(probe.kind === "reloaded", "#188: the mid-run reload sees the new file");
+    (runtime as any).opts.domain = probe.schema;
     (runtime as any).pendingBudgetRefresh = true;
 
     const resumed: any[] = [];
@@ -1429,6 +1431,95 @@ function makeMockStreamFn(decision: string): any {
     const balance = ledger.getBalance(session.id)!;
     assert(balance.tokenCap === 100_000 && balance.spentTokens === 15 && balance.reservedTokens === 0,
       "#188: the pending refresh updates the durable cap and the run settles by actual usage");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #306: a TOML that goes bad while a runtime is alive stops the next run before
+// any controlled call. The old behaviour kept the last known good policy and
+// carried on, which is the "declared constraint silently stops applying" hole.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-306-broken-toml-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const tomlPath = join(dir, "rt.toml");
+    const good = [
+      'name = "rt"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '',
+    ].join("\n");
+    writeFileSync(tomlPath, good);
+    const session = await store.createSession("chat");
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain } as any,
+      domainTomlPath: tomlPath,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+    });
+
+    // First run consumes forceFirst on a healthy file.
+    const first: any[] = [];
+    for await (const ev of runtime.run("hello")) first.push(ev);
+    assert(first.some(e => e.type === "done"), "#306: the run on a healthy TOML finishes");
+
+    // Now the declaration becomes unreadable.
+    writeFileSync(tomlPath, 'name = "rt"\n[rag\nadapter = "none"\n');
+    utimesSync(tomlPath, Date.now() / 1000 + 4, Date.now() / 1000 + 4);
+
+    const stopped: any[] = [];
+    for await (const ev of runtime.run("hello")) stopped.push(ev);
+    const err = stopped.find(e => e.type === "error");
+    assert(err !== undefined, "#306: an unreadable domain TOML stops the run");
+    assert(err?.reason === "domain-not-established", "#306: the stop is classified, not just prose");
+    assert(!stopped.some(e => e.type === "done"), "#306: no answer is produced from an unconfirmed policy");
+    assert(String(err?.message ?? "").includes("没跑"), "#306: the message says the run did not happen");
+
+    // #306: an absent TOML is a different answer from a broken one. With nobody
+    // naming a domain (the `default` convention), losing the file is the legal
+    // fallback every other entry takes — not a stop with a message claiming the
+    // run did not happen.
+    const lonely = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain } as any,
+      domainTomlPath: join(dir, "gone.toml"),
+      // #306: the `default` convention — nobody declared this name.
+      domainDeclared: false,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+    });
+    // A declared name makes the same absence a fault.
+    const strict = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain } as any,
+      domainTomlPath: join(dir, "gone.toml"),
+      domainDeclared: true,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+    });
+    const lonelyEvents: any[] = [];
+    for await (const ev of lonely.run("hello")) lonelyEvents.push(ev);
+    assert(lonelyEvents.some(e => e.type === "done"),
+      "#306: an absent TOML under the default convention is the legal fallback");
+    const strictEvents: any[] = [];
+    for await (const ev of strict.run("hello")) strictEvents.push(ev);
+    assert(strictEvents.some(e => e.type === "error" && e.reason === "domain-not-established"),
+      "#306: the same absence IS a fault when the operator named the domain");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }

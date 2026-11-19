@@ -16,7 +16,7 @@
 // object to route anything to.
 
 import { toBudgetCaps, type BudgetConfig, type TaskBudgetLedger } from "@anysearch-cli/store";
-import type { RuntimeErrorReason } from "./runtime";
+import type { BudgetStopReason, RuntimeErrorReason } from "./runtime";
 import type { SessionStorePort } from "./ports";
 
 export interface TaskBudgetWiring {
@@ -32,23 +32,27 @@ export interface TaskBudgetWiring {
   /** The reason a declared budget could not be established. */
   taskBudgetFault?: string;
   /** The machine-readable class of the same fault, so callers stop guessing. */
-  taskBudgetFaultReason?: RuntimeErrorReason;
+  taskBudgetFaultReason?: BudgetStopReason;
 }
 
 /**
  * The runtime reasons that mean "a budget stopped this run".
  *
  * Keyed by the kernel union, so adding a reason there is a type error here until
- * this table says whether it is a stop. The task wrapper uses it to decide which
- * error result carries a closeout.
+ * this table says whether it is a budget stop. #306 added
+ * `domain-not-established`, which is a stop but not a budget one: it must not
+ * be reported as a cap the caller should raise.
  */
-const BUDGET_STOP_REASONS: Record<RuntimeErrorReason, true> = {
+const BUDGET_STOP_REASONS: Record<RuntimeErrorReason, boolean> = {
   "budget-not-established": true,
   "budget-rejected": true,
+  "domain-not-established": false,
 };
 
-export function isBudgetStopReason(value: unknown): value is RuntimeErrorReason {
-  return typeof value === "string" && Object.hasOwn(BUDGET_STOP_REASONS, value);
+export function isBudgetStopReason(value: unknown): value is BudgetStopReason {
+  return typeof value === "string"
+    && Object.hasOwn(BUDGET_STOP_REASONS, value)
+    && BUDGET_STOP_REASONS[value as RuntimeErrorReason];
 }
 
 export interface WireTaskBudgetOptions {

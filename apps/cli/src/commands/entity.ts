@@ -7,7 +7,7 @@
 // from?); `unresolved` is where a record whose object could not be established
 // waits for a human instead of silently staying out of recall.
 
-import { createPersistentEngine } from "../db";
+import { createEngineForActiveDomain } from "../db";
 import type { SqliteSessionStore } from "@anysearch-cli/store";
 
 // The store surface this command drives. Taken from the concrete store rather
@@ -57,7 +57,7 @@ function printHelp(): void {
 export async function runEntity(args: string[]): Promise<number> {
   const sub = args[0];
   if (!sub || sub === "--help" || sub === "-h") { printHelp(); return 0; }
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createEngineForActiveDomain();
   const store = eng.store as unknown as EntityStore;
 
   if (sub === "merge") {

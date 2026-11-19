@@ -6,11 +6,11 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
-import { beginToolBudget, toolBudgetStop } from "./task-budget.js";
+import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
@@ -169,6 +169,11 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               "budget-rejected",
               e.message + " (" + rounds + " round(s) settled before the stop)",
             );
+          }
+          // #306: the domain constraint is re-read per round, so it can break
+          // between rounds; name that stop instead of an upstream failure.
+          if (isDomainConstraintError(e)) {
+            return toolDomainStop("research_web", e.message);
           }
           return toolError("research_web", e instanceof Error ? e.message : String(e));
         }

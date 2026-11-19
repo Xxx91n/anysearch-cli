@@ -32,6 +32,58 @@ export function installDataDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(home, ".anysearch");
 }
 
+/**
+ * The CLI's persisted key=value config (`~/.anysearch/config.env`). `ans domain`
+ * writes ANS_DOMAIN here, which is the product's own switch.
+ */
+export function configEnvPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(installDataDir(env), "config.env");
+}
+
+/** The persisted Active Domain name, when `ans domain` wrote one. */
+export function readPersistedDomain(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  let content: string;
+  try {
+    content = readFileSync(configEnvPath(env), "utf8");
+  } catch {
+    return undefined;
+  }
+  for (const line of content.split("\n")) {
+    const match = line.match(/^ANS_DOMAIN=(.*)$/);
+    if (match) return match[1]!.trim() || undefined;
+  }
+  return undefined;
+}
+
+export interface ActiveDomain {
+  /** The name in force: the declared one, or the product's `default` convention. */
+  name: string;
+  /** The name the operator declared, or undefined when nobody did. */
+  declaredName?: string;
+  declared: boolean;
+}
+
+/**
+ * Which domain this process runs under. One definition for every entry — the
+ * CLI, the MCP server, the plugin server and the hook bundles all ask here.
+ *
+ * The persisted selection counts: `ans domain research` writes `config.env`, and
+ * a long-lived process that only read its own start-time env would keep gating
+ * URLs against the domain the user already left. An explicit `ANS_DOMAIN` still
+ * wins, including an explicitly empty one — that is how a test or a script says
+ * "no domain here", and falling back to the file would overrule it.
+ *
+ * Builtins only, so hook bundles can import it (same rule as this file's other
+ * helpers).
+ */
+export function resolveActiveDomain(env: NodeJS.ProcessEnv = process.env): ActiveDomain {
+  const explicit = env.ANS_DOMAIN;
+  const declaredName = explicit !== undefined
+    ? (explicit.trim() || undefined)
+    : (readPersistedDomain(env) ?? undefined);
+  return { name: declaredName ?? "default", ...(declaredName ? { declaredName } : {}), declared: !!declaredName };
+}
+
 /** One token for this installation; every project's hooks read the same file. */
 export function serverTokenPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(installConfigDir(env), "server-token");

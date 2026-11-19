@@ -1,7 +1,7 @@
 // ans relation: entity-relation edge inspection + idempotent backfill.
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
-import { createPersistentEngine } from "../db";
+import { createEngineForActiveDomain } from "../db";
 import type { RelationRow, BackfillRelationsResult } from "@anysearch-cli/store";
 
 interface RelationStore {
@@ -41,7 +41,7 @@ function intOpt(args: string[], flag: string, usage: string): { value?: number; 
 export async function runRelation(args: string[]): Promise<number> {
   const sub = args[0];
   if (!sub || sub === "--help" || sub === "-h") { printHelp(); return 0; }
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createEngineForActiveDomain();
   const store = eng.store as unknown as RelationStore;
 
   if (sub === "list") {

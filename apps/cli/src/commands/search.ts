@@ -3,8 +3,8 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, type DomainConfigPort } from "@anysearch-cli/kernel";
-import { isDomainSchemaError, loadDomainByNameIn } from "@anysearch-cli/store";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
@@ -105,40 +105,50 @@ export async function runSearch(args: string[]): Promise<number> {
   }
 
   // decision 3A: createEngine factory with domain filtering.
-  const domain = process.env.ANS_DOMAIN;
+  // #306: an unset ANS_DOMAIN is "nobody declared a domain" — the legal
+  // no-filtering default. A set one is a declaration, and createEngine stops
+  // the command when it cannot be honoured instead of fanning out to every
+  // provider with the operator's allowlist silently gone.
+  const active = resolveActiveDomain();
   // draft: ANS_PROVIDERS env-gated provider subset filter —
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const engine = createPersistentEngine(domain);
+  const engine = createPersistentEngine(active.declaredName);
   const { retriever, observation, providerBuildErrors, store, config } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that
   // cannot be established stops before any provider request; an undeclared one
   // travels a no-row scope and caps nothing.
   //
-  // Design: resolve the budget from ANS_DOMAIN || "default", like `ans chat`
-  // and `ans consolidate` — an unset ANS_DOMAIN keeps the historical full
-  // fanout for provider selection, but it must not silently drop the default
-  // domain's declared cap. The engine's own config is absent in that case, so
-  // the default TOML is read once for the budget only.
-  let budgetDomain: DomainConfigPort | undefined = config;
-  if (!budgetDomain) {
-    try {
-      budgetDomain = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs()) as DomainConfigPort;
-    } catch (e) {
-      // A configured-but-broken domain is a configuration error, not an
-      // absence: `ans chat` fails closed on exactly this predicate. Swallowing
-      // it would ignore a declared [budget] while still fanning out, which is
-      // the "cap exists on paper" hole this ticket closes. A missing or
-      // unreadable domain stays the historical fail-open.
-      if (isDomainSchemaError(e)) throw e;
-      process.stderr.write(
-        "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); search runs unmetered\n",
-      );
-    }
+  // Design: the budget comes from the same three-state answer `ans chat` and
+  // `ans consolidate` ask for, not from `config ?? load()` — an unset ANS_DOMAIN
+  // keeps the historical full fanout for provider selection but must not
+  // silently drop the default domain's declared cap, and reading that default
+  // TOML once here (rather than trusting the engine's own config, which is
+  // absent when nobody declared a domain) is what keeps the cap attached.
+  //
+  // The fatal branch is not redundant for a bare search: the engine only loads
+  // a domain when one was declared, so a BROKEN `default.toml` is invisible to
+  // it here. Refusing it is the point — treating it as "no budget" would ignore
+  // a declared cap while still fanning out to every provider.
+  // A declared domain was already resolved by the engine, and `config` is that
+  // exact schema — resolving again would read the TOML (and its base chain) a
+  // second time and could disagree with the copy the providers were built from.
+  // The undeclared case needs its own read: the engine loads nothing then, and
+  // the default domain's [budget] still has to be attached.
+  const defaultDomain = config
+    ? null
+    : resolveDomainConstraint({ name: active.name, declared: active.declared, dirs: domainSearchDirs() });
+  if (defaultDomain?.state === "failed" && defaultDomain.fatal) {
+    throw new DomainConstraintError(defaultDomain);
   }
+  if (defaultDomain?.state === "failed") {
+    process.stderr.write("[warn] " + describeDomainFallback(defaultDomain) + "\n");
+  }
+  const budgetDomain: DomainConfigPort | undefined = config
+    ?? (defaultDomain?.state === "established" ? defaultDomain.schema as DomainConfigPort : undefined);
   const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, budgetDomain?.budget, {
     warn: (m) => process.stderr.write("[warn] " + m + "\n"),
     fallbackText: "this run is unmetered",
@@ -165,7 +175,7 @@ export async function runSearch(args: string[]): Promise<number> {
         attributes: {
           "anysearch.command": "search",
           "anysearch.mode": mode,
-          "anysearch.domain": domain ?? "all",
+          "anysearch.domain": active.declaredName ?? "all",
           "anysearch.source": "retrieved",
         },
       },

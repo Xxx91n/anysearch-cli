@@ -2,7 +2,7 @@
 // backfill-vectors: idempotent re-embed of retrieval_results rows missing a vector.
 // Serves 3 roles: pendingVectors cleanup, pre- upgrade backfill, future model re-embed.
 
-import { createPersistentEngine } from "../db";
+import { createEngineForActiveDomain } from "../db";
 
 interface MemoryStore {
   backfillEmbeddings(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }>;
@@ -41,7 +41,7 @@ export async function runMemory(args: string[]): Promise<number> {
       process.stderr.write("ans memory backfill-vectors: --limit must be a positive integer\n");
       return 2;
     }
-    const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+    const eng = createEngineForActiveDomain();
     const store = eng.store as unknown as MemoryStore;
     const r = await store.backfillEmbeddings(dryRun, limit);
     if (dryRun) {
@@ -66,7 +66,7 @@ export async function runMemory(args: string[]): Promise<number> {
 
 
   if (sub === "forget") {
-    const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+    const eng = createEngineForActiveDomain();
     const store = eng.store as unknown as MemoryStore;
     const ui = args.indexOf("--undo");
     if (ui >= 0) {

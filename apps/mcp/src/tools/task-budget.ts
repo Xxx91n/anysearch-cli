@@ -23,7 +23,7 @@
 import {
   wireTaskBudget,
   type CompositionResult,
-  type RuntimeErrorReason,
+  type BudgetStopReason,
   type TaskBudgetWiring,
 } from "@anysearch-cli/kernel";
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -83,6 +83,31 @@ export function beginToolBudget(
 }
 
 /**
+ * The result for a call refused because the Active Domain could not be read:
+ * classified in structuredContent so a host can switch on it without reading
+ * prose, and carrying the task id plus whatever the run already spent. It is
+ * not a `budget` stop — the fix is to repair the TOML, not to raise a cap.
+ */
+export function toolDomainStop(
+  toolName: string,
+  detail: string,
+  extra: { taskId?: string; usage?: unknown } = {},
+): CallToolResult {
+  const task = extra.taskId ?? currentMcpTask()?.taskId;
+  return {
+    isError: true,
+    content: [{ type: "text", text: toolName + "：" + detail }],
+    structuredContent: {
+      operation: toolName,
+      errorKind: "domain-not-established",
+      domain: { stopped: true, detail },
+      ...(task ? { taskId: task } : {}),
+      ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
+    },
+  };
+}
+
+/**
  * The structured answer for a budget stop: isError carries "this call did not
  * finish", and structuredContent carries the machine-readable class. The task
  * wrapper attaches the closeout to exactly this shape (#303), so a host can
@@ -90,7 +115,7 @@ export function beginToolBudget(
  */
 export function toolBudgetStop(
   toolName: string,
-  kind: RuntimeErrorReason,
+  kind: BudgetStopReason,
   detail: string,
 ): CallToolResult {
   const notEstablished = kind === "budget-not-established";

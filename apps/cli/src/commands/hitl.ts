@@ -3,8 +3,9 @@
 // `ans hitl review` lists the queue; `--allow-url <host>` pre-authorizes a host by writing
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
+import { dirname, join, resolve } from "node:path";
+import { atomicWriteFile, canonicalVersion, defaultDomainsDirs, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveDbPath } from "@anysearch-cli/kernel";
 
@@ -35,10 +36,24 @@ function readQueue(): HitlEntry[] {
 // Add host to the active domain TOML [sources].urlAllowlist (append-style, section-replace
 // semantics preserved). Returns true on write.
 function allowHost(host: string): boolean {
-  const domainName = process.env.ANS_DOMAIN || "default";
-  const tomlPath = domainTomlPath(process.cwd(), domainName);
+  const domainName = resolveActiveDomain().name;
+  const dirs = domainSearchDirs();
+  const tomlPath = domainTomlPath(process.cwd(), domainName, dirs);
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
-  const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];
+  const beforeHosts = loadDomainByNameIn(domainName, dirs).sources.urlAllowlist ?? [];
+  // An already-allowed host writes nothing but still clears its queue entries,
+  // so it must not trip the writability check below.
+  if (beforeHosts.includes(host)) return false;
+  // Only the operator's own dirs are writable: a TOML found elsewhere (the
+  // packaged domains dir, or a parent project's) is shared by other projects,
+  // replaced on upgrade, or read-only in a global install.
+  const writableDirs = defaultDomainsDirs();
+  if (!writableDirs.map((d) => resolve(d)).includes(resolve(dirname(tomlPath)))) {
+    throw new Error(
+      "refusing to write " + tomlPath + ": it is outside your own domains dirs ("
+      + writableDirs.join(", ") + "). Copy the TOML there, or set ANS_DOMAINS_DIR, and re-run.",
+    );
+  }
   const src = readFileSync(tomlPath, "utf8");
   const lines = src.split("\n");
   const srcStart = lines.findIndex((l) => l.trim() === "[sources]");
@@ -55,7 +70,6 @@ function allowHost(host: string): boolean {
       const m = lines[alIdx]!.match(/^(.*urlAllowlist\s*=\s*\[)([^\]]*)(\].*)$/);
       if (!m) throw new Error("cannot parse urlAllowlist line: " + lines[alIdx]);
       const hosts = m[2]!.split(",").map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean);
-      if (hosts.includes(host)) return false; // already allowed
       hosts.push(host);
       next = [...lines];
       next[alIdx] = m[1] + hosts.map((h) => '"' + h + '"').join(", ") + m[3];
@@ -71,15 +85,13 @@ function allowHost(host: string): boolean {
     throw new Error("allowlist write did not round-trip for host" + host);
   }
   // D8: ConfigChange audit event into the local trace store (fail-open).
-  if (!beforeHosts.includes(host)) {
-    void emitConfigChangeAudit(resolveDbPath(), {
-      actor: "cli",
-      source: "cli",
-      path: tomlPath,
-      change: { before: beforeHosts, after: schema.sources.urlAllowlist ?? [] },
-      policyVersion: canonicalVersion(schema.sources.urlAllowlist ?? [], schema.sources.urlDenylist ?? []),
-    });
-  }
+  void emitConfigChangeAudit(resolveDbPath(), {
+    actor: "cli",
+    source: "cli",
+    path: tomlPath,
+    change: { before: beforeHosts, after: schema.sources.urlAllowlist ?? [] },
+    policyVersion: canonicalVersion(schema.sources.urlAllowlist ?? [], schema.sources.urlDenylist ?? []),
+  });
   return true;
 }
 
@@ -128,7 +140,7 @@ export async function runHitl(args: string[]): Promise<number> {
     mkdirSync(join(process.cwd(), ".anysearch-cli"), { recursive: true });
     writeFileSync(queuePath(), remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : ""), "utf8");
     process.stdout.write(
-      (changed ? "allowed" + host : "already allowed" + host) +
+      (changed ? "allowed " + host : "already allowed" + host) +
       "; queue now" + remaining.length + " pending\n",
     );
     return 0;

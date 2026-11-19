@@ -16,6 +16,8 @@ export {
   writeServerRegistry,
   clearServerRegistry,
   resolveServerEndpoint,
+  resolveActiveDomain,
+  type ActiveDomain,
   type ResolvedToken,
   type ServerRegistryEntry,
   type ServerEndpoint,

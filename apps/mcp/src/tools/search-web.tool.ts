@@ -6,11 +6,11 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
-import { beginToolBudget, toolBudgetStop } from "./task-budget.js";
+import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailed,
@@ -148,6 +148,12 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // budget stop it is instead of an upstream error.
           if (isTaskBudgetRejectedError(e)) {
             return toolBudgetStop("search_web", "budget-rejected", e.message);
+          }
+          // #306: a declared Active Domain that cannot be read is refused by the
+          // engine's own policy resolver. Name it as that stop, so a host does
+          // not read it as an upstream failure and retry.
+          if (isDomainConstraintError(e)) {
+            return toolDomainStop("search_web", e.message);
           }
           return toolError("search_web", e instanceof Error ? e.message : String(e));
         }

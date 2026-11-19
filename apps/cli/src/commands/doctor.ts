@@ -2,7 +2,9 @@
 // CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
+import { resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
@@ -130,7 +132,7 @@ export async function runDoctor(): Promise<number> {
     }
     for (const warning of resolved.warnings) check("  [credentials] " + warning, false);
   }
-  check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN || "not set (default)");
+  check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN?.trim() || "not set (default)");
   check("  ANS_DOMAINS_DIR", true, process.env.ANS_DOMAINS_DIR?.trim() || "not set (resolution chain in [6])");
   {
     // Durable DB writability — created lazily at search time; probe the resolved path now.
@@ -221,40 +223,54 @@ export async function runDoctor(): Promise<number> {
       check("  " + f, false, String(e?.message || e).slice(0, 80));
     }
   }
-  const activeName = process.env.ANS_DOMAIN || "default";
-  const activeEntry = [...found].find(([f]) => f === activeName + ".toml");
-  if (!activeEntry) {
-    check("  active domain '" + activeName + "'", false, "not found on the resolution chain (silent full-fanout) — fix: ans domain <one of the listed names> or point ANS_DOMAINS_DIR at your toml dir");
-  } else {
-    try {
-      const s = loadDomain(path.join(activeEntry[1], activeEntry[0]));
-      console.log("  active: " + s.name + "  (resolved from " + activeEntry[1] + ")");
-      check("    sources.enabled", s.sources.enabled.length > 0, s.sources.enabled.join(","));
-      check("    skills.active", true, s.skills.active.join(",") || "none");
-      check("    hooks.toolWhitelist", true, s.hooks.toolWhitelist.length + " tools");
-      check("    prompts", true, (s.prompts?.length ?? 0) + " entries");
-      check("    rag.adapter", s.rag.adapter.length > 0, s.rag.adapter);
-      if (s.sources.urlAllowlist?.length) {
-        console.log("    urlAllowlist: " + s.sources.urlAllowlist.join(", "));
+  // #306: the active selection is reported through the same three-state answer
+  // the entries act on, so doctor cannot say "fine" about a domain that will
+  // actually stop the next command — or fail a run over a state that is legal.
+  const selection = resolveActiveDomain();
+  const activeName = selection.name;
+  const active = resolveDomainConstraint({ name: selection.name, declared: selection.declared, dirs: domainSearchDirs() });
+  if (active.state === "failed") {
+    if (active.fatal) {
+      check(
+        "  active domain '" + activeName + "'",
+        false,
+        "声明了但建不起来，运行时直接停：" + active.reason + "。修：ans domain <上面列的名字>",
+      );
+    } else {
+      // Legal, not a failure: nobody named a domain and the convention default
+      // is absent, so the run fans out with no filtering. SKIP keeps doctor's
+      // exit status honest about a state the product allows.
+      skip(
+        "  active domain '" + activeName + "'",
+        "没指定领域，也没有默认域 TOML，按不限定领域继续。想固定领域就 ans domain <上面列的名字>",
+      );
+    }
+  } else if (active.state === "established") {
+    const s = active.schema;
+    console.log("  active: " + s.name + "  (resolved from " + domainTomlPath(process.cwd(), activeName, domainSearchDirs()) + ")" + (selection.declared ? "" : "（没指定，用默认）"));
+    check("    sources.enabled", s.sources.enabled.length > 0, s.sources.enabled.join(","));
+    check("    skills.active", true, s.skills.active.join(",") || "none");
+    check("    hooks.toolWhitelist", true, s.hooks.toolWhitelist.length + " tools");
+    check("    prompts", true, (s.prompts?.length ?? 0) + " entries");
+    check("    rag.adapter", s.rag.adapter.length > 0, s.rag.adapter);
+    if (s.sources.urlAllowlist?.length) {
+      console.log("    urlAllowlist: " + s.sources.urlAllowlist.join(", "));
+    }
+    // B3 self-service: every enabled provider without a key is silently
+    // dropped from the fan-out — name the key to set or the entry to remove.
+    // the provider actually reads ANYSEARCH_API_KEY (see
+    // packages/retriever/src/providers/anysearch.ts). ANS_API_KEY here was a
+    // drift bug — doctor advised setting a variable nothing reads.
+    const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANYSEARCH_API_KEY" };
+    for (const prov of s.sources.enabled) {
+      const key = KEY_BY_PROVIDER[prov];
+      if (key) {
+        // SKIP not FAIL: an unset key is a degraded-but-supported config — the
+        // engine drops that provider from the fan-out. Failing would turn every
+        // keyless CI run red; the remediation text is the self-service part.
+        if (process.env[key]) check("    provider " + prov + " key", true, "set");
+        else skip("    provider " + prov + " key", key + " unset -> provider skipped at search; set the key or drop '" + prov + "' from sources.enabled");
       }
-      // B3 self-service: every enabled provider without a key is silently
-      // dropped from the fan-out — name the key to set or the entry to remove.
-      // the provider actually reads ANYSEARCH_API_KEY (see
-      // packages/retriever/src/providers/anysearch.ts). ANS_API_KEY here was a
-      // drift bug — doctor advised setting a variable nothing reads.
-      const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANYSEARCH_API_KEY" };
-      for (const prov of s.sources.enabled) {
-        const key = KEY_BY_PROVIDER[prov];
-        if (key) {
-          // SKIP not FAIL: an unset key is a degraded-but-supported config — the
-          // engine drops that provider from the fan-out. Failing would turn every
-          // keyless CI run red; the remediation text is the self-service part.
-          if (process.env[key]) check("    provider " + prov + " key", true, "set");
-          else skip("    provider " + prov + " key", key + " unset -> provider skipped at search; set the key or drop '" + prov + "' from sources.enabled");
-        }
-      }
-    } catch (e: any) {
-      check("  active domain '" + activeName + "'", false, String(e?.message || e).slice(0, 80));
     }
   }
 

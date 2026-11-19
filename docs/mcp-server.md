@@ -19,11 +19,15 @@ forwards to that sibling build. The CLI does not bundle the server, so the
 installed `ans-mcp` bin stays the normal entry. `--help` prints the two
 flags.
 
-`ANS_DOMAIN` is read from the process environment. The `ans` CLI first
-rehydrates `~/.anysearch/config.env` (where `ans domain <name>` saves the
-current domain, code: `Active Domain`), and the child process inherits it.
-So `ans mcp` sees the saved choice. A directly launched `ans-mcp` does not read that file. Export
-`ANS_DOMAIN` explicitly when a domain must apply.
+The Active Domain is resolved the same way every other entry resolves it
+(`resolveActiveDomain`, `packages/store/src/local-service.ts`): `ANS_DOMAIN`
+from the process environment when it is set, otherwise the persisted selection
+in `~/.anysearch/config.env` (where `ans domain <name>` saves the current
+domain). So `ans mcp` and a directly launched `ans-mcp` both see the saved
+choice, including one made after the server started. An explicitly empty
+`ANS_DOMAIN` means "no domain here" and does not fall back to the file. A
+declared domain that cannot be established stops the server at startup instead
+of fanning out with the allowlist gone.
 
 - **stdio** — one server and one engine for the whole process. JSON-RPC
   frames are newline-delimited on stdin/stdout. Diagnostics go to stderr

@@ -5,7 +5,7 @@
 // demote: d-i conflict / d-iii /forget / d-ii eviction at cap overflow (all land in quarantine, never drop).
 // Post-write: regenerates MEMORY.md projection (temp+fsync+rename, key-override merge global+project).
 
-import { createPersistentEngine } from "../db";
+import { createEngineForActiveDomain } from "../db";
 import { writeProjection } from "@anysearch-cli/kernel";
 import type { T0PreferenceInput } from "@anysearch-cli/store";
 
@@ -47,7 +47,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     }
   }
 
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createEngineForActiveDomain();
 
   if (sub === "list") {
     const rows = await eng.store.listPreferences(process.cwd());

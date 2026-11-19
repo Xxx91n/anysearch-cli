@@ -37,6 +37,10 @@ export * from "./llm-init";
 // One per-execution task-budget decision, shared by `ans chat` and `ans_chat`.
 export * from "./task-budget";
 
+// #306: one three-state answer to "is the Active Domain in effect?", shared by
+// every entry that is about to do something the domain constrains.
+export * from "./domain-constraint";
+
 // Explicit consolidation seams (D4/D5): one summarize + fidelity gate + usage
 // ledger shared by `ans consolidate` and `ans_chat operation=consolidate`.
 export * from "./consolidation";

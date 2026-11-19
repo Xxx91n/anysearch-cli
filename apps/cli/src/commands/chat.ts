@@ -6,7 +6,8 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -36,7 +37,16 @@ export async function runChat(argv: string[]): Promise<number> {
   // ~/.anysearch/anysearch.db) instead of createEngine — the latter falls back to
   // ":memory:", which would make the newly wired RAG adapter recall nothing at
   // all ("connected but always empty" is harder to diagnose than no wiring).
-  const domainName = process.env.ANS_DOMAIN || "default";
+  // #306: three states, not one `||`. A name the operator declared (env or the
+  // persisted selection) that cannot be resolved stops the command; the
+  // product's own "default" convention falling back is the legal behaviour it
+  // had before, and the engine says so on stderr.
+  // `active.declared` is what tells the engine whether a missing TOML is a fault
+  // or the product's own default convention; the engine refuses the first and
+  // falls back on the second, so this path does not re-decide it.
+  const active = resolveActiveDomain();
+  const domainName = active.name;
+
   let engine: CompositionResult;
   let domain: DomainConfigPort;
   // sessions.domain is metadata only; record the domain actually in use so a
@@ -46,7 +56,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // store must not be registered as a resumable session.
   let durableStore = true;
   try {
-    engine = createPersistentEngine(domainName);
+    engine = createPersistentEngine(domainName, { domainDeclared: active.declared });
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     // A configured-but-broken domain is a configuration error, not an
@@ -55,7 +65,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // Same predicate as createEngine; the CLI top-level handler prints the
     // error and exits non-zero (#162). Missing domains and DB/IO faults keep
     // the fallback below.
-    if (isDomainSchemaError(e)) throw e;
+    if (isDomainSchemaError(e) || isDomainConstraintError(e)) throw e;
     if (printOnly) {
       console.error("读取领域或打开持久库失败。 " + (e?.message || String(e)));
       return 1;
@@ -247,7 +257,9 @@ export async function runChat(argv: string[]): Promise<number> {
         // the real `ans chat` path instead of being silently skipped.
         ...memory,
         // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
-        domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
+        domainTomlPath: domainTomlPath(undefined, engine.domainName ?? "default", engine.domainsDirs),
+        // Only a domain the engine actually loaded makes a missing TOML a fault.
+        domainDeclared: engine.domainName !== undefined && engine.domainDeclared === true,
         // #188: same dirs the engine loaded the domain from, so the run-boundary
         // reloader can still resolve inherited base TOMLs.
         domainsDirs: engine.domainsDirs,

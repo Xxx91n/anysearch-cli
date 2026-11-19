@@ -6,9 +6,10 @@
 // allow = union across layers (D2); deny is a first-class independent channel evaluated last.
 
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
+import { isDomainNotFoundError } from "./domain-schema";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore, generateTraceIdHex } from "./observation";
 import { readSessionId } from "./session-id";
@@ -135,24 +136,134 @@ export function atomicWriteFile(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
+// One file's identity for "has this declaration changed since?" questions.
+// mtime alone misses a same-second rewrite; ctime also catches a chmod, which
+// matters because the policy's readability is part of whether it applies.
+function fileVersion(path: string): string {
+  try {
+    const s = statSync(path);
+    return s.mtimeMs + ":" + s.ctimeMs;
+  } catch {
+    return "-1";
+  }
+}
+
+export interface PolicySourceVersion {
+  path: string;
+  /** `fileVersion` of the TOML at materialization; "-1" when it did not exist. */
+  version: string;
+}
+
+// The dirs a chain walk probes when the caller handed no list of its own:
+// the ANS_DOMAINS_DIR override first, then the TOML's own dir, then the cwd
+// convention. One definition, because the reloader and the cache envelope must
+// watch exactly the same list — a `base` living only in ANS_DOMAINS_DIR was
+// invisible to the envelope while the reloader re-read it, which is the stale
+// cache this check exists to prevent.
+function defaultChainDirs(tomlPath: string): string[] {
+  const dirs: string[] = [];
+  const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+  if (envDir) dirs.push(envDir);
+  dirs.push(dirname(tomlPath));
+  dirs.push(join(process.cwd(), "domains"));
+  return dirs;
+}
+
+export interface DomainChainWalk {
+  /** Every file the policy is actually read from: the TOML first, then each `base`. */
+  chain: string[];
+  /** Candidates that were looked for and may appear later (missing today). */
+  probed: string[];
+}
+
+// The files a project's URL policy depends on: the TOML plus its whole `base`
+// chain. The reloader and the cache envelope both need this list, and if they
+// walk it differently the cache can be accepted while a file the reloader reads
+// has changed — so there is one walk.
+//
+// A base that exists but does not parse still belongs to the chain: it is part
+// of what the policy depends on, and skipping it would hide exactly the kind of
+// breakage this list exists to notice.
+export function walkDomainChain(tomlPath: string, domainsDirs?: string[]): DomainChainWalk {
+  const dirs = domainsDirs && domainsDirs.length > 0 ? domainsDirs : defaultChainDirs(tomlPath);
+  const chain: string[] = [tomlPath];
+  const probed: string[] = [];
+  let cur: ReturnType<typeof loadRawDomain> | undefined;
+  try { cur = loadRawDomain(tomlPath); } catch { cur = undefined; }
+  const seen = new Set<string>();
+  while (cur?.base) {
+    if (seen.has(cur.base)) break;
+    seen.add(cur.base);
+    let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
+    for (const d of dirs) {
+      const candidate = join(d, cur.base + ".toml");
+      probed.push(candidate);
+      let raw: ReturnType<typeof loadRawDomain> | undefined;
+      try { raw = tryLoadRawDomain(candidate); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
+      if (raw) { found = { path: candidate, raw }; break; }
+    }
+    if (!found) break;
+    chain.push(found.path);
+    cur = found.raw;
+  }
+  return { chain, probed };
+}
+
+// The chain's versions at one moment, for the materialized-policy envelope.
+// Recording them is what lets a later reader answer "is this cached policy still
+// the one the declaration says?" without parsing TOML in a dependency-free hook.
+export function domainSourceVersions(tomlPath: string, domainsDirs?: string[]): PolicySourceVersion[] {
+  const walk = walkDomainChain(tomlPath, domainsDirs);
+  // Probed-but-absent candidates belong in the envelope too: a `base` that
+  // appears in a higher-priority dir later shadows the one recorded here, and
+  // without its "-1" the recorded files would all still match while the policy
+  // in force has moved. `probed` is what the reloader watches for exactly this.
+  const paths = [...new Set([...walk.chain, ...walk.probed])];
+  return paths.map((path) => ({ path, version: fileVersion(path) }));
+}
+
 // supplement: write a MaterializedPolicy envelope
 // (policy body + materialized_at timestamp) to the disk cache so the hook
 // readPolicy cache fallback can surface staleness. The timestamp is the only
 // signal that lets the hook differentiate "fresh from server seconds ago" from
 // "last write was before the server went down 3 days ago".
+//
+// #306: the envelope also records WHICH project and WHICH declaration files it
+// was materialized from. A cache that cannot prove it still describes the
+// current project's current TOML is not used at all — the hook asks instead.
 export interface MaterializedPolicy {
   allow: string[];
   deny: string[];
   policy_version: string;
   materialized_at: string; // ISO-8601 UTC
+  /** Real path of the project this policy belongs to. */
+  project_root: string;
+  /**
+   * The Active Domain name it was read under. Project + file versions alone are
+   * not enough: switching A to B, where both files exist and neither changes,
+   * leaves A's TOML untouched and its cache "unmoved" — yet it no longer
+   * describes what the project declares.
+   */
+  domain_name: string;
+  /** The TOML and its base chain at materialization. */
+  sources: PolicySourceVersion[];
 }
 
-export function writePolicyCache(cachePath: string, policy: UrlPolicy): void {
+export interface PolicyCacheProvenance {
+  projectRoot: string;
+  domainName: string;
+  sources: PolicySourceVersion[];
+}
+
+export function writePolicyCache(cachePath: string, policy: UrlPolicy, provenance: PolicyCacheProvenance): void {
   const envelope: MaterializedPolicy = {
     allow: policy.allow,
     deny: policy.deny,
     policy_version: policy.policyVersion,
     materialized_at: new Date().toISOString(),
+    project_root: provenance.projectRoot,
+    domain_name: provenance.domainName,
+    sources: provenance.sources,
   };
   atomicWriteFile(cachePath, JSON.stringify(envelope, null, 2) + "\n");
 }
@@ -160,21 +271,65 @@ export function writePolicyCache(cachePath: string, policy: UrlPolicy): void {
 // readPolicyCacheEnvelope: hook-side discriminator. Returns null when the cache
 // is unreadable / shape-broken; otherwise returns the envelope for downstream
 // staleness signaling.
+//
+// #306: an envelope written before this field set existed cannot say which
+// declaration it came from, so it is treated as shape-broken rather than as a
+// policy someone may rely on.
 export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy | null {
   try {
     const raw = JSON.parse(readFileSync(cachePath, "utf8")) as Partial<MaterializedPolicy>;
     if (!Array.isArray(raw.allow) || !Array.isArray(raw.deny) || typeof raw.policy_version !== "string") return null;
     if (typeof raw.materialized_at !== "string") return null;
+    if (typeof raw.project_root !== "string" || raw.project_root.length === 0) return null;
+    if (typeof raw.domain_name !== "string" || raw.domain_name.length === 0) return null;
+    if (!Array.isArray(raw.sources) || raw.sources.length === 0) return null;
+    const sourcesOk = raw.sources.every((s) => s && typeof s.path === "string" && typeof s.version === "string");
+    if (!sourcesOk) return null;
     return raw as MaterializedPolicy;
   } catch {
     return null;
   }
 }
 
+// Can this cached policy still be trusted to describe the current project?
+// Three things have to hold, and none is a guess:
+//   1. it was materialized for THIS project (a cache copied into another
+//      project's .anysearch-cli must not answer for it);
+//   2. it names the Active Domain the caller is running now;
+//   3. every file it was materialized from still has the same version, so the
+//      declaration it encodes has not moved since.
+// Anything else — including a file that appeared where there was none — means
+// the cache cannot be confirmed, and the caller must ask instead of consuming.
+export function policyCacheApplies(
+  envelope: MaterializedPolicy,
+  ctx: { projectRoot: string; domainName: string },
+): { ok: true } | { ok: false; reason: string } {
+  const real = (p: string): string => {
+    try { return realpathSync(p); } catch { return p; }
+  };
+  if (real(envelope.project_root) !== real(ctx.projectRoot)) {
+    return { ok: false, reason: "cached policy was materialized for a different project" };
+  }
+  if (envelope.domain_name !== ctx.domainName) {
+    return { ok: false, reason: "cached policy was materialized under domain \"" + envelope.domain_name + "\", not \"" + ctx.domainName + "\"" };
+  }
+  for (const source of envelope.sources) {
+    if (fileVersion(source.path) !== source.version) {
+      return { ok: false, reason: "domain TOML changed after this policy was cached (" + source.path + ")" };
+    }
+  }
+  return { ok: true };
+}
+
 /**
  * Lazy mtime-checked domain reloader (#167/#CodeRabbit).
  *
- * Probe returns null = unchanged (or unreadable), schema = reloaded.
+ * #306: the probe reports three outcomes instead of `schema | null`. "Nothing
+ * changed" and "the file could not be read" are different answers, and a caller
+ * that cannot tell them apart keeps enforcing a policy the operator may have
+ * just replaced — or, worse, treats a broken declaration as a live one. The
+ * caller decides what to do with `failed`; this function never decides for it.
+ *
  * Inheritance-aware: startup resolves inherited domains via file-based lookup
  * (loadDomainByNameIn), so the reloader must use the same lookup and watch
  * ancestor mtimes. Otherwise a child with base stays stale after a restart-free
@@ -185,18 +340,24 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
  * request (ans_chat) snapshots mtimes at construction — after a TOML edit — so
  * an mtime-only difference would never fire. The first run then still sees the
  * current file instead of the host's startup config snapshot. Default false
- * preserves the existing "unchanged -> null" contract for other callers.
+ * preserves the "unchanged -> unchanged" contract for other callers.
  */
-export function createDomainReloader(tomlPath: string, domainsDirs?: string[], opts?: { forceFirst?: boolean }): () => DomainSchema | null {
-  const getSearchDirs = (): string[] => {
-    if (domainsDirs) return domainsDirs;
-    const dirs: string[] = [];
-    const envDir = process.env.ANS_DOMAINS_DIR?.trim();
-    if (envDir) dirs.push(envDir);
-    try { dirs.push(dirname(tomlPath)); } catch {}
-    dirs.push(join(process.cwd(), "domains"));
-    return dirs;
-  };
+export type DomainReloadResult =
+  | { kind: "unchanged" }
+  | { kind: "reloaded"; schema: DomainSchema }
+  | {
+      kind: "failed";
+      reason: string;
+      /**
+       * `missing` = the TOML is gone from the chain; `broken` = it is there but
+       * unreadable. Callers need the difference: for an undeclared domain an
+       * absent file is the legal fallback, while a broken one never is.
+       */
+      fault: "missing" | "broken";
+    };
+
+export function createDomainReloader(tomlPath: string, domainsDirs?: string[], opts?: { forceFirst?: boolean }): () => DomainReloadResult {
+  const getSearchDirs = (): string[] => (domainsDirs ? domainsDirs : defaultChainDirs(tomlPath));
   // Single shared dir order — collectChain and lookupFor must agree so the
   // watched files are exactly the files that would be loaded (grandparent in a
   // different dir would otherwise be missed). Reuse tryLoadRawDomain for the
@@ -210,34 +371,10 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
     return undefined;
   };
 
-  const collectChainAndProbed = (): { chain: string[]; probed: string[] } => {
-    const searchDirs = getSearchDirs();
-    const chain: string[] = [tomlPath];
-    const probed: string[] = [];
-    const seen = new Set<string>();
-    let curRaw: ReturnType<typeof loadRawDomain> | undefined;
-    try {
-      curRaw = loadRawDomain(tomlPath);
-    } catch {
-      return { chain, probed };
-    }
-    while (curRaw?.base) {
-      if (seen.has(curRaw.base)) break;
-      seen.add(curRaw.base);
-      let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
-      for (const d of searchDirs) {
-        const cand = join(d, curRaw.base + ".toml");
-        probed.push(cand);
-        let raw: ReturnType<typeof loadRawDomain> | undefined;
-        try { raw = tryLoadRawDomain(cand); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
-        if (raw) { found = { path: cand, raw }; break; }
-      }
-      if (!found) break;
-      chain.push(found.path);
-      curRaw = found.raw;
-    }
-    return { chain, probed };
-  };
+  // One walker (walkDomainChain) shared with the cache envelope, so the files
+  // this reloader watches and the files a cached policy claims to depend on are
+  // the same list — a disagreement there would let a stale cache look current.
+  const collectChainAndProbed = (): DomainChainWalk => walkDomainChain(tomlPath, getSearchDirs());
 
   const lookupFor = (): ((name: string) => ReturnType<typeof loadRawDomain> | undefined) | undefined => {
     const searchDirs = getSearchDirs();
@@ -246,15 +383,6 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
 
   // version includes ctime so chmod (permission repair) is detected even
   // when mtime is unchanged (inode(7): ctime changes on permission change).
-  const fileVersion = (p: string): string => {
-    try {
-      const s = statSync(p);
-      return `${s.mtimeMs}:${s.ctimeMs}`;
-    } catch {
-      return "-1";
-    }
-  };
-
   // watched = chain files + every probed candidate (including missing, -1)
   // so a new higher-priority file that shadows a parent is detected via stat,
   // without re-parsing the chain on every call.
@@ -277,7 +405,7 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
     for (const pp of watched) {
       if (fileVersion(pp) !== mtimes.get(pp)) { changed = true; break; }
     }
-    if (!forced && !changed) return null;
+    if (!forced && !changed) return { kind: "unchanged" };
     try {
       const schema = loadDomain(tomlPath, lookupFor());
       const next = collectChainAndProbed();
@@ -286,7 +414,7 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
       watched = [...new Set([...watchedChain, ...watchedProbed])];
       mtimes.clear();
       for (const pp of watched) mtimes.set(pp, fileVersion(pp));
-      return schema;
+      return { kind: "reloaded", schema };
     } catch (e) {
       // collect new chain/probed but do not snapshot newly discovered paths
       // with their post-failure versions as if they were already loaded;
@@ -314,9 +442,17 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
       const sig = watched.map((pp) => fileVersion(pp)).join(",");
       if (warnedSig !== sig) {
         warnedSig = sig;
-        process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
+        process.stderr.write("[anysearch] domain TOML reload failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
-      return null;
+      // ENOENT is the ordinary shape of "the file is not there" (the reloader
+      // is handed the convention path even when nothing exists at it), while
+      // loadDomainByNameIn raises "Domain not found" instead. Both mean absent.
+      const errno = (e as NodeJS.ErrnoException)?.code;
+      return {
+        kind: "failed",
+        reason: e instanceof Error ? e.message : String(e),
+        fault: errno === "ENOENT" || isDomainNotFoundError(e) ? "missing" : "broken",
+      };
     }
   };
 }

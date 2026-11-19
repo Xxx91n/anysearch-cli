@@ -62,6 +62,7 @@ import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from ".
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
+import { toolDomainStop } from "./task-budget.js";
 
 // A cut-off run's accounting dimensions: the provider never sent a final
 // usage figure, so the run's tokens, cache and cost are all unknown. Named
@@ -598,7 +599,11 @@ export function registerAnsChat(
             retriever: eng.retriever,
             domain,
             ...memory,
-            domainTomlPath: domainTomlPath(undefined, eng.domainName, eng.domainsDirs),
+            domainTomlPath: domainTomlPath(undefined, eng.domainName ?? "default", eng.domainsDirs),
+            // The flag and the path both come from the engine: an engine built
+            // with no domain name never declared one, so a missing TOML is the
+            // legal fallback even if the host sets ANS_DOMAIN after startup.
+            domainDeclared: eng.domainName !== undefined && eng.domainDeclared === true,
             // #188: same dirs the engine loaded the domain from, so a base TOML
             // in the packaged domains dir stays resolvable on a live re-read.
             domainsDirs: eng.domainsDirs,
@@ -732,6 +737,19 @@ export function registerAnsChat(
             // structuredContent.errorKind so a host can tell them apart without
             // reading the message — and the spend already incurred is still
             // reported under `usage`, never hidden behind the error.
+            if (runtimeErrorReason === "domain-not-established") {
+              // A broken Active Domain is not a budget answer: nothing was
+              // called and the fix is to repair the TOML. The spend so far is
+              // still reported — flushMemory has already run, so a background
+              // summary may really have cost money.
+              return toolDomainStop("ans_chat", runtimeError, {
+                ...(task ? { taskId: task.taskId } : {}),
+                usage: {
+                  run: emptyRunUsage(["run usage: the run stopped before any model call"]),
+                  memorySummary: runtime.getMemoryUsage(),
+                },
+              });
+            }
             if (runtimeErrorReason !== undefined) {
               // A stop can land mid-stream, so wait for the late settlement
               // before this call's task row is closed; no tail is a no-op.
