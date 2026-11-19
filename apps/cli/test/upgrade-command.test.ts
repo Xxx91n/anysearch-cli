@@ -219,6 +219,15 @@ async function main(): Promise<void> {
 
       const empty = io();
       check("7b: a second prune with nothing aged exits 0", (await runUpgrade(["prune"], empty.opts)) === 0);
+      // One shape per command: an empty database must still carry every key a
+      // script reads, not a smaller object.
+      const emptyJson = io();
+      await runUpgrade(["prune", "--json"], emptyJson.opts);
+      const emptyShape = JSON.parse(emptyJson.out.join("")) as Record<string, unknown>;
+      check("7b: the empty-database --json has the same keys",
+        emptyShape.pruned === 0 && emptyShape.wouldPrune === 0 && emptyShape.wouldHold === 0
+          && Array.isArray(emptyShape.rows) && typeof emptyShape.days === "number",
+        JSON.stringify(emptyShape));
       const bad = io();
       check("7b: --days 0 is a usage error", (await runUpgrade(["prune", "--days", "0"], bad.opts)) === 2);
       stillOpen.finish({ exitCode: 0 });

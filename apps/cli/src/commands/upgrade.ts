@@ -459,8 +459,15 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
     try {
       const aged = registry.agedFinishedTasks(retentionDays);
       if (aged.length === 0) {
-        if (json) out(JSON.stringify({ pruned: 0, days: retentionDays }, null, 2) + "\n");
-        else out("[upgrade] " + retentionDays + " 天前没有已收尾的任务行，没什么可删\n");
+        // 同一个 --json 只有一种形状：脚本读 wouldPrune 不会在"库本来就干净"
+        // 这条路上拿到 undefined。
+        if (json) {
+          out(JSON.stringify({
+            pruned: 0, wouldPrune: 0, wouldHold: 0, days: retentionDays, rows: [],
+          }, null, 2) + "\n");
+        } else {
+          out("[upgrade] " + retentionDays + " 天前没有已收尾的任务行，没什么可删\n");
+        }
         return 0;
       }
       if (dryRun) {
@@ -480,7 +487,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
             " 天前收尾的任务行（dry-run，没删）：\n");
           for (const r of preview.wouldPrune) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
           if (preview.wouldHold.length > 0) {
-            out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还有行依存地指着，" +
+            out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还被别的行引用着，" +
               "真跑时会留着（删了会把那些行的归属抹掉）：\n");
             for (const r of preview.wouldHold) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
           }
@@ -511,7 +518,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           "恢复依据在 " + backup.backupFile + "（连同它的 .json 记录）\n");
         out("[upgrade] 开着的行一条没动——它们是升级阻塞的判据\n");
         if (pruned.heldByChildren > 0) {
-          out("[upgrade] 有 " + pruned.heldByChildren + " 条虽然过期了，但还有活着的行指着它们，" +
+          out("[upgrade] 有 " + pruned.heldByChildren + " 条虽然过期了，但还被别的行引用着，" +
             "所以留着没删（删了会把那些行的归属抹掉）\n");
         }
       }

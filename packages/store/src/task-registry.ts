@@ -501,19 +501,14 @@ export class TaskRegistry {
     return this.stmts.agedFinishedTasks.all("-" + days + " days") as Array<{ taskId: string; kind: string; endedAt: string }>;
   }
 
-  /** How many aged finished rows a prune would keep because a row still points at them. */
-  agedFinishedTasksHeldByChildren(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): number {
-    const days = requirePositiveDays(olderThanDays);
-    return (this.stmts.agedFinishedTasksHeldByChildren.get("-" + days + " days") as { n: number }).n;
-  }
-
   /**
    * What `pruneFinishedTasks` would do, without deleting anything.
    *
    * Computed with the SAME rule the delete loop applies — a row goes only when
    * no SURVIVING row points at it, and removing one generation can free the
    * next — so a chain of aged rows reports "both go", not "one goes, one is
-   * held". Read-only: no transaction, no write lock, nothing to roll back.
+   * held". Read-only: one deferred read transaction (a stable WAL snapshot),
+   * no write lock, nothing to roll back.
    */
   previewPrune(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): {
     wouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
@@ -521,32 +516,38 @@ export class TaskRegistry {
   } {
     const days = requirePositiveDays(olderThanDays);
     const window = "-" + days + " days";
-    const aged = this.stmts.agedFinishedTasks.all(window) as Array<{ taskId: string; kind: string; endedAt: string }>;
-    const references = this.stmts.parentReferences.all() as Array<{ taskId: string; parentTaskId: string }>;
+    // The three reads must come from ONE snapshot: a follow-up link written
+    // between them would appear in allTaskIds but not in parentReferences, the
+    // fixed point would never learn about it, and the preview would promise to
+    // delete a row the real prune (which sees the finished database) keeps.
+    return this.consistentRead(() => {
+      const aged = this.stmts.agedFinishedTasks.all(window) as Array<{ taskId: string; kind: string; endedAt: string }>;
+      const references = this.stmts.parentReferences.all() as Array<{ taskId: string; parentTaskId: string }>;
 
-    const agedIds = new Set(aged.map((r) => r.taskId));
-    // A row survives if it is not aged, or if an aged row that survives points
-    // at it. Start with everything that is not aged, then grow to a fixed point.
-    const surviving = new Set<string>(
-      (this.stmts.allTaskIds.all() as Array<{ taskId: string }>)
-        .map((r) => r.taskId)
-        .filter((id) => !agedIds.has(id)),
-    );
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const ref of references) {
-        if (!agedIds.has(ref.parentTaskId) || surviving.has(ref.parentTaskId)) continue;
-        if (surviving.has(ref.taskId)) {
-          surviving.add(ref.parentTaskId);
-          grew = true;
+      const agedIds = new Set(aged.map((r) => r.taskId));
+      // A row survives if it is not aged, or if an aged row that survives points
+      // at it. Start with everything that is not aged, then grow to a fixed point.
+      const surviving = new Set<string>(
+        (this.stmts.allTaskIds.all() as Array<{ taskId: string }>)
+          .map((r) => r.taskId)
+          .filter((id) => !agedIds.has(id)),
+      );
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const ref of references) {
+          if (!agedIds.has(ref.parentTaskId) || surviving.has(ref.parentTaskId)) continue;
+          if (surviving.has(ref.taskId)) {
+            surviving.add(ref.parentTaskId);
+            grew = true;
+          }
         }
       }
-    }
-    return {
-      wouldPrune: aged.filter((r) => !surviving.has(r.taskId)),
-      wouldHold: aged.filter((r) => surviving.has(r.taskId)),
-    };
+      return {
+        wouldPrune: aged.filter((r) => !surviving.has(r.taskId)),
+        wouldHold: aged.filter((r) => surviving.has(r.taskId)),
+      };
+    });
   }
 
   /**

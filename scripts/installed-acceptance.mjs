@@ -1520,8 +1520,7 @@ async function main() {
         // "它一直在等"本身就是被测的东西。只看最后退了 0 不够：万一 wait 漏看
         // 了这条聊天任务、一看没阻塞就退，后面照样会绿。所以放行之前先确认它
         // 还没结束。
-        let waitSettled = false;
-        const waitDone = waiting.then((r) => { waitSettled = true; return r; });
+        const waitDone = waiting;
         const gateDeadline = Date.now() + 10_000;
         while (!gateIsClosed() && Date.now() < gateDeadline) {
           await new Promise((r) => setTimeout(r, 50));
@@ -1543,11 +1542,18 @@ async function main() {
           "N4：status 点名是哪个任务在挡", status.out.slice(0, 600));
 
         // ---- 3. 放掉这一轮；任务收尾之后 wait 才退 0 ----
-        // 放行之前它必须还在等。这一条才是"没有提前放行"的证据。
-        // 上面几次 runAns 是同步 spawn，会把事件循环堵住；先让一拍，否则即使
-        // wait 真的提前退了，.then 也还没轮到跑，这里读到的仍是 false。
-        await new Promise((r) => setTimeout(r, 0));
-        check(!waitSettled, "N4：wait 还在等（没有提前退，也没漏看这条在跑的活）");
+        // 放行之前它必须还在等——这一条才是"没有提前放行"的证据。
+        // 不能只等一拍 setTimeout(0)：timers 阶段在 poll 之前，子进程的
+        // exit/close 回调在 poll 阶段派发，那一拍完全可能先跑到，这时
+        // waitSettled 还是 false，断言照样绿。改成真的等一小段，看它这期间
+        // 有没有结束：只有 wait 在 250ms 内就退（正是要抓的漏看）才会红。
+        const observed = await Promise.race([
+          waitDone.then(() => "settled"),
+          new Promise((r) => setTimeout(() => r("waiting"), 250)),
+        ]);
+        check(observed === "waiting",
+          "N4：wait 还在等（没有提前退，也没漏看这条在跑的活）",
+          "observed=" + observed + " after 250ms");
         // 放行之后 wait 才可能看到"没有阻塞了"——顺序就是被测的那件事，不能倒过来。
         releaseRunHold();
         const waited = await waitDone;
