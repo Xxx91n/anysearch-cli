@@ -288,7 +288,7 @@ export interface ConsolidateReport {
   // The scope this run really used, echoed back so a caller can see it rather
   // than infer it from the flags it thinks it passed.
   scope: ConsolidateScopeReport;
-  // Clusters whose model call was refused by the session budget. The run stops
+  // Clusters whose model call was refused by this run's budget. The run stops
   // spending at the first rejection; nothing is written for those clusters.
   budgetRejected: number;
   // D6: single-evidence episodes that could not correct existing knowledge. A
@@ -1627,7 +1627,7 @@ export async function consolidateMemoryRun(
       // phase, so what is left stays unresolved BY NAME: counted as
       // incomplete, never silently dropped.
       if (resolutionStopped) {
-        pushIncompleteRejudge(pending.planned, pending, "rejudge-budget", "the session budget was already exhausted before this collision could be re-judged");
+        pushIncompleteRejudge(pending.planned, pending, "rejudge-budget", "this run's budget was already exhausted before this collision could be re-judged");
         continue;
       }
       const head = liveHead(pending.planned.id);
@@ -1663,7 +1663,7 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-judge model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-judge model call was refused by this run's budget");
           continue;
         }
         // Design: #262 — a model fault here must not hide the work the main
@@ -1751,7 +1751,7 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-merge model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the re-merge model call was refused by this run's budget");
           continue;
         }
         mergeFailed = true;
@@ -1803,7 +1803,7 @@ export async function consolidateMemoryRun(
         if (isBudgetRejection(e)) {
           report.budgetRejected++;
           resolutionStopped = true;
-          pushIncompleteRejudge(head, pending, "rejudge-budget", "the final-content re-check model call was refused by the session budget");
+          pushIncompleteRejudge(head, pending, "rejudge-budget", "the final-content re-check model call was refused by this run's budget");
           continue;
         }
         // Design: #262 — same rule as the re-judge: a model fault after the

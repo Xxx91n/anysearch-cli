@@ -9,6 +9,7 @@
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
 import { RetroaererdEngine } from "../src/engine";
+import { isTaskBudgetRejectedError } from "../src/budget-error";
 import type { BudgetLedgerPort } from "../src/ports";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "@anysearch-cli/retriever";
 
@@ -119,6 +120,10 @@ async function main() {
     } catch (e) { threw = e; }
     assert(threw instanceof Error && /Budget exceeded: per-call cap reached/.test(threw.message),
       "an exhausted task call cap refuses the search with the existing error");
+    // #304: the refusal is a typed stop, so the CLI and the MCP search tools can
+    // name it without matching the message text.
+    assert(isTaskBudgetRejectedError(threw),
+      "the refusal is the typed budget stop the hosts branch on");
     assert(taskLedger.settles.length === 0,
       "the refused task search is not settled — it never ran");
   }

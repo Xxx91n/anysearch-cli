@@ -6,10 +6,12 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
+import { beginToolBudget, toolBudgetStop } from "./task-budget.js";
+import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailed,
   allProvidersFailedText,
@@ -30,7 +32,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       // signal covers stateless HTTP response-stream closure. The engine
       // combines the winner with its per-provider controllers.
       const signal = requestSignal(ctx);
-      return observeTool(eng, "search_web", ctx, async (span) => {
+      // #304: one tool call is one task. Wrapped around the observation so the
+      // task row is ended only after the observation write, same as ans_chat.
+      return withMcpTask(eng, "search_web", () => observeTool(eng, "search_web", ctx, async (span) => {
         // maxResults is intentionally absent from the
         // public schema (additionalProperties:false) — exposing it is a feature
         // decision, not hygiene; the dead destructure is removed, engine
@@ -45,8 +49,20 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           return toolError("search_web", "verticalSubDomain/verticalParams require verticalDomain");
         }
         const vertical = built.vertical;
+        // #304: this search bills its own task, never a session that happens to
+        // be around. A declared [budget] that cannot be established stops here,
+        // before any provider request.
+        const budget = beginToolBudget(eng, "search_web");
+        if ("stop" in budget) return budget.stop;
         try {
-          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span, signal });
+          const envelope = await eng.retriever.search({
+            query,
+            mode: (mode as any) ?? "fast",
+            ...(vertical ? { vertical } : {}),
+            ...(budget.taskBudget ? { taskBudget: budget.taskBudget } : {}),
+            span,
+            signal,
+          });
 
           // A zero-result search is successful only when an arm answered. If
           // every queried arm is in providersFailed this is an outage: an error
@@ -114,6 +130,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // isError absent (false). The block is emitted whenever any of
           // sufficiency/attribution/abstain is present.
           const structuredContent = {
+            // #304 review: the caller may have aborted mid-search. The engine
+            // returns whatever arrived instead of throwing, so without this the
+            // task wrapper would record a cancelled call as a clean finish.
+            ...(signal?.aborted ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
@@ -124,9 +144,14 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
+          // A refused reservation never reached a provider: report it as the
+          // budget stop it is instead of an upstream error.
+          if (isTaskBudgetRejectedError(e)) {
+            return toolBudgetStop("search_web", "budget-rejected", e.message);
+          }
           return toolError("search_web", e instanceof Error ? e.message : String(e));
         }
-      });
+      }));
     },
   );
 }

@@ -2,6 +2,9 @@
 export * from "./ports";
 export * from "./runtime";
 export * from "./engine";
+// #304: the typed budget refusal the retrieval path throws, so the CLI and the
+// MCP search tools can name it instead of matching the message text.
+export * from "./budget-error";
 export * from "./pi-runtime";
 // Token/cache/cost accounting shared by the agent run and the memory pipeline.
 export * from "./usage";

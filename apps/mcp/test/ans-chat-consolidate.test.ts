@@ -152,8 +152,9 @@ async function callConsolidate(args: Record<string, unknown>) {
   assert(sc?.scope?.materialsRead === 3, "the run read exactly the three listed materials (got " + sc?.scope?.materialsRead + ")");
   assert(sc?.scope?.sessionIdNotApplied === true, "the report says the sessionId did not decide the scope");
   assert(sc?.scope?.requestedMaterials === 3, "the report echoes how many materials were requested");
-  // A memory list has no owning session, so a sessionId given alongside it must
-  // not turn into a billing target. Saying so is the honest result.
+  // #304: this fixture's domain declares no [budget], so the task form answers
+  // "no declared caps". Either way, a sessionId echoed alongside memoryIds must
+  // never become a billing target.
   assert(sc?.budgetUnmetered === true, "a memory-list scope is reported unmetered, not charged to the session it merely echoed");
 }
 

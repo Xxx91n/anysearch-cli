@@ -16,6 +16,7 @@ import {
   RAG_DEFAULT_LIMIT,
 } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
+import { withMcpTask } from "../mcp-task.js";
 
 export function registerQueryKnowledge(server: McpServer, eng: CompositionResult): void {
   // Per-connection registry, same pattern as MemoryPipeline.
@@ -28,7 +29,9 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
       inputSchema: fromJsonSchema(KernelJsonSchemas.query_knowledge),
     },
     async (args: unknown, ctx?: ServerContext) => {
-      return observeTool(eng, "query_knowledge", ctx, async () => {
+      // #304: every MCP tool call is one task. This tool bills nothing, but its
+      // closeout gives the hook's post-work a parent task id (#307).
+      return withMcpTask(eng, "query_knowledge", () => observeTool(eng, "query_knowledge", ctx, async () => {
         const { query } = args as { query: string };
         const domain = eng.config;
 
@@ -56,7 +59,7 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
 
         // No hits or retrieval error (already warned via resolveInjection).
         return { content: [{ type: "text" as const, text: "query_knowledge: no results found (adapter=fts)" }] };
-      });
+      }));
     }
   );
 }

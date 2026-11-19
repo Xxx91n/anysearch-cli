@@ -13,7 +13,7 @@
 // anysearch side keeps only the research store and its anchors.
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { normalizeContext, resolveTranscript, type AssistantMessage, type StreamFunction } from "@earendil-works/pi-ai";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
@@ -30,7 +30,7 @@ import {
   SESSION_LOCKS_DIRNAME,
   type SessionLockWindows,
 } from "./session-lock";
-import { estimateTranscriptTokens } from "./message-text";
+import { estimateTranscriptTokens, omitPartialAnswerFromSummary } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, reportBudgetFault, reserveTaskModelCall, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
@@ -89,6 +89,25 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
 }
 
 const DEFAULT_AGENT_TIMEOUT_MS = 300_000;
+const PARTIAL_ANSWER_NOTICE = "这条回答当时被打断，只留下半截，不要当成完整回答。";
+
+function markPartialAnswer(message: AgentMessage): AgentMessage {
+  if (message.role !== "assistant" || message.stopReason !== "aborted") return message;
+  // Send only visible text. Unfinished tool calls and reasoning blocks can
+  // make a provider reject the next request.
+  const textParts = message.content.filter((part) => part.type === "text");
+  const firstText = textParts.findIndex((part) => part.text.trim());
+  if (firstText === -1) return message;
+  // Design: mark the visible text at replay time — PI drops aborted messages
+  // from requests, and the saved record still needs the original stop reason.
+  const part = textParts[firstText]!;
+  textParts[firstText] = { ...part, text: PARTIAL_ANSWER_NOTICE + "\n\n" + part.text };
+  return {
+    ...message,
+    stopReason: "stop",
+    content: textParts,
+  };
+}
 
 // r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
 // On adversarial questions the model kept re-searching (46–62 calls per question in
@@ -402,8 +421,8 @@ export interface PiAgentRuntimeOptions {
    * loop's calls, compaction, the memory pipeline's summary/adjudication and
    * the late settlement — lands on the task's budget row, and internal
    * searches carry the scope so they stop accumulating on the session
-   * ledger. Absent: the session form, unchanged, for the callers that have not
-   * migrated (#304: MCP search/research/standalone consolidate).
+   * ledger. Absent: the session form, unchanged, for callers that attach no
+   * task budget.
    */
   taskBudget?: TaskBudgetScope;
   /**
@@ -1122,6 +1141,12 @@ export class PiAgentRuntime {
         const injected = await this.pipeline.inject(event.messages as any);
         return { messages: injected as any };
       });
+      pi.on("context_with_system", (event) => ({ messages: event.messages.map(markPartialAnswer) }));
+      pi.on("session_before_compact", (event) => {
+        const preparation = event.preparation;
+        preparation.messagesToSummarize = preparation.messagesToSummarize.map(omitPartialAnswerFromSummary);
+        preparation.turnPrefixMessages = preparation.turnPrefixMessages.map(omitPartialAnswerFromSummary);
+      });
       pi.on("tool_call", async (event) => {
         // saturation stop — block further searches, let the model answer.
         if (event.toolName === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
@@ -1381,8 +1406,8 @@ export class PiAgentRuntime {
     // only after the session row exists (#178).
     //
     // A task-scoped budget is the new accounting form: the run bills its task,
-    // so resuming a conversation spends none of its history. The entries still
-    // on the session form (#304) keep their old semantics untouched.
+    // so resuming a conversation spends none of its history. The session form
+    // stays for callers that do not attach a task budget.
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
     const billingWired = !!this.billingScope && !perCallBudget;
@@ -1581,7 +1606,7 @@ export class PiAgentRuntime {
     // Per-call reserve, two forms (#178 / #302):
     // - session form: a soft gate — a rejection lets the run continue and the
     //   call is simply not billed (the token dimension is the hard stop there).
-    //   Kept unchanged for the callers that have not migrated (#304).
+    //   Kept unchanged for callers that attach no task budget.
     // - task form: a declared call quota is enforced consistently (S5) — a
     //   rejection stops this run before its first controlled call. The wiring
     //   established a budget for exactly this execution, so "unbilled but

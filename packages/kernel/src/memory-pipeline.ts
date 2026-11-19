@@ -44,7 +44,7 @@ import type { RetrieverPort, SessionStorePort, DomainConfigPort, SummarySuspensi
 import { rebuildSuspendedSummary, type SummaryRebuildAttempt } from "./summary-rebuild";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
-import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
+import { appendMessageText, omitPartialAnswerFromSummary, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 // #286: the block renderer, the exact-block remover and the recall cap are owned
@@ -286,11 +286,11 @@ export const RECALL_SOURCE_SCAN_FROM = 0;
 // #263: the dependency scan and the summarizer call must read the SAME message
 // membership. The caller hands in the live agent-state array and two `await`s
 // separate the scan from the model call, so an append in that window would give
-// the summary a fact its sources never saw. A shallow copy pins membership
-// without copying message contents. Exported so the "is it a copy" contract is
-// assertable: the real summarizer is an un-mockable SDK import.
+// the summary a fact its sources never saw. Remove half-finished text from
+// interrupted or failed answers without changing message positions, which the
+// gap scan uses. Reuse the other messages. Exported so tests can check the copy.
 export function snapshotMessages(messages: any[]): any[] {
-  return messages.slice();
+  return messages.map(omitPartialAnswerFromSummary);
 }
 
 /**

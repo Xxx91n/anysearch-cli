@@ -319,15 +319,15 @@ test('tools/result: carries no write of its own (#307)', async () => {
 
 test('tools/post-execute (#307): the MCP call task travels as the index write parent', async () => {
   // The MCP server puts the call's task in structuredContent.closeout; the
-  // native execute keeps it in the tool VALUE, and the awaited post-execute
+  // native execute keeps it in the tool VALUE, and the post-execute listener
   // names it when it sends the index write. A host that does not know the id
   // forwards none — and the service records "no link" instead of inventing one.
   //
-  // This fake server emits that closeout for a search call on purpose: the MCP
-  // side wraps only `ans_chat` today (#303/#304 leave the other four
-  // unregistered), so this pins the TRANSPORT contract — "when a tool value
-  // carries a task id, it reaches the request body" — not a claim that search
-  // returns one in production.
+  // Every MCP tool reports its own task now (#303 for ans_chat, #304 for the
+  // other four), so a search call really does carry this block. The fake
+  // server still builds it by hand: this pins the TRANSPORT contract — "a
+  // task id in the tool value reaches the request body" — not the MCP server's
+  // own closeout shape, which apps/mcp tests own.
   const mcp = await fakeMcpServer({
     content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
     isError: false,
