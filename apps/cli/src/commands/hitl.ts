@@ -41,18 +41,17 @@ function allowHost(host: string): boolean {
   const tomlPath = domainTomlPath(process.cwd(), domainName, dirs);
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
   const beforeHosts = loadDomainByNameIn(domainName, dirs).sources.urlAllowlist ?? [];
-  // An already-allowed host writes nothing, and that path still clears the
-  // matching queue entries — so the writability check below must not turn it
-  // into an error.
+  // An already-allowed host writes nothing but still clears its queue entries,
+  // so it must not trip the writability check below.
   if (beforeHosts.includes(host)) return false;
-  // Only the operator's own dirs are writable: a domain that exists only in the
-  // packaged `domains/` dir is shared by every project on the machine, replaced
-  // on upgrade, and read-only in a global install.
+  // Only the operator's own dirs are writable: a TOML found elsewhere (the
+  // packaged domains dir, or a parent project's) is shared by other projects,
+  // replaced on upgrade, or read-only in a global install.
   const writableDirs = defaultDomainsDirs();
   if (!writableDirs.map((d) => resolve(d)).includes(resolve(dirname(tomlPath)))) {
     throw new Error(
-      "领域 " + domainName + " 的 TOML 只在随包目录里（" + tomlPath + "），那份是全机共用、升级会覆盖的，不能往里写。"
-      + "把它复制到 " + join(process.cwd(), "domains") + "，或者设置 ANS_DOMAINS_DIR 指向你自己的目录，再跑一次。",
+      "refusing to write " + tomlPath + ": it is outside your own domains dirs ("
+      + writableDirs.join(", ") + "). Copy the TOML there, or set ANS_DOMAINS_DIR, and re-run.",
     );
   }
   const src = readFileSync(tomlPath, "utf8");
@@ -71,7 +70,6 @@ function allowHost(host: string): boolean {
       const m = lines[alIdx]!.match(/^(.*urlAllowlist\s*=\s*\[)([^\]]*)(\].*)$/);
       if (!m) throw new Error("cannot parse urlAllowlist line: " + lines[alIdx]);
       const hosts = m[2]!.split(",").map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean);
-      if (hosts.includes(host)) return false; // already allowed
       hosts.push(host);
       next = [...lines];
       next[alIdx] = m[1] + hosts.map((h) => '"' + h + '"').join(", ") + m[3];
@@ -87,15 +85,13 @@ function allowHost(host: string): boolean {
     throw new Error("allowlist write did not round-trip for host" + host);
   }
   // D8: ConfigChange audit event into the local trace store (fail-open).
-  if (!beforeHosts.includes(host)) {
-    void emitConfigChangeAudit(resolveDbPath(), {
-      actor: "cli",
-      source: "cli",
-      path: tomlPath,
-      change: { before: beforeHosts, after: schema.sources.urlAllowlist ?? [] },
-      policyVersion: canonicalVersion(schema.sources.urlAllowlist ?? [], schema.sources.urlDenylist ?? []),
-    });
-  }
+  void emitConfigChangeAudit(resolveDbPath(), {
+    actor: "cli",
+    source: "cli",
+    path: tomlPath,
+    change: { before: beforeHosts, after: schema.sources.urlAllowlist ?? [] },
+    policyVersion: canonicalVersion(schema.sources.urlAllowlist ?? [], schema.sources.urlDenylist ?? []),
+  });
   return true;
 }
 
@@ -144,7 +140,7 @@ export async function runHitl(args: string[]): Promise<number> {
     mkdirSync(join(process.cwd(), ".anysearch-cli"), { recursive: true });
     writeFileSync(queuePath(), remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : ""), "utf8");
     process.stdout.write(
-      (changed ? "allowed" + host : "already allowed" + host) +
+      (changed ? "allowed " + host : "already allowed" + host) +
       "; queue now" + remaining.length + " pending\n",
     );
     return 0;
