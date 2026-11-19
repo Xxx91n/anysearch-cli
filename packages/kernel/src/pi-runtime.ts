@@ -359,10 +359,11 @@ export interface PiAgentRuntimeOptions {
   // when set, the allow/deny lists are re-read lazily per tool call via mtime.
   domainTomlPath?: string;
   /**
-   * #306: true when the operator named the domain, so a TOML that disappears
-   * mid-run is a fault. Omitted/false means `domainTomlPath` points at the
-   * product's own `default` convention, where an absent file is the legal
-   * fallback every other entry also takes.
+   * #306: false says `domainTomlPath` points at the product's own `default`
+   * convention rather than a name the operator declared, so an absent file is
+   * the legal fallback every other entry also takes. Omitted means declared —
+   * the same rule as `createEngine`'s option of the same name, because a caller
+   * forwards one flag to both and two opposite defaults is one bug waiting.
    */
   domainDeclared?: boolean;
   // #188 (CodeRabbit): the host's domain search dirs, so the run-boundary
@@ -643,6 +644,17 @@ export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly taskBudgetSettlements = new Set<Promise<void>>();
   private readonly domainReloader: (() => DomainReloadResult) | null;
+
+  /**
+   * #306: an undeclared domain whose TOML is simply gone is the legal fallback,
+   * not a fault — `ans search`, `ans consolidate` and `ans doctor` read it the
+   * same way. Only a declared name, or a file that is present but unreadable,
+   * stops the run. One predicate, so the run gate and the per-call gate cannot
+   * drift apart.
+   */
+  private legalAbsence(failure: { fault: "missing" | "broken" }): boolean {
+    return failure.fault === "missing" && this.opts.domainDeclared === false;
+  }
   private warnedEnvIgnored = false;
   /** One line, once, when an undeclared domain's TOML turns out to be absent. */
   private warnedDomainAbsent = false;
@@ -861,28 +873,21 @@ export class PiAgentRuntime {
     if (domainProbe?.kind === "reloaded") {
       (this.opts as { domain: DomainConfigPort }).domain = domainProbe.schema as DomainConfigPort;
     }
-    // #306: an undeclared domain whose TOML is simply gone is the legal
-    // fallback, not a fault — `ans search`, `ans consolidate` and `ans doctor`
-    // already read it that way. Only a declared name, or a file that is present
-    // but unreadable, stops the run.
-    const domainAbsentButLegal =
-      domainProbe?.kind === "failed" &&
-      domainProbe.fault === "missing" &&
-      this.opts.domainDeclared !== true;
-    if (domainAbsentButLegal) {
+    const domainFailure = domainProbe?.kind === "failed" ? domainProbe : null;
+    if (domainFailure && this.legalAbsence(domainFailure)) {
       if (!this.warnedDomainAbsent) {
         this.warnedDomainAbsent = true;
         process.stderr.write(
-          "[anysearch] 没指定领域，" + domainProbe!.reason + "，这次按不限定领域继续。\n",
+          "[anysearch] 没指定领域，" + domainFailure.reason + "，这次按不限定领域继续。\n",
         );
       }
     }
-    if (domainProbe?.kind === "failed" && !domainAbsentButLegal) {
+    if (domainFailure && !this.legalAbsence(domainFailure)) {
       stopRunScope("domain constraint fault");
       yield {
         type: "error",
         message:
-          "领域配置读不出来，这次没跑：" + domainProbe.reason +
+          "领域配置读不出来，这次没跑：" + domainFailure.reason +
           "。改回能读的 TOML 再试，或者用 ans domain 换一个领域。",
         reason: "domain-not-established",
       };
@@ -1199,7 +1204,7 @@ export class PiAgentRuntime {
         // can no longer be confirmed, and "the old copy is probably fine" is
         // exactly the guess the ticket rules out.
         const domainProbe = this.domainReloader ? this.domainReloader() : null;
-        if (domainProbe?.kind === "failed" && !(domainProbe.fault === "missing" && this.opts.domainDeclared !== true)) {
+        if (domainProbe?.kind === "failed" && !this.legalAbsence(domainProbe)) {
           return {
             block: true,
             reason: "领域配置读不出来，先停手：" + domainProbe.reason +

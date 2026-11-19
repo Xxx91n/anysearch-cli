@@ -1494,6 +1494,8 @@ function makeMockStreamFn(decision: string): any {
       retriever: new MockRetriever(),
       domain: { ...mockDomain } as any,
       domainTomlPath: join(dir, "gone.toml"),
+      // #306: the `default` convention — nobody declared this name.
+      domainDeclared: false,
       model: { id: "test-model", provider: "test" } as any,
       streamFn: usageStream(10, 5, 15, 0.001),
       store,

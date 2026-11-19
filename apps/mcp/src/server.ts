@@ -9,6 +9,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
 import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
@@ -48,9 +49,14 @@ export function createDefaultEngine(): CompositionResult {
   // better-sqlite3 opens it (CWE-732, same as apps/cli/src/db.ts).
   const dbPath = resolveDbPath();
   ensureOwnerOnlyDb(dbPath);
-  // ANS_DOMAIN flows into the engine (same env contract as the
-  // CLI) so the domain post-filter + abstain contract is reachable on MCP.
-  // Unset = full fanout, unchanged legacy behavior.
+  // #306: the Active Domain is resolved the same way the CLI resolves it, so
+  // the domain post-filter + abstain contract is reachable on MCP. Reading
+  // ANS_DOMAIN alone was a fail-open: this server is long-lived and outlives
+  // the shell it was started from, so after `ans domain research` it kept
+  // fanning out with no allowlist while claiming nobody had declared a domain.
+  // Nobody declaring at all is still the legal no-filtering default; a declared
+  // name that cannot be established stops the build.
+  const active = resolveActiveDomain();
   // mirror the CLI's domains-dir chain — an installed ans-mcp must
   // resolve the builtin TOMLs shipped inside its own package, not only
   // <cwd>/domains (a host project's cwd never has one).
@@ -59,9 +65,10 @@ export function createDefaultEngine(): CompositionResult {
   domainsDirs.push(join(self, "..", "domains"));
   // #301: the same user credential file the CLI reads, so a GUI host that
   // starts this server without a shell env still authenticates its search arms.
-  return createEngine(process.env.ANS_DOMAIN, {
+  return createEngine(active.declaredName, {
     dbPath,
     domainsDirs,
+    domainDeclared: active.declared,
     searchCredentials: resolveSearchCredentials,
   });
 }

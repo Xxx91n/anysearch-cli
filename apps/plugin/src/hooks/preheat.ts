@@ -163,10 +163,13 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   // the note, so it rides additionalContext instead.
   let cachedPolicyNote: string | undefined;
   // Everything below may want to say it, so the returns are composed at the end
-  // instead of each one repeating the check.
+  // instead of each one repeating the check. The note joins whatever context the
+  // decision already carries rather than yielding to it: a URL allowed on cached
+  // rules plus a recall hit used to return the hit alone, so the one thing the
+  // user had to know — this allow rested on a snapshot — never reached them.
   const withNote = (decision: HookDecision): HookDecision =>
-    cachedPolicyNote && !decision.additionalContext
-      ? { ...decision, additionalContext: cachedPolicyNote }
+    cachedPolicyNote
+      ? { ...decision, additionalContext: [cachedPolicyNote, decision.additionalContext].filter(Boolean).join("\n\n") }
       : decision;
   {
     const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];

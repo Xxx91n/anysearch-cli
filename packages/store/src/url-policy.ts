@@ -154,6 +154,21 @@ export interface PolicySourceVersion {
   version: string;
 }
 
+// The dirs a chain walk probes when the caller handed no list of its own:
+// the ANS_DOMAINS_DIR override first, then the TOML's own dir, then the cwd
+// convention. One definition, because the reloader and the cache envelope must
+// watch exactly the same list — a `base` living only in ANS_DOMAINS_DIR was
+// invisible to the envelope while the reloader re-read it, which is the stale
+// cache this check exists to prevent.
+function defaultChainDirs(tomlPath: string): string[] {
+  const dirs: string[] = [];
+  const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+  if (envDir) dirs.push(envDir);
+  dirs.push(dirname(tomlPath));
+  dirs.push(join(process.cwd(), "domains"));
+  return dirs;
+}
+
 export interface DomainChainWalk {
   /** Every file the policy is actually read from, in base-first order. */
   chain: string[];
@@ -170,7 +185,7 @@ export interface DomainChainWalk {
 // of what the policy depends on, and skipping it would hide exactly the kind of
 // breakage this list exists to notice.
 export function walkDomainChain(tomlPath: string, domainsDirs?: string[]): DomainChainWalk {
-  const dirs = domainsDirs && domainsDirs.length > 0 ? domainsDirs : [dirname(tomlPath), join(process.cwd(), "domains")];
+  const dirs = domainsDirs && domainsDirs.length > 0 ? domainsDirs : defaultChainDirs(tomlPath);
   const chain: string[] = [tomlPath];
   const probed: string[] = [];
   let cur: ReturnType<typeof loadRawDomain> | undefined;
@@ -336,15 +351,7 @@ export type DomainReloadResult =
     };
 
 export function createDomainReloader(tomlPath: string, domainsDirs?: string[], opts?: { forceFirst?: boolean }): () => DomainReloadResult {
-  const getSearchDirs = (): string[] => {
-    if (domainsDirs) return domainsDirs;
-    const dirs: string[] = [];
-    const envDir = process.env.ANS_DOMAINS_DIR?.trim();
-    if (envDir) dirs.push(envDir);
-    try { dirs.push(dirname(tomlPath)); } catch {}
-    dirs.push(join(process.cwd(), "domains"));
-    return dirs;
-  };
+  const getSearchDirs = (): string[] => (domainsDirs ? domainsDirs : defaultChainDirs(tomlPath));
   // Single shared dir order — collectChain and lookupFor must agree so the
   // watched files are exactly the files that would be loaded (grandparent in a
   // different dir would otherwise be missed). Reuse tryLoadRawDomain for the

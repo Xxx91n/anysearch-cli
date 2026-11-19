@@ -122,11 +122,12 @@ export async function runSearch(args: string[]): Promise<number> {
   // cannot be established stops before any provider request; an undeclared one
   // travels a no-row scope and caps nothing.
   //
-  // #306: the budget is resolved through the same three-state answer `ans chat`
-  // and `ans consolidate` ask for. An unset ANS_DOMAIN keeps the historical
-  // full fanout for provider selection, but it must not silently drop the
-  // default domain's declared cap — the engine's own config is absent in that
-  // case, so the default TOML is read once here, for the budget only.
+  // Design: the budget comes from the same three-state answer `ans chat` and
+  // `ans consolidate` ask for, not from `config ?? load()` — an unset ANS_DOMAIN
+  // keeps the historical full fanout for provider selection but must not
+  // silently drop the default domain's declared cap, and reading that default
+  // TOML once here (rather than trusting the engine's own config, which is
+  // absent when nobody declared a domain) is what keeps the cap attached.
   //
   // The fatal branch is not redundant for a bare search: the engine only loads
   // a domain when one was declared, so a BROKEN `default.toml` is invisible to
