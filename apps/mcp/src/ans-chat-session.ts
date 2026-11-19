@@ -327,10 +327,9 @@ export interface AnsChatBudgetStopExtra {
  * budget that could not be established) to be distinguishable from an upstream
  * failure without string matching. So the classification rides in
  * `structuredContent.errorKind`, the stop reason is named in the text, and the
- * result stays a normal MCP execution result (isError + content). This is the
- * ONE error result that carries structuredContent — #204 keeps generic errors
- * bare, and the budget stop is not an output-schema result: the block is a
- * classification, not a report of work that happened.
+ * result stays a normal MCP execution result (isError + content). A classified
+ * stop is not an output-schema result: the block says why the run stopped, not
+ * what work happened. #204 still keeps unclassified errors bare.
  *
  * Both stops mean "nothing was called for this run": the runtime refuses before
  * the first controlled call and says so in the text. The work that already

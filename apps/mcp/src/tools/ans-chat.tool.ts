@@ -63,7 +63,6 @@ import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
 import { toolDomainStop } from "./task-budget.js";
-import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // A cut-off run's accounting dimensions: the provider never sent a final
 // usage figure, so the run's tokens, cache and cost are all unknown. Named
@@ -601,8 +600,9 @@ export function registerAnsChat(
             domain,
             ...memory,
             domainTomlPath: domainTomlPath(undefined, eng.domainName, eng.domainsDirs),
-            // #306: only a named domain makes a missing TOML a fault.
-            domainDeclared: resolveActiveDomain().declared,
+            // The flag rides with the engine's own domain name, so one call
+            // cannot pair today's declaration with a TOML path fixed at startup.
+            domainDeclared: eng.domainDeclared === true,
             // #188: same dirs the engine loaded the domain from, so a base TOML
             // in the packaged domains dir stays resolvable on a live re-read.
             domainsDirs: eng.domainsDirs,
@@ -737,10 +737,17 @@ export function registerAnsChat(
             // reading the message — and the spend already incurred is still
             // reported under `usage`, never hidden behind the error.
             if (runtimeErrorReason === "domain-not-established") {
-              // #306: a broken Active Domain is not a budget answer. Nothing
-              // was called, and the fix is to repair the TOML, so it gets its
-              // own classification instead of "raise your cap".
-              return toolDomainStop("ans_chat", runtimeError);
+              // A broken Active Domain is not a budget answer: nothing was
+              // called and the fix is to repair the TOML. The spend so far is
+              // still reported — flushMemory has already run, so a background
+              // summary may really have cost money.
+              return toolDomainStop("ans_chat", runtimeError, {
+                ...(task ? { taskId: task.taskId } : {}),
+                usage: {
+                  run: emptyRunUsage(["run usage: the run stopped before any model call"]),
+                  memorySummary: runtime.getMemoryUsage(),
+                },
+              });
             }
             if (runtimeErrorReason !== undefined) {
               // A stop can land mid-stream, so wait for the late settlement

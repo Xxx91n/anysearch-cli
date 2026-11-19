@@ -2,7 +2,7 @@
 // CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
 import { resolveDomainConstraint } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
@@ -247,7 +247,7 @@ export async function runDoctor(): Promise<number> {
     }
   } else if (active.state === "established") {
     const s = active.schema;
-    console.log("  active: " + s.name + (selection.declared ? "" : "（没指定，用默认）"));
+    console.log("  active: " + s.name + "  (resolved from " + domainTomlPath(process.cwd(), activeName, domainSearchDirs()) + ")" + (selection.declared ? "" : "（没指定，用默认）"));
     check("    sources.enabled", s.sources.enabled.length > 0, s.sources.enabled.join(","));
     check("    skills.active", true, s.skills.active.join(",") || "none");
     check("    hooks.toolWhitelist", true, s.hooks.toolWhitelist.length + " tools");

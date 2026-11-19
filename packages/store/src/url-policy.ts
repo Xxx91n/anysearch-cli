@@ -170,7 +170,7 @@ function defaultChainDirs(tomlPath: string): string[] {
 }
 
 export interface DomainChainWalk {
-  /** Every file the policy is actually read from, in base-first order. */
+  /** Every file the policy is actually read from: the TOML first, then each `base`. */
   chain: string[];
   /** Candidates that were looked for and may appear later (missing today). */
   probed: string[];
@@ -213,7 +213,13 @@ export function walkDomainChain(tomlPath: string, domainsDirs?: string[]): Domai
 // Recording them is what lets a later reader answer "is this cached policy still
 // the one the declaration says?" without parsing TOML in a dependency-free hook.
 export function domainSourceVersions(tomlPath: string, domainsDirs?: string[]): PolicySourceVersion[] {
-  return walkDomainChain(tomlPath, domainsDirs).chain.map((path) => ({ path, version: fileVersion(path) }));
+  const walk = walkDomainChain(tomlPath, domainsDirs);
+  // Probed-but-absent candidates belong in the envelope too: a `base` that
+  // appears in a higher-priority dir later shadows the one recorded here, and
+  // without its "-1" the recorded files would all still match while the policy
+  // in force has moved. `probed` is what the reloader watches for exactly this.
+  const paths = [...new Set([...walk.chain, ...walk.probed])];
+  return paths.map((path) => ({ path, version: fileVersion(path) }));
 }
 
 // supplement: write a MaterializedPolicy envelope

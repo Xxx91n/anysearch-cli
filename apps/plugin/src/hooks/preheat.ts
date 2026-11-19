@@ -111,11 +111,22 @@ export async function readPolicy(serverUrl: string, token: string, projectRoot: 
       signal: AbortSignal.timeout(3000),
     });
     if (res.ok) {
-      const body = (await res.json()) as PolicyCache;
-      return { allow: body.allow, deny: body.deny, policy_version: body.policy_version, from: "server" };
+      // A body is used only when it is well-formed AND names the same Active
+      // Domain this hook gates for: the adapters read a hook throw as "allow",
+      // so a malformed or foreign answer has to mean "no policy", not a crash.
+      const body = (await res.json()) as Partial<PolicyCache> & { domain?: string };
+      const shaped = Array.isArray(body.allow) && Array.isArray(body.deny) && typeof body.policy_version === "string";
+      if (!shaped) {
+        process.stderr.write("[anysearch] GET /policy returned an unusable body; falling back to cached policy\n");
+      } else if (typeof body.domain === "string" && body.domain !== domainName) {
+        process.stderr.write("[anysearch] GET /policy answered for domain \"" + body.domain + "\", this hook runs \"" + domainName + "\"; falling back to cached policy\n");
+      } else {
+        return { allow: body.allow as string[], deny: body.deny as string[], policy_version: body.policy_version as string, from: "server" };
+      }
+    } else {
+      // Audit M3: a reachable-but-failing server is a distinct signal, not silent cache reuse.
+      process.stderr.write("[anysearch] GET /policy returned HTTP " + res.status + "; falling back to cached policy\n");
     }
-    // Audit M3: a reachable-but-failing server is a distinct signal, not silent cache reuse.
-    process.stderr.write("[anysearch] GET /policy returned HTTP " + res.status + "; falling back to cached policy\n");
   } catch { /* server unreachable -> cache fallback */ }
   let cached: PolicyCache | null = null;
   try {
@@ -127,7 +138,7 @@ export async function readPolicy(serverUrl: string, token: string, projectRoot: 
   if (!warnedCacheFallback) {
     warnedCacheFallback = true;
     process.stderr.write(
-      "[anysearch] server unreachable; using this project's cached URL policy materialized_at=" +
+      "[anysearch] no usable policy from the server; using this project's cached URL policy materialized_at=" +
       (cached.materialized_at ?? "unknown") + "\n",
     );
   }

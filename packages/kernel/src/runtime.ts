@@ -17,6 +17,9 @@ import type { CostSource } from "./usage";
  * - `budget-rejected`: the budget refused the run (tokens or calls). On the task
  *   form this is the task's own budget; on the session form it is the session
  *   row's cap. Nothing was called for this refusal.
+ *
+ * `RuntimeErrorReason` also carries `domain-not-established`, which is a stop
+ * but not a budget one — see `DomainStopReason`.
  */
 export type BudgetStopReason = "budget-not-established" | "budget-rejected";
 
@@ -50,7 +53,7 @@ export type AgentEvent =
   | {
       type: "error";
       message: string;
-      /** Absent means "not a runtime-decided budget stop". */
+      /** Absent means the run did not stop itself; a budget stop and a domain stop both name their class. */
       reason?: RuntimeErrorReason;
     };
 

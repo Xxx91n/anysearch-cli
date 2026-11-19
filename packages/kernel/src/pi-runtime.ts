@@ -878,11 +878,12 @@ export class PiAgentRuntime {
       if (!this.warnedDomainAbsent) {
         this.warnedDomainAbsent = true;
         process.stderr.write(
-          "[anysearch] 没指定领域，" + domainFailure.reason + "，这次按不限定领域继续。\n",
+          "[anysearch] 没指定领域，" + domainFailure.reason + "，这次沿用上次读到的配置继续。\n",
         );
       }
     }
     if (domainFailure && !this.legalAbsence(domainFailure)) {
+      callerSignal?.removeEventListener("abort", onCallerAbort);
       stopRunScope("domain constraint fault");
       yield {
         type: "error",

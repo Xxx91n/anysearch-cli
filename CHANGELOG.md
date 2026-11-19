@@ -11,12 +11,17 @@
 - **"当前用的是哪个领域"只有一处定义**（`packages/store/src/local-service.ts` 的 `resolveActiveDomain`，只用 Node 自带模块，钩子包也能引）。它先看 `ANS_DOMAIN`，没有再读 `ans domain` 写下的 `config.env`——以前只有 CLI 入口会回填这个文件，常驻的服务和钩子进程一直按自己启动时的环境走，于是你在终端 `ans domain research` 之后，网址闸口还在按 `default` 执行，而新加的缓存比对又拿两边同样的旧名字比出"一致"。MCP 服务器现在也走这一处——它以前只看自己启动时的 `ANS_DOMAIN`，`ans domain` 落盘的选择进不去，于是最该受领域约束的那条入口反而最不受约束。`ANS_DOMAIN` 显式设成空串仍然表示"这里没有领域"，不会回头去读文件。
 - **`config.env` 改成原子写**：先写 `<文件>.tmp` 再改名。以前是就地覆盖，写一半出事会留下一个空配置，原来的领域选择跟着一起没了。现在写失败，旧文件一个字节不变。
 - **MCP 搜索的领域停止也带类型**：`search_web` / `research_web` 撞上读不出来的领域时，结果里带 `errorKind: "domain-not-established"`，跟 `ans_chat` 一致，宿主不用读中文才知道这是配置坏了、重试没用。
-- **测试**：`apps/cli/test/domain-constraint.test.ts`（三态；切换成功才落盘；名字不存在/TOML 坏/配置写不进都失败且旧文件内容不变，包括"临时文件写不进去"这一处；`ans search` 直接拒绝、`ans consolidate` 返回 1 并说清原因；`ans domain` 不带参数时只有"声明了且会停"才返回非零；环境里没有 `ANS_DOMAIN` 时按 `config.env` 选领域，显式空串则不回读文件）；`packages/store/test/url-policy.test.ts` 把重载器的旧断言换成"读坏要返回 failed、修好后能重新加载"；`packages/store/test/session-id-propagation.test.ts` 加缓存出处与适用性断言；`apps/plugin/test/policy.test.ts` 加"另一个项目的缓存不借、TOML 改过后不认、没有出处的老缓存不认"；`packages/kernel/test/pi-runtime.test.ts` 加"运行中 TOML 读坏，这次运行不发模型请求并以 `domain-not-established` 结束；同一个文件被删掉时，没人点名就照常跑，点名了就停"。
+- **测试**：`apps/cli/test/domain-constraint.test.ts`（三态；切换成功才落盘；名字不存在/TOML 坏/配置写不进都失败且旧文件内容不变，包括"临时文件写不进去"这一处；`ans search` 直接拒绝、`ans consolidate` 返回 1 并说清原因；`ans domain` 不带参数时只有"声明了且会停"才返回非零；环境里没有 `ANS_DOMAIN` 时按 `config.env` 选领域，显式空串则不回读文件）；`packages/store/test/url-policy.test.ts` 把重载器的旧断言换成"读坏要返回 failed、修好后能重新加载"；`packages/store/test/session-id-propagation.test.ts` 加缓存出处与适用性断言；`apps/plugin/test/policy.test.ts` 加"另一个项目的缓存不借、TOML 改过后不认、没有出处的老缓存不认"；`packages/kernel/test/pi-runtime.test.ts` 加"运行中 TOML 读坏，这次运行不发模型请求并以 `domain-not-established` 结束；同一个文件被删掉时，没人点名就照常跑，点名了就停"；`apps/mcp/test/ans-chat-task-budget.test.ts` 加"领域停止带 closeout 和 usage、同一句话不说两遍"，并保留"带审计报告的错误结果不挂 closeout"这条反向断言。
 
 ### Changed
 
 - **声明了但找不到的领域不再当成没声明**：`createEngine("<名字>")` 以前把 `Domain not found` 当"缺省"，直接全量扇出并丢掉操作者配的白名单；现在这算失败，直接报错。产品自己的 `default` 约定是另一回事：`domainDeclared: false` 的调用方（`ans chat` 没设 `ANS_DOMAIN` 时）仍然退回全量扇出，只是会明说丢掉了什么。`packages/kernel/test/composition-vertical.test.ts` 里"缺领域仍然全量扇出"那条旧断言就是按这个改写并加严的，没有删掉。
 - **`ans doctor` 的领域一节跟着改口径**：原来是"not found on the resolution chain (silent full-fanout)"，现在分得清"声明了会停"（`[FAIL]`）和"没指定所以继续全量"（`[SKIP]`，这是产品允许的状态，不该把 doctor 的退出码拉红）。
+- **`ans domain` 只接受干净的单个名字**：落盘前先去掉首尾空格，带路径分隔符（`/`、`\`）或就是 `.` / `..` 的名字直接拒绝并返回 2。以前校验用的是去空格后的名字、写进 `config.env` 的是原始输入，`ans domain " docs "` 会验证通过却落一个只有会去空格的读取路径才认的名字。
+- **钩子拿到的策略要对得上领域和形状**：`/policy` 的响应现在带 `domain`，钩子发现和自己正在执行的领域不一致就当没拿到策略（退回缓存或问用户）；响应体缺 `allow`/`deny` 也照样处理，不再把畸形响应当成合法策略——各适配器把钩子抛错当放行，畸形响应走到那一步就是悄悄放行。
+- **缺 TOML 不再清空能用的缓存**：项目还没有领域 TOML 时，服务器不再把空策略写进 `.anysearch-cli/policy.json`。以前那样写一次，上一份能用的物化策略就没了，而且文件找回来以后版本对不上，缓存永远用不了。
+- **缓存记下了"探过但还没有"的文件**：信封除了实际读到的 TOML，也记下探测过但不存在的候选。更靠前的目录后来放了一份同名 base 时，实际生效的声明变了，缓存会因为那一项从 "-1" 变成真实版本而失效，不再继续按旧 base 放行。
+- **MCP 的领域停止也带任务号和花费**：`search_web` / `research_web` / `ans_chat` 因领域读不出来而停下时，结果里有 `taskId`、`closeout` 和已经产生的 `usage`（`ans_chat` 的后台摘要可能已经花过钱），文案也不再"这次没跑"说两遍。
 - **四个不检索的命令不再把 `default` 当"点名要的领域"**：`ans memory` / `ans entity` / `ans relation` / `ans pref` 以前无论有没有设 `ANS_DOMAIN` 都按"默认域"这个具体名字去加载，缺了那个 TOML 就会被当成本票新规则下的"声明了却建不起来"。它们本来不检索、不需要域名过滤，所以现在只在真的设了 `ANS_DOMAIN` 时才按声明处理；没设就是未声明，跟以前一样全量扇出。`ans hitl` 保留 "default" 作为约定（它改的就是那个 TOML），只是补了去空格。
 
 ### Known limits

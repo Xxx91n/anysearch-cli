@@ -73,7 +73,15 @@ export async function runDomain(args: string[]): Promise<number> {
     return 0;
   }
 
-  const newDomain = args[0]!;
+  // The name goes into a file path, so the accepted shape is a bare name:
+  // trimming keeps the validated name and the persisted one identical, and
+  // banning separators keeps `ans domain ../../x` inside the domains dirs.
+  const newDomain = args[0]!.trim();
+  if (!newDomain || newDomain === "." || newDomain === ".." || /[\\/]/.test(newDomain)) {
+    process.stderr.write("领域名要写成不带路径的单名，例如 docs。\n");
+    printAvailable();
+    return 2;
+  }
   // Validate the whole thing — file, inheritance chain, every field — before
   // anything is written. Nothing below can leave the old selection replaced by
   // one that does not load.
@@ -92,9 +100,9 @@ export async function runDomain(args: string[]): Promise<number> {
     // disappear on the next command.
     try {
       writeConfig("ANS_DOMAIN", newDomain);
-    } catch (e: any) {
+    } catch (e) {
       process.stderr.write(
-        "没换成 " + newDomain + "。配置写不进去（" + (e?.message || String(e)) + "），" +
+        "没换成 " + newDomain + "。配置写不进去（" + (e instanceof Error ? e.message : String(e)) + "），" +
         "原来用的是 " + current + "，没动。\n",
       );
       return 1;

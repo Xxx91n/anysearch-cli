@@ -28,6 +28,7 @@ import Database from "better-sqlite3";
 import { createFauxCore, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import { SqliteSessionStore, type BudgetConfig } from "@anysearch-cli/store";
 import type { CompositionResult } from "@anysearch-cli/kernel";
+import { toolDomainStop } from "../src/tools/task-budget.js";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
@@ -542,6 +543,33 @@ async function main() {
         "8: both calls were registered and closed, closeout or not (got " + JSON.stringify(tasks) + ")");
       assert(tasks[0]?.code === 1 && tasks[1]?.code === 0,
         "8: failed one exit 1, successful one exit 0 (got " + JSON.stringify(tasks.map((t) => t.code)) + ")");
+    }
+
+    // ===== 9. a domain stop is classified, closed, and still reports spend =====
+    //
+    // A domain stop carries structuredContent (errorKind = domain-not-established)
+    // the same way a budget stop does, so it gets the same closeout — and the
+    // spend the run already incurred must not disappear behind the error.
+    {
+      const dbPath = join(tempRoot, "domain-stop.db");
+      const store = new SqliteSessionStore(dbPath);
+      const eng = makeEngine(store);
+      const res = await withMcpTask(eng, "probe_tool", async () =>
+        toolDomainStop("probe_tool", "领域配置读不出来，这次没跑：probe", {
+          usage: { run: { settled: false }, memorySummary: { calls: 0, spentUsd: 0 } },
+        }));
+      assert(res?.structuredContent?.errorKind === "domain-not-established",
+        "9: the stop stays classified (got " + JSON.stringify(res?.structuredContent) + ")");
+      assert(res?.structuredContent?.closeout !== undefined,
+        "9: a domain stop carries a closeout like a budget stop");
+      assert(res?.structuredContent?.usage !== undefined,
+        "9: the spend so far is still reported");
+      const text = String(res?.content?.[0]?.type === "text" ? res.content[0].text : "");
+      assert(text.includes("这次没跑") && !/这次没跑[^。]*这次没跑/.test(text),
+        "9: the sentence is said once, not twice (got " + text + ")");
+      const tasks = readRows<TaskRow>(dbPath, TASKS_SQL);
+      assert(tasks.length === 1 && tasks[0]?.code === 1 && !!tasks[0]?.ended,
+        "9: the call is recorded and closed as a failure (got " + JSON.stringify(tasks) + ")");
     }
 
     // ---- #322: nothing reached the operator's real home ----

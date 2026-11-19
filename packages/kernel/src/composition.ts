@@ -193,6 +193,10 @@ export interface CompositionResult {
   // #188: the domain name this engine was created for, so runtime reloaders
   // resolve the same TOML instead of falling back to ANS_DOMAIN/default.
   domainName?: string;
+  // #306: whether that name was declared by the operator. Travels with
+  // `domainName` so a long-lived host cannot re-read the env later and pair one
+  // call's `declared` with an engine built for another name.
+  domainDeclared?: boolean;
   // #188: the same domain dirs the loader used, passed on to runtime reloaders
   // so a base TOML in a host-specific dir stays resolvable on a live re-read.
   domainsDirs?: string[];
@@ -416,6 +420,10 @@ export function createEngine(
   // without restart); absent vertical returns undefined.
   let repoVertical: (() => SearchRequest["vertical"]) | undefined;
 
+  // Passing a name is itself a request for that domain unless the caller says
+  // the name is its convention default (see `domainDeclared`); read once so the
+  // build and the request-time re-read cannot disagree.
+  const domainDeclared = opts?.domainDeclared !== false;
   if (domain) {
     // #306: one three-state answer instead of a try/catch that turns every
     // absence into a full fanout. `declared: false` is the caller saying "this
@@ -423,7 +431,7 @@ export function createEngine(
     // missing default keeps the old fallback, a broken one never does.
     const constraint = resolveDomainConstraint({
       name: domain,
-      declared: opts?.domainDeclared !== false,
+      declared: domainDeclared,
       dirs: domainsDirs,
     });
     if (constraint.state === "failed") {
@@ -442,11 +450,13 @@ export function createEngine(
       const tomlPath = domainTomlPath(process.cwd(), domain, domainsDirs);
       const reload = createDomainReloader(tomlPath, domainsDirs);
       let liveSchema = schema;
-      // #306: once a re-read fails, the declared constraint can no longer be
-      // confirmed, so every request-time read fails closed until the file is
-      // readable again. Keeping last-known-good here would mean a policy the
-      // operator just replaced stays in force with only a stderr line to say so.
+      // #306: a failed re-read becomes the same three-state failure the build
+      // used, with the reloader's own `fault` kept intact — a declared name that
+      // vanished is a fault, while the convention default vanishing is the legal
+      // fallback. `domainConstraintFailure` decides `fatal`, so this path cannot
+      // grow a second rule that disagrees with `legalAbsence` in the runtime.
       let liveFault: DomainConstraintFailure | undefined;
+      let warnedFallback = false;
       const live = () => {
         const probe = reload();
         if (probe.kind === "reloaded") {
@@ -455,12 +465,19 @@ export function createEngine(
         } else if (probe.kind === "failed") {
           liveFault = domainConstraintFailure({
             name: domain,
-            declared: opts?.domainDeclared !== false,
-            fault: "broken",
+            declared: domainDeclared,
+            fault: probe.fault,
             reason: probe.reason,
           });
         }
-        if (liveFault) throw new DomainConstraintError(liveFault);
+        if (liveFault?.fatal) throw new DomainConstraintError(liveFault);
+        if (liveFault && !warnedFallback) {
+          warnedFallback = true;
+          process.stderr.write(
+            "[anysearch] 没指定领域，默认的领域 TOML 读不到了（" + liveFault.reason +
+              "），这次沿用上次读到的配置继续。\n",
+          );
+        }
         return liveSchema;
       };
       urlPolicy = () => resolvePolicyFromSchema(live());
@@ -531,6 +548,7 @@ export function createEngine(
     calibration: attributionCalibration,
     providerBuildErrors,
     domainName: domain,
+    domainDeclared,
     domainsDirs,
     ledger,
     credentialSources,

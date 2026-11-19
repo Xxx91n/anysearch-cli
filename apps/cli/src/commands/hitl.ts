@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveDbPath } from "@anysearch-cli/kernel";
 
@@ -35,7 +36,7 @@ function readQueue(): HitlEntry[] {
 // Add host to the active domain TOML [sources].urlAllowlist (append-style, section-replace
 // semantics preserved). Returns true on write.
 function allowHost(host: string): boolean {
-  const domainName = process.env.ANS_DOMAIN?.trim() || "default";
+  const domainName = resolveActiveDomain().name;
   const tomlPath = domainTomlPath(process.cwd(), domainName);
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
   const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];

@@ -83,19 +83,26 @@ export function beginToolBudget(
 }
 
 /**
- * #306: the result for a call refused because the Active Domain could not be
- * read. Same shape as a budget stop (a classification the host can switch on
- * without reading prose) for the same reason — but the caller's next move is to
- * repair the TOML, not to raise a cap, so it must not be reported as `budget`.
+ * The result for a call refused because the Active Domain could not be read:
+ * classified in structuredContent so a host can switch on it without reading
+ * prose, and carrying the task id plus whatever the run already spent. It is
+ * not a `budget` stop — the fix is to repair the TOML, not to raise a cap.
  */
-export function toolDomainStop(toolName: string, detail: string): CallToolResult {
+export function toolDomainStop(
+  toolName: string,
+  detail: string,
+  extra: { taskId?: string; usage?: unknown } = {},
+): CallToolResult {
+  const task = extra.taskId ?? currentMcpTask()?.taskId;
   return {
     isError: true,
-    content: [{ type: "text", text: toolName + ": 这次没跑 —— " + detail }],
+    content: [{ type: "text", text: toolName + "：" + detail }],
     structuredContent: {
       operation: toolName,
       errorKind: "domain-not-established",
       domain: { stopped: true, detail },
+      ...(task ? { taskId: task } : {}),
+      ...(extra.usage !== undefined ? { usage: extra.usage } : {}),
     },
   };
 }

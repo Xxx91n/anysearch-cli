@@ -85,6 +85,8 @@ interface ProjectPolicy {
   domainName: string;
   /** The declaration files this policy was read from, for the cache envelope. */
   sources: PolicySourceVersion[];
+  /** False when the project has no TOML at all (an empty policy, not a declaration). */
+  tomlExists: boolean;
 }
 
 // A project's URL policy is read from that project's own domains TOML. The
@@ -105,14 +107,14 @@ function readProjectPolicy(projectRoot: string): ProjectPolicy {
   const cachePath = join(projectRoot, ".anysearch-cli", "policy.json");
   if (existsSync(tomlPath)) {
     try {
-      return { policy: loadPolicyFromToml(tomlPath), tomlPath, cachePath, domainName, sources: domainSourceVersions(tomlPath) };
+      return { policy: loadPolicyFromToml(tomlPath), tomlPath, cachePath, domainName, sources: domainSourceVersions(tomlPath), tomlExists: true };
     } catch (e) {
       const cached = readPolicyCacheEnvelope(cachePath);
       if (cached) {
         const applies = policyCacheApplies(cached, { projectRoot, domainName });
         if (applies.ok) {
           process.stderr.write("[anysearch] WARN: domain TOML parse failed; using cached policy materialized_at=" + cached.materialized_at + ": " + (e instanceof Error ? e.message : String(e)) + "\n");
-          return { policy: resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny }), tomlPath, cachePath, domainName, sources: cached.sources };
+          return { policy: resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny }), tomlPath, cachePath, domainName, sources: cached.sources, tomlExists: true };
         }
         process.stderr.write("[anysearch] cached policy rejected (" + applies.reason + "); refusing to answer for " + projectRoot + "\n");
       }
@@ -122,7 +124,7 @@ function readProjectPolicy(projectRoot: string): ProjectPolicy {
   // No TOML at all: nobody declared a URL policy for this project, which is a
   // legal state — an empty allowlist makes the hook ask about every URL rather
   // than inventing rules from a cache for a file that is gone.
-  return { policy: resolveUrlPolicy({ tomlHosts: [] }), tomlPath, cachePath, domainName, sources: domainSourceVersions(tomlPath) };
+  return { policy: resolveUrlPolicy({ tomlHosts: [] }), tomlPath, cachePath, domainName, sources: domainSourceVersions(tomlPath), tomlExists: false };
 }
 // Last policy version seen per project, so the audit row names the project
 // whose rules changed.
@@ -325,7 +327,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // process's start directory. No project = no policy answer.
       const project = resolveProject(url.searchParams.get("project"));
       if (!project.ok) { sendJson(res, 400, { error: project.error }); return; }
-      const { policy, tomlPath, cachePath, domainName, sources } = readProjectPolicy(project.root);
+      const { policy, tomlPath, cachePath, domainName, sources, tomlExists } = readProjectPolicy(project.root);
       // Ensure OBS_DB permissions before any audit write (best-effort, once).
       if (!obsDbEnsured) {
         obsDbEnsured = true;
@@ -381,10 +383,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           }),
           { isFailure: (written) => !written });
       }
-      const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion, project: project.root };
-      // writePolicyCache stamps materialized_at alongside the
-      // policy body so the hook fallback can surface staleness.
-      writePolicyCache(cachePath, policy, { projectRoot: project.root, domainName, sources });
+      // `domain` lets the hook check that it and this process agree on the Active
+      // Domain before trusting these rules; the cached path already compares it.
+      const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion, project: project.root, domain: domainName };
+      // A project with no TOML at all gets an empty policy. Writing that would
+      // overwrite the last usable envelope and keep it rejected after the file
+      // comes back (its sources are all "-1"), so a temporary absence writes
+      // nothing: the old envelope stays, and version checks reject it if the
+      // declaration really changed.
+      if (tomlExists) writePolicyCache(cachePath, policy, { projectRoot: project.root, domainName, sources });
       sendJson(res, 200, body);
       return;
     }

@@ -2,8 +2,7 @@
 // B1: shared module + entry-point rehydrate so `ans domain <name>`
 // actually takes effect for search/chat/etc. across sessions (was write-only).
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { configEnvPath } from "@anysearch-cli/store/local-service";
 
 export function configPath(): string {
@@ -35,7 +34,12 @@ export function readConfig(): Record<string, string> {
 // with it. "A failed write keeps the old selection" only holds if the old file
 // is never opened for truncation.
 export function writeConfig(key: string, value: string): void {
-  const dir = join(homedir(), ".anysearch");
+  // The target's own directory, not a second guess at the home dir: the path
+  // comes from configEnvPath() (USERPROFILE || HOME || "."), and homedir()
+  // reads the passwd entry instead. When they disagree the file was written
+  // into a directory nobody created.
+  const target = configPath();
+  const dir = dirname(target);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const existing = readConfig();
   existing[key] = value;
@@ -43,7 +47,6 @@ export function writeConfig(key: string, value: string): void {
     Object.entries(existing)
       .map(([k, v]) => k + "=" + v)
       .join("\n") + "\n";
-  const target = configPath();
   const temp = target + ".tmp";
   try {
     // SECURITY: restrict config file permissions to owner-only (CWE-312). The
