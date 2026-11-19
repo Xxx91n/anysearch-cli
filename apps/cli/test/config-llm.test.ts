@@ -22,12 +22,12 @@ function fixture(files: { userToml?: string; projectToml?: string } = {}) {
   const home = mkdtempSync(join(tmpdir(), "ans-home-"));
   const cwd = mkdtempSync(join(tmpdir(), "ans-proj-"));
   if (files.userToml !== undefined) {
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
-    writeFileSync(join(home, ".anysearch-cli", "config.toml"), files.userToml);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "config.toml"), files.userToml);
   }
   if (files.projectToml !== undefined) {
-    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
-    writeFileSync(join(cwd, ".anysearch", "config.toml"), files.projectToml);
+    mkdirSync(join(cwd, ".ans"), { recursive: true });
+    writeFileSync(join(cwd, ".ans", "config.toml"), files.projectToml);
   }
   const warnings: string[] = [];
   const opts = (extra: object = {}) => ({
@@ -458,7 +458,7 @@ test("an unset env_key falls through to the stored key instead of stopping", () 
 
 test("a broken credential file is reported instead of reading as 'no keys'", () => {
   const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
-  mkdirSync(join(f.home, ".anysearch-cli"), { recursive: true });
+  mkdirSync(join(f.home, ".ans"), { recursive: true });
   writeFileSync(credPath(f.home), "{ not json", "utf8");
   const cfg = resolveLlmConfig(f.opts({ env: {} }));
   assert.equal(cfg.apiKey, undefined);
@@ -645,7 +645,7 @@ test("read and write resolve the same config root from the same env", () => {
     const expectedHome = resolveConfigHome(undefined, env);
     assert.equal(
       userConfigPath(expectedHome),
-      join(expectedHome, ".anysearch-cli", "config.toml"),
+      join(expectedHome, ".ans", "config.toml"),
       "the resolver used the shared root for " + JSON.stringify(Object.keys(env)),
     );
     if (expectedHome === f.home) {

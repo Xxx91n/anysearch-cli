@@ -1,6 +1,6 @@
 // ans domain: switch or show Active Domain (cc-persona TOML).
 // decision 4A: loads TOML from domains/<name>.toml convention directory.
-// G016: persists domain to ~/.anysearch/config.env for cross-session recall.
+// G016: persists domain to ~/.ans/config.env for cross-session recall.
 //
 // #306: validate first, persist second. The old order wrote the name and then
 // tried to load it, so a typo left a persisted selection that resolves to

@@ -47,7 +47,7 @@ ans doctor                    # "vector arm (present ...)" 表示已激活
 ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模型（约 130 MB）
 ```
 
-- 模型第一次使用时从 huggingface.co 下载，缓存在 `~/.anysearch/models`
+- 模型第一次使用时从 huggingface.co 下载，缓存在 `~/.ans/models`
 （可以用 `ANYSEARCH_MODEL_CACHE` 改位置）。
 - 离线机器可以从联网机器拷贝已经填好的缓存目录。卸载这个包后，CLI 会退回只用 FTS，不会崩，`ans doctor` 会把这一项标成 SKIP。
 
@@ -68,7 +68,7 @@ ans auth list                  # 看存了哪些、各自绑到哪个 provider �
 ans auth remove openai         # 删掉这一条
 ```
 
-- 存在 `~/.anysearch-cli/credentials.json`，**是明文**，不是加密，也不是系统钥匙串。文件里自己写明了这点。
+- 存在 `~/.ans/credentials.json`，**是明文**，不是加密，也不是系统钥匙串。文件里自己写明了这点。
 - 本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主；所以录一次就够了。
 - 环境变量仍然优先：`ANS_LLM_API_KEY`、或该 provider 自己的 `*_API_KEY`。
 - 每条绑定到具体的 provider；模型用的 key 还会绑定到当时的端点。换了端点或 provider 就不会发出去，要重新录。

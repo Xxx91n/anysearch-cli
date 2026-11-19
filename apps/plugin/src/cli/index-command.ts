@@ -21,7 +21,7 @@ function requireProject(): string | null {
   if (!("reason" in project)) return project.root;
   process.stderr.write(
     "项目身份不明确：" + project.reason +
-    " 请从项目根目录运行，或在项目里加 .anysearch/config.toml。\n",
+    " 请从项目根目录运行，或在项目里加 .ans/config.toml。\n",
   );
   return null;
 }

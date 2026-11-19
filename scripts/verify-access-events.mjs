@@ -59,7 +59,11 @@ function main() {
   const flagIdx = process.argv.indexOf("--db");
   const flagValue = flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined;
   if (flagIdx !== -1 && (!flagValue || flagValue.startsWith("--"))) fail("usage: --db <path> (flag present but value missing) — fail-closed, refusing silent fallback");
-  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+  const home = process.env.USERPROFILE || process.env.HOME || ".";
+  const defaultDb = [".ans", ".anysearch"]
+    .map((dir) => path.join(home, dir, "anysearch.db"))
+    .find((candidate) => fs.existsSync(candidate)) ?? path.join(home, ".ans", "anysearch.db");
+  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? defaultDb;
   const t0 = performance.now();
   if (!fs.existsSync(dbPath)) {
     process.stdout.write(JSON.stringify({ verdict: "NO_DATABASE", dbPath }) + "\n");

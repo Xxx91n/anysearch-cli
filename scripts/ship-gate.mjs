@@ -164,7 +164,7 @@ function failUnverifiable(msg) {
 
 // (supersedes 's raw spawn): layered verification object.
 // (a) ANS_DB_PATH explicitly set but the file is missing -> misconfiguration -> fail (fail-closed);
-// (b) a consumable db exists (ANS_DB_PATH or ~/.anysearch default) -> consumed track;
+// (b) a consumable db exists (ANS_DB_PATH or the ~/.ans default) -> consumed track;
 // (c) neither -> gate-built track: chain-gate-fixture.ts materializes .ship-gate/chain-gate.db
 // through the real SqliteSessionStore write path, verified via an explicit --db argument.
 // Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson); gate-built track
@@ -182,7 +182,7 @@ function stepAccessChainVerify() {
   if (explicitDb !== undefined) {
     if (!explicitDb || !fs.existsSync(explicitDb)) fail("ANS_DB_PATH is set but the database does not exist: " + explicitDb + " — misconfiguration, fail-closed");
     object = "consumed";
-  } else if (fs.existsSync(path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db"))) {
+  } else if (["\.ans", "\.anysearch"].some((dir) => fs.existsSync(path.join(process.env.USERPROFILE || process.env.HOME || ".", dir, "anysearch.db")))) {
     object = "consumed";
   } else {
     object = "gate-built";

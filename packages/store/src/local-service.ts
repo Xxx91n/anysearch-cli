@@ -1,43 +1,38 @@
 // Local service identity: where the plugin server keeps its token, which
 // address it published, and where the shared project index lives.
 //
-// Design: one token and one published address per installation under
-// ~/.anysearch-cli, plus one user-level index database — a per-project token
-// and a cwd-derived port made every new directory a guessing game, and the
-// server could not answer for a project other than its start directory (S3).
+// Design: one token and one published address per installation under ~/.ans,
+// plus one user-level index database — a per-project token and a cwd-derived
+// port made every new directory a guessing game, and the server could not
+// answer for a project other than its start directory (S3).
 //
 // This module is the single source for every entry point that talks to the
 // local service (plugin hooks, the plugin server, dsh, and the MCP recall
 // fallback). It uses only node builtins so hook bundles (esbuild) and the
 // bundled apps can include it without pulling the store's native dependencies.
+// The directory names themselves live in ans-paths.ts (#323).
 //
 // Both the token and the address belong to the installation, not to a project
-// directory: one file per user config root, read by every project's hooks.
+// directory: one file per user root, read by every project's hooks.
 // ANS_SERVER_URL and ANS_SERVER_TOKEN stay the explicit override channel.
 import { randomBytes } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  ansConfigEnvPath,
+  ansProjectIndexDbPath,
+  ansServerRegistryPath,
+  ansServerTokenPath,
+} from "./ans-paths.js";
 
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:33333";
 
-/** User config root: ~/.anysearch-cli (USERPROFILE on Windows, HOME elsewhere). */
-export function installConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.USERPROFILE || env.HOME || ".";
-  return join(home, ".anysearch-cli");
-}
-
-/** User data root: ~/.anysearch, where the databases live. */
-export function installDataDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.USERPROFILE || env.HOME || ".";
-  return join(home, ".anysearch");
-}
-
 /**
- * The CLI's persisted key=value config (`~/.anysearch/config.env`). `ans domain`
+ * The CLI's persisted key=value config (`~/.ans/config.env`). `ans domain`
  * writes ANS_DOMAIN here, which is the product's own switch.
  */
 export function configEnvPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(installDataDir(env), "config.env");
+  return ansConfigEnvPath(env);
 }
 
 /** The persisted Active Domain name, when `ans domain` wrote one. */
@@ -86,24 +81,24 @@ export function resolveActiveDomain(env: NodeJS.ProcessEnv = process.env): Activ
 
 /** One token for this installation; every project's hooks read the same file. */
 export function serverTokenPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(installConfigDir(env), "server-token");
+  return ansServerTokenPath(env);
 }
 
 /** The address record the running server writes; ANS_SERVER_REGISTRY overrides (tests). */
 export function serverRegistryPath(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.ANS_SERVER_REGISTRY?.trim();
-  return override ? override : join(installConfigDir(env), "server.json");
+  return override ? override : ansServerRegistryPath(env);
 }
 
 /**
- * The project index lives in the user data root, so the server, the CLI and
+ * The project index lives in the user root, so the server, the CLI and
  * every project's hooks read and write the same table. Per-project isolation
  * comes from the project_path column, not from a per-directory database.
  * ANS_PROJECT_DB stays the explicit override channel.
  */
 export function projectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.ANS_PROJECT_DB?.trim();
-  return override ? override : join(installDataDir(env), "project-index.db");
+  return override ? override : ansProjectIndexDbPath(env);
 }
 
 export interface ResolvedToken {
@@ -137,6 +132,9 @@ export function resolveServerToken(env: NodeJS.ProcessEnv = process.env): Resolv
   const path = serverTokenPath(env);
   const fromEnv = env.ANS_SERVER_TOKEN;
   if (fromEnv && fromEnv.trim()) return { token: fromEnv.trim(), generated: false, path };
+  // A token minted before the rename is still this installation's token:
+  // `serverTokenPath` resolves to it, so this reads it instead of minting a
+  // second one the running server would reject.
   if (existsSync(path)) {
     const existing = readFileSync(path, "utf8").trim();
     if (existing) return { token: existing, generated: false, path };

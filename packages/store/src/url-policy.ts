@@ -294,7 +294,7 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 // Can this cached policy still be trusted to describe the current project?
 // Three things have to hold, and none is a guess:
 //   1. it was materialized for THIS project (a cache copied into another
-//      project's .anysearch-cli must not answer for it);
+//      project's .ans must not answer for it);
 //   2. it names the Active Domain the caller is running now;
 //   3. every file it was materialized from still has the same version, so the
 //      declaration it encodes has not moved since.

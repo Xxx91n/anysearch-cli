@@ -6,11 +6,12 @@
 // honest. The authoritative resolver lives in the store.
 //
 // A hook only ever runs inside a host's working tree. If that tree is not a
-// project (no Git root, no .anysearch/config.toml), the hook must say the
+// project (no Git root, no .ans/config.toml), the hook must say the
 // project-scoped capability is unavailable instead of inventing a project or
 // borrowing another one's records.
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ansProjectConfigPath } from "@anysearch-cli/store/paths";
 
 export interface HookProject {
   root: string | null;
@@ -24,20 +25,26 @@ export function resolveHookProject(cwd: string = process.cwd()): HookProject {
     let root = realpathSync(cwd);
     if (!statSync(root).isDirectory()) throw new Error("not a directory");
     for (;;) {
-      for (const [marker, source] of [[".git", "git"], [join(".anysearch", "config.toml"), "config"]] as const) {
-        try {
-          const entry = statSync(join(root, marker));
-          if (source === "git" ? entry.isDirectory() || entry.isFile() : entry.isFile()) return { root, source };
-        } catch (error) {
-          // Only a missing marker means "keep walking"; other fs errors are real.
-          if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
-        }
+      try {
+        const git = statSync(join(root, ".git"));
+        if (git.isDirectory() || git.isFile()) return { root, source: "git" };
+      } catch (error) {
+        // Only a missing marker means "keep walking"; other fs errors are real.
+        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+      }
+      // `ansProjectConfigPath` also answers for a project that still has the
+      // pre-#323 `.anysearch/config.toml`, so an existing project keeps its
+      // identity across the rename.
+      try {
+        if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       }
       const parent = dirname(root);
       if (parent === root) break;
       root = parent;
     }
-    return { root: null, source: "unknown", reason: "No Git root or .anysearch/config.toml found." };
+    return { root: null, source: "unknown", reason: "No Git root or .ans/config.toml found." };
   } catch {
     return { root: null, source: "unknown", reason: "The project directory could not be read." };
   }

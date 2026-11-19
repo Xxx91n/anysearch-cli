@@ -135,10 +135,10 @@ for (const project of [false, true]) {
     writeFileSync(manual, "user-authored, not managed\n");
     const protectedFiles = [
       join(f.cwd, "domains", "research.toml"),
-      join(f.home, ".anysearch-cli", "domains", "user.toml"),
-      join(f.cwd, ".anysearch", "config.toml"),
-      join(f.home, ".anysearch-cli", "config.toml"),
-      join(f.home, ".anysearch", "config.env"),
+      join(f.home, ".ans", "domains", "user.toml"),
+      join(f.cwd, ".ans", "config.toml"),
+      join(f.home, ".ans", "config.toml"),
+      join(f.home, ".ans", "config.env"),
     ];
     for (const path of protectedFiles) {
       mkdirSync(join(path, ".."), { recursive: true });
@@ -555,7 +555,7 @@ test("source symlinks are rejected and staging is rolled back", async (t) => {
 test("reinstallation never overwrites an existing skill or a user-authored namesake", async (t) => {
   const f = fixture(t);
   const dir = f.source();
-  const manual = join(f.home, ".anysearch-cli", "skills", "demo", "SKILL.md");
+  const manual = join(f.home, ".ans", "skills", "demo", "SKILL.md");
   mkdirSync(join(manual, ".."), { recursive: true });
   writeFileSync(manual, "handwritten");
   assert.equal((await f.run(["install", dir])).code, 0);
@@ -607,15 +607,15 @@ test("a replaced installed directory cannot redirect uninstall outside synced/",
   }
 });
 
-test("project scope cannot alias the user store through a .anysearch symlink", async (t) => {
+test("project scope cannot alias the user store through a .ans symlink", async (t) => {
   const f = fixture(t);
   const dir = f.source();
   assert.equal((await f.run(["install", dir])).code, 0);
   const userSkill = join(managedSkillsRoot(f.opts), "demo", "SKILL.md");
   const userManifest = skillManifestPath(f.opts);
   // Junctions work on Windows without requiring file-symlink privileges.
-  const link = join(f.cwd, ".anysearch");
-  symlinkSync(join(f.home, ".anysearch-cli"), link, "junction");
+  const link = join(f.cwd, ".ans");
+  symlinkSync(join(f.home, ".ans"), link, "junction");
   try {
     for (const args of [
       ["list", "--project"],

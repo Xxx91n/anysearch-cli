@@ -65,7 +65,7 @@ function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   registerResearchWeb(fakeServer as any, eng);
   registerRecallMemory(fakeServer as any, eng);
   // #300/greptile P1: the "missing config" case must not depend on the
-  // operator's real ~/.anysearch-cli/config.toml. Point the shared resolver at
+  // operator's real ~/.ans/config.toml. Point the shared resolver at
   // an empty temp root so only this suite's env decides the outcome.
   const emptyRoot = mkdtempSync(join(tmpdir(), "ans-300-failure-"));
   failureRoots.push(emptyRoot);
@@ -203,7 +203,7 @@ async function main() {
       assert(
         String(missing?.content?.[0]?.text) ===
           "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
-          "or write provider/model in ~/.anysearch-cli/config.toml (user) or .anysearch/config.toml (project).",
+          "or write provider/model in ~/.ans/config.toml (user) or .ans/config.toml (project).",
         "ans_chat missing LLM config: names env and both config files",
       );
       assert(missing?.structuredContent === undefined, "ans_chat missing LLM config: no structuredContent");

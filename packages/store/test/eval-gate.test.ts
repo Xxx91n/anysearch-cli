@@ -76,7 +76,7 @@ assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
   // the eval CLI writes observations into the durable DB
-  // (ANS_DB_PATH or ~/.anysearch/anysearch.db) and then advances the switch state machine
+  // (ANS_DB_PATH or ~/.ans/anysearch.db) and then advances the switch state machine
   // against that same DB. The fixture must hand it a DB that carries the store schema
   // (access_events et al.) - i.e. reuse the schema-application path. Otherwise the switch step
   // hits the no-such-table error on a clean machine (fail-closed by design, but the fixture

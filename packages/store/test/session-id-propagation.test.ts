@@ -288,7 +288,7 @@ async function main() {
     const dir = mkdtempSync(join(tmpdir(), "ans-anchor-unreadable-"));
     const home = join(dir, "home");
     mkdirSync(home, { recursive: true });
-    const anchorDir = join(home, ".anysearch-cli");
+    const anchorDir = join(home, ".ans");
     mkdirSync(anchorDir, { recursive: true });
     const anchorFile = join(anchorDir, "session");
     // Write the original anchor, then replace it with a directory.

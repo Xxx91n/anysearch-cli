@@ -52,7 +52,12 @@ export * from "./access-chain";
 // and export mapping at the volatile OTel GenAI boundary.
 export * from "./observation";
 
-// session_id persistence (.anysearch-cli/session file + env override).
+// #323: the one place the on-disk layout is decided (~/.ans, <project>/.ans)
+// and the one-time move of the pre-#323 directories into it.
+export * from "./ans-paths";
+export * from "./ans-layout";
+
+// session_id persistence (.ans/session file + env override).
 export * from "./session-id";
 
 // owner-only DB permission helper (CWE-732 mitigation, shared by CLI/MCP/plugin).

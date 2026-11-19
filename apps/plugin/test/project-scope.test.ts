@@ -124,8 +124,8 @@ test("project index: dedupe and purge stay inside one project", () => {
 test("project identity: the hook copy matches the store resolver", () => {
   const gitProject = project("drift-git");
   const configured = mkdtempSync(join(tmpdir(), "ans-scope-drift-config-"));
-  mkdirSync(join(configured, ".anysearch"), { recursive: true });
-  writeFileSync(join(configured, ".anysearch", "config.toml"), "", "utf8");
+  mkdirSync(join(configured, ".ans"), { recursive: true });
+  writeFileSync(join(configured, ".ans", "config.toml"), "", "utf8");
   const plain = mkdtempSync(join(tmpdir(), "ans-scope-drift-plain-"));
   const nested = join(gitProject, "src", "deep");
   mkdirSync(nested, { recursive: true });
@@ -288,8 +288,8 @@ test("plugin server: recall, index and policy require the explicit project", asy
     assert.equal(policyNoProject.status, 400, "a policy answer needs the project it belongs to");
 
     // Each project keeps its own materialized cache; neither borrows the other.
-    const cacheA = JSON.parse(readFileSync(join(a, ".anysearch-cli", "policy.json"), "utf8")) as { allow: string[] };
-    const cacheB = JSON.parse(readFileSync(join(b, ".anysearch-cli", "policy.json"), "utf8")) as { allow: string[] };
+    const cacheA = JSON.parse(readFileSync(join(a, ".ans", "policy.json"), "utf8")) as { allow: string[] };
+    const cacheB = JSON.parse(readFileSync(join(b, ".ans", "policy.json"), "utf8")) as { allow: string[] };
     assert.deepEqual(cacheA.allow, ["a.example"]);
     assert.deepEqual(cacheB.allow, ["b.example"]);
 

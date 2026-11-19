@@ -1,6 +1,6 @@
 // 操作日志：接入/修复/移除共用一份 journal，落盘在目标同 scope
-// 的目录下（项目级 → <项目>/.anysearch/host-wiring/；用户级 → ~/.anysearch-cli/
-// host-wiring/）。一行一个 JSON，append-only：一次操作按 planned → partial →
+// 的目录下（项目级 → <项目>/.ans/host-wiring/；用户级 → ~/.ans/host-wiring/）。
+// 一行一个 JSON，append-only：一次操作按 planned → partial →
 // done 追加多行（同 id），读的时候按 id 取最后一行。它同时干三件事：
 //   1. 恢复依据：每个目标文件写前备份（backups/<entry-id>/ 下），原文字节不动；
 //   2. 中断诊断：最后一条不是 done → 报哪些文件没写/没验证，repair 能续；
@@ -11,6 +11,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { ansProjectWiringDir, ansUserWiringDirIn } from "@anysearch-cli/store";
 
 export type HostOp = "connect" | "repair" | "remove";
 export type EntryStatus = "planned" | "partial" | "done";
@@ -42,9 +43,7 @@ export interface JournalEntry {
 
 /** journal 与备份的存放根目录。 */
 export function wiringRoot(scope: "project" | "user", projectRoot: string, home: string = homedir()): string {
-  return scope === "project"
-    ? join(projectRoot, ".anysearch", "host-wiring")
-    : join(home, ".anysearch-cli", "host-wiring");
+  return scope === "project" ? ansProjectWiringDir(projectRoot) : ansUserWiringDirIn(home);
 }
 
 function journalPath(root: string): string {

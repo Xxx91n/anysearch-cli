@@ -56,7 +56,7 @@ export async function runMemory(args: string[]): Promise<number> {
     if (r.failed > 0) {
       process.stderr.write(
         "hint: embedding failed — the model downloads on first use; check huggingface.co reachability" +
-        "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.anysearch/models) " +
+        "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.ans/models) " +
         "from a connected host; run ans doctor to confirm the vector arm is present.\n"
       );
       return 1;

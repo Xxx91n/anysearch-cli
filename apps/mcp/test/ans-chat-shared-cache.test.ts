@@ -64,7 +64,7 @@ const ENV_KEYS = [
   "ANS_MCP_KEY",
   "ANS_PROJECT_DB",
   // This suite drives chat runs, and each run keeps a PI session record. Without
-  // an isolated directory it writes into the operator's real ~/.anysearch —
+  // an isolated directory it writes into the operator's real ~/.ans —
   // which also means a leftover record from an earlier run decides whether the
   // suite passes. #299 made a duplicate record a refusal, so the leak stopped
   // being harmless.
@@ -211,7 +211,7 @@ async function main() {
   // #322 regression guard: snapshot the operator's real PI-session dir before
   // touching any env — homedir() derives from HOME/USERPROFILE. If a future
   // edit drops the isolation, a chat record lands there and the guard fails.
-  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realPiDir = join(homedir(), ".ans", "pi-sessions");
   const realBefore = piRecords(realPiDir);
 
   const saved: Record<string, string | undefined> = {};
@@ -415,7 +415,7 @@ async function main() {
     const realAfter = piRecords(realPiDir);
     assert(
       realBefore.join("|") === realAfter.join("|"),
-      "#322: the operator's real ~/.anysearch/pi-sessions gained no record (before=" +
+      "#322: the operator's real ~/.ans/pi-sessions gained no record (before=" +
         realBefore.length + ", after=" + realAfter.length + ")",
     );
   } finally {

@@ -97,8 +97,8 @@ const tmp = mkdtempSync(join(tmpdir(), 'ans-dsh-test-'));
 // The shared hooks resolve a project before they use project-scoped abilities.
 // Make the temp workspace a real project, or recall/index would correctly
 // report "project identity unknown" and this suite would test the wrong path.
-mkdirSync(join(tmp, '.anysearch'), { recursive: true });
-writeFileSync(join(tmp, '.anysearch', 'config.toml'), '', 'utf8');
+mkdirSync(join(tmp, '.ans'), { recursive: true });
+writeFileSync(join(tmp, '.ans', 'config.toml'), '', 'utf8');
 const prevCwd = process.cwd();
 process.chdir(tmp);
 process.env.ANS_SERVER_TOKEN = 'test-token';

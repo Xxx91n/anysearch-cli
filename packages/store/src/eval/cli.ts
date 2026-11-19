@@ -3,7 +3,7 @@
 // --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import os from "node:os";
+import { ansDbPath } from "../ans-paths.js";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
@@ -273,7 +273,7 @@ async function main(): Promise<number> {
   try {
     const observationDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
       ? process.env.ANS_DB_PATH
-      : join(os.homedir(), ".anysearch", "anysearch.db");
+      : ansDbPath();
     mkdirSync(dirname(observationDb), { recursive: true });
     const observation = new SqliteObservationStore(observationDb);
     observation.recordEvaluationTrace({
@@ -335,13 +335,13 @@ async function main(): Promise<number> {
   }
 
   // impl-plan 3/8: advance the consumed/synthetic switch state machine.
-  // Reads the durable DB (ANS_DB_PATH or ~/.anysearch/anysearch.db), never the eval temp DB.
+  // Reads the durable DB (ANS_DB_PATH or ~/.ans/anysearch.db), never the eval temp DB.
   // IO failures are loud stderr but never crash the run (exit-code contract unchanged);
   // the chain verifier at ship-gate step 1 remains the authority on chain health.
   try {
     const swDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
       ? process.env.ANS_DB_PATH
-      : join(os.homedir(), ".anysearch", "anysearch.db");
+      : ansDbPath();
     const gateBoundary = decisionIdx >= 0 || overrideIdx >= 0;
     const probe = gateBoundary ? probeSwitchIntegrity(outDir, swDb) : null;
     // build the verdict AFTER the probe runs and AFTER advanceSwitch has

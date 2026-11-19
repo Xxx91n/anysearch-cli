@@ -187,7 +187,7 @@ test("ans auth remove drops one key and reports when there was none", async () =
     const first = await capture(() => runAuth(["remove", "openai"]));
     assert.equal(first.code, 0, first.out);
     assert.equal(readUserCredentials().bindings.length, 0);
-    assert.equal(userCredentialsPath(), join(home, ".anysearch-cli", "credentials.json"));
+    assert.equal(userCredentialsPath(), join(home, ".ans", "credentials.json"));
 
     const again = await capture(() => runAuth(["remove", "openai"]));
     assert.equal(again.code, 1, again.out);

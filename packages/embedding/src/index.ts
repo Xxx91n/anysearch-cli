@@ -50,9 +50,21 @@ function loadTransformers(): Promise<TransformersModule> {
   }
   return transformersPromise;
 }
+// The product's layout root is decided in @anysearch-cli/store's ans-paths.ts
+// (#323). This package is a zero-dependency leaf that the store loads
+// dynamically, so it cannot import that module: the caller hands the directory
+// in with `setModelCacheDir` before the first embed. The literal below is only
+// the standalone default for using this package on its own.
+let modelCacheDirOverride: string | undefined;
+
+/** Point the model cache at the product's layout root. Call before the first embed. */
+export function setModelCacheDir(dir: string): void {
+  modelCacheDirOverride = dir;
+}
+
 function configureEnv(mod: TransformersModule): void {
   if (envConfigured) return;
-  mod.env.cacheDir = process.env.ANYSEARCH_MODEL_CACHE ?? join(homedir(), ".anysearch", "models");
+  mod.env.cacheDir = process.env.ANYSEARCH_MODEL_CACHE ?? modelCacheDirOverride ?? join(homedir(), ".ans", "models");
   envConfigured = true;
 }
 

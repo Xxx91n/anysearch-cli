@@ -81,7 +81,7 @@ async function run() {
   // a bundle written here is what the CLI/MCP actually loads.
   const revisionRoot = process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT
     ? path.resolve(process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT)
-    : path.join(os.homedir(), ".anysearch", "attribution-gold-revisions");
+    : path.join(os.homedir(), ".ans", "attribution-gold-revisions");
   const storable = selectSamples.length ? fitResult.params : { a: 1, b: 1, c: 0 };
   const { digest: bundleDigest } = bundles.writeCalibrationBundle(
     revisionRoot,

@@ -611,7 +611,7 @@ async function main() {
     // ================= A. 装出来的 CLI =================
     //
     // 每条命令都把 HOME/USERPROFILE 和 ANS_DB_PATH 指进沙箱。doctor 会自己解析
-    // 持久库的路径并建目录，继承真实环境就会动到操作者自己的 ~/.anysearch。
+    // 持久库的路径并建目录，继承真实环境就会动到操作者自己的 ~/.ans。
     console.log("\n== A. CLI ==");
     const cliEnv = {
       ...process.env,
@@ -655,7 +655,7 @@ async function main() {
       ANS_DB_PATH: join(work, "anysearch.db"),
       ANS_PI_SESSION_DIR: join(work, "pi"),
       ANS_NO_INTERACTIVE: "1",
-      // HOME/USERPROFILE 指到沙箱，开发机自己的 ~/.anysearch-cli 不会混进来。
+      // HOME/USERPROFILE 指到沙箱，开发机自己的 ~/.ans 不会混进来。
       USERPROFILE: work,
       HOME: work,
     };
@@ -2049,7 +2049,7 @@ async function main() {
       // （POSIX 用只读目录；Windows 上目录权限语义不同，这条只在 POSIX 查。）
       if (process.platform !== "win32") {
         const tightHome = join(work, "tight-home");
-        const tightConfig = join(tightHome, ".anysearch-cli");
+        const tightConfig = join(tightHome, ".ans");
         mkdirSync(tightConfig, { recursive: true });
         chmodSync(tightConfig, 0o500);
         try {

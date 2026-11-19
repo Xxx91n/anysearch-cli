@@ -3,7 +3,7 @@
 // uses createLlmSession deep module from kernel.
 // LLM config resolves through the layered loader (cli > env > project > user >
 // default; #108): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
-// ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
+// ANS_LLM_* env, .ans/config.toml (whitelisted keys), ~/.ans/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
@@ -34,7 +34,7 @@ export async function runChat(argv: string[]): Promise<number> {
 
   // Initialize retriever + domain over the DURABLE store (#129).
   // Design: use createPersistentEngine (ANS_DB_PATH, default
-  // ~/.anysearch/anysearch.db) instead of createEngine — the latter falls back to
+  // ~/.ans/anysearch.db) instead of createEngine — the latter falls back to
   // ":memory:", which would make the newly wired RAG adapter recall nothing at
   // all ("connected but always empty" is harder to diagnose than no wiring).
   // #306: three states, not one `||`. A name the operator declared (env or the
@@ -129,7 +129,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const cfg = resolveLlmConfig({ flags });
   if (!cfg.provider || !cfg.model) {
     process.stderr.write("LLM provider not configured.\n");
-    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
+    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.ans/config.toml)\n");
     process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
     return 3;
   }

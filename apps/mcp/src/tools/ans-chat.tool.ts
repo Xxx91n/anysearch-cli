@@ -510,7 +510,7 @@ export function registerAnsChat(
           // to check it instead of being told only to set env vars.
           return toolFailure(
             "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
-            "or write provider/model in ~/.anysearch-cli/config.toml (user) or .anysearch/config.toml (project).",
+            "or write provider/model in ~/.ans/config.toml (user) or .ans/config.toml (project).",
           );
         }
         // Design: a caller that already cancelled gets no LLM construction,

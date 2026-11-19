@@ -1,4 +1,4 @@
-// ~/.anysearch/config.env — the CLI's persisted key=value config (G016).
+// ~/.ans/config.env — the CLI's persisted key=value config (G016).
 // B1: shared module + entry-point rehydrate so `ans domain <name>`
 // actually takes effect for search/chat/etc. across sessions (was write-only).
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -26,7 +26,7 @@ export function readConfig(): Record<string, string> {
   }
 }
 
-// Write a config key-value pair to ~/.anysearch/config.env.
+// Write a config key-value pair to ~/.ans/config.env.
 //
 // #306: the write goes through a temp file and a rename. `writeFileSync` in
 // place truncates the file before it writes, so a fault mid-write (a full disk,

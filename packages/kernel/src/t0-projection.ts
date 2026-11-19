@@ -4,9 +4,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { SessionStorePort } from "./ports";
-import type { T0PreferenceRow } from "@anysearch-cli/store";
+import { ansHomeDir, ansProjectDir, type T0PreferenceRow } from "@anysearch-cli/store";
 
 const MAX_CHARS = 1500;
 const MAX_LINES = 200;
@@ -67,8 +66,8 @@ export async function writeProjection(
   store: SessionStorePort,
   projectScope?: string,
 ): Promise<{ path: string; warned: boolean }[]> {
-  const globalDir = path.join(os.homedir(), ".anysearch");
-  const projectDir = path.join(process.cwd(), ".anysearch");
+  const globalDir = ansHomeDir();
+  const projectDir = ansProjectDir();
   const results: { path: string; warned: boolean }[] = [];
 
   let rows: T0PreferenceRow[];

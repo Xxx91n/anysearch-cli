@@ -86,6 +86,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { dirname } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
 
@@ -447,6 +448,56 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     throw new Error(
       "建立恢复存档点失败：" + detail +
       "。没有恢复依据就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
+      { cause: error },
+    );
+  } finally {
+    if (db) {
+      try { endInit(db); } catch { /* already ended */ }
+      try { db.close(); } catch { /* already closed */ }
+    }
+  }
+}
+
+/**
+ * #323: publish a consistent copy of `from` at `to` for the directory rename.
+ *
+ * Same mechanism as the pre-migration snapshot (`VACUUM INTO`, never a file
+ * copy): the source may be a live WAL database held open by a running server,
+ * and a plain copy would miss committed pages still in `-wal`. The source is
+ * left untouched — the rename keeps the old file as the pre-upgrade copy, and
+ * deleting it is the operator's call, not this function's.
+ *
+ * @throws when no copy can be produced. The caller must not treat the new
+ *   directory as authoritative in that case; the old database stays in use.
+ */
+export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
+  if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
+  if (existsSync(to)) throw new Error("cannot adopt " + from + ": " + to + " already exists");
+  let db: Database.Database | undefined;
+  try {
+    const conn = openDatabase(from, { timeout: 5000 });
+    db = conn;
+    const initDeadline = beginInit(conn);
+    const prevUmask = process.umask(0o077);
+    try {
+      withInitBusyRetry("layout adoption", () => {
+        try { rmSync(to, { force: true }); } catch { /* nothing to clear */ }
+        conn.prepare("VACUUM INTO ?").run(to);
+      }, initDeadline);
+    } finally {
+      process.umask(prevUmask);
+    }
+    endInit(conn);
+    try { chmodSync(to, 0o600); } catch { /* best-effort (Windows ACL path) */ }
+    return { bytes: statSync(to).size, sha256: sha256File(to) };
+  } catch (error) {
+    // A half-written copy next to the live database looks like a valid one;
+    // remove it so the failure cannot be mistaken for a finished move.
+    try { rmSync(to, { force: true }); } catch { /* best effort */ }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      "把 " + from + " 复制到 " + to + " 失败：" + detail +
+      "。旧库原样保留，本次继续用旧库；检查 " + dirname(to) + " 的写权限和磁盘空间后重试。",
       { cause: error },
     );
   } finally {

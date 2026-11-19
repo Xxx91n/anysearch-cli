@@ -1,7 +1,7 @@
 // User credential file (#301 / spec S2).
 //
 // What this is: ONE plaintext file under the user config root
-// (`~/.anysearch-cli/credentials.json`) holding provider API keys, so the user
+// (`~/.ans/credentials.json`) holding provider API keys, so the user
 // enters a key once and every entry on this machine and account - CLI, MCP,
 // plugin server, the GUI host - reads it. It is NOT encrypted, NOT a system
 // keychain, and it is never copied into project configs or host configs.
@@ -42,6 +42,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { ansCredentialsPathIn } from "./ans-paths.js";
 
 export const CREDENTIALS_FILENAME = "credentials.json";
 
@@ -164,7 +165,7 @@ export interface CredentialFileContents {
  * that both omit it can never end up describing two different files.
  */
 export function userCredentialsPath(home: string = resolveConfigHome()): string {
-  return join(home, ".anysearch-cli", CREDENTIALS_FILENAME);
+  return ansCredentialsPathIn(home);
 }
 
 /**

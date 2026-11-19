@@ -1,10 +1,10 @@
 // ans hitl — HITL review queue for shouldAllowUrl-blocked retrieved-derived URLs.
-// headless runs deny-first + enqueue to .anysearch-cli/hitl.pending (JSONL);
+// headless runs deny-first + enqueue to .ans/hitl.pending (JSONL);
 // `ans hitl review` lists the queue; `--allow-url <host>` pre-authorizes a host by writing
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { atomicWriteFile, canonicalVersion, defaultDomainsDirs, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
+import { dirname, resolve } from "node:path";
+import { ansProjectHitlPath, atomicWriteFile, canonicalVersion, defaultDomainsDirs, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveDbPath } from "@anysearch-cli/kernel";
@@ -18,7 +18,7 @@ interface HitlEntry {
 }
 
 function queuePath(): string {
-  return join(process.cwd(), ".anysearch-cli", "hitl.pending");
+  return ansProjectHitlPath(process.cwd());
 }
 
 function readQueue(): HitlEntry[] {
@@ -137,7 +137,7 @@ export async function runHitl(args: string[]): Promise<number> {
     }
     const changed = allowHost(host);
     const remaining = readQueue().filter((e) => e.host !== host && !e.host.endsWith("." + host));
-    mkdirSync(join(process.cwd(), ".anysearch-cli"), { recursive: true });
+    mkdirSync(dirname(queuePath()), { recursive: true });
     writeFileSync(queuePath(), remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : ""), "utf8");
     process.stdout.write(
       (changed ? "allowed " + host : "already allowed" + host) +

@@ -10,6 +10,8 @@ import type { SearchProvider, SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
+  ansAttributionRoot,
+  ansDbPath,
   defaultDomainsDirs,
   SqliteObservationStore,
   SqliteSessionStore,
@@ -288,23 +290,21 @@ const PATH_RE = new RegExp(
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).
 // persistent DB path for maintenance commands (consolidate / forget / backfill).
-// ANS_DB_PATH overrides; default ~/.anysearch/anysearch.db (global dir convention from t0-projection).
+// ANS_DB_PATH overrides; default ~/.ans/anysearch.db (#323).
 // Kernel does not read env elsewhere, but path resolution is composition-root I/O (pits: keep it here).
 export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.ANS_DB_PATH && env.ANS_DB_PATH.trim();
   if (explicit) return explicit;
-  const home = env.USERPROFILE || env.HOME || ".";
-  return path.join(home, ".anysearch", "anysearch.db");
+  return ansDbPath(env);
 }
 
 // attribution calibration lives on disk as a revision-root head
 // pointer; only the wiring resolves it. Env override mirrors
-// scripts/attribution-calibrate.mjs; default joins the ~/.anysearch dir convention.
+// scripts/attribution-calibrate.mjs; default joins the ~/.ans dir convention.
 export function resolveAttributionRevisionRoot(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT && env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT.trim();
   if (explicit) return path.resolve(explicit);
-  const home = env.USERPROFILE || env.HOME || ".";
-  return path.join(home, ".anysearch", "attribution-gold-revisions");
+  return ansAttributionRoot(env);
 }
 
 // Fail-open: missing/corrupt head or bundle yields undefined and the engine

@@ -53,7 +53,7 @@ const server3 = buildServer(mockEngine);
 assert(server2 !== server3, "buildServer() returns new instance each call (factory pattern)");
 
 // Test 4 (regression): buildServer without an engine must
-// boot from a COLD HOME - a temp dir with no ~/.anysearch parent - proving the
+// boot from a COLD HOME - a temp dir with no ~/.ans parent - proving the
 // resolveDbPath mkdir guard exists. Removing the guard turns this red.
 {
   const coldHome = mkdtempSync(join(tmpdir(), "ans-mcp-cold-"));
@@ -66,7 +66,7 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
   process.env.HOME = coldHome;
   try {
     const server4 = buildServer();
-    assert(server4 !== undefined, "buildServer() boots with cold HOME (no ~/.anysearch)");
+    assert(server4 !== undefined, "buildServer() boots with cold HOME (no ~/.ans)");
     assert(existsSync(dirname(coldDb)), "cold boot created the DB parent directory");
   } catch (e) {
     assert(false, "buildServer() cold-HOME boot crashed: " + (e as Error).message);
@@ -81,13 +81,13 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
 
 
 // Test 5 (regression): this pins the cold-boot requirement -
-// proving boot works with a COLD HOME (no ~/.anysearch) via the DEFAULT path - i.e.
-// with ANS_DB_PATH UNSET, so resolveDbPath derives ~/.anysearch/anysearch.db from
+// proving boot works with a COLD HOME (no ~/.ans) via the DEFAULT path - i.e.
+// with ANS_DB_PATH UNSET, so resolveDbPath derives ~/.ans/anysearch.db from
 // USERPROFILE/HOME. Test 4 sets ANS_DB_PATH, which short-circuits that derivation
 // and therefore only proves the mkdir guard for an explicitly given path.
 {
   const coldHome = mkdtempSync(join(tmpdir(), "ans-mcp-defhome-"));
-  const expectedParent = join(coldHome, ".anysearch");
+  const expectedParent = join(coldHome, ".ans");
   const expectedDb = join(expectedParent, "anysearch.db");
   const prevDb = process.env.ANS_DB_PATH;
   const prevProfile = process.env.USERPROFILE;
@@ -104,11 +104,11 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
     assert(server5 !== undefined, "buildServer() boots with a cold HOME via the default path");
     assert(
       existsSync(expectedParent),
-      "cold-HOME default boot created ~/.anysearch (mkdir guard on the derived path)"
+      "cold-HOME default boot created ~/.ans (mkdir guard on the derived path)"
     );
     assert(
       existsSync(expectedDb),
-      "cold-HOME default boot created the DB file at ~/.anysearch/anysearch.db"
+      "cold-HOME default boot created the DB file at ~/.ans/anysearch.db"
     );
   } catch (e) {
     assert(false, "buildServer() cold-HOME default-path boot crashed: " + (e as Error).message);

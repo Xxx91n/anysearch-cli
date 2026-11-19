@@ -16,8 +16,8 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 
 function project(tag: string): string {
   const dir = mkdtempSync(join(tmpdir(), "ans-mcp-scope-" + tag + "-"));
-  mkdirSync(join(dir, ".anysearch"), { recursive: true });
-  writeFileSync(join(dir, ".anysearch", "config.toml"), "", "utf8");
+  mkdirSync(join(dir, ".ans"), { recursive: true });
+  writeFileSync(join(dir, ".ans", "config.toml"), "", "utf8");
   return dir;
 }
 

@@ -16,18 +16,27 @@ import { createRequire } from "node:module";
 import { readdirSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ansModelCacheDir } from "./ans-paths.js";
 
 type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 
 let modPromise: Promise<EmbeddingModule | null> | undefined;
 let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModuleForTest)
 
+// #323: the model cache lives under the product's layout root. The embedding
+// package is a zero-dependency leaf that cannot import ans-paths, so it takes
+// the directory from here before its first embed.
+function withCacheDir(m: EmbeddingModule): EmbeddingModule {
+  m.setModelCacheDir?.(ansModelCacheDir());
+  return m;
+}
+
 function loadEmbedding(): Promise<EmbeddingModule | null> {
   if (forced !== undefined) return Promise.resolve(forced);
   if (!modPromise) {
     modPromise = (async () => {
       try {
-        return await import("@anysearch-cli/embedding");
+        return withCacheDir(await import("@anysearch-cli/embedding"));
       } catch (e) {
         const code = (e as NodeJS.ErrnoException | undefined)?.code;
         // only a NOT-FOUND falls through to sibling-root
@@ -81,7 +90,7 @@ async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles(
   const tryImport = async (resolved: string | undefined): Promise<EmbeddingModule | null> => {
     if (!resolved) return null;
     try {
-      return (await import(pathToFileURL(resolved).href)) as EmbeddingModule;
+      return withCacheDir((await import(pathToFileURL(resolved).href)) as EmbeddingModule);
     } catch {
       return null;
     }

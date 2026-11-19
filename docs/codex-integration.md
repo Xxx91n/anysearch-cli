@@ -68,13 +68,13 @@ MCP `ans_chat` session and memory behavior, see
 ans-plugin-server     # 127.0.0.1:33333 by default, Bearer token auto-generated
 ```
 
-The server writes one 0600 token to `~/.anysearch-cli/server-token`
+The server writes one 0600 token to `~/.ans/server-token`
 (`%USERPROFILE%` on Windows) and publishes the address it bound in
-`~/.anysearch-cli/server.json`, so hooks in any project find the same server.
-It writes `.anysearch-cli/policy.json` inside each project (the hook-side
+`~/.ans/server.json`, so hooks in any project find the same server.
+It writes `.ans/policy.json` inside each project (the hook-side
 policy fallback) and serves `/recall`, `/index`, `/purge`, and `/policy`.
 Every request names its project (the workspace's Git root or
-`.anysearch/config.toml`).
+`.ans/config.toml`).
 
 ## 4. MCP server
 
@@ -82,14 +82,14 @@ Every request names its project (the workspace's Git root or
 
 <!-- machine-local: illustrative placeholder path in doc example @ 2026-09-19 -->
 ```toml
-[mcp_servers.anysearch]
+[mcp_servers.ans]
 command = "ans-mcp"
 startup_timeout_sec = 60
 
-[mcp_servers.anysearch.env]
+[mcp_servers.ans.env]
 # optional: pin the plugin server address/token for the recall_memory fallback
 # ANS_SERVER_URL = "http://127.0.0.1:33333"
-# ANS_SERVER_TOKEN = "<the token in ~/.anysearch-cli/server-token>"
+# ANS_SERVER_TOKEN = "<the token in ~/.ans/server-token>"
 ```
 
 It exposes `search_web`, `research_web`, `recall_memory`, `query_knowledge`,

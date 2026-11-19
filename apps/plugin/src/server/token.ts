@@ -4,8 +4,6 @@
 // import path stable.
 export {
   DEFAULT_SERVER_URL,
-  installConfigDir,
-  installDataDir,
   serverTokenPath,
   serverRegistryPath,
   projectIndexDbPath,

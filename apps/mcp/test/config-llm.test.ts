@@ -51,12 +51,12 @@ function fixture(userToml?: string, projectToml?: string) {
   process.env.ANS_PI_SESSION_DIR = join(cwd, "pi-sessions");
   process.env.ANS_DB_PATH = join(cwd, "anysearch.db");
   if (userToml !== undefined) {
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
-    writeFileSync(join(home, ".anysearch-cli", "config.toml"), userToml);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "config.toml"), userToml);
   }
   if (projectToml !== undefined) {
-    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
-    writeFileSync(join(cwd, ".anysearch", "config.toml"), projectToml);
+    mkdirSync(join(cwd, ".ans"), { recursive: true });
+    writeFileSync(join(cwd, ".ans", "config.toml"), projectToml);
   }
   const warnings: string[] = [];
   return { home, cwd, warnings };
@@ -141,7 +141,7 @@ async function main() {
       assert(h.seen.length === 1, "user TOML: one session was built");
       assert(h.seen[0]?.provider === "anthropic", "user TOML: provider was read by MCP");
       assert(h.seen[0]?.model === "claude-sonnet-4-6", "user TOML: model was read by MCP");
-      // Project-unknown (cwd has no .anysearch/config.toml): report the real
+      // Project-unknown (cwd has no .ans/config.toml): report the real
       // source as user, never invent a project layer (#300 如实报告).
       assert(h.attrs[0]?.["anysearch.llm.provider.source"] === "user" &&
         h.attrs[0]?.["anysearch.llm.model.source"] === "user",
@@ -217,8 +217,8 @@ async function main() {
     //     crash before observation (#300/greptile P2).
     {
       const fix = fixture();
-      mkdirSync(join(fix.home, ".anysearch-cli"), { recursive: true });
-      mkdirSync(join(fix.home, ".anysearch-cli", "config.toml")); // a directory, not a file
+      mkdirSync(join(fix.home, ".ans"), { recursive: true });
+      mkdirSync(join(fix.home, ".ans", "config.toml")); // a directory, not a file
       const h = harness(fix, { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" });
       await h.call();
       assert(h.seen.length === 1, "unreadable config: env model still runs, no crash");

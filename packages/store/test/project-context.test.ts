@@ -17,8 +17,8 @@ test("project identity: nested paths, worktree markers, aliases, unknown directo
     symlinkSync(project, alias, process.platform === "win32" ? "junction" : "dir");
     assert.equal(resolveProjectContext(alias).root, realpathSync(project));
     const configured = join(dir, "configured");
-    mkdirSync(join(configured, ".anysearch"), { recursive: true });
-    writeFileSync(join(configured, ".anysearch", "config.toml"), "");
+    mkdirSync(join(configured, ".ans"), { recursive: true });
+    writeFileSync(join(configured, ".ans", "config.toml"), "");
     assert.deepEqual(resolveProjectContext(configured), { root: realpathSync(configured), source: "config" });
     assert.equal(resolveProjectContext(join(dir, "missing")).root, null);
     assert.equal(resolveProjectContext(dir).root, null);

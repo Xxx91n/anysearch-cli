@@ -7,8 +7,6 @@ export {
   serverTokenPath,
   serverRegistryPath,
   projectIndexDbPath,
-  installConfigDir,
-  installDataDir,
   DEFAULT_SERVER_URL,
   type ResolvedToken,
   type ServerEndpoint,

@@ -27,8 +27,8 @@ process.chdir(dir);
 // The hook resolves the project before it reads any policy: without a project
 // marker every URL question is "project identity unknown" (ask). This fixture
 // is the project under test.
-mkdirSync(join(dir, ".anysearch"), { recursive: true });
-writeFileSync(join(dir, ".anysearch", "config.toml"), "", "utf8");
+mkdirSync(join(dir, ".ans"), { recursive: true });
+writeFileSync(join(dir, ".ans", "config.toml"), "", "utf8");
 // Keep the installation token/address out of the operator's home and
 // pin the endpoint at a dead port so a real local server cannot answer.
 process.env.HOME = dir;
@@ -55,9 +55,9 @@ function tomlVersion(): string {
 
 const GOOD = { allow: ["good.example"], deny: ["denied.example"] };
 const goodPolicy = { ...GOOD, policy_version: canonicalVersion(GOOD.allow, GOOD.deny) };
-const cacheFile = join(realpathSync(dir), ".anysearch-cli", "policy.json");
+const cacheFile = join(realpathSync(dir), ".ans", "policy.json");
 function writeCache(p: unknown) {
-  mkdirSync(join(realpathSync(dir), ".anysearch-cli"), { recursive: true });
+  mkdirSync(join(realpathSync(dir), ".ans"), { recursive: true });
   writeFileSync(cacheFile, JSON.stringify(p), "utf8");
 }
 // The envelope the server writes: policy body + where it came from.

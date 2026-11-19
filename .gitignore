@@ -30,6 +30,10 @@ Thumbs.db
 !.ship-gate/calibration-l2-preregistration.json
 !.ship-gate/attribution-gold-preregistration.json
 
+# #323: the one runtime directory, user and project scope.
+.ans/
+# Pre-#323 names, still read by the layout fallback and still written by a
+# checkout that has not moved yet.
 .anysearch/
 apps/plugin/dist/
 apps/dsh-plugin/lib/
@@ -39,7 +43,7 @@ apps/cli/domains/
 
 .model-cache/
 
-# runtime policy cache
+# runtime policy cache (pre-#323 name)
 .anysearch-cli/
 
 # R68 audit F-A2: agy adapter writes .antigravity/rules/anysearch.mdc into the

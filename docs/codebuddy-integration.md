@@ -17,7 +17,7 @@ word for word.
 ```bash
 npm i -g @anysearch-cli/cli @anysearch-cli/mcp @anysearch-cli/plugin
 ans doctor            # 22 pass expected; keys/providers/domains self-check
-ans domain docs       # optional: pin the demo domain (persists to ~/.anysearch/config.env) <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+ans domain docs       # optional: pin the demo domain (persists to ~/.ans/config.env) <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 ```
 
 ## 2. Keys
@@ -49,12 +49,12 @@ On ≤0.0.3 there is no bin. Start it by hand:
 node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"
 ```
 
-The server writes one 0600 token to `~/.anysearch-cli/server-token`
+The server writes one 0600 token to `~/.ans/server-token`
 (`%USERPROFILE%` on Windows) and publishes the address it bound in
-`~/.anysearch-cli/server.json`. Hooks read those two files, so one server
+`~/.ans/server.json`. Hooks read those two files, so one server
 serves every project; a taken port only changes the published address.
 Project-scoped requests name their project (the workspace's Git root or
-`.anysearch/config.toml`).
+`.ans/config.toml`).
 
 ## 4. MCP registration — project `mcp.json`
 

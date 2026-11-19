@@ -1,5 +1,5 @@
 // Shared helper: engine backed by the durable anysearch DB.
-// ANS_DB_PATH overrides; default ~/.anysearch/anysearch.db via kernel resolveDbPath.
+// ANS_DB_PATH overrides; default ~/.ans/anysearch.db via kernel resolveDbPath.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
