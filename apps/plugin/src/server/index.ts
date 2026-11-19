@@ -34,6 +34,7 @@ import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { clearServerRegistry, installDataDir, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
 import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
+import { parseDrainMs, runShutdown } from "./shutdown.js";
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
@@ -518,62 +519,29 @@ bind(REQUESTED_PORT, true);
 // Two things count as in flight — requests being handled (a handler can sit in
 // `await readBody` before any task exists) and registered post-work units.
 // Only when both settle does the process close its stores. On timeout it exits
-// WITHOUT closing them: the work still holds the handles, and closing a
-// database under a live write corrupts the file. The open row is then the
-// blocker an upgrade reads.
-const parseDrainMs = (raw: string | undefined): number => {
-  const fallback = 10000;
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const parsed = Number(raw);
-  // A bad value must not silently turn every SIGTERM into "timeout, exit 1,
-  // stores left open" (NaN/-1 both make setTimeout fire immediately).
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    try {
-      process.stderr.write("[anysearch] ANS_SHUTDOWN_DRAIN_MS=" + raw + " is not a positive number; using " + fallback + "ms\n");
-    } catch { /* dead stderr */ }
-    return fallback;
-  }
-  return parsed;
-};
-const SHUTDOWN_DRAIN_MS = parseDrainMs(process.env.ANS_SHUTDOWN_DRAIN_MS);
+// WITHOUT closing them: a unit may be half done (row opened, end not written),
+// and closing would drop that write. The open row is then the blocker an
+// upgrade reads. Why it is not "to avoid corrupting the file": the store runs
+// WAL (crash-safe), and better-sqlite3 is synchronous, so no other JS can slip
+// in between a write statement and close(). See shutdown.ts for that reasoning.
+const SHUTDOWN_DRAIN_MS = parseDrainMs(process.env.ANS_SHUTDOWN_DRAIN_MS, (line) => {
+  try { process.stderr.write(line); } catch { /* dead stderr */ }
+});
 let shuttingDown = false;
-let requestsClosed = false;
-const reportIncomplete = (signal: string): void => {
-  // Say WHICH part is still running: a stuck request and a running post-work
-  // unit send the operator to different places, and reporting "0 registered
-  // units still running" would misdirect the search.
-  const detail = postWork.pending() > 0
-    ? postWork.pending() + " post-work unit(s) still running"
-    : "requests still in flight (no post-work unit is running)";
-  process.stderr.write(
-    "[anysearch] " + signal + ": " + detail + " after " + SHUTDOWN_DRAIN_MS +
-    "ms — exiting without closing stores; open task rows stay as blockers an upgrade reports\n",
-  );
-  // Drop this process's published address too: leaving server.json pointing at a
-  // pid that is gone is self-healing (readers probe the pid), but the success
-  // path clears it, and a failed stop should not read differently in the file.
-  try { clearServerRegistry(); } catch { /* best-effort */ }
-  // No store.close()/postWork.stop() here: the live work still owns the handles.
-  process.exit(1);
-};
 const shutdown = (signal: string): void => {
   if (shuttingDown) return; // a second signal must not restart the teardown
   shuttingDown = true;
-  // Both conditions share one deadline: a client holding its socket must not
-  // hang the exit past the bounded wait.
-  let drainedUnits = false;
-  const requestsEnded = new Promise<void>((resolve) => server.close(() => { requestsClosed = true; resolve(); }));
-  const unitsEnded = postWork.drain(SHUTDOWN_DRAIN_MS).then((ok) => { drainedUnits = ok; });
-  const deadline = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS));
-  void Promise.race([Promise.all([requestsEnded, unitsEnded]), deadline]).then(() => {
-    if (!drainedUnits || !requestsClosed) {
-      reportIncomplete(signal);
-      return;
-    }
-    store.close();
-    clearServerRegistry();
-    postWork.stop();
-    process.exit(0);
+  void runShutdown({
+    closeServer: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    drainPostWork: (timeoutMs) => postWork.drain(timeoutMs),
+    pendingPostWork: () => postWork.pending(),
+    closeStores: () => store.close(),
+    clearRegistry: () => clearServerRegistry(),
+    stopPostWork: () => postWork.stop(),
+    exit: (code) => process.exit(code),
+    write: (line) => { try { process.stderr.write(line); } catch { /* dead stderr */ } },
+    drainMs: SHUTDOWN_DRAIN_MS,
+    signal,
   });
 };
 process.on("SIGINT", () => shutdown("SIGINT"));
