@@ -424,6 +424,34 @@ Two cancellation details worth knowing:
   including one cancelled before its run started, where no provider call was
   made. "Cancelled" is not "completed without output".
 
+### Post-work tasks in the hook service (#307)
+
+The MCP tool call is not the only place a task row comes from. The hook IPC
+service (`ans-plugin-server`) also writes to the durable DB — the project-index
+rows behind `POST /index` and the config audit behind `GET /policy`. Each of
+those runs as its own task row:
+
+| Field | Value |
+|-------|-------|
+| `kind` | `server.project_index` or `server.policy_audit` |
+| `entry` | `server` |
+| `origin` | `follow-up` — work that exists because another request finished, not a new request |
+| `parent_task_id` | The task this tail belongs to, when a real row is named. A parent id that is not in this database is recorded as **no link** (never a dangling reference); the registry reports `parentLink: "unknown"` for it and `"none"` when no parent was named at all |
+
+`/index` answers only after its row ends. The `/policy` audit runs behind the
+answer instead: the hook that reads the policy has a 3-second budget, and making
+its answer wait on a store write would turn a slow audit into "policy
+unreachable". `/purge` is not post-work of another request — it keeps its old
+synchronous behaviour and no follow-up row.
+
+The distinction matters to a reader of the task table: an entry with `origin =
+"independent"` is a request waiting or running, while `origin = "follow-up"` is
+the tail of one. Both are work that must finish, so neither is discarded. The
+column only says what the reader is looking at, and a follow-up may start after
+its parent ended — that is what a tail looks like. Which tasks block an upgrade,
+and how a stuck one is reported, belongs to the upgrade coordination ticket;
+this page only describes the rows that exist.
+
 The conversation handle is no longer the owner of this run's quota (S5). With
 a task registered, `ans_chat` neither initializes nor releases the session's
 `[budget]` row; the run's calls, compaction, summaries and late settlement

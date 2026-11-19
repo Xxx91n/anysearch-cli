@@ -221,12 +221,25 @@ CREATE TABLE IF NOT EXISTS task_records (
   -- status/diagnostic/config operations that stay usable while admission is
   -- paused (#309 decides policy, this column is the fact it reads).
   role TEXT NOT NULL CHECK (role IN ('business', 'management')),
-  -- Which entry process ran it: 'cli', or 'mcp' for one tool call (#303).
+  -- Which entry process ran it: 'cli' | 'mcp' (one tool call, #303) |
+  -- 'server' (the hook IPC service, #307).
   entry TEXT NOT NULL,
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
   owner_host TEXT NOT NULL,
   -- Context handle the task ran under, attached best-effort while running.
   session_id TEXT,
+  -- #307: where this row came from, so post-work is never read as a new
+  -- request. 'independent' = work a caller asked for; 'follow-up' = work that
+  -- exists because another request finished (a hook's index write, a policy
+  -- audit). Both are still work an upgrade must wait out — the column only
+  -- says which one a reader is looking at. A follow-up may start AFTER its
+  -- parent ended: that is the shape post-work has, not an error.
+  origin TEXT NOT NULL DEFAULT 'independent' CHECK (origin IN ('independent', 'follow-up')),
+  -- The task this follow-up belongs to. NULL means the root task could not be
+  -- named across the process/host boundary — recorded as "unknown parent"
+  -- instead of inventing a link. A real reference, so a dangling id cannot be
+  -- written.
+  parent_task_id TEXT REFERENCES task_records(task_id),
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   -- NULL = still running (or crashed before finishing); non-NULL = the task
   -- reached its end (success or failure alike — the exit_code says which).
@@ -236,6 +249,11 @@ CREATE TABLE IF NOT EXISTS task_records (
 );
 CREATE INDEX IF NOT EXISTS idx_task_records_open ON task_records(ended_at) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_task_records_session ON task_records(session_id);
+-- #307: the parent index is NOT here on purpose. It reads parent_task_id, a
+-- column an existing database only gets through the ALTER in the openers; an
+-- index inside this script would run before that ALTER and fail to open an old
+-- database (the #277 lesson). Both openers create it after their migration.
+
 
 -- #302: process records, kept separate from task_records on purpose. A running
 -- process is a fact about a machine; an active task is a fact about work. A
@@ -247,7 +265,8 @@ CREATE TABLE IF NOT EXISTS process_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   pid INTEGER NOT NULL CHECK (pid > 0),
   owner_host TEXT NOT NULL,
-  -- 'cli' | 'mcp' — the entry whose lifetime this row records.
+  -- 'cli' | 'mcp' | 'server' — the entry whose lifetime this row records.
+  -- 'server' is the hook IPC service (#307), which now owns post-work.
   entry TEXT NOT NULL,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   -- NULL = still running; set when the process reports its own exit. A

@@ -337,7 +337,13 @@ export interface ConfigChangeEvent {
 // the observation layer. traceId/sessionId are forwarded to recordOperation so
 // the new attribution columns are populated (OPA #6905 closure: SELECT after
 // write returns the same values the caller threaded in).
-export async function emitConfigChangeAudit(dbPath: string, event: ConfigChangeEvent): Promise<void> {
+//
+// #307: the return value says whether the row landed. Fail-open stays — an
+// audit fault must not break the caller's own work — but a caller that records
+// this write as a task (the hook service) must not write "success" over a
+// stderr line nobody reads. Existing callers ignore the value, so their
+// behaviour is unchanged.
+export async function emitConfigChangeAudit(dbPath: string, event: ConfigChangeEvent): Promise<boolean> {
   // Caller-supplied trace_id wins (server extracts from HTTP header); absent ->
   // generate fresh W3C 32-hex for this audit call (CLI per-command lifetime).
   const traceId = event.traceId && event.traceId.length === 32 ? event.traceId : generateTraceIdHex();
@@ -372,7 +378,9 @@ export async function emitConfigChangeAudit(dbPath: string, event: ConfigChangeE
     } finally {
       store.close();
     }
+    return true;
   } catch (e) {
     process.stderr.write("[anysearch] config audit write failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
+    return false;
   }
 }

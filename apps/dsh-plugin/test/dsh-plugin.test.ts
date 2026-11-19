@@ -113,12 +113,16 @@ test('exports: stable name + inject service list', () => {
   assert.deepEqual([...inject].sort(), ['systemPrompt', 'tools']);
 });
 
-test('apply: mounts all five hook surfaces + routing-card section', () => {
+test('apply: mounts the hook surfaces + routing-card section', () => {
   const ctx = mockCtx();
   apply(ctx as unknown as Context);
-  for (const ev of ['agent/created', 'tools/pre-execute', 'tools/post-execute', 'tools/result']) {
+  // #307: `tools/result` is deliberately not listened to any more — the index
+  // write moved into the awaited post-execute (see the tests below).
+  for (const ev of ['agent/created', 'tools/pre-execute', 'tools/post-execute']) {
     assert.ok((ctx.listeners.get(ev) ?? []).length >= 1, 'missing listener for ' + ev);
   }
+  assert.equal((ctx.listeners.get('tools/result') ?? []).length, 0,
+    'tools/result must not carry a write: the host does not await that notification');
   const sec = ctx.sections.find((s) => s.name === 'anysearch:routing-card');
   assert.ok(sec, 'routing-card section registered');
   assert.match(String(sec!.text), /ans_* prefix|search_web/);
@@ -253,39 +257,107 @@ test('tools/post-execute: ans result gains a distilled additionalContexts messag
   assert.equal(distilled.resultCount, 1);
 });
 
-test('tools/result: indexes successful ans results over IPC', async () => {
+test('tools/post-execute: indexes the successful ans result, awaited (#307)', async () => {
   const { url, srv, reqs } = await fakeAnsServer(({ url }) =>
     url.startsWith('/index') ? { status: 200, body: { ok: true } } : { status: 404 });
   process.env.ANS_SERVER_URL = url;
   try {
     const ctx = mockCtx();
     apply(ctx as unknown as Context);
-    const fn = ctx.listeners.get('tools/result')![0] as (e: unknown, r: unknown) => void;
-    fn(exec('ans_search_web', { query: 'q' }, mockAgent()), {
-      isError: false,
-      content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
-    });
-    await new Promise((r) => setTimeout(r, 300)); // fire-and-forget lands
+    const fn = ctx.listeners.get('tools/post-execute')![0] as (
+      e: unknown, r: unknown, n: () => Promise<PostToolDecision>,
+    ) => Promise<PostToolDecision>;
+    const out = await fn(
+      exec('ans_search_web', { query: 'q' }, mockAgent()),
+      {
+        isError: false,
+        value: { content: [] },
+        content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
+      },
+      accept,
+    );
+    assert.equal(out.kind, 'accept');
+    assert.ok((out.additionalContexts ?? []).length === 1, 'the distilled summary still travels');
+    // No sleep: the request must already be on the wire when the listener
+    // resolves — an awaited write is the whole point of #307.
     const idx = reqs.filter((r) => r.url.startsWith('/index'));
-    assert.equal(idx.length, 1);
+    assert.equal(idx.length, 1, 'the index write is part of this call, not a fire-and-forget tail');
     const body = JSON.parse(idx[0].body);
     assert.equal(body.toolName, 'ans_search_web');
     assert.equal(body.entries.length, 1);
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });
 
-test('tools/result: error results and non-ans tools are skipped', async () => {
+test('tools/post-execute: error results and non-ans tools are skipped', async () => {
   const { url, srv, reqs } = await fakeAnsServer(() => ({ status: 200, body: {} }));
   process.env.ANS_SERVER_URL = url;
   try {
     const ctx = mockCtx();
     apply(ctx as unknown as Context);
-    const fn = ctx.listeners.get('tools/result')![0] as (e: unknown, r: unknown) => void;
-    fn(exec('ans_search_web', {}, mockAgent()), { isError: true, error: { message: 'x' }, content: [] });
-    fn(exec('read_file', {}, mockAgent()), { isError: false, content: [] });
-    await new Promise((r) => setTimeout(r, 200));
+    const fn = ctx.listeners.get('tools/post-execute')![0] as (
+      e: unknown, r: unknown, n: () => Promise<PostToolDecision>,
+    ) => Promise<PostToolDecision>;
+    await fn(exec('ans_search_web', {}, mockAgent()), { isError: true, error: { message: 'x' }, content: [] }, accept);
+    await fn(exec('read_file', {}, mockAgent()), { isError: false, value: { content: [] }, content: [] }, accept);
     assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 0);
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
+});
+
+test('tools/result: carries no write of its own (#307)', async () => {
+  // The listener is gone on purpose. A host does not await `tools/result`, so a
+  // write there is a task nobody owns — exactly what the ticket removes.
+  const { url, srv, reqs } = await fakeAnsServer(() => ({ status: 200, body: {} }));
+  process.env.ANS_SERVER_URL = url;
+  try {
+    const ctx = mockCtx();
+    apply(ctx as unknown as Context);
+    assert.equal((ctx.listeners.get('tools/result') ?? []).length, 0);
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 0);
+  } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
+});
+
+test('tools/post-execute (#307): the MCP call task travels as the index write parent', async () => {
+  // The MCP server puts the call's task in structuredContent.closeout; the
+  // native execute keeps it in the tool VALUE, and the post-execute listener
+  // names it when it sends the index write. A host that does not know the id
+  // forwards none — and the service records "no link" instead of inventing one.
+  //
+  // Every MCP tool reports its own task now (#303 for ans_chat, #304 for the
+  // other four), so a search call really does carry this block. The fake
+  // server still builds it by hand: this pins the TRANSPORT contract — "a
+  // task id in the tool value reaches the request body" — not the MCP server's
+  // own closeout shape, which apps/mcp tests own.
+  const mcp = await fakeMcpServer({
+    content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
+    isError: false,
+    structuredContent: { closeout: { taskId: 'mcp-abc123', kind: 'mcp.ans_chat', state: 'ended', exitCode: 0 } },
+  });
+  process.env.ANS_MCP_URL = mcp.url;
+  const ipc = await fakeAnsServer(({ url }) =>
+    url.startsWith('/index') ? { status: 200, body: { ok: true } } : { status: 404 });
+  process.env.ANS_SERVER_URL = ipc.url;
+  try {
+    const ctx = mockCtx();
+    apply(ctx as unknown as Context);
+    const def = ctx.tools.get('ans_search_web') as { execute(a: unknown, e: unknown): Promise<{ content: Array<{ text?: string }>; taskId?: string }> } | undefined;
+    assert.ok(def, 'ans_search_web not registered');
+    const value = await def!.execute({ query: 'q' }, execCtx(mockAgent('sess-307')));
+    assert.equal(value.taskId, 'mcp-abc123', 'the MCP task id rides the tool value');
+    const post = ctx.listeners.get('tools/post-execute')![0] as (
+      e: unknown, r: unknown, n: () => Promise<PostToolDecision>,
+    ) => Promise<PostToolDecision>;
+    await post(exec('ans_search_web', { query: 'q' }, mockAgent('sess-307')), { isError: false, value, content: value.content }, accept);
+    const idx = ipc.reqs.filter((r) => r.url.startsWith('/index'));
+    assert.equal(idx.length, 1);
+    const body = JSON.parse(idx[0].body) as { parentTaskId?: string; entries: unknown[] };
+    assert.equal(body.parentTaskId, 'mcp-abc123', 'the index write names the call task as its parent');
+  } finally {
+    mcp.srv.close();
+    ipc.srv.close();
+    delete process.env.ANS_MCP_URL;
+    delete process.env.ANS_SERVER_URL;
+  }
 });
 
 test('contextMessage: produces a durable user message with plugin provenance', () => {
@@ -434,7 +506,7 @@ test('native execute: JSON-RPC session error re-handshakes once then succeeds', 
   } finally { srv.close(); delete process.env.ANS_MCP_URL; }
 });
 
-test('hook compatibility: bare ans_* names still hit all four hook surfaces', async () => {
+test('hook compatibility: bare ans_* names still hit every hook surface', async () => {
   const { url, srv, reqs } = await fakeAnsServer(({ url }) =>
     url.startsWith('/recall')
       ? { status: 200, body: { hits: [{ title: 'Prior', url: 'u', snippet: 'snip' }] } }
@@ -445,16 +517,15 @@ test('hook compatibility: bare ans_* names still hit all four hook surfaces', as
     apply(ctx as unknown as Context);
     const pre = ctx.listeners.get('tools/pre-execute')![0] as (e: unknown, n: () => Promise<PreToolDecision>) => Promise<PreToolDecision>;
     const post = ctx.listeners.get('tools/post-execute')![0] as (e: unknown, r: unknown, n: () => Promise<PostToolDecision>) => Promise<PostToolDecision>;
-    const res = ctx.listeners.get('tools/result')![0] as (e: unknown, r: unknown) => void;
     const agent = mockAgent();
-    const result = { isError: false, content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }] };
+    const result = { isError: false, value: { content: [] }, content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }] };
     const out = await pre(exec('ans_search_web', { query: 'x' }, agent), allow);
     assert.equal(out.kind, 'allow');
     assert.ok(agent.injected.length >= 1, 'pre-execute did not engage for bare ans_search_web');
+    // #307: the index write happens inside the awaited post-execute now, so it
+    // is already on the wire when this resolves.
     const p = await post(exec('ans_search_web', { query: 'q' }, agent), result, accept);
     assert.ok((p.additionalContexts ?? []).length === 1, 'post-execute did not engage for bare ans_search_web');
-    res(exec('ans_search_web', {}, agent), result);
-    await new Promise((r) => setTimeout(r, 200));
-    assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 1, 'tools/result did not index for bare ans_search_web');
+    assert.equal(reqs.filter((r) => r.url.startsWith('/index')).length, 1, 'post-execute did not index for bare ans_search_web');
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });

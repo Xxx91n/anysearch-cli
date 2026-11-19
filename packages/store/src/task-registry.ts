@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDatabase } from "./db";
-import { beginInit, endInit, execDdlAtomically, withInitBusyRetry } from "./sqlite-init";
+import { beginInit, endInit, execDdlAtomically, isDuplicateColumnError, withInitBusyRetry } from "./sqlite-init";
 import { pidIsAlive } from "./budget-ledger";
 import { SCHEMA_SQL } from "./schema-content";
 // #310: the registry can be the FIRST opener of a durable database (the main
@@ -45,6 +45,17 @@ import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup";
 
 /** What the task row says about the work it names. */
 export type TaskRole = "business" | "management";
+
+/**
+ * Where a task row came from (#307).
+ *
+ * - `independent`: work a caller asked for (a command, one tool call).
+ * - `follow-up`: work that exists because another request finished — a hook's
+ *   project-index write, the policy audit that rides a /policy read. It may
+ *   start after its parent ended; that is what post-work looks like, and it is
+ *   still work an upgrade must wait out.
+ */
+export type TaskOrigin = "independent" | "follow-up";
 
 export interface TaskRegistryOptions {
   /** Owner identity for rows this registry writes. Defaults to this process. */
@@ -69,6 +80,10 @@ export interface TaskRecordRow {
   ownerHost: string;
   /** Best-effort context handle, attached while the task was running. */
   sessionId: string | null;
+  /** #307: independent work or post-work of another task. */
+  origin: TaskOrigin;
+  /** #307: the task this follow-up belongs to, or null when it could not be named. */
+  parentTaskId: string | null;
   startedAt: string;
   /** NULL = still running, or crashed before finishing. */
   endedAt: string | null;
@@ -88,6 +103,13 @@ export interface ProcessRecordRow {
 /** An open task and how to end it. `finish` is idempotent (a second call is a no-op). */
 export interface RegisteredTask {
   taskId: string;
+  /**
+   * #307: how the parent link landed. `"linked"` = the named parent row exists
+   * and this follow-up points at it; `"unknown"` = a parent was named but no
+   * such row exists (another host, a pruned database, a typo), so the row
+   * records no link rather than a dangling one. `"none"` = independent work.
+   */
+  parentLink: "linked" | "unknown" | "none";
   /** Attach the context handle (session id) the task ran under, best-effort. */
   attachSession(sessionId: string): void;
   /** Record the task's end. Success and failure both end a task; the code says which. */
@@ -122,7 +144,7 @@ export class TaskRegistry {
       // ended_at IS NULL in the WHERE keeps `finish` from rewriting history:
       // a task that already reported its end keeps the code it ended with.
       insertTask: db.prepare(
-        "INSERT INTO task_records (task_id, kind, role, entry, owner_pid, owner_host) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO task_records (task_id, kind, role, entry, owner_pid, owner_host, origin, parent_task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       ),
       finishTask: db.prepare(
         "UPDATE task_records SET ended_at = datetime('now'), exit_code = ? WHERE task_id = ? AND ended_at IS NULL",
@@ -133,10 +155,10 @@ export class TaskRegistry {
         "UPDATE task_records SET session_id = ? WHERE task_id = ? AND ended_at IS NULL",
       ),
       taskById: db.prepare(
-        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE task_id = ?"
+        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE task_id = ?"
       ),
       openTasks: db.prepare(
-        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE ended_at IS NULL ORDER BY started_at"
+        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE ended_at IS NULL ORDER BY started_at"
       ),
       insertProcess: db.prepare(
         "INSERT INTO process_records (pid, owner_host, entry) VALUES (?, ?, ?)",
@@ -156,14 +178,50 @@ export class TaskRegistry {
    * The id is minted here so the caller cannot invent one the registry never
    * wrote (task_budgets' foreign key depends on exactly that: a budget row
    * names a task that exists).
+   *
+   * #307: `origin: "follow-up"` plus `parentTaskId` records work that exists
+   * because another task finished. The parent id comes from outside this
+   * process, so it is VERIFIED before it is written: a parent row that does not
+   * exist is recorded as no link (`parentLink: "unknown"`) instead of a dangling
+   * reference or a made-up id.
    */
-  registerTask(req: { kind: string; role: TaskRole; entry: string; sessionId?: string }): RegisteredTask {
+  registerTask(req: {
+    kind: string;
+    role: TaskRole;
+    entry: string;
+    sessionId?: string;
+    origin?: TaskOrigin;
+    parentTaskId?: string;
+  }): RegisteredTask {
     const taskId = req.entry + "-" + randomUUID();
-    this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host);
+    const origin: TaskOrigin = req.origin ?? "independent";
+    // A parent id on INDEPENDENT work is a caller bug: nothing links a root task
+    // to another root. Say so instead of dropping it silently — the caller then
+    // sees a thrown error, not a row that quietly lost its attribution.
+    if (origin !== "follow-up" && req.parentTaskId) {
+      throw new Error(
+        "registerTask: parentTaskId is only meaningful for follow-up work (kind=" + req.kind +
+        ", origin=" + origin + "); pass origin: \"follow-up\" or omit the parent",
+      );
+    }
+    // The parent id comes from outside this process, so it is verified before it
+    // is written: a row that does not exist here records NO link.
+    let parentTaskId: string | null = null;
+    let parentLink: RegisteredTask["parentLink"] = "none";
+    if (req.parentTaskId) {
+      if (this.taskById(req.parentTaskId)) {
+        parentTaskId = req.parentTaskId;
+        parentLink = "linked";
+      } else {
+        parentLink = "unknown";
+      }
+    }
+    this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host, origin, parentTaskId);
     if (req.sessionId) this.stmts.attachSession.run(req.sessionId, taskId);
     let finished = false;
     return {
       taskId,
+      parentLink,
       attachSession: (sessionId: string): void => {
         this.stmts.attachSession.run(sessionId, taskId);
       },
@@ -232,6 +290,35 @@ export class TaskRegistry {
 }
 
 /**
+ * #307: bring an existing task_records up to the follow-up shape.
+ *
+ * Both openers call this: the registry can be the first process to touch an old
+ * file, and the session store can be the first to assemble one. Keeping it in
+ * this module means the two never disagree about the column set.
+ *
+ * `origin` gets a NOT NULL default so every existing row reads as
+ * 'independent' — that is what those rows really were (nothing wrote
+ * post-work links before #307), not a guess. `parent_task_id` stays nullable
+ * on purpose: a follow-up whose parent cannot be named must record no link.
+ * The index is created AFTER the ALTER; placing it in schema.sql would make it
+ * run before the column exists and fail to open an old database (the #277
+ * lesson).
+ */
+export function migrateTaskFollowupColumns(db: Database.Database, initDeadline: number): void {
+  const step = (ddl: string): void => {
+    try {
+      withInitBusyRetry("task follow-up columns", () => db.exec(ddl), initDeadline);
+    } catch (e) {
+      if (isDuplicateColumnError(e)) return;
+      throw e;
+    }
+  };
+  step("ALTER TABLE task_records ADD COLUMN origin TEXT NOT NULL DEFAULT 'independent' CHECK (origin IN ('independent', 'follow-up'))");
+  step("ALTER TABLE task_records ADD COLUMN parent_task_id TEXT REFERENCES task_records(task_id)");
+  step("CREATE INDEX IF NOT EXISTS idx_task_records_parent ON task_records(parent_task_id) WHERE parent_task_id IS NOT NULL");
+}
+
+/**
  * Open the shared registry on its own connection.
  *
  * Same cold-start discipline as the session store (bounded busy retry, WAL,
@@ -285,6 +372,11 @@ export function openTaskRegistry(dbPath: string, opts: TaskRegistryOptions = {})
   } else {
     withInitBusyRetry("schema", () => execDdlAtomically(db, schema), initDeadline);
   }
+  // #307: an existing database's task_records predates the follow-up columns.
+  // New files already carry them from the CREATE TABLE above, so this ALTER is
+  // the migration and a duplicate column is absorbed (the schema objects here
+  // run before every ALTER, so both statements live outside createTaskTables).
+  migrateTaskFollowupColumns(db, initDeadline);
   endInit(db);
   return new TaskRegistry(db, opts);
 }
