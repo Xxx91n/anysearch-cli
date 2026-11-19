@@ -95,7 +95,7 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 | `agent/created` | with `source === 'startup'`, `agent.inject()` writes the routing card as a durable user message (next request). Resume, clear, and compact are skipped. |
 | `ctx.systemPrompt` | registers the `anysearch:routing-card` section (every request) |
 | `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
-| `tools/post-execute` | appends the distilled result summary to `additionalContexts`, and (#307) sends the awaited project-index write (`POST /index`). The host waits for that write, so it belongs to the call instead of becoming a tail nobody owns. |
+| `tools/post-execute` | appends the distilled result summary to `additionalContexts`, and (#307) sends the project-index write (`POST /index`). The listener awaits that write, so on a host that awaits `tools/post-execute` it belongs to the call instead of becoming a tail nobody owns. **Not verified on a real dsh host**: the host's await behaviour is documented upstream and exercised here only through a mock context; the unit tests prove the listener waits, not that the host does. |
 | `tools/result` | unused since #307: the host does not await this notification, so a write there would be a task with no owner. The index write moved into the awaited post-execute above. |
 | `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle. Where the MCP tool reports its own task (`ans_chat` does, through `structuredContent.closeout`; the other four do not report a task today, #303/#304), the id rides the tool VALUE so the index write can name it as its parent. |
 
@@ -166,14 +166,16 @@ Verified on the wire:
   carries real result entries with `x-anysearch-session-id`.
 
 Those observations predate #307. What #307 changes is *when* the write happens:
-it now runs inside the awaited `tools/post-execute`, so the host waits for it,
-and the request body names the MCP call's task as `parentTaskId` when the host
-holds one. Unit coverage is in `apps/dsh-plugin/test/dsh-plugin.test.ts` (the
-request is already on the wire when the listener resolves — no sleep — and the
-parent id round-trips) and in `apps/plugin/test/post-work.test.ts` (the server's
-follow-up task row is ended before the response is sent). Neither run has been
-repeated on a real dsh host in this ticket; the verification above still stands
-for the wire shape, not for the new ordering.
+it now runs inside `tools/post-execute` and the listener awaits it, and the
+request body names the MCP call's task as `parentTaskId` when the host holds
+one. That "the host waits too" half is documented for the host, not measured
+here — the unit tests use a mock context, so they prove the listener waits and
+the id round-trips, not the real host's ordering. Unit coverage:
+`apps/dsh-plugin/test/dsh-plugin.test.ts` (the request is on the wire when the
+listener resolves — no sleep is used) and `apps/plugin/test/post-work.test.ts`
+(the server's follow-up row is ended before the `/index` response goes out).
+The verification above still stands for the wire shape, not for the new
+ordering, and nothing in this ticket was re-run on a real dsh host.
 
 ## Approval channel (verified on the real host)
 

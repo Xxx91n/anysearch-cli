@@ -201,6 +201,44 @@ test("post-work tracker: a parent id on independent work is a caller bug, not a 
   }
 });
 
+test("post-work tracker: runLater counts the unit before it starts, starts it a turn later", async () => {
+  // Deterministic in-process proof of the deferral contract. The cross-process
+  // version of this check (server's setImmediate vs client's read) is a race and
+  // cannot be asserted; this one can.
+  const dir = mkdtempSync(join(tmpdir(), "ans-postwork-later-"));
+  const dbPath = join(dir, "anysearch.db");
+  const registry = openTaskRegistry(dbPath);
+  const tracker = createPostWorkTracker(registry);
+  try {
+    let ran = false;
+    tracker.runLater("server.policy_audit", {}, () => { ran = true; });
+    // Before yielding to the loop: counted, but not started, and no row yet.
+    assert.equal(tracker.pending(), 1, "the unit is counted as ONE before its work starts");
+    assert.equal(ran, false, "the work has not run yet");
+    const before = registry.openTasks().filter((t) => t.kind === "server.policy_audit");
+    assert.equal(before.length, 0, "no task row exists before the deferral runs");
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(ran, true, "the work ran after a turn");
+    // The row is now open (or already ended); either way it exists.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const rows = new Database(dbPath, { readonly: true });
+    try {
+      const row = rows.prepare(
+        "SELECT origin, ended_at as ended FROM task_records WHERE kind = 'server.policy_audit'",
+      ).get() as { origin: string; ended: string | null } | undefined;
+      assert.ok(row, "the deferred unit left a row");
+      assert.equal(row!.origin, "follow-up");
+    } finally {
+      rows.close();
+    }
+    assert.equal(tracker.pending(), 0, "the count is released when the unit settles");
+  } finally {
+    tracker.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("post-work tracker: drain waits for a running unit, and says so when it cannot", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-postwork-drain-"));
   const dbPath = join(dir, "anysearch.db");
@@ -345,24 +383,15 @@ test("real service: /index settles before the answer, /policy's audit behind it"
     });
     assert.equal(changed.status, 200);
 
-    // #307 review: the audit must START after the answer, not before it.
-    // Reading immediately after the response is the sharpest available check:
-    // if the whole unit (the row INSERT included) had run inside the handler,
-    // the row would already exist here.
-    const rightAfter = new Database(durableDb, { readonly: true });
-    try {
-      const ready = rightAfter.prepare(
-        "SELECT COUNT(*) AS n FROM task_records WHERE kind = 'server.policy_audit' AND ended_at IS NOT NULL",
-      ).get() as { n: number };
-      assert.equal(ready.n, 0,
-        "the audit row is not written before the policy answer (it runs behind it)");
-    } finally {
-      rightAfter.close();
-    }
+    // The ordering itself ("the audit starts after the answer") is pinned
+    // deterministically in the `runLater` unit test above: across a process
+    // boundary the same read is a race — the deferred turn can already have
+    // run by the time this query lands. What this segment can honestly assert
+    // is the end state: the audit row exists, is a follow-up, and settles.
 
     const auditDb = new Database(durableDb, { readonly: true });
     try {
-      // It settles shortly after; poll rather than racing the deferral.
+      // It settles shortly after the answer; poll rather than racing the deferral.
       const deadline = Date.now() + 10000;
       let auditRows: Array<{ origin: string; parent: string | null; ended: string | null; code: number }> = [];
       while (Date.now() < deadline) {

@@ -43,6 +43,11 @@ export interface PostWorkOptions<T = unknown> {
   isFailure?: (result: T) => boolean;
 }
 
+// 去重同一句话，别在长驻服务里每次请求刷一行。这是一份有界去重的小工具，
+// CLI（cli-task-tracking.ts）和 MCP（mcp-task.ts）各有一份同形的。三份都留在
+// 各自的包里，是因为它们分别是独立打包的入口，为这点逻辑新建一个共用模块要把
+// store 变成日志源头，那是跨包重构，不属于这张票。前缀各带各的模块名，读日志时
+// 能分清是谁在抱怨。
 const WARNED_MAX = 32;
 const warned = new Set<string>();
 
@@ -50,10 +55,6 @@ function warnOnce(message: string): void {
   if (warned.has(message)) return;
   if (warned.size >= WARNED_MAX) warned.clear();
   warned.add(message);
-  // The service's stdout is not a host protocol (only the hooks write stdout),
-  // but stderr is where every other warning in this process goes. The label
-  // names this subsystem so a post-work degradation is not read as some other
-  // entry's line (each entry keeps its own prefix by design).
   try { process.stderr.write("[anysearch] post-work: " + message + "\n"); } catch { /* dead stderr */ }
 }
 
@@ -90,6 +91,16 @@ export interface PostWorkTracker {
   run<T>(kind: string, opts: PostWorkOptions<T>, work: () => T | Promise<T>): Promise<{ result: T; outcome: PostWorkOutcome }>;
   /** Register this service's own lifetime as a process record (not a task). */
   start(): void;
+  /**
+   * Run one unit later: count it NOW, start the work after this turn ends.
+   *
+   * The count happens here, not inside the deferred body, so a stop signal that
+   * lands between "answer sent" and "unit started" still sees the unit and
+   * waits. Counting only registered units made `drain()` answer "empty" in that
+   * window and the queued unit was then dropped by the exit — the exact loss
+   * the gate exists to prevent.
+   */
+  runLater<T>(kind: string, opts: PostWorkOptions<T>, work: () => T | Promise<T>): void;
   /** How many units are running right now. */
   pending(): number;
   /**
@@ -114,11 +125,21 @@ export interface PostWorkTracker {
  */
 export function createPostWorkTracker(registry: TaskRegistry | undefined): PostWorkTracker {
   let processRecord: RegisteredProcess | undefined;
+  // Two counters, on purpose: `inFlight` counts units whose work has started,
+  // `scheduled` counts units promised by runLater that have not started yet.
+  // `pending()` and `drain()` read their sum, so a stop signal in the gap
+  // between "answer sent" and "work started" still waits — and a single unit is
+  // still counted as ONE, not two.
   let inFlight = 0;
+  let scheduled = 0;
+  const total = (): number => inFlight + scheduled;
   const waiters = new Set<() => void>();
+  const release = (): void => {
+    for (const done of waiters) done();
+  };
   const settle = (): void => {
     inFlight -= 1;
-    for (const done of waiters) done();
+    release();
   };
   return {
     start(): void {
@@ -188,10 +209,32 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
       }
     },
     pending(): number {
-      return inFlight;
+      return total();
+    },
+    runLater<T>(kind: string, opts: PostWorkOptions<T>, work: () => T | Promise<T>): void {
+      // Count first: the unit exists from this moment, even though its work
+      // starts a turn later. It goes to `scheduled`, NOT `inFlight` — the work
+      // has not started, and when it does, run() takes its own count. Adding to
+      // inFlight here would count one unit twice and make the shutdown message
+      // claim two units are stuck when one is.
+      scheduled += 1;
+      setImmediate(() => {
+        scheduled -= 1;
+        // A unit leaving the scheduled bucket may be the last one, so wake the
+        // drain waiters before the work even starts.
+        if (inFlight === 0) release();
+        void this.run<T>(kind, opts, work)
+          .catch((e: unknown) => {
+            // run() already ended the row (or the registry failed); this line is
+            // for the operator.
+            try {
+              process.stderr.write("[anysearch] post-work " + kind + " failed: " + errText(e) + "\n");
+            } catch { /* dead stderr */ }
+          });
+      });
     },
     drain(timeoutMs: number): Promise<boolean> {
-      if (inFlight === 0) return Promise.resolve(true);
+      if (total() === 0) return Promise.resolve(true);
       return new Promise<boolean>((resolve) => {
         let done = false;
         const finish = (value: boolean): void => {
@@ -201,7 +244,7 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
           clearTimeout(timer);
           resolve(value);
         };
-        const onSettle = (): void => { if (inFlight === 0) finish(true); };
+        const onSettle = (): void => { if (total() === 0) finish(true); };
         // NOT unref'd on purpose (#307 review, CI-caught on ubuntu): this timer
         // is the only thing that can answer when the work never settles. An
         // unref'd timer lets the event loop run dry while the promise is still

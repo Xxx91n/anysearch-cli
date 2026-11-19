@@ -438,11 +438,13 @@ its answer wait on a store write would turn a slow audit into "policy
 unreachable". `/purge` is not post-work of another request — it keeps its old
 synchronous behaviour and no follow-up row.
 
-The distinction matters to an upgrade coordinator (#309): an entry with
-`origin = "independent"` is a request waiting or running, while `origin =
-"follow-up"` is the tail of one. Both are "work that must finish", so neither is
-discarded — the column only says what the reader is looking at. A follow-up is
-allowed to start after its parent ended, which is what a tail looks like.
+The distinction matters to a reader of the task table: an entry with `origin =
+"independent"` is a request waiting or running, while `origin = "follow-up"` is
+the tail of one. Both are work that must finish, so neither is discarded. The
+column only says what the reader is looking at, and a follow-up may start after
+its parent ended — that is what a tail looks like. Which tasks block an upgrade,
+and how a stuck one is reported, belongs to the upgrade coordination ticket;
+this page only describes the rows that exist.
 
 The conversation handle is no longer the owner of this run's quota (S5). With
 a task registered, `ans_chat` neither initializes nor releases the session's

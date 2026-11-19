@@ -8,24 +8,28 @@ import { resolveServerEndpoint } from "../server/token.js";
 
 type IndexEntries = NonNullable<HookDecision["indexEntries"]>;
 
-/**
- * How long an index write may hold up its caller.
- *
- * The 5-second IPC default is a budget for the hook itself, not for a write
- * that rides inside a host's tool call. #307 made this write awaited (it used
- * to be fire-and-forget), so the ceiling became visible as a tail on every
- * `ans_*` call; 2 seconds is enough for the INSERT + rows + UPDATE the service
- * does, and a slower write still lands server-side (fail-open means the caller
- * stops waiting, not that the write is abandoned).
- */
-const INDEX_WRITE_TIMEOUT_MS = 2000;
+export interface IndexOptions {
+  /** The task this write belongs to (dsh passes its own tool-call task). */
+  parentTaskId?: string;
+  /**
+   * How long this write may hold up the CALLER.
+   *
+   * Defaults to the IPC budget (5s, see core.ts). Pass a shorter value only
+   * where the write sits inside a host's own tool call and the caller has
+   * promised the user a snappy turn — dsh's awaited post-execute does that, and
+   * 2s is enough for the INSERT + rows + UPDATE the service performs. A write
+   * that outlives the caller's patience still lands server-side; the timeout
+   * stops the wait, not the work.
+   */
+  timeoutMs?: number;
+}
 
 export async function indexToProject(
   projectRoot: string | null,
   toolName: string,
   entries: IndexEntries | undefined,
   sessionId: string,
-  parentTaskId?: string,
+  opts: IndexOptions = {},
 ): Promise<void> {
   if (!projectRoot || !entries || entries.length === 0) return;
   const endpoint = resolveServerEndpoint();
@@ -33,6 +37,9 @@ export async function indexToProject(
     projectPath: projectRoot,
     toolName,
     entries,
-    ...(parentTaskId ? { parentTaskId } : {}),
-  }, { sessionId, timeoutMs: INDEX_WRITE_TIMEOUT_MS }).catch(() => null);
+    ...(opts.parentTaskId ? { parentTaskId: opts.parentTaskId } : {}),
+  }, {
+    sessionId,
+    ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
+  }).catch(() => null);
 }

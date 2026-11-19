@@ -70,8 +70,10 @@ const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db")
 const postWork = createPostWorkTracker(openPostWorkRegistry(OBS_DB));
 postWork.start();
 
-// OBS_DB permissions are tightened at startup by openPostWorkRegistry above,
-// and again lazily before the first /policy audit write (best-effort, once).
+// OBS_DB permissions are tightened at startup by openPostWorkRegistry above —
+// unless that call is the one that fails, in which case nothing ran and the
+// lazy pass below is what covers the first /policy audit write (best-effort,
+// once, and it also re-checks the success case at no cost).
 let obsDbEnsured = false;
 
 interface ProjectPolicy {
@@ -247,7 +249,7 @@ function runPostWork<T>(
 
 /**
  * Start post-work only AFTER this turn returns to the event loop, so the HTTP
- * answer goes out first (#307 review).
+ * answer goes out first.
  *
  * Why the extra hop is required: `postWork.run` begins with a synchronous
  * SQLite INSERT and `emitConfigChangeAudit` constructs its store synchronously.
@@ -256,8 +258,8 @@ function runPostWork<T>(
  * false and the hook's 3-second policy budget would pay for it. Deferring to a
  * macrotask puts the whole unit after `sendJson`.
  *
- * `drain()` still sees the unit: the registration happens inside the deferred
- * body, and the shutdown wait is what keeps a stop signal from dropping it.
+ * The count is taken HERE, before the deferral (see `runLater`), so a stop
+ * signal in the gap still waits for this unit instead of exiting over it.
  */
 function runPostWorkLater<T>(
   kind: string,
@@ -265,12 +267,10 @@ function runPostWorkLater<T>(
   work: () => T | Promise<T>,
   opts: { isFailure?: (result: T) => boolean } = {},
 ): void {
-  setImmediate(() => {
-    void runPostWork(kind, sessionId, work, opts).catch((e: unknown) => {
-      // The task row already records the failure; this line is for the operator.
-      try { process.stderr.write("[anysearch] post-work " + kind + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n"); } catch { /* dead stderr */ }
-    });
-  });
+  postWork.runLater<T>(kind, {
+    sessionId,
+    ...(opts.isFailure ? { isFailure: opts.isFailure } : {}),
+  }, work);
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {

@@ -14,7 +14,8 @@
  * systemPrompt → 'anysearch:routing-card' section registration
  * tools/pre-execute → URL-policy deny/ask + preheat recall injection
  * tools/post-execute → distilled summary via additionalContexts, and (#307) the
- *   awaited project-index write so the host waits out that call's post-work
+ *   project-index write, awaited by THIS listener (not yet checked on a real
+ *   host: a host that does not await the listener would not wait for it)
  * tools/result → unused (a non-awaited notification is no place for a write)
  * Tool plane:
  * ctx.tools.register → five native ans_* tools; execute = MCP tools/call
@@ -296,8 +297,10 @@ export function apply(ctx: Context): void {
   // which the host never awaits: the agent loop had already moved on, and the
   // write could still be in flight (or be dropped when the process exited)
   // while the anysearch service recorded nothing for it. Running it here means
-  // the host waits for it, and the follow-up task it starts names the MCP
-  // call's own task as its parent whenever the id came back.
+  // THIS listener waits for it; whether the host waits for the listener is the
+  // host's contract and was not re-measured on a real dsh host here. The
+  // follow-up task it starts names the MCP call's own task as its parent
+  // whenever the id came back.
   // It stays excluded from `isError` results: an error outcome has nothing
   // indexable, and the index write is not a correction of the error.
   // The tool VALUE is passed through untouched — dsh validates it against the
@@ -318,8 +321,13 @@ export function apply(ctx: Context): void {
         const valueTask = (result.value as { taskId?: unknown } | undefined)?.taskId;
         const parentTaskId = typeof valueTask === 'string' && valueTask.length > 0 ? valueTask : undefined;
         // Awaited on purpose: this is the call's post-work, not a new request.
-        await indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent), parentTaskId)
-          .catch(() => { /* fail-open: indexing never fails the tool */ });
+        // The 2s ceiling is scoped to THIS caller — the write rides inside the
+        // host's tool call, so it must not turn into a 5s tail. It is not a
+        // change to how the other adapters' hook processes budget their IPC.
+        await indexToProject(projectRoot(), exec.name, d.indexEntries, sessionIdOf(exec.agent), {
+          ...(parentTaskId ? { parentTaskId } : {}),
+          timeoutMs: 2000,
+        }).catch(() => { /* fail-open: indexing never fails the tool */ });
       }
       if (!d.distilledOutput) return downstream;
       const injected = contextMessage(d.distilledOutput);

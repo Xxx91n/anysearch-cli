@@ -1,9 +1,9 @@
-// 关门口的两个分支（#307）。
+// 收到停止信号后的收尾，两个分支（#307）。
 //
 // 这里测的是「按合同走」：两条判据都过 → 关库退 0；有一条没过 → 不关库、说清楚、退 1。
 //
 // 不宣称真信号验证过。规格 T4 明确写了「Windows 程序模拟 SIGINT 不等于真实
-// Ctrl+C」，所以这一组只覆盖关门口这个函数本身，真信号、宿主怎么对待停止信号，
+// Ctrl+C」，所以这一组只覆盖收尾函数本身，真信号、宿主怎么对待停止信号，
 // 仍然算未覆盖。
 
 import { test } from "node:test";
@@ -71,12 +71,50 @@ test("shutdown: a request stuck in flight (no unit running) is named as such", a
   assert.match(lines[0]!, /no post-work unit is running/);
 });
 
-test("shutdown: a second signal does not rerun the teardown", async () => {
-  // The guard lives in index.ts (`shuttingDown`); this pins the invariant it
-  // protects — one runShutdown call is one exit, whatever happens around it.
+test("shutdown: one settled decision per call (the repeat guard lives in index.ts)", async () => {
+  // The `shuttingDown` guard that stops a second signal from rerunning this is
+  // in index.ts's wrapper, not here — calling runShutdown once cannot test it.
+  // What this pins is the shape the guard relies on: one call is one exit.
   const { deps, exits } = recorder({ drainPostWork: async () => false });
   await runShutdown(deps);
   assert.deepEqual(exits, [1], "one settled decision, not two exits racing");
+});
+
+test("shutdown: a failing dependency still reaches the exit code", async () => {
+  // index.ts calls `void runShutdown(...)`, so a rejection here would become an
+  // unhandled rejection and the process would die without the teardown or an
+  // exit code. Both a rejecting drain and a throwing closeStores are covered.
+  const { deps, calls, exits, lines } = recorder({
+    drainPostWork: () => Promise.reject(new Error("drain blew up")),
+  });
+  await runShutdown(deps);
+  assert.deepEqual(exits, [1], "a failing drain counts as 'not settled'");
+  assert.equal(lines.length, 1);
+  // The message names what the code knows: units vs requests. A failing drain
+  // is neither, so it must not claim requests are stuck; it says the stop did
+  // not settle and names nothing specific.
+  assert.match(lines[0]!, /after 50ms — exiting without closing stores/);
+  assert.doesNotMatch(lines[0]!, /requests still in flight/);
+
+  const second = recorder({
+    closeStores: () => { throw new Error("close failed"); },
+  });
+  await runShutdown(second.deps);
+  assert.deepEqual(second.exits, [0], "a throwing close must not swallow the exit");
+  assert.deepEqual(second.calls, ["closeServer", "drain", "clearRegistry", "stopPostWork", "exit:0"],
+    "the remaining teardown still runs after one step throws");
+});
+
+test("shutdown: pending is read once, so the message cannot contradict itself", async () => {
+  let reads = 0;
+  const { deps, lines } = recorder({
+    drainPostWork: async () => false,
+    // The second read would see 0 (the last unit finished between the two).
+    pendingPostWork: () => (reads++ === 0 ? 1 : 0),
+  });
+  await runShutdown(deps);
+  assert.equal(reads, 1, "the count is taken once");
+  assert.match(lines[0]!, /1 post-work unit\(s\) still running/);
 });
 
 test("parseDrainMs: bad values fall back to 10000 and say so", () => {
