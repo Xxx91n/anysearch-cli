@@ -169,6 +169,50 @@ test("run from the home directory, the database is snapshotted and not renamed",
   } finally { box.done(); }
 });
 
+test("the home directory in another case is still the home directory", { skip: process.platform !== "win32" }, () => {
+  const box = sandbox();
+  try {
+    // Windows answers to several spellings of one directory: another drive-letter
+    // case, an 8.3 short name, a junction. A string comparison calls those
+    // different, so the project pass claims the user roots — it moves the file
+    // instead of the user pass, and the run then records nothing at all.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+
+    const record = ensureAnsLayout(box.env, () => {}, box.home.toUpperCase());
+    assert.ok(record, "the user pass handled the home directory");
+    assert.deepEqual(record.pending, []);
+    assert.ok(
+      record.moved.some((m) => m.from.endsWith("config.env") && m.how === "moved"),
+      "the user pass is the one that moved it",
+    );
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
+  } finally { box.done(); }
+});
+
+test("an entry that stays unmoved is reported on every run, not just the first", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "config.env"), "ANS_DOMAIN=new\n");
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=old\n");
+
+    // The record stops changing after the first run, so a "nothing changed"
+    // shortcut placed before the warning would report the conflict once and
+    // then say nothing while the file was still sitting there unmoved.
+    const runs = [1, 2, 3].map(() => {
+      const said: string[] = [];
+      ensureAnsLayout(box.env, (message) => said.push(message));
+      return said.join("");
+    });
+    assert.match(runs[0], /config\.env/);
+    assert.match(runs[1], /config\.env/, "the second run still names the entry");
+    assert.match(runs[2], /config\.env/, "and so does the third");
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=new\n");
+  } finally { box.done(); }
+});
+
 test("a second run is a no-op once everything moved", () => {
   const box = sandbox();
   try {

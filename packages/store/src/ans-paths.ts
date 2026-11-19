@@ -188,10 +188,6 @@ export function ansUserSkillsDirFor(home: string): string {
   );
 }
 
-export function ansUserSkillsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return ansUserSkillsDirFor(homeOf(env));
-}
-
 /** The user-level MEMORY.md projection. Regenerated, so write-only. */
 export function ansUserMemoryPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(ansHomeDir(env), "MEMORY.md");
@@ -208,10 +204,6 @@ export function ansUserWiringDirFor(home: string): string {
     join(ansHomeDirFor(home), "host-wiring"),
     join(home, LEGACY_CONFIG_DIR_NAME, "host-wiring"),
   );
-}
-
-export function ansUserWiringDir(env: NodeJS.ProcessEnv = process.env): string {
-  return ansUserWiringDirFor(homeOf(env));
 }
 
 /**

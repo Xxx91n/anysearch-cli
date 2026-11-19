@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SessionStorePort } from "./ports";
-import { ansHomeDir, ansProjectDir, type T0PreferenceRow } from "@anysearch-cli/store";
+import { ansProjectMemoryPath, ansUserMemoryPath, type T0PreferenceRow } from "@anysearch-cli/store";
 
 const MAX_CHARS = 1500;
 const MAX_LINES = 200;
@@ -66,8 +66,6 @@ export async function writeProjection(
   store: SessionStorePort,
   projectScope?: string,
 ): Promise<{ path: string; warned: boolean }[]> {
-  const globalDir = ansHomeDir();
-  const projectDir = ansProjectDir();
   const results: { path: string; warned: boolean }[] = [];
 
   let rows: T0PreferenceRow[];
@@ -83,7 +81,7 @@ export async function writeProjection(
   // Project scope file (only when project rows exist — no auto-creation).
   if (projectScope && hasProject) {
     try {
-      const projPath = path.join(projectDir, "MEMORY.md");
+      const projPath = ansProjectMemoryPath();
       atomicWrite(projPath, merged.text);
       results.push({ path: projPath, warned: merged.warned });
     } catch (e) {
@@ -94,7 +92,7 @@ export async function writeProjection(
 
   // Global file (always written when any rows exist).
   try {
-    const globalPath = path.join(globalDir, "MEMORY.md");
+    const globalPath = ansUserMemoryPath();
     atomicWrite(globalPath, merged.text);
     results.push({ path: globalPath, warned: merged.warned });
   } catch (e) {

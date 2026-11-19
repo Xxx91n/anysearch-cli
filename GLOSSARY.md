@@ -131,7 +131,7 @@
 - **库布局标记**:库里一行记录，说明这个库的结构已被哪个版本线装配过；带会话表又缺这行的库，下次打开会先做迁移前备份（代码里叫 store_layout）。
   _Avoid_: schema 版本号、迁移水位线
 
-- **配置根**:用户级一个 `~/.ans`，项目级一个 `<项目>/.ans`，所有配置、数据、缓存、技能、日志都住在这两个目录里；位置只在 `packages/store/src/ans-paths.ts` 定义一次（代码里叫 ansHomeDir / ansProjectDir）。
+- **配置根**:用户级一个 `~/.ans`，项目级一个 `<项目>/.ans`，所有配置、数据、缓存、技能、日志都住在这两个目录里；位置只在 `packages/store/src/ans-paths.ts` 定义一次（代码里叫 ansHomeDir / ansProjectDir；发布脚本和嵌入包的默认值两处例外，见 `docs/ans-layout.md`）。
   _Avoid_: 数据目录、配置目录、`.anysearch`、`.anysearch-cli`
 
 - **目录搬迁记录**:用户级目录从旧名字搬到 `~/.ans` 之后留下的那份记录，写明搬了什么、从哪来、用什么方式、哪些没搬成和为什么；项目级不记，因为项目里没有数据库，纯改名可以每次重试（代码里叫 AnsLayoutRecord，落盘为 `~/.ans/.layout.json`）。

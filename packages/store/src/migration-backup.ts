@@ -474,6 +474,8 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
   if (existsSync(to)) throw new Error("cannot adopt " + from + ": " + to + " already exists");
   let db: Database.Database | undefined;
+  /** Set only while this call owns `to`, so a failure never deletes another process's snapshot. */
+  let written = false;
   try {
     const conn = openDatabase(from, { timeout: 5000 });
     db = conn;
@@ -481,7 +483,17 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
     const prevUmask = process.umask(0o077);
     try {
       withInitBusyRetry("layout adoption", () => {
-        try { rmSync(to, { force: true }); } catch { /* nothing to clear */ }
+        // A process that held the lock first may have published the snapshot
+        // while this one waited. Its file is the winner and this one stops:
+        // vacuuming over it would replace a completed copy with a second one,
+        // the swap this module's publish path refuses to make. VACUUM INTO
+        // either completes or fails atomically, so an existing file here is
+        // never a torn leftover from a crashed attempt.
+        if (existsSync(to)) {
+          written = false;
+          return;
+        }
+        written = true;
         conn.prepare("VACUUM INTO ?").run(to);
       }, initDeadline);
     } finally {
@@ -492,8 +504,12 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
     return { bytes: statSync(to).size, sha256: sha256File(to) };
   } catch (error) {
     // A half-written copy next to the live database looks like a valid one;
-    // remove it so the failure cannot be mistaken for a finished move.
-    try { rmSync(to, { force: true }); } catch { /* best effort */ }
+    // remove it so the failure cannot be mistaken for a finished move. Only
+    // this call's own file: a copy another process published is its result,
+    // and deleting it would destroy the recovery point this module promises.
+    if (written) {
+      try { rmSync(to, { force: true }); } catch { /* best effort */ }
+    }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       "把 " + from + " 复制到 " + to + " 失败：" + detail +

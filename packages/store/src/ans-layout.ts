@@ -34,12 +34,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   rmdirSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   ANS_DB_FILENAME,
   ANS_PROJECT_INDEX_FILENAME,
@@ -56,8 +57,12 @@ export const ANS_LAYOUT_MARKER = ".layout.json";
 /** Databases that must be copied, never renamed (see the header). */
 const DATABASE_ENTRIES = new Set([ANS_DB_FILENAME, ANS_PROJECT_INDEX_FILENAME]);
 
-/** A database's write-ahead sidecars belong to the file that stays behind. */
-const DATABASE_SIDECAR = /\.db-(wal|shm)$/;
+/**
+ * The files a live SQLite connection keeps next to the main one. They belong to
+ * the file that stays behind: `-journal` is the rollback-mode equivalent of
+ * `-wal`, and moving it away from its database is the same corruption.
+ */
+const DATABASE_SIDECAR = /\.db-(wal|shm|journal)$/;
 
 export interface AnsLayoutMove {
   from: string;
@@ -107,6 +112,31 @@ function errorText(error: unknown): string {
 }
 
 /**
+ * Whether two paths name the same directory.
+ *
+ * The layout guard asks "is this cwd the home directory", and on Windows the
+ * same directory answers to several spellings: a drive letter in another case,
+ * an 8.3 short name (`ADMINI~1`), a junction. Comparing `join`-ed strings calls
+ * those different, and a wrong "not the home directory" verdict hands the user
+ * roots to the project pass, which renames a database instead of snapshotting
+ * it. `realpath` asks the filesystem; the case fold covers a path that does not
+ * exist yet, where `realpath` has nothing to canonicalize.
+ */
+function sameDir(left: string, right: string): boolean {
+  const a = canonicalPath(left);
+  const b = canonicalPath(right);
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function canonicalPath(target: string): string {
+  try {
+    return realpathSync.native(target);
+  } catch {
+    return resolve(target);
+  }
+}
+
+/**
  * Rename one entry, falling back to a copy when the two roots are on different
  * volumes. A copy that cannot be completed leaves the source untouched.
  */
@@ -125,9 +155,12 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
 /**
  * Move one project's pre-#323 directories into `<project>/.ans`.
  *
- * No marker and no database: a project directory holds neither, so this is a
- * plain rename that is safe to retry. A name that already exists in the new
- * directory is kept and reported, never overwritten.
+ * No marker and no database of its own: a project directory holds neither, so
+ * this is a plain rename that is safe to retry. A name that already exists in
+ * the new directory is kept and reported, never overwritten. A database found
+ * here is a leftover: the product keeps the project index in the user root, so
+ * it has no counterpart in the new layout and moving it would present dead rows
+ * as live ones. It stays put, with a message saying so.
  */
 function adoptProjectLayout(cwd: string, warn: (message: string) => void): void {
   const target = ansProjectDir(cwd);
@@ -145,7 +178,11 @@ function adoptProjectLayout(cwd: string, warn: (message: string) => void): void 
       // ours to rename: a live WAL database moved out from under its -wal is
       // the corruption this module exists to avoid.
       if (DATABASE_ENTRIES.has(entry) || DATABASE_SIDECAR.test(entry)) {
-        warn("[anysearch] " + join(dir, entry) + " 没有搬：项目目录里不该有数据库，留给用户自己处理。\n");
+        warn(
+          "[anysearch] " + join(dir, entry) + " 没有搬：新的索引库在 ~/.ans/project-index.db，" +
+          "按项目分列，不在项目目录里。这份是旧布局留下的，产品不再读它，" +
+          "确认不要了可以删掉，或用 ANS_PROJECT_DB 指过去。\n",
+        );
         continue;
       }
       const from = join(dir, entry);
@@ -186,7 +223,7 @@ export function ensureAnsLayout(
   // project roots ARE the user roots. Letting the project pass handle them would
   // rename the databases instead of snapshotting them — the one thing this
   // module exists to prevent — so the user branch owns that case.
-  if (ansProjectDir(cwd) !== ansHomeDir(env)) adoptProjectLayout(cwd, warn);
+  if (!sameDir(ansProjectDir(cwd), ansHomeDir(env))) adoptProjectLayout(cwd, warn);
 
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;
@@ -207,7 +244,7 @@ export function ensureAnsLayout(
     mkdirSync(home, { recursive: true });
   } catch (error) {
     throw new Error(
-      "无法创建新的配置目录 " + home + "：" + errorText(error) +
+      "无法创建配置根 " + home + "：" + errorText(error) +
       "。旧目录 " + legacy.join("、") + " 原样保留，没有丢任何东西；" +
       "修好这个目录的写权限后重新运行即可。",
       { cause: error },
@@ -259,6 +296,17 @@ export function ensureAnsLayout(
     moved,
     pending,
   };
+  // The warning goes before the "nothing changed" shortcut: an entry that could
+  // not be moved produces the same record every run, so short-circuiting first
+  // would report it once and then go quiet while the file was still unmigrated.
+  if (pending.length > 0) {
+    warn(
+      "[anysearch] 有 " + pending.length + " 项旧文件没能搬进 " + home +
+      "，本次继续从旧位置读取，下次运行会再试：\n" +
+      pending.map((item) => "  - " + item.path + "：" + item.reason + "\n").join(""),
+    );
+  }
+
   const unchanged = recorded !== undefined && JSON.stringify(record) === JSON.stringify(recorded);
   if (unchanged) return record;
   try {
@@ -267,14 +315,6 @@ export function ensureAnsLayout(
     // The move already happened; failing here would make the next run redo it
     // and report every entry as "already exists". Say so instead of throwing.
     warn("[anysearch] 目录已经搬到 " + home + "，但迁移记录写不进去（" + errorText(error) + "）；不影响使用。\n");
-  }
-
-  if (pending.length > 0) {
-    warn(
-      "[anysearch] 有 " + pending.length + " 项旧文件没能搬进 " + home +
-      "，本次继续从旧位置读取，下次运行会再试：\n" +
-      pending.map((item) => "  - " + item.path + "：" + item.reason + "\n").join(""),
-    );
   }
   return record;
 }
