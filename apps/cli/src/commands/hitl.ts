@@ -35,7 +35,7 @@ function readQueue(): HitlEntry[] {
 // Add host to the active domain TOML [sources].urlAllowlist (append-style, section-replace
 // semantics preserved). Returns true on write.
 function allowHost(host: string): boolean {
-  const domainName = process.env.ANS_DOMAIN || "default";
+  const domainName = process.env.ANS_DOMAIN?.trim() || "default";
   const tomlPath = domainTomlPath(process.cwd(), domainName);
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
   const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];

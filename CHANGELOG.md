@@ -7,19 +7,22 @@
 - **三态判断，不再是"有没有 config"**：`resolveDomainConstraint` 把当前领域分成没指定、已建立、声明了但建不起来三种（内核 `domain-constraint.ts`）。CLI 搜索/聊天/整理、MCP、`ans doctor` 都问同一处，不再各自从 `undefined` 或"重读返回 null"去猜。没指定领域仍然是合法状态——全量扇出、不做网址过滤，跟以前一样。
 - **`ans domain <名字>` 先完整验证再落盘**：文件、继承链、每个字段都通过才写配置。名字不存在、TOML 读不出来、配置文件写不进去，都返回非零，原来的选择一个字都不动，也不会再打印"persisted"然后告诉你"其实是全网"。
 - **运行途中 TOML 读坏就停这一次**：重载器以前把"没变化"和"读坏了"都返回 null，调用方只能继续用内存里的旧策略。现在三种结果分开回报，读坏了这次运行不开始、工具调用也直接拦住，提示改回能读的 TOML 或者换个领域。改回来就恢复，不是一坏到底。
-- **钩子的网址规则缓存要能自证有效才会用**：缓存文件现在记着是哪个项目、从哪几个 TOML（含 base 继承链）按当时的版本写下来的。项目对不上、TOML 改过、或者缓存是老格式没这些信息，都不认，改问用户；真用上了会在理由里写清"规则来自某个时间的缓存"。
-- **测试**：`apps/cli/test/domain-constraint.test.ts`（三态；切换成功才落盘；名字不存在/TOML 坏/配置写不进都失败且保留旧选择；当前领域坏了 `ans domain` 不带参数也返回非零）；`packages/store/test/url-policy.test.ts` 把重载器的旧断言换成"读坏要返回 failed、修好后能重新加载"；`packages/store/test/session-id-propagation.test.ts` 加缓存出处与适用性断言；`apps/plugin/test/policy.test.ts` 加"另一个项目的缓存不借、TOML 改过后不认、没有出处的老缓存不认"；`packages/kernel/test/pi-runtime.test.ts` 加"运行中 TOML 读坏，这次运行不发模型请求并以 `domain-not-established` 结束"。
+- **钩子的网址规则缓存要能自证有效才会用**：缓存文件现在记着是哪个项目、从哪几个 TOML（含 base 继承链）按当时的版本写下来的。项目对不上、TOML 改过、或者缓存是老格式没这些信息，都不认，改问用户。真用上了会明说：拦下来的时候写在理由里，放行的时候挂在附带说明里——放行那条本来没有留下任何提示的地方。
+- **`config.env` 改成原子写**：先写 `<文件>.tmp` 再改名。以前是就地覆盖，写一半出事会留下一个空配置，原来的领域选择跟着一起没了。现在写失败，旧文件一个字节不变。
+- **MCP 搜索的领域停止也带类型**：`search_web` / `research_web` 撞上读不出来的领域时，结果里带 `errorKind: "domain-not-established"`，跟 `ans_chat` 一致，宿主不用读中文才知道这是配置坏了、重试没用。
+- **测试**：`apps/cli/test/domain-constraint.test.ts`（三态；切换成功才落盘；名字不存在/TOML 坏/配置写不进都失败且旧文件内容不变，包括"临时文件写不进去"这一处；`ans search` 直接拒绝、`ans consolidate` 返回 1 并说清原因；`ans domain` 不带参数时只有"声明了且会停"才返回非零）；`packages/store/test/url-policy.test.ts` 把重载器的旧断言换成"读坏要返回 failed、修好后能重新加载"；`packages/store/test/session-id-propagation.test.ts` 加缓存出处与适用性断言；`apps/plugin/test/policy.test.ts` 加"另一个项目的缓存不借、TOML 改过后不认、没有出处的老缓存不认"；`packages/kernel/test/pi-runtime.test.ts` 加"运行中 TOML 读坏，这次运行不发模型请求并以 `domain-not-established` 结束"。
 
 ### Changed
 
 - **声明了但找不到的领域不再当成没声明**：`createEngine("<名字>")` 以前把 `Domain not found` 当"缺省"，直接全量扇出并丢掉操作者配的白名单；现在这算失败，直接报错。产品自己的 `default` 约定是另一回事：`domainDeclared: false` 的调用方（`ans chat` 没设 `ANS_DOMAIN` 时）仍然退回全量扇出，只是会明说丢掉了什么。`packages/kernel/test/composition-vertical.test.ts` 里"缺领域仍然全量扇出"那条旧断言就是按这个改写并加严的，没有删掉。
 - **`ans doctor` 的领域一节跟着改口径**：原来是"not found on the resolution chain (silent full-fanout)"，现在分得清"声明了会停"和"没指定所以继续全量"。
+- **四个不检索的命令不再把 `default` 当"点名要的领域"**：`ans memory` / `ans entity` / `ans relation` / `ans pref` 以前无论有没有设 `ANS_DOMAIN` 都按"默认域"这个具体名字去加载，缺了那个 TOML 就会被当成本票新规则下的"声明了却建不起来"。它们本来不检索、不需要域名过滤，所以现在只在真的设了 `ANS_DOMAIN` 时才按声明处理；没设就是未声明，跟以前一样全量扇出。`ans hitl` 保留 "default" 作为约定（它改的就是那个 TOML），只是补了去空格。
 
 ### Known limits
 
 - **只覆盖领域这一路约束**：预算和网址策略本身的三态已经在 #302/#304 里建立，本票没有重做它们；网址策略那一路只补了"缓存能不能用"。
 - **钩子是否把提示给人看，取决于宿主**：钩子按宿主协议回 `ask`/`deny` 并把缓存出处写进理由，宿主愿不愿意显示不在本仓控制范围内。
-- **`apps/plugin` 的两个钩子契约测试需要先构建 `dist/hooks`**：没有构建产物时它们会因为找不到 `dist/hooks/adapters/*.cjs` 而失败，这是构建前置条件，不是本票的行为变化。
+- **三条测试车道要构建产物，本窗口没跑**：`apps/cli/test/e2e.test.ts`、`apps/plugin` 的 antigravity/codebuddy 钩子契约、`apps/dsh-plugin` 的测试都直接 spawn `dist/`。本窗口按要求不本地编译，这三条留给远端 CI；其余车道在本机全部跑过。
 
 ## Unreleased — #304: 搜索、研究和独立整理也各记各的任务
 

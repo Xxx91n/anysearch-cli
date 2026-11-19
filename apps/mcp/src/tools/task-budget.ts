@@ -88,6 +88,24 @@ export function beginToolBudget(
  * wrapper attaches the closeout to exactly this shape (#303), so a host can
  * tell a budget stop from an upstream failure without reading prose.
  */
+/**
+ * #306: the result for a call refused because the Active Domain could not be
+ * read. Same shape as a budget stop (a classification the host can switch on
+ * without reading prose) for the same reason — but the caller's next move is to
+ * repair the TOML, not to raise a cap, so it must not be reported as `budget`.
+ */
+export function toolDomainStop(toolName: string, detail: string): CallToolResult {
+  return {
+    isError: true,
+    content: [{ type: "text", text: toolName + ": 这次没跑 —— " + detail }],
+    structuredContent: {
+      operation: toolName,
+      errorKind: "domain-not-established",
+      domain: { stopped: true, detail },
+    },
+  };
+}
+
 export function toolBudgetStop(
   toolName: string,
   kind: BudgetStopReason,

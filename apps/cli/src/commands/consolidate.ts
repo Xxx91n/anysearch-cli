@@ -24,6 +24,7 @@ import {
   resolveDbPath,
   describeDomainFailure,
   describeDomainFallback,
+  resolveActiveDomain,
   resolveDomainConstraint,
   type ConsolidationMetering,
 } from "@anysearch-cli/kernel";
@@ -209,10 +210,10 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // #306: the same three-state answer `ans search` and `ans chat` ask for.
   // A declared domain that cannot be read stops the run; the convention
   // default being absent is a legal undeclared run with no caps to enforce.
-  const declaredDomain = process.env.ANS_DOMAIN?.trim() || undefined;
+  const active = resolveActiveDomain();
   const budgetConstraint = resolveDomainConstraint({
-    name: declaredDomain ?? "default",
-    declared: !!declaredDomain,
+    name: active.name,
+    declared: active.declared,
     dirs: domainSearchDirs(),
   });
   if (budgetConstraint.state === "failed" && budgetConstraint.fatal) {

@@ -24,9 +24,10 @@ import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
 import {
   describeDomainFallback,
+  domainConstraintFailure,
   DomainConstraintError,
   resolveDomainConstraint,
-  type DomainConstraint,
+  type DomainConstraintFailure,
 } from "./domain-constraint";
 
 // Map provider ids to constructors.
@@ -445,21 +446,19 @@ export function createEngine(
       // confirmed, so every request-time read fails closed until the file is
       // readable again. Keeping last-known-good here would mean a policy the
       // operator just replaced stays in force with only a stderr line to say so.
-      let liveFault: Extract<DomainConstraint, { state: "failed" }> | undefined;
+      let liveFault: DomainConstraintFailure | undefined;
       const live = () => {
         const probe = reload();
         if (probe.kind === "reloaded") {
           liveSchema = probe.schema;
           liveFault = undefined;
         } else if (probe.kind === "failed") {
-          liveFault = {
-            state: "failed",
+          liveFault = domainConstraintFailure({
             name: domain,
             declared: opts?.domainDeclared !== false,
             fault: "broken",
             reason: probe.reason,
-            fatal: true,
-          };
+          });
         }
         if (liveFault) throw new DomainConstraintError(liveFault);
         return liveSchema;

@@ -737,7 +737,7 @@ export function registerAnsChat(
               // #306: a broken Active Domain is not a budget answer. Nothing
               // was called, and the fix is to repair the TOML, so it gets its
               // own classification instead of "raise your cap".
-              return buildAnsChatDomainResult(runtimeError, { operation: "chat" });
+              return buildAnsChatDomainResult(runtimeError);
             }
             if (runtimeErrorReason !== undefined) {
               // A stop can land mid-stream, so wait for the late settlement

@@ -40,9 +40,8 @@ export interface ResolvedPolicy {
   materialized_at?: string;
 }
 
-// A long-lived host (the dsh plugin) calls this once per tool call. The two
-// degradation lines below are worth saying, not worth repeating every time.
-let warnedServerFailure = false;
+// A long-lived host (the dsh plugin) calls this once per tool call, so the
+// cache notice below is worth saying once rather than on every call.
 let warnedCacheFallback = false;
 
 function policyCachePath(projectRoot: string): string {
@@ -109,10 +108,7 @@ export async function readPolicy(serverUrl: string, token: string, projectRoot: 
       return { allow: body.allow, deny: body.deny, policy_version: body.policy_version, from: "server" };
     }
     // Audit M3: a reachable-but-failing server is a distinct signal, not silent cache reuse.
-    if (!warnedServerFailure) {
-      warnedServerFailure = true;
-      process.stderr.write("[anysearch] GET /policy returned HTTP " + res.status + "; falling back to cached policy\n");
-    }
+    process.stderr.write("[anysearch] GET /policy returned HTTP " + res.status + "; falling back to cached policy\n");
   } catch { /* server unreachable -> cache fallback */ }
   let cached: PolicyCache | null = null;
   try {
@@ -154,6 +150,11 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   // +: any URL in the tool input is gated against the resolved
   // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.
   // D2: deny is a first-class channel evaluated last; it overrides any allow match.
+  // #306: "提示后使用" — when a cached policy is what answered, the decision is
+  // allowed to stand, but the user is told it rests on a snapshot. On the allow
+  // path nothing else would ever say it: there is no ask and no deny to carry
+  // the note, so it rides additionalContext instead.
+  let cachedPolicyNote: string | undefined;
   {
     const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
     if (urls.length > 0) {
@@ -171,6 +172,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
       const cacheNote = policy?.from === "cache"
         ? "（规则来自 " + (policy.materialized_at ?? "更早") + " 的缓存，服务没连上）"
         : "";
+      if (cacheNote) cachedPolicyNote = "[anysearch] 这次判断网址规则用的是缓存" + cacheNote + "，不是当前项目的实时规则。";
       for (const url of urls) {
         let host = "";
         try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
@@ -197,14 +199,14 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   }
 
   const query = String(input.toolInput?.query || "");
-  if (!query) return {};
+  if (!query) return cachedPolicyNote ? { additionalContext: cachedPolicyNote } : {};
 
   // No project identity: say the project index is unavailable instead of
   // reading another project's rows or this process's start directory.
   if (!projectRoot) {
     return {
-      additionalContext: "[anysearch] project index unavailable: " + projectReason +
-        " (run from a project root, or add .anysearch/config.toml)",
+      additionalContext: [cachedPolicyNote, "[anysearch] project index unavailable: " + projectReason +
+        " (run from a project root, or add .anysearch/config.toml)"].filter(Boolean).join("\n"),
     };
   }
 
@@ -220,7 +222,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   }, { sessionId: input.sessionId });
 
   if (!result || !result.hits || !Array.isArray(result.hits) || result.hits.length === 0) {
-    return {};
+    return cachedPolicyNote ? { additionalContext: cachedPolicyNote } : {};
   }
 
   // Inject as additional context for the host agent.
@@ -228,5 +230,9 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   const contextLines = hits.map(h => "- " + h.title + ": " + (h.snippet || "").slice(0, 200));
   const additionalContext = "[anysearch preheat] Relevant prior results from project index:\n" + contextLines.join("\n");
 
-  return { additionalContext };
+  return {
+    additionalContext: cachedPolicyNote
+      ? cachedPolicyNote + "\n" + additionalContext
+      : additionalContext,
+  };
 }

@@ -47,7 +47,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     }
   }
 
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
 
   if (sub === "list") {
     const rows = await eng.store.listPreferences(process.cwd());

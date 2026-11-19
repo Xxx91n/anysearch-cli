@@ -33,20 +33,57 @@ export interface DomainConstraintInput {
 export type DomainConstraint =
   | { state: "undeclared" }
   | { state: "established"; name: string; schema: DomainSchema }
-  | {
-      state: "failed";
-      name: string;
-      declared: boolean;
-      /** `missing` = no TOML on the chain; `broken` = a TOML exists but is unusable. */
-      fault: "missing" | "broken";
-      /** The underlying message, verbatim, for the operator. */
-      reason: string;
-      /** True when this failure must stop new controlled work. */
-      fatal: boolean;
-    };
+  | DomainConstraintFailure;
+
+export interface DomainConstraintFailure {
+  state: "failed";
+  name: string;
+  declared: boolean;
+  /** `missing` = no TOML on the chain; `broken` = a TOML exists but is unusable. */
+  fault: "missing" | "broken";
+  /** The underlying message, verbatim, for the operator. */
+  reason: string;
+  /** True when this failure must stop new controlled work. */
+  fatal: boolean;
+}
+
+/**
+ * Build a failure with its `fatal` rule applied in one place: a file that exists
+ * but does not validate is always a fault, while an absent file is a fault only
+ * when someone asked for it by name. Runtime faults (a reload that failed) are
+ * `broken` by construction and therefore always fatal.
+ */
+export function domainConstraintFailure(input: {
+  name: string;
+  declared: boolean;
+  fault: "missing" | "broken";
+  reason: string;
+}): DomainConstraintFailure {
+  return { state: "failed", ...input, fatal: input.fault === "broken" || input.declared };
+}
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Which domain this process is running under, before any file is read. Every
+ * entry asked this question with its own `process.env.ANS_DOMAIN || "default"`,
+ * which drifted (one site forgot `.trim()`, one layered the persisted value on
+ * top) — the same shape #306 exists to remove. `declared` is what decides
+ * whether a failure stops the work, so it must come from one place.
+ */
+export interface ActiveDomain {
+  /** The name in force: the declared one, or the product's `default` convention. */
+  name: string;
+  /** The name the operator declared, or undefined when nobody did. */
+  declaredName?: string;
+  declared: boolean;
+}
+
+export function resolveActiveDomain(env: NodeJS.ProcessEnv = process.env): ActiveDomain {
+  const declaredName = env.ANS_DOMAIN?.trim() || undefined;
+  return { name: declaredName ?? "default", ...(declaredName ? { declaredName } : {}), declared: !!declaredName };
 }
 
 export function resolveDomainConstraint(input: DomainConstraintInput): DomainConstraint {
@@ -56,29 +93,20 @@ export function resolveDomainConstraint(input: DomainConstraintInput): DomainCon
   try {
     return { state: "established", name, schema: loadDomainByNameIn(name, input.dirs) };
   } catch (e: unknown) {
-    const missing = isDomainNotFoundError(e);
-    // A file that exists but does not validate is always a fault: swallowing it
-    // would silently drop the operator's allowlist/weights. An absent file is a
-    // fault only when someone asked for it by name.
-    const fatal = !missing || declared;
-    return {
-      state: "failed",
+    return domainConstraintFailure({
       name,
       declared,
-      fault: missing ? "missing" : "broken",
+      fault: isDomainNotFoundError(e) ? "missing" : "broken",
       reason: errText(e),
-      fatal,
-    };
+    });
   }
 }
 
 /** The error an entry throws when a declared domain cannot be established. */
 export class DomainConstraintError extends Error {
-  readonly constraint: Extract<DomainConstraint, { state: "failed" }>;
-  /** The runtime/MCP reason code, so hosts classify instead of parsing text. */
-  readonly reasonCode = "domain-not-established";
+  readonly constraint: DomainConstraintFailure;
 
-  constructor(constraint: Extract<DomainConstraint, { state: "failed" }>) {
+  constructor(constraint: DomainConstraintFailure) {
     super(describeDomainFailure(constraint));
     this.name = "DomainConstraintError";
     this.constraint = constraint;
@@ -90,9 +118,7 @@ export function isDomainConstraintError(e: unknown): e is DomainConstraintError 
 }
 
 /** One plain sentence for the operator: what is wrong and what to do next. */
-export function describeDomainFailure(
-  constraint: Extract<DomainConstraint, { state: "failed" }>,
-): string {
+export function describeDomainFailure(constraint: DomainConstraintFailure): string {
   const head = constraint.declared
     ? "指定的领域 \"" + constraint.name + "\" 没建起来"
     : "默认领域 \"" + constraint.name + "\" 没建起来";
@@ -108,9 +134,7 @@ export function describeDomainFailure(
  * named this domain, so running with no filtering is still a legal run. Saying
  * "这一步没有执行" here would be a lie about what the program just did.
  */
-export function describeDomainFallback(
-  constraint: Extract<DomainConstraint, { state: "failed" }>,
-): string {
+export function describeDomainFallback(constraint: DomainConstraintFailure): string {
   const detail = constraint.fault === "missing"
     ? "在领域目录里没找到 " + constraint.name + ".toml"
     : "它的配置读不出来（" + constraint.reason + "）";

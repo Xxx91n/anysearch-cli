@@ -233,8 +233,8 @@ export async function runDoctor(): Promise<number> {
       "  active domain '" + activeName + "'",
       false,
       active.fatal
-        ? "声明了但建不起来，运行时直接停：" + active.reason + " — fix: ans domain <one of the listed names>"
-        : "没找到，按不限定领域继续（全部信息源、不过滤）— fix: ans domain <one of the listed names>",
+        ? "声明了但建不起来，运行时直接停：" + active.reason + "。修：ans domain <上面列的名字>"
+        : "没找到，按不限定领域继续（全部信息源、不过滤）。想固定领域就 ans domain <上面列的名字>",
     );
   } else if (active.state === "established") {
     const s = active.schema;

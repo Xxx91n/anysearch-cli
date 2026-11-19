@@ -57,7 +57,7 @@ function printHelp(): void {
 export async function runEntity(args: string[]): Promise<number> {
   const sub = args[0];
   if (!sub || sub === "--help" || sub === "-h") { printHelp(); return 0; }
-  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
   const store = eng.store as unknown as EntityStore;
 
   if (sub === "merge") {

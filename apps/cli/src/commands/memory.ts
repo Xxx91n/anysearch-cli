@@ -41,7 +41,7 @@ export async function runMemory(args: string[]): Promise<number> {
       process.stderr.write("ans memory backfill-vectors: --limit must be a positive integer\n");
       return 2;
     }
-    const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+    const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
     const store = eng.store as unknown as MemoryStore;
     const r = await store.backfillEmbeddings(dryRun, limit);
     if (dryRun) {
@@ -66,7 +66,7 @@ export async function runMemory(args: string[]): Promise<number> {
 
 
   if (sub === "forget") {
-    const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
+    const eng = createPersistentEngine(process.env.ANS_DOMAIN?.trim() || undefined);
     const store = eng.store as unknown as MemoryStore;
     const ui = args.indexOf("--undo");
     if (ui >= 0) {

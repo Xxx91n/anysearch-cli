@@ -12,6 +12,8 @@ import { configPath, readConfig, writeConfig } from "../config-env";
 import { domainSearchDirs } from "../db";
 import {
   describeDomainFailure,
+  describeDomainFallback,
+  resolveActiveDomain,
   resolveDomainConstraint,
   type DomainConstraint,
 } from "@anysearch-cli/kernel";
@@ -37,28 +39,33 @@ function printResolved(constraint: Extract<DomainConstraint, { state: "establish
 }
 
 export async function runDomain(args: string[]): Promise<number> {
-  // Explicit env wins, then the persisted selection; neither means nobody has
-  // declared a domain, which is a legal state (the "default" convention applies).
+  // The persisted selection is already in the env (index.ts rehydrates it), so
+  // `resolveActiveDomain` sees exactly what every other command sees. readConfig
+  // is only here to say WHERE the selection came from.
   const persisted = readConfig();
-  const declared = process.env.ANS_DOMAIN || persisted.ANS_DOMAIN;
-  const current = declared || "default";
+  const active = resolveActiveDomain();
+  const current = active.name;
 
   if (args.length === 0) {
     const constraint = resolveDomainConstraint({
-      name: current,
-      declared: !!declared,
+      name: active.name,
+      declared: active.declared,
       dirs: domainSearchDirs(),
     });
-    console.log("当前领域：" + current + (declared ? "" : "（没指定，用默认）"));
+    console.log("当前领域：" + current + (active.declared ? "" : "（没指定，用默认）"));
     if (persisted.ANS_DOMAIN) {
       console.log("  记在 " + configPath() + " 里");
     }
     if (constraint.state === "failed") {
-      // Showing the state is not a successful switch, but it is a real problem
-      // the operator needs to see: exit non-zero so a script notices too.
-      process.stderr.write(describeDomainFailure(constraint) + "\n");
-      printAvailable();
-      return 1;
+      // #306: a declared domain that will stop every command is a failure to
+      // report; a convention default that is simply absent is a legal state and
+      // must not exit non-zero over it.
+      if (constraint.fatal) {
+        process.stderr.write(describeDomainFailure(constraint) + "\n");
+        printAvailable();
+        return 1;
+      }
+      process.stderr.write(describeDomainFallback(constraint) + "\n");
     }
     if (constraint.state === "established") printResolved(constraint);
     printAvailable();
@@ -99,7 +106,6 @@ export async function runDomain(args: string[]): Promise<number> {
     console.log("");
     return 0;
   }
-  // Unreachable: a name was given, so the constraint cannot be "undeclared".
   process.stderr.write("没换成 " + newDomain + "：没有可用的领域配置。\n");
   return 1;
 }

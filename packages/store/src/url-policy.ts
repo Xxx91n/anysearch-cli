@@ -138,7 +138,7 @@ export function atomicWriteFile(path: string, content: string): void {
 // One file's identity for "has this declaration changed since?" questions.
 // mtime alone misses a same-second rewrite; ctime also catches a chmod, which
 // matters because the policy's readability is part of whether it applies.
-export function fileVersion(path: string): string {
+function fileVersion(path: string): string {
   try {
     const s = statSync(path);
     return s.mtimeMs + ":" + s.ctimeMs;
@@ -153,41 +153,51 @@ export interface PolicySourceVersion {
   version: string;
 }
 
-// The files a project's URL policy is actually read from: the TOML plus every
-// file on its `base` inheritance chain. Recording their versions is what lets a
-// later reader answer "is this cached policy still the one the declaration
-// says?" without parsing TOML in a dependency-free hook bundle.
-export function domainSourceVersions(tomlPath: string, domainsDirs?: string[]): PolicySourceVersion[] {
+export interface DomainChainWalk {
+  /** Every file the policy is actually read from, in base-first order. */
+  chain: string[];
+  /** Candidates that were looked for and may appear later (missing today). */
+  probed: string[];
+}
+
+// The files a project's URL policy depends on: the TOML plus its whole `base`
+// chain. The reloader and the cache envelope both need this list, and if they
+// walk it differently the cache can be accepted while a file the reloader reads
+// has changed — so there is one walk.
+//
+// A base that exists but does not parse still belongs to the chain: it is part
+// of what the policy depends on, and skipping it would hide exactly the kind of
+// breakage this list exists to notice.
+export function walkDomainChain(tomlPath: string, domainsDirs?: string[]): DomainChainWalk {
   const dirs = domainsDirs && domainsDirs.length > 0 ? domainsDirs : [dirname(tomlPath), join(process.cwd(), "domains")];
-  const seen = new Set<string>();
-  const versions: PolicySourceVersion[] = [];
-  const push = (p: string): void => {
-    if (seen.has(p)) return;
-    seen.add(p);
-    versions.push({ path: p, version: fileVersion(p) });
-  };
-  push(tomlPath);
+  const chain: string[] = [tomlPath];
+  const probed: string[] = [];
   let cur: ReturnType<typeof loadRawDomain> | undefined;
   try { cur = loadRawDomain(tomlPath); } catch { cur = undefined; }
-  const visited = new Set<string>();
+  const seen = new Set<string>();
   while (cur?.base) {
-    if (visited.has(cur.base)) break;
-    visited.add(cur.base);
+    if (seen.has(cur.base)) break;
+    seen.add(cur.base);
     let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
     for (const d of dirs) {
       const candidate = join(d, cur.base + ".toml");
+      probed.push(candidate);
       let raw: ReturnType<typeof loadRawDomain> | undefined;
-      // Same rule as the reloader's chain walk: a base that exists but does not
-      // parse still belongs to the chain (it is part of what the policy depends
-      // on), so it is recorded rather than skipped.
       try { raw = tryLoadRawDomain(candidate); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
       if (raw) { found = { path: candidate, raw }; break; }
     }
     if (!found) break;
-    push(found.path);
+    chain.push(found.path);
     cur = found.raw;
   }
-  return versions;
+  return { chain, probed };
+}
+
+// The chain's versions at one moment, for the materialized-policy envelope.
+// Recording them is what lets a later reader answer "is this cached policy still
+// the one the declaration says?" without parsing TOML in a dependency-free hook.
+export function domainSourceVersions(tomlPath: string, domainsDirs?: string[]): PolicySourceVersion[] {
+  return walkDomainChain(tomlPath, domainsDirs).chain.map((path) => ({ path, version: fileVersion(path) }));
 }
 
 // supplement: write a MaterializedPolicy envelope
@@ -324,34 +334,10 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
     return undefined;
   };
 
-  const collectChainAndProbed = (): { chain: string[]; probed: string[] } => {
-    const searchDirs = getSearchDirs();
-    const chain: string[] = [tomlPath];
-    const probed: string[] = [];
-    const seen = new Set<string>();
-    let curRaw: ReturnType<typeof loadRawDomain> | undefined;
-    try {
-      curRaw = loadRawDomain(tomlPath);
-    } catch {
-      return { chain, probed };
-    }
-    while (curRaw?.base) {
-      if (seen.has(curRaw.base)) break;
-      seen.add(curRaw.base);
-      let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
-      for (const d of searchDirs) {
-        const cand = join(d, curRaw.base + ".toml");
-        probed.push(cand);
-        let raw: ReturnType<typeof loadRawDomain> | undefined;
-        try { raw = tryLoadRawDomain(cand); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
-        if (raw) { found = { path: cand, raw }; break; }
-      }
-      if (!found) break;
-      chain.push(found.path);
-      curRaw = found.raw;
-    }
-    return { chain, probed };
-  };
+  // One walker (walkDomainChain) shared with the cache envelope, so the files
+  // this reloader watches and the files a cached policy claims to depend on are
+  // the same list — a disagreement there would let a stale cache look current.
+  const collectChainAndProbed = (): DomainChainWalk => walkDomainChain(tomlPath, getSearchDirs());
 
   const lookupFor = (): ((name: string) => ReturnType<typeof loadRawDomain> | undefined) | undefined => {
     const searchDirs = getSearchDirs();

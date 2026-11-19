@@ -394,20 +394,14 @@ export function buildAnsChatBudgetResult(
  * is also not a budget answer: telling someone to raise a cap would send them
  * to the wrong place.
  */
-export function buildAnsChatDomainResult(
-  detail: string,
-  extra: { operation?: "chat" | "consolidate" } = {},
-): AnsChatToolResult {
-  const operation = extra.operation ?? "chat";
-  const toolLabel = operation === "consolidate" ? "ans_chat consolidate" : "ans_chat";
+export function buildAnsChatDomainResult(detail: string): AnsChatToolResult {
+  // Chat only: the consolidate path never reaches a runtime run, so it has no
+  // domain stop of its own to report.
   return {
     isError: true,
-    content: [{
-      type: "text",
-      text: toolLabel + ": 这次没跑起来 —— " + detail,
-    }],
+    content: [{ type: "text", text: "ans_chat: 这次没跑起来 —— " + detail }],
     structuredContent: {
-      operation,
+      operation: "chat",
       errorKind: "domain-not-established",
       domain: { stopped: true, detail },
     },

@@ -1,7 +1,7 @@
 // ~/.anysearch/config.env — the CLI's persisted key=value config (G016).
 // B1: shared module + entry-point rehydrate so `ans domain <name>`
 // actually takes effect for search/chat/etc. across sessions (was write-only).
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -25,6 +25,12 @@ export function readConfig(): Record<string, string> {
 }
 
 // Write a config key-value pair to ~/.anysearch/config.env.
+//
+// #306: the write goes through a temp file and a rename. `writeFileSync` in
+// place truncates the file before it writes, so a fault mid-write (a full disk,
+// a killed process) leaves an EMPTY config — and the previous domain selection
+// with it. "A failed write keeps the old selection" only holds if the old file
+// is never opened for truncation.
 export function writeConfig(key: string, value: string): void {
   const dir = join(homedir(), ".anysearch");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -34,8 +40,21 @@ export function writeConfig(key: string, value: string): void {
     Object.entries(existing)
       .map(([k, v]) => k + "=" + v)
       .join("\n") + "\n";
-  // SECURITY: restrict config file permissions to owner-only (CWE-312).
-  writeFileSync(configPath(), content, { encoding: "utf8", mode: 0o600 });
+  const target = configPath();
+  const temp = target + ".tmp";
+  try {
+    // SECURITY: restrict config file permissions to owner-only (CWE-312). The
+    // mode applies to the temp file, which the rename then publishes.
+    writeFileSync(temp, content, { encoding: "utf8", mode: 0o600 });
+    // Plain rename, deliberately without fs-atomic's backoff: that policy waits up
+    // to a minute on a permanent Windows sharing error, and a config switch that
+    // hangs for a minute is worse than one that fails and keeps the old file.
+    renameSync(temp, target);
+  } catch (e) {
+    // Never leave a half-written temp behind for the next write to trip over.
+    try { unlinkSync(temp); } catch { /* already gone */ }
+    throw e;
+  }
 }
 
 // Rehydrate persisted keys into env where the key is not already defined.

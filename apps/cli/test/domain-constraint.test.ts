@@ -16,6 +16,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDomainConstraint } from "@anysearch-cli/kernel";
 import { runDomain } from "../src/commands/domain.js";
+import { runSearch } from "../src/commands/search.js";
+import { runConsolidate } from "../src/commands/consolidate.js";
+import { runTeardown } from "../src/teardown.js";
 
 const dir = mkdtempSync(join(tmpdir(), "ans-306-domain-"));
 const domainsDir = join(dir, "domains");
@@ -35,6 +38,15 @@ writeFileSync(join(domainsDir, "good.toml"), [
   '',
 ].join("\n"), "utf8");
 
+writeFileSync(join(domainsDir, "other.toml"), [
+  'name = "other"',
+  '[sources]',
+  'enabled = ["anysearch"]',
+  '[rag]',
+  'adapter = "none"',
+  '',
+].join("\n"), "utf8");
+
 // Found on the chain but unusable: the same fault family `createEngine` refuses.
 writeFileSync(join(domainsDir, "broken.toml"), [
   'name = "broken"',
@@ -46,10 +58,11 @@ writeFileSync(join(domainsDir, "broken.toml"), [
   '',
 ].join("\n"), "utf8");
 
-const ENV_KEYS = ["ANS_DOMAINS_DIR", "ANS_DOMAIN", "USERPROFILE", "HOME"] as const;
+const ENV_KEYS = ["ANS_DOMAINS_DIR", "ANS_DOMAIN", "ANS_DB_PATH", "USERPROFILE", "HOME"] as const;
 const previousEnv: Record<string, string | undefined> = {};
 for (const key of ENV_KEYS) previousEnv[key] = process.env[key];
 process.env.ANS_DOMAINS_DIR = domainsDir;
+process.env.ANS_DB_PATH = join(dir, "cli.db");
 process.env.USERPROFILE = dir;
 process.env.HOME = dir;
 delete process.env.ANS_DOMAIN;
@@ -61,7 +74,7 @@ function resetSelection(): void {
   try { rmSync(join(dir, ".anysearch"), { recursive: true, force: true }); } catch { /* absent */ }
 }
 
-async function runDomainCaptured(argv: string[]): Promise<{ code: number; out: string; err: string }> {
+async function capture(fn: () => Promise<number>): Promise<{ code: number; out: string; err: string }> {
   const realOut = process.stdout.write.bind(process.stdout);
   const realErr = process.stderr.write.bind(process.stderr);
   let out = "";
@@ -69,12 +82,20 @@ async function runDomainCaptured(argv: string[]): Promise<{ code: number; out: s
   (process.stdout as any).write = (chunk: any) => { out += String(chunk); return true; };
   (process.stderr as any).write = (chunk: any) => { err += String(chunk); return true; };
   try {
-    const code = await runDomain(argv);
+    const code = await fn();
     return { code, out, err };
   } finally {
     (process.stdout as any).write = realOut;
     (process.stderr as any).write = realErr;
   }
+}
+
+function runDomainCaptured(argv: string[]) {
+  return capture(() => runDomain(argv));
+}
+
+function runConsolidateCaptured(argv: string[]) {
+  return capture(() => runConsolidate(argv));
 }
 
 test("undeclared is its own state, not a failed lookup", () => {
@@ -157,6 +178,42 @@ test("a config file that cannot be written keeps the previous selection", async 
   assert.ok(existsSync(configFile), "the path stays what it was");
 });
 
+test("a write that fails at the temp file leaves the old selection intact", async () => {
+  resetSelection();
+  await runDomainCaptured(["good"]);
+  const before = readFileSync(configFile, "utf8");
+  // The atomic write goes through <config>.tmp. Making that path a directory
+  // fails the temp write — the exact moment a plain truncating write would have
+  // already emptied the config.
+  mkdirSync(configFile + ".tmp", { recursive: true });
+  const r = await runDomainCaptured(["other"]);
+  assert.notEqual(r.code, 0, "a failed write is a failed switch");
+  assert.equal(readFileSync(configFile, "utf8"), before, "the file still holds the previous selection");
+  assert.equal(process.env.ANS_DOMAIN, "good");
+  rmSync(configFile + ".tmp", { recursive: true, force: true });
+});
+
+test("ans search stops on a declared domain that cannot be built", async () => {
+  resetSelection();
+  process.env.ANS_DOMAIN = "nobody-here";
+  await assert.rejects(
+    () => runSearch(["q"]),
+    (e: Error) => /nobody-here/.test(e.message) && /没建起来/.test(e.message),
+    "a declared-but-missing domain must stop before any provider request",
+  );
+  resetSelection();
+});
+
+test("ans consolidate returns non-zero on a declared domain that cannot be built", async () => {
+  resetSelection();
+  process.env.ANS_DOMAIN = "nobody-here";
+  const r = await runConsolidateCaptured(["--session", "whatever", "--dry-run"]);
+  assert.equal(r.code, 1, "a declared constraint that cannot be read stops the run");
+  assert.match(r.err, /没建起来/);
+  assert.match(r.err, /nobody-here/);
+  resetSelection();
+});
+
 test("showing the current selection reports a broken one as a failure", async () => {
   resetSelection();
   process.env.ANS_DOMAIN = "nobody-here";
@@ -173,5 +230,8 @@ test("cleanup", () => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  rmSync(dir, { recursive: true, force: true });
+  // The command paths open the durable store; close what they registered before
+  // deleting the directory (Windows refuses to remove an open database).
+  try { runTeardown(); } catch { /* best-effort */ }
+  try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp, may still be pinned */ }
 });

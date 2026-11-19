@@ -3,7 +3,7 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveActiveDomain, resolveDomainConstraint, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
@@ -108,13 +108,13 @@ export async function runSearch(args: string[]): Promise<number> {
   // no-filtering default. A set one is a declaration, and createEngine stops
   // the command when it cannot be honoured instead of fanning out to every
   // provider with the operator's allowlist silently gone.
-  const declaredDomain = process.env.ANS_DOMAIN?.trim() || undefined;
+  const active = resolveActiveDomain();
   // draft: ANS_PROVIDERS env-gated provider subset filter —
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const engine = createPersistentEngine(declaredDomain);
+  const engine = createPersistentEngine(active.declaredName);
   const { retriever, observation, providerBuildErrors, store, config } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that
@@ -130,8 +130,8 @@ export async function runSearch(args: string[]): Promise<number> {
   // unusable stops the run before any provider request; the convention default
   // being absent is a legal undeclared run, which just has no caps to enforce.
   const budgetConstraint = resolveDomainConstraint({
-    name: declaredDomain ?? "default",
-    declared: !!declaredDomain,
+    name: active.name,
+    declared: active.declared,
     dirs: domainSearchDirs(),
   });
   if (budgetConstraint.state === "failed" && budgetConstraint.fatal) {
@@ -171,7 +171,7 @@ export async function runSearch(args: string[]): Promise<number> {
         attributes: {
           "anysearch.command": "search",
           "anysearch.mode": mode,
-          "anysearch.domain": declaredDomain ?? "all",
+          "anysearch.domain": active.declaredName ?? "all",
           "anysearch.source": "retrieved",
         },
       },
