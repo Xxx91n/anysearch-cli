@@ -232,8 +232,10 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
  * module decides is that the answer is named here rather than re-derived at
  * every call site.
  */
+export const ANS_DOMAINS_DIR_NAME = "domains";
+
 export function ansProjectDomainsDir(cwd: string = process.cwd()): string {
-  return join(cwd, "domains");
+  return join(cwd, ANS_DOMAINS_DIR_NAME);
 }
 
 /** The project-level `[llm]` config, and the marker that makes a directory a project. */

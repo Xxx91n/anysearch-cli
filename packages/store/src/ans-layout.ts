@@ -53,7 +53,7 @@ import {
   legacyHomeDirs,
   legacyProjectDirs,
 } from "./ans-paths.js";
-import { adoptDatabase } from "./migration-backup.js";
+import { adoptDatabase, opensAsDatabase } from "./migration-backup.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
@@ -303,9 +303,21 @@ export function ensureAnsLayout(
       const from = join(dir, entry);
       const to = join(home, entry);
       if (existsSync(to)) {
+        // A database that was already copied stays behind on purpose (it is the
+        // pre-upgrade copy), so "the target exists" is the finished state here,
+        // not a conflict to report on every run.
         if (DATABASE_ENTRIES.has(entry) && adopted.has(from)) continue;
-        pending.push({ path: from, reason: "新目录里已经有同名文件，保留新的那份" });
-        continue;
+        // A target that will not open is not a newer file to preserve: it is
+        // what an interrupted snapshot left half-written. Keeping it would
+        // strand the real database in the old directory forever — and `pathInUse`
+        // reads the new path whenever it exists, so the reader would get the torn
+        // file, not the fallback. Clear it and let the adoption below run.
+        const tornDatabase = DATABASE_ENTRIES.has(entry) && !opensAsDatabase(to);
+        if (!tornDatabase) {
+          pending.push({ path: from, reason: "新目录里已经有同名文件，保留新的那份" });
+          continue;
+        }
+        try { rmSync(to, { force: true }); } catch { /* already gone */ }
       }
       try {
         if (DATABASE_ENTRIES.has(entry)) {

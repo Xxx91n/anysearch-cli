@@ -8,6 +8,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ansProjectDomainsDir } from "./ans-paths.js";
 import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
 import { isDomainNotFoundError } from "./domain-schema";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
@@ -119,7 +120,7 @@ export function domainTomlPath(
     const envPath = join(envDir, name + ".toml");
     if (existsSync(envPath)) return envPath;
   }
-  const primary = join(cwd, "domains", name + ".toml");
+  const primary = join(ansProjectDomainsDir(cwd), name + ".toml");
   if (existsSync(primary)) return primary;
   for (const dir of extraDomainsDirs) {
     const candidate = join(dir, name + ".toml");
@@ -165,7 +166,7 @@ function defaultChainDirs(tomlPath: string): string[] {
   const envDir = process.env.ANS_DOMAINS_DIR?.trim();
   if (envDir) dirs.push(envDir);
   dirs.push(dirname(tomlPath));
-  dirs.push(join(process.cwd(), "domains"));
+  dirs.push(ansProjectDomainsDir());
   return dirs;
 }
 

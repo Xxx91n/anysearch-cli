@@ -317,7 +317,7 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   `store` + `sessionId`, so the session's L1 summary / L2 recall memory and
   domain retrieval injection continue in that session. The conversation
   transcript also continues: PI keeps its own append-only session record under
-  `ANS_PI_SESSION_DIR` (default `pi-sessions/` beside the durable DB), keyed by a
+  `ANS_PI_SESSION_DIR` (default `pi-sessions/` under `~/.ans`, beside the durable DB only when `ANS_DB_PATH` names one), keyed by a
   hash of the handle, so a follow-up request carries the earlier turns — and
   still does after a process restart. The record is the source of truth for
   history; the store holds the research archive and the memory anchors.
@@ -557,7 +557,7 @@ written to config files. Hosts that inherit their environment (the usual
 | `ANS_LLM_API_KEY` | `ans_chat` with `ANS_LLM_BASE_URL` | Credential for the custom upstream; a rotation rebuilds the cached client. Catalog providers (no base URL) authenticate through pi-ai's provider env: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`. |
 | `ANS_LLM_BASE_URL` + `ANS_LLM_API` | `ans_chat` | Custom upstream. `ANS_LLM_API` must be `chat`, `messages`, or `responses` whenever `ANS_LLM_BASE_URL` is set. |
 | `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | The real model window. It drives request budgeting, the L0 low-water mark, PI's compaction trigger, and the window reported back in `structuredContent.context`. It overrides a catalog model's own window; a malformed value fails the call rather than silently defaulting to 128K. |
-| `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` beside the durable DB. Threading the same `sessionId` back resumes the conversation, including after a restart. |
+| `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` under `~/.ans`, beside the durable DB only when `ANS_DB_PATH` names one. Threading the same `sessionId` back resumes the conversation, including after a restart. |
 | `ANS_PI_LOCK_STALE_MS` / `ANS_PI_LOCK_TIMEOUT_MS` | `ans_chat` | Override the cross-process session lock windows: how long a lock whose owner this machine cannot confirm is kept (default 600000), and the same-session wait cap before "session busy" (default 120000). The wait cap applies to the run lock only: a chat attempt's lease never waits and answers "running elsewhere" at once (#299). Meant for observing expiry and recovery in seconds during a test run; an unparsable value keeps the default. |
 | `ANS_PI_COMPACTION_RESERVE_TOKENS` / `ANS_PI_COMPACTION_KEEP_RECENT_TOKENS` | `ans_chat` | Override PI's compaction thresholds (defaults 16384 / 20000). Meant for forcing compaction on a small context during a test run; an unparsable value keeps PI's default. |
 

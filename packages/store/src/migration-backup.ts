@@ -460,7 +460,7 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
 }
 
 /** Whether `path` holds a database SQLite can read, as opposed to a torn leftover. */
-function opensAsDatabase(path: string): boolean {
+export function opensAsDatabase(path: string): boolean {
   let db: Database.Database | undefined;
   try {
     db = openDatabase(path, { readonly: true, timeout: 1000 });

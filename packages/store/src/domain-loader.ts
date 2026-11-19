@@ -6,7 +6,7 @@ import { parse as tomlParse } from "smol-toml";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, validate, type DomainSchema, type RawDomain } from "./domain-schema";
 import { join } from "node:path";
-import { ansProjectDomainsDir } from "./ans-paths.js";
+import { ANS_DOMAINS_DIR_NAME, ansProjectDomainsDir } from "./ans-paths.js";
 
 // Parse a TOML string into a RawDomain object.
 export function parseDomainToml(toml: string): RawDomain {
@@ -82,16 +82,15 @@ export function loadDomainFromString(
 
 // decision 4A: load domain from convention directory domains/<name>.toml.
 // Returns DomainSchema; callers treat it as DomainConfigPort (structurally compatible).
-const DOMAINS_DIR = "domains";
 
 export function loadDomainByName(
   name: string,
   baseDir: string = process.cwd(),
   lookup?: (name: string) => RawDomain | undefined,
 ): DomainSchema {
-  const tomlPath = join(baseDir, DOMAINS_DIR, name + ".toml");
+  const tomlPath = join(baseDir, ANS_DOMAINS_DIR_NAME, name + ".toml");
   if (!existsSync(tomlPath)) {
-    const dir = join(baseDir, DOMAINS_DIR);
+    const dir = join(baseDir, ANS_DOMAINS_DIR_NAME);
     let available = "";
     try {
       available = readdirSync(dir)
@@ -110,7 +109,7 @@ export function loadDomainByName(
       const fromCaller = lookup(parent);
       if (fromCaller !== undefined) return fromCaller;
     }
-    const parentPath = join(baseDir, DOMAINS_DIR, parent + ".toml");
+    const parentPath = join(baseDir, ANS_DOMAINS_DIR_NAME, parent + ".toml");
     return tryLoadRawDomain(parentPath);
   };
   return loadDomain(tomlPath, effectiveLookup);

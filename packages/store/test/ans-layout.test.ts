@@ -213,6 +213,27 @@ test("a junction to the home directory is still the home directory", { skip: pro
   } finally { box.done(); }
 });
 
+test("a half-written snapshot in the new root does not strand the real database", () => {
+  const box = sandbox();
+  try {
+    // An interrupted snapshot leaves a file at the target name. Treating it as
+    // "the newer file, keep it" would leave the real database in the old
+    // directory for good, and the reader would open the torn copy because the
+    // new path exists.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "history");
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "anysearch.db"), "not a database at all");
+
+    const said: string[] = [];
+    const record = ensureAnsLayout(box.env, (m) => said.push(m));
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
+    assert.equal(said.join(""), "", "a recovered snapshot is not a warning");
+  } finally { box.done(); }
+});
+
 test("an entry that stays unmoved is reported on every run, not just the first", () => {
   const box = sandbox();
   try {
