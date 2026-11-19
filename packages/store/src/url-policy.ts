@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
+import { isDomainNotFoundError } from "./domain-schema";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore, generateTraceIdHex } from "./observation";
 import { readSessionId } from "./session-id";
@@ -323,7 +324,16 @@ export function policyCacheApplies(
 export type DomainReloadResult =
   | { kind: "unchanged" }
   | { kind: "reloaded"; schema: DomainSchema }
-  | { kind: "failed"; reason: string };
+  | {
+      kind: "failed";
+      reason: string;
+      /**
+       * `missing` = the TOML is gone from the chain; `broken` = it is there but
+       * unreadable. Callers need the difference: for an undeclared domain an
+       * absent file is the legal fallback, while a broken one never is.
+       */
+      fault: "missing" | "broken";
+    };
 
 export function createDomainReloader(tomlPath: string, domainsDirs?: string[], opts?: { forceFirst?: boolean }): () => DomainReloadResult {
   const getSearchDirs = (): string[] => {
@@ -421,7 +431,15 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[], o
         warnedSig = sig;
         process.stderr.write("[anysearch] domain TOML reload failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
-      return { kind: "failed", reason: e instanceof Error ? e.message : String(e) };
+      // ENOENT is the ordinary shape of "the file is not there" (the reloader
+      // is handed the convention path even when nothing exists at it), while
+      // loadDomainByNameIn raises "Domain not found" instead. Both mean absent.
+      const errno = (e as NodeJS.ErrnoException)?.code;
+      return {
+        kind: "failed",
+        reason: e instanceof Error ? e.message : String(e),
+        fault: errno === "ENOENT" || isDomainNotFoundError(e) ? "missing" : "broken",
+      };
     }
   };
 }

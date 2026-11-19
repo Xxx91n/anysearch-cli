@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { runDomain } from "../src/commands/domain.js";
 import { runSearch } from "../src/commands/search.js";
 import { runConsolidate } from "../src/commands/consolidate.js";
@@ -132,6 +133,31 @@ test("a file that exists but does not validate is always fatal", () => {
   if (c.state !== "failed") return;
   assert.equal(c.fault, "broken");
   assert.equal(c.fatal, true, "absent ≠ broken: a broken file is a fault whoever named it");
+});
+
+test("the persisted selection decides the Active Domain when the env is silent", async () => {
+  resetSelection();
+  await runDomainCaptured(["good"]);
+  // What a fresh command or a long-lived host sees: no ANS_DOMAIN in its own
+  // env, but `ans domain` wrote one. Missing this is exactly how a hook kept
+  // gating URLs against the domain the user had already left.
+  delete process.env.ANS_DOMAIN;
+  const selection = resolveActiveDomain();
+  assert.equal(selection.name, "good");
+  assert.equal(selection.declaredName, "good");
+  assert.equal(selection.declared, true);
+  resetSelection();
+});
+
+test("an explicitly empty ANS_DOMAIN means 'no domain', not 'read the file'", async () => {
+  resetSelection();
+  await runDomainCaptured(["good"]);
+  process.env.ANS_DOMAIN = "";
+  const selection = resolveActiveDomain();
+  assert.equal(selection.declared, false, "an explicit empty value must not fall back to the persisted selection");
+  assert.equal(selection.name, "default");
+  assert.equal(selection.declaredName, undefined);
+  resetSelection();
 });
 
 test("ans domain <good> persists only after the domain resolves", async () => {

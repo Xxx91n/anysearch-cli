@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
 import { resolveHookProject } from "./project-identity.js";
 // the server never runs open; resolve the installation token and published address.
-import { resolveServerEndpoint } from "../server/token.js";
+import { resolveActiveDomain, resolveServerEndpoint } from "../server/token.js";
 
 interface PolicyCacheSource {
   path: string;
@@ -102,8 +102,9 @@ function usableCache(parsed: Partial<PolicyCache>, projectRoot: string, domainNa
 // source is usable — the caller then asks instead of allowing. Both the request and the
 // fallback are scoped to projectRoot, so one project's rules never answer another.
 export async function readPolicy(serverUrl: string, token: string, projectRoot: string): Promise<ResolvedPolicy | null> {
-  // The domain the hook is asking about is the one this host process would use.
-  const domainName = process.env.ANS_DOMAIN?.trim() || "default";
+  // The domain this hook is asking about: the persisted `ans domain` selection
+  // counts, so a stale host env cannot make an old cache look current.
+  const domainName = resolveActiveDomain().name;
   try {
     const res = await fetch(serverUrl + "/policy?project=" + encodeURIComponent(projectRoot), {
       headers: { Authorization: "Bearer " + token },
@@ -161,6 +162,12 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   // path nothing else would ever say it: there is no ask and no deny to carry
   // the note, so it rides additionalContext instead.
   let cachedPolicyNote: string | undefined;
+  // Everything below may want to say it, so the returns are composed at the end
+  // instead of each one repeating the check.
+  const withNote = (decision: HookDecision): HookDecision =>
+    cachedPolicyNote && !decision.additionalContext
+      ? { ...decision, additionalContext: cachedPolicyNote }
+      : decision;
   {
     const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
     if (urls.length > 0) {
@@ -178,7 +185,12 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
       const cacheNote = policy?.from === "cache"
         ? "（规则来自 " + (policy.materialized_at ?? "更早") + " 的缓存，服务没连上）"
         : "";
-      if (cacheNote) cachedPolicyNote = "[anysearch] 这次判断网址规则用的是缓存" + cacheNote + "，不是当前项目的实时规则。";
+      // One sentence, said once: when the cache allowed a call there is no ask
+      // and no deny to carry it, so it rides additionalContext below.
+      if (policy?.from === "cache") {
+        cachedPolicyNote = "[anysearch] 这次判断网址规则用的是旧缓存（" +
+          (policy.materialized_at ?? "更早") + " 写下的，服务没连上），不是当前项目的实时规则。";
+      }
       for (const url of urls) {
         let host = "";
         try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
@@ -205,15 +217,15 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   }
 
   const query = String(input.toolInput?.query || "");
-  if (!query) return cachedPolicyNote ? { additionalContext: cachedPolicyNote } : {};
+  if (!query) return withNote({});
 
   // No project identity: say the project index is unavailable instead of
   // reading another project's rows or this process's start directory.
   if (!projectRoot) {
-    return {
-      additionalContext: [cachedPolicyNote, "[anysearch] project index unavailable: " + projectReason +
-        " (run from a project root, or add .anysearch/config.toml)"].filter(Boolean).join("\n"),
-    };
+    return withNote({
+      additionalContext: "[anysearch] project index unavailable: " + projectReason +
+        " (run from a project root, or add .anysearch/config.toml)",
+    });
   }
 
   // Ask long-running server to recall from project index.
@@ -228,7 +240,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   }, { sessionId: input.sessionId });
 
   if (!result || !result.hits || !Array.isArray(result.hits) || result.hits.length === 0) {
-    return cachedPolicyNote ? { additionalContext: cachedPolicyNote } : {};
+    return withNote({});
   }
 
   // Inject as additional context for the host agent.
@@ -236,9 +248,5 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   const contextLines = hits.map(h => "- " + h.title + ": " + (h.snippet || "").slice(0, 200));
   const additionalContext = "[anysearch preheat] Relevant prior results from project index:\n" + contextLines.join("\n");
 
-  return {
-    additionalContext: cachedPolicyNote
-      ? cachedPolicyNote + "\n" + additionalContext
-      : additionalContext,
-  };
+  return withNote({ additionalContext });
 }

@@ -24,7 +24,6 @@ import {
   resolveDbPath,
   describeDomainFailure,
   describeDomainFallback,
-  resolveActiveDomain,
   resolveDomainConstraint,
   type ConsolidationMetering,
 } from "@anysearch-cli/kernel";
@@ -37,6 +36,7 @@ import {
   type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";

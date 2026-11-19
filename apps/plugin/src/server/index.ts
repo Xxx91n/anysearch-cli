@@ -49,6 +49,7 @@ const DB_PATH = projectIndexDbPath();
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
@@ -96,7 +97,10 @@ interface ProjectPolicy {
 // older than the thing that broke: the request fails closed instead of
 // answering with rules nobody confirmed.
 function readProjectPolicy(projectRoot: string): ProjectPolicy {
-  const domainName = process.env.ANS_DOMAIN?.trim() || "default";
+  // The persisted selection counts: `ans domain research` must reach this
+  // long-lived process too, or the URL gate keeps enforcing the domain the user
+  // left while the cache check compares "default" to "default" and passes.
+  const domainName = resolveActiveDomain().name;
   const tomlPath = domainTomlPath(projectRoot, domainName);
   const cachePath = join(projectRoot, ".anysearch-cli", "policy.json");
   if (existsSync(tomlPath)) {

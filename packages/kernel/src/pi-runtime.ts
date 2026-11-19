@@ -358,6 +358,13 @@ export interface PiAgentRuntimeOptions {
   domain: DomainConfigPort;
   // when set, the allow/deny lists are re-read lazily per tool call via mtime.
   domainTomlPath?: string;
+  /**
+   * #306: true when the operator named the domain, so a TOML that disappears
+   * mid-run is a fault. Omitted/false means `domainTomlPath` points at the
+   * product's own `default` convention, where an absent file is the legal
+   * fallback every other entry also takes.
+   */
+  domainDeclared?: boolean;
   // #188 (CodeRabbit): the host's domain search dirs, so the run-boundary
   // reloader can resolve a base TOML that lives only in a host-specific dir
   // (e.g. the MCP packaged domains dir), not just dirname(tomlPath)/cwd.
@@ -637,6 +644,8 @@ export class PiAgentRuntime {
   private readonly taskBudgetSettlements = new Set<Promise<void>>();
   private readonly domainReloader: (() => DomainReloadResult) | null;
   private warnedEnvIgnored = false;
+  /** One line, once, when an undeclared domain's TOML turns out to be absent. */
+  private warnedDomainAbsent = false;
   // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
   // the ledger caps, but the next run's reloader sees no new file change. Keep
   // the detection until the next run boundary consumes it.
@@ -852,7 +861,23 @@ export class PiAgentRuntime {
     if (domainProbe?.kind === "reloaded") {
       (this.opts as { domain: DomainConfigPort }).domain = domainProbe.schema as DomainConfigPort;
     }
-    if (domainProbe?.kind === "failed") {
+    // #306: an undeclared domain whose TOML is simply gone is the legal
+    // fallback, not a fault — `ans search`, `ans consolidate` and `ans doctor`
+    // already read it that way. Only a declared name, or a file that is present
+    // but unreadable, stops the run.
+    const domainAbsentButLegal =
+      domainProbe?.kind === "failed" &&
+      domainProbe.fault === "missing" &&
+      this.opts.domainDeclared !== true;
+    if (domainAbsentButLegal) {
+      if (!this.warnedDomainAbsent) {
+        this.warnedDomainAbsent = true;
+        process.stderr.write(
+          "[anysearch] 没指定领域，" + domainProbe!.reason + "，这次按不限定领域继续。\n",
+        );
+      }
+    }
+    if (domainProbe?.kind === "failed" && !domainAbsentButLegal) {
       stopRunScope("domain constraint fault");
       yield {
         type: "error",
@@ -1174,7 +1199,7 @@ export class PiAgentRuntime {
         // can no longer be confirmed, and "the old copy is probably fine" is
         // exactly the guess the ticket rules out.
         const domainProbe = this.domainReloader ? this.domainReloader() : null;
-        if (domainProbe?.kind === "failed") {
+        if (domainProbe?.kind === "failed" && !(domainProbe.fault === "missing" && this.opts.domainDeclared !== true)) {
           return {
             block: true,
             reason: "领域配置读不出来，先停手：" + domainProbe.reason +

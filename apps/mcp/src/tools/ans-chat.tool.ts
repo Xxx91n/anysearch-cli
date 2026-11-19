@@ -63,6 +63,7 @@ import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
 import { toolDomainStop } from "./task-budget.js";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // A cut-off run's accounting dimensions: the provider never sent a final
 // usage figure, so the run's tokens, cache and cost are all unknown. Named
@@ -600,6 +601,8 @@ export function registerAnsChat(
             domain,
             ...memory,
             domainTomlPath: domainTomlPath(undefined, eng.domainName, eng.domainsDirs),
+            // #306: only a named domain makes a missing TOML a fault.
+            domainDeclared: resolveActiveDomain().declared,
             // #188: same dirs the engine loaded the domain from, so a base TOML
             // in the packaged domains dir stays resolvable on a live re-read.
             domainsDirs: eng.domainsDirs,

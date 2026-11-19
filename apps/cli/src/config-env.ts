@@ -4,9 +4,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { configEnvPath } from "@anysearch-cli/store/local-service";
 
 export function configPath(): string {
-  return join(homedir(), ".anysearch", "config.env");
+  // One definition of where the CLI's persisted config lives; the plugin server
+  // and the hook bundles read the same file through this helper's store home.
+  return configEnvPath();
 }
 
 // Read persisted config (KEY=value format).

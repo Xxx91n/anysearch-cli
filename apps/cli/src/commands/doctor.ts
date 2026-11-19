@@ -3,7 +3,8 @@
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
 import { loadDomain, loadDomainFromString, listDomainTomls, MANUAL_RECOVERY_NOTE, readUserCredentials, resolveConfigHome, resolveSearchCredentials, SEARCH_PROVIDER_IDS, userCredentialsPath } from "@anysearch-cli/store";
-import { resolveActiveDomain, resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
@@ -131,7 +132,7 @@ export async function runDoctor(): Promise<number> {
     }
     for (const warning of resolved.warnings) check("  [credentials] " + warning, false);
   }
-  check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN || "not set (default)");
+  check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN?.trim() || "not set (default)");
   check("  ANS_DOMAINS_DIR", true, process.env.ANS_DOMAINS_DIR?.trim() || "not set (resolution chain in [6])");
   {
     // Durable DB writability — created lazily at search time; probe the resolved path now.

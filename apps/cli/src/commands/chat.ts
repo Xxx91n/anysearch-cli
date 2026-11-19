@@ -6,7 +6,8 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError, resolveActiveDomain } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -257,6 +258,9 @@ export async function runChat(argv: string[]): Promise<number> {
         ...memory,
         // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
         domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
+        // #306: only a named domain makes a missing TOML a fault; the `default`
+        // convention falling away is the legal fallback.
+        domainDeclared: active.declared,
         // #188: same dirs the engine loaded the domain from, so the run-boundary
         // reloader can still resolve inherited base TOMLs.
         domainsDirs: engine.domainsDirs,

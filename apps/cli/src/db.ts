@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
 import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // B1: the domains-dir resolution chain for this CLI.
 // 1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
@@ -24,6 +25,17 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
 
 // Teardown registry lives in ./teardown (pure leaf).
 import { registerTeardown } from "./teardown";
+
+/**
+ * Engine for the command that just wants "whatever domain is in effect", with
+ * the #306 rule applied: a name the operator declared must resolve, while the
+ * `default` convention falling back stays legal. One spelling, so a new command
+ * cannot pick up the rule half-right.
+ */
+export function createEngineForActiveDomain(): CompositionResult {
+  const active = resolveActiveDomain();
+  return createPersistentEngine(active.name, { domainDeclared: active.declared });
+}
 
 export function createPersistentEngine(
   domain?: string,

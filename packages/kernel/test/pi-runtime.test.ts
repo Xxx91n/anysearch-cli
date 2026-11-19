@@ -1485,6 +1485,39 @@ function makeMockStreamFn(decision: string): any {
     assert(err?.reason === "domain-not-established", "#306: the stop is classified, not just prose");
     assert(!stopped.some(e => e.type === "done"), "#306: no answer is produced from an unconfirmed policy");
     assert(String(err?.message ?? "").includes("没跑"), "#306: the message says the run did not happen");
+
+    // #306: an absent TOML is a different answer from a broken one. With nobody
+    // naming a domain (the `default` convention), losing the file is the legal
+    // fallback every other entry takes — not a stop with a message claiming the
+    // run did not happen.
+    const lonely = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain } as any,
+      domainTomlPath: join(dir, "gone.toml"),
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+    });
+    // A declared name makes the same absence a fault.
+    const strict = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain } as any,
+      domainTomlPath: join(dir, "gone.toml"),
+      domainDeclared: true,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+    });
+    const lonelyEvents: any[] = [];
+    for await (const ev of lonely.run("hello")) lonelyEvents.push(ev);
+    assert(lonelyEvents.some(e => e.type === "done"),
+      "#306: an absent TOML under the default convention is the legal fallback");
+    const strictEvents: any[] = [];
+    for await (const ev of strict.run("hello")) strictEvents.push(ev);
+    assert(strictEvents.some(e => e.type === "error" && e.reason === "domain-not-established"),
+      "#306: the same absence IS a fault when the operator named the domain");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }

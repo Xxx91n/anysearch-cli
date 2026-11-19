@@ -13,11 +13,11 @@ import { domainSearchDirs } from "../db";
 import {
   describeDomainFailure,
   describeDomainFallback,
-  resolveActiveDomain,
   resolveDomainConstraint,
   type DomainConstraint,
 } from "@anysearch-cli/kernel";
 import { listDomainTomls } from "@anysearch-cli/store";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // Domain names discoverable on the resolution chain (shared lister; one
 // implementation for both call sites).

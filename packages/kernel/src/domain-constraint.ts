@@ -66,26 +66,6 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/**
- * Which domain this process is running under, before any file is read. Every
- * entry asked this question with its own `process.env.ANS_DOMAIN || "default"`,
- * which drifted (one site forgot `.trim()`, one layered the persisted value on
- * top) — the same shape #306 exists to remove. `declared` is what decides
- * whether a failure stops the work, so it must come from one place.
- */
-export interface ActiveDomain {
-  /** The name in force: the declared one, or the product's `default` convention. */
-  name: string;
-  /** The name the operator declared, or undefined when nobody did. */
-  declaredName?: string;
-  declared: boolean;
-}
-
-export function resolveActiveDomain(env: NodeJS.ProcessEnv = process.env): ActiveDomain {
-  const declaredName = env.ANS_DOMAIN?.trim() || undefined;
-  return { name: declaredName ?? "default", ...(declaredName ? { declaredName } : {}), declared: !!declaredName };
-}
-
 export function resolveDomainConstraint(input: DomainConstraintInput): DomainConstraint {
   const name = input.name?.trim();
   if (!name) return { state: "undeclared" };
@@ -117,15 +97,19 @@ export function isDomainConstraintError(e: unknown): e is DomainConstraintError 
   return e instanceof DomainConstraintError;
 }
 
+/** What exactly is wrong, in one clause — shared by both messages below. */
+function failureDetail(constraint: DomainConstraintFailure): string {
+  return constraint.fault === "missing"
+    ? "在领域目录里没找到 " + constraint.name + ".toml"
+    : "它的配置读不出来（" + constraint.reason + "）";
+}
+
 /** One plain sentence for the operator: what is wrong and what to do next. */
 export function describeDomainFailure(constraint: DomainConstraintFailure): string {
   const head = constraint.declared
     ? "指定的领域 \"" + constraint.name + "\" 没建起来"
     : "默认领域 \"" + constraint.name + "\" 没建起来";
-  const detail = constraint.fault === "missing"
-    ? "在领域目录里没找到 " + constraint.name + ".toml"
-    : "它的配置读不出来（" + constraint.reason + "）";
-  return head + "：" + detail + "。这一步没有执行。"
+  return head + "：" + failureDetail(constraint) + "。这一步没有执行。"
     + "换成已有的领域用 ans domain <名字>，或把 ANS_DOMAINS_DIR 指到放 toml 的目录。";
 }
 
@@ -135,9 +119,6 @@ export function describeDomainFailure(constraint: DomainConstraintFailure): stri
  * "这一步没有执行" here would be a lie about what the program just did.
  */
 export function describeDomainFallback(constraint: DomainConstraintFailure): string {
-  const detail = constraint.fault === "missing"
-    ? "在领域目录里没找到 " + constraint.name + ".toml"
-    : "它的配置读不出来（" + constraint.reason + "）";
-  return "没指定领域，" + detail + "，这次按不限定领域继续：全部信息源都开，不做网址过滤。"
+  return "没指定领域，" + failureDetail(constraint) + "，这次按不限定领域继续：全部信息源都开，不做网址过滤。"
     + "想固定领域就运行 ans domain <名字>。";
 }
