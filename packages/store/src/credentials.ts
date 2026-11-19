@@ -42,7 +42,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { ansCredentialsPathIn } from "./ans-paths.js";
+import { ansCredentialsPathFor } from "./ans-paths.js";
 
 export const CREDENTIALS_FILENAME = "credentials.json";
 
@@ -165,7 +165,7 @@ export interface CredentialFileContents {
  * that both omit it can never end up describing two different files.
  */
 export function userCredentialsPath(home: string = resolveConfigHome()): string {
-  return ansCredentialsPathIn(home);
+  return ansCredentialsPathFor(home);
 }
 
 /**

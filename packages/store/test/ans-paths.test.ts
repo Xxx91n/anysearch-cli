@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ansConfigEnvPath,
-  ansCredentialsPathIn,
+  ansCredentialsPathFor,
   ansDbPath,
   ansHomeDir,
   ansProjectConfigPath,
@@ -17,8 +17,8 @@ import {
   ansProjectSkillsDir,
   ansServerTokenPath,
   ansSessionPath,
-  ansUserConfigPathIn,
-  ansUserSkillsDirIn,
+  ansUserConfigPathFor,
+  ansUserSkillsDirFor,
   legacyHomeDirs,
   legacyProjectDirs,
 } from "../src/ans-paths";
@@ -45,11 +45,11 @@ test("a fresh install resolves every file under .ans, user and project", () => {
     assert.equal(ansDbPath(box.env), join(box.home, ".ans", "anysearch.db"));
     assert.equal(ansProjectIndexDbPath(box.env), join(box.home, ".ans", "project-index.db"));
     assert.equal(ansConfigEnvPath(box.env), join(box.home, ".ans", "config.env"));
-    assert.equal(ansUserConfigPathIn(box.home), join(box.home, ".ans", "config.toml"));
-    assert.equal(ansCredentialsPathIn(box.home), join(box.home, ".ans", "credentials.json"));
+    assert.equal(ansUserConfigPathFor(box.home), join(box.home, ".ans", "config.toml"));
+    assert.equal(ansCredentialsPathFor(box.home), join(box.home, ".ans", "credentials.json"));
     assert.equal(ansServerTokenPath(box.env), join(box.home, ".ans", "server-token"));
     assert.equal(ansSessionPath(box.env), join(box.home, ".ans", "session"));
-    assert.equal(ansUserSkillsDirIn(box.home), join(box.home, ".ans", "skills"));
+    assert.equal(ansUserSkillsDirFor(box.home), join(box.home, ".ans", "skills"));
     assert.equal(ansProjectConfigPath(box.cwd), join(box.cwd, ".ans", "config.toml"));
     assert.equal(ansProjectSkillsDir(box.cwd), join(box.cwd, ".ans", "skills"));
     assert.equal(ansProjectPolicyPath(box.cwd), join(box.cwd, ".ans", "policy.json"));
@@ -75,7 +75,7 @@ test("a file that only exists under the pre-#323 name is still read", () => {
     assert.equal(ansDbPath(box.env), join(box.home, ".anysearch", "anysearch.db"));
     assert.equal(ansConfigEnvPath(box.env), join(box.home, ".anysearch", "config.env"));
     assert.equal(ansServerTokenPath(box.env), join(box.home, ".anysearch-cli", "server-token"));
-    assert.equal(ansUserConfigPathIn(box.home), join(box.home, ".anysearch-cli", "config.toml"));
+    assert.equal(ansUserConfigPathFor(box.home), join(box.home, ".anysearch-cli", "config.toml"));
     assert.equal(ansProjectConfigPath(box.cwd), join(box.cwd, ".anysearch", "config.toml"));
     assert.equal(ansProjectPolicyPath(box.cwd), join(box.cwd, ".anysearch-cli", "policy.json"));
   } finally { box.done(); }

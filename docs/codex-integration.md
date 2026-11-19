@@ -82,11 +82,11 @@ Every request names its project (the workspace's Git root or
 
 <!-- machine-local: illustrative placeholder path in doc example @ 2026-09-19 -->
 ```toml
-[mcp_servers.ans]
+[mcp_servers.anysearch]
 command = "ans-mcp"
 startup_timeout_sec = 60
 
-[mcp_servers.ans.env]
+[mcp_servers.anysearch.env]
 # optional: pin the plugin server address/token for the recall_memory fallback
 # ANS_SERVER_URL = "http://127.0.0.1:33333"
 # ANS_SERVER_TOKEN = "<the token in ~/.ans/server-token>"

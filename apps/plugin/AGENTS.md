@@ -27,4 +27,4 @@ A broken hook exits 0. The shared hook code is the same on every host, but URL p
 - Hook names start with the `anysearch-*` prefix (for example anysearch-preheat, anysearch-distill, anysearch-session-start).
 - Config environment variables: `ANS_SERVER_URL`, `ANS_SERVER_TOKEN`, `ANS_SERVER_PORT`, `ANS_SERVER_REGISTRY`, `ANS_PROJECT_DB`.
 - IPC uses HTTP on 127.0.0.1 with a Bearer token, and times out after 5 seconds.
-- Project-scoped routes (`/policy`, `/recall`, `/index`, `/purge`) refuse a request that does not name a real project root (Git root or `.ans/config.toml`). The hook resolves that root before calling; an unknown project is reported, never replaced with another project's records.
+- Project-scoped routes (`/policy`, `/recall`, `/index`, `/purge`) refuse a request that does not name a real project root (Git root or `.ans/config.toml`; a project that still has the pre-#323 `.anysearch/config.toml` counts too, because `ansProjectConfigPath` answers for both). The hook resolves that root before calling; an unknown project is reported, never replaced with another project's records.

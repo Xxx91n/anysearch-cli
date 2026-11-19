@@ -633,6 +633,11 @@ async function main() {
     check(noScope.code === 2, "整理不带范围时退出码 2，不会去整理全库", noScope.out);
     check(/explicit scope is required/.test(noScope.out), "拒绝整理时说明了缺什么", noScope.out);
 
+    // #323: 全新环境只认 .ans。旧名字的目录一个都不该出现——出现了就说明还有
+    // 代码在按老路径写，用户升级后会同时看到两套目录。
+    const strayLegacy = [".anysearch", ".anysearch-cli"].filter((d) => existsSync(join(work, d)));
+    check(strayLegacy.length === 0, "全新环境没有产生 .anysearch / .anysearch-cli", strayLegacy.join(","));
+
     // ================= 假模型端点 =================
     await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
     const port = endpoint.address().port;
@@ -2085,6 +2090,33 @@ async function main() {
       // 这里再整体裁一次，防止某条被跳过时漏掉。
       const everything = [entered, listed, credDoctor, removed].map((r) => r.out).join("\n");
       check(!everything.includes(credKey), "录入、列表、doctor、移除的输出里都没有密钥值");
+    }
+    // ================= H. 从旧目录升级：配置、token、领域选择都还在 =================
+    console.log("\n== H. upgrade from the pre-#323 directories: config, token and domain survive ==");
+    {
+      const legacyHome = join(work, "legacy-home");
+      mkdirSync(join(legacyHome, ".anysearch-cli"), { recursive: true });
+      mkdirSync(join(legacyHome, ".anysearch"), { recursive: true });
+      writeFileSync(join(legacyHome, ".anysearch-cli", "server-token"), "legacy-token-323\n", "utf8");
+      writeFileSync(join(legacyHome, ".anysearch-cli", "config.toml"), '[llm]\nprovider = "openai"\nmodel = "probe-model"\n', "utf8");
+      writeFileSync(join(legacyHome, ".anysearch", "config.env"), "ANS_DOMAIN=probe\n", "utf8");
+
+      // `ans domain` 不带参数：读持久选择、报当前领域，退出码 0。它不在只读豁免
+      // 名单里，所以这一次运行就是升级后的第一次运行，搬迁应该在这里发生。
+      const upgraded = runAns(["domain"], {
+        cwd: prefix,
+        env: { ...baseEnv, USERPROFILE: legacyHome, HOME: legacyHome, ANS_DB_PATH: join(legacyHome, "upgrade.db") },
+      });
+      check(upgraded.code === 0, "旧目录升级后 ans domain 退出码 0", upgraded.out);
+      check(/probe/.test(upgraded.out), "升级后仍然认得旧目录里记下的领域", upgraded.out.slice(0, 300));
+      check(existsSync(join(legacyHome, ".ans", "server-token")), "token 搬进了 .ans", legacyHome);
+      check(readFileSync(join(legacyHome, ".ans", "server-token"), "utf8").trim() === "legacy-token-323",
+        "token 的值一个字节都没变");
+      check(existsSync(join(legacyHome, ".ans", "config.toml")), "用户配置搬进了 .ans");
+      check(existsSync(join(legacyHome, ".ans", "config.env")), "领域选择搬进了 .ans");
+      check(!existsSync(join(legacyHome, ".anysearch-cli")), "旧配置目录搬空后删掉了");
+      check(!existsSync(join(legacyHome, ".anysearch")), "旧数据目录搬空后删掉了");
+      check(existsSync(join(legacyHome, ".ans", ".layout.json")), "搬迁结果记在 .layout.json 里");
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

@@ -39,12 +39,7 @@ import { parseDrainMs, runShutdown } from "./shutdown.js";
 // #323: move the pre-#323 directories into ~/.ans before the token and the
 // index are resolved. A failure is loud: the server must not start on a layout
 // it could not establish.
-try {
-  ensureAnsLayout();
-} catch (error) {
-  process.stderr.write("[anysearch] " + (error instanceof Error ? error.message : String(error)) + "\n");
-  process.exit(1);
-}
+ensureAnsLayoutOrExit("[anysearch]");
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
@@ -60,7 +55,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { ansDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayout, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+import { ansDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";

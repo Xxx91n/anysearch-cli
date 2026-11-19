@@ -7,7 +7,7 @@ import { basename, dirname, join } from "node:path";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { resolveDbPath } from "./composition";
-import { LEGACY_DATA_DIR_NAME, legacyReadPath } from "@anysearch-cli/store";
+import { ansPiSessionsDir } from "@anysearch-cli/store";
 import type { SessionLockWindows } from "./session-lock";
 
 /**
@@ -17,13 +17,12 @@ import type { SessionLockWindows } from "./session-lock";
 export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.ANS_PI_SESSION_DIR?.trim();
   if (override) return override;
-  // Sessions live beside the database, so they follow it across the rename.
-  // The pre-#323 directory is still read when the move has not happened yet.
-  const home = env.USERPROFILE || env.HOME || ".";
-  return legacyReadPath(
-    join(dirname(resolveDbPath(env)), "pi-sessions"),
-    join(home, LEGACY_DATA_DIR_NAME, "pi-sessions"),
-  );
+  // An explicit database path keeps its records beside it; otherwise the
+  // records live under the layout root, which is what lets them survive a
+  // migration that moved the directory but not the database.
+  const explicitDb = env.ANS_DB_PATH?.trim();
+  if (explicitDb) return join(dirname(explicitDb), "pi-sessions");
+  return ansPiSessionsDir(env);
 }
 
 // Design: read PI's bounded JSONL headers — listAll reads every transcript

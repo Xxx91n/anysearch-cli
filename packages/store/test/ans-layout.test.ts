@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
 import { ansLayoutMarkerPath, ensureAnsLayout, readAnsLayoutRecord } from "../src/ans-layout";
+import { ansPiSessionsDir } from "../src/ans-paths";
 
 function sandbox(): { home: string; env: NodeJS.ProcessEnv; done: () => void } {
   const root = mkdtempSync(join(tmpdir(), "ans-layout-"));
@@ -94,6 +95,44 @@ test("the kept pre-upgrade database copy is not reported as a conflict on later 
     assert.deepEqual(second.pending, [], "the old file is the copy we chose to keep");
     assert.deepEqual(warnings, [], "and it is not re-reported every run");
     assert.equal(second.moved.length, 1, "the record of what moved survives");
+  } finally { box.done(); }
+});
+
+test("a database that cannot be copied does not take the rest of the move down with it", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch", "pi-sessions"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "pi-sessions", "record.jsonl"), "{}\n");
+    // Not a database: VACUUM INTO cannot read it, so the copy must fail.
+    writeFileSync(join(box.home, ".anysearch", "anysearch.db"), "not a database");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.equal(record.pending.length, 1, "the database is reported, not silently skipped");
+    assert.match(record.pending[0]!.path, /anysearch\.db$/);
+    assert.ok(existsSync(join(box.home, ".ans", "pi-sessions", "record.jsonl")), "the rest still moved");
+    assert.equal(
+      ansPiSessionsDir(box.env),
+      join(box.home, ".ans", "pi-sessions"),
+      "history is read from where it actually is, not from beside the database that stayed",
+    );
+  } finally { box.done(); }
+});
+
+test("a project's pre-#323 directories move on the first run in that project", () => {
+  const box = sandbox();
+  try {
+    const cwd = join(box.home, "work");
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "config.toml"), "[llm]\n");
+    mkdirSync(join(cwd, ".anysearch-cli"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch-cli", "policy.json"), "{}\n");
+
+    ensureAnsLayout(box.env, () => {}, cwd);
+    assert.equal(readFileSync(join(cwd, ".ans", "config.toml"), "utf8"), "[llm]\n");
+    assert.equal(readFileSync(join(cwd, ".ans", "policy.json"), "utf8"), "{}\n");
+    assert.equal(existsSync(join(cwd, ".anysearch")), false);
+    assert.equal(existsSync(join(cwd, ".anysearch-cli")), false);
   } finally { box.done(); }
 });
 

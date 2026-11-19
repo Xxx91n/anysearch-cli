@@ -23,7 +23,7 @@ import { runHitl } from "./commands/hitl";
 import { runHost } from "./commands/host";
 import { describeAdmissionRefusal, runUpgrade } from "./commands/upgrade";
 import { rehydrateConfigEnv } from "./config-env";
-import { ensureAnsLayout } from "@anysearch-cli/store";
+import { ensureAnsLayoutOrExit } from "@anysearch-cli/store";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 import { trackCliCommand } from "./cli-task-tracking";
 
@@ -102,23 +102,25 @@ if (!known.has(cmd)) {
   process.exit(2);
 }
 
+const cmdArgs = argv.slice(1);
+
 // #323: move the pre-#323 directories into ~/.ans before anything reads them.
 // A failure here stops the command: continuing would write into a layout we
 // could not establish, which is the silent half of the same mistake.
-try {
-  ensureAnsLayout();
-} catch (error) {
-  process.stderr.write("ans: " + (error instanceof Error ? error.message : String(error)) + "\n");
-  process.exit(1);
-}
+//
+// Read-only commands are exempt. `ans upgrade status` is documented as
+// "只读不改", and `ans doctor` is the command you run to see the current state —
+// a migration in front of either would make the report describe a layout the
+// command itself just changed. Both read the old location through the layout
+// fallback, so they still answer correctly before the move.
+const readOnly = cmd === "doctor" || (cmd === "upgrade" && (cmdArgs[0] ?? "status") === "status");
+if (!readOnly) ensureAnsLayoutOrExit("ans");
 
 // CLI wiring: dispatch to command implementation.
 // Each command receives remaining args and returns exit code.
 // B1: `ans domain <name>` persists to ~/.ans/config.env — rehydrate
 // it into env (only where unset) so the active domain actually reaches search/chat/etc.
 rehydrateConfigEnv();
-
-const cmdArgs = argv.slice(1);
 const handlers: Record<string, (args: string[]) => Promise<number>> = {
   doctor: runDoctor,
   search: runSearch,

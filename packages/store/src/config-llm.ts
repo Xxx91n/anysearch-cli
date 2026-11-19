@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
-import { ansCredentialsPathIn, ansProjectConfigPath, ansUserConfigPathIn } from "./ans-paths.js";
+import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   lookupModelCredential,
   displayEndpoint,
@@ -111,7 +111,7 @@ export interface ResolveLlmOpts {
 // "one root" rule hold at the type level too: a caller that omits `home` writes
 // to the same file the resolver reads, on any host.
 export function userConfigPath(home: string = resolveConfigHome()): string {
-  return ansUserConfigPathIn(home);
+  return ansUserConfigPathFor(home);
 }
 
 export function projectConfigPath(cwd: string = process.cwd()): string {
@@ -366,7 +366,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     }
 
     if (!resolved.apiKey && opts.credentials !== false) {
-      const credsPath = ansCredentialsPathIn(home);
+      const credsPath = ansCredentialsPathFor(home);
       const file = readUserCredentials({ filePath: credsPath });
       if (file.error) {
         // A broken credential file must be visible, never treated as "no keys"

@@ -1,5 +1,10 @@
 // #323: the one place the on-disk layout is decided.
 //
+// Design: one directory per scope, named after the command (`ans`), instead of
+// two families that differed by a suffix — a reader that has to know which of
+// `~/.anysearch` and `~/.anysearch-cli` holds a file is a reader that can
+// disagree with the writer about it.
+//
 // Two roots, one name:
 //   user     ~/.ans            (USERPROFILE on Windows, HOME elsewhere)
 //   project  <project>/.ans
@@ -20,6 +25,7 @@
 // must not pull the store index's native dependencies.
 
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** The directory name both scopes use. */
@@ -29,8 +35,11 @@ export const LEGACY_DATA_DIR_NAME = ".anysearch";
 /** Pre-#323 user config root (config.toml, token, session, skills). */
 export const LEGACY_CONFIG_DIR_NAME = ".anysearch-cli";
 
+// Same fallback chain as `resolveConfigHome` in credentials.ts: an explicit
+// env home, else the platform's. Two different answers here would put the
+// config file and the credential file in different directories.
 function homeOf(env: NodeJS.ProcessEnv): string {
-  return env.USERPROFILE || env.HOME || ".";
+  return env.USERPROFILE || env.HOME || homedir();
 }
 
 /** User root: `~/.ans`. */
@@ -38,8 +47,8 @@ export function ansHomeDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(homeOf(env), ANS_DIR_NAME);
 }
 
-/** User root under an already-resolved home directory (callers that took one as an argument). */
-export function ansHomeDirIn(home: string): string {
+/** User root for an already-resolved home directory (callers that took one as an argument). */
+export function ansHomeDirFor(home: string): string {
   return join(home, ANS_DIR_NAME);
 }
 
@@ -76,19 +85,24 @@ export function legacyReadPath(next: string, legacy: string): string {
 // User scope
 // ---------------------------------------------------------------------------
 
+/** The durable database's file name, shared with the migration. */
+export const ANS_DB_FILENAME = "anysearch.db";
+/** The shared project index's file name, shared with the migration. */
+export const ANS_PROJECT_INDEX_FILENAME = "project-index.db";
+
 /** The durable database. */
 export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return legacyReadPath(
-    join(ansHomeDir(env), "anysearch.db"),
-    join(homeOf(env), LEGACY_DATA_DIR_NAME, "anysearch.db"),
+    join(ansHomeDir(env), ANS_DB_FILENAME),
+    join(homeOf(env), LEGACY_DATA_DIR_NAME, ANS_DB_FILENAME),
   );
 }
 
 /** The shared project index. */
 export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return legacyReadPath(
-    join(ansHomeDir(env), "project-index.db"),
-    join(homeOf(env), LEGACY_DATA_DIR_NAME, "project-index.db"),
+    join(ansHomeDir(env), ANS_PROJECT_INDEX_FILENAME),
+    join(homeOf(env), LEGACY_DATA_DIR_NAME, ANS_PROJECT_INDEX_FILENAME),
   );
 }
 
@@ -109,17 +123,17 @@ export function ansConfigEnvPath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** The user-level `[llm]` config. */
-export function ansUserConfigPathIn(home: string): string {
+export function ansUserConfigPathFor(home: string): string {
   return legacyReadPath(
-    join(ansHomeDirIn(home), "config.toml"),
+    join(ansHomeDirFor(home), "config.toml"),
     join(home, LEGACY_CONFIG_DIR_NAME, "config.toml"),
   );
 }
 
 /** The plaintext, owner-only provider credential file. */
-export function ansCredentialsPathIn(home: string): string {
+export function ansCredentialsPathFor(home: string): string {
   return legacyReadPath(
-    join(ansHomeDirIn(home), "credentials.json"),
+    join(ansHomeDirFor(home), "credentials.json"),
     join(home, LEGACY_CONFIG_DIR_NAME, "credentials.json"),
   );
 }
@@ -149,15 +163,15 @@ export function ansSessionPath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** User-scope installed skills. */
-export function ansUserSkillsDirIn(home: string): string {
+export function ansUserSkillsDirFor(home: string): string {
   return legacyReadPath(
-    join(ansHomeDirIn(home), "skills"),
+    join(ansHomeDirFor(home), "skills"),
     join(home, LEGACY_CONFIG_DIR_NAME, "skills"),
   );
 }
 
 export function ansUserSkillsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return ansUserSkillsDirIn(homeOf(env));
+  return ansUserSkillsDirFor(homeOf(env));
 }
 
 /** The user-level MEMORY.md projection. Regenerated, so write-only. */
@@ -171,15 +185,28 @@ export function ansModelCacheDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** User-scope host-wiring journal and backups. */
-export function ansUserWiringDirIn(home: string): string {
+export function ansUserWiringDirFor(home: string): string {
   return legacyReadPath(
-    join(ansHomeDirIn(home), "host-wiring"),
+    join(ansHomeDirFor(home), "host-wiring"),
     join(home, LEGACY_CONFIG_DIR_NAME, "host-wiring"),
   );
 }
 
 export function ansUserWiringDir(env: NodeJS.ProcessEnv = process.env): string {
-  return ansUserWiringDirIn(homeOf(env));
+  return ansUserWiringDirFor(homeOf(env));
+}
+
+/**
+ * Conversation records. They live beside the database, so they follow it across
+ * the rename; the pre-#323 directory is still read when the move has not
+ * happened yet, which is what keeps a half-finished migration from hiding
+ * history.
+ */
+export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
+  return legacyReadPath(
+    join(ansHomeDir(env), "pi-sessions"),
+    join(homeOf(env), LEGACY_DATA_DIR_NAME, "pi-sessions"),
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,19 +1,28 @@
-// #323: one-time move of the pre-#323 user directories into ~/.ans.
+// #323: one-time move of the pre-#323 directories into `.ans`.
+//
+// Design: move the old directories once, at the entry points, instead of
+// teaching every reader two names — a reader that has to try two paths is a
+// reader that can disagree with the writer about which one is live.
 //
 // The rule, in one paragraph: on the first run after the rename, everything
-// under ~/.anysearch and ~/.anysearch-cli is moved into ~/.ans. Small files and
-// directories are renamed (a copy-then-verify-then-drop when the two roots sit
-// on different volumes). Databases are NOT renamed: a live WAL database can be
-// held open by a running server, and moving the main file out from under its
-// -wal is how a database gets corrupted. They are copied with SQLite's own
-// online backup (`VACUUM INTO`, the same mechanism #310 trusts) and the old
-// file is left where it is as the pre-upgrade copy.
+// under ~/.anysearch and ~/.anysearch-cli is moved into ~/.ans, and everything
+// under <project>/.anysearch and <project>/.anysearch-cli is moved into
+// <project>/.ans. Small files and directories are renamed (a copy-then-drop
+// when the two roots sit on different volumes). Databases are NOT renamed: a
+// live WAL database can be held open by a running server, and moving the main
+// file out from under its -wal is how a database gets corrupted. They are
+// copied with SQLite's own online backup (`VACUUM INTO`, the same mechanism
+// #310 trusts) and the old file is left where it is as the pre-upgrade copy.
 //
 // What cannot be moved is not lost: `ans-paths.ts` reads the old location when
 // the new one is absent, so a file left behind keeps working, and the next run
 // retries it. The marker at ~/.ans/.layout.json records what moved, what was
 // left, and why — so "did the rename finish" is a question with an answer on
 // disk instead of a guess.
+//
+// Project scope has no marker: a project directory holds no database, so the
+// move is a plain rename that is safe to retry on every run, and a marker file
+// in every project would be a worse trade than a few `stat` calls.
 //
 // This module pulls better-sqlite3 through migration-backup, so it is imported
 // by the CLI, MCP and plugin-server entries only. Hook bundles stay on
@@ -31,14 +40,21 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { ansHomeDir, legacyHomeDirs } from "./ans-paths.js";
+import {
+  ANS_DB_FILENAME,
+  ANS_PROJECT_INDEX_FILENAME,
+  ansHomeDir,
+  ansProjectDir,
+  legacyHomeDirs,
+  legacyProjectDirs,
+} from "./ans-paths.js";
 import { adoptDatabase } from "./migration-backup.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
 
 /** Databases that must be copied, never renamed (see the header). */
-const DATABASE_ENTRIES = new Set(["anysearch.db", "project-index.db"]);
+const DATABASE_ENTRIES = new Set([ANS_DB_FILENAME, ANS_PROJECT_INDEX_FILENAME]);
 
 /** A database's write-ahead sidecars belong to the file that stays behind. */
 const DATABASE_SIDECAR = /\.db-(wal|shm)$/;
@@ -107,12 +123,49 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
 }
 
 /**
- * Move the pre-#323 user directories into `~/.ans`, once.
+ * Move one project's pre-#323 directories into `<project>/.ans`.
  *
- * Idempotent and self-healing: a run with nothing left to do costs two `stat`
- * calls, and an entry that could not be moved last time is retried. Returns
- * undefined when there was no old directory to begin with, so a fresh install
- * never creates `~/.ans` just to record that it had nothing to do.
+ * No marker and no database: a project directory holds neither, so this is a
+ * plain rename that is safe to retry. A name that already exists in the new
+ * directory is kept and reported, never overwritten.
+ */
+function adoptProjectLayout(cwd: string, warn: (message: string) => void): void {
+  const target = ansProjectDir(cwd);
+  for (const dir of legacyProjectDirs(cwd)) {
+    if (!existsSync(dir)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch (error) {
+      warn("[anysearch] 读不出 " + dir + "：" + errorText(error) + "；本次继续从旧位置读取。\n");
+      continue;
+    }
+    for (const entry of entries) {
+      const from = join(dir, entry);
+      const to = join(target, entry);
+      if (existsSync(to)) {
+        warn("[anysearch] " + from + " 没有搬：新目录里已经有同名文件，保留新的那份。\n");
+        continue;
+      }
+      try {
+        mkdirSync(target, { recursive: true });
+        moveEntry(from, to);
+      } catch (error) {
+        warn("[anysearch] " + from + " 没有搬：" + errorText(error) + "；本次继续从旧位置读取。\n");
+      }
+    }
+    try { rmdirSync(dir); } catch { /* not empty, or already gone */ }
+  }
+}
+
+/**
+ * Move the pre-#323 directories into `.ans`, once: the user roots always, and
+ * the current project's roots when `cwd` names one.
+ *
+ * Idempotent and self-healing: a run with nothing left to do costs a handful of
+ * `stat` calls, and an entry that could not be moved last time is retried.
+ * Returns undefined when there was no old user directory to begin with, so a
+ * fresh install never creates `~/.ans` just to record that it had nothing to do.
  *
  * @throws only when `~/.ans` itself cannot be created — at that point nothing
  *   can be written at all, and continuing would mean silently writing nowhere.
@@ -120,7 +173,10 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
 export function ensureAnsLayout(
   env: NodeJS.ProcessEnv = process.env,
   warn: (message: string) => void = (message) => process.stderr.write(message),
+  cwd: string = process.cwd(),
 ): AnsLayoutRecord | undefined {
+  adoptProjectLayout(cwd, warn);
+
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;
 
@@ -202,4 +258,20 @@ export function ensureAnsLayout(
     );
   }
   return record;
+}
+
+/**
+ * Run the migration, or stop the process with a message naming `program`.
+ *
+ * One helper because the three entry points (CLI, MCP, plugin server) must fail
+ * the same way: a layout that could not be established is not something to
+ * carry on past, and three hand-written copies of that decision drift.
+ */
+export function ensureAnsLayoutOrExit(program: string, env: NodeJS.ProcessEnv = process.env): void {
+  try {
+    ensureAnsLayout(env);
+  } catch (error) {
+    process.stderr.write(program + ": " + errorText(error) + "\n");
+    process.exit(1);
+  }
 }

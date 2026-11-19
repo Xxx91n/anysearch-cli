@@ -14,7 +14,7 @@ import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
-import { ansProjectSkillsDir, ansUserSkillsDirIn } from "@anysearch-cli/store";
+import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store";
 import { atomicRename as renameWithRetry, renameSeam, setRenameSeam, sleepSync } from "./fs-atomic";
 
 export interface SkillOptions {
@@ -85,7 +85,7 @@ function requireFile(path: string, label: string): void {
 export function skillsRoot(opts: SkillOptions = {}): string {
   return opts.project
     ? ansProjectSkillsDir(resolve(opts.cwd ?? process.cwd()))
-    : ansUserSkillsDirIn(resolve(opts.home ?? homedir()));
+    : ansUserSkillsDirFor(resolve(opts.home ?? homedir()));
 }
 
 /** Resolve the machine-managed synced/ directory inside the selected scope. */
@@ -234,10 +234,10 @@ function skillsRootFromManaged(managed: string): string {
   return resolve(managed, "..");
 }
 
-// Design: the selected scope anchor (.ans / .ans) is part of the
-// trust boundary — a project-controlled .ans symlink must not alias the
+// Design: the selected scope anchor (the user root or the project root) is part
+// of the trust boundary — a project-controlled .ans symlink must not alias the
 // user store, so it is validated before manifest read/write/delete authority.
-/** Derive the scope anchor (.ans / .ans) from a managed path. */
+/** Derive the scope anchor (the user root or the project root) from a managed path. */
 function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
 }
