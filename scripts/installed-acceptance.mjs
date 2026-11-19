@@ -722,9 +722,27 @@ async function main() {
       check(interrupted.code === 130 && saved, "CLI 收到 Ctrl-C 后保存半截回答",
         JSON.stringify({ code: interrupted.code, signal: interrupted.signal, caughtSignals: interrupted.caughtSignals, answers }) + "\n" + interrupted.out);
       if (interruptedHandle) {
+        const beforeResume = requestLog.length;
         const resumed = await chatCli(["--session", interruptedHandle, "SECOND-TURN-QUESTION"], projectA);
         check(resumed.code === 0 && resumed.out.includes("上一轮没正常结束"),
           "从 Ctrl-C 中断的会话续聊时先看到提醒", resumed.out);
+        const request = JSON.parse(requestLog.slice(beforeResume).find((r) => r.role === "chat")?.body ?? "{}");
+        // This is the exact text the installed runtime must send. If the
+        // wording changes in PARTIAL_ANSWER_NOTICE, update this expectation too.
+        const notice = "这条回答当时被打断，只留下半截，不要当成完整回答。";
+        const expected = notice + "\n\nCANCEL-STREAM-PARTIAL";
+        const messages = request.messages ?? [];
+        const marked = messages.flatMap((message, index) =>
+          messageText(message).includes(notice) ? [{ index, role: message.role, text: messageText(message) }] : []);
+        const previousQuestion = messages.findIndex((message) =>
+          message.role === "user" && messageText(message).includes("CANCEL-STREAM-QUESTION"));
+        const nextQuestion = messages.findIndex((message) =>
+          message.role === "user" && messageText(message).includes("SECOND-TURN-QUESTION"));
+        check(marked.length === 1 && marked[0].role === "assistant" && marked[0].text === expected &&
+          previousQuestion >= 0 && previousQuestion < marked[0].index && marked[0].index < nextQuestion,
+          "模型在上一轮问题和新问题之间收到带标记的半截回答",
+          JSON.stringify({ previousQuestion, nextQuestion, expected, marked, assistants: messages
+            .filter((message) => message.role === "assistant").map((message) => messageText(message)) }));
       }
     }
 

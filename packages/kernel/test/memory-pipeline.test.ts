@@ -367,6 +367,49 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(callLog.count === 0, "consolidate: low watermark bypasses adjudication (no streamFn call)");
 }
 
+// A later turn can summarize an earlier interrupted answer. Keep its tools,
+// but ensure the half-finished answer cannot be copied into session memory.
+{
+  const store = new MockStore();
+  const requests: import("@earendil-works/pi-ai").TranscriptContext[] = [];
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    models: { getModel: () => undefined },
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" },
+    streamFn: (_model: unknown, context: import("@earendil-works/pi-ai").TranscriptContext) => {
+      requests.push(context);
+      return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: "已完成内容的摘要" }] }) };
+    },
+    sessionId: "s1",
+  });
+  const interrupted = {
+    role: "assistant", stopReason: "aborted", content: [
+      { type: "text", text: "这段半截原文不进摘要" },
+      { type: "thinking", thinking: "这里的推理不进摘要" },
+      { type: "toolCall", id: "search-1", name: "search", arguments: { query: "前一轮的搜索" } },
+    ],
+  };
+  await pipeline.consolidate([
+    interrupted,
+    { role: "toolResult", toolCallId: "search-1", content: [{ type: "text", text: "前一轮的结果" }] },
+    { role: "assistant", stopReason: "error", content: [{ type: "text", text: "供应商报错前的半截原文" }] },
+    { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "后续的完整回答" }] },
+  ], 200000, true);
+  await pipeline.flush();
+  assert(requests.length === 1 && requests[0]?.messages.every((message) => message.role !== "assistant"),
+    "PI 把历史转成摘要提示，没有发送 assistant 消息");
+  const prompt = JSON.stringify(requests[0]?.messages ?? []);
+  assert(prompt.includes("后续的完整回答") && prompt.includes("前一轮的搜索") && prompt.includes("前一轮的结果"),
+    "滚动摘要的请求保留完整回答和工具记录");
+  assert(!prompt.includes("这段半截原文不进摘要"), "滚动摘要的请求略过半截原文");
+  assert(!prompt.includes("供应商报错前的半截原文"), "滚动摘要略过报错前的半截原文");
+  assert(!prompt.includes("这里的推理不进摘要"), "PI 不把推理块写进摘要请求");
+  assert(interrupted.content[0].text === "这段半截原文不进摘要", "生成滚动摘要时保留原消息");
+  assert(store.saveAnchorCalls.some((call) => call.type === "rolling_summary"), "滚动摘要正常写入");
+}
+
 // Test: post-search (below watermark) triggers adjudication (streamFn called).
 {
   const callLog = { count: 0 };

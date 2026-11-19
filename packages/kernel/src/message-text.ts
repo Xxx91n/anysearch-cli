@@ -1,4 +1,4 @@
-// Message-shape helpers for the inject path (#104).
+// Helpers for reading, editing, and trimming the text that goes to the model.
 // Why this exists: pi-agent-core normalizes `agent.prompt("hello")` into a
 // content-BLOCK user message —
 //   { role: "user", content: [{ type: "text", text: "hello" }] }
@@ -7,6 +7,17 @@
 // either never fires or, worse, rewrites the user's message down to the
 // injected text. These helpers make "read the text" and "append text" total
 // over both shapes, and refuse to guess, so a caller can stand down instead.
+
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+
+// Design: omit interrupted prose from summaries — a summary could repeat it
+// as a conclusion. Keep the tool records that explain what happened.
+export function omitPartialAnswerFromSummary(message: AgentMessage): AgentMessage {
+  if (message?.role !== "assistant") return message;
+  if (message.stopReason !== "aborted" && message.stopReason !== "error") return message;
+  const content = Array.isArray(message.content) ? message.content : [];
+  return { ...message, content: content.filter((part) => part?.type !== "text") };
+}
 
 /** A message's text channel, plus the shape the write-back has to keep. */
 export interface TextTarget {
