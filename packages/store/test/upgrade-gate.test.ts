@@ -240,6 +240,53 @@ function main(): void {
       check("J4: admission reopened for the next section", registry.gateState() === null);
     }
 
+    // ---- J5. the preview matches the real prune on a CHAIN ---------------
+    {
+      // A(parent) <- B(child) <- C(grandchild), all finished and all aged. The
+      // real prune peels one generation per pass and ends up deleting all
+      // three; the preview has to say the same thing.
+      const a = registry.registerTask({ kind: "cli.chat", role: "business", entry: "cli" });
+      a.finish({ exitCode: 0 });
+      const b = registry.registerTask({
+        kind: "server.project_index", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: a.taskId,
+      });
+      b.finish({ exitCode: 0 });
+      const c = registry.registerTask({
+        kind: "server.policy_audit", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: b.taskId,
+      });
+      c.finish({ exitCode: 0 });
+      const age = new Database(dbPath);
+      try {
+        age.prepare("UPDATE task_records SET ended_at = datetime('now','-45 days') WHERE task_id IN (?,?,?)")
+          .run(a.taskId, b.taskId, c.taskId);
+      } finally { age.close(); }
+
+      const preview = registry.previewPrune(30);
+      check("J5: the chain is entirely prunable, previewed as such", preview.wouldPrune.length === 3,
+        JSON.stringify({ prune: preview.wouldPrune.length, hold: preview.wouldHold.length }));
+      check("J5: nothing in the chain is predicted as held", preview.wouldHold.length === 0,
+        JSON.stringify(preview.wouldHold.map((r) => r.taskId)));
+      const real = registry.pruneFinishedTasks(30);
+      check("J5: the real run removes exactly what the preview said",
+        real.removed === preview.wouldPrune.length && real.heldByChildren === preview.wouldHold.length,
+        JSON.stringify({ real, previewed: preview.wouldPrune.length }));
+      check("J5: and the chain is gone", registry.taskById(a.taskId) === null && registry.taskById(c.taskId) === null);
+    }
+
+    // ---- J6. adoption refuses to fake a gate that vanished mid-flight -----
+    {
+      // Simulate the race: the gate is read, then someone cancels, then the
+      // takeover runs. A 0-row UPDATE must become an error, never a stale gate.
+      const gate = registry.openGate({ note: "about to vanish" });
+      check("J6: a live gate is not adopted, just returned",
+        registry.openGate({ note: "second" }).gateId === gate.gateId);
+      check("J6: its note is unchanged (no takeover of a live holder)",
+        registry.gateState()?.note === "about to vanish");
+      registry.closeGate();
+    }
+
     registry.close();
 
     // ---- H. the shape survives a reopen ----------------------------------

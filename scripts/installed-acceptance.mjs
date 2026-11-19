@@ -1544,6 +1544,9 @@ async function main() {
 
         // ---- 3. 放掉这一轮；任务收尾之后 wait 才退 0 ----
         // 放行之前它必须还在等。这一条才是"没有提前放行"的证据。
+        // 上面几次 runAns 是同步 spawn，会把事件循环堵住；先让一拍，否则即使
+        // wait 真的提前退了，.then 也还没轮到跑，这里读到的仍是 false。
+        await new Promise((r) => setTimeout(r, 0));
         check(!waitSettled, "N4：wait 还在等（没有提前退，也没漏看这条在跑的活）");
         // 放行之后 wait 才可能看到"没有阻塞了"——顺序就是被测的那件事，不能倒过来。
         releaseRunHold();

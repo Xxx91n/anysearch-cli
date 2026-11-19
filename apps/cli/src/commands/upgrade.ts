@@ -112,24 +112,24 @@ function toBlocker(row: TaskRecordRow & { ownerState: "alive" | "dead" | "unknow
  * wait. Callers that only need one reading use `readSnapshot`.
  */
 function snapshotOf(registry: TaskRegistry, excludePid?: number, withDismissable = false): Snapshot {
-  const gate = registry.gateOwnerState();
-  // Everything below is read on ONE connection in one go, so a machine-readable
-  // report never carries two contradictory moments (a task that ended between
-  // two reads would show up in `blockers` and not in `dismissable`).
-  const blockers = registry.blockingTasks().map(toBlocker);
-  return {
-    gate: gate?.gate ?? null,
-    gateOwnerState: gate?.ownerState ?? null,
-    blockers,
-    // 自己这条进程记录不算"说不清的进程"：问问题的人就是它。
-    processes: registry.openProcesses()
-      .filter((p) => p.pid !== excludePid || p.entry !== "cli")
-      .map((p) => ({
-        pid: p.pid, entry: p.entry, ownerHost: p.ownerHost,
-        ownerState: p.ownerState, startedAt: p.startedAt,
-      })),
-    ...(withDismissable ? { dismissable: registry.dismissableTasks().map(toBlocker) } : {}),
-  };
+  // 一次读事务里取全：单条语句各自一致，但彼此不一致——中间刚好有一条活收尾，
+  // blockers 和 dismissable 就会互相打架。
+  return registry.consistentRead(() => {
+    const gate = registry.gateOwnerState();
+    return {
+      gate: gate?.gate ?? null,
+      gateOwnerState: gate?.ownerState ?? null,
+      blockers: registry.blockingTasks().map(toBlocker),
+      // 自己这条进程记录不算"说不清的进程"：问问题的人就是它。
+      processes: registry.openProcesses()
+        .filter((p) => p.pid !== excludePid || p.entry !== "cli")
+        .map((p) => ({
+          pid: p.pid, entry: p.entry, ownerHost: p.ownerHost,
+          ownerState: p.ownerState, startedAt: p.startedAt,
+        })),
+      ...(withDismissable ? { dismissable: registry.dismissableTasks().map(toBlocker) } : {}),
+    };
+  });
 }
 
 /** One reading, opening and closing its own connection. */
@@ -464,19 +464,25 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         return 0;
       }
       if (dryRun) {
-        // 预览必须和真跑对得上：真跑会跳过"还有行指着"的那几条，预览不扣掉就会说
-        // 会删 10 条、实际只删 3 条，剩下的原因要到真删之后才知道。
-        const held = registry.agedFinishedTasksHeldByChildren(retentionDays);
-        const wouldPrune = aged.length - held;
+        // 预览必须和真跑对得上，包括多层父子：真跑是一层一层剥，父行在子行删掉
+        // 之后下一轮就能删，所以"被谁指着"要在剥完的图上算，不能只看当前引用。
+        const preview = registry.previewPrune(retentionDays);
         if (json) {
           out(JSON.stringify({
-            pruned: 0, wouldPrune, wouldHold: held, days: retentionDays, rows: aged,
+            pruned: 0,
+            wouldPrune: preview.wouldPrune.length,
+            wouldHold: preview.wouldHold.length,
+            days: retentionDays,
+            rows: preview.wouldPrune,
           }, null, 2) + "\n");
         } else {
-          out("[upgrade] 会删掉 " + wouldPrune + " 条 " + retentionDays + " 天前收尾的任务行（dry-run，没删）：\n");
-          for (const r of aged) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
-          if (held > 0) {
-            out("[upgrade] 另有 " + held + " 条虽然过期了，但还有活着的行指着，真跑时会留着（删了会把那些行的归属抹掉）\n");
+          out("[upgrade] 会删掉 " + preview.wouldPrune.length + " 条 " + retentionDays +
+            " 天前收尾的任务行（dry-run，没删）：\n");
+          for (const r of preview.wouldPrune) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
+          if (preview.wouldHold.length > 0) {
+            out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还有行依存地指着，" +
+              "真跑时会留着（删了会把那些行的归属抹掉）：\n");
+            for (const r of preview.wouldHold) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
           }
         }
         return 0;

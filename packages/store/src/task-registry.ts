@@ -196,6 +196,8 @@ export class TaskRegistry {
     dismissableTasks: Database.Statement;
     agedFinishedTasks: Database.Statement;
     agedFinishedTasksHeldByChildren: Database.Statement;
+    allTaskIds: Database.Statement;
+    parentReferences: Database.Statement;
     pruneFinishedTasks: Database.Statement;
   };
   private readonly owner: { pid: number; host: string };
@@ -269,6 +271,10 @@ export class TaskRegistry {
       // at aborts the whole transaction. Such parents are skipped instead of
       // having the live row's link rewritten — losing the attribution of an open
       // row is worse than keeping one old finished row.
+      allTaskIds: db.prepare("SELECT task_id as taskId FROM task_records"),
+      parentReferences: db.prepare(
+        "SELECT task_id as taskId, parent_task_id as parentTaskId FROM task_records WHERE parent_task_id IS NOT NULL",
+      ),
       pruneFinishedTasks: db.prepare(
         "DELETE FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
         "AND task_id NOT IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
@@ -383,10 +389,17 @@ export class TaskRegistry {
       // dead same-host owner is adopted; a live one (someone else is upgrading)
       // and an unprovable one (another host) are left alone.
       if (this.probeOwnerState(existing.openedByHost, existing.openedByPid) !== "dead") return existing;
-      const adopted = this.db.transaction((): UpgradeGateState => {
-        this.stmts.adoptGate.run(this.owner.pid, this.owner.host, req.note ?? null, existing.gateId);
-        return this.gateState() ?? existing;
+      const adopted = this.db.transaction((): UpgradeGateState | null => {
+        const changes = this.stmts.adoptGate.run(this.owner.pid, this.owner.host, req.note ?? null, existing.gateId).changes;
+        // Zero changes means the row is gone: someone ran `cancel` between the
+        // read above and this transaction. Admission is open now, so returning
+        // the stale gate would announce a pause that no longer exists — the same
+        // mistake as fabricating one.
+        return changes === 0 ? null : this.gateState();
       }).immediate();
+      if (!adopted) {
+        throw new Error("openGate: the gate disappeared while it was being taken over (admission is open)");
+      }
       return adopted;
     }
     const gateId = "upgrade-" + randomUUID();
@@ -403,6 +416,19 @@ export class TaskRegistry {
       throw new Error("openGate: the gate row could not be read back after writing it — admission is NOT closed");
     }
     return written;
+  }
+
+  /**
+   * Run several reads as ONE WAL snapshot.
+   *
+   * The statements are individually consistent but not mutually: a task that
+   * ends between two of them can appear in one list and not the other, and a
+   * machine-readable report must not carry two contradictory moments. A
+   * deferred transaction gives the reader a stable snapshot without taking a
+   * write lock.
+   */
+  consistentRead<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
   }
 
   /**
@@ -479,6 +505,48 @@ export class TaskRegistry {
   agedFinishedTasksHeldByChildren(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): number {
     const days = requirePositiveDays(olderThanDays);
     return (this.stmts.agedFinishedTasksHeldByChildren.get("-" + days + " days") as { n: number }).n;
+  }
+
+  /**
+   * What `pruneFinishedTasks` would do, without deleting anything.
+   *
+   * Computed with the SAME rule the delete loop applies — a row goes only when
+   * no SURVIVING row points at it, and removing one generation can free the
+   * next — so a chain of aged rows reports "both go", not "one goes, one is
+   * held". Read-only: no transaction, no write lock, nothing to roll back.
+   */
+  previewPrune(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): {
+    wouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
+    wouldHold: Array<{ taskId: string; kind: string; endedAt: string }>;
+  } {
+    const days = requirePositiveDays(olderThanDays);
+    const window = "-" + days + " days";
+    const aged = this.stmts.agedFinishedTasks.all(window) as Array<{ taskId: string; kind: string; endedAt: string }>;
+    const references = this.stmts.parentReferences.all() as Array<{ taskId: string; parentTaskId: string }>;
+
+    const agedIds = new Set(aged.map((r) => r.taskId));
+    // A row survives if it is not aged, or if an aged row that survives points
+    // at it. Start with everything that is not aged, then grow to a fixed point.
+    const surviving = new Set<string>(
+      (this.stmts.allTaskIds.all() as Array<{ taskId: string }>)
+        .map((r) => r.taskId)
+        .filter((id) => !agedIds.has(id)),
+    );
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const ref of references) {
+        if (!agedIds.has(ref.parentTaskId) || surviving.has(ref.parentTaskId)) continue;
+        if (surviving.has(ref.taskId)) {
+          surviving.add(ref.parentTaskId);
+          grew = true;
+        }
+      }
+    }
+    return {
+      wouldPrune: aged.filter((r) => !surviving.has(r.taskId)),
+      wouldHold: aged.filter((r) => surviving.has(r.taskId)),
+    };
   }
 
   /**
