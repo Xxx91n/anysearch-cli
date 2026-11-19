@@ -284,6 +284,7 @@ export function registerAnsChat(
             // healthy unmetered run; the wiring warns here and the run keeps
             // the session form. Deduped: this process is long-lived.
             warn: warnDegraded,
+            fallbackText: "this run falls back to the session account",
           }));
         const {
           message,

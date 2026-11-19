@@ -192,6 +192,7 @@ export async function runChat(argv: string[]): Promise<number> {
     warn: (m) => {
       try { process.stderr.write("[warn] " + m + "\n"); } catch { /* a dead stderr must not break the run */ }
     },
+    fallbackText: "this run falls back to the session account",
   });
   // Design: 脚本模式需要能按任务记账 — 持久库出错时，不能换个库放行付费请求。
   const taskBudgetFault = taskBudgetWiring.taskBudgetFault ??

@@ -381,7 +381,9 @@ points, and budget state stay per call / per session.
 
 ### Task closeout (#303)
 
-Every `ans_chat` call is one task: `mcp.ans_chat` in `task_records`. When a task
+Every MCP tool call is one task: `mcp.ans_chat` for the chat/consolidation
+entry, and `mcp.search_web` / `mcp.research_web` / `mcp.recall_memory` /
+`mcp.query_knowledge` for the rest (#304). When a task
 was registered, a result that carries `structuredContent` also carries
 `structuredContent.closeout`:
 
@@ -468,6 +470,15 @@ nothing is charged to any conversation.
     request is sent for that call; earlier rounds of a research call already
     settled on the same row, and the text says how many.
 - An undeclared domain still registers the task and writes no budget row.
+- A cancelled call is not a clean finish: the result says
+  `structuredContent.interrupted: true` and the task ends with exit code 1.
+  The engine returns whatever arrived instead of throwing, so without that
+  marker a cut-off search would be recorded as completed.
+
+`recall_memory` and `query_knowledge` are tasks too (`mcp.recall_memory` /
+`mcp.query_knowledge`), even though they bill no model call and write no budget
+row. Their closeout is what lets a hook's follow-up work (an index write, for
+example) name the request that caused it (#307).
 
 ## Environment and auth
 

@@ -54,6 +54,8 @@ function warnDegraded(message: string, key: string): void {
 export function establishToolBudget(eng: CompositionResult): TaskBudgetWiring {
   return wireTaskBudget(eng.store, currentMcpTask()?.taskId, eng.config?.budget, {
     warn: warnDegraded,
+    // A bare search has no session account: the fallback is not "session form".
+    fallbackText: "this call is unmetered",
   });
 }
 

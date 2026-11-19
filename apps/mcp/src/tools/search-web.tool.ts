@@ -130,6 +130,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // isError absent (false). The block is emitted whenever any of
           // sufficiency/attribution/abstain is present.
           const structuredContent = {
+            // #304 review: the caller may have aborted mid-search. The engine
+            // returns whatever arrived instead of throwing, so without this the
+            // task wrapper would record a cancelled call as a clean finish.
+            ...(signal?.aborted ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),

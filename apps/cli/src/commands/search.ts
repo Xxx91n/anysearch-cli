@@ -4,7 +4,7 @@
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { wireTaskBudget, isTaskBudgetRejectedError, type DomainConfigPort } from "@anysearch-cli/kernel";
-import { loadDomainByNameIn } from "@anysearch-cli/store";
+import { isDomainSchemaError, loadDomainByNameIn } from "@anysearch-cli/store";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
@@ -128,8 +128,12 @@ export async function runSearch(args: string[]): Promise<number> {
     try {
       budgetDomain = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs()) as DomainConfigPort;
     } catch (e) {
-      // Same fail-open contract as `ans chat`: an unreadable domain leaves the
-      // run unmetered, and the warning says so instead of implying a cap.
+      // A configured-but-broken domain is a configuration error, not an
+      // absence: `ans chat` fails closed on exactly this predicate. Swallowing
+      // it would ignore a declared [budget] while still fanning out, which is
+      // the "cap exists on paper" hole this ticket closes. A missing or
+      // unreadable domain stays the historical fail-open.
+      if (isDomainSchemaError(e)) throw e;
       process.stderr.write(
         "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); search runs unmetered\n",
       );
@@ -137,6 +141,7 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const budgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, budgetDomain?.budget, {
     warn: (m) => process.stderr.write("[warn] " + m + "\n"),
+    fallbackText: "this run is unmetered",
   });
   if (budgetWiring.taskBudgetFault) {
     process.stderr.write(

@@ -146,6 +146,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // structuredContent.abstain, isError absent (false).
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
+            // #304 review: a cancelled research call stops after the aborted
+            // round and then returns normally. Say so, or the task wrapper
+            // records the interrupted call as a clean finish.
+            ...(signal?.aborted ? { interrupted: true } : {}),
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),

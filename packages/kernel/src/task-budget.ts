@@ -10,9 +10,10 @@
 //
 // Degradation: with no task to bill, or no ledger to hand out, an UNDECLARED
 // domain runs without a task budget and says so once; a DECLARED one faults in
-// the same corner (chat keeps its session form where one is wired — a bare
-// search has no session, so it is simply unmetered). The scope travels only in
-// the established case — the fallback has no ledger object to route anything to.
+// the same corner. The sentence after the dash is the host's: chat keeps its
+// session form, a bare search is simply unmetered (see WireTaskBudgetOptions).
+// The scope travels only in the established case — the fallback has no ledger
+// object to route anything to.
 
 import { toBudgetCaps, type BudgetConfig, type TaskBudgetLedger } from "@anysearch-cli/store";
 import type { RuntimeErrorReason } from "./runtime";
@@ -52,13 +53,18 @@ export function isBudgetStopReason(value: unknown): value is RuntimeErrorReason 
 
 export interface WireTaskBudgetOptions {
   /**
-   * Where a degradation is reported. Called for the corner that would otherwise
-   * be invisible: an UNDECLARED domain whose store cannot hand out a ledger —
-   * the run then has no task budget, which is indistinguishable from "correctly
-   * unmetered" without a line somewhere.
-   *
-   * `key` names that corner without the task id, so a long-lived host can dedupe
-   * without parsing the message. Defaults to a no-op so unit tests stay quiet.
+   * What the host really does when no task budget can be attached. The fallback
+   * differs by entry point — `ans_chat` keeps billing its session form, while a
+   * bare search has no session account at all — so the host supplies the
+   * sentence instead of the kernel guessing (review finding): a log line that
+   * says "unmetered" for chat would be false, and one that says "session form"
+   * for search would be too.
+   */
+  fallbackText?: string;
+  /**
+   * Where a degradation is reported. `key` names that corner without the task
+   * id, so a long-lived host can dedupe without parsing the message. Defaults
+   * to a no-op so unit tests stay quiet.
    */
   warn?: (message: string, key: string) => void;
 }
@@ -84,11 +90,12 @@ export function wireTaskBudget(
   const say = (message: string, key: string): void => {
     try { warn(message, key); } catch { /* a dead stderr must not break the wiring */ }
   };
-  const stop = (faultText: string, degradedText: string, key: string): TaskBudgetWiring => {
+  const fallback = opts.fallbackText ?? "this run has no task budget";
+  const stop = (faultText: string, causeText: string, key: string): TaskBudgetWiring => {
     if (declared) {
       return { declared, taskBudgetFault: faultText, taskBudgetFaultReason: "budget-not-established" };
     }
-    say("task " + taskId + " " + degradedText, key);
+    say("task " + taskId + " " + causeText + " — " + fallback, key);
     return { declared };
   };
   if (!taskId) {
@@ -109,7 +116,7 @@ export function wireTaskBudget(
   if (!store) {
     return stop(
       "no session store to hold this run's budget",
-      "has no store to bill — this run runs without a task budget",
+      "has no store to bill",
       "no-store",
     );
   }
@@ -124,14 +131,14 @@ export function wireTaskBudget(
     // later ledger fault by name, so the wiring must not crash here.
     return stop(
       "task budget ledger unavailable: " + errText(e),
-      "has no usable ledger (" + errText(e) + ") — this run runs without a task budget",
+      "has no usable ledger (" + errText(e) + ")",
       "no-ledger",
     );
   }
   if (!ledger) {
     return stop(
       "session store lacks createTaskBudgetLedger",
-      "has no ledger seam — this run runs without a task budget",
+      "has no ledger seam",
       "no-ledger",
     );
   }

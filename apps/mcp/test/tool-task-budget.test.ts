@@ -34,6 +34,8 @@ import { SqliteSessionStore } from "@anysearch-cli/store";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
 import { registerResearchWeb } from "../src/tools/research-web.tool.js";
+import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
+import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import { resetToolBudgetWarnings } from "../src/tools/task-budget.js";
 import { resetMcpTaskWarnings } from "../src/mcp-task.js";
 
@@ -57,7 +59,7 @@ const fakeSpan: any = {
   finish: () => {},
 };
 
-type Handler = (args: unknown) => Promise<any>;
+type Handler = (args: unknown, ctx?: { mcpReq?: { signal?: AbortSignal } }) => Promise<any>;
 
 function capture(eng: CompositionResult): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
@@ -68,6 +70,8 @@ function capture(eng: CompositionResult): Record<string, Handler> {
   } as unknown as McpServer;
   registerSearchWeb(fakeServer, eng);
   registerResearchWeb(fakeServer, eng);
+  registerRecallMemory(fakeServer, eng);
+  registerQueryKnowledge(fakeServer, eng);
   return handlers;
 }
 
@@ -295,6 +299,55 @@ async function main() {
         "5: the task is still registered and ended (got " + JSON.stringify(close) + ")");
       const budgets = readRows<TaskBudgetRow>(dbPath, TASK_BUDGETS_SQL);
       assert(budgets.length === 0, "5: no budget row is invented for an undeclared domain");
+    }
+    // ====== 6. the two local tools are tasks too, for post-work linking ======
+    //
+    // They bill no model call, so no budget row. The task id in the closeout is
+    // what lets the hook's follow-up/index work name its parent request (#307).
+    {
+      const dbPath = join(tempRoot, "local-tools.db");
+      const calls = { count: 0 };
+      const eng = makeEngine(dbPath, calls);
+      const handlers = capture(eng);
+      const recall = await handlers.recall_memory({ query: "anything" });
+      const asked = await handlers.query_knowledge({ query: "anything" });
+
+      assert(recall?.structuredContent?.closeout?.kind === "mcp.recall_memory",
+        "6: recall_memory carries a closeout (got " + JSON.stringify(recall?.structuredContent?.closeout) + ")");
+      assert(asked?.structuredContent?.closeout?.kind === "mcp.query_knowledge",
+        "6: query_knowledge carries a closeout (got " + JSON.stringify(asked?.structuredContent?.closeout) + ")");
+      const kinds = readRows<TaskRow>(dbPath, TASKS_SQL).map((t) => t.kind).sort();
+      assert(JSON.stringify(kinds) === JSON.stringify(["mcp.query_knowledge", "mcp.recall_memory"]),
+        "6: each local call is its own task (got " + JSON.stringify(kinds) + ")");
+      const budgets = readRows<TaskBudgetRow>(dbPath, TASK_BUDGETS_SQL);
+      assert(budgets.length === 0, "6: local tools declare no budget and invent no row");
+    }
+
+    // ====== 7. an aborted call is not a clean finish ======
+    //
+    // The engine returns whatever arrived instead of throwing, so the handler
+    // must say "interrupted"; otherwise the wrapper ends the task with exit 0
+    // and an upgrade cannot tell the call was cut off.
+    {
+      const dbPath = join(tempRoot, "aborted.db");
+      const calls = { count: 0 };
+      const eng = makeEngine(dbPath, calls, { budget: { tokenCap: 1_000_000, callCap: 20 } });
+      const handlers = capture(eng);
+      const gone = new AbortController();
+      gone.abort("caller left");
+      const search = await handlers.search_web({ query: "aborted" }, { mcpReq: { signal: gone.signal } });
+      assert(search?.structuredContent?.interrupted === true,
+        "7: an aborted search says it was interrupted (got " + JSON.stringify(search?.structuredContent) + ")");
+      assert(search?.structuredContent?.closeout?.exitCode === 1,
+        "7: the search task ends unfinished (got " + JSON.stringify(search?.structuredContent?.closeout) + ")");
+
+      const gone2 = new AbortController();
+      gone2.abort("caller left");
+      const research = await handlers.research_web({ question: "aborted", depth: "brief" }, { mcpReq: { signal: gone2.signal } });
+      assert(research?.structuredContent?.interrupted === true,
+        "7: an aborted research call says it was interrupted (got " + JSON.stringify(research?.structuredContent) + ")");
+      assert(research?.structuredContent?.closeout?.exitCode === 1,
+        "7: the research task ends unfinished (got " + JSON.stringify(research?.structuredContent?.closeout) + ")");
     }
   } finally {
     for (const key of ENV_KEYS) {

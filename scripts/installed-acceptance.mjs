@@ -1229,11 +1229,10 @@ async function main() {
         { cwd: prefix, env: searchEnv },
       );
       check(searched.code === 0, "带预算域的 CLI 搜索退出码 0", searched.out.slice(-400));
-      let searchJson;
-      try {
-        searchJson = JSON.parse(searched.out.slice(searched.out.indexOf("{"), searched.out.lastIndexOf("}") + 1));
-      } catch { searchJson = null; }
-      check(searchJson?.results?.length >= 1, "CLI 搜索真的搜到了东西", String(searched.out).slice(-300));
+      // runAnsAsync 的 out 是 stdout+stderr 拼起来的；这里不切片解析 JSON，
+      // 只按 --json 契约断言那两样东西：结果数组和假端点返回的网址。
+      check(/"results":\s*\[/.test(searched.out), "CLI 搜索输出里带着结果数组", String(searched.out).slice(-300));
+      check(/print\.example/.test(searched.out), "CLI 搜索真的搜到了东西", String(searched.out).slice(-300));
       {
         const db = new Database(searchEnv.ANS_DB_PATH, { readonly: true });
         try {
