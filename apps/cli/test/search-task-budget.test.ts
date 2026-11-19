@@ -183,7 +183,10 @@ test("a broken default domain TOML fails closed instead of dropping its budget",
   try {
     const task = registry.registerTask({ kind: "cli.search", role: "business", entry: "cli" });
     await assert.rejects(
-      withTask(task, () => run(["anysearch-cli GitHub repository"])),
+      runWithCliTask(
+        { taskId: task.taskId, kind: "cli.search", role: "business", attachSession: () => {} },
+        () => run(["anysearch-cli GitHub repository"]),
+      ),
       /Domain schema:/,
     );
     assert.equal(requests, before, "no provider request was sent");
