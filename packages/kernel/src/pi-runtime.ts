@@ -421,8 +421,8 @@ export interface PiAgentRuntimeOptions {
    * loop's calls, compaction, the memory pipeline's summary/adjudication and
    * the late settlement — lands on the task's budget row, and internal
    * searches carry the scope so they stop accumulating on the session
-   * ledger. Absent: the session form, unchanged, for the callers that have not
-   * migrated (#304: MCP search/research/standalone consolidate).
+   * ledger. Absent: the session form, unchanged, for callers that attach no
+   * task budget.
    */
   taskBudget?: TaskBudgetScope;
   /**
@@ -1406,8 +1406,8 @@ export class PiAgentRuntime {
     // only after the session row exists (#178).
     //
     // A task-scoped budget is the new accounting form: the run bills its task,
-    // so resuming a conversation spends none of its history. The entries still
-    // on the session form (#304) keep their old semantics untouched.
+    // so resuming a conversation spends none of its history. The session form
+    // stays for callers that do not attach a task budget.
     const billingLedger: BudgetLedgerPort | undefined = this.billingScope?.ledger;
     const billingId = this.billingScope?.taskId;
     const billingWired = !!this.billingScope && !perCallBudget;
@@ -1606,7 +1606,7 @@ export class PiAgentRuntime {
     // Per-call reserve, two forms (#178 / #302):
     // - session form: a soft gate — a rejection lets the run continue and the
     //   call is simply not billed (the token dimension is the hard stop there).
-    //   Kept unchanged for the callers that have not migrated (#304).
+    //   Kept unchanged for callers that attach no task budget.
     // - task form: a declared call quota is enforced consistently (S5) — a
     //   rejection stops this run before its first controlled call. The wiring
     //   established a budget for exactly this execution, so "unbilled but

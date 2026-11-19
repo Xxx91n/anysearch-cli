@@ -6,6 +6,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
+import { withMcpTask } from "../mcp-task.js";
 import { toolError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
 
@@ -17,7 +18,10 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       inputSchema: fromJsonSchema(KernelJsonSchemas.recall_memory),
     },
     async (args: unknown, ctx?: ServerContext) => {
-      return observeTool(eng, "recall_memory", ctx, async () => {
+      // #304: every MCP tool call is one task. This tool bills no model call,
+      // but the task id in its closeout is what lets the hook's post-work
+      // (index writes) say which request caused it (#307).
+      return withMcpTask(eng, "recall_memory", () => observeTool(eng, "recall_memory", ctx, async () => {
       try {
         const { query, limit, projectPaths } = args as { query: string; limit?: number; projectPaths?: string[] };
         const lim = limit ?? 5;
@@ -103,7 +107,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       } catch (e) {
         return toolError("recall_memory", e instanceof Error ? e.message : String(e));
       }
-      });
+      }));
     }
   );
 }

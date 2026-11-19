@@ -15,11 +15,14 @@ import {
   createConsolidationSeams,
   isConsolidationBudgetError,
   resolveConsolidationMetering,
+  taskBudgetMetering,
+  wireTaskBudget,
   CONSOLIDATION_UNMETERED_TEXT,
   MISSING_CONSOLIDATION_USAGE,
   MISSING_CONSOLIDATION_CACHE,
   MISSING_CONSOLIDATION_COST,
   resolveDbPath,
+  type ConsolidationMetering,
 } from "@anysearch-cli/kernel";
 import {
   SqliteSessionStore,
@@ -33,6 +36,7 @@ import {
 } from "@anysearch-cli/store";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainSearchDirs } from "../db";
+import { currentCliTask } from "../cli-task-context";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -82,10 +86,15 @@ function help(): string {
     "figure was obtained: not-called, unknown, a price estimate, or a server-returned",
     "figure. An unknown cost is never shown as zero. A mix of server-returned and",
     "estimated prices is reported as mixed.",
-    "Metering: a run with exactly one --session is charged against that session when the",
-    "Active Domain declares [budget] caps; a refused call stops the run and is counted.",
-    "Otherwise the output says why it ran unmetered (no owning session, several owners,",
-    "no declared caps, or a failed budget setup) instead of implying a cap was enforced.",
+    "Metering: this run is charged to its own task when the Active Domain declares",
+    "[budget] caps — a memory list, one chat, or materials from several chats all bill",
+    "the same run, so no single conversation is picked to pay for it. A refused call",
+    "stops the run and is counted; anything already spent stays on the task's row.",
+    "Only when no task budget can be attached and the domain declares none does it",
+    "fall back to the old session form; then the output says why it ran unmetered",
+    "(no owning session, several owners, no declared caps, or a failed budget setup)",
+    "instead of implying a cap was enforced. A domain that DOES declare [budget] stops",
+    "instead of falling back.",
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
@@ -185,13 +194,16 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteSessionStore(dbPath);
 
-  // Budget wiring (D4). The rule lives in the kernel so this path and the MCP
-  // tool cannot answer "was this run charged?" differently.
+  // Budget wiring (D4 / #304). The rule lives in the kernel so this path and
+  // the MCP tool cannot answer "was this run charged?" differently.
   //
-  // Design: registering the Active Domain's caps here (not only at `ans chat`)
-  // is what makes the cap real — the ledger's reserve passes for every session
-  // that has no row, so a run that never registers one would claim a cap it
-  // does not have.
+  // Design: this run is its own task, so the materials' provenance no longer
+  // decides who pays. A memory list has no owning session, and several
+  // --session owners used to leave the run unmetered; both now bill the task
+  // this invocation registered, so no single chat is picked to pay for work
+  // that spans chats. Registering the Active Domain's caps on that task is what
+  // makes the cap real — a ledger whose row was never written passes every
+  // reserve, so a run that skipped this would claim a cap it does not have.
   let domainForBudget: ReturnType<typeof loadDomainByNameIn> | undefined;
   try {
     domainForBudget = loadDomainByNameIn(process.env.ANS_DOMAIN || "default", domainSearchDirs());
@@ -202,14 +214,39 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       "[warn] domain load failed for budget (" + (e instanceof Error ? e.message : String(e)) + "); consolidation runs unmetered\n",
     );
   }
-  const metering = await resolveConsolidationMetering({
-    store,
-    scope,
-    domain: domainForBudget,
-    toCaps: (b) => toBudgetCaps(b as BudgetConfig),
-    domainLabel: "consolidate",
-    warn: (m) => process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n"),
+  // #304: a declared [budget] that cannot be established stops before any
+  // model call. Falling back to the session form here would be exactly the
+  // "keep going unmetered" the spec forbids for a declared constraint. The
+  // session form below stays only for the no-task fallback.
+  const budgetWarn = (m: string): void => {
+    process.stderr.write("[warn] " + m + "; consolidation runs unmetered\n");
+  };
+  const taskBudgetWiring = wireTaskBudget(store, currentCliTask()?.taskId, domainForBudget?.budget, {
+    warn: budgetWarn,
   });
+  if (taskBudgetWiring.taskBudgetFault) {
+    process.stderr.write(
+      "ans consolidate: this run's task budget could not be established — " +
+        taskBudgetWiring.taskBudgetFault + "\nNo model call was sent and nothing was written.\n",
+    );
+    return 1;
+  }
+  const taskMetering = taskBudgetMetering(taskBudgetWiring);
+  let metering: ConsolidationMetering;
+  if (taskMetering) {
+    metering = taskMetering;
+  } else {
+    // No task budget to bill (a broken registry / dispatch outside the CLI):
+    // the old session form stands unchanged, and says why it is unmetered.
+    metering = await resolveConsolidationMetering({
+      store,
+      scope,
+      domain: domainForBudget,
+      toCaps: (b) => toBudgetCaps(b as BudgetConfig),
+      domainLabel: "consolidate",
+      warn: budgetWarn,
+    });
+  }
   const budget = metering.metered ? metering.budget : undefined;
 
   // #277: the Active Domain's declared cross-script mappings take effect here,
@@ -426,7 +463,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // shows what landed; the exit code carries "not finished".
   if (r.budgetRejected > 0) {
     process.stderr.write(
-      "ans consolidate: stopped by the session budget (" + r.budgetRejected +
+      "ans consolidate: stopped by this run's budget (" + r.budgetRejected +
         " call(s) refused); " +
         (r.add + r.update === 0 ? "nothing was written." : "the rest of the scope was not processed.") + "\n",
     );
