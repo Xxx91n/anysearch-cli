@@ -21,6 +21,7 @@ import { runAccessChain } from "./commands/access-chain";
 import { runSwitchState } from "./commands/switch-state";
 import { runHitl } from "./commands/hitl";
 import { runHost } from "./commands/host";
+import { describeAdmissionRefusal, runUpgrade } from "./commands/upgrade";
 import { rehydrateConfigEnv } from "./config-env";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 import { trackCliCommand } from "./cli-task-tracking";
@@ -60,11 +61,17 @@ const help = [
   " relation Entity relation edges: list + backfill-relations",
   " consolidate Turn selected materials into long-term knowledge (needs --session or --memory)",
   " hitl HITL review queue for blocked retrieved-derived URLs",
+  "  upgrade  升级预检：status 看还有谁在干 · wait 暂拒新任务等收尾 · cancel 恢复准入",
   "",
   "Options:",
   "  --version, -v     Print version",
   "  --installation   Print build commit, installation path and entry role (installed command)",
   "  --help, -h        Print this help",
+  "",
+  "Exit codes:",
+  "  0 ok   1 failure   2 usage",
+  "  3 chat has no usable model config, or search abstained under --fail-on-abstain",
+  "  4 refused: an upgrade paused new tasks (ans upgrade cancel reopens admission)",
   "",
   "Env:",
   "  ANS_DOMAIN        Active Domain name (overrides TOML selection)",
@@ -88,7 +95,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain", "hitl", "host"]);
+const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain", "hitl", "host", "upgrade"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command" + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See" + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -120,6 +127,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   "switch-state": runSwitchState,
   hitl: runHitl,
   host: runHost,
+  upgrade: runUpgrade,
 };
 
 const handler = handlers[cmd];
@@ -154,7 +162,17 @@ const exit = (code: number): void => {
 // command (chat today) can read the task id it bills to.
 const runCommand = (): Promise<number> =>
   tracking.task ? tracking.task.run(() => handler(cmdArgs)) : handler(cmdArgs);
-runCommand()
+
+// #309: an upgrade closes admission for BUSINESS commands. That refusal is not
+// a broken registry (which warns and runs anyway) — it is a decision, so the
+// command stops before its handler with its own message and exit code 4, and
+// it is never queued or replayed. `upgrade` and the other management commands
+// register with role='management' and keep working, which is what makes the
+// pause navigable.
+if (tracking.admissionRefusal) {
+  process.stderr.write(describeAdmissionRefusal(tracking.admissionRefusal));
+  exit(4);
+} else runCommand()
   .then((code) => {
     // Success and failure both end a task; the exit code says which. Written
     // before exit closes the registry connection.

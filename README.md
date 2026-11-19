@@ -107,7 +107,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
   `retrieval.domain_filter.post`.
 - For `research_web`, the abstain marker describes only the last round; earlier rounds may already have results.
 
-> Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
+> Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a domain policy · `2` usage error · `3` abstain under `--fail-on-abstain` · `4` refused because an upgrade paused new tasks (`ans upgrade cancel` ends the pause).
 
 ### Writing domain descriptions (`ans recommend`)
 
@@ -187,6 +187,32 @@ Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`, an
 `ANS_DOMAIN` scopes the server via process environment variables: export it explicitly when starting `ans-mcp` directly; `ans mcp` inherits the domain selected in the CLI. Tools never write to stdout, keeping the protocol channel clean.
 
 For tool arguments, `isError` / empty result / abstain semantics, both transports, environment variables and authentication, the `ans_chat` session ID, how both protocol generations are handled, and upstream provider details, see the specification reference in [docs/mcp-server.md](docs/mcp-server.md).
+
+## Upgrading: preflight before replacing files
+
+```bash
+ans upgrade status                 # read-only: who is still working, what this host cannot confirm
+ans upgrade wait --timeout 120000  # pause NEW tasks, wait for accepted work to finish
+ans upgrade cancel                 # give up on the pause and admit new work again
+ans upgrade dismiss <taskId> --reason "..."   # acknowledge a row nobody can finish
+ans upgrade prune --dry-run        # how many finished rows a prune would remove
+ans upgrade prune                  # snapshot first, then delete rows finished >30 days ago
+```
+
+While a pause is in effect, new paid/work requests are refused on the spot — the
+CLI exits **4**, MCP tools return `errorKind: "upgrade-in-progress"` — and they
+are **not queued or replayed**. Status, diagnostics, the upgrade commands
+themselves, and the tail work of requests already accepted keep running.
+`wait` exits 1 and names every remaining blocker instead of claiming success,
+and it never reports the program as updated: replacing files is a separate step.
+
+A PID or a heartbeat is not proof that a task finished. A row whose owner this
+host cannot confirm stays a blocker until a human runs `upgrade dismiss`.
+
+`task_records` grows with every hook write, so `upgrade prune` bounds it: **open
+rows are never deleted** (they are the blocking criterion), finished rows older
+than 30 days are, and a prune snapshots the database first and prints where the
+snapshot is. Pruning never runs on its own.
 
 ## How It Works
 

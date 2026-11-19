@@ -47,6 +47,39 @@ import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup";
 export type TaskRole = "business" | "management";
 
 /**
+ * #309: a task registration refused because an upgrade closed admission.
+ *
+ * It is its own error type, not a generic throw, because every entry must tell
+ * "this did not start" apart from "this failed": the caller refuses the run and
+ * says so (`errorKind: "upgrade-in-progress"` on MCP, a named exit on the CLI),
+ * and it must never be mistaken for a broken registry (which fails open) or an
+ * upstream failure (which retries).
+ */
+export class AdmissionClosedError extends Error {
+  readonly gate: UpgradeGateState;
+  constructor(gate: UpgradeGateState) {
+    super(
+      "upgrade in progress: new task admission is closed (" +
+      "gate " + gate.gateId + " opened " + gate.openedAt +
+      " by pid " + gate.openedByPid + " on " + gate.openedByHost +
+      ") — refused, not queued. " +
+      "If no upgrade is actually running (a paused `ans upgrade wait` was interrupted): ans upgrade cancel",
+    );
+    this.name = "AdmissionClosedError";
+    this.gate = gate;
+  }
+}
+
+/** #309: the open admission gate as a reader sees it. */
+export interface UpgradeGateState {
+  gateId: string;
+  openedAt: string;
+  openedByPid: number;
+  openedByHost: string;
+  note: string | null;
+}
+
+/**
  * Where a task row came from (#307).
  *
  * - `independent`: work a caller asked for (a command, one tool call).
@@ -71,6 +104,27 @@ export interface TaskRegistryOptions {
   ownsConnection?: boolean;
 }
 
+/**
+ * #309: how long a FINISHED task row is kept when `pruneFinishedTasks` runs.
+ *
+ * The #307 comment asked this ticket to settle "how much of task_records to
+ * read", and the table has no cleanup path: every hook write adds a row (an
+ * INSERT plus an UPDATE). The rule this constant encodes:
+ *
+ * - an OPEN row (`ended_at IS NULL`) is never pruned, whatever its age — it is
+ *   the blocking criterion, and deleting it would make an upgrade stop waiting
+ *   for work that is still running;
+ * - a dismissed-but-open row is also kept (it is still open, and the dismissal
+ *   record is the only evidence a human looked at it);
+ * - a finished row is audit history. 30 days is long enough to answer "what ran
+ *   last month" and short enough that the table stays bounded;
+ * - pruning is NEVER automatic. It runs only when an operator asks
+ *   (`ans upgrade prune`), takes a consistent snapshot first, and reports the
+ *   count it removed — the ticket forbids silently sweeping the very records an
+ *   upgrade reads.
+ */
+export const TASK_HISTORY_RETENTION_DAYS = 30;
+
 export interface TaskRecordRow {
   taskId: string;
   kind: string;
@@ -88,6 +142,9 @@ export interface TaskRecordRow {
   /** NULL = still running, or crashed before finishing. */
   endedAt: string | null;
   exitCode: number | null;
+  /** #309: an operator acknowledged this open row; it is not a blocker any more. */
+  dismissedAt: string | null;
+  dismissedReason: string | null;
 }
 
 export interface ProcessRecordRow {
@@ -131,6 +188,17 @@ export class TaskRegistry {
     insertProcess: Database.Statement;
     endProcess: Database.Statement;
     openProcesses: Database.Statement;
+    gate: Database.Statement;
+    openGate: Database.Statement;
+    closeGate: Database.Statement;
+    adoptGate: Database.Statement;
+    dismissTask: Database.Statement;
+    dismissableTasks: Database.Statement;
+    agedFinishedTasks: Database.Statement;
+    agedFinishedTasksHeldByChildren: Database.Statement;
+    allTaskIds: Database.Statement;
+    parentReferences: Database.Statement;
+    pruneFinishedTasks: Database.Statement;
   };
   private readonly owner: { pid: number; host: string };
   private readonly isOwnerAlive: (pid: number) => boolean;
@@ -140,6 +208,10 @@ export class TaskRegistry {
     this.owner = opts.owner ?? { pid: process.pid, host: hostname() };
     this.isOwnerAlive = opts.isOwnerAlive ?? pidIsAlive;
     this.ownsConnection = opts.ownsConnection ?? true;
+    const taskColumns =
+      "task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, " +
+      "session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, " +
+      "ended_at as endedAt, exit_code as exitCode, dismissed_at as dismissedAt, dismissed_reason as dismissedReason";
     this.stmts = {
       // ended_at IS NULL in the WHERE keeps `finish` from rewriting history:
       // a task that already reported its end keeps the code it ended with.
@@ -154,12 +226,8 @@ export class TaskRegistry {
       attachSession: db.prepare(
         "UPDATE task_records SET session_id = ? WHERE task_id = ? AND ended_at IS NULL",
       ),
-      taskById: db.prepare(
-        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE task_id = ?"
-      ),
-      openTasks: db.prepare(
-        "SELECT task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, ended_at as endedAt, exit_code as exitCode FROM task_records WHERE ended_at IS NULL ORDER BY started_at"
-      ),
+      taskById: db.prepare("SELECT " + taskColumns + " FROM task_records WHERE task_id = ?"),
+      openTasks: db.prepare("SELECT " + taskColumns + " FROM task_records WHERE ended_at IS NULL ORDER BY started_at"),
       insertProcess: db.prepare(
         "INSERT INTO process_records (pid, owner_host, entry) VALUES (?, ?, ?)",
       ),
@@ -168,6 +236,52 @@ export class TaskRegistry {
       ),
       openProcesses: db.prepare(
         "SELECT id, pid, owner_host as ownerHost, entry, started_at as startedAt, ended_at as endedAt FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
+      ),
+      gate: db.prepare(
+        "SELECT gate_id as gateId, opened_at as openedAt, opened_by_pid as openedByPid, opened_by_host as openedByHost, note FROM upgrade_gate WHERE id = 1",
+      ),
+      openGate: db.prepare(
+        "INSERT INTO upgrade_gate (id, gate_id, opened_by_pid, opened_by_host, note) VALUES (1, ?, ?, ?, ?) " +
+        "ON CONFLICT (id) DO NOTHING",
+      ),
+      closeGate: db.prepare("DELETE FROM upgrade_gate WHERE id = 1"),
+      // Takeover of a gate whose opener is provably gone: the pause stays, the
+      // holder becomes the process that is actually waiting on it.
+      adoptGate: db.prepare(
+        "UPDATE upgrade_gate SET opened_by_pid = ?, opened_by_host = ?, note = COALESCE(?, note) WHERE id = 1 AND gate_id = ?",
+      ),
+      // A dismissal never writes ended_at: the row stays open and keeps its
+      // owner, and the reason says a human made the call. A task that finished
+      // in the meantime cannot be dismissed (nothing to dismiss).
+      dismissTask: db.prepare(
+        "UPDATE task_records SET dismissed_at = datetime('now'), dismissed_reason = ? WHERE task_id = ? AND ended_at IS NULL AND dismissed_at IS NULL",
+      ),
+      dismissableTasks: db.prepare(
+        "SELECT " + taskColumns + " FROM task_records WHERE ended_at IS NULL AND dismissed_at IS NULL ORDER BY started_at",
+      ),
+      // #309: audit history past the retention window. `ended_at IS NOT NULL`
+      // is load-bearing — an open row is the blocking criterion and must
+      // survive any age.
+      agedFinishedTasks: db.prepare(
+        "SELECT task_id as taskId, kind, ended_at as endedAt FROM task_records " +
+        "WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) ORDER BY ended_at",
+      ),
+      // FK-safe on purpose: `parent_task_id` references this same table with no
+      // ON DELETE action, so deleting a parent that a SURVIVING row still points
+      // at aborts the whole transaction. Such parents are skipped instead of
+      // having the live row's link rewritten — losing the attribution of an open
+      // row is worse than keeping one old finished row.
+      allTaskIds: db.prepare("SELECT task_id as taskId FROM task_records"),
+      parentReferences: db.prepare(
+        "SELECT task_id as taskId, parent_task_id as parentTaskId FROM task_records WHERE parent_task_id IS NOT NULL",
+      ),
+      pruneFinishedTasks: db.prepare(
+        "DELETE FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
+        "AND task_id NOT IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
+      ),
+      agedFinishedTasksHeldByChildren: db.prepare(
+        "SELECT COUNT(*) as n FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
+        "AND task_id IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
       ),
     };
   }
@@ -216,7 +330,28 @@ export class TaskRegistry {
         parentLink = "unknown";
       }
     }
-    this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host, origin, parentTaskId);
+    // #309: the gate read and the row insert are ONE immediate transaction, so
+    // a task can never start on a reading an upgrade already invalidated. This
+    // is the "check then start" hole the ticket names: without the transaction,
+    // an upgrade could close admission between our SELECT and our INSERT and
+    // wait forever on work it never admitted.
+    //
+    // Who is admitted while the gate is open: management work (the commands
+    // that report and drive the upgrade itself) and follow-up work of requests
+    // that were already accepted (their tails must finish — dropping them is
+    // the data loss the gate exists to avoid). Everyone else is refused, and
+    // the refusal is an error, never a queue and never an auto-replay.
+    const admittedOn = (): UpgradeGateState | null => {
+      if (req.role === "management" || origin === "follow-up") return null;
+      return this.gateState();
+    };
+    const gate = this.db.transaction((): UpgradeGateState | null => {
+      const open = admittedOn();
+      if (open) return open;
+      this.stmts.insertTask.run(taskId, req.kind, req.role, req.entry, this.owner.pid, this.owner.host, origin, parentTaskId);
+      return null;
+    }).immediate();
+    if (gate) throw new AdmissionClosedError(gate);
     if (req.sessionId) this.stmts.attachSession.run(req.sessionId, taskId);
     let finished = false;
     return {
@@ -231,6 +366,222 @@ export class TaskRegistry {
         this.stmts.finishTask.run(opts?.exitCode ?? 0, taskId);
       },
     };
+  }
+
+  /** #309: the open admission gate, or null when admission is open. */
+  gateState(): UpgradeGateState | null {
+    return (this.stmts.gate.get() as UpgradeGateState | undefined) ?? null;
+  }
+
+  /**
+   * #309: close admission. Idempotent — a second call keeps the gate that is
+   * already open (and its identity), because "there is an upgrade in progress"
+   * is the fact both callers want, and swapping the gate id mid-flight would
+   * make waiters unable to say which pause they observed.
+   */
+  openGate(req: { note?: string } = {}): UpgradeGateState {
+    const existing = this.gateState();
+    if (existing) {
+      // A gate left behind by an interrupted `wait` still names the process that
+      // died. Returning it unchanged would make this call announce a pause whose
+      // holder does not exist, and the diagnostics would keep saying "nobody is
+      // upgrading" while a fresh wait is sitting right there. Only a provably
+      // dead same-host owner is adopted; a live one (someone else is upgrading)
+      // and an unprovable one (another host) are left alone.
+      if (this.probeOwnerState(existing.openedByHost, existing.openedByPid) !== "dead") return existing;
+      const adopted = this.db.transaction((): UpgradeGateState | null => {
+        const changes = this.stmts.adoptGate.run(this.owner.pid, this.owner.host, req.note ?? null, existing.gateId).changes;
+        // Zero changes means the row is gone: someone ran `cancel` between the
+        // read above and this transaction. Admission is open now, so returning
+        // the stale gate would announce a pause that no longer exists — the same
+        // mistake as fabricating one.
+        return changes === 0 ? null : this.gateState();
+      }).immediate();
+      if (!adopted) {
+        throw new Error("openGate: the gate disappeared while it was being taken over (admission is open)");
+      }
+      return adopted;
+    }
+    const gateId = "upgrade-" + randomUUID();
+    this.db.transaction((): void => {
+      this.stmts.openGate.run(gateId, this.owner.pid, this.owner.host, req.note ?? null);
+    }).immediate();
+    // Re-read: another process may have won the race (ON CONFLICT DO NOTHING),
+    // and whatever row is there now is the gate everyone must agree on. If there
+    // is no row at all the write did not land — say so instead of returning a
+    // gate nobody wrote, which would let a caller announce a pause that is not in
+    // effect.
+    const written = this.gateState();
+    if (!written) {
+      throw new Error("openGate: the gate row could not be read back after writing it — admission is NOT closed");
+    }
+    return written;
+  }
+
+  /**
+   * Run several reads as ONE WAL snapshot.
+   *
+   * The statements are individually consistent but not mutually: a task that
+   * ends between two of them can appear in one list and not the other, and a
+   * machine-readable report must not carry two contradictory moments. A
+   * deferred transaction gives the reader a stable snapshot without taking a
+   * write lock.
+   */
+  consistentRead<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
+  /**
+   * #309: the gate plus whether the process that opened it is still running.
+   *
+   * A `wait` that was interrupted (Ctrl-C, closed terminal) leaves the gate
+   * closed, and then every business command is refused until someone reopens it.
+   * `ownerState` is what lets the diagnostics say "nobody is upgrading, this is
+   * your own leftover" instead of implying an upgrade is in progress:
+   * `alive` / `dead` (same host) / `unknown` (another host, unprovable).
+   *
+   * Nothing clears the gate automatically. A dead opener is strong evidence but
+   * still a decision to reopen, and `ans upgrade cancel` is that decision.
+   */
+  gateOwnerState(): { gate: UpgradeGateState; ownerState: "alive" | "dead" | "unknown" } | null {
+    const gate = this.gateState();
+    if (!gate) return null;
+    return { gate, ownerState: this.probeOwnerState(gate.openedByHost, gate.openedByPid) };
+  }
+
+  /** #309: reopen admission. Returns whether a gate was actually open. */
+  closeGate(): boolean {
+    const info = this.db.transaction((): number => this.stmts.closeGate.run().changes).immediate();
+    return info > 0;
+  }
+
+  /**
+   * #309: unfinished work that blocks an upgrade.
+   *
+   * Business tasks only: a management command (a status read, the upgrade
+   * itself) is not work an upgrade has to wait out. Dismissed rows are excluded
+   * by the operator's explicit decision, not by any liveness guess. Follow-up
+   * work IS included — a hook's index write is still a write in flight.
+   */
+  blockingTasks(): Array<TaskRecordRow & { ownerState: "alive" | "dead" | "unknown" }> {
+    // openTasks() already folds in the owner probe; re-probing here would ask
+    // the OS twice about the same pid and let the two answers disagree.
+    return this.openTasks().filter((row) => row.role === "business" && row.dismissedAt === null);
+  }
+
+  /** #309: open rows an operator may acknowledge (undismissed, unfinished). */
+  dismissableTasks(): Array<TaskRecordRow & { ownerState: "alive" | "dead" | "unknown" }> {
+    const rows = this.stmts.dismissableTasks.all() as TaskRecordRow[];
+    return rows.map((row) => ({ ...row, ownerState: this.probeOwnerState(row.ownerHost, row.ownerPid) }));
+  }
+
+  /**
+   * #309: acknowledge one open row as unresolvable, with a mandatory reason.
+   *
+   * This is the ONLY way a leftover stops blocking without an end write, and it
+   * is deliberately manual: the row keeps its NULL `ended_at` (nothing here
+   * claims the task finished), and the reason travels with it so a later reader
+   * sees a human decision instead of a silent sweep. Returns false when the row
+   * is not dismissed by this call (already ended, already dismissed, or unknown).
+   */
+  dismissTask(taskId: string, reason: string): boolean {
+    const why = reason.trim();
+    if (!why) throw new Error("dismissTask: a reason is required — dismissing says a human gave up on this row");
+    return this.db.transaction((): boolean => this.stmts.dismissTask.run(why, taskId).changes > 0).immediate();
+  }
+
+  /**
+   * #309: finished rows older than the retention window, as a preview.
+   *
+   * `olderThanDays` defaults to TASK_HISTORY_RETENTION_DAYS. An open row is
+   * never listed, however old — it is a blocker, not history.
+   */
+  agedFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): Array<{ taskId: string; kind: string; endedAt: string }> {
+    const days = requirePositiveDays(olderThanDays);
+    return this.stmts.agedFinishedTasks.all("-" + days + " days") as Array<{ taskId: string; kind: string; endedAt: string }>;
+  }
+
+  /**
+   * What `pruneFinishedTasks` would do, without deleting anything.
+   *
+   * Computed with the SAME rule the delete loop applies — a row goes only when
+   * no SURVIVING row points at it, and removing one generation can free the
+   * next — so a chain of aged rows reports "both go", not "one goes, one is
+   * held". Read-only: one deferred read transaction (a stable WAL snapshot),
+   * no write lock, nothing to roll back.
+   */
+  previewPrune(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): {
+    wouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
+    wouldHold: Array<{ taskId: string; kind: string; endedAt: string }>;
+  } {
+    const days = requirePositiveDays(olderThanDays);
+    const window = "-" + days + " days";
+    // The three reads must come from ONE snapshot: a follow-up link written
+    // between them would appear in allTaskIds but not in parentReferences, the
+    // fixed point would never learn about it, and the preview would promise to
+    // delete a row the real prune (which sees the finished database) keeps.
+    return this.consistentRead(() => {
+      const aged = this.stmts.agedFinishedTasks.all(window) as Array<{ taskId: string; kind: string; endedAt: string }>;
+      const references = this.stmts.parentReferences.all() as Array<{ taskId: string; parentTaskId: string }>;
+
+      const agedIds = new Set(aged.map((r) => r.taskId));
+      // A row survives if it is not aged, or if an aged row that survives points
+      // at it. Start with everything that is not aged, then grow to a fixed point.
+      const surviving = new Set<string>(
+        (this.stmts.allTaskIds.all() as Array<{ taskId: string }>)
+          .map((r) => r.taskId)
+          .filter((id) => !agedIds.has(id)),
+      );
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const ref of references) {
+          if (!agedIds.has(ref.parentTaskId) || surviving.has(ref.parentTaskId)) continue;
+          if (surviving.has(ref.taskId)) {
+            surviving.add(ref.parentTaskId);
+            grew = true;
+          }
+        }
+      }
+      return {
+        wouldPrune: aged.filter((r) => !surviving.has(r.taskId)),
+        wouldHold: aged.filter((r) => surviving.has(r.taskId)),
+      };
+    });
+  }
+
+  /**
+   * #309: delete finished rows older than the retention window.
+   *
+   * Returns how many rows went and how many aged rows stayed because a
+   * surviving row still points at them. The CALLER must have built a recovery
+   * point first (`ans upgrade prune` snapshots the whole database before this);
+   * this method deliberately takes no snapshot of its own, so a caller cannot
+   * mistake "the registry searched nothing" for "history is recoverable".
+   *
+   * Open rows are untouched by the WHERE clause, so a crash mid-prune can never
+   * delete work an upgrade is waiting for.
+   */
+  pruneFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): { removed: number; heldByChildren: number } {
+    const days = requirePositiveDays(olderThanDays);
+    const window = "-" + days + " days";
+    return this.db.transaction((): { removed: number; heldByChildren: number } => {
+      // One pass only removes the outermost generation: a parent is still
+      // referenced by its child when the statement starts. Repeated passes peel
+      // the history one level at a time, oldest references last. Bounded so a
+      // pathological chain cannot spin here.
+      let removed = 0;
+      for (let pass = 0; pass < 32; pass++) {
+        const changes = this.stmts.pruneFinishedTasks.run(window).changes;
+        removed += changes;
+        if (changes === 0) break;
+      }
+      // Aged rows kept because a surviving row still links to them. Reported, not
+      // silently dropped: the operator should be able to tell "nothing to prune"
+      // from "something is holding these back".
+      const heldByChildren = (this.stmts.agedFinishedTasksHeldByChildren.get(window) as { n: number }).n;
+      return { removed, heldByChildren };
+    }).immediate();
   }
 
   /** Register this process's own lifetime as a process record. */
@@ -290,7 +641,7 @@ export class TaskRegistry {
 }
 
 /**
- * #307: bring an existing task_records up to the follow-up shape.
+ * #307/#309: bring an existing task_records up to the current shape.
  *
  * Both openers call this: the registry can be the first process to touch an old
  * file, and the session store can be the first to assemble one. Keeping it in
@@ -300,8 +651,11 @@ export class TaskRegistry {
  * 'independent' — that is what those rows really were (nothing wrote
  * post-work links before #307), not a guess. `parent_task_id` stays nullable
  * on purpose: a follow-up whose parent cannot be named must record no link.
- * The index is created AFTER the ALTER; placing it in schema.sql would make it
- * run before the column exists and fail to open an old database (the #277
+ * #309's dismissal columns are nullable and default NULL: an old open row has
+ * NOT been acknowledged by anyone, so it must start as a blocker.
+ *
+ * Indexes are created AFTER the ALTERs; placing them in schema.sql would make
+ * them run before the columns exist and fail to open an old database (the #277
  * lesson).
  */
 export function migrateTaskFollowupColumns(db: Database.Database, initDeadline: number): void {
@@ -315,7 +669,17 @@ export function migrateTaskFollowupColumns(db: Database.Database, initDeadline: 
   };
   step("ALTER TABLE task_records ADD COLUMN origin TEXT NOT NULL DEFAULT 'independent' CHECK (origin IN ('independent', 'follow-up'))");
   step("ALTER TABLE task_records ADD COLUMN parent_task_id TEXT REFERENCES task_records(task_id)");
+  step("ALTER TABLE task_records ADD COLUMN dismissed_at TEXT");
+  step("ALTER TABLE task_records ADD COLUMN dismissed_reason TEXT");
   step("CREATE INDEX IF NOT EXISTS idx_task_records_parent ON task_records(parent_task_id) WHERE parent_task_id IS NOT NULL");
+}
+
+/** Reject a retention window that would silently mean something else. */
+function requirePositiveDays(days: number): number {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error("task history retention must be a positive number of days (got " + String(days) + ")");
+  }
+  return days;
 }
 
 /**

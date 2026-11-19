@@ -1,3 +1,30 @@
 * text=auto eol=lf
-*.{bat,ps1,cmd} text eol=crlf
-*.{png,ico,icns,jpg,jpeg,gif,webp,exe,dll,node,pdb,msi,so,dylib,bin,zip,gz,tar,7z} binary
+
+# git 的 wildmatch 不认 `*.{bat,ps1,cmd}` 这种花括号，写了等于没写（以前 .bat
+# 还是 eol: lf）。一行一个后缀，`git check-attr` 才真的认。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+
+# 同上：二进制后缀逐个列。以前那行花括号无效，.png 还在按 text 处理。
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.exe binary
+*.dll binary
+*.node binary
+*.pdb binary
+*.msi binary
+*.so binary
+*.dylib binary
+*.bin binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
