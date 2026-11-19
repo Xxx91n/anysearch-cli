@@ -111,7 +111,7 @@ try {
 
   const dom = ans("domain docs");
   check("ans domain docs exit 0", dom.code === 0, dom.out);
-  check("domain switch resolves shipped toml", dom.out.includes("sources:"), dom.out);
+  check("domain switch resolves shipped toml", dom.out.includes("领域已换成：docs"), dom.out);
 
   const d2 = ans("doctor");
   check("doctor shows active domain docs", d2.out.includes("active: docs"), d2.out.slice(-400));
