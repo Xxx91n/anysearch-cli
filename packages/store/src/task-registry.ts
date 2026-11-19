@@ -61,8 +61,9 @@ export class AdmissionClosedError extends Error {
     super(
       "upgrade in progress: new task admission is closed (" +
       "gate " + gate.gateId + " opened " + gate.openedAt +
-      (gate.openedByHost ? " by pid " + String(gate.openedByPid) + " on " + gate.openedByHost : "") +
-      ") — this request was refused and NOT queued; retry after the upgrade finishes",
+      " by pid " + gate.openedByPid + " on " + gate.openedByHost +
+      ") — refused, not queued. " +
+      "If no upgrade is actually running (a paused `ans upgrade wait` was interrupted): ans upgrade cancel",
     );
     this.name = "AdmissionClosedError";
     this.gate = gate;
@@ -193,6 +194,7 @@ export class TaskRegistry {
     dismissTask: Database.Statement;
     dismissableTasks: Database.Statement;
     agedFinishedTasks: Database.Statement;
+    agedFinishedTasksHeldByChildren: Database.Statement;
     pruneFinishedTasks: Database.Statement;
   };
   private readonly owner: { pid: number; host: string };
@@ -256,8 +258,18 @@ export class TaskRegistry {
         "SELECT task_id as taskId, kind, ended_at as endedAt FROM task_records " +
         "WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) ORDER BY ended_at",
       ),
+      // FK-safe on purpose: `parent_task_id` references this same table with no
+      // ON DELETE action, so deleting a parent that a SURVIVING row still points
+      // at aborts the whole transaction. Such parents are skipped instead of
+      // having the live row's link rewritten — losing the attribution of an open
+      // row is worse than keeping one old finished row.
       pruneFinishedTasks: db.prepare(
-        "DELETE FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?)",
+        "DELETE FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
+        "AND task_id NOT IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
+      ),
+      agedFinishedTasksHeldByChildren: db.prepare(
+        "SELECT COUNT(*) as n FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
+        "AND task_id IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
       ),
     };
   }
@@ -362,15 +374,34 @@ export class TaskRegistry {
     this.db.transaction((): void => {
       this.stmts.openGate.run(gateId, this.owner.pid, this.owner.host, req.note ?? null);
     }).immediate();
-    // Another process may have won the race (ON CONFLICT DO NOTHING): whatever
-    // row is there now is the gate everyone must agree on.
-    return this.gateState() ?? {
-      gateId,
-      openedAt: new Date().toISOString(),
-      openedByPid: this.owner.pid,
-      openedByHost: this.owner.host,
-      note: req.note ?? null,
-    };
+    // Re-read: another process may have won the race (ON CONFLICT DO NOTHING),
+    // and whatever row is there now is the gate everyone must agree on. If there
+    // is no row at all the write did not land — say so instead of returning a
+    // gate nobody wrote, which would let a caller announce a pause that is not in
+    // effect.
+    const written = this.gateState();
+    if (!written) {
+      throw new Error("openGate: the gate row could not be read back after writing it — admission is NOT closed");
+    }
+    return written;
+  }
+
+  /**
+   * #309: the gate plus whether the process that opened it is still running.
+   *
+   * A `wait` that was interrupted (Ctrl-C, closed terminal) leaves the gate
+   * closed, and then every business command is refused until someone reopens it.
+   * `ownerState` is what lets the diagnostics say "nobody is upgrading, this is
+   * your own leftover" instead of implying an upgrade is in progress:
+   * `alive` / `dead` (same host) / `unknown` (another host, unprovable).
+   *
+   * Nothing clears the gate automatically. A dead opener is strong evidence but
+   * still a decision to reopen, and `ans upgrade cancel` is that decision.
+   */
+  gateOwnerState(): { gate: UpgradeGateState; ownerState: "alive" | "dead" | "unknown" } | null {
+    const gate = this.gateState();
+    if (!gate) return null;
+    return { gate, ownerState: this.probeOwnerState(gate.openedByHost, gate.openedByPid) };
   }
 
   /** #309: reopen admission. Returns whether a gate was actually open. */
@@ -436,11 +467,26 @@ export class TaskRegistry {
    * Open rows are untouched by the WHERE clause, so a crash mid-prune can never
    * delete work an upgrade is waiting for.
    */
-  pruneFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): number {
+  pruneFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): { removed: number; heldByChildren: number } {
     const days = requirePositiveDays(olderThanDays);
-    return this.db.transaction((): number =>
-      this.stmts.pruneFinishedTasks.run("-" + days + " days").changes,
-    ).immediate();
+    const window = "-" + days + " days";
+    return this.db.transaction((): { removed: number; heldByChildren: number } => {
+      // One pass only removes the outermost generation: a parent is still
+      // referenced by its child when the statement starts. Repeated passes peel
+      // the history one level at a time, oldest references last. Bounded so a
+      // pathological chain cannot spin here.
+      let removed = 0;
+      for (let pass = 0; pass < 32; pass++) {
+        const changes = this.stmts.pruneFinishedTasks.run(window).changes;
+        removed += changes;
+        if (changes === 0) break;
+      }
+      // Aged rows kept because a surviving row still links to them. Reported, not
+      // silently dropped: the operator should be able to tell "nothing to prune"
+      // from "something is holding these back".
+      const heldByChildren = (this.stmts.agedFinishedTasksHeldByChildren.get(window) as { n: number }).n;
+      return { removed, heldByChildren };
+    }).immediate();
   }
 
   /** Register this process's own lifetime as a process record. */

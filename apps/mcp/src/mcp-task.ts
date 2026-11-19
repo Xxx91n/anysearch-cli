@@ -42,10 +42,9 @@ export interface McpTaskCloseout {
 interface Tracking {
   identity?: McpTaskIdentity;
   /**
-   * #309: set when an upgrade closed admission and this call was refused. The
-   * handler must not run; `withMcpTask` answers the host with the refusal
-   * instead of calling a provider. Distinct from `!identity`, which is a broken
-   * registry and still runs (fail-open).
+   * Set when an upgrade closed admission and this call was refused: the handler
+   * must not run. Distinct from `!identity`, which is a broken registry and
+   * still runs (fail-open). Filled by `trackMcpToolCall`, read by `withMcpTask`.
    */
   refusal?: AdmissionClosedError;
   /** End the task row. Returns false when the write failed (record stays open). */
@@ -125,8 +124,12 @@ function registerTask(
 /**
  * Register this tool call as a business task. An unregistered call still runs:
  * a broken registry never breaks the tool.
+ *
+ * Not exported: `withMcpTask` is the only thing allowed to decide what a
+ * refusal means. An exported refusal field would be optional at every call site,
+ * and one caller forgetting to look turns the admission gate off silently.
  */
-export function trackMcpToolCall(eng: CompositionResult, toolName: string): Tracking {
+function trackMcpToolCall(eng: CompositionResult, toolName: string): Tracking {
   const kind = "mcp." + toolName;
   const registered = registerTask(eng, kind);
   if (registered && "refusal" in registered) return { refusal: registered.refusal, finish: () => false };

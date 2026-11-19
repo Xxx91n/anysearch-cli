@@ -146,8 +146,8 @@ function main(): void {
         !preview.some((r) => r.taskId === kept.taskId));
 
       // Dry-run is the listing; pruning removes exactly the aged finished rows.
-      const removed = registry.pruneFinishedTasks(30);
-      check("J: pruning removed the aged finished row", removed === 1, "removed=" + removed);
+      const pruned = registry.pruneFinishedTasks(30);
+      check("J: pruning removed the aged finished row", pruned.removed === 1, "removed=" + pruned.removed);
       check("J: the finished row is gone", registry.taskById(old.taskId) === null);
       check("J: the open row survived the prune", registry.taskById(kept.taskId) !== null);
 
@@ -168,6 +168,57 @@ function main(): void {
       check("J: a zero-day retention window is rejected", badWindow);
       kept.finish({ exitCode: 0 });
       stuck.finish({ exitCode: 0 });
+    }
+
+    // ---- J2. an aged row that a surviving row still points at is kept ----
+    {
+      // parent_task_id references this same table with no ON DELETE action, so a
+      // blind DELETE would abort the whole prune (review finding: measured
+      // FOREIGN KEY constraint failed). The aged parent must survive, and the
+      // live child must keep its link.
+      const parent = registry.registerTask({ kind: "cli.chat", role: "business", entry: "cli" });
+      parent.finish({ exitCode: 0 });
+      const child = registry.registerTask({
+        kind: "server.project_index", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: parent.taskId,
+      });
+      const raw = new Database(dbPath);
+      try {
+        raw.prepare("UPDATE task_records SET ended_at = datetime('now','-45 days') WHERE task_id = ?").run(parent.taskId);
+      } finally { raw.close(); }
+
+      const pruned = registry.pruneFinishedTasks(30);
+      check("J2: the aged parent is held back, not deleted", registry.taskById(parent.taskId) !== null);
+      check("J2: the prune reports it as held by a child", pruned.heldByChildren === 1, "held=" + pruned.heldByChildren);
+      check("J2: the live child keeps its link", registry.taskById(child.taskId)!.parentTaskId === parent.taskId);
+      check("J2: prune did not fail (no FK abort)", pruned.removed >= 0);
+      child.finish({ exitCode: 0 });
+      // A child that just ended is NOT aged yet, so the parent is still held
+      // back — lossless, at the cost of pruning that pair 30 days later.
+      const stillHeld = registry.pruneFinishedTasks(30);
+      check("J2: a freshly finished child still holds its parent back",
+        registry.taskById(parent.taskId) !== null && stillHeld.heldByChildren === 1);
+      // Age the child as well: now the pair is deletable in one go.
+      const ageChild = new Database(dbPath);
+      try {
+        ageChild.prepare("UPDATE task_records SET ended_at = datetime('now','-45 days') WHERE task_id = ?").run(child.taskId);
+      } finally { ageChild.close(); }
+      const second = registry.pruneFinishedTasks(30);
+      check("J2: once both are aged, the pair goes together",
+        registry.taskById(parent.taskId) === null && registry.taskById(child.taskId) === null);
+      check("J2: nothing is left held back", second.heldByChildren === 0, "held=" + second.heldByChildren);
+    }
+
+    // ---- J3. the gate reports whether its opener is still running ---------
+    {
+      const foreign = openTaskRegistry(dbPath, { owner: { pid: 999_999, host: "gone-host" }, isOwnerAlive: () => false });
+      try {
+        foreign.openGate({ note: "orphan" });
+        const viewed = registry.gateOwnerState();
+        check("J3: the gate is reported with its owner state", viewed !== null && viewed.ownerState === "unknown",
+          JSON.stringify(viewed));
+      } finally { foreign.closeGate(); foreign.close(); }
+      check("J3: closing from that registry reopens admission", registry.gateState() === null);
     }
 
     registry.close();

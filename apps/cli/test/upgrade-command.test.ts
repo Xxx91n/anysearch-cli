@@ -141,7 +141,8 @@ async function main(): Promise<void> {
       // cancel with nothing open is honest about it.
       const s2 = io();
       const code2 = await runUpgrade(["cancel"], s2.opts);
-      check("5: cancel with no pause exits 1 and says so", code2 === 1 && /本来就是开的/.test(s2.out.join("")));
+      check("5: cancel with no pause exits 0 and says so (admission is open, not blocked)",
+        code2 === 0 && /本来就是开的/.test(s2.out.join("")));
     }
 
     // ---- 6. dismiss needs a reason and removes the blocker ----------------
@@ -221,6 +222,55 @@ async function main(): Promise<void> {
       const bad = io();
       check("7b: --days 0 is a usage error", (await runUpgrade(["prune", "--days", "0"], bad.opts)) === 2);
       stillOpen.finish({ exitCode: 0 });
+    }
+
+    // ---- 7c. an option without a value is a usage error, not a silent
+    //          fallback to the default database/timeout ---------------------
+    {
+      const s1 = io();
+      check("7c: --db with no value is a usage error", (await runUpgrade(["status", "--db"], s1.opts)) === 2);
+      const s2 = io();
+      check("7c: --timeout with no value is a usage error", (await runUpgrade(["wait", "--timeout"], s2.opts)) === 2);
+      const s3 = io();
+      check("7c: --db followed by another option is a usage error",
+        (await runUpgrade(["status", "--db", "--json"], s3.opts)) === 2);
+      check("7c: the message says a value is missing", /后面要跟一个值/.test(s3.err.join("")), s3.err.join(""));
+      const s4 = io();
+      check("7c: --reason with no value is a usage error",
+        (await runUpgrade(["dismiss", "x", "--reason"], s4.opts)) === 2);
+    }
+
+    // ---- 7d. cancel with no pause is "admission is open", not "blocked" --
+    {
+      const s = io();
+      const code = await runUpgrade(["cancel"], s.opts);
+      check("7d: cancel with nothing to cancel exits 0 (admission is open)", code === 0, "code=" + code);
+      check("7d: and still says there was no pause", /本来就是开的/.test(s.out.join("")), s.out.join(""));
+    }
+
+    // ---- 7e. status names a gate whose opener is gone (the leftover trap) --
+    {
+      // A wait interrupted by Ctrl-C leaves the gate closed with a dead opener.
+      // status must say nobody is upgrading and name the way out.
+      const probe = registry.registerTask({ kind: "cli.search", role: "business", entry: "cli" });
+      const host = registry.taskById(probe.taskId)!.ownerHost;
+      probe.finish({ exitCode: 0 });
+      const orphan = openTaskRegistry(dbPath, { owner: { pid: 999_999, host }, isOwnerAlive: () => false });
+      try { orphan.openGate({ note: "interrupted wait" }); } finally { orphan.close(); }
+      const s = io();
+      const code = await runUpgrade(["status"], s.opts);
+      const text = s.out.join("");
+      check("7e: status exits 1 while admission is closed", code === 1);
+      check("7e: status says the process that closed it is gone", /已经不在了/.test(text), text);
+      check("7e: status names both ways out", /upgrade wait/.test(text) && /upgrade cancel/.test(text), text);
+      const j = io();
+      await runUpgrade(["status", "--json"], j.opts);
+      const parsed = JSON.parse(j.out.join("")) as { gateOwnerState: string };
+      check("7e: --json reports the gate owner as provably gone", parsed.gateOwnerState === "dead",
+        JSON.stringify(parsed.gateOwnerState));
+      const cancel = io();
+      check("7e: cancel clears the leftover gate", (await runUpgrade(["cancel"], cancel.opts)) === 0);
+      check("7e: admission is open again", registry.gateState() === null);
     }
 
     // ---- 8. bad usage is its own exit code -------------------------------

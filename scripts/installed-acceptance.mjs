@@ -1538,6 +1538,7 @@ async function main() {
           "N4：status 点名是哪个任务在挡", status.out.slice(0, 600));
 
         // ---- 3. 放掉这一轮；任务收尾之后 wait 才退 0 ----
+        // 放行之后 wait 才可能看到"没有阻塞了"——顺序就是被测的那件事，不能倒过来。
         releaseRunHold();
         const waited = await waiting;
         check(waited.code === 0, "N4：旧任务收尾之后 wait 才退 0", waited.out.slice(0, 600));

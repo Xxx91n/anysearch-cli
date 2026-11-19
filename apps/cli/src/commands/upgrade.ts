@@ -1,22 +1,12 @@
-// ans upgrade — 升级预检（#309）。
+// ans upgrade — 升级预检（#309）。只回答"现在能不能换程序"，不换文件、不下载、
+// 不重启任何进程（换文件是 #311）。
 //
-// 这张票只回答一件事：现在能不能换程序。它不换文件、不下载包、不动安装布局
-// （那是 #311），也不会假装升级已经完成。
+// 准入关着时，新的付费/干活请求被直接拒绝，不排队也不事后重放。管理类命令
+// （status、doctor、本命令）和已接请求的后置工作照常放行：前者用来处理升级，
+// 后者是别人干到一半的活，掐掉就是丢数据。
 //
-// 三件事：
-// - `status`：只读。谁还开着活、哪些进程本机确认不了、准入现在是开还是关。
-// - `wait`：把新任务准入关掉，等已经接下的活干完。等到上限还有人没干完就报名字、
-//   退 1，不假装等到了。
-// - `cancel`：放弃这次暂停，把准入重新打开。它不杀任何正在跑的活——用户取消的是
-//   「等待」，不是别人的工作。
-//
-// 准入关着的时候，新的一次付费/干活请求会被直接拒绝（不是排队、不事后重放）；
-// 管理类命令（status、doctor、本命令自己）和后置工作照常放行：前者是用来处理升级的，
-// 后者是已经接下的请求的尾巴，掐掉就是丢数据。
-//
-// 进程记录只报不挡：常驻 MCP 服务本来就一直在，拿它的 PID 当"活没干完"会让等待永远
-// 等不完；反过来，一个已经死掉的 PID 也不等于它那次任务干完了——这正是本票不把
-// PID 或心跳当完成证明的意思。
+// 进程记录只报不挡。常驻 MCP 服务一直在，拿它的 PID 当"活没干完"会让等待永远等
+// 不完；反过来，一个死掉的 PID 也不证明那次任务干完了。
 
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveDbPath } from "@anysearch-cli/kernel";
@@ -91,6 +81,8 @@ interface ProcessView {
 /** 读一份现场快照：门槛、阻塞的活、确认不了的进程、可确认的行。 */
 interface Snapshot {
   gate: UpgradeGateState | null;
+  /** Whether the process that closed admission is still running. */
+  gateOwnerState: "alive" | "dead" | "unknown" | null;
   blockers: BlockerView[];
   processes: ProcessView[];
 }
@@ -118,8 +110,10 @@ function toBlocker(row: TaskRecordRow & { ownerState: "alive" | "dead" | "unknow
  * wait. Callers that only need one reading use `readSnapshot`.
  */
 function snapshotOf(registry: TaskRegistry, excludePid?: number): Snapshot {
+  const gate = registry.gateOwnerState();
   return {
-    gate: registry.gateState(),
+    gate: gate?.gate ?? null,
+    gateOwnerState: gate?.ownerState ?? null,
     blockers: registry.blockingTasks().map(toBlocker),
     // 自己这条进程记录不算"说不清的进程"：问问题的人就是它。
     processes: registry.openProcesses()
@@ -249,6 +243,7 @@ function jsonSnapshot(s: Snapshot, dismissable: BlockerView[]): string {
   return JSON.stringify({
     admission: s.gate ? "closed" : "open",
     gate: s.gate,
+    gateOwnerState: s.gateOwnerState,
     blocked: s.blockers.length > 0,
     blockers: s.blockers,
     // 进程不是阻塞判据，只是"哪些入口还在、哪些确认不了"的说明。
@@ -284,14 +279,31 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
   let daysRaw: string | undefined;
   let reason: string | undefined;
   let dryRun = false;
-  for (let i = 0; i < rest.length; i++) {
-    const arg = rest[i]!;
+  // 取值型选项：后面那个必须是个值。少写一个值就悄悄回落成默认库/默认超时，
+  // 是会看错库、等错时间的那种安静错误；`--db --json` 更不能把下一个选项当路径。
+  let at = 0;
+  const takeValue = (name: string): string | null => {
+    const next = rest[at + 1];
+    if (next === undefined || next.startsWith("--")) {
+      err("ans upgrade: " + name + " 后面要跟一个值\n");
+      return null;
+    }
+    at += 1;
+    return next;
+  };
+  for (; at < rest.length; at++) {
+    const arg = rest[at]!;
     if (arg === "--json") continue;
-    if (arg === "--db") { dbPath = rest[++i]; continue; }
-    if (arg === "--timeout") { timeoutRaw = rest[++i]; continue; }
-    if (arg === "--reason") { reason = rest[++i]; continue; }
-    if (arg === "--days") { daysRaw = rest[++i]; continue; }
     if (arg === "--dry-run") { dryRun = true; continue; }
+    if (arg === "--db" || arg === "--timeout" || arg === "--reason" || arg === "--days") {
+      const value = takeValue(arg);
+      if (value === null) return 2;
+      if (arg === "--db") dbPath = value;
+      else if (arg === "--timeout") timeoutRaw = value;
+      else if (arg === "--reason") reason = value;
+      else daysRaw = value;
+      continue;
+    }
     if (arg.startsWith("--")) {
       err("ans upgrade: 不认识的选项 " + arg + "\n");
       return 2;
@@ -327,11 +339,26 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       err("ans upgrade status: 读不了库 " + resolvedDb + "（" + errText(e) + "）\n");
       return 1;
     }
-    if (json) { out(jsonSnapshot(snap, dismissableOf(resolvedDb)) + "\n"); }
+    if (json) {
+      let dismissable: BlockerView[];
+      try {
+        dismissable = dismissableOf(resolvedDb);
+      } catch (e) {
+        err("ans upgrade status: 读不了可放弃的行（" + errText(e) + "）\n");
+        return 1;
+      }
+      out(jsonSnapshot(snap, dismissable) + "\n");
+    }
     else {
       out("[upgrade] 准入：" + (snap.gate
         ? "关着（" + snap.gate.gateId + "，从 " + snap.gate.openedAt + " 起）"
         : "开着——新任务可以接") + "\n");
+      // 开门的那个人已经不在了，是最常见的"门关着但没人升级"：被 Ctrl-C 打断的
+      // wait、关掉的终端。不替人做决定，但必须把出路点出来，否则每条业务命令都退 4。
+      if (snap.gate && snap.gateOwnerState === "dead") {
+        out("[upgrade] 注意：关掉准入的那个进程（pid " + snap.gate.openedByPid + "）已经不在了，" +
+          "现在没有升级在跑。要么 ans upgrade wait 接管，要么 ans upgrade cancel 直接打开准入\n");
+      }
       if (snap.blockers.length === 0) {
         out("[upgrade] 没有没干完的活，可以开始升级\n");
       } else {
@@ -342,9 +369,12 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         out("[upgrade] 还在的入口进程（只说明情况，不当作阻塞）：\n");
         for (const p of snap.processes) out("  - " + describeProcess(p) + "\n");
       }
-      const unconfirmed = snap.blockers.filter((b) => b.ownerState !== "alive");
-      if (unconfirmed.length > 0) {
-        out("[upgrade] 本机确认不了的账 " + unconfirmed.length + " 条，要人决定：" +
+      // "dead" 和 "unknown" 不是一回事：前者本机已经查清（进程没了），后者查不了。
+      // 混着数会让人以为这些行全都无从判断。
+      const dead = snap.blockers.filter((b) => b.ownerState === "dead").length;
+      const unknown = snap.blockers.filter((b) => b.ownerState === "unknown").length;
+      if (dead + unknown > 0) {
+        out("[upgrade] 其中已经不在跑的 " + dead + " 条、别的机器上确认不了的 " + unknown + " 条，要人决定：" +
           "确认真的没人管了就用 ans upgrade dismiss <taskId> --reason \"...\"\n");
       }
     }
@@ -383,9 +413,10 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       } else {
         out("[upgrade] " + (wasOpen
           ? "已经打开准入，新任务又能进来了（正在跑的活没被碰）\n"
-          : "准入本来就是开的，没有可取消的暂停\n") + "");
+          : "准入本来就是开的，没有可取消的暂停\n"));
       }
-      return wasOpen ? 0 : 1;
+      // 两种都算"准入现在是开的"，都退 0：空前提出 1 会被脚本读成"升级被挡"。
+      return 0;
     } catch (e) {
       err("ans upgrade cancel: 打不开准入（" + errText(e) + "）\n");
       return 1;
@@ -416,14 +447,14 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           (before.endedAt !== null ? "已经有结束时间" : "已经标记过") + "）\n");
         return 1;
       }
-      // 记下之后它真的不再挡了——用同一个读法再确认一次，而不是假设。
-      const stillBlocking = registry.blockingTasks().some((b) => b.taskId === taskId);
+      // 不再复查"是不是还在挡"：dismiss 写的 dismissed_at 一定让 blockingTasks
+      // 排除这行，复查永远为假，只会在成功文案后面接一个失败退出码。
       if (json) {
-        out(JSON.stringify({ dismissed: taskId, stillBlocking, reason: reason.trim() }, null, 2) + "\n");
+        out(JSON.stringify({ dismissed: taskId, reason: reason.trim() }, null, 2) + "\n");
       } else {
         out("[upgrade] 记下了：" + taskId + " 不再算升级阻塞（原因：" + reason.trim() + "）\n");
       }
-      return stillBlocking ? 1 : 0;
+      return 0;
     } catch (e) {
       err("ans upgrade dismiss: 记不下来（" + errText(e) + "）\n");
       return 1;
@@ -470,13 +501,20 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         err("ans upgrade prune: 建不起恢复存档点，什么都没删（" + errText(e) + "）\n");
         return 1;
       }
-      const removed = registry.pruneFinishedTasks(retentionDays);
+      const pruned = registry.pruneFinishedTasks(retentionDays);
       if (json) {
-        out(JSON.stringify({ pruned: removed, days: retentionDays, backup: backup.backupFile }, null, 2) + "\n");
+        out(JSON.stringify({
+          pruned: pruned.removed, heldByChildren: pruned.heldByChildren,
+          days: retentionDays, backup: backup.backupFile,
+        }, null, 2) + "\n");
       } else {
-        out("[upgrade] 删掉了 " + removed + " 条 " + retentionDays + " 天前收尾的任务行；" +
+        out("[upgrade] 删掉了 " + pruned.removed + " 条 " + retentionDays + " 天前收尾的任务行；" +
           "恢复依据在 " + backup.backupFile + "（连同它的 .json 记录）\n");
         out("[upgrade] 开着的行一条没动——它们是升级阻塞的判据\n");
+        if (pruned.heldByChildren > 0) {
+          out("[upgrade] 有 " + pruned.heldByChildren + " 条虽然过期了，但还有活着的行指着它们，" +
+            "所以留着没删（删了会把那些行的归属抹掉）\n");
+        }
       }
       return 0;
     } catch (e) {

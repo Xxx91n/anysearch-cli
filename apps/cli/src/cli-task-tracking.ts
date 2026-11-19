@@ -18,13 +18,15 @@
 //   registered too — with role='management' — so an admission pause can keep
 //   them usable (#309 reads the role; this layer only records the fact).
 //
-// Failure behavior: a broken registry must not break the command. Today
-// nothing gates on a registration (admission lands in #309), so a failure
-// warns on stderr and the command runs unregistered — with one deliberate
-// exception downstream: a chat whose domain declares [budget] cannot
-// establish a task budget without a registered task, and that run then stops
-// (see commands/chat-task-budget.ts — a declared constraint that cannot be
-// established must not turn into uncontrolled calls).
+// Failure behavior: three outcomes, deliberately kept apart.
+// - a broken registry warns on stderr and the command runs unregistered;
+// - an upgrade closing admission is NOT a failure. It comes back as
+//   `admissionRefusal` and the entry decides the exit code (index.ts: exit 4,
+//   handler never runs). Squashing it into the fail-open branch would start the
+//   very work the gate exists to refuse;
+// - downstream, a chat whose domain declares [budget] cannot establish a task
+//   budget without a registered task, and that run stops (see
+//   commands/chat-task-budget.ts).
 //
 // Run from tests: pnpm --filter @anysearch-cli/cli test
 

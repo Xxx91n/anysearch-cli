@@ -398,7 +398,15 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     const initDeadline = beginInit(conn);
     const prevUmask = process.umask(0o077);
     try {
-      withInitBusyRetry("destructive-op snapshot", () => conn.prepare("VACUUM INTO ?").run(backupFile), initDeadline);
+      withInitBusyRetry("destructive-op snapshot", () => {
+        // A previous attempt inside the retry loop leaves the target behind, and
+        // then "VACUUM INTO" fails with "output file already exists" — which is
+        // not a busy error, so the retry stops and the real cause (a locked
+        // database) is replaced by a misleading one. Clear it first, the same
+        // step the migration path takes.
+        try { rmSync(backupFile, { force: true }); } catch { /* nothing to clear */ }
+        conn.prepare("VACUUM INTO ?").run(backupFile);
+      }, initDeadline);
     } finally {
       process.umask(prevUmask);
     }
@@ -419,9 +427,22 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
         sha256,
         manualRecovery: MANUAL_RECOVERY_NOTE,
       });
-    } catch { /* the snapshot itself is verifiable; losing the note must not fail the op */ }
+    } catch (e) {
+      // Same rule as the migration path: a snapshot without its record is still
+      // verifiable (sha256 can be recomputed), so this must not fail the
+      // operation — but it must not be silent either, or a later reader sees a
+      // .db with no .json and cannot tell "never written" from "written and lost".
+      process.stderr.write(
+        "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + String(e instanceof Error ? e.message : e) +
+        "）；快照本体在 " + backupFile + "，没有受影响。\n",
+      );
+    }
     return { backupFile, bytes, sha256 };
   } catch (error) {
+    // A half-written snapshot sitting next to the live database looks exactly
+    // like a valid recovery point and carries no .json record; remove it so the
+    // failure cannot be mistaken for evidence.
+    try { rmSync(backupFile, { force: true }); } catch { /* best effort */ }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       "建立恢复存档点失败：" + detail +
