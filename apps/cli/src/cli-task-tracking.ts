@@ -29,7 +29,7 @@
 // Run from tests: pnpm --filter @anysearch-cli/cli test
 
 import { resolveDbPath } from "@anysearch-cli/kernel";
-import { ensureOwnerOnlyDb, openTaskRegistry, type RegisteredProcess, type RegisteredTask, type TaskRegistry, type TaskRole } from "@anysearch-cli/store";
+import { AdmissionClosedError, ensureOwnerOnlyDb, openTaskRegistry, type RegisteredProcess, type RegisteredTask, type TaskRegistry, type TaskRole } from "@anysearch-cli/store";
 import { runWithCliTask, type CliTaskIdentity } from "./cli-task-context";
 
 /**
@@ -46,6 +46,9 @@ const PROCESS_ENTRY_COMMANDS = new Set(["mcp"]);
  */
 const MANAGEMENT_COMMANDS = new Set([
   "doctor", "auth", "llm", "domain", "switch-state", "access-chain", "hitl",
+  // #309: the upgrade commands themselves must work while admission is closed —
+  // they are how a paused upgrade is inspected, waited on, and ended.
+  "upgrade",
 ]);
 
 export function cliTaskKind(cmd: string): string {
@@ -63,6 +66,13 @@ export interface CliCommandTracking {
     /** Record the task's end with the handler's exit code. Idempotent. */
     finish(exitCode: number): void;
   };
+  /**
+   * #309: set when an upgrade closed admission and this command's work was
+   * refused. The handler must NOT run: the entry stops with its own message
+   * and exit code instead of degrading to an unregistered run (which would be
+   * exactly the "check then start" gap the gate exists to close).
+   */
+  admissionRefusal?: AdmissionClosedError;
   /** Close the process record; called on the exit path before teardown. */
   endProcess(): void;
 }
@@ -125,13 +135,20 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
   );
   let taskRecord: RegisteredTask | undefined;
   let identity: CliTaskIdentity | undefined;
+  let admissionRefusal: AdmissionClosedError | undefined;
   if (!PROCESS_ENTRY_COMMANDS.has(cmd)) {
     const kind = cliTaskKind(cmd);
     const role = cliTaskRole(cmd);
-    taskRecord = tryRegister(
-      () => registry.registerTask({ kind, role, entry: "cli" }),
-      "task registration",
-    );
+    // #309: an admission refusal is a DECISION, not a broken registry, so it is
+    // not squashed into the fail-open branch. It comes back as its own field and
+    // the entry stops; every other write failure keeps the old "warn and run
+    // unregistered" behavior.
+    try {
+      taskRecord = registry.registerTask({ kind, role, entry: "cli" });
+    } catch (e) {
+      if (e instanceof AdmissionClosedError) admissionRefusal = e;
+      else warnOnce("task registration failed (" + (e instanceof Error ? e.message : String(e)) + ") — continuing without task registration");
+    }
     if (taskRecord) {
       identity = { taskId: taskRecord.taskId, kind, role, attachSession: (s) => taskRecord!.attachSession(s) };
     }
@@ -149,6 +166,7 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
           },
         }
       : undefined,
+    ...(admissionRefusal ? { admissionRefusal } : {}),
     endProcess: (): void => {
       try {
         processRecord?.end();

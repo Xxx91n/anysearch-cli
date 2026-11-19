@@ -69,6 +69,18 @@
 - **后置工作的归属**:每条后置工作记着自己是从哪次任务来的。那个任务是真存在的一行就记上链接；找不到（别的机器、库被清过、传错了）就记成「不知道」，不硬凑一个指向空气的号（代码里叫 parent_task_id，读出来看 parentLink）。
   _Avoid_: parent id、父任务字段、归属关系
 
+- **升级准入**:现在还不收新活的那个开关。关着的时候，新的一次干活/付费请求当场被拒（退出 4 或 `errorKind: upgrade-in-progress`），不排队、不事后重放；管理类命令（`ans upgrade`、doctor 这类）和已经接下的请求的尾巴照常放行。它是一行记在持久库里的记录，不是某个模块里的标志，所以每个入口看的是同一个开关（代码里叫 upgrade_gate / AdmissionClosedError）。
+  _Avoid_: 封门、admission gate、暂停开关
+
+- **升级预检**:换程序之前先问一句「现在行不行」，只读不改：谁还开着活、哪些进程本机确认不了、准入开没开（`ans upgrade status`）。它在准入关着的时候也能跑，这正是它有用的地方。
+  _Avoid_: preflight、升级检查
+
+- **放弃收尾**:一条收不了尾的任务行，由人明说「这条没人管了」并写明理由，之后不再算升级阻塞。它不写成「任务已完成」——结束时间还是空的，只多一条谁、什么时候、为什么（代码里叫 dismissed_at / dismissed_reason，`ans upgrade dismiss`）。
+  _Avoid_: 清理、扫尾、dismiss
+
+- **任务历史**:已经收尾的那些任务行，是用来查「上个月都跑了什么」的账。开着的行不算历史，它是阻塞判据，永远不清。历史留 30 天，删要人显式喊一声（`ans upgrade prune`），删前先留一份能核对的快照（代码里叫 TASK_HISTORY_RETENTION_DAYS / pruneFinishedTasks / snapshotBeforeDestructiveOp）。
+  _Avoid_: 日志清理、归档、retention
+
 - **恢复存档点**:检索算完后可能写一条状态记录，重开时读它给模型一份检索摘要，不会自动重跑检索（代码里叫 ResumeAnchorsPort）。
   _Avoid_: Anchor、锚点、恢复锚
 

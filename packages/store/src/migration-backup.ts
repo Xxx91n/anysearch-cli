@@ -87,6 +87,7 @@ import {
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
+import { openDatabase } from "./db.js";
 
 /** Layout marker table name; presence (with the marker row) means "written by build line ≥ #310". */
 export const STORE_META_TABLE = "store_meta";
@@ -356,6 +357,81 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     if (db) {
       try { endInit(db); } catch { /* connection may already be closing */ }
       db.close();
+    }
+  }
+}
+
+/**
+ * #309: a deliberate snapshot of the CURRENT database, before a destructive
+ * operation that is not a schema migration (pruning old task history).
+ *
+ * Deliberately separate from `ensurePreMigrationBackup`, whose job is the
+ * opposite: that one only copies a LEGACY file, and never re-snapshots a
+ * current one (its idempotent-replay contract). Pruning wants a fresh recovery
+ * point every time an operator asks to delete data, so this one always writes a
+ * new file and never overwrites an existing one — a timestamped name keeps
+ * several prunes from clobbering each other's evidence.
+ *
+ * Same snapshot mechanism as the migration path (`VACUUM INTO`, never a file
+ * copy — see the header), same verifiable record, same manual-restore note.
+ *
+ * @returns the snapshot path and what it captured.
+ * @throws when no snapshot can be produced: the caller must not delete data
+ *   without one.
+ */
+export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { backupFile: string; bytes: number; sha256: string } {
+  if (!dbPath || dbPath === ":memory:") {
+    throw new Error("cannot snapshot an in-memory database; nothing to recover to");
+  }
+  if (!existsSync(dbPath)) {
+    throw new Error("cannot snapshot " + dbPath + ": the file does not exist");
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupFile = dbPath + "." + label + "-" + stamp + ".db";
+  let db: Database.Database | undefined;
+  try {
+    // Tracked opener, unlike the migration path above: this runs from a command
+    // (`ans upgrade prune`) that keeps living after the snapshot, so the handle
+    // must be visible to the exit path if something goes wrong mid-snapshot.
+    const conn = openDatabase(dbPath, { timeout: 5000 });
+    db = conn;
+    const initDeadline = beginInit(conn);
+    const prevUmask = process.umask(0o077);
+    try {
+      withInitBusyRetry("destructive-op snapshot", () => conn.prepare("VACUUM INTO ?").run(backupFile), initDeadline);
+    } finally {
+      process.umask(prevUmask);
+    }
+    endInit(conn);
+    try { chmodSync(backupFile, 0o600); } catch { /* best-effort (Windows ACL path) */ }
+    const bytes = statSync(backupFile).size;
+    const sha256 = sha256File(backupFile);
+    const at = new Date().toISOString();
+    try {
+      writeAtomicJson(backupFile + ".json", {
+        version: 1,
+        db: dbPath,
+        backupFile,
+        createdAt: at,
+        method: "sqlite-vacuum-into",
+        reason: label,
+        bytes,
+        sha256,
+        manualRecovery: MANUAL_RECOVERY_NOTE,
+      });
+    } catch { /* the snapshot itself is verifiable; losing the note must not fail the op */ }
+    return { backupFile, bytes, sha256 };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      "建立恢复存档点失败：" + detail +
+      "。没有恢复依据就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
+      { cause: error },
+    );
+  } finally {
+    if (db) {
+      try { endInit(db); } catch { /* already ended */ }
+      try { db.close(); } catch { /* already closed */ }
     }
   }
 }

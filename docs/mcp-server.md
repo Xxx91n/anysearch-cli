@@ -197,6 +197,7 @@ The server follows the MCP rule that an execution failure is an
 | Handler exception (the SDK turns an uncaught throw into an `isError` result); vertical-guard rejection (`verticalSubDomain`/`verticalParams` without `verticalDomain`); `ans_chat` runtime error or missing LLM configuration | `true` | absent — text content only |
 | `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `operation`, `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
 | `search_web` / `research_web` stopped by their task budget (refused, or declared but not established) | `true` | `operation` (the tool name), `errorKind`, `budget`, optional `taskId`, plus `closeout` when a task was registered — see [Search and research tasks](#search-and-research-tasks-304) |
+| Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed` and their error classes |
 | Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
@@ -216,6 +217,8 @@ Rules behind the table:
     because it has to be distinguishable from an upstream failure without
     matching on text (#303). `errorKind` is a classification, not an output
     schema;
+  - an upgrade refusal carries `errorKind: "upgrade-in-progress"` for the same
+    reason: it is a pause, not a failure, so a host must not retry it blindly;
   - `ans_chat`'s summary-rebuild report (#264) is an error that carries
     `summaryRebuilds`. It is left exactly as it is — no task `closeout` is mixed
     into it, so a client parsing that error sees the same shape as before.
@@ -511,6 +514,28 @@ nothing is charged to any conversation.
 `mcp.query_knowledge`), even though they bill no model call and write no budget
 row. Their closeout is what lets a hook's follow-up work (an index write, for
 example) name the request that caused it (#307).
+
+### Upgrade preflight (#309)
+
+A normal upgrade pauses new tasks before replacing anything. While that pause is
+in effect, every tool call this server would start as a new business task is
+refused immediately:
+
+- the result is `isError: true` with `structuredContent.errorKind:
+  "upgrade-in-progress"` and `structuredContent.upgrade = { admitted: false, gate }`;
+- **the handler never runs** — no provider request, no model call;
+- **no task row is written** — nothing ran, so nothing is left open to block the
+  upgrade that refused it;
+- the refusal is **not queued and not replayed**. It is a pause, so a host must
+  retry it after the upgrade, not as a failure.
+
+There is no `taskId` or `closeout` in that result for the same reason: there
+was no task. `ans upgrade status` shows the current pause, `ans upgrade wait`
+starts one and waits for accepted work, and `ans upgrade cancel` ends it.
+
+A long-running MCP server keeps serving; what it cannot do while paused is start
+new work. Work it had already accepted (its tail settlement, background
+summaries) still finishes, which is what an upgrade is waiting for.
 
 ## Environment and auth
 

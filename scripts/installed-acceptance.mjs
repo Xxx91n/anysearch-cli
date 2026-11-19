@@ -73,6 +73,14 @@ const SETTLE_TIMEOUT_MS = 60_000; // 等四个任务都收尾
 const requestLog = [];
 // 取消那轮到没到上游：置一次标记就够，不用每轮把整份请求日志从头扫一遍。
 let holdArrived = false;
+// #309 N4: 收尾期间升级。这一轮只要问题里带这个标记，端点就先吐一截回答
+// （真的进 stdout），然后卡住不回尾，好让"回答已经显示、这次任务还没收尾"这个
+// 窗口真实存在——它不是靠等固定秒数凑出来的。放行时把这一轮正常说完。
+const RUN_HOLD_MARKER = "HOLD-RUN-309";
+const RUN_HOLD_TEXT = "N4-ANSWER-SHOWN";
+let runHoldArrived = false;
+let releaseRunHold;
+const runHoldGate = new Promise((resolve) => { releaseRunHold = resolve; });
 
 function sseChunk(delta, finish, usage) {
   return "data: " + JSON.stringify({
@@ -134,6 +142,26 @@ const endpoint = createServer(async (req, res) => {
   }
   const isPrintGap = body.includes("What is missing? Write a single search query") && body.includes("Print source");
   const role = isPrintGap ? "print-gap" : classify(body);
+
+  // #309 N4: hold the run AFTER some answer text has been streamed. The text is
+  // real stdout output from the installed CLI, so "the answer is already shown
+  // while the task row is still open" is an observed fact, not a timed guess.
+  // Releasing finishes the turn normally; the bounded give-up keeps a broken
+  // lane from holding the process open.
+  if (body.includes(RUN_HOLD_MARKER)) {
+    requestLog.push({ role, body, authorization: req.headers["authorization"] });
+    runHoldArrived = true;
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(sseChunk({ role: "assistant", content: RUN_HOLD_TEXT }, null));
+    const giveUp = setTimeout(() => { try { res.destroy(); } catch { /* already gone */ } }, HOLD_RELEASE_MS);
+    giveUp.unref();
+    await runHoldGate;
+    clearTimeout(giveUp);
+    if (!res.writableEnded) {
+      res.end(sseChunk({}, "stop", { prompt_tokens: 40, completion_tokens: 5, total_tokens: 45, prompt_tokens_details: { cached_tokens: 0 } }) + "data: [DONE]\n\n");
+    }
+    return;
+  }
 
   // #303: this marker holds the turn open at the model call, which is the only
   // moment a client can cancel meaningfully. The response is never sent: the
@@ -1409,6 +1437,120 @@ async function main() {
           check(sessionRows.n === 0, "没有从任何一个聊天会话的账上扣钱", JSON.stringify(sessionRows));
         } finally { db.close(); }
       }
+    }
+
+    // ================= C6. N4：收尾期间升级 =================
+    //
+    // #309：规格 #297 的 N4 场景，用已经展示过的时序跑一遍——
+    //   回答先出来 → 这次任务还没收尾 → 这时发起升级 → 同时提交新任务。
+    //
+    // 要证明的四件事，全部从装出来的产品外部看：
+    //  1. 旧任务还没收尾时，`upgrade wait` 说"还有活"、退 1，并且不假装换好了文件；
+    //  2. 等待期间提交的新任务被直接拒绝（退出 4），不发任何上游请求；
+    //  3. 取消/诊断仍可用：准入关着时 `upgrade status` 能跑并点名挡路的任务；
+    //  4. 旧任务放了以后它真的收尾了，`wait` 才退 0。
+    //
+    // "还没收尾"是端点真的没回完这一轮（假端点先吐一截回答再挂住），不是等秒数
+    // 凑出来的；"新任务被拒"是库里准入真的关着、并且上游请求数没变。
+    console.log("\n== C6. N4: upgrade preflight while a turn is still settling ==");
+    {
+      const settleDomain = DOMAIN_MIN("settle", "SETTLE-SYSTEM.");
+      settleDomain.push("[budget]", "tokenCap = 200000", "callCap = 40");
+      writeDomain(domainsDir, "settle", settleDomain);
+      const settleDb = join(work, "n4-upgrade.db");
+      const settleEnv = { ...baseEnv, ANS_DOMAIN: "settle", ANS_DB_PATH: settleDb };
+      const settleProject = join(work, "project-settle");
+      mkdirSync(join(settleProject, ".git"), { recursive: true });
+      const openChatTasks = () => {
+        try {
+          const db = new Database(settleDb, { readonly: true });
+          try {
+            return db.prepare(
+              "SELECT COUNT(*) as n FROM task_records WHERE kind = 'cli.chat' AND ended_at IS NULL",
+            ).get().n;
+          } finally { db.close(); }
+        } catch { return -1; }
+      };
+      const gateIsClosed = () => {
+        try {
+          const db = new Database(settleDb, { readonly: true });
+          try { return db.prepare("SELECT COUNT(*) as n FROM upgrade_gate").get().n === 1; }
+          finally { db.close(); }
+        } catch { return false; }
+      };
+
+      // ---- 1. 一轮对话：回答先显示，这一轮还没说完 ----
+      runHoldArrived = false;
+      let answerSeen = false;
+      const chat = spawn(process.execPath, [cliEntry, "chat", RUN_HOLD_MARKER + " N4-TURN-QUESTION"], {
+        cwd: settleProject, env: { ...settleEnv, ANS_SESSION_ID: "n4-settle-session" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const chatResult = new Promise((resolve, reject) => {
+        let out = "", stdout = "";
+        chat.stdout.on("data", (chunk) => {
+          stdout += chunk; out += chunk;
+          if (!answerSeen && stdout.includes(RUN_HOLD_TEXT)) answerSeen = true;
+        });
+        chat.stderr.on("data", (chunk) => { out += chunk; });
+        const timer = setTimeout(() => { chat.kill(); reject(new Error("N4 chat timed out")); }, 120_000);
+        chat.once("error", (error) => { clearTimeout(timer); reject(error); });
+        chat.once("close", (code, signal) => { clearTimeout(timer); resolve({ code, signal, out, stdout }); });
+      });
+      // 两个真实事件都等到：回答进了 stdout、这一轮真的到了上游并挂住。
+      const holdDeadline = Date.now() + HOLD_TIMEOUT_MS;
+      while (!(answerSeen && runHoldArrived) && Date.now() < holdDeadline) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      }
+      const enteredWindow = answerSeen && runHoldArrived;
+      check(answerSeen, "N4：回答先显示出来了", "等到 " + HOLD_TIMEOUT_MS + "ms 还没看到 " + RUN_HOLD_TEXT);
+      check(runHoldArrived, "N4：这一轮到了上游并挂在那里（还没收尾）",
+        "等到 " + HOLD_TIMEOUT_MS + "ms 请求还没到端点");
+
+      if (enteredWindow) {
+        check(openChatTasks() === 1, "N4：回答出来了但任务行还开着（这就是收尾窗口）", "open=" + openChatTasks());
+
+        // ---- 2. 收尾没完时升级预检：关准入、报阻塞、拒新任务 ----
+        const waiting = runAns(["upgrade", "wait", "--timeout", "8000"], { cwd: prefix, env: settleEnv });
+        const gateDeadline = Date.now() + 10_000;
+        while (!gateIsClosed() && Date.now() < gateDeadline) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        check(gateIsClosed(), "N4：升级预检真的把新任务准入关上了");
+
+        const beforeRefused = requestLog.length;
+        const refused = runAns(["consolidate", "--session", "n4-settle-session"], { cwd: prefix, env: settleEnv });
+        check(refused.code === 4, "N4：收尾期间提交的新任务被拒绝（退出码 4）", refused.out.slice(0, 400));
+        check(/升级中/.test(refused.out) && /不会排队/.test(refused.out),
+          "N4：拒绝说清这是升级挡的、不排队重放", refused.out.slice(0, 400));
+        check(requestLog.length === beforeRefused, "N4：被拒绝的新任务没有发出任何上游请求",
+          "delta=" + (requestLog.length - beforeRefused));
+
+        // 取消/诊断仍可用。
+        const status = runAns(["upgrade", "status"], { cwd: prefix, env: settleEnv });
+        check(status.code === 1, "N4：准入关着时 status 能跑，并如实说现在不能升级", status.out.slice(0, 600));
+        check(/准入：关着/.test(status.out) && /cli\.chat/.test(status.out),
+          "N4：status 点名是哪个任务在挡", status.out.slice(0, 600));
+
+        // ---- 3. 放掉这一轮；任务收尾之后 wait 才退 0 ----
+        releaseRunHold();
+        const waited = await waiting;
+        check(waited.code === 0, "N4：旧任务收尾之后 wait 才退 0", waited.out.slice(0, 600));
+        check(openChatTasks() === 0, "N4：放行之后那条聊天任务确实收尾了", "open=" + openChatTasks());
+        const settled = await chatResult;
+        check(settled.code === 0, "N4：这一轮对话最终正常结束", settled.out.slice(-400));
+      } else {
+        // 没进窗口：说清楚，别让后面几条空跑成"通过"。
+        skip("N4 升级/拒绝/收尾这一组断言", "回答或上游请求没在时限内出现");
+      }
+
+      releaseRunHold();
+      try { chat.kill(process.platform === "win32" ? "SIGKILL" : "SIGTERM"); } catch { /* already gone */ }
+      await chatResult.catch(() => {});
+
+      // 收尾：把暂停解除，别把准入一直关着影响后面的车道。
+      const cancel = runAns(["upgrade", "cancel"], { cwd: prefix, env: settleEnv });
+      check(cancel.code === 0 || cancel.code === 1, "N4：最后把准入恢复到可用状态", cancel.out.slice(0, 200));
     }
 
     // ================= D. 装出来的整理 =================

@@ -245,10 +245,35 @@ CREATE TABLE IF NOT EXISTS task_records (
   -- reached its end (success or failure alike — the exit_code says which).
   ended_at TEXT,
   exit_code INTEGER,
+  -- #309: an operator acknowledged this open row as unresolvable (a crashed
+  -- run whose fate this machine cannot prove). It does NOT claim the task
+  -- ended — ended_at stays NULL on purpose — it records that a human decided
+  -- to stop treating the row as an upgrade blocker, and why. Admission reads
+  -- it; nothing clears it automatically.
+  dismissed_at TEXT,
+  dismissed_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_task_records_open ON task_records(ended_at) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_task_records_session ON task_records(session_id);
+-- #309: upgrade admission gate. A row here means "admission closed": new
+-- independent business tasks are refused, while management work (status,
+-- diagnostics, the upgrade commands themselves) and follow-up work of requests
+-- that were already accepted keep running. No row = normal operation.
+--
+-- One row on purpose: the gate is a single machine-wide decision, and the row
+-- is written/read in the same IMMEDIATE transaction as task registration, so a
+-- task can never be admitted on a reading the gate write already invalidated.
+-- The gate lives in this durable database (not a flag in the module that will
+-- be replaced) exactly so an upgrade in progress is visible to every entry.
+CREATE TABLE IF NOT EXISTS upgrade_gate (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  gate_id TEXT NOT NULL,
+  opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+  opened_by_pid INTEGER NOT NULL CHECK (opened_by_pid > 0),
+  opened_by_host TEXT NOT NULL,
+  note TEXT
+);
 -- #307: the parent index is NOT here on purpose. It reads parent_task_id, a
 -- column an existing database only gets through the ALTER in the openers; an
 -- index inside this script would run before that ALTER and fail to open an old

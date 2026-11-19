@@ -10,7 +10,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isBudgetStopReason, type CompositionResult } from "@anysearch-cli/kernel";
-import type { RegisteredTask, TaskRegistry } from "@anysearch-cli/store";
+import { AdmissionClosedError, type RegisteredTask, type TaskRegistry } from "@anysearch-cli/store";
 
 /** The task this MCP tool call runs under. Read via `currentMcpTask()`. */
 export interface McpTaskIdentity {
@@ -41,6 +41,13 @@ export interface McpTaskCloseout {
 
 interface Tracking {
   identity?: McpTaskIdentity;
+  /**
+   * #309: set when an upgrade closed admission and this call was refused. The
+   * handler must not run; `withMcpTask` answers the host with the refusal
+   * instead of calling a provider. Distinct from `!identity`, which is a broken
+   * registry and still runs (fail-open).
+   */
+  refusal?: AdmissionClosedError;
   /** End the task row. Returns false when the write failed (record stays open). */
   finish(exitCode: number): boolean;
 }
@@ -80,8 +87,17 @@ function warnOnce(key: string, detail: string): void {
   }
 }
 
-/** Register this call, or say why it runs unregistered and return undefined. */
-function registerTask(eng: CompositionResult, kind: string): RegisteredTask | undefined {
+/**
+ * Register this call, or say why it runs unregistered and return undefined.
+ *
+ * #309: an admission refusal is returned separately — it is a decision, not a
+ * broken registry, and the call must NOT run. Every other failure keeps the
+ * fail-open contract (a broken registry never breaks the tool).
+ */
+function registerTask(
+  eng: CompositionResult,
+  kind: string,
+): { task: RegisteredTask } | { refusal: AdmissionClosedError } | undefined {
   let registry: TaskRegistry | undefined;
   try {
     // The registry comes from the store seam, so the task record and its budget
@@ -97,8 +113,9 @@ function registerTask(eng: CompositionResult, kind: string): RegisteredTask | un
     return undefined;
   }
   try {
-    return registry.registerTask({ kind, role: "business", entry: "mcp" });
+    return { task: registry.registerTask({ kind, role: "business", entry: "mcp" }) };
   } catch (e: unknown) {
+    if (e instanceof AdmissionClosedError) return { refusal: e };
     warnOnce("register:" + errText(e),
       "task registration failed (" + errText(e) + ") — running unregistered");
     return undefined;
@@ -111,7 +128,9 @@ function registerTask(eng: CompositionResult, kind: string): RegisteredTask | un
  */
 export function trackMcpToolCall(eng: CompositionResult, toolName: string): Tracking {
   const kind = "mcp." + toolName;
-  const task = registerTask(eng, kind);
+  const registered = registerTask(eng, kind);
+  if (registered && "refusal" in registered) return { refusal: registered.refusal, finish: () => false };
+  const task = registered?.task;
   if (!task) return { finish: () => false };
   let finished = false;
   let wroteEnd = false;
@@ -142,6 +161,35 @@ export function trackMcpToolCall(eng: CompositionResult, toolName: string): Trac
         wroteEnd = false;
       }
       return wroteEnd;
+    },
+  };
+}
+
+/**
+ * #309: the answer for a call refused by upgrade admission.
+ *
+ * `errorKind: "upgrade-in-progress"` is a classification the host can switch on
+ * (like the budget stops); the text says the same in words for a human. No
+ * taskId: this call never had a task, and inventing one would make a refusal
+ * look like work that ran and stopped.
+ */
+function refusalResult(toolName: string, refusal: AdmissionClosedError): {
+  isError: true;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent: Record<string, unknown>;
+} {
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: toolName + ": upgrade in progress — this call was refused before it started. " +
+        "It is NOT queued and will not be replayed; retry after the upgrade finishes. (" +
+        refusal.message + ")",
+    }],
+    structuredContent: {
+      operation: toolName,
+      errorKind: "upgrade-in-progress",
+      upgrade: { admitted: false, gate: refusal.gate },
     },
   };
 }
@@ -222,6 +270,14 @@ export async function withMcpTask<R>(
   handler: () => Promise<R>,
 ): Promise<R> {
   const tracking = trackMcpToolCall(eng, toolName);
+  // #309: refused before the handler runs and before any provider request. The
+  // answer is a structured classification, not prose a host has to parse, and
+  // there is deliberately no task row: nothing ran, so nothing is left open to
+  // block the upgrade that refused it.
+  // The MCP callback result type is opaque to this module (the SDK declares an
+  // open object), so the refusal result is cast the same way attachCloseout
+  // casts its spread — the shape is ours, the generic is the caller's.
+  if (tracking.refusal) return refusalResult(toolName, tracking.refusal) as unknown as R;
   const identity = tracking.identity;
   let result: R;
   try {
