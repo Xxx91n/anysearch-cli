@@ -85,6 +85,8 @@ interface Snapshot {
   gateOwnerState: "alive" | "dead" | "unknown" | null;
   blockers: BlockerView[];
   processes: ProcessView[];
+  /** Only filled when the caller asks for it (status --json). */
+  dismissable?: BlockerView[];
 }
 
 function toBlocker(row: TaskRecordRow & { ownerState: "alive" | "dead" | "unknown" }): BlockerView {
@@ -109,12 +111,16 @@ function toBlocker(row: TaskRecordRow & { ownerState: "alive" | "dead" | "unknow
  * new connection per poll would open and close ~480 handles over one 2-minute
  * wait. Callers that only need one reading use `readSnapshot`.
  */
-function snapshotOf(registry: TaskRegistry, excludePid?: number): Snapshot {
+function snapshotOf(registry: TaskRegistry, excludePid?: number, withDismissable = false): Snapshot {
   const gate = registry.gateOwnerState();
+  // Everything below is read on ONE connection in one go, so a machine-readable
+  // report never carries two contradictory moments (a task that ended between
+  // two reads would show up in `blockers` and not in `dismissable`).
+  const blockers = registry.blockingTasks().map(toBlocker);
   return {
     gate: gate?.gate ?? null,
     gateOwnerState: gate?.ownerState ?? null,
-    blockers: registry.blockingTasks().map(toBlocker),
+    blockers,
     // 自己这条进程记录不算"说不清的进程"：问问题的人就是它。
     processes: registry.openProcesses()
       .filter((p) => p.pid !== excludePid || p.entry !== "cli")
@@ -122,28 +128,15 @@ function snapshotOf(registry: TaskRegistry, excludePid?: number): Snapshot {
         pid: p.pid, entry: p.entry, ownerHost: p.ownerHost,
         ownerState: p.ownerState, startedAt: p.startedAt,
       })),
+    ...(withDismissable ? { dismissable: registry.dismissableTasks().map(toBlocker) } : {}),
   };
 }
 
 /** One reading, opening and closing its own connection. */
-function readSnapshot(dbPath: string, excludePid?: number): Snapshot {
+function readSnapshot(dbPath: string, excludePid?: number, withDismissable = false): Snapshot {
   const registry = openTaskRegistry(dbPath);
   try {
-    return snapshotOf(registry, excludePid);
-  } finally {
-    registry.close();
-  }
-}
-
-/**
- * Rows an operator may acknowledge. Read only by `status --json`: `wait` polls
- * its own snapshot every 250ms, and this query answers a different question
- * ("what could I give up on?") that no other subcommand asks.
- */
-function dismissableOf(dbPath: string): BlockerView[] {
-  const registry = openTaskRegistry(dbPath);
-  try {
-    return registry.dismissableTasks().map(toBlocker);
+    return snapshotOf(registry, excludePid, withDismissable);
   } finally {
     registry.close();
   }
@@ -239,7 +232,7 @@ function describeProcess(p: ProcessView): string {
   return p.entry + " pid " + p.pid + "（" + p.ownerHost + "，" + state + "，起于 " + p.startedAt + "）";
 }
 
-function jsonSnapshot(s: Snapshot, dismissable: BlockerView[]): string {
+function jsonSnapshot(s: Snapshot): string {
   return JSON.stringify({
     admission: s.gate ? "closed" : "open",
     gate: s.gate,
@@ -248,7 +241,7 @@ function jsonSnapshot(s: Snapshot, dismissable: BlockerView[]): string {
     blockers: s.blockers,
     // 进程不是阻塞判据，只是"哪些入口还在、哪些确认不了"的说明。
     processes: s.processes,
-    dismissable,
+    dismissable: s.dismissable ?? [],
   }, null, 2);
 }
 
@@ -334,21 +327,12 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
   if (command === "status") {
     let snap: Snapshot;
     try {
-      snap = readSnapshot(resolvedDb, process.pid);
+      snap = readSnapshot(resolvedDb, process.pid, json);
     } catch (e) {
       err("ans upgrade status: 读不了库 " + resolvedDb + "（" + errText(e) + "）\n");
       return 1;
     }
-    if (json) {
-      let dismissable: BlockerView[];
-      try {
-        dismissable = dismissableOf(resolvedDb);
-      } catch (e) {
-        err("ans upgrade status: 读不了可放弃的行（" + errText(e) + "）\n");
-        return 1;
-      }
-      out(jsonSnapshot(snap, dismissable) + "\n");
-    }
+    if (json) { out(jsonSnapshot(snap) + "\n"); }
     else {
       out("[upgrade] 准入：" + (snap.gate
         ? "关着（" + snap.gate.gateId + "，从 " + snap.gate.openedAt + " 起）"
@@ -480,11 +464,20 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         return 0;
       }
       if (dryRun) {
+        // 预览必须和真跑对得上：真跑会跳过"还有行指着"的那几条，预览不扣掉就会说
+        // 会删 10 条、实际只删 3 条，剩下的原因要到真删之后才知道。
+        const held = registry.agedFinishedTasksHeldByChildren(retentionDays);
+        const wouldPrune = aged.length - held;
         if (json) {
-          out(JSON.stringify({ pruned: 0, wouldPrune: aged.length, days: retentionDays, rows: aged }, null, 2) + "\n");
+          out(JSON.stringify({
+            pruned: 0, wouldPrune, wouldHold: held, days: retentionDays, rows: aged,
+          }, null, 2) + "\n");
         } else {
-          out("[upgrade] 会删掉 " + aged.length + " 条 " + retentionDays + " 天前收尾的任务行（dry-run，没删）：\n");
+          out("[upgrade] 会删掉 " + wouldPrune + " 条 " + retentionDays + " 天前收尾的任务行（dry-run，没删）：\n");
           for (const r of aged) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
+          if (held > 0) {
+            out("[upgrade] 另有 " + held + " 条虽然过期了，但还有活着的行指着，真跑时会留着（删了会把那些行的归属抹掉）\n");
+          }
         }
         return 0;
       }
@@ -541,5 +534,6 @@ function errText(e: unknown): string {
  */
 export function describeAdmissionRefusal(e: AdmissionClosedError): string {
   return "升级中，本次没有开始（" + e.gate.gateId + " 从 " + e.gate.openedAt +
-    " 起暂停了新任务）。这不是失败，也不会排队重放：等升级做完再敲一次。\n";
+    " 起暂停了新任务）。这不是失败，也不会排队重放：等升级做完再敲一次。" +
+    "如果根本没人在升级（上次的 ans upgrade wait 被中断过），用 ans upgrade cancel 打开准入。\n";
 }

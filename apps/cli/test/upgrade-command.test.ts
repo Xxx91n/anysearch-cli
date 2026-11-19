@@ -273,6 +273,35 @@ async function main(): Promise<void> {
       check("7e: admission is open again", registry.gateState() === null);
     }
 
+    // ---- 7f. dry-run preview matches what a real prune would do ----------
+    {
+      const parent = registry.registerTask({ kind: "cli.chat", role: "business", entry: "cli" });
+      parent.finish({ exitCode: 0 });
+      const child = registry.registerTask({
+        kind: "server.project_index", role: "business", entry: "server",
+        origin: "follow-up", parentTaskId: parent.taskId,
+      });
+      const Database = (await import("better-sqlite3")).default;
+      const raw = new Database(dbPath);
+      try {
+        raw.prepare("UPDATE task_records SET ended_at = datetime('now','-45 days') WHERE task_id = ?").run(parent.taskId);
+      } finally { raw.close(); }
+
+      const dry = io();
+      await runUpgrade(["prune", "--dry-run", "--json"], dry.opts);
+      const preview = JSON.parse(dry.out.join("")) as { wouldPrune: number; wouldHold: number };
+      check("7f: the preview subtracts rows held by a live child", preview.wouldHold === 1,
+        JSON.stringify(preview));
+      check("7f: and says fewer will actually go", preview.wouldPrune === 0, JSON.stringify(preview));
+
+      const real = io();
+      await runUpgrade(["prune", "--json"], real.opts);
+      const done = JSON.parse(real.out.join("")) as { pruned: number; heldByChildren: number };
+      check("7f: the real run agrees with the preview", done.pruned === preview.wouldPrune && done.heldByChildren === preview.wouldHold,
+        JSON.stringify({ preview, done }));
+      child.finish({ exitCode: 0 });
+    }
+
     // ---- 8. bad usage is its own exit code -------------------------------
     {
       const s = io();

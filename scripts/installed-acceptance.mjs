@@ -1517,6 +1517,11 @@ async function main() {
         // 挂住的那一轮永远不可能在 wait 返回前收尾——测出来的只会是"超时"，
         // 而不是升级预检的真实行为。上限放宽到 60 秒没有代价：阻塞一空它就退出。
         const waiting = runAnsAsync(["upgrade", "wait", "--timeout", "60000"], { cwd: prefix, env: settleEnv });
+        // "它一直在等"本身就是被测的东西。只看最后退了 0 不够：万一 wait 漏看
+        // 了这条聊天任务、一看没阻塞就退，后面照样会绿。所以放行之前先确认它
+        // 还没结束。
+        let waitSettled = false;
+        const waitDone = waiting.then((r) => { waitSettled = true; return r; });
         const gateDeadline = Date.now() + 10_000;
         while (!gateIsClosed() && Date.now() < gateDeadline) {
           await new Promise((r) => setTimeout(r, 50));
@@ -1538,9 +1543,11 @@ async function main() {
           "N4：status 点名是哪个任务在挡", status.out.slice(0, 600));
 
         // ---- 3. 放掉这一轮；任务收尾之后 wait 才退 0 ----
+        // 放行之前它必须还在等。这一条才是"没有提前放行"的证据。
+        check(!waitSettled, "N4：wait 还在等（没有提前退，也没漏看这条在跑的活）");
         // 放行之后 wait 才可能看到"没有阻塞了"——顺序就是被测的那件事，不能倒过来。
         releaseRunHold();
-        const waited = await waiting;
+        const waited = await waitDone;
         check(waited.code === 0, "N4：旧任务收尾之后 wait 才退 0", waited.out.slice(0, 600));
         check(openChatTasks() === 0, "N4：放行之后那条聊天任务确实收尾了", "open=" + openChatTasks());
         const settled = await chatResult;

@@ -191,6 +191,7 @@ export class TaskRegistry {
     gate: Database.Statement;
     openGate: Database.Statement;
     closeGate: Database.Statement;
+    adoptGate: Database.Statement;
     dismissTask: Database.Statement;
     dismissableTasks: Database.Statement;
     agedFinishedTasks: Database.Statement;
@@ -242,6 +243,11 @@ export class TaskRegistry {
         "ON CONFLICT (id) DO NOTHING",
       ),
       closeGate: db.prepare("DELETE FROM upgrade_gate WHERE id = 1"),
+      // Takeover of a gate whose opener is provably gone: the pause stays, the
+      // holder becomes the process that is actually waiting on it.
+      adoptGate: db.prepare(
+        "UPDATE upgrade_gate SET opened_by_pid = ?, opened_by_host = ?, note = COALESCE(?, note) WHERE id = 1 AND gate_id = ?",
+      ),
       // A dismissal never writes ended_at: the row stays open and keeps its
       // owner, and the reason says a human made the call. A task that finished
       // in the meantime cannot be dismissed (nothing to dismiss).
@@ -369,7 +375,20 @@ export class TaskRegistry {
    */
   openGate(req: { note?: string } = {}): UpgradeGateState {
     const existing = this.gateState();
-    if (existing) return existing;
+    if (existing) {
+      // A gate left behind by an interrupted `wait` still names the process that
+      // died. Returning it unchanged would make this call announce a pause whose
+      // holder does not exist, and the diagnostics would keep saying "nobody is
+      // upgrading" while a fresh wait is sitting right there. Only a provably
+      // dead same-host owner is adopted; a live one (someone else is upgrading)
+      // and an unprovable one (another host) are left alone.
+      if (this.probeOwnerState(existing.openedByHost, existing.openedByPid) !== "dead") return existing;
+      const adopted = this.db.transaction((): UpgradeGateState => {
+        this.stmts.adoptGate.run(this.owner.pid, this.owner.host, req.note ?? null, existing.gateId);
+        return this.gateState() ?? existing;
+      }).immediate();
+      return adopted;
+    }
     const gateId = "upgrade-" + randomUUID();
     this.db.transaction((): void => {
       this.stmts.openGate.run(gateId, this.owner.pid, this.owner.host, req.note ?? null);
@@ -456,10 +475,17 @@ export class TaskRegistry {
     return this.stmts.agedFinishedTasks.all("-" + days + " days") as Array<{ taskId: string; kind: string; endedAt: string }>;
   }
 
+  /** How many aged finished rows a prune would keep because a row still points at them. */
+  agedFinishedTasksHeldByChildren(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): number {
+    const days = requirePositiveDays(olderThanDays);
+    return (this.stmts.agedFinishedTasksHeldByChildren.get("-" + days + " days") as { n: number }).n;
+  }
+
   /**
    * #309: delete finished rows older than the retention window.
    *
-   * Returns the number of rows removed. The CALLER must have built a recovery
+   * Returns how many rows went and how many aged rows stayed because a
+   * surviving row still points at them. The CALLER must have built a recovery
    * point first (`ans upgrade prune` snapshots the whole database before this);
    * this method deliberately takes no snapshot of its own, so a caller cannot
    * mistake "the registry searched nothing" for "history is recoverable".

@@ -221,6 +221,25 @@ function main(): void {
       check("J3: closing from that registry reopens admission", registry.gateState() === null);
     }
 
+    // ---- J4. a second `wait` adopts a gate whose opener is gone -----------
+    {
+      const host = registry.taskById("none")?.ownerHost ?? registry.openTasks()[0]?.ownerHost ?? "";
+      const dead = openTaskRegistry(dbPath, { owner: { pid: 999_999, host }, isOwnerAlive: () => false });
+      try {
+        const first = dead.openGate({ note: "interrupted wait" });
+        check("J4: a dead owner closes admission", registry.gateOwnerState()?.ownerState === "dead");
+        // The live registry calling openGate again must TAKE OVER, not return the
+        // dead holder — otherwise every later status read keeps saying "nobody is
+        // upgrading" while this wait is sitting right there.
+        const adopted = registry.openGate({ note: "second wait" });
+        check("J4: the gate keeps its identity (it is the same pause)", adopted.gateId === first.gateId);
+        check("J4: the holder is now the live process", registry.gateOwnerState()?.ownerState === "alive",
+          JSON.stringify(registry.gateOwnerState()));
+        check("J4: and the note names the takeover", registry.gateState()?.note === "second wait");
+      } finally { dead.close(); registry.closeGate(); }
+      check("J4: admission reopened for the next section", registry.gateState() === null);
+    }
+
     registry.close();
 
     // ---- H. the shape survives a reopen ----------------------------------
