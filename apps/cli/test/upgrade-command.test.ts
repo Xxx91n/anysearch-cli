@@ -394,8 +394,10 @@ async function main(): Promise<void> {
       const stJson = io();
       await runUpgrade(["status", "--json"], stJson.opts);
       const snap = JSON.parse(stJson.out.join("")) as { processes: Array<{ ownerState: string }> };
-      check("7g: status --json still lists every row one by one",
-        snap.processes.length === 4 && snap.processes.filter((p) => p.ownerState === "dead").length === 1,
+      // Three open rows are left after the prune: the young dead one, the live
+      // one, and the other host's. The `proc` row from test 7 was ended there.
+      check("7g: status --json still lists every open row one by one",
+        snap.processes.length === 3 && snap.processes.filter((p) => p.ownerState === "dead").length === 1,
         JSON.stringify(snap.processes));
 
       // Idempotent: a second run has nothing to delete and writes no snapshot.

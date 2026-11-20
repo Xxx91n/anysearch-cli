@@ -377,7 +377,12 @@ function pruneJson(v: {
   backup: string | null;
   taskPruned: number;
   taskWouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
-  taskWouldHold: Array<{ taskId: string; kind: string; endedAt: string }>;
+  /**
+   * 过期却留下的任务行有几条。dry-run 里是预览，真跑里是删完之后还在的那几条——
+   * 两种情形都是「还留着」的同一个数，所以和 heldByChildren 永远相等。写成两个
+   * 互不相干的字段，读 wouldHold 的脚本会以为一条都没留。
+   */
+  taskWouldHold: number;
   heldByChildren: number;
   plan: ProcessPrunePlan;
   processRemoved: { removed: number; closed: number; openGone: number };
@@ -387,7 +392,7 @@ function pruneJson(v: {
     dryRun: v.dryRun,
     pruned: v.taskPruned,
     wouldPrune: v.taskWouldPrune.length,
-    wouldHold: v.taskWouldHold.length,
+    wouldHold: v.taskWouldHold,
     heldByChildren: v.heldByChildren,
     rows: v.taskWouldPrune,
     backup: v.backup,
@@ -962,7 +967,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         if (json) {
           out(pruneJson({
             days: retentionDays, dryRun, backup: null,
-            taskPruned: 0, taskWouldPrune: [], taskWouldHold: preview.wouldHold,
+            taskPruned: 0, taskWouldPrune: [], taskWouldHold: preview.wouldHold.length,
             heldByChildren: preview.wouldHold.length,
             plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
           }));
@@ -985,7 +990,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
             days: retentionDays, dryRun: true, backup: null,
             taskPruned: 0,
             taskWouldPrune: preview.wouldPrune,
-            taskWouldHold: preview.wouldHold,
+            taskWouldHold: preview.wouldHold.length,
             heldByChildren: preview.wouldHold.length,
             plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
           }));
@@ -1031,7 +1036,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         out(pruneJson({
           days: retentionDays, dryRun: false, backup: backup.backupFile,
           taskPruned: pruned.removed,
-          taskWouldPrune: [], taskWouldHold: [],
+          taskWouldPrune: [],
+          taskWouldHold: pruned.heldByChildren,
           heldByChildren: pruned.heldByChildren,
           plan, processRemoved,
         }));
