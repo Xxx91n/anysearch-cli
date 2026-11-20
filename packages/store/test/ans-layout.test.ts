@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
@@ -97,11 +97,14 @@ test("an existing target that already opens is adopted as-is, not rewritten", ()
     seedDatabase(from, "source");
     seedDatabase(to, "target");
 
+    const before = readFileSync(to);
+
     const adopted = adoptDatabase(from, to);
 
     assert.equal(readMarkerValue(to), "target", "the readable target is kept, not overwritten");
     assert.ok(existsSync(from), "the source stays in place; adopting it is not a move");
-    assert.equal(adopted.bytes, statSync(to).size, "the result describes the file that was kept");
+    assert.deepEqual(readFileSync(to), before, "the kept file's bytes are unchanged");
+    assert.equal(adopted.bytes, before.length, "the result describes the file that was kept");
   } finally { box.done(); }
 });
 
