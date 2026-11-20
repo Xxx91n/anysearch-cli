@@ -949,7 +949,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       //
       // 预览算在这里而不是只给 --dry-run 用：真跑拿它决定"到底有没有东西可删"。
       // 只有"过期但删不得"（被别的行引用着）时不该写快照——什么都没删，快照就是
-      // 一份多余的存档点。
+      // 一份多余的快照。
       const preview = registry.previewPrune(retentionDays);
       const plan = registry.processPrunePlan(retentionDays);
       if (preview.wouldPrune.length === 0 && plan.deletable.length === 0) {
@@ -1035,8 +1035,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           plan, processRemoved,
         }));
       } else {
-        // 恢复依据单独一行：只删了进程行、或只删了任务行，这一句都得说出来。
-        out("[upgrade] 恢复依据在 " + backup.backupFile + "（连同它的 .json 记录）\n");
+        // 快照单独一行：只删了进程行、或只删了任务行，这一句都得说出来。
+        out("[upgrade] 快照在 " + backup.backupFile + "（连同它的 .json 记录）\n");
         if (pruned.removed > 0) {
           out("[upgrade] 删掉了 " + pruned.removed + " 条 " + retentionDays + " 天前收尾的任务行\n");
         }
