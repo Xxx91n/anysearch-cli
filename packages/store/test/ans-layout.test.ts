@@ -359,3 +359,30 @@ test("an explicit ANS_DOMAINS_DIR keeps its directory where the operator pointed
     assert.equal(existsSync(join(project, ".ans", "domains")), false, "nothing was copied either");
   } finally { box.done(); }
 });
+
+test("the product's own checkout keeps its builtin domains where the build expects them", () => {
+  const box = sandbox();
+  try {
+    // `domains/` at the monorepo root is the builtin source `sync-domains.mjs`
+    // copies into the CLI package at build time. Renaming it into `.ans` breaks
+    // the next build, and a package under that tree ships its own copy for the
+    // same reason.
+    const root = join(box.home, "checkout");
+    mkdirSync(join(root, ".git"), { recursive: true });
+    mkdirSync(join(root, "domains"), { recursive: true });
+    writeFileSync(join(root, "domains", "builtin.toml"), "[domain]\nname = \"builtin\"\n");
+    writeFileSync(join(root, "turbo.json"), "{}\n");
+
+    const pkg = join(root, "apps", "mcp");
+    mkdirSync(join(pkg, "domains"), { recursive: true });
+    writeFileSync(join(pkg, "domains", "shipped.toml"), "[domain]\nname = \"shipped\"\n");
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@anysearch-cli/mcp" }));
+
+    ensureAnsLayout(box.env, () => {}, root);
+    ensureAnsLayout(box.env, () => {}, pkg);
+
+    assert.equal(existsSync(join(root, "domains", "builtin.toml")), true, "the monorepo root keeps its builtin source");
+    assert.equal(existsSync(join(pkg, "domains", "shipped.toml")), true, "a product package keeps the copy it ships");
+    assert.equal(existsSync(join(root, ".ans", "domains")), false, "nothing was moved into .ans either");
+  } finally { box.done(); }
+});

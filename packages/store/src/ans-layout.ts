@@ -171,12 +171,26 @@ function projectDatabaseNotice(path: string, entry: string, env: NodeJS.ProcessE
  * the domains live. Moving them out from under that setting would leave the
  * variable naming an empty directory, so an explicit override wins here too.
  *
- * Only a directory the product itself calls a project is touched. A package
- * that ships domain TOMLs next to its own source has a `domains/` directory
- * too, and renaming that one out of the package would delete shipped defaults
- * the first time anything ran there. The project marker is the product's own
- * definition of "this directory is a project", so it is the condition used.
+ * Only a user project is touched. The product's own checkout has a `domains/`
+ * directory too — it is the builtin source the CLI copies into its package at
+ * build time — and renaming that one out would break the next build. A project
+ * marker decides what is a project; a checkout of this product is not one.
  */
+/**
+ * True for a directory that belongs to this product rather than to a user: the
+ * monorepo root, or one of its packages. Both ship a `domains/` directory that
+ * is builtin source, not the user's own, so the layout move leaves it alone.
+ */
+function isProductCheckout(root: string): boolean {
+  if (existsSync(join(root, "turbo.json"))) return true;
+  try {
+    const name = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown }).name;
+    return typeof name === "string" && (name === "anysearch-cli" || name.startsWith("@anysearch-cli/"));
+  } catch {
+    return false;
+  }
+}
+
 function adoptProjectDomains(
   cwd: string,
   target: string,
@@ -186,10 +200,8 @@ function adoptProjectDomains(
   const from = join(cwd, ANS_DOMAINS_DIR_NAME);
   const to = join(target, ANS_DOMAINS_DIR_NAME);
   if (!existsSync(from) || samePath(from, to)) return;
-  // Only a project has project domains. A package directory that ships its own
-  // `domains/` (the builtin set) is not one, and moving those out from under it
-  // would leave the package with nothing to read.
   if (!existsSync(join(cwd, ".git")) && !existsSync(ansProjectConfigPath(cwd))) return;
+  if (isProductCheckout(cwd)) return;
   const override = env.ANS_DOMAINS_DIR?.trim();
   if (override && samePath(override, from)) return;
   let entries: string[];
