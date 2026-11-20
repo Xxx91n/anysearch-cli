@@ -209,10 +209,10 @@ async function main(): Promise<void> {
       check("7b: prune exits 0", realCode === 0, real.err.join(""));
       check("7b: the aged finished row is gone", registry.taskById(finished.taskId) === null);
       check("7b: the open row survived", registry.taskById(stillOpen.taskId) !== null);
-      check("7b: it names the recovery point it left", /恢复依据在/.test(real.out.join("")), real.out.join(""));
+      check("7b: it names the recovery point it left", /快照在/.test(real.out.join("")), real.out.join(""));
       // The snapshot the output names really exists on disk, and so does its
       // verifiable record — the claim is checked, not taken on trust.
-      const named = (real.out.join("").match(/恢复依据在 (\S+?)（/) ?? [])[1];
+      const named = (real.out.join("").match(/快照在 (\S+?)（/) ?? [])[1];
       check("7b: the output names a snapshot path", typeof named === "string" && named.length > 0,
         real.out.join(""));
       check("7b: the named snapshot exists on disk", !!named && existsSync(named), "expected " + String(named));
@@ -370,7 +370,7 @@ async function main(): Promise<void> {
       check("7g: prune exits 0", (await runUpgrade(["prune"], real.opts)) === 0, real.err.join(""));
       const realText = real.out.join("");
       check("7g: the real run reports both tables", /进程登记删掉了 2 条/.test(realText), realText);
-      check("7g: it names the recovery point it left", /恢复依据在/.test(realText), realText);
+      check("7g: it names the recovery point it left", /快照在/.test(realText), realText);
 
       const after = new Database(dbPath, { readonly: true });
       try {
@@ -403,7 +403,7 @@ async function main(): Promise<void> {
       // Idempotent: a second run has nothing to delete and writes no snapshot.
       const again = io();
       check("7g: a second prune with nothing aged exits 0", (await runUpgrade(["prune"], again.opts)) === 0, again.err.join(""));
-      check("7g: the second run wrote no extra recovery point", !/恢复依据在/.test(again.out.join("")), again.out.join(""));
+      check("7g: the second run wrote no extra recovery point", !/快照在/.test(again.out.join("")), again.out.join(""));
     }
 
     // ---- 8. bad usage is its own exit code -------------------------------
