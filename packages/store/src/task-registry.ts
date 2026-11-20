@@ -674,6 +674,11 @@ export class TaskRegistry {
    *
    * The number of within-window rows is a count, not a list: printing hundreds
    * of young rows is exactly the noise the ticket is removing from the report.
+   *
+   * Design: an open row is deletable only on PROOF (same host + pid gone + past
+   * the window), never on age alone — #343 option 1 ("never touch an open row")
+   * leaves the crash residue growing forever (this host gains ~20 a day), and
+   * option 3 (dismiss each row by hand) asks a human to click through them.
    */
   processPrunePlan(olderThanDays: number = HISTORY_RETENTION_DAYS): ProcessPrunePlan {
     const days = requirePositiveDays(olderThanDays);
