@@ -535,20 +535,12 @@ function announce(): void {
 
 /**
  * The last thing a start that never listened does (#344): say why, end the
- * process record this process wrote at module load, then exit 1.
- *
- * The record is written before the bind, so a start that cannot listen leaves
- * an open row nothing will ever end: the pid dies with the process, and only a
- * prune past the retention window clears it. A stop signal is not the only
- * clean exit — a pinned port already in use, or a port the OS refuses outright,
- * exits cleanly too, and both must close their own row. `stop()` is what the
- * graceful path calls; no request has been served yet, so there is nothing to
- * drain, and the index store is left to process teardown with no write in
- * flight.
+ * process record written at module load, then exit 1.
  *
  * Design: end the row here rather than in a `process.on("exit")` handler —
  * that handler would also fire on the drain-timeout exit, which deliberately
- * writes nothing while a unit may be half done.
+ * writes nothing while a unit may be half done. `stop()` is the call the
+ * graceful path makes; nothing is in flight yet.
  */
 function failToListen(detail: string): never {
   // A dead stderr must not swallow the end write: that would put back the open
@@ -563,8 +555,10 @@ function bind(port: number, allowFallback: boolean): void {
     server.off("error", onError);
     if (allowFallback && error.code === "EADDRINUSE" && !process.env.ANS_SERVER_PORT) {
       // The documented default port was taken. Bind an ephemeral port and
-      // publish the address, so callers read it instead of guessing.
-      process.stderr.write("[anysearch] port " + port + " is taken; trying an ephemeral port\n");
+      // publish the address, so callers read it instead of guessing. Guarded
+      // like every other stderr write: an uncaught throw from this event
+      // callback would kill the process with its record still open.
+      try { process.stderr.write("[anysearch] port " + port + " is taken; trying an ephemeral port\n"); } catch { /* dead stderr */ }
       bind(0, false);
       return;
     }
