@@ -360,6 +360,43 @@ test("an explicit ANS_DOMAINS_DIR keeps its directory where the operator pointed
   } finally { box.done(); }
 });
 
+test("a user's monorepo with a turbo.json still moves its domains", () => {
+  const box = sandbox();
+  try {
+    // turborepo is common outside this product; a `turbo.json` does not make a
+    // directory part of the product, only its package name does.
+    const project = join(box.home, "monorepo");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(join(project, "domains"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+    writeFileSync(join(project, "turbo.json"), "{}\n");
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "my-app" }));
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(existsSync(join(project, ".ans", "domains", "probe.toml")), true, "moved into .ans");
+    assert.equal(existsSync(join(project, "domains")), false, "the old directory is gone");
+  } finally { box.done(); }
+});
+
+test("a partially written domains directory never hides the old one", () => {
+  const box = sandbox();
+  try {
+    // The move is all-or-nothing: `ans-paths` picks `.ans/domains` the moment it
+    // exists, so a half-moved set would make the TOMLs left behind unreadable.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(join(project, "domains"), { recursive: true });
+    writeFileSync(join(project, "domains", "a.toml"), "[domain]\nname = \"a\"\n");
+    writeFileSync(join(project, "domains", "b.toml"), "[domain]\nname = \"b\"\n");
+    mkdirSync(join(project, ".ans", "domains"), { recursive: true });
+    writeFileSync(join(project, ".ans", "domains", "a.toml"), "[domain]\nname = \"a\"\n");
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(existsSync(join(project, "domains", "b.toml")), true, "nothing is moved into an existing .ans/domains");
+    assert.equal(existsSync(join(project, ".ans", "domains", "b.toml")), false);
+  } finally { box.done(); }
+});
+
 test("the product's own checkout keeps its builtin domains where the build expects them", () => {
   const box = sandbox();
   try {
@@ -371,7 +408,7 @@ test("the product's own checkout keeps its builtin domains where the build expec
     mkdirSync(join(root, ".git"), { recursive: true });
     mkdirSync(join(root, "domains"), { recursive: true });
     writeFileSync(join(root, "domains", "builtin.toml"), "[domain]\nname = \"builtin\"\n");
-    writeFileSync(join(root, "turbo.json"), "{}\n");
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "anysearch-cli" }));
 
     const pkg = join(root, "apps", "mcp");
     mkdirSync(join(pkg, "domains"), { recursive: true });

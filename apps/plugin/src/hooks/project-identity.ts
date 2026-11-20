@@ -11,7 +11,7 @@
 // borrowing another one's records.
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ansProjectConfigPath } from "@anysearch-cli/store/paths";
+import { ANS_DIR_NAME, ansHomeDir, ansProjectConfigPath, samePath } from "@anysearch-cli/store/paths";
 
 export interface HookProject {
   root: string | null;
@@ -32,13 +32,15 @@ export function resolveHookProject(cwd: string = process.cwd()): HookProject {
         // Only a missing marker means "keep walking"; other fs errors are real.
         if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       }
-      // `ansProjectConfigPath` also answers for a project that still has the
-      // pre-#323 `.anysearch/config.toml`, so an existing project keeps its
-      // identity across the rename.
-      try {
-        if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+      // Skip the user root: `~/.ans/config.toml` is the user's own `[llm]`
+      // settings, not a project marker, and accepting it would make the home
+      // directory the project of every directory above nothing.
+      if (!samePath(join(root, ANS_DIR_NAME), ansHomeDir())) {
+        try {
+          if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+        }
       }
       const parent = dirname(root);
       if (parent === root) break;

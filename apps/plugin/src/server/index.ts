@@ -35,18 +35,19 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { clearServerRegistry, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
 import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
 import { parseDrainMs, runShutdown } from "./shutdown.js";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
-import { existsSync } from "node:fs";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { ansDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+import { ansDbPath, explicitDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so the wire format
 // stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 
 // Move the pre-#323 directories into ~/.ans before the token and the index are
-// resolved. A failure is loud: the server must not start on a layout it could
-// not establish. Imports are hoisted, so this is the first statement that runs.
+// resolved; a failure is loud, because the server must not start on a layout it
+// could not establish. This sits after the imports and before the first path is
+// read — not "the first statement that runs", since imported modules initialize
+// first, so keep path reads out of their top level.
 ensureAnsLayoutOrExit("[anysearch]");
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
@@ -65,7 +66,7 @@ try { ensureOwnerOnlyDb(DB_PATH); } catch { mkdirSync(dirname(DB_PATH), { recurs
 const store = new ProjectIndexStore(DB_PATH);
 try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
-const OBS_DB = process.env.ANS_DB_PATH || ansDbPath();
+const OBS_DB = explicitDbPath() ?? ansDbPath();
 
 // #307: this service's post-work runs under task records like every other
 // entry. The registry is opened once, on its own connection to the same

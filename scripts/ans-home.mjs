@@ -37,25 +37,21 @@ export function ansDbPath(env = process.env) {
 }
 
 /**
- * A user-level directory under the layout root, read from the old location when
- * that is all there is.
+ * A user-level directory under the layout root that lived in the data root before
+ * the rename.
  *
- * Both pre-#323 roots are consulted, in the product's order: a file's old home
- * depended on which family it belonged to, and `skills/` or `host-wiring/` lived
- * under `.anysearch-cli` while the database lived under `.anysearch`. Looking only
- * at the data root would quietly return the new path for those and read nothing.
+ * Only the data root: `skills/` and `host-wiring/` lived under `.anysearch-cli`,
+ * and the product resolves those with their own rule, so a helper that consulted
+ * both old roots would answer for a directory the product never reads.
  */
-export function ansUserDirPath(name, env = process.env) {
+export function ansDataDirPath(name, env = process.env) {
   const home = resolveHome(env);
-  return pathInUse(
-    path.join(home, NEW_DIR, name),
-    pathInUse(path.join(home, LEGACY_DATA_DIR, name), path.join(home, LEGACY_CONFIG_DIR, name)),
-  );
+  return pathInUse(path.join(home, NEW_DIR, name), path.join(home, LEGACY_DATA_DIR, name));
 }
 
 /** The attribution calibration revisions directory. */
 export function ansAttributionRoot(env = process.env) {
-  return ansUserDirPath(ATTRIBUTION_DIR, env);
+  return ansDataDirPath(ATTRIBUTION_DIR, env);
 }
 
 export { NEW_DIR, LEGACY_DATA_DIR, LEGACY_CONFIG_DIR, ATTRIBUTION_DIR };

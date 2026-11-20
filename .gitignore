@@ -30,9 +30,9 @@ Thumbs.db
 !.ship-gate/calibration-l2-preregistration.json
 !.ship-gate/attribution-gold-preregistration.json
 
-# runtime directory, user and project scope
+# 运行时目录（用户级 + 项目级）
 .ans/
-# pre-#323 name, read while a checkout has not moved yet
+# 旧名字，升级期间还会读
 .anysearch/
 apps/plugin/dist/
 apps/dsh-plugin/lib/
@@ -42,7 +42,7 @@ apps/cli/domains/
 
 .model-cache/
 
-# runtime policy cache (pre-#323 name)
+# 旧名字，升级期间还会读
 .anysearch-cli/
 
 # R68 audit F-A2: agy adapter writes .antigravity/rules/anysearch.mdc into the

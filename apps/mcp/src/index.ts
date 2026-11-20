@@ -6,9 +6,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { buildServer, createDefaultEngine } from "./server.js";
 import { createHttpApp } from "./http.js";
 import { createMcpToolState } from "./tool-state.js";
-import { homedir } from "node:os";
 import { markHttpTransport } from "./transport-mode.js";
-import { ensureAnsLayoutOrExit } from "@anysearch-cli/store";
+import { ensureAnsLayoutOrExit, resolveConfigHome } from "@anysearch-cli/store";
 
 // The /health version banner moved with the HTTP wiring into http.ts (#112),
 // so this entry no longer needs the __PACKAGE_VERSION__ substitution.
@@ -32,17 +31,12 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
-function userHome(): string {
-  return process.env.USERPROFILE || process.env.HOME || homedir();
-}
-
 async function main() {
-  // #323: move the pre-#323 directories into ~/.ans before the first read.
-  // A long-running HTTP server serves several workspaces, so its startup
-  // directory is nobody's project (`transport-mode.ts` refuses to treat it as
-  // one). Passing the user root as the project cwd keeps the project pass off,
-  // instead of renaming whatever directory the host happened to spawn us in.
-  ensureAnsLayoutOrExit("ans-mcp", process.env, transport === "http" ? userHome() : process.cwd());
+  // Move the old directories into ~/.ans before the first read. An HTTP server
+  // serves several workspaces and its startup directory is nobody's project
+  // (see transport-mode.ts), so it passes the user root and the project pass
+  // skips itself.
+  ensureAnsLayoutOrExit("ans-mcp", process.env, transport === "http" ? resolveConfigHome() : process.cwd());
   // #210: one process-level tool state for either transport. stdio already had
   // process-level behavior through its single long-lived server; HTTP now gets
   // the same scope even though it builds a fresh server per request.

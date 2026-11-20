@@ -6,8 +6,7 @@
 import { basename, dirname, join } from "node:path";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
-import { ansPiSessionsDir } from "@anysearch-cli/store";
-import { explicitDbPath } from "./composition";
+import { ansPiSessionsDir, explicitDbPath } from "@anysearch-cli/store";
 import type { SessionLockWindows } from "./session-lock";
 
 /**

@@ -1,4 +1,4 @@
-// The one-time move of the pre-#323 directories into `.ans`.
+// The move of the two old directory names into `.ans`, on every start.
 //
 // Small files and directories are renamed, or copied then dropped when the two
 // roots sit on different volumes. Databases are never renamed: a live WAL
@@ -29,7 +29,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   renameSync,
   rmSync,
   rmdirSync,
@@ -54,9 +53,6 @@ import { adoptDatabase, opensAsDatabase, setAsideUnreadable } from "./migration-
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
-
-/** Named so the multi-line operator messages below stay readable in source. */
-const NL = "\n";
 
 /** Databases that must be copied, never renamed (see the header). */
 const DATABASE_ENTRIES = new Set([ANS_DB_FILENAME, ANS_PROJECT_INDEX_FILENAME]);
@@ -115,6 +111,22 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Whether anything wrote to this database after `since`.
+ *
+ * The databases run in WAL mode, so an old build's writes land in the `-wal`
+ * while the main file's mtime stays put; checking only the main file would miss
+ * exactly the case this warning exists for.
+ */
+function writtenSince(path: string, since: number): boolean {
+  for (const file of [path, path + "-wal"]) {
+    try {
+      if (statSync(file).mtimeMs > since) return true;
+    } catch { /* absent */ }
+  }
+  return false;
+}
+
 
 /**
  * Rename one entry, falling back to a copy when the two roots are on different
@@ -144,7 +156,7 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
 }
 
 /**
- * What to say about a database found in a project's pre-#323 directory.
+ * What to say about a database found in a project's old directory.
  *
  * A leftover either way: the product keeps both databases in the user root, so
  * the new layout has no place for this file, and moving it would present stale
@@ -159,30 +171,8 @@ function projectDatabaseNotice(path: string, entry: string, env: NodeJS.ProcessE
     "这份是旧布局留下的，产品不再读它，确认不要了可以删掉，或用 " + override + " 指过去。\n";
 }
 
-/**
- * Move `<project>/domains` into the layout root.
- *
- * The domain TOMLs used to sit at the project root; the rename puts them with
- * everything else, so `"所有文件住哪只在 ans-paths.ts 定义一次"` stays true. A
- * plain rename per entry, with the same collision rule as the rest of the
- * project pass: an existing name wins and is reported.
- *
- * `ANS_DOMAINS_DIR` pointing at the old directory is an operator saying where
- * the domains live. Moving them out from under that setting would leave the
- * variable naming an empty directory, so an explicit override wins here too.
- *
- * Only a user project is touched. The product's own checkout has a `domains/`
- * directory too — it is the builtin source the CLI copies into its package at
- * build time — and renaming that one out would break the next build. A project
- * marker decides what is a project; a checkout of this product is not one.
- */
-/**
- * True for a directory that belongs to this product rather than to a user: the
- * monorepo root, or one of its packages. Both ship a `domains/` directory that
- * is builtin source, not the user's own, so the layout move leaves it alone.
- */
+/** True for a directory that is part of this product rather than a user project. */
 function isProductCheckout(root: string): boolean {
-  if (existsSync(join(root, "turbo.json"))) return true;
   try {
     const name = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown }).name;
     return typeof name === "string" && (name === "anysearch-cli" || name.startsWith("@anysearch-cli/"));
@@ -191,6 +181,22 @@ function isProductCheckout(root: string): boolean {
   }
 }
 
+/**
+ * Move `<project>/domains` into the layout root, in one rename.
+ *
+ * The domain TOMLs used to sit at the project root; the move puts them with
+ * everything else. It is all-or-nothing on purpose: `ans-paths.ts` picks the new
+ * directory as soon as it exists, so a half-moved set would hide the TOMLs still
+ * sitting in the old one. `moveEntry` stages a cross-volume copy and publishes it
+ * with a rename, which keeps that promise on both paths.
+ *
+ * `ANS_DOMAINS_DIR` pointing at the old directory is an operator saying where the
+ * domains live, so it wins over the move. A `domains/` that already exists in the
+ * layout root is left alone and reported.
+ *
+ * Only a user project is touched: a checkout of this product ships its own
+ * `domains/` as builtin source, and moving that out would break the build.
+ */
 function adoptProjectDomains(
   cwd: string,
   target: string,
@@ -204,32 +210,22 @@ function adoptProjectDomains(
   if (isProductCheckout(cwd)) return;
   const override = env.ANS_DOMAINS_DIR?.trim();
   if (override && samePath(override, from)) return;
-  let entries: string[];
-  try {
-    entries = readdirSync(from);
-  } catch (error) {
-    warn("[anysearch] 读不出 " + from + "：" + errorText(error) + "；本次继续从旧位置读取。" + NL + "");
+  if (existsSync(to)) {
+    warn("[anysearch] " + from + " 没有搬：" + to + " 已经存在，保留新的那份。\n");
     return;
   }
-  for (const entry of entries) {
-    const source = join(from, entry);
-    const dest = join(to, entry);
-    if (existsSync(dest)) {
-      warn("[anysearch] " + source + " 没有搬：新目录里已经有同名文件，保留新的那份。" + NL + "");
-      continue;
-    }
-    try {
-      mkdirSync(to, { recursive: true });
-      moveEntry(source, dest);
-    } catch (error) {
-      warn("[anysearch] " + source + " 没有搬：" + errorText(error) + "；本次继续从旧位置读取。" + NL + "");
-    }
+  try {
+    // The rename needs the root to exist; creating the root alone keeps the
+    // reader on the old directory until the whole move lands.
+    mkdirSync(target, { recursive: true });
+    moveEntry(from, to);
+  } catch (error) {
+    warn("[anysearch] " + from + " 没有搬：" + errorText(error) + "；本次继续从旧位置读取。\n");
   }
-  try { rmdirSync(from); } catch { /* not empty, or already gone */ }
 }
 
 /**
- * Move one project's pre-#323 directories into `<project>/.ans`.
+ * Move one project's old directories into `<project>/.ans`.
  *
  * No marker, and nothing in it that the new layout keeps at project scope, so
  * this is a plain rename that is safe to retry. A name that already exists in
@@ -281,7 +277,7 @@ function adoptProjectLayout(cwd: string, env: NodeJS.ProcessEnv, warn: (message:
 }
 
 /**
- * Move the pre-#323 directories into `.ans`, once: the user roots always, and
+ * Move the old directories into `.ans`: the user roots always, and
  * the current project's roots when `cwd` names one.
  *
  * Idempotent and self-healing: a run with nothing left to do costs a handful of
@@ -364,10 +360,10 @@ export function ensureAnsLayout(
           // the new database, and no later run will bring them over.
           try {
             const copiedAt = recorded?.migratedAt ? Date.parse(recorded.migratedAt) : NaN;
-            if (Number.isFinite(copiedAt) && statSync(from).mtimeMs > copiedAt) {
+            if (Number.isFinite(copiedAt) && writtenSince(from, copiedAt)) {
               warn(
                 "[anysearch] " + from + " 在升级之后又被写过，那些内容不在 " + to +
-                " 里；新的库才是现在在用的那个，旧文件确认不要了可以删掉。" + NL + "",
+                " 里；新的库才是现在在用的那个，旧文件确认不要了可以删掉。\n",
               );
             }
           } catch { /* stat failed: nothing to report */ }

@@ -20,7 +20,7 @@ import {
 interface AnsHomeModule {
   resolveHome(env: NodeJS.ProcessEnv): string;
   ansDbPath(env: NodeJS.ProcessEnv): string;
-  ansUserDirPath(name: string, env: NodeJS.ProcessEnv): string;
+  ansDataDirPath(name: string, env: NodeJS.ProcessEnv): string;
   ansAttributionRoot(env: NodeJS.ProcessEnv): string;
   NEW_DIR: string;
   LEGACY_DATA_DIR: string;
@@ -63,18 +63,24 @@ test("both sides answer the database path the same way, in every layout", () => 
   } finally { box.done(); }
 });
 
-test("a legacy directory in either old family is found by both sides", () => {
+test("a data-root directory falls back to the data root only", () => {
   const box = sandbox();
   try {
-    // `skills/` lived under `.anysearch-cli` before the rename, the database under
-    // `.anysearch`. A helper that only looks at the data root returns the new path
-    // for the config-side directories and reads nothing.
-    mkdirSync(join(box.home, LEGACY_CONFIG_DIR_NAME, "skills"), { recursive: true });
-    assert.equal(ansHome.ansUserDirPath("skills", box.env), ansUserSkillsDirFor(box.home));
-    assert.equal(ansHome.ansUserDirPath("skills", box.env), join(box.home, ".anysearch-cli", "skills"));
+    mkdirSync(join(box.home, LEGACY_DATA_DIR_NAME, "attribution-gold-revisions"), { recursive: true });
+    assert.equal(
+      ansHome.ansDataDirPath("attribution-gold-revisions", box.env),
+      join(box.home, ".anysearch", "attribution-gold-revisions"),
+    );
 
-    mkdirSync(join(box.home, LEGACY_DATA_DIR_NAME, "host-wiring"), { recursive: true });
-    assert.equal(ansHome.ansUserDirPath("host-wiring", box.env), join(box.home, ".anysearch", "host-wiring"));
+    // Nothing the product reads lives under `.anysearch-cli` for this name, so a
+    // copy there must be ignored rather than preferred.
+    rmSync(join(box.home, LEGACY_DATA_DIR_NAME), { recursive: true, force: true });
+    mkdirSync(join(box.home, LEGACY_CONFIG_DIR_NAME, "attribution-gold-revisions"), { recursive: true });
+    assert.equal(
+      ansHome.ansDataDirPath("attribution-gold-revisions", box.env),
+      join(box.home, ".ans", "attribution-gold-revisions"),
+      "the config family's old root is not this directory's old home",
+    );
   } finally { box.done(); }
 });
 
@@ -90,5 +96,12 @@ test("the attribution root agrees, including its legacy fallback", () => {
       join(box.home, ".anysearch", "attribution-gold-revisions"),
       "the old location is read while it is the only one",
     );
+
+    // `.anysearch-cli/attribution-gold-revisions` is not a location the product
+    // ever used; a copy there must not become the scripts' answer.
+    rmSync(join(box.home, LEGACY_DATA_DIR_NAME), { recursive: true, force: true });
+    mkdirSync(join(box.home, LEGACY_CONFIG_DIR_NAME, "attribution-gold-revisions"), { recursive: true });
+    assert.equal(ansHome.ansAttributionRoot(box.env), ansAttributionRoot(box.env));
+    assert.equal(ansHome.ansAttributionRoot(box.env), join(box.home, ".ans", "attribution-gold-revisions"));
   } finally { box.done(); }
 });

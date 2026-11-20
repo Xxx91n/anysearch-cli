@@ -30,9 +30,13 @@ process.chdir(dir);
 mkdirSync(join(dir, ".ans"), { recursive: true });
 writeFileSync(join(dir, ".ans", "config.toml"), "", "utf8");
 // Keep the installation token/address out of the operator's home and
-// pin the endpoint at a dead port so a real local server cannot answer.
-process.env.HOME = dir;
-process.env.USERPROFILE = dir;
+// pin the endpoint at a dead port so a real local server cannot answer. The home
+// is its own directory: pointing it at the project would make the project the
+// user root, which is not a project identity the product recognizes.
+const fakeHome = join(dir, "home");
+mkdirSync(fakeHome, { recursive: true });
+process.env.HOME = fakeHome;
+process.env.USERPROFILE = fakeHome;
 process.env.ANS_SERVER_URL = DEAD;
 process.env.ANS_SERVER_TOKEN = "policy-test-token";
 delete process.env.ANS_SERVER_REGISTRY;

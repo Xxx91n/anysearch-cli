@@ -52,7 +52,7 @@ export * from "./access-chain";
 // and export mapping at the volatile OTel GenAI boundary.
 export * from "./observation";
 
-// The on-disk layout; ans-layout.ts moves the old directories once.
+// The on-disk layout; ans-layout.ts moves the old directories into it.
 export * from "./ans-paths";
 export * from "./ans-layout";
 

@@ -3,7 +3,7 @@
 // --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ansDbPath } from "../ans-paths.js";
+import { ansDbPath, explicitDbPath } from "../ans-paths.js";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
@@ -18,14 +18,9 @@ import { activeIds, expiredEntries, readQuarantine } from "./quarantine-ledger";
 import { SqliteObservationStore } from "../observation";
 import { runTeardown, unrefPendingHandles } from "../teardown";
 
-/**
- * The database this run may write to: `ANS_DB_PATH` when set, else the layout's
- * durable database. Both the observation write and the switch-state probe use it,
- * so the override rule is decided once.
- */
+/** The database this run writes to, by the product's own rule. */
 function durableDbPath(): string {
-  const override = process.env.ANS_DB_PATH?.trim();
-  return override ? override : ansDbPath();
+  return explicitDbPath() ?? ansDbPath();
 }
 
 function repoRoot(): string {

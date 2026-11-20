@@ -139,6 +139,28 @@ test("project identity: the hook copy matches the store resolver", () => {
     }
     assert.equal(resolveHookProject(nested).root, realpathSync(gitProject), "a nested directory resolves to the project root");
     assert.equal(resolveHookProject(plain).root, null, "a plain directory has no project identity");
+
+    // The user root holds `~/.ans/config.toml` as soon as `ans llm set` ran. That
+    // is the user's own settings, not a project marker, and both resolvers have to
+    // agree on it, or hook attribution lands in the home directory.
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "ans-scope-drift-home-")));
+    const underHome = join(home, "scratch", "deep");
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "config.toml"), "", "utf8");
+    mkdirSync(underHome, { recursive: true });
+    const saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      assert.equal(resolveHookProject(underHome).root, null, "the hook does not take the home directory as a project");
+      assert.equal(resolveProjectContext(underHome).root, null, "the store does not either");
+    } finally {
+      process.env.USERPROFILE = saved.USERPROFILE;
+      process.env.HOME = saved.HOME;
+      if (saved.USERPROFILE === undefined) delete process.env.USERPROFILE;
+      if (saved.HOME === undefined) delete process.env.HOME;
+      rmSync(home, { recursive: true, force: true });
+    }
   } finally {
     for (const dir of [gitProject, configured, plain]) rmSync(dir, { recursive: true, force: true });
   }

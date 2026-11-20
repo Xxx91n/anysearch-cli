@@ -128,13 +128,19 @@ export const ANS_DB_FILENAME = "anysearch.db";
 /** The shared project index's file name, shared with the migration. */
 export const ANS_PROJECT_INDEX_FILENAME = "project-index.db";
 /** The provider credentials file. */
-export const CREDENTIALS_FILENAME = "credentials.json";
+const CREDENTIALS_FILENAME = "credentials.json";
 
 export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), ANS_DB_FILENAME),
     join(homeOf(env), LEGACY_DATA_DIR_NAME, ANS_DB_FILENAME),
   );
+}
+
+/** The database path the operator named explicitly, if any. */
+export function explicitDbPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const explicit = env.ANS_DB_PATH?.trim();
+  return explicit ? explicit : undefined;
 }
 
 export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -242,8 +248,10 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
  * The project's own domain TOMLs, inside the layout root like everything else.
  *
  * They lived at `<project>/domains` before the rename, so the old location is
- * read while it is the only one that exists; `ans-layout.ts` moves it on the
- * next run in that project. `ANS_DOMAINS_DIR` still overrides both.
+ * still read while it is the only one there. `ans-layout.ts` moves the whole
+ * directory in one rename on the next run in that project — all of it or none
+ * of it — so this two-way choice never exposes a half-filled set.
+ * `ANS_DOMAINS_DIR` overrides both.
  */
 export const ANS_DOMAINS_DIR_NAME = "domains";
 

@@ -78,7 +78,8 @@ ans auth remove openai         # drop that entry
 
 ## Domains & Abstain
 
-A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`).
+A *domain* is a TOML file under `<project>/.ans/domains/` (or `ANS_DOMAINS_DIR`;
+    a `domains/` left at the project root is still read until the next run moves it in).
 It declares which providers this domain uses, along with an authoritative allowlist `urlAllowlist`.
 
 ```bash

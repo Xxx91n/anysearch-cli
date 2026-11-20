@@ -79,6 +79,7 @@ import {
   linkSync,
   openSync,
   readFileSync,
+  readdirSync,
   readSync,
   renameSync,
   rmSync,
@@ -86,7 +87,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
 
@@ -487,7 +488,38 @@ export function opensAsDatabase(path: string): boolean {
 export function setAsideUnreadable(path: string): string {
   const aside = path + ".unreadable-" + Date.now();
   renameSync(path, aside);
+  // The log files belong to this database. Left behind, they would pair the copy
+  // that gets published next with another generation's `-wal`, which is the
+  // corruption this module exists to avoid.
+  for (const suffix of SQLITE_SIDECARS) {
+    try { renameSync(path + suffix, aside + suffix); } catch { /* not there */ }
+  }
   return aside;
+}
+
+/** The files a live SQLite connection keeps beside the main one. */
+const SQLITE_SIDECARS = ["-wal", "-shm", "-journal"] as const;
+
+/**
+ * Drop work files a killed run left next to `to`.
+ *
+ * Every run names its own `.adopting` file, so nothing else clears them and an
+ * interrupted upgrade leaves a whole database's worth of bytes behind. Only
+ * files old enough that no live run can still be writing them are removed.
+ */
+function sweepStaleWorkFiles(to: string): void {
+  const dir = dirname(to);
+  const prefix = basename(to) + ".";
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith(".adopting")) continue;
+    const file = join(dir, name);
+    try {
+      if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
+    } catch { /* leave it */ }
+  }
 }
 
 /**
@@ -510,6 +542,7 @@ export function setAsideUnreadable(path: string): string {
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
+  sweepStaleWorkFiles(to);
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);
