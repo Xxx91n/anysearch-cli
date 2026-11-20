@@ -13,10 +13,11 @@
 // Run: pnpm --filter @anysearch-cli/cli test
 
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ansUpgradeHistoryPath, ansUpgradePausePath, openTaskRegistry } from "@anysearch-cli/store";
 import type { ProductIdentity } from "../src/build-identity";
+import { spawn } from "node:child_process";
 import { runUpgrade } from "../src/commands/upgrade";
 
 let passed = 0;
@@ -24,6 +25,15 @@ let failed = 0;
 function check(label: string, cond: boolean, detail?: string): void {
   if (cond) { passed++; console.log("  PASS " + label); }
   else { failed++; console.error("  FAIL " + label + (detail ? ": " + detail : "")); }
+}
+
+/** 一个本机确认已经不在的 pid：起一个子进程，等它退出。 */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("起不了子进程，拿不到一个死掉的 pid");
+  await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return pid;
 }
 
 /** 一份假的"磁盘上装的是这一版"。 */
@@ -186,7 +196,51 @@ async function main(): Promise<void> {
       registry.close();
     }
 
-    // ---- 7. cancel 也清暂停记录，免得下次 finish 拿过期基准去比 -----------
+    // ---- 8. 本机确认已经没了的入口，不算"还要重连" -----------------------
+    {
+      // 一行 pid 已经不在的旧版记录：它是"进程没了、行没收尾"，不是"还在跑旧版"。
+      // 把它算进重连清单，等于让人去重启一个早就不存在的东西。
+      const deadPid = await exitedPid();
+      const ghost = openTaskRegistry(dbPath, {
+        owner: { pid: deadPid, host: hostname() },
+        isOwnerAlive: () => false,
+      });
+      const ghostRow = ghost.registerProcess({ entry: "mcp", build: OLD });
+      // 另一个还在跑的旧版入口，用来证明这一条真的区分了两者。
+      const live = openTaskRegistry(dbPath);
+      const liveRow = live.registerProcess({ entry: "server", build: OLD });
+      try {
+        const s = io();
+        await run(["status"], NEW, s);
+        const text = s.out.join("");
+        check("8: 死掉的那行在入口清单里标着进程已不在", text.includes("本机确认已经没了，但没写结束"), text);
+        // 只取 [重连] 那一段来判断：死掉的那行必须不在里面，还在跑的那个必须在。
+        const reconnectText = text.slice(text.indexOf("[重连]"));
+        check("8: 重连清单里没有那个死掉的 pid",
+          !reconnectText.includes("mcp pid " + deadPid), reconnectText);
+        check("8: 重连清单里有还在跑的那个", reconnectText.includes("server pid "), reconnectText);
+
+        const jsonOut = io();
+        await run(["status", "--json"], NEW, jsonOut);
+        const parsed = JSON.parse(jsonOut.out.join("")) as {
+          program: { reconnect: { pending: Array<{ entry: string }> } };
+          processes: Array<{ entry: string; ownerState: string; build: string | null }>;
+        };
+        const pending = parsed.program.reconnect.pending.map((e) => e.entry);
+        check("8: --json 的重连清单只有还在跑的那个", pending.length === 1 && pending[0] === "server",
+          JSON.stringify(parsed.program.reconnect));
+        const dead = parsed.processes.find((p) => p.ownerState === "dead");
+        check("8: 死掉的那行仍然出现在进程清单里（只是不算重连）", dead?.build === OLD,
+          JSON.stringify(parsed.processes));
+      } finally {
+        ghostRow.end();
+        ghost.close();
+        liveRow.end();
+        live.close();
+      }
+    }
+
+    // ---- 9. cancel 也清暂停记录，免得下次 finish 拿过期基准去比 -----------
     {
       const wait = io();
       await run(["wait", "--timeout", "2000"], NEW, wait);

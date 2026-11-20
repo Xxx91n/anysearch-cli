@@ -316,8 +316,10 @@ function describeProcess(p: ProcessView): string {
  *
  * 没记构建（旧版本没有这一列）的行单独归一类，不塞进"旧版"里：说它旧是猜的，
  * 说它是新版更是猜的。分开列出来，让人自己决定要不要重启。
- */
-/**
+ *
+ * 本机确认已经没了的行两边都不进：它没在跑，说它"还要重连"是假话。它仍然出现在
+ * 上面那份入口清单里（标着"进程已不在，行没收尾"），那才是它的真实状态。
+ *
  * 一个入口相对磁盘版本是什么状态。
  *
  * 三态，不是一个布尔：`current` 跑的就是这一版，`stale` 记下的构建不一样（要
@@ -338,6 +340,9 @@ function reconnectOf(
   const pending: ReconnectEntry[] = [];
   const unknown: ReconnectEntry[] = [];
   for (const process of processes) {
+    // 本机确认进程已经没了的行：它没在跑，不进重连清单。这一条和"没记版本"
+    // 是两回事——后者可能正在跑，前者确定没跑。
+    if (process.ownerState === "dead") continue;
     const entry: ReconnectEntry = {
       entry: process.entry,
       pid: process.pid,

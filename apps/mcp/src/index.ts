@@ -85,6 +85,11 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   });
 }
 
+// 信号之外还有正常退出：stdin 关了（宿主收回连接）、main() 跑完、被
+// TerminateProcess 之外的任何路径结束。少这一条，那些行会一直挂着没写结束，
+// 而"没写结束"在升级报告里会被读成"这个入口还在跑"。
+process.once("exit", () => { processRecord?.end(); });
+
 main().catch((e) => {
   processRecord?.end();
   process.stderr.write("anysearch MCP server error: " + (e instanceof Error ? e.message : String(e)) + "\n");

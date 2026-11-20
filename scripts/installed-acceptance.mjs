@@ -425,7 +425,10 @@ const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join(
 function sh(cmd, args, opts = {}) {
   if (process.platform !== "win32") {
     const r = spawnSync(cmd, args, { encoding: "utf8", shell: false, ...opts });
-    return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+    // `stdout` 单独留着：机器可读输出（--json）只能从它解析。`out` 是给人看的
+    // 合并流，混进一句 stderr 就会让 JSON.parse 炸掉，而那正好是"看起来跑了、
+    // 其实没断言"的坑。
+    return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
   }
   // cmd.exe 只在一种情况下会篡改被引号包住的内容：成对的 %NAME%。它会被
   // 展开成环境变量，路径随之变成别的东西。
@@ -445,7 +448,7 @@ function sh(cmd, args, opts = {}) {
   // 是命令分隔符，跟有没有空格无关。引号包住之后它就只是普通字符。
   for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
   const r = spawnSync(parts.join(" "), { encoding: "utf8", shell: true, ...opts });
-  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
 }
 
 /**
