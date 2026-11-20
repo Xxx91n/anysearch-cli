@@ -265,6 +265,8 @@ async function main(): Promise<void> {
       const code = await runUpgrade(["finish", "--db", dbPath], { ...s.opts, identity: unstampedIdentity });
       check("10: 磁盘没打标时 finish 退 1", code === 1, "code=" + code + " " + s.out.join(""));
       check("10: 说清核对不了哪一版", s.err.join("").includes("没打标"), s.err.join(""));
+      check("10: 磁盘这份没打标时也给一条放弃的出路",
+        s.err.join("").includes("ans upgrade cancel"), s.err.join(""));
       check("10: 准入还关着（没报一个核对不了的通过）", !gateOpen());
       check("10: 没写换版历史", readSwitchHistory(env).length === historyBefore, String(historyBefore));
 
@@ -292,6 +294,9 @@ async function main(): Promise<void> {
         check("10: status 说清磁盘这份没打标、finish 会拒", text.includes("现在磁盘上这份没打标"), text);
         check("10: status 没让人去跑一个会被拒的 finish",
           !text.includes("可以 ans upgrade finish 收尾"), text);
+        // 前缀和分支各讲一遍「没打标」，一行里就会出现三次以上。每侧只该说一次。
+        check("10: status 没把「没打标」反复说",
+          (text.match(/没打标/g) ?? []).length <= 2, text);
       } finally {
         row.end();
         live.close();

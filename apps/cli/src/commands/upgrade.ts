@@ -331,12 +331,15 @@ function freshnessOf(process: ProcessView, installedBuildId: string | null): Pro
 }
 
 /**
- * 「这次暂停还能不能收尾」以及不能时该怎么走。
+ * 「这次暂停还能不能收尾」以及不能时该怎么走，一句话说完。
  *
  * `status` 和 `finish` 共用这一份。两边各写一遍，就会出现一边说可以收尾、另一边
  * 一跑就拒，或者劝人走一条注定被拒的路——磁盘这份没打标时重跑 `wait` 写下的还是
  * null，装完再跑 `wait` 写下的又正好是刚装的那一版，`finish` 只会再说一次"文件
  * 没换"，两趟都白跑。
+ *
+ * 句子自带「当时 / 现在」两侧的事实，调用方只报时间、封门号和这一句，不再另拼
+ * 一遍，否则同一件事会说两遍。
  *
  * Design: 磁盘版本和暂停记录一样时拒绝收尾、准入继续关着 — 另一种做法是照常打开
  * 准入并提示"好像没换"，但那等于用一句提示换掉唯一能拦住"报了个假升级"的判据。
@@ -346,37 +349,38 @@ function pauseOutcome(
   pause: PauseRecord,
   identity: ProductIdentity,
 ): { canFinish: boolean; text: string } {
+  const before = describeBuildId(pause.from.buildId);
+  const now = describeBuildId(identity.buildId);
+  const cancel = "；要放弃这次暂停就用 ans upgrade cancel";
   if (identity.buildId === null && pause.from.buildId === null) {
     return {
       canFinish: false,
-      text: "磁盘上这份和当时暂停的那份都没打标，这次暂停补不出基准：" +
-        "要收尾就用 ans upgrade cancel；想留一条换版记录，得先把一个打过标的旧版本装回来、" +
-        "重跑 ans upgrade wait 拿它当基准，再换到新版、跑 finish",
+      text: "当时和现在这两份都没打标，这次暂停补不出基准：要收尾就用 ans upgrade cancel；" +
+        "想留一条换版记录，得先把一个打过标的旧版本装回来、重跑 ans upgrade wait 拿它当基准，再换到新版、跑 finish",
     };
   }
   if (identity.buildId === null) {
     return {
       canFinish: false,
-      text: "现在磁盘上这份没打标，核对不了换成了哪一版：装一个正式发出来的版本，再跑 ans upgrade finish",
+      text: "当时磁盘上是 " + before + "，现在磁盘上这份没打标：装一个正式发出来的版本再跑 ans upgrade finish" + cancel,
     };
   }
   if (pause.from.buildId === null) {
     return {
       canFinish: false,
-      text: "当时暂停的那一份没打标，没有可核对的基准：现在这份打了标，重跑一次 ans upgrade wait 拿它当基准、" +
-        "再换一次文件，finish 才核得上；要放弃这次暂停就用 ans upgrade cancel",
+      text: "当时磁盘上那份没打标，现在磁盘上是 " + now + "——没有可核对的基准：" +
+        "重跑一次 ans upgrade wait 拿现在这份当基准、再换一次文件，finish 才核得上" + cancel,
     };
   }
   if (pause.from.buildId === identity.buildId) {
     return {
       canFinish: false,
-      text: "文件没换：磁盘上还是 " + describeBuildId(identity.buildId) +
-        "。装完新版本再跑一次 ans upgrade finish；要放弃这次暂停就用 ans upgrade cancel",
+      text: "当时磁盘上是 " + before + "，现在还是这一版：文件没换，装完新版本再跑一次 ans upgrade finish" + cancel,
     };
   }
   return {
     canFinish: true,
-    text: "现在磁盘上是 " + describeBuildId(identity.buildId) + "，文件换了，可以 ans upgrade finish 收尾",
+    text: "当时磁盘上是 " + before + "，现在磁盘上是 " + now + "：文件换了，可以 ans upgrade finish 收尾",
   };
 }
 
@@ -619,8 +623,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         }
       }
       if (pause) {
-        out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
-          describeBuildId(pause.from.buildId) + "——" + pauseOutcome(pause, identity).text + "\n");
+        out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "）：" +
+          pauseOutcome(pause, identity).text + "\n");
       }
       // 换版历史只有 finish 在写，报告里得能读回来一条，否则这份文件只增不读，
       // 人想看只能自己去数据根开 JSON。
