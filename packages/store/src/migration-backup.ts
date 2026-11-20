@@ -320,7 +320,7 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     // and the original message stays inline so its shape stays discoverable.
     const wrapped = new Error(
       "旧版数据库需要先做迁移前备份，但备份失败了：" + detail +
-      "。没有恢复依据就不会改数据库；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间，修好后重试。",
+      "。没有迁移前备份就不会改数据库；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间，修好后重试。",
       { cause: error },
     );
     (wrapped as { code?: unknown }).code = (error as { code?: unknown })?.code;
@@ -377,7 +377,7 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
       recordPath: backupFile + ".json",
       extra: { reason: label },
       warning: (detail) =>
-        "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + detail +
+        "[anysearch] 快照已建好，但记录文件写不进去（" + detail +
         "）；快照本体在 " + backupFile + "，没有受影响。",
     });
     return { backupFile, bytes: sealed.bytes, sha256: sealed.sha256 };
@@ -388,8 +388,8 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     try { rmSync(backupFile, { force: true }); } catch { /* best effort */ }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      "建立恢复存档点失败：" + detail +
-      "。没有恢复依据就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
+      "建立快照失败：" + detail +
+      "。没有快照就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
       { cause: error },
     );
   } finally {
@@ -497,15 +497,7 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
     const conn = openDatabase(from, { timeout: 5000 });
     db = conn;
     const initDeadline = beginInit(conn);
-    const prevUmask = process.umask(0o077);
-    try {
-      try { rmSync(work, { force: true }); } catch { /* nothing to clear */ }
-      withInitBusyRetry("layout adoption", () => {
-        conn.prepare("VACUUM INTO ?").run(work);
-      }, initDeadline);
-    } finally {
-      process.umask(prevUmask);
-    }
+    vacuumSnapshotInto(conn, work, "layout adoption", initDeadline);
     endInit(conn);
     try {
       renameSync(work, to);
