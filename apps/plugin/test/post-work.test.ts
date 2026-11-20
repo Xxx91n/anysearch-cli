@@ -487,6 +487,9 @@ test("real service: a start that cannot listen leaves no open process record", a
   // The exit code and the rows are the contract: the message on stderr is for a
   // human, and a piped stderr can be cut short by process.exit.
   const exitCodeOf = async (proc: ReturnType<typeof spawn>): Promise<number | null> => {
+    // A child that already exited will not emit 'exit' again; waiting for it
+    // would hang until the test timeout.
+    if (proc.exitCode !== null) return proc.exitCode;
     const [code] = await once(proc, "exit");
     return (code ?? null) as number | null;
   };

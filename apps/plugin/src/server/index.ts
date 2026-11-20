@@ -542,9 +542,9 @@ function announce(): void {
  * prune past the retention window clears it. A stop signal is not the only
  * clean exit — a pinned port already in use, or a port the OS refuses outright,
  * exits cleanly too, and both must close their own row. `stop()` is what the
- * graceful path calls; nothing is running yet, so there is nothing to drain,
- * and the index store is left to process teardown because nothing is writing
- * to it.
+ * graceful path calls; no request has been served yet, so there is nothing to
+ * drain, and the index store is left to process teardown with no write in
+ * flight.
  *
  * Design: end the row here rather than in a `process.on("exit")` handler —
  * that handler would also fire on the drain-timeout exit, which deliberately
