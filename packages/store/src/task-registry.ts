@@ -105,37 +105,17 @@ export interface TaskRegistryOptions {
 }
 
 /**
- * #309/#343: how long an ENDED row is kept when `ans upgrade prune` runs.
+ * How long an ENDED row is kept, for BOTH registry tables (#309, #343). One
+ * window, because two would drift the first time someone tuned one.
  *
- * One window for BOTH registry tables. The two have the same job — remember
- * "what ran last month" — and #343 exists because the process table never got
- * a cleanup path while the task table did. Two numbers would drift apart the
- * first time someone tuned one of them.
+ * Ended rows are history: 30 days answers "what ran last month" and keeps the
+ * tables bounded. Open TASK rows are never pruned at any age — they are the
+ * blocking criterion. Open PROCESS rows survive too, unless this host can prove
+ * the pid is gone (see `processPrunePlan`). Dismissed rows are kept: the
+ * dismissal is the only evidence a human looked at them.
  *
- * The rules this constant encodes:
- *
- * - an OPEN TASK row (`ended_at IS NULL`) is never pruned, whatever its age — it
- *   is the blocking criterion, and deleting it would make an upgrade stop
- *   waiting for work that is still running;
- * - a dismissed-but-open task row is also kept (it is still open, and the
- *   dismissal record is the only evidence a human looked at it);
- * - an ENDED row is audit history. 30 days is long enough to answer "what ran
- *   last month" and short enough that the tables stay bounded;
- * - an OPEN PROCESS row is not the same thing as an open task row. It is the
- *   only evidence "this entry may still be running", so it survives on its own;
- *   the one exception #343 settled is a row this host can PROVE is gone (same
- *   host, the pid is no longer running) AND that is past the window. A row whose
- *   pid is still in use is kept even though the pid may have been reused by
- *   something else: keeping a false "still running" is cheap, deleting a row
- *   that describes a live process is not;
- * - pruning is NEVER automatic. It runs only when an operator asks
- *   (`ans upgrade prune`), takes a consistent snapshot first, and reports the
- *   count it removed — the ticket forbids silently sweeping the very records an
- *   upgrade reads.
- *
- * Design: ONE window for both tables (#343) — two constants would drift the
- * first time someone tuned one, and a shorter process window would answer "what
- * ran last month" differently depending on which table you asked.
+ * Pruning is never automatic. Only an operator's `ans upgrade prune` deletes,
+ * and it snapshots first.
  */
 export const HISTORY_RETENTION_DAYS = 30;
 
@@ -188,7 +168,8 @@ export type ProcessPruneReason = "closed-aged" | "open-gone-aged";
 
 /**
  * #343: one pass of the process-table cleanup, as decisions rather than actions
- * so `--dry-run` and the real run read the same one.
+ * so `--dry-run` and the real run read the same one. The kept side is counts,
+ * not rows: every caller reports "why these stay" as a number.
  */
 export interface ProcessPrunePlan {
   /** Rows this host can delete, with the reason each one qualified. */
@@ -196,9 +177,9 @@ export interface ProcessPrunePlan {
   /** Rows too young to touch, whatever their state. */
   withinWindow: number;
   /** Open rows whose pid is still in use: kept, because the pid may be reused. */
-  pidInUse: ProcessRecordRow[];
+  pidInUse: number;
   /** Open rows from another host: this machine cannot prove anything about them. */
-  otherHost: ProcessRecordRow[];
+  otherHost: number;
 }
 
 /** An open task and how to end it. `finish` is idempotent (a second call is a no-op). */
@@ -250,8 +231,7 @@ export class TaskRegistry {
     agedClosedProcesses: Database.Statement;
     agedOpenProcesses: Database.Statement;
     inWindowProcesses: Database.Statement;
-    deleteClosedProcess: Database.Statement;
-    deleteOpenProcess: Database.Statement;
+    deleteProcessRow: Database.Statement;
   };
   private readonly owner: { pid: number; host: string };
   private readonly isOwnerAlive: (pid: number) => boolean;
@@ -356,11 +336,13 @@ export class TaskRegistry {
         "(ended_at IS NOT NULL AND ended_at >= datetime('now', ?)) OR " +
         "(ended_at IS NULL AND started_at >= datetime('now', ?))",
       ),
-      deleteClosedProcess: db.prepare(
-        "DELETE FROM process_records WHERE id = ? AND ended_at IS NOT NULL AND ended_at < datetime('now', ?)",
-      ),
-      deleteOpenProcess: db.prepare(
-        "DELETE FROM process_records WHERE id = ? AND ended_at IS NULL AND started_at < datetime('now', ?)",
+      // One statement, both reasons: the age predicate is written ONCE, so
+      // changing the window cannot leave the preview and the delete disagreeing.
+      // A row that changed state since the plan no longer matches, and stays.
+      deleteProcessRow: db.prepare(
+        "DELETE FROM process_records WHERE id = ? AND (" +
+        "(ended_at IS NOT NULL AND ended_at < datetime('now', ?)) OR " +
+        "(ended_at IS NULL AND started_at < datetime('now', ?)))",
       ),
     };
   }
@@ -692,13 +674,13 @@ export class TaskRegistry {
       for (const row of this.stmts.agedClosedProcesses.all(window) as ProcessRecordRow[]) {
         deletable.push({ row, reason: "closed-aged" });
       }
-      const pidInUse: ProcessRecordRow[] = [];
-      const otherHost: ProcessRecordRow[] = [];
+      let pidInUse = 0;
+      let otherHost = 0;
       for (const row of this.stmts.agedOpenProcesses.all(window) as ProcessRecordRow[]) {
         const ownerState = this.probeOwnerState(row.ownerHost, row.pid);
         if (ownerState === "dead") deletable.push({ row, reason: "open-gone-aged" });
-        else if (ownerState === "alive") pidInUse.push(row);
-        else otherHost.push(row);
+        else if (ownerState === "alive") pidInUse++;
+        else otherHost++;
       }
       const withinWindow = (this.stmts.inWindowProcesses.get(window, window) as { n: number }).n;
       return { deletable, withinWindow, pidInUse, otherHost };
@@ -725,15 +707,11 @@ export class TaskRegistry {
     return this.db.transaction((): { removed: number; closed: number; openGone: number } => {
       const counts = { removed: 0, closed: 0, openGone: 0 };
       for (const entry of plan.deletable) {
-        if (entry.reason === "closed-aged") {
-          const changes = this.stmts.deleteClosedProcess.run(entry.row.id, window).changes;
-          counts.removed += changes;
-          counts.closed += changes;
-        } else {
-          const changes = this.stmts.deleteOpenProcess.run(entry.row.id, window).changes;
-          counts.removed += changes;
-          counts.openGone += changes;
-        }
+        const changes = this.stmts.deleteProcessRow.run(entry.row.id, window, window).changes;
+        if (changes === 0) continue;
+        counts.removed += changes;
+        if (entry.reason === "closed-aged") counts.closed += changes;
+        else counts.openGone += changes;
       }
       return counts;
     }).immediate();
@@ -842,7 +820,7 @@ export function migrateTaskRegistryColumns(db: Database.Database, initDeadline: 
 /** Reject a retention window that would silently mean something else. */
 function requirePositiveDays(days: number): number {
   if (!Number.isFinite(days) || days <= 0) {
-    throw new Error("task history retention must be a positive number of days (got " + String(days) + ")");
+    throw new Error("history retention must be a positive number of days (got " + String(days) + ")");
   }
   return days;
 }
