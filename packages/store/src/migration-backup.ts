@@ -294,7 +294,7 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     if (keptTheirs) return { status: "skipped-existing-backup" };
 
     // --- verifiable record (sha256 + size + source layout + honest claims) ---
-    const sealed = writeSnapshotRecord({
+    const sealed = sealSnapshot({
       file: backupFile,
       db: dbPath,
       recordPath: preMigrationRecordPath(dbPath),
@@ -306,12 +306,9 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
         declaredCompatibleLayouts: VERIFIED_LAYOUT_SOURCES,
         afterLayout: STORE_LAYOUT_VERSION,
       },
-      // The backup itself exists and is verifiable on demand (sha256 can be
-      // recomputed against the file). Losing the convenience record must not
-      // fail a start that already has its recovery point.
-      warning: (detail, file) =>
+      warning: (detail) =>
         "[anysearch] 迁移前备份已完成，但记录文件写不进去（" + detail +
-        "）；备份本体在 " + file + "，没有受影响。",
+        "）；备份本体在 " + backupFile + "，没有受影响。",
     });
     return { status: "backed-up", backupFile, at: sealed.at };
   } catch (error) {
@@ -374,18 +371,14 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     const initDeadline = beginInit(conn);
     vacuumSnapshotInto(conn, backupFile, "destructive-op snapshot", initDeadline);
     endInit(conn);
-    const sealed = writeSnapshotRecord({
+    const sealed = sealSnapshot({
       file: backupFile,
       db: dbPath,
       recordPath: backupFile + ".json",
       extra: { reason: label },
-      // Same rule as the migration path: a snapshot without its record is still
-      // verifiable (sha256 can be recomputed), so this must not fail the
-      // operation — but it must not be silent either, or a later reader sees a
-      // .db with no .json and cannot tell "never written" from "written and lost".
-      warning: (detail, file) =>
+      warning: (detail) =>
         "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + detail +
-        "）；快照本体在 " + file + "，没有受影响。",
+        "）；快照本体在 " + backupFile + "，没有受影响。",
     });
     return { backupFile, bytes: sealed.bytes, sha256: sealed.sha256 };
   } catch (error) {
@@ -673,13 +666,13 @@ function vacuumSnapshotInto(
  * Locks the snapshot down, measures it, and writes the record that makes it
  * checkable later — the second half of the shared snapshot mechanism.
  *
- * The record write failing is a warning, not a failure: a snapshot without its
- * record is still verifiable (sha256 can be recomputed), and refusing to start
- * over a convenience file would be worse. Silence, though, would leave a later
- * reader unable to tell "record never written" from "record written and lost",
- * so the caller supplies the wording for that line.
+ * Design: a snapshot without its record still counts — the sha256 can be
+ * recomputed from the file, and refusing to start over a convenience file is
+ * the worse outcome. Silence would be worse still (a later reader cannot tell
+ * "record never written" from "record written and lost"), so the caller
+ * supplies the wording for that one line.
  */
-function writeSnapshotRecord(options: {
+function sealSnapshot(options: {
   /** The published snapshot file this record describes. */
   file: string;
   /** The live database the snapshot was taken from. */
@@ -689,7 +682,7 @@ function writeSnapshotRecord(options: {
   /** Fields only this caller's record carries. */
   extra: Record<string, unknown>;
   /** The stderr line for a record that cannot be written. */
-  warning: (detail: string, file: string) => string;
+  warning: (detail: string) => string;
 }): { bytes: number; sha256: string; at: string } {
   try { chmodSync(options.file, 0o600); } catch { /* best-effort (Windows ACL path) */ }
   const bytes = statSync(options.file).size;
@@ -697,6 +690,9 @@ function writeSnapshotRecord(options: {
   const at = new Date().toISOString();
   try {
     writeAtomicJson(options.recordPath, {
+      // Extras first: the measured fields below must win, or a caller's stray
+      // `bytes`/`sha256` would quietly make the record unverifiable.
+      ...options.extra,
       version: 1,
       db: options.db,
       backupFile: options.file,
@@ -704,13 +700,10 @@ function writeSnapshotRecord(options: {
       method: "sqlite-vacuum-into",
       bytes,
       sha256,
-      ...options.extra,
       manualRecovery: MANUAL_RECOVERY_NOTE,
     });
   } catch (e) {
-    process.stderr.write(
-      options.warning(String(e instanceof Error ? e.message : e), options.file) + "\n",
-    );
+    process.stderr.write(options.warning(String(e instanceof Error ? e.message : e)) + "\n");
   }
   return { bytes, sha256, at };
 }
