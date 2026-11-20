@@ -49,6 +49,7 @@ import {
   readPauseRecord,
   readSwitchHistory,
   writePauseRecord,
+  type PauseRecord,
   type ReconnectEntry,
   type SwitchRecord,
 } from "../upgrade-record";
@@ -330,6 +331,24 @@ function freshnessOf(process: ProcessView, installedBuildId: string | null): Pro
 }
 
 /**
+ * `status` 对"现在能不能收尾"的那句话。
+ *
+ * 判据顺序必须和 `finish` 一致：finish 先看磁盘这份、再看基准那份、最后才比。
+ * 顺序不一致就会出现"status 说可以收尾、finish 一跑就拒"的两套话。
+ */
+function pauseVerdict(pause: PauseRecord, identity: ProductIdentity): string {
+  if (identity.buildId === null) {
+    return "现在磁盘上这份没打标，ans upgrade finish 会拒绝收尾：先装一个打过标的版本再跑 finish\n";
+  }
+  if (pause.from.buildId === null) {
+    return "暂停时那一份没打标，没有可核对的基准：重跑一次 ans upgrade wait 建一个，或者 ans upgrade cancel 放弃这次暂停\n";
+  }
+  return pause.from.buildId === identity.buildId
+    ? "文件还没换，ans upgrade finish 会拒绝报完成\n"
+    : "文件换了，可以 ans upgrade finish 收尾\n";
+}
+
+/**
  * 谁还在旧版上：记下的构建和磁盘上那一份不一样，就是"文件换了它没换"。
  *
  * 判断不了的行（自己没记构建、或磁盘这份没打标）单独归一类，不塞进"旧版"里。
@@ -567,18 +586,10 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           out("  - " + entry.entry + " pid " + entry.pid + "，起于 " + entry.startedAt + "\n");
         }
       }
-      if (pause?.from.buildId === null) {
-        // 基准那一侧是空的：没有"从哪一版换的"可比，finish 会拒绝，别在这里先
-        // 说"可以收尾了"。
-        out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId +
-          "），但当时磁盘上那一份没打标，没有可核对的基准：" +
-          "重跑一次 ans upgrade wait 建一个，或者 ans upgrade cancel 放弃这次暂停\n");
-      } else if (pause) {
+      if (pause) {
         out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
           describeBuildId(pause.from.buildId) + "；现在磁盘上是 " + describeBuildId(identity.buildId) + "——" +
-          (pause.from.buildId === identity.buildId
-            ? "文件还没换，ans upgrade finish 会拒绝报完成\n"
-            : "文件换了，可以 ans upgrade finish 收尾\n"));
+          pauseVerdict(pause, identity));
       }
       // 换版历史只有 finish 在写，报告里得能读回来一条，否则这份文件只增不读，
       // 人想看只能自己去数据根开 JSON。

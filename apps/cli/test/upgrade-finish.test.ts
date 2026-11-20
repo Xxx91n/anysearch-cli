@@ -283,6 +283,15 @@ async function main(): Promise<void> {
         check("10: 磁盘没打标时每个进程都判不了（stale 全是 null）",
           parsed.processes.length > 0 && parsed.processes.every((p) => p.stale === null),
           JSON.stringify(parsed.processes));
+
+        // 文字报告也得和 finish 一个口径：磁盘这份没打标时，不能一边说没打标、
+        // 一边又说"可以 ans upgrade finish 收尾"。
+        const stText = io();
+        await runUpgrade(["status", "--db", dbPath], { ...stText.opts, identity: unstampedIdentity });
+        const text = stText.out.join("");
+        check("10: status 说清磁盘这份没打标、finish 会拒", text.includes("现在磁盘上这份没打标"), text);
+        check("10: status 没让人去跑一个会被拒的 finish",
+          !text.includes("可以 ans upgrade finish 收尾"), text);
       } finally {
         row.end();
         live.close();
