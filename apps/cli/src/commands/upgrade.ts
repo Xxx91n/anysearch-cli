@@ -337,15 +337,20 @@ function freshnessOf(process: ProcessView, installedBuildId: string | null): Pro
  * 顺序不一致就会出现"status 说可以收尾、finish 一跑就拒"的两套话。
  */
 function pauseVerdict(pause: PauseRecord, identity: ProductIdentity): string {
+  // 两边都空：只装一个打了标的版本还不够，基准那一侧还是 null，finish 第二道门
+  // 照样拒。两句一起说，免得人跑两趟。
+  if (identity.buildId === null && pause.from.buildId === null) {
+    return "现在磁盘上这份也没打标，先装一个打过标的版本，再重跑一次 ans upgrade wait 建基准，之后 finish 才有的可核对\n";
+  }
   if (identity.buildId === null) {
-    return "现在磁盘上这份没打标，ans upgrade finish 会拒绝收尾：先装一个打过标的版本再跑 finish\n";
+    return "现在磁盘上这份没打标，ans upgrade finish 会拒绝报完成：先装一个打过标的版本再跑 finish\n";
   }
   if (pause.from.buildId === null) {
     return "暂停时那一份没打标，没有可核对的基准：重跑一次 ans upgrade wait 建一个，或者 ans upgrade cancel 放弃这次暂停\n";
   }
   return pause.from.buildId === identity.buildId
-    ? "文件还没换，ans upgrade finish 会拒绝报完成\n"
-    : "文件换了，可以 ans upgrade finish 收尾\n";
+    ? "现在磁盘上还是这一版，文件还没换，ans upgrade finish 会拒绝报完成\n"
+    : "现在磁盘上是 " + describeBuildId(identity.buildId) + "，文件换了，可以 ans upgrade finish 收尾\n";
 }
 
 /**
@@ -588,8 +593,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       }
       if (pause) {
         out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
-          describeBuildId(pause.from.buildId) + "；现在磁盘上是 " + describeBuildId(identity.buildId) + "——" +
-          pauseVerdict(pause, identity));
+          describeBuildId(pause.from.buildId) + "——" + pauseVerdict(pause, identity));
       }
       // 换版历史只有 finish 在写，报告里得能读回来一条，否则这份文件只增不读，
       // 人想看只能自己去数据根开 JSON。

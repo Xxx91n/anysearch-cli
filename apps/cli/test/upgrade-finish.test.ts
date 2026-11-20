@@ -323,6 +323,14 @@ async function main(): Promise<void> {
       check("11: status 说清当时那一份没打标、要重跑 wait",
         st.out.join("").includes("没有可核对的基准"), st.out.join(""));
 
+      // 两边都没打标：只叫人「装一个打过标的版本」是半句话——装完基准还是 null，
+      // finish 第二道门照样拒，人得再跑一趟。
+      const bothSt = io();
+      await runUpgrade(["status", "--db", dbPath], { ...bothSt.opts, identity: unstampedIdentity });
+      const both = bothSt.out.join("");
+      check("11: 两边都没打标时说清还要重跑 wait 建基准",
+        both.includes("再重跑一次 ans upgrade wait 建基准"), both);
+
       const cancel = io();
       const c = await run(["cancel"], NEW, cancel);
       check("11: cancel 退 0", c.code === 0, cancel.err.join(""));
