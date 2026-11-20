@@ -652,8 +652,8 @@ function vacuumSnapshotInto(
   withInitBusyRetry(retryLabel, () => {
     try { rmSync(targetFile, { force: true }); } catch { /* nothing to clear */ }
     // umask is process-global; this section is synchronous, single-threaded
-    // command code that owns the only file creation happening in this process
-    // right now, so the window cannot leak into anyone else's file.
+    // code that owns the only file creation happening in this process right
+    // now, so the window cannot leak into anyone else's file.
     const prevUmask = process.umask(0o077);
     try {
       conn.prepare("VACUUM INTO ?").run(targetFile);
