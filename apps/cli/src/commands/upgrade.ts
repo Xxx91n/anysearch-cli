@@ -567,7 +567,13 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           out("  - " + entry.entry + " pid " + entry.pid + "，起于 " + entry.startedAt + "\n");
         }
       }
-      if (pause) {
+      if (pause?.from.buildId === null) {
+        // 基准那一侧是空的：没有"从哪一版换的"可比，finish 会拒绝，别在这里先
+        // 说"可以收尾了"。
+        out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId +
+          "），但当时磁盘上那一份没打标，没有可核对的基准：" +
+          "重跑一次 ans upgrade wait 建一个，或者 ans upgrade cancel 放弃这次暂停\n");
+      } else if (pause) {
         out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
           describeBuildId(pause.from.buildId) + "；现在磁盘上是 " + describeBuildId(identity.buildId) + "——" +
           (pause.from.buildId === identity.buildId
@@ -629,6 +635,14 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         "ans upgrade cancel 直接打开准入\n");
       return 1;
     }
+    // 基准那一侧没打标：null 跟任何版本都不相等，照比就会判成"换了"，打出一句
+    // "换版核对通过：没打标 → 0.2.0+abc"——什么都没核对。
+    if (pause.from.buildId === null) {
+      err("[upgrade] 暂停时磁盘上那一份没打标（没有 dist/build-info.json），这次换版没有基准可核对。\n" +
+        "[upgrade] 重跑一次 ans upgrade wait 建立一个打了标的基准，或者 ans upgrade cancel 放弃这次暂停。\n" +
+        "[upgrade] 准入还关着——没有基准就不打开。\n");
+      return 1;
+    }
     if (pause.from.buildId === identity.buildId) {
       // 最容易被糊弄过去的一步：wait 成功了、用户以为装完了、其实 npm 那步失败了。
       //
@@ -681,7 +695,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
     if (json) {
       out(JSON.stringify({
         admission: "open", finished: true, reopened: wasOpen,
-        from: record.from, to: record.to, pendingReconnect: record.pendingReconnect,
+        from: record.from, to: record.to,
+        pendingReconnect: record.pendingReconnect, unknownReconnect: record.unknownReconnect,
       }, null, 2) + "\n");
     } else {
       out("[upgrade] 换版核对通过：" + describeBuildId(record.from.buildId) + " → " +

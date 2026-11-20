@@ -16,12 +16,14 @@
 //     不动。
 //   - 旧包里没有产品包：只报"这里没有装过"，不替人装。
 //
-// 只用 node 内置模块：这个模块会被编译成可以单独 `node dist/migrate-install.js`
-// 跑的入口，那条路必须在全局命令坏掉的时候也能走通（新包的 bin 还没链接上、
-// 旧包的 `ans` 还占着名字），所以它不能依赖任何别的东西。
+// 只用 node 内置模块（加本仓库那个同样只依赖 node:fs 的 fs-atomic）：这个模块会
+// 被编译成可以单独 `node dist/migrate-install.js` 跑的入口，那条路必须在全局命令
+// 坏掉的时候也能走通（新包的 bin 还没链接上、旧包的 `ans` 还占着名字），所以它
+// 不能依赖任何第三方包。
 
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, writeFileSync } from "node:fs";
+import { atomicRename } from "./fs-atomic";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 /** 这个产品提供（提供过）的命令名。看 bin 之前先用它兜底，免得"没装"等于"没看过"。 */
@@ -450,18 +452,22 @@ function planSteps(
       command: "npm rm -g " + removals.join(" "),
     });
   }
-  // 包已经卸了、shim 还指着它（版本读不到就是那个包不在了）：没有可删的东西，
-  // 只有名字要收回来。一个包都没删也要重装一次，否则预览像"没什么要做的"，
-  // 问题到 --apply 之后才冒出来。
+  // 三种情况都要再装一次产品，而且都要在预览里说清：只写"删"的话，用户照预览
+  // 做完就掉命令。
   const product = packages.find((pkg) => isProductPackage(pkg.name));
   const legacy = commands.filter((c) => c.state === "legacy");
   const reclaimable = legacy.filter((c) => c.version === null && PRODUCT_COMMANDS.includes(c.name));
-  if (product === undefined || (removals.length === 0 && reclaimable.length > 0)) {
-    const reasons: string[] = [];
-    if (product === undefined) reasons.push("完整产品不在这个前缀里");
-    if (reclaimable.length > 0) {
-      reasons.push("这些命令还指着已经不在的旧包（" + reclaimable.map((c) => c.name).join("、") + "）");
-    }
+  const reasons: string[] = [];
+  if (removals.length > 0) {
+    // 旧包占着的命令名是它自己的 shim：npm rm 一跑这些链接跟着没了，而产品的
+    // shim 早被旧包覆盖过——删完不重装，ans-mcp 这些名字就敲不出来。
+    reasons.push("卸旧包会连带带走它占着的命令名（" + removals.join("、") + "）");
+  }
+  if (product === undefined) reasons.push("完整产品不在这个前缀里");
+  if (reclaimable.length > 0) {
+    reasons.push("这些命令还指着已经不在的旧包（" + reclaimable.map((c) => c.name).join("、") + "）");
+  }
+  if (reasons.length > 0) {
     steps.push(installStep(reasons.join("，") + "：" + (product === undefined
       ? "先把产品装上，命令才有着落"
       : "重装一次完整产品把名字收回来")));
@@ -608,8 +614,15 @@ export function applyInstallPlan(
 function writeRecord(path: string, record: InstallMigrationRecord): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = path + "." + process.pid + ".tmp";
-  writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+    // 和 upgrade-record 同一套：Windows 上被占用会重试几次，不留半份 JSON，
+    // 也不把一次短暂的占用变成"迁移在写记录这步结束"。
+    atomicRename(tmp, path);
+  } catch (error) {
+    try { rmSync(tmp, { force: true }); } catch { /* 尽力清理 */ }
+    throw error;
+  }
 }
 
 

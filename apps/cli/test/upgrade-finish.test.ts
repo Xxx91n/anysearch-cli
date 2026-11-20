@@ -289,6 +289,36 @@ async function main(): Promise<void> {
       }
     }
 
+    // ---- 11. 暂停时那一份没打标：没有基准，finish 也不许报通过 --------------
+    {
+      const s = io();
+      const waited = await runUpgrade(["wait", "--timeout", "2000", "--db", dbPath], {
+        ...s.opts, identity: unstampedIdentity,
+      });
+      check("11: 没打标时 wait 也退 0（活干完了就能停）", waited === 0, s.err.join(""));
+      const pause = JSON.parse(readFileSync(ansUpgradePausePath(env), "utf8")) as {
+        from: { buildId: string | null };
+      };
+      check("11: 暂停记录里基准是 null", pause.from.buildId === null, JSON.stringify(pause.from));
+
+      const historyBefore = readSwitchHistory(env).length;
+      const fin = io();
+      const { code } = await run(["finish"], NEW, fin);
+      check("11: 基准没打标时 finish 退 1", code === 1, "code=" + code + " " + fin.out.join(""));
+      check("11: 说清没有基准可核对", fin.err.join("").includes("没有基准可核对"), fin.err.join(""));
+      check("11: 准入还关着", !gateOpen());
+      check("11: 没写换版历史", readSwitchHistory(env).length === historyBefore, String(historyBefore));
+
+      const st = io();
+      await run(["status"], NEW, st);
+      check("11: status 说清当时那一份没打标、要重跑 wait",
+        st.out.join("").includes("没有可核对的基准"), st.out.join(""));
+
+      const cancel = io();
+      const c = await run(["cancel"], NEW, cancel);
+      check("11: cancel 退 0", c.code === 0, cancel.err.join(""));
+    }
+
     // ---- 9. cancel 也清暂停记录，免得下次 finish 拿过期基准去比 -----------
     {
       const wait = io();
