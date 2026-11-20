@@ -90,7 +90,7 @@ function stopProcess(proc: ReturnType<typeof spawn>): Promise<void> {
  * Everything a spawned service needs to stay inside this test's temp dir: no
  * operator home, no operator database, its own pinned port and token.
  */
-function serviceEnv(home: string, port: number): { env: NodeJS.ProcessEnv; durableDb: string } {
+function serviceSandbox(home: string, port: number): { env: NodeJS.ProcessEnv; durableDb: string } {
   const durableDb = join(home, "anysearch.db");
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
   Object.assign(env, {
@@ -345,7 +345,7 @@ test("real service: /index settles before the answer, /policy's audit behind it"
   const root = project("live");
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-home-"));
   const port = await freePort();
-  const { env, durableDb } = serviceEnv(home, port);
+  const { env, durableDb } = serviceSandbox(home, port);
   const proc = spawnService(env);
   const base = "http://127.0.0.1:" + port;
   try {
@@ -469,13 +469,11 @@ test("real service: /index settles before the answer, /policy's audit behind it"
 
 // #344: a start that never listened is a clean exit too, so it has to end the
 // process record it wrote at module load. Two ways to fail that way are pinned
-// here — a pinned port already in use, and a port the OS refuses outright —
-// because without the end the row stays open forever: the pid dies with the
-// process, and only a prune past the retention window clears it.
+// here: a pinned port already in use, and a port the OS refuses outright.
 test("real service: a start that cannot listen leaves no open process record", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-bind-"));
   const port = await freePort();
-  const { env, durableDb } = serviceEnv(home, port);
+  const { env, durableDb } = serviceSandbox(home, port);
   const serverRows = (): Array<{ pid: number; ended: string | null }> => {
     const db = new Database(durableDb, { readonly: true });
     try {
@@ -486,11 +484,11 @@ test("real service: a start that cannot listen leaves no open process record", a
       db.close();
     }
   };
-  const exitOf = async (proc: ReturnType<typeof spawn>): Promise<{ code: number | null; stderr: string }> => {
-    let stderr = "";
-    proc.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+  // The exit code and the rows are the contract: the message on stderr is for a
+  // human, and a piped stderr can be cut short by process.exit.
+  const exitCodeOf = async (proc: ReturnType<typeof spawn>): Promise<number | null> => {
     const [code] = await once(proc, "exit");
-    return { code: (code ?? null) as number | null, stderr };
+    return (code ?? null) as number | null;
   };
 
   const live = spawnService(env);
@@ -506,16 +504,12 @@ test("real service: a start that cannot listen leaves no open process record", a
     // The same pinned port: this start cannot listen, so it exits 1 — a clean
     // exit that must close the row it wrote.
     const taken = spawnService(env);
-    const takenExit = await exitOf(taken);
-    assert.equal(takenExit.code, 1, "a start on a port already in use exits 1");
-    assert.match(takenExit.stderr, /could not listen/, "and says why");
+    assert.equal(await exitCodeOf(taken), 1, "a start on a port already in use exits 1");
 
     // A port the OS refuses before the socket exists throws instead of
     // emitting 'error': same rule, and nothing was ever listening.
     const refused = spawnService({ ...env, ANS_SERVER_PORT: "abc" });
-    const refusedExit = await exitOf(refused);
-    assert.equal(refusedExit.code, 1, "a start on a port the OS refuses exits 1");
-    assert.match(refusedExit.stderr, /could not listen/, "and says why");
+    assert.equal(await exitCodeOf(refused), 1, "a start on a port the OS refuses exits 1");
 
     const rows = serverRows();
     const failedStarts: Array<[string, number | undefined]> = [

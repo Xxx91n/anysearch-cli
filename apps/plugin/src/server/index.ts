@@ -542,14 +542,18 @@ function announce(): void {
  * prune past the retention window clears it. A stop signal is not the only
  * clean exit — a pinned port already in use, or a port the OS refuses outright,
  * exits cleanly too, and both must close their own row. `stop()` is what the
- * graceful path calls; nothing is running yet, so there is nothing to drain.
+ * graceful path calls; nothing is running yet, so there is nothing to drain,
+ * and the index store is left to process teardown because nothing is writing
+ * to it.
  *
  * Design: end the row here rather than in a `process.on("exit")` handler —
  * that handler would also fire on the drain-timeout exit, which deliberately
  * writes nothing while a unit may be half done.
  */
 function failToListen(detail: string): never {
-  process.stderr.write("[anysearch] plugin server could not listen: " + detail + "\n");
+  // A dead stderr must not swallow the end write: that would put back the open
+  // row this function exists to close.
+  try { process.stderr.write("[anysearch] plugin server could not listen: " + detail + "\n"); } catch { /* dead stderr */ }
   postWork.stop();
   process.exit(1);
 }
@@ -571,8 +575,7 @@ function bind(port: number, allowFallback: boolean): void {
     server.listen(port, HOST, () => { server.off("error", onError); announce(); });
   } catch (error) {
     // A port the OS refuses before the socket exists (NaN, out of range)
-    // throws here instead of emitting 'error': same terminal failure. The
-    // listener is left attached on purpose — the process exits immediately.
+    // throws here instead of emitting 'error': same terminal failure.
     failToListen(error instanceof Error ? error.message : String(error));
   }
 }
