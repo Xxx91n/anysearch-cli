@@ -72,7 +72,8 @@ const HELP = `Usage: ans upgrade <command> [options]
   finish              文件换完了：核对真的换了版本，重新打开准入，记下哪几个入口要重连
   cancel              放弃这次暂停，把准入重新打开（不杀正在跑的活）
   dismiss <taskId>    记下某条收不了尾的行没人能解决，之后不再算阻塞（必须给理由）
-  prune               清掉 ${HISTORY_RETENTION_DAYS} 天前收尾的行（任务历史 + 进程登记；先做备份；开着的任务行永远不删）
+  prune               清掉 ${HISTORY_RETENTION_DAYS} 天前收尾的行（任务历史 + 进程登记；真删前先备份）
+                      开着的任务行永远不删；开着的进程行只清本机确认进程已不在的那种
 
 换文件这一步不归本命令：它不替换程序文件、不下载、不安装、不重启任何进程。
 用什么装（npm、pnpm、内部制品库）由你决定，装完再跑 finish 核对。
@@ -282,7 +283,7 @@ async function runWait(
           // #343: 已经不在的那些不是重连对象，只报一行；要清走由 ans upgrade prune 决定。
           if (gone.length > 0) {
             opts.out("[upgrade] 另有 " + gone.length + " 条入口进程本机已经确认不在了，不在此列" +
-              "（超过保留窗口后 ans upgrade prune 会清，明细看 --json）\n");
+              "（要清就跑 ans upgrade prune，过窗口的会删；明细看 --json）\n");
           }
         }
       }
@@ -490,8 +491,8 @@ function pauseOutcome(
  *
  * 判断不了的行（自己没记构建、或磁盘这份没打标）单独归一类，不塞进"旧版"里。
  *
- * 本机确认已经没了的行两边都不进：它没在跑，说它"还要重连"是假话。它仍然出现在
- * 上面那份入口清单里（标着"进程已不在，行没收尾"），那才是它的真实状态。
+ * 本机确认已经没了的行两边都不进：它没在跑，说它"还要重连"是假话。入口清单里它们
+ * 折成一行汇总（#343），逐条明细只在 --json 里。
  */
 function reconnectOf(
   processes: ProcessView[],
@@ -701,7 +702,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         // 逐条列出来就把报告塞满了。明细在 --json 里，清不清由 prune 决定。
         if (gone.length > 0) {
           out("[upgrade] 另有 " + gone.length + " 条入口进程本机已经确认不在了，只是没写结束：" +
-            "不当作阻塞，超过保留窗口后 ans upgrade prune 会清（明细看 --json）\n");
+            "不当作阻塞。要清就跑 ans upgrade prune（过窗口的会删掉；明细看 --json）\n");
         }
       }
       // "dead" 和 "unknown" 不是一回事：前者本机已经查清（进程没了），后者查不了。
@@ -1036,7 +1037,11 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         out(pruneJson({
           days: retentionDays, dryRun: false, backup: backup.backupFile,
           taskPruned: pruned.removed,
-          taskWouldPrune: [],
+          // The rows this run TARGETED, not an empty list: `pruned` below says
+          // how many actually went, so a script reading wouldPrune after a real
+          // run is told the same thing the dry run told it before, and rows
+          // never contradicts wouldPrune. Same shape as the processes block.
+          taskWouldPrune: preview.wouldPrune,
           taskWouldHold: pruned.heldByChildren,
           heldByChildren: pruned.heldByChildren,
           plan, processRemoved,

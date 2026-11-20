@@ -215,9 +215,10 @@ service start, so `upgrade prune` bounds both. Open task rows are never deleted
 (they are the blocking criterion); rows finished more than 30 days ago are, in
 both tables. An open process row is deleted only when this host can prove its pid
 is gone AND the row is past that same window; a row whose pid is still in use
-stays, because that number may belong to something else by now. A prune
-snapshots the database first and prints where the snapshot is, and it never runs
-on its own.
+stays, because that number may belong to something else by now. A prune snapshots
+the database before it deletes anything and prints where the snapshot is, so a
+run with nothing to delete leaves no snapshot behind. Pruning never runs on its
+own.
 
 ## How It Works
 

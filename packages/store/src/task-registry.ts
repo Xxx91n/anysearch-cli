@@ -132,6 +132,10 @@ export interface TaskRegistryOptions {
  *   (`ans upgrade prune`), takes a consistent snapshot first, and reports the
  *   count it removed — the ticket forbids silently sweeping the very records an
  *   upgrade reads.
+ *
+ * Design: ONE window for both tables (#343) — two constants would drift the
+ * first time someone tuned one, and a shorter process window would answer "what
+ * ran last month" differently depending on which table you asked.
  */
 export const HISTORY_RETENTION_DAYS = 30;
 
