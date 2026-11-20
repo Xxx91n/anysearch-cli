@@ -32,7 +32,7 @@ Thumbs.db
 
 # 运行时目录（用户级 + 项目级）
 .ans/
-# 旧名字，升级期间还会读
+# 旧数据根，升级期间还会读
 .anysearch/
 apps/plugin/dist/
 apps/dsh-plugin/lib/
@@ -42,7 +42,7 @@ apps/cli/domains/
 
 .model-cache/
 
-# 旧名字，升级期间还会读
+# 旧配置根，升级期间还会读
 .anysearch-cli/
 
 # R68 audit F-A2: agy adapter writes .antigravity/rules/anysearch.mdc into the

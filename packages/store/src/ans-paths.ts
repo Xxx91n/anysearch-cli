@@ -143,6 +143,14 @@ export function explicitDbPath(env: NodeJS.ProcessEnv = process.env): string | u
   return explicit ? explicit : undefined;
 }
 
+/**
+ * The durable database: the explicit `ANS_DB_PATH` when set, else the one the
+ * layout resolves. Every entry point asks this, so the override rule exists once.
+ */
+export function ansDurableDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return explicitDbPath(env) ?? ansDbPath(env);
+}
+
 export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), ANS_PROJECT_INDEX_FILENAME),

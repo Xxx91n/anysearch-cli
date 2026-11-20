@@ -110,13 +110,18 @@ const cmdArgs = argv.slice(1);
 //
 // Read-only commands are exempt: `ans upgrade status` and `ans doctor` report
 // the current state, and a migration in front of either would make the report
-// describe a layout the command itself just changed. `status` is the only
-// subcommand that reads; the rest write, and no arguments or `--help` print the
-// usage. Same test `runUpgrade` applies, so an option's value can never be read
-// as the subcommand.
-const upgradeWrites =
-  cmdArgs.length > 0 && !cmdArgs.includes("--help") && !cmdArgs.includes("-h") && cmdArgs[0] !== "status";
-const readOnly = cmd === "doctor" || (cmd === "upgrade" && !upgradeWrites);
+// describe a layout the command itself just changed. So are the invocations that
+// do nothing at all — no arguments, `--help`, or a leading option, which
+// `runUpgrade` rejects with the usage. `status` is the only subcommand that
+// reads; every other one writes. This is the test `runUpgrade` applies, so an
+// option's value is never taken for the subcommand.
+const upgradeReadOnly =
+  cmdArgs.length === 0 ||
+  cmdArgs.includes("--help") ||
+  cmdArgs.includes("-h") ||
+  cmdArgs[0] === "status" ||
+  cmdArgs[0]!.startsWith("-");
+const readOnly = cmd === "doctor" || (cmd === "upgrade" && upgradeReadOnly);
 if (!readOnly) ensureAnsLayoutOrExit("ans");
 
 // CLI wiring: dispatch to command implementation.

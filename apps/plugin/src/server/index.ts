@@ -38,7 +38,7 @@ import { parseDrainMs, runShutdown } from "./shutdown.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { ansDbPath, explicitDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+import { ansDurableDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so the wire format
 // stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
@@ -66,7 +66,7 @@ try { ensureOwnerOnlyDb(DB_PATH); } catch { mkdirSync(dirname(DB_PATH), { recurs
 const store = new ProjectIndexStore(DB_PATH);
 try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
-const OBS_DB = explicitDbPath() ?? ansDbPath();
+const OBS_DB = ansDurableDbPath();
 
 // #307: this service's post-work runs under task records like every other
 // entry. The registry is opened once, on its own connection to the same

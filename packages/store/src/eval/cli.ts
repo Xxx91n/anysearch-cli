@@ -3,7 +3,7 @@
 // --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ansDbPath, explicitDbPath } from "../ans-paths.js";
+import { ansDurableDbPath } from "../ans-paths.js";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
@@ -20,7 +20,7 @@ import { runTeardown, unrefPendingHandles } from "../teardown";
 
 /** The database this run writes to, by the product's own rule. */
 function durableDbPath(): string {
-  return explicitDbPath() ?? ansDbPath();
+  return ansDurableDbPath();
 }
 
 function repoRoot(): string {

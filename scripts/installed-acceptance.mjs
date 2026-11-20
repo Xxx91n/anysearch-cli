@@ -2214,25 +2214,31 @@ async function main() {
         "续聊的上游请求里带着升级前那一轮的问题", resumedBody.slice(0, 300));
       // 文件存在只说明搬迁做过，说明不了第二轮读的是哪个库。查第二轮那句话落在
       // 哪份库里，再确认旧库一个字节都没动。
-      // 搬迁失败时这里要给出结论，而不是甩一段 stack 把前面的计数全吃掉：
-      // 开库、取会话句柄、stat 旧库都可能抛。
-      try {
-        const db = new Database(join(resumeHome, ".ans", "anysearch.db"), { readonly: true });
+      // 搬迁失败时这里要给出结论，而不是甩一段 stack 把前面的计数全吃掉。但结论
+      // 只能是这条断言自己的结论：「拿不到句柄」是上面那条的账，在这里再报一次
+      // 会把人指向错误的库。
+      if (!legacySession) {
+        check(false, "续聊那一轮写进了搬到 .ans 的库", "拿不到升级前的会话句柄，判断不了这一轮落在哪个库");
+      } else {
+        let rows;
         try {
-          const row = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND content LIKE ?")
-            .get(legacySession, "%LEGACY-SECOND-QUESTION%");
-          check((row?.n ?? 0) > 0, "续聊那一轮写进了搬到 .ans 的库");
-        } finally { db.close(); }
-      } catch (error) {
-        check(false, "续聊那一轮写进了搬到 .ans 的库", String(error && error.message ? error.message : error));
+          const db = new Database(join(resumeHome, ".ans", "anysearch.db"), { readonly: true });
+          try {
+            rows = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND content LIKE ?")
+              .get(legacySession, "%LEGACY-SECOND-QUESTION%");
+          } finally { db.close(); }
+        } catch { /* 开不了库，按没查到处理，detail 里说明 */ }
+        check((rows?.n ?? 0) > 0, "续聊那一轮写进了搬到 .ans 的库",
+          rows ? "" : "打不开 " + join(resumeHome, ".ans", "anysearch.db"));
       }
-      try {
-        check(existsSync(legacyDb) && legacyStamp !== "" &&
-          statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs === legacyStamp,
-          "续聊没有写回旧库");
-      } catch (error) {
-        check(false, "续聊没有写回旧库", String(error && error.message ? error.message : error));
+      let legacyUntouched = false;
+      if (legacyStamp !== "") {
+        try {
+          legacyUntouched = existsSync(legacyDb) &&
+            statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs === legacyStamp;
+        } catch { /* 旧库不在了：自然不算「没写回」 */ }
       }
+      check(legacyUntouched, "续聊没有写回旧库");
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

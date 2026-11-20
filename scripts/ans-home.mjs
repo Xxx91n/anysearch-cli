@@ -4,7 +4,8 @@
 // scripts' copy of just the two rules those scripts need. It exists because a
 // standalone `.mjs` script cannot import a TypeScript module without a loader,
 // and four scripts each spelling out the same chain is how #323 happened in the
-// first place. Keep this in step with `ans-paths.ts`; nothing enforces it.
+// first place. `packages/store/test/ans-home-parity.test.ts` compares the two,
+// so a rename on one side and not the other fails there instead of in production.
 
 import fs from "node:fs";
 import os from "node:os";

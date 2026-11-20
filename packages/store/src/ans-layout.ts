@@ -49,7 +49,13 @@ import {
   legacyHomeDirs,
   legacyProjectDirs,
 } from "./ans-paths.js";
-import { adoptDatabase, opensAsDatabase, setAsideUnreadable } from "./migration-backup.js";
+import {
+  adoptDatabase,
+  opensAsDatabase,
+  setAsideUnreadable,
+  SQLITE_SIDECAR_SUFFIXES,
+  sweepStaleWorkFiles,
+} from "./migration-backup.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
@@ -62,13 +68,16 @@ const DATABASE_ENTRIES = new Set([ANS_DB_FILENAME, ANS_PROJECT_INDEX_FILENAME]);
  * the file that stays behind: `-journal` is the rollback-mode equivalent of
  * `-wal`, and moving it away from its database is the same corruption.
  */
-const DATABASE_SIDECAR = /\.db-(wal|shm|journal)$/;
+const isDatabaseSidecar = (name: string): boolean =>
+  SQLITE_SIDECAR_SUFFIXES.some((suffix) => name.endsWith(".db" + suffix));
 
 export interface AnsLayoutMove {
   from: string;
   to: string;
   /** `moved`/`copied` for a rename or a cross-volume copy; `snapshot` for a database. */
   how: "moved" | "copied" | "snapshot";
+  /** When this snapshot was taken, ISO-8601. Only a snapshot carries it. */
+  at?: string;
 }
 
 export interface AnsLayoutPending {
@@ -144,6 +153,7 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   // name the reader prefers when an interrupted run is retried, and the intact
   // source would then be ignored forever.
   const staging = to + "." + process.pid + ".copying";
+  sweepStaleWorkFiles(to, ".copying");
   try {
     cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
     renameSync(staging, to);
@@ -194,8 +204,10 @@ function isProductCheckout(root: string): boolean {
  * domains live, so it wins over the move. A `domains/` that already exists in the
  * layout root is left alone and reported.
  *
- * Only a user project is touched: a checkout of this product ships its own
- * `domains/` as builtin source, and moving that out would break the build.
+ * Only a user project is touched — a directory with a `.git` or a project
+ * `config.toml`; a directory that merely happens to hold a `domains/` is left
+ * alone. A checkout of this product ships its own `domains/` as builtin source,
+ * and moving that out would break the build.
  */
 function adoptProjectDomains(
   cwd: string,
@@ -250,7 +262,7 @@ function adoptProjectLayout(cwd: string, env: NodeJS.ProcessEnv, warn: (message:
       // rename: a live WAL database moved out from under its -wal is the
       // corruption this module exists to avoid, and the product reads the user
       // root anyway, so a moved copy would only look live.
-      if (DATABASE_SIDECAR.test(entry)) {
+      if (isDatabaseSidecar(entry)) {
         warn("[anysearch] " + join(dir, entry) + " 没有搬：它是旧库的附随文件，跟着库留在原处。\n");
         continue;
       }
@@ -335,6 +347,15 @@ export function ensureAnsLayout(
   // pre-upgrade copy), so "the target exists" is the finished state for it, not
   // a conflict to report on every run.
   const adopted = new Set((recorded?.moved ?? []).filter((m) => m.how === "snapshot").map((m) => m.from));
+  // Each snapshot carries its own time. The record's `migratedAt` is the first
+  // run's stamp and stays put, so comparing against it would accuse an old
+  // database that only appeared later of being written after the copy.
+  const snapshottedAt = new Map<string, number>();
+  for (const move of recorded?.moved ?? []) {
+    if (move.how !== "snapshot" || !move.at) continue;
+    const parsed = Date.parse(move.at);
+    if (Number.isFinite(parsed)) snapshottedAt.set(move.from, parsed);
+  }
   const moved: AnsLayoutMove[] = [...(recorded?.moved ?? [])];
   const pending: AnsLayoutPending[] = [];
 
@@ -347,7 +368,7 @@ export function ensureAnsLayout(
       continue;
     }
     for (const entry of entries) {
-      if (DATABASE_SIDECAR.test(entry)) continue;
+      if (isDatabaseSidecar(entry)) continue;
       const from = join(dir, entry);
       const to = join(home, entry);
       if (existsSync(to)) {
@@ -358,15 +379,13 @@ export function ensureAnsLayout(
           // The old file stays behind as the pre-upgrade copy, so a newer mtime
           // means something wrote to it after the snapshot. Those rows are not in
           // the new database, and no later run will bring them over.
-          try {
-            const copiedAt = recorded?.migratedAt ? Date.parse(recorded.migratedAt) : NaN;
-            if (Number.isFinite(copiedAt) && writtenSince(from, copiedAt)) {
-              warn(
-                "[anysearch] " + from + " 在升级之后又被写过，那些内容不在 " + to +
-                " 里；新的库才是现在在用的那个，旧文件确认不要了可以删掉。\n",
-              );
-            }
-          } catch { /* stat failed: nothing to report */ }
+          const copiedAt = snapshottedAt.get(from);
+          if (copiedAt !== undefined && writtenSince(from, copiedAt)) {
+            warn(
+              "[anysearch] " + from + " 在升级之后又被写过，那些内容不在 " + to +
+              " 里；新的库才是现在在用的那个，旧文件确认不要了可以删掉。\n",
+            );
+          }
           continue;
         }
         // A target that will not open is not a newer file to preserve: it is
@@ -393,7 +412,7 @@ export function ensureAnsLayout(
       try {
         if (DATABASE_ENTRIES.has(entry)) {
           adoptDatabase(from, to);
-          moved.push({ from, to, how: "snapshot" });
+          moved.push({ from, to, how: "snapshot", at: new Date().toISOString() });
         } else {
           moved.push({ from, to, how: moveEntry(from, to) });
         }

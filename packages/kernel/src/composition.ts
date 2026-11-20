@@ -11,8 +11,7 @@ import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
-  ansDbPath,
-  explicitDbPath,
+  ansDurableDbPath,
   defaultDomainsDirs,
   SqliteObservationStore,
   SqliteSessionStore,
@@ -294,7 +293,7 @@ const PATH_RE = new RegExp(
 // ANS_DB_PATH overrides; default ~/.ans/anysearch.db (#323).
 // Kernel does not read env elsewhere, but path resolution is composition-root I/O (pits: keep it here).
 export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  return explicitDbPath(env) ?? ansDbPath(env);
+  return ansDurableDbPath(env);
 }
 
 // attribution calibration lives on disk as a revision-root head

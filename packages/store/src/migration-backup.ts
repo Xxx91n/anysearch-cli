@@ -485,36 +485,38 @@ export function opensAsDatabase(path: string): boolean {
  * Deleting any of those destroys data nobody examined, so the file is renamed
  * aside and named in the message instead.
  */
+/** The files a live SQLite connection keeps beside the main one. */
+export const SQLITE_SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
+
 export function setAsideUnreadable(path: string): string {
   const aside = path + ".unreadable-" + Date.now();
   renameSync(path, aside);
   // The log files belong to this database. Left behind, they would pair the copy
   // that gets published next with another generation's `-wal`, which is the
   // corruption this module exists to avoid.
-  for (const suffix of SQLITE_SIDECARS) {
+  for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
     try { renameSync(path + suffix, aside + suffix); } catch { /* not there */ }
   }
   return aside;
 }
 
-/** The files a live SQLite connection keeps beside the main one. */
-const SQLITE_SIDECARS = ["-wal", "-shm", "-journal"] as const;
-
 /**
- * Drop work files a killed run left next to `to`.
+ * Drop work files a killed run left next to `target`.
  *
- * Every run names its own `.adopting` file, so nothing else clears them and an
- * interrupted upgrade leaves a whole database's worth of bytes behind. Only
- * files old enough that no live run can still be writing them are removed.
+ * Every run names its own staging file, so nothing else clears them and an
+ * interrupted copy leaves a whole file's (or directory's) worth of bytes behind.
+ * `suffix` is the caller's own marker: `.adopting` here, `.copying` for the
+ * cross-volume directory move. Only files old enough that no live run can still
+ * be writing them are removed.
  */
-function sweepStaleWorkFiles(to: string): void {
-  const dir = dirname(to);
-  const prefix = basename(to) + ".";
+export function sweepStaleWorkFiles(target: string, suffix: string): void {
+  const dir = dirname(target);
+  const prefix = basename(target) + ".";
   const cutoff = Date.now() - 60 * 60 * 1000;
   let names: string[];
   try { names = readdirSync(dir); } catch { return; }
   for (const name of names) {
-    if (!name.startsWith(prefix) || !name.endsWith(".adopting")) continue;
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
     const file = join(dir, name);
     try {
       if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
@@ -542,7 +544,7 @@ function sweepStaleWorkFiles(to: string): void {
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  sweepStaleWorkFiles(to);
+  sweepStaleWorkFiles(to, ".adopting");
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);

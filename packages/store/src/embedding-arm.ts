@@ -23,22 +23,28 @@ type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 let modPromise: Promise<EmbeddingModule | null> | undefined;
 let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModuleForTest)
 
-// The model cache directory is handed to the embedding package rather than
-// defined there: that package is a zero-dependency leaf and cannot import
-// ans-paths, so a second literal would be a second answer to "where is the
-// cache".
-/** Written to stderr unless a caller hands in its own sink. */
-function defaultWarn(message: string): void {
-  process.stderr.write(message);
+/** Where the load-time notices go; `setEmbeddingWarn` replaces it. */
+let warnSink: (message: string) => void = (message) => process.stderr.write(message);
+
+/** Replace the sink for load-time notices (a host that owns its logging). */
+export function setEmbeddingWarn(warn: (message: string) => void): void {
+  warnSink = warn;
 }
 
-function withCacheDir(m: EmbeddingModule, warn: (message: string) => void): EmbeddingModule {
+/**
+ * Hand the embedding package the product's model cache directory.
+ *
+ * The directory is defined here rather than there: that package is a
+ * zero-dependency leaf and cannot import ans-paths, so a second literal would be
+ * a second answer to "where is the cache".
+ */
+function withCacheDir(m: EmbeddingModule): EmbeddingModule {
   // `?.` would make this silently optional. `importEmbeddingFallback` can find a
   // copy in another install tree, and an old copy without the setter would
   // download models into its own default directory with `ans doctor` showing
   // nothing wrong, so the mismatch is reported instead.
   if (typeof m.setModelCacheDir !== "function") {
-    warn(
+    warnSink(
       "[anysearch] 这个 embedding 副本不支持指定缓存目录，模型会下到它自己的默认位置" +
       "（配了 ANYSEARCH_MODEL_CACHE 时按那个来）。装一个匹配的版本可以消掉这条。\n",
     );
@@ -48,19 +54,19 @@ function withCacheDir(m: EmbeddingModule, warn: (message: string) => void): Embe
   return m;
 }
 
-function loadEmbedding(warn: (message: string) => void): Promise<EmbeddingModule | null> {
+function loadEmbedding(): Promise<EmbeddingModule | null> {
   if (forced !== undefined) return Promise.resolve(forced);
   if (!modPromise) {
     modPromise = (async () => {
       try {
-        return withCacheDir(await import("@anysearch-cli/embedding"), warn);
+        return withCacheDir(await import("@anysearch-cli/embedding"));
       } catch (e) {
         const code = (e as NodeJS.ErrnoException | undefined)?.code;
         // only a NOT-FOUND falls through to sibling-root
         // probing — a present-but-broken package stays absent (fail-open),
         // never masked by a stray copy elsewhere on disk.
         if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
-          return await importEmbeddingFallback(embeddingAnchorFiles(), warn);
+          return await importEmbeddingFallback();
         }
         return null;
       }
@@ -98,10 +104,7 @@ function childDirNames(dir: string): string[] {
   } catch { return []; }
 }
 
-async function importEmbeddingFallback(
-  anchors: string[] = embeddingAnchorFiles(),
-  warn: (message: string) => void = defaultWarn,
-): Promise<EmbeddingModule | null> {
+async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles()): Promise<EmbeddingModule | null> {
   // a resolved-but-broken copy (truncated dist, missing chunk,
   // top-level throw) must stay absent, not throw — an unguarded rejection
   // would poison modPromise for the process lifetime and veto every caller's
@@ -110,7 +113,7 @@ async function importEmbeddingFallback(
   const tryImport = async (resolved: string | undefined): Promise<EmbeddingModule | null> => {
     if (!resolved) return null;
     try {
-      return withCacheDir((await import(pathToFileURL(resolved).href)) as EmbeddingModule, warn);
+      return withCacheDir((await import(pathToFileURL(resolved).href)) as EmbeddingModule);
     } catch {
       return null;
     }
@@ -133,7 +136,7 @@ async function importEmbeddingFallback(
 // empty input). Callers already degrade on null — this wrapper only adds the
 // package-absence branch.
 export async function embedText(text: string, role: "query" | "passage"): Promise<Float32Array | null> {
-  const m = await loadEmbedding(defaultWarn);
+  const m = await loadEmbedding();
   if (!m) return null;
   return m.embedText(text, role);
 }
@@ -141,7 +144,7 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
 // Model id for memory_embeddings.model — only resolved after embedText
 // produced a vector, so the module is known-present here.
 export async function embeddingModelId(): Promise<string> {
-  const m = await loadEmbedding(defaultWarn);
+  const m = await loadEmbedding();
   return m?.EMBEDDING_MODEL_ID ?? "unavailable";
 }
 
@@ -156,7 +159,7 @@ export interface ArmTelemetry {
 }
 
 export async function armTelemetry(): Promise<ArmTelemetry> {
-  const m = await loadEmbedding(defaultWarn);
+  const m = await loadEmbedding();
   if (!m) return { loads: 0, embeds: 0, failures: 0, circuitOpen: false, absent: true };
   return { ...m.embeddingTelemetry(), absent: false };
 }
@@ -178,15 +181,13 @@ export function __setEmbeddingModuleForTest(m: EmbeddingModule | null | "auto"):
   modPromise = undefined;
 }
 
-// ponytail: test-only seam — resolve the sibling-root fallback against explicit
-// anchor files (synthetic global layouts) instead of argv[1]/self.
-export function __withCacheDirForTest(
-  m: EmbeddingModule,
-  warn: (message: string) => void,
-): EmbeddingModule {
-  return withCacheDir(m, warn);
+// ponytail: test-only seam — run the cache-dir handoff against a stand-in module.
+export function __withCacheDirForTest(m: EmbeddingModule): EmbeddingModule {
+  return withCacheDir(m);
 }
 
+// ponytail: test-only seam — resolve the sibling-root fallback against explicit
+// anchor files (synthetic global layouts) instead of argv[1]/self.
 export function __importEmbeddingFallbackForTest(anchors: string[]): Promise<EmbeddingModule | null> {
   return importEmbeddingFallback(anchors);
 }

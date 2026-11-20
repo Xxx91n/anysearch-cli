@@ -7,7 +7,7 @@
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, __setEmbeddingModuleForTest, __importEmbeddingFallbackForTest, __withCacheDirForTest } from "../src/embedding-arm";
+import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, setEmbeddingWarn, __setEmbeddingModuleForTest, __importEmbeddingFallbackForTest, __withCacheDirForTest } from "../src/embedding-arm";
 import { SqliteSessionStore } from "../src/session-store";
 
 let passed = 0, failed = 0;
@@ -117,8 +117,9 @@ async function main() {
   // setter must report itself, not silently download models to its own default.
   {
     const said: string[] = [];
+    setEmbeddingWarn((m) => said.push(m));
     const oldCopy = { embedText: async () => null } as never;
-    __withCacheDirForTest(oldCopy, (m) => said.push(m));
+    __withCacheDirForTest(oldCopy);
     assert(said.length === 1 && said[0].includes("不支持指定缓存目录"),
       "a copy without setModelCacheDir reports itself");
 
@@ -127,8 +128,10 @@ async function main() {
       embedText: async () => null,
       setModelCacheDir: (dirIn: string) => { handedOver = dirIn; },
     } as never;
-    __withCacheDirForTest(matching, () => { /* silent */ });
+    __withCacheDirForTest(matching);
     assert(handedOver.endsWith("models"), "a matching copy is handed the layout's model cache dir");
+    assert(said.length === 1, "a matching copy says nothing");
+    setEmbeddingWarn((m) => process.stderr.write(m));
   }
 
   // 6. cosineSimilarity — inlined pure math, no package dependency.

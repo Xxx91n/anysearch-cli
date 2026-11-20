@@ -32,9 +32,11 @@ export function resolveHookProject(cwd: string = process.cwd()): HookProject {
         // Only a missing marker means "keep walking"; other fs errors are real.
         if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       }
-      // Skip the user root: `~/.ans/config.toml` is the user's own `[llm]`
-      // settings, not a project marker, and accepting it would make the home
-      // directory the project of every directory above nothing.
+      // Skip the user root: there, `.ans/config.toml` is the user's own `[llm]`
+      // settings rather than a project marker. Without this, the walk up from any
+      // unrooted directory ends at the home directory and calls it that
+      // directory's project. A home directory that is itself a git repository
+      // still answers through the `.git` check above.
       if (!samePath(join(root, ANS_DIR_NAME), ansHomeDir())) {
         try {
           if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };

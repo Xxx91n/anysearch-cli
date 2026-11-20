@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
@@ -321,6 +321,49 @@ test("a database that appears in the old root after the move is still snapshotte
       "late",
       "the old file stays where it is, as the pre-upgrade copy",
     );
+  } finally { box.done(); }
+});
+
+test("the written-since warning compares against that snapshot, not the first run", () => {
+  const box = sandbox();
+  try {
+    // First run: nothing to move. The record's `migratedAt` is stamped now and
+    // never moves again, so it cannot say when a later snapshot was taken.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    ensureAnsLayout(box.env, () => {});
+
+    // The first run removes the emptied legacy directory, so put it back the way
+    // an old build would.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    const legacyDb = join(box.home, ".anysearch", "anysearch.db");
+    seedDatabase(legacyDb, "late");
+    ensureAnsLayout(box.env, () => {});
+
+    const record = JSON.parse(readFileSync(ansLayoutMarkerPath(box.env), "utf8")) as {
+      migratedAt: string;
+      moved: { how: string; at?: string }[];
+    };
+    record.migratedAt = "2020-01-01T00:00:00.000Z";
+    const snapshot = record.moved.find((m) => m.how === "snapshot");
+    assert.ok(snapshot, "the late database was snapshotted");
+
+    // The old file was written in 2024: after the first run, before the snapshot.
+    utimesSync(legacyDb, new Date("2024-01-01T00:00:00.000Z"), new Date("2024-01-01T00:00:00.000Z"));
+
+    snapshot.at = "2025-01-01T00:00:00.000Z";
+    writeFileSync(ansLayoutMarkerPath(box.env), JSON.stringify(record));
+    const quiet: string[] = [];
+    ensureAnsLayout(box.env, (m) => quiet.push(m));
+    assert.deepEqual(quiet.filter((m) => m.includes("又被写过")), [],
+      "written before its own snapshot: nothing to report");
+
+    // Same file, snapshot taken first: now those rows really are missing.
+    snapshot.at = "2023-01-01T00:00:00.000Z";
+    writeFileSync(ansLayoutMarkerPath(box.env), JSON.stringify(record));
+    const loud: string[] = [];
+    ensureAnsLayout(box.env, (m) => loud.push(m));
+    assert.equal(loud.filter((m) => m.includes("又被写过")).length, 1,
+      "written after its snapshot: the old rows are not in the new database");
   } finally { box.done(); }
 });
 
