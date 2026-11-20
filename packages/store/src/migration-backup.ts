@@ -628,20 +628,11 @@ function tmpSuffix(): string {
 }
 
 /**
- * Produces the standalone snapshot file at `targetFile` through SQLite's own
- * online backup path — the first half of the shared snapshot mechanism.
+ * Vacuums a standalone copy of the database into `targetFile`.
  *
- * Design: vacuum and record-write stay two helpers, not one — the migration
- * path publishes the vacuumed file under a cross-process lock BEFORE any
- * record may name it, so a single "vacuum + record" call would have to either
- * write the record for a file that never got published, or take the publish
- * away from the caller that owns the lock. Each helper does one job; both
- * callers compose them in their own order.
- *
- * The leftover clear and the umask tightening are both load-bearing:
- * "VACUUM INTO" refuses to overwrite (so a retry after a killed run would fail
- * with "output file already exists" instead of the real busy cause), and a
- * file born at 0666&~umask is world-readable for the whole vacuum.
+ * Design: vacuum and record-write stay two steps — the migration path
+ * publishes between them, under the source lock, so no record may name an
+ * unpublished file.
  */
 function vacuumSnapshotInto(
   conn: Database.Database,
@@ -650,6 +641,8 @@ function vacuumSnapshotInto(
   deadlineAt: number,
 ): void {
   withInitBusyRetry(retryLabel, () => {
+    // "VACUUM INTO" refuses to overwrite, so a leftover from a killed attempt
+    // would fail the retry with "file exists" and hide the real busy cause.
     try { rmSync(targetFile, { force: true }); } catch { /* nothing to clear */ }
     // umask is process-global; this section is synchronous, single-threaded
     // code that owns the only file creation happening in this process right
@@ -664,14 +657,11 @@ function vacuumSnapshotInto(
 }
 
 /**
- * Locks the snapshot down, measures it, and writes the record that makes it
- * checkable later — the second half of the shared snapshot mechanism.
+ * Locks the snapshot down, measures it, and writes its record.
  *
- * Design: a snapshot without its record still counts — the sha256 can be
- * recomputed from the file, and refusing to start over a convenience file is
- * the worse outcome. Silence would be worse still (a later reader cannot tell
- * "record never written" from "record written and lost"), so the caller
- * supplies the wording for that one line.
+ * Design: a missing record is a warning, not a failure — the sha256 can be
+ * recomputed from the file, but silence would hide a loss the next reader
+ * cannot see, so the caller supplies that one stderr line's wording.
  */
 function sealSnapshot(options: {
   /** The published snapshot file this record describes. */
