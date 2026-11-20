@@ -228,7 +228,11 @@ async function main(): Promise<void> {
         const s = io();
         await run(["status"], NEW, s);
         const text = s.out.join("");
-        check("8: 死掉的那行在入口清单里标着进程已不在", text.includes("本机确认已经没了，但没写结束"), text);
+        // #343: 死掉的行不再逐条列，折进入口清单的一行汇总。它仍然"被报出来"，
+        // 只是不再占一行——更不进制重连清单，那才是这一条要守的事。
+        check("8: 死掉的那行折进入口清单的汇总行",
+          /另有 1 条入口进程本机已经确认不在了/.test(text), text);
+        check("8: 不再逐条念出死掉的行", !text.includes("本机确认已经没了，但没写结束"), text);
         // 只取 [重连] 那一段来判断：死掉的那行必须不在里面，还在跑的那个必须在。
         const reconnectText = text.slice(text.indexOf("[重连]"));
         check("8: 重连清单里没有那个死掉的 pid",
