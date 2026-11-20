@@ -20,8 +20,9 @@
 //
 // Run: pnpm --filter @anysearch-cli/cli test
 
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTaskRegistry } from "@anysearch-cli/store";
 import { runUpgrade } from "../src/commands/upgrade";
@@ -309,6 +310,98 @@ async function main(): Promise<void> {
       check("7f: the real run agrees with the preview", done.pruned === preview.wouldPrune && done.heldByChildren === preview.wouldHold,
         JSON.stringify({ preview, done }));
       child.finish({ exitCode: 0 });
+    }
+
+    // ---- 7g. #343: the process table is cleaned by the same prune, and an
+    //          open row only goes when this host proved its pid is gone ------
+    {
+      const Database = (await import("better-sqlite3")).default;
+      const host = hostname();
+      // A pid this host can confirm is gone: a child that has already exited.
+      // Same trick the registry tests use.
+      const exitedPid = async (): Promise<number> => {
+        const child = spawn(process.execPath, ["-e", "process.exit(0)"]);
+        const pid = child.pid;
+        if (pid === undefined) throw new Error("could not start a child to obtain a dead pid");
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        return pid;
+      };
+      const deadPid = await exitedPid();
+
+      const raw = new Database(dbPath);
+      let closedAged = 0;
+      let openGoneAged = 0;
+      let openGoneYoung = 0;
+      let openLiveAged = 0;
+      let openOtherHost = 0;
+      try {
+        const insertEnded = raw.prepare(
+          "INSERT INTO process_records (pid, owner_host, entry, started_at, ended_at) " +
+          "VALUES (?, ?, 'server', datetime('now', ?), datetime('now', ?))",
+        );
+        const insertOpen = raw.prepare(
+          "INSERT INTO process_records (pid, owner_host, entry, started_at) " +
+          "VALUES (?, ?, 'server', datetime('now', ?))",
+        );
+        closedAged = Number(insertEnded.run(deadPid, host, "-45 days", "-40 days").lastInsertRowid);
+        openGoneAged = Number(insertOpen.run(deadPid, host, "-45 days").lastInsertRowid);
+        openGoneYoung = Number(insertOpen.run(deadPid, host, "-1 hours").lastInsertRowid);
+        // This test process is its own live pid, so "still in use" needs no setup.
+        openLiveAged = Number(insertOpen.run(process.pid, host, "-45 days").lastInsertRowid);
+        openOtherHost = Number(insertOpen.run(deadPid, "another-host", "-45 days").lastInsertRowid);
+      } finally { raw.close(); }
+
+      const dry = io();
+      check("7g: prune --dry-run exits 0", (await runUpgrade(["prune", "--dry-run"], dry.opts)) === 0, dry.err.join(""));
+      const dryText = dry.out.join("");
+      check("7g: the dry run counts the process rows it would delete", /进程登记会删掉 2 条/.test(dryText), dryText);
+      check("7g: it names both reasons a row qualifies",
+        /已收尾于/.test(dryText) && /本机确认这个进程已经不在了/.test(dryText), dryText);
+      check("7g: it says why the rest stay (window / pid in use / other host)",
+        /还没到保留窗口/.test(dryText) && /进程号还被占着/.test(dryText) && /别的机器记的/.test(dryText), dryText);
+
+      const afterDry = new Database(dbPath, { readonly: true });
+      try {
+        const still = (afterDry.prepare("SELECT COUNT(*) AS n FROM process_records WHERE id = ?").get(closedAged) as { n: number }).n;
+        check("7g: the dry run deleted nothing", still === 1);
+      } finally { afterDry.close(); }
+
+      const real = io();
+      check("7g: prune exits 0", (await runUpgrade(["prune"], real.opts)) === 0, real.err.join(""));
+      const realText = real.out.join("");
+      check("7g: the real run reports both tables", /进程登记删掉了 2 条/.test(realText), realText);
+      check("7g: it names the recovery point it left", /恢复依据在/.test(realText), realText);
+
+      const after = new Database(dbPath, { readonly: true });
+      try {
+        const has = (id: number): boolean =>
+          (after.prepare("SELECT COUNT(*) AS n FROM process_records WHERE id = ?").get(id) as { n: number }).n === 1;
+        check("7g: the ended aged row is gone", !has(closedAged));
+        check("7g: the open row whose pid is gone and is aged is gone", !has(openGoneAged));
+        check("7g: a young open row is kept by the window", has(openGoneYoung));
+        check("7g: an open row whose pid is still in use is kept", has(openLiveAged));
+        check("7g: an open row from another host is kept", has(openOtherHost));
+      } finally { after.close(); }
+
+      const st = io();
+      check("7g: status exits 0 with nothing blocking", (await runUpgrade(["status"], st.opts)) === 0, st.err.join(""));
+      const stText = st.out.join("");
+      check("7g: status folds the proven-gone rows into one line",
+        /另有 1 条入口进程本机已经确认不在了/.test(stText), stText);
+      check("7g: status no longer prints each gone row",
+        !/本机确认已经没了，但没写结束/.test(stText), stText);
+
+      const stJson = io();
+      await runUpgrade(["status", "--json"], stJson.opts);
+      const snap = JSON.parse(stJson.out.join("")) as { processes: Array<{ ownerState: string }> };
+      check("7g: status --json still lists every row one by one",
+        snap.processes.length === 4 && snap.processes.filter((p) => p.ownerState === "dead").length === 1,
+        JSON.stringify(snap.processes));
+
+      // Idempotent: a second run has nothing to delete and writes no snapshot.
+      const again = io();
+      check("7g: a second prune with nothing aged exits 0", (await runUpgrade(["prune"], again.opts)) === 0, again.err.join(""));
+      check("7g: the second run wrote no extra recovery point", !/恢复依据在/.test(again.out.join("")), again.out.join(""));
     }
 
     // ---- 8. bad usage is its own exit code -------------------------------
