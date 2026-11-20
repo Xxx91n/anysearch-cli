@@ -252,24 +252,7 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
 
     // --- snapshot the original via SQLite's own backup path ---
     tmpPath = backupFile + tmpSuffix() + ".tmp";
-    withInitBusyRetry("pre-migration backup", () => {
-      // A previous attempt inside the retry loop can leave its output behind
-      // (a process killed mid-vacuum leaves a file SQLite never cleaned), and
-      // "VACUUM INTO" refuses to overwrite an existing file — clear first.
-      try { rmSync(tmpPath, { force: true }); } catch { /* nothing to clear */ }
-      // The snapshot file is born with SQLite's default mode (0666&~umask) —
-      // readable by others for the whole vacuum. Tighten the umask around it
-      // so the tmp is owner-only from its first byte; the post-publish chmod
-      // below covers only the canonical name. umask is process-global, but
-      // this section is synchronous startup code and owns the only file
-      // creation happening in this process right now (CodeRabbit round).
-      const prevUmask = process.umask(0o077);
-      try {
-        conn.prepare("VACUUM INTO ?").run(tmpPath);
-      } finally {
-        process.umask(prevUmask);
-      }
-    }, initDeadline);
+    vacuumSnapshotInto(conn, tmpPath, "pre-migration backup", initDeadline);
 
     // Snapshot captured; publish under the source DB's write lock — same
     // cross-process mutual exclusion the schema assembly already rides on
@@ -309,38 +292,25 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     try { rmSync(tmpPath, { force: true }); } catch { /* best effort; tmp names never collide */ }
     tmpPath = "";
     if (keptTheirs) return { status: "skipped-existing-backup" };
-    try { chmodSync(backupFile, 0o600); } catch { /* best-effort (Windows ACL path) */ }
 
     // --- verifiable record (sha256 + size + source layout + honest claims) ---
-    const at = new Date().toISOString();
-    const record = {
-      version: 1,
+    const sealed = sealSnapshot({
+      file: backupFile,
       db: dbPath,
-      backupFile,
-      createdAt: at,
-      method: "sqlite-vacuum-into",
-      bytes: statSync(backupFile).size,
-      sha256: sha256File(backupFile),
-      probedLayout: {
-        storeMetaPresent: probe.storeMetaPresent,
-        observationUserVersion: probe.observationUserVersion,
+      recordPath: preMigrationRecordPath(dbPath),
+      extra: {
+        probedLayout: {
+          storeMetaPresent: probe.storeMetaPresent,
+          observationUserVersion: probe.observationUserVersion,
+        },
+        declaredCompatibleLayouts: VERIFIED_LAYOUT_SOURCES,
+        afterLayout: STORE_LAYOUT_VERSION,
       },
-      declaredCompatibleLayouts: VERIFIED_LAYOUT_SOURCES,
-      afterLayout: STORE_LAYOUT_VERSION,
-      manualRecovery: MANUAL_RECOVERY_NOTE,
-    };
-    try {
-      writeAtomicJson(preMigrationRecordPath(dbPath), record);
-    } catch (e) {
-      // The backup itself exists and is verifiable on demand (sha256 can be
-      // recomputed against the file). Losing the convenience record must not
-      // fail a start that already has its recovery point.
-      process.stderr.write(
-        "[anysearch] 迁移前备份已完成，但记录文件写不进去（" + String(e instanceof Error ? e.message : e) +
-        "）；备份本体在 " + backupFile + "，没有受影响。\n",
-      );
-    }
-    return { status: "backed-up", backupFile, at };
+      warning: (detail) =>
+        "[anysearch] 迁移前备份已完成，但记录文件写不进去（" + detail +
+        "）；备份本体在 " + backupFile + "，没有受影响。",
+    });
+    return { status: "backed-up", backupFile, at: sealed.at };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     // `cause` rides along on purpose: contended-start tests (fk-restore's held
@@ -399,48 +369,18 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     const conn = openDatabase(dbPath, { timeout: 5000 });
     db = conn;
     const initDeadline = beginInit(conn);
-    const prevUmask = process.umask(0o077);
-    try {
-      withInitBusyRetry("destructive-op snapshot", () => {
-        // A previous attempt inside the retry loop leaves the target behind, and
-        // then "VACUUM INTO" fails with "output file already exists" — which is
-        // not a busy error, so the retry stops and the real cause (a locked
-        // database) is replaced by a misleading one. Clear it first, the same
-        // step the migration path takes.
-        try { rmSync(backupFile, { force: true }); } catch { /* nothing to clear */ }
-        conn.prepare("VACUUM INTO ?").run(backupFile);
-      }, initDeadline);
-    } finally {
-      process.umask(prevUmask);
-    }
+    vacuumSnapshotInto(conn, backupFile, "destructive-op snapshot", initDeadline);
     endInit(conn);
-    try { chmodSync(backupFile, 0o600); } catch { /* best-effort (Windows ACL path) */ }
-    const bytes = statSync(backupFile).size;
-    const sha256 = sha256File(backupFile);
-    const at = new Date().toISOString();
-    try {
-      writeAtomicJson(backupFile + ".json", {
-        version: 1,
-        db: dbPath,
-        backupFile,
-        createdAt: at,
-        method: "sqlite-vacuum-into",
-        reason: label,
-        bytes,
-        sha256,
-        manualRecovery: MANUAL_RECOVERY_NOTE,
-      });
-    } catch (e) {
-      // Same rule as the migration path: a snapshot without its record is still
-      // verifiable (sha256 can be recomputed), so this must not fail the
-      // operation — but it must not be silent either, or a later reader sees a
-      // .db with no .json and cannot tell "never written" from "written and lost".
-      process.stderr.write(
-        "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + String(e instanceof Error ? e.message : e) +
-        "）；快照本体在 " + backupFile + "，没有受影响。\n",
-      );
-    }
-    return { backupFile, bytes, sha256 };
+    const sealed = sealSnapshot({
+      file: backupFile,
+      db: dbPath,
+      recordPath: backupFile + ".json",
+      extra: { reason: label },
+      warning: (detail) =>
+        "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + detail +
+        "）；快照本体在 " + backupFile + "，没有受影响。",
+    });
+    return { backupFile, bytes: sealed.bytes, sha256: sealed.sha256 };
   } catch (error) {
     // A half-written snapshot sitting next to the live database looks exactly
     // like a valid recovery point and carries no .json record; remove it so the
@@ -685,6 +625,78 @@ export function readMigrationStatus(dbPath: string): MigrationStatus {
 /** Collision-proof suffix for throwaway files this process creates (pid + uuid). */
 function tmpSuffix(): string {
   return "." + process.pid + "." + randomUUID().slice(0, 8);
+}
+
+/**
+ * Vacuums a standalone copy of the database into `targetFile`.
+ *
+ * Design: vacuum and record-write stay two steps — the migration path
+ * publishes between them, under the source lock, so no record may name an
+ * unpublished file.
+ */
+function vacuumSnapshotInto(
+  conn: Database.Database,
+  targetFile: string,
+  retryLabel: string,
+  deadlineAt: number,
+): void {
+  withInitBusyRetry(retryLabel, () => {
+    // "VACUUM INTO" refuses to overwrite, so a leftover from a killed attempt
+    // would fail the retry with "file exists" and hide the real busy cause.
+    try { rmSync(targetFile, { force: true }); } catch { /* nothing to clear */ }
+    // umask is process-global; this section is synchronous, single-threaded
+    // code that owns the only file creation happening in this process right
+    // now, so the window cannot leak into anyone else's file.
+    const prevUmask = process.umask(0o077);
+    try {
+      conn.prepare("VACUUM INTO ?").run(targetFile);
+    } finally {
+      process.umask(prevUmask);
+    }
+  }, deadlineAt);
+}
+
+/**
+ * Locks the snapshot down, measures it, and writes its record.
+ *
+ * Design: a missing record is a warning, not a failure — the sha256 can be
+ * recomputed from the file, but silence would hide a loss the next reader
+ * cannot see, so the caller supplies that one stderr line's wording.
+ */
+function sealSnapshot(options: {
+  /** The published snapshot file this record describes. */
+  file: string;
+  /** The live database the snapshot was taken from. */
+  db: string;
+  /** Where the JSON record goes; callers own the naming scheme. */
+  recordPath: string;
+  /** Fields only this caller's record carries. */
+  extra: Record<string, unknown>;
+  /** The stderr line for a record that cannot be written. */
+  warning: (detail: string) => string;
+}): { bytes: number; sha256: string; at: string } {
+  try { chmodSync(options.file, 0o600); } catch { /* best-effort (Windows ACL path) */ }
+  const bytes = statSync(options.file).size;
+  const sha256 = sha256File(options.file);
+  const at = new Date().toISOString();
+  try {
+    writeAtomicJson(options.recordPath, {
+      // Extras first: the measured fields below must win, or a caller's stray
+      // `bytes`/`sha256` would quietly make the record unverifiable.
+      ...options.extra,
+      version: 1,
+      db: options.db,
+      backupFile: options.file,
+      createdAt: at,
+      method: "sqlite-vacuum-into",
+      bytes,
+      sha256,
+      manualRecovery: MANUAL_RECOVERY_NOTE,
+    });
+  } catch (e) {
+    process.stderr.write(options.warning(String(e instanceof Error ? e.message : e)) + "\n");
+  }
+  return { bytes, sha256, at };
 }
 
 function writeAtomicJson(path: string, value: unknown): void {
