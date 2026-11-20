@@ -571,8 +571,8 @@ function bind(port: number, allowFallback: boolean): void {
     server.listen(port, HOST, () => { server.off("error", onError); announce(); });
   } catch (error) {
     // A port the OS refuses before the socket exists (NaN, out of range)
-    // throws here instead of emitting 'error': same terminal failure.
-    server.off("error", onError);
+    // throws here instead of emitting 'error': same terminal failure. The
+    // listener is left attached on purpose — the process exits immediately.
     failToListen(error instanceof Error ? error.message : String(error));
   }
 }
