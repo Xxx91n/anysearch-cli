@@ -30,20 +30,22 @@ const buildInfo = {
   version: manifest.version,
   commit: stamp.commit,
   dirty: productStatus === null ? null : productStatus !== "",
-  // #311: when this bundle was stamped. The upgrade report compares it with a
-  // running process's own recorded build to answer "installed vs actually
-  // running"; without it a reader could only guess which side is newer.
+  // #311: when this bundle was stamped; the upgrade report compares it with a
+  // running process's own recorded build.
   builtAt: new Date().toISOString(),
 };
 writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
-// The hook service is a separate bundle in the same product (`plugin/dist`), so
-// it carries the same stamp. Without this its process row would read "unknown
-// build" on every install, and the reconnect list would nag about an entry that
-// was in fact built with everything else.
-for (const dir of [join(pkgDir, "plugin", "dist"), join(pkgDir, "mcp", "dist")]) {
-  // `mcp/dist` is the resident server's bundle: its process row is the one that
-  // answers "which MCP server is still on the old build" (#311), and a row with
-  // no stamp answers nothing.
-  if (!existsSync(dir)) continue;
+// Both add-on bundles sit inside the product tarball and carry the same stamp.
+// `plugin/dist` is the hook service; `mcp/dist` is the resident server whose
+// process row answers "which MCP server is still on the old build" (#311). A row
+// with no stamp answers nothing.
+const bundleDirs = [join(pkgDir, "plugin", "dist"), join(pkgDir, "mcp", "dist")];
+for (const dir of bundleDirs) {
+  if (!existsSync(dir)) {
+    // Loud on purpose: an unstamped bundle reports "no idea which build" forever,
+    // and the upgrade list will keep listing it as undecidable.
+    console.log("[stamp-dist] 跳过 " + dir + "（没有这个目录）");
+    continue;
+  }
   writeFileSync(join(dir, "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
 }

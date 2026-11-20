@@ -231,6 +231,11 @@ export function ansUserMemoryPath(env: NodeJS.ProcessEnv = process.env): string 
 // replaces the program directory wholesale, and a record written there would
 // vanish with the files it was supposed to describe.
 
+// All three are dot-prefixed like every other internal marker in this directory
+// (`.layout.json`, `.build-stamp.json`): they are bookkeeping, not something a
+// user opens. One naming rule for the group, so `ls ~/.ans` reads the same way
+// for all of them.
+
 /** The pause record `ans upgrade wait` writes once the drain completes. */
 export function ansUpgradePausePath(env: NodeJS.ProcessEnv = process.env): string {
   return join(ansHomeDir(env), ".upgrade-pause.json");
@@ -238,12 +243,12 @@ export function ansUpgradePausePath(env: NodeJS.ProcessEnv = process.env): strin
 
 /** Where past `ans upgrade finish` outcomes are kept, newest first. */
 export function ansUpgradeHistoryPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(ansHomeDir(env), "upgrade-history.json");
+  return join(ansHomeDir(env), ".upgrade-history.json");
 }
 
 /** Recovery records written before an old global package is removed. */
 export function ansInstallMigrationsDir(env: NodeJS.ProcessEnv = process.env): string {
-  return join(ansHomeDir(env), "install-migrations");
+  return join(ansHomeDir(env), ".install-migrations");
 }
 
 /** The embedding model cache. Write-only. */

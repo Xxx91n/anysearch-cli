@@ -685,8 +685,8 @@ export function migrateTaskRegistryColumns(db: Database.Database, initDeadline: 
   step("ALTER TABLE task_records ADD COLUMN parent_task_id TEXT REFERENCES task_records(task_id)");
   step("ALTER TABLE task_records ADD COLUMN dismissed_at TEXT");
   step("ALTER TABLE task_records ADD COLUMN dismissed_reason TEXT");
-  step("CREATE INDEX IF NOT EXISTS idx_task_records_parent ON task_records(parent_task_id) WHERE parent_task_id IS NOT NULL");
   step("ALTER TABLE process_records ADD COLUMN build TEXT");
+  step("CREATE INDEX IF NOT EXISTS idx_task_records_parent ON task_records(parent_task_id) WHERE parent_task_id IS NOT NULL");
 }
 
 /** Reject a retention window that would silently mean something else. */

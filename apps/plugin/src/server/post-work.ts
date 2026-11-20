@@ -150,7 +150,9 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined, build?
     start(): void {
       if (!registry) return;
       try {
-        processRecord = registry.registerProcess({ entry: "server", ...(build ? { build } : {}) });
+        // registerProcess writes `build ?? null`, so an unstamped bundle records NULL
+        // instead of a guessed version.
+        processRecord = registry.registerProcess({ entry: "server", build });
       } catch (e: unknown) {
         warnOnce("process registration failed (" + errText(e) + ") — this service runs unrecorded");
       }

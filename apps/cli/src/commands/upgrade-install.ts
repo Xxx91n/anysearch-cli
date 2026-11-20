@@ -15,6 +15,7 @@ import {
   inspectInstall,
   PRODUCT_PACKAGE,
   resolveNpmPrefix,
+  type ApplyResult,
   type InstallInspection,
 } from "../install-layout";
 
@@ -30,7 +31,8 @@ Options:
 
 说明：本命令只处理全局安装里的 @anysearch-cli 包和它们占的命令名。
 认不出归属的命令（你自己写的脚本、别的工具）一个都不动，报出来让你决定。
-删包之前会把动手前的现场写进 <用户根>/install-migrations/，事后照着能查回来。
+删包之前会把动手前的现场写进数据根下的 .install-migrations 文件夹（就在 ~/.ans/ 里面），
+事后照着能查回来。
 换完要重开终端和宿主：已经在跑的进程不会自己换代码。
 
 Exit codes: 0 干净（或 --apply 成功） · 1 有要处理的东西 / 有认不出归属的命令 / 执行失败 · 2 用法错误
@@ -140,7 +142,7 @@ export async function runUpgradeInstall(
     return 1;
   }
 
-  let result;
+  let result: ApplyResult;
   try {
     result = applyInstallPlan(inspection, {
       recordDir: ansInstallMigrationsDir(env),
@@ -166,7 +168,12 @@ export async function runUpgradeInstall(
   }
 
   if (result.record.executed.length === 0) {
-    out("没有要卸的旧包：命令本来就都指向完整产品。\n");
+    // 没卸包不等于"本来就都指向完整产品"：也可能是命令指着已经不在的旧包，
+    // 只是没东西可删。那种局面下面会报"还有命令指着旧包"。
+    const orphaned = inspection.commands.filter((c) => c.state === "legacy");
+    out(orphaned.length === 0
+      ? "没有要卸的旧包：命令本来就都指向完整产品。\n"
+      : "没有要卸的旧包，但有 " + orphaned.length + " 个命令指着已经不在的旧包（见下面的方案）。\n");
   } else {
     for (const step of result.record.executed) {
       out("[执行] " + step.command + " → 退出码 " + String(step.status) + "\n");

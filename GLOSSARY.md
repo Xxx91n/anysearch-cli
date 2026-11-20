@@ -87,7 +87,7 @@
 - **暂停记录**:`ans upgrade wait` 等干净以后写下的一份「等干净的时候磁盘上是哪一版」（`~/.ans/.upgrade-pause.json`）。`ans upgrade finish` 拿它当基准：磁盘上还是同一版就拒绝报完成。写在数据根而不是程序目录，因为换版会把程序目录整份换掉。
   _Avoid_: 升级状态文件、lockfile
 
-- **换版历史**:过去几次「从哪版到哪版、什么时候、哪几个入口还要重连」的记录，留最近 20 条（`~/.ans/upgrade-history.json`）。
+- **换版历史**:过去几次「从哪版到哪版、什么时候、哪几个入口还要重连」的记录，留最近 20 条（`~/.ans/.upgrade-history.json`）。`ans upgrade status` 报最新那一条；「还在旧版」和「没记是哪一版」在记录里也是分开的两栏。
   _Avoid_: 升级日志、changelog
 
 - **旧布局**:0.2.0 以前那种「三个全局包各装一次」的安装形态（`@anysearch-cli/cli`、`@anysearch-cli/mcp`、`@anysearch-cli/plugin`）。三个包往同一个全局 bin 目录写命令，名字被两边同时声明时谁最后装谁赢，于是「装的是哪个版本」和「命令实际指向哪个包」可以不一致。`ans upgrade install` 只看不删，`--apply` 才卸掉真的在抢命令名的那些包。

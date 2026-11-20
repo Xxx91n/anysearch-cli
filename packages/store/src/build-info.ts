@@ -1,16 +1,13 @@
-// #311: what build is this, in one spelling all three entries agree on.
+// #311: what build is on disk, in one spelling all four entries agree on.
 //
-// `dist/build-info.json` travels inside the package and is written after the
-// bundle, so it describes the code that is actually on disk. A process reads it
-// at start and records the answer in its process row; that recorded value is
-// what makes "this MCP server is still running the old build" observable from
-// another process. Reading the file again later would answer "what is on disk
-// now", which is the opposite question — the whole point of #311's version
-// report is that the two are different during and after a switch.
+// `dist/build-info.json` is written after the bundle, so it describes the code
+// that actually ships. A process reads it once at start and records the answer
+// in its process row; reading it again later answers "what is on disk now",
+// which is the opposite question during and after a switch.
 //
-// Kept in the shared library because the CLI, the MCP launcher and the hook
-// service must not each invent their own notion of "which build". Only node
-// builtins here: hook bundles are esbuild-bundled and pull in no native code.
+// Shared because the CLI, the MCP launcher and the hook service must not each
+// invent their own notion of "which build". Only node builtins: hook bundles
+// are esbuild-bundled and pull in no native code.
 
 import { readFileSync } from "node:fs";
 
@@ -18,7 +15,6 @@ import { readFileSync } from "node:fs";
 export const BUILD_INFO_SCHEMA = "anysearch/installation@1";
 
 export interface BuildInfo {
-  schema: string;
   /** Absent in a build stamped before this field existed. */
   packageName?: string;
   version: string;
@@ -38,10 +34,10 @@ export interface BuildInfo {
  * Read one build-info file, or `null` when it is absent or unusable.
  *
  * `null` is the honest answer for "this build never recorded itself": a missing
- * file, a truncated write, or a bundle made by a tool that does not stamp. The
- * caller reports that as unknown; it must never be filled in with the version
- * of whatever happens to be on disk, which would present an old process as
- * current.
+ * file, a truncated write, a bundle made by a tool that does not stamp, or a
+ * file stamped by some other product. The caller reports that as unknown; it
+ * must never be filled in with the version of whatever happens to be on disk,
+ * which would present an old process as current.
  */
 export function readBuildInfo(file: string): BuildInfo | null {
   let raw: string;
@@ -58,9 +54,12 @@ export function readBuildInfo(file: string): BuildInfo | null {
   }
   if (typeof parsed !== "object" || parsed === null) return null;
   const record = parsed as Record<string, unknown>;
+  // The tag is how this file says it is ours. A different (or missing) tag means
+  // someone else's file, and reporting its version would describe the wrong
+  // program.
+  if (record.schema !== BUILD_INFO_SCHEMA) return null;
   if (typeof record.version !== "string" || typeof record.commit !== "string") return null;
   return {
-    schema: typeof record.schema === "string" ? record.schema : BUILD_INFO_SCHEMA,
     ...(typeof record.packageName === "string" ? { packageName: record.packageName } : {}),
     version: record.version,
     commit: record.commit,

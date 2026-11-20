@@ -96,6 +96,8 @@ export interface InstallInspection {
   packages: InstalledProductPackage[];
   /** 每个命令的归属。 */
   commands: CommandOwnership[];
+  /** 要卸掉的旧包名。方案和执行都读这一份，不各算一次。 */
+  removals: string[];
   verdict: InstallVerdict;
   steps: InstallStep[];
   /** 前缀是怎么来的（环境变量 / 问 npm / 调用方给的），报告里要说清。 */
@@ -155,7 +157,16 @@ function defaultRun(command: string, args: string[]): { status: number | null; s
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-/** 读一个包的 name/version/bin，读不出来就是 null。 */
+/**
+ * 能被本命令管理的包名形状。
+ *
+ * 这些名字会被拼进 `npm rm -g`，而 Windows 上 spawnSync 开了 shell（npm 是 .cmd），
+ * 参数交给 cmd.exe 再解释一遍：名字里带 `&`、`|`、`^` 就成了命令分隔符。名字来自
+ * node_modules 里的 package.json，不是代码里的常量，所以在入口就把形状钉死。
+ */
+const MANAGED_PACKAGE_NAME = /^@anysearch-cli\/[a-z0-9][a-z0-9._-]*$/;
+
+/** 读一个包的 name/version/bin，读不出来（或名字不是本 scope 的形状）就是 null。 */
 function readPackageManifest(dir: string): InstalledProductPackage | null {
   let parsed: Record<string, unknown>;
   try {
@@ -163,7 +174,8 @@ function readPackageManifest(dir: string): InstalledProductPackage | null {
   } catch {
     return null;
   }
-  if (typeof parsed.name !== "string" || typeof parsed.version !== "string") return null;
+  if (typeof parsed.name !== "string" || !MANAGED_PACKAGE_NAME.test(parsed.name)) return null;
+  if (typeof parsed.version !== "string") return null;
   const bin = parsed.bin;
   const binNames = typeof bin === "string"
     ? [parsed.name.split("/").pop() ?? parsed.name]
@@ -299,15 +311,30 @@ export function inspectInstall(prefix: string, prefixSource = "调用方指定")
   // 让"旧包装着但命令被别的包抢走"这种局面也出现在报告里。
   const names = [...new Set([...PRODUCT_COMMANDS, ...declared.keys()])].sort();
   const commands = names.map((name) => ownershipOf(prefix, name, packages, declared.get(name) ?? []));
-  const verdict = verdictOf(packages, commands);
+  const removals = conflictingPackages(packages).map((pkg) => pkg.name);
+  const verdict = verdictOf(packages, commands, removals);
   return {
     prefix,
     packages,
     commands,
+    removals,
     verdict,
-    steps: planSteps(verdict, packages, commands),
+    steps: planSteps(verdict, packages, commands, removals),
     prefixSource,
   };
+}
+
+/**
+ * shim 在不在。用 lstat 而不是 existsSync：后者跟着符号链接走，一条指向已经卸掉的
+ * 旧包的链接会被当成"没有这个命令"，报告就成了 clean。
+ */
+function shimExists(shimPath: string): boolean {
+  try {
+    lstatSync(shimPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function ownershipOf(
@@ -317,7 +344,7 @@ function ownershipOf(
   declarers: string[],
 ): CommandOwnership {
   for (const shim of shimCandidates(prefix, name)) {
-    if (!existsSync(shim)) continue;
+    if (!shimExists(shim)) continue;
     const reading = readShim(shim);
     if (reading.kind === "unreadable") {
       return {
@@ -363,13 +390,19 @@ function ownershipOf(
   };
 }
 
-function verdictOf(packages: InstalledProductPackage[], commands: CommandOwnership[]): InstallVerdict {
+function verdictOf(
+  packages: InstalledProductPackage[],
+  commands: CommandOwnership[],
+  removals: string[],
+): InstallVerdict {
   // 认不出归属排在"没装过"前面：一个空前缀里躺着一个别人的 `ans`，说"这里没装过"
   // 再建议 `npm i -g`，等于建议覆盖它。归属说不清就该停下来说清楚。
   if (commands.some((c) => c.state === "unknown" || c.state === "conflict")) return "blocked";
+  // 包已经卸了、shim 还指着它：一个产品包都没有也得报 legacy。报"这里没装过"等于
+  // 说"没什么要处理的"，而那条死链接还占着命令名。
+  if (commands.some((c) => c.state === "legacy")) return "legacy";
   if (packages.length === 0) return "absent";
-  const legacyCommand = commands.some((c) => c.state === "legacy");
-  return conflictingPackages(packages).length > 0 || legacyCommand ? "legacy" : "clean";
+  return removals.length > 0 ? "legacy" : "clean";
 }
 
 /**
@@ -383,9 +416,14 @@ function planSteps(
   verdict: InstallVerdict,
   packages: InstalledProductPackage[],
   commands: CommandOwnership[],
+  removals: string[],
 ): InstallStep[] {
   const steps: InstallStep[] = [];
-  const removals = conflictingPackages(packages).map((pkg) => pkg.name);
+  const installStep = (text: string): InstallStep => ({
+    kind: "install",
+    text,
+    command: "npm i -g " + PRODUCT_PACKAGE + "@latest",
+  });
   const conflicts = commands.filter((c) => c.state === "unknown" || c.state === "conflict");
 
   if (verdict === "blocked") {
@@ -400,11 +438,7 @@ function planSteps(
   }
 
   if (verdict === "absent") {
-    steps.push({
-      kind: "install",
-      text: "这个前缀里还没装过这个产品：装一次完整产品就有了",
-      command: "npm i -g " + PRODUCT_PACKAGE + "@latest",
-    });
+    steps.push(installStep("这个前缀里还没装过这个产品：装一次完整产品就有了"));
     return steps;
   }
 
@@ -416,27 +450,23 @@ function planSteps(
       command: "npm rm -g " + removals.join(" "),
     });
   }
+  // 包已经卸了、shim 还指着它（版本读不到就是那个包不在了）：没有可删的东西，
+  // 只有名字要收回来。一个包都没删也要重装一次，否则预览像"没什么要做的"，
+  // 问题到 --apply 之后才冒出来。
   const product = packages.find((pkg) => isProductPackage(pkg.name));
-  if (!product) {
-    steps.push({
-      kind: "install",
-      text: "完整产品不在这个前缀里，卸完旧包就一个命令都不剩了：先把产品装上",
-      command: "npm i -g " + PRODUCT_PACKAGE + "@latest",
-    });
+  const legacy = commands.filter((c) => c.state === "legacy");
+  const reclaimable = legacy.filter((c) => c.version === null && PRODUCT_COMMANDS.includes(c.name));
+  if (product === undefined || (removals.length === 0 && reclaimable.length > 0)) {
+    const reasons: string[] = [];
+    if (product === undefined) reasons.push("完整产品不在这个前缀里");
+    if (reclaimable.length > 0) {
+      reasons.push("这些命令还指着已经不在的旧包（" + reclaimable.map((c) => c.name).join("、") + "）");
+    }
+    steps.push(installStep(reasons.join("，") + "：" + (product === undefined
+      ? "先把产品装上，命令才有着落"
+      : "重装一次完整产品把名字收回来")));
   }
-  // 包已经卸了、shim 还指着它：没有可删的东西，只有名字要收回来。不说清楚的话
-  // 预览会像"没什么要做的"，而 --apply 之后才冒出问题。
-  const orphaned = commands.filter((c) => c.state === "legacy");
-  const reclaimable = orphaned.filter((c) => PRODUCT_COMMANDS.includes(c.name));
-  if (removals.length === 0 && reclaimable.length > 0) {
-    steps.push({
-      kind: "install",
-      text: "这些命令还指着已经不在的旧包（" + reclaimable.map((c) => c.name).join("、") +
-        "）：重装一次完整产品把名字收回来",
-      command: "npm i -g " + PRODUCT_PACKAGE + "@latest",
-    });
-  }
-  for (const orphan of orphaned.filter((c) => !PRODUCT_COMMANDS.includes(c.name))) {
+  for (const orphan of legacy.filter((c) => !PRODUCT_COMMANDS.includes(c.name))) {
     steps.push({
       kind: "note",
       text: "`" + orphan.name + "` 不动：它指向 " + (orphan.packageName ?? "别的包") +
@@ -449,13 +479,26 @@ function planSteps(
       text: "`" + conflict.name + "` 不动：" + conflict.note,
     });
   }
+  // 产品装着但 bin 里没有 shim：所有权都对，判定是 clean，可这几个名字敲不出来。
+  // 不说清楚的话，--apply 会退 0 并说"换好了"。
+  const shimless = commands.filter((c) => c.state === "product" && c.target === null);
+  if (shimless.length > 0) {
+    steps.push({
+      kind: "note",
+      text: "这些命令归完整产品，但 bin 里找不到 shim（" + shimless.map((c) => c.name).join("、") +
+        "）：重装一次完整产品才敲得出来",
+    });
+  }
   if (verdict === "clean") {
     steps.push({ kind: "note", text: "命令都指向完整产品，没有要迁移的东西" });
   }
-  steps.push({
-    kind: "note",
-    text: "换完重开终端和宿主：已经在跑的进程还执行着旧代码，重启或重连才会用上新版",
-  });
+  // 一个文件都没换，就别叫人重开终端。
+  if (removals.length > 0 || reclaimable.length > 0) {
+    steps.push({
+      kind: "note",
+      text: "换完重开终端和宿主：已经在跑的进程还执行着旧代码，重启或重连才会用上新版",
+    });
+  }
   return steps;
 }
 
@@ -475,7 +518,7 @@ export interface InstallMigrationRecord {
 }
 
 export interface ApplyOptions {
-  /** 恢复记录放哪：调用方给 `<用户根>/install-migrations`。 */
+  /** 恢复记录放哪：调用方给 `ansInstallMigrationsDir()`，即 `<数据根>/.install-migrations`。 */
   recordDir: string;
   /** 注入的命令执行器（测试用），默认 spawnSync。 */
   run?: (command: string, args: string[]) => { status: number | null; stdout: string; stderr: string };
@@ -511,7 +554,7 @@ export function applyInstallPlan(
         .join("；"),
     );
   }
-  const removals = conflictingPackages(inspection.packages).map((pkg) => pkg.name);
+  const removals = inspection.removals;
   const record: InstallMigrationRecord = {
     version: 1,
     at,
@@ -523,7 +566,11 @@ export function applyInstallPlan(
     after: null,
   };
   const recordPath = join(opts.recordDir, at.replace(/[:.]/g, "-") + ".json");
-  writeRecord(recordPath, record);
+  try {
+    writeRecord(recordPath, record);
+  } catch (error) {
+    throw new Error("写不进恢复记录 " + recordPath + "（" + errorText(error) + "）——一个包都没删", { cause: error });
+  }
 
   const run = opts.run ?? defaultRun;
   if (removals.length > 0) {
@@ -535,11 +582,17 @@ export function applyInstallPlan(
       stderr: result.stderr ?? "",
     });
   }
-  // Re-inspect even when nothing was removed: a command can point at a package
-  // that is already gone (a stale shim), and that is exactly the state the
-  // caller has to hear about instead of a silent "nothing to do".
   record.after = inspectInstall(inspection.prefix, inspection.prefixSource);
-  writeRecord(recordPath, record);
+  try {
+    writeRecord(recordPath, record);
+  } catch (error) {
+    // 包已经按方案处理过了：这里只能报"事后读数没落盘"，不能假装什么都没发生。
+    return {
+      record,
+      recordPath,
+      failure: "包已经按方案处理过，但事后读数写不进恢复记录（" + errorText(error) + "）",
+    };
+  }
   const failed = record.executed.find((step) => step.status !== 0);
   if (failed) {
     return {
@@ -556,12 +609,9 @@ function writeRecord(path: string, record: InstallMigrationRecord): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = path + "." + process.pid + ".tmp";
   writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
-  try {
-    renameSync(tmp, path);
-  } catch (error) {
-    throw new Error("写不进恢复记录 " + path + "（" + errorText(error) + "）——一个包都没删", { cause: error });
-  }
+  renameSync(tmp, path);
 }
+
 
 /** 人读的一段报告。 */
 export function describeInspection(inspection: InstallInspection): string {
@@ -579,7 +629,7 @@ export function describeInspection(inspection: InstallInspection): string {
   if (interesting.length > 0) {
     lines.push("[命令] 每个名字现在指向谁：");
     for (const command of interesting) {
-      const mark = command.state === "product" ? "✓" : command.state === "missing" ? "·" : "!";
+      const mark = command.state === "product" ? "✓" : "!";
       lines.push("  " + mark + " " + command.name + " → " + (command.packageName ?? "认不出") +
         (command.version ? "@" + command.version : "") + "：" + command.note);
     }

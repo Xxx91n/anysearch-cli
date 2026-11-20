@@ -464,37 +464,41 @@ function sh(cmd, args, opts = {}) {
  * 卡住就是发现了问题，该红就红。
  */
 async function shAsync(cmd, args, opts = {}) {
-  if (process.platform !== "win32") {
-    const r = await new Promise((resolve) => {
-      const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
-      let out = "";
-      child.stdout.on("data", (d) => (out += d.toString()));
-      child.stderr.on("data", (d) => (out += d.toString()));
-      const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
-      child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
-      child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
-    });
-    return r;
+  // 命令行怎么拼：POSIX 直接传参数数组，Windows 走 cmd.exe 加引号。两边的纪律和
+  // sh() 一样（拦成对 %NAME%、参数一律加引号），只是换成异步 spawn。
+  let command = cmd;
+  let argv = args;
+  let spawnOpts = { ...opts };
+  if (process.platform === "win32") {
+    const EXPANDS = /%[^%]+%/;
+    if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
+      throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
+    }
+    const isPath = cmd.includes("/") || cmd.includes("\\");
+    const parts = [isPath ? '"' + cmd + '"' : cmd];
+    for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
+    command = parts.join(" ");
+    argv = [];
+    spawnOpts = { ...opts, shell: true };
   }
-  // cmd.exe 的引号纪律与 sh() 完全一致（同款两坑：成对 %NAME% 拦下、参数一律
-  // 加引号），只是换成异步 spawn。
-  const EXPANDS = /%[^%]+%/;
-  if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
-    throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
-  }
-  const isPath = cmd.includes("/") || cmd.includes("\\");
-  const parts = [isPath ? '"' + cmd + '"' : cmd];
-  for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
-  const r = await new Promise((resolve) => {
-    const child = spawn(parts.join(" "), { ...opts, stdio: ["ignore", "pipe", "pipe"], shell: true });
+  return await new Promise((resolve) => {
+    const child = spawn(command, argv, { ...spawnOpts, stdio: ["ignore", "pipe", "pipe"] });
+    // stdout 单独收着（和 sh() 同款）：机器可读输出只能从它解析，混进 stderr 的
+    // 一句话就会让 JSON.parse 炸掉。out 是给人看的合并流。
     let out = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (out += d.toString()));
-    const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
-    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
-    child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+    let stdout = "";
+    child.stdout.on("data", (d) => { out += d; stdout += d; });
+    child.stderr.on("data", (d) => { out += d; });
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" "), stdout });
+    }, 240_000);
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out, stdout }); });
+    child.once("error", (e) => {
+      clearTimeout(timer);
+      resolve({ code: 1, out: out + "\n[spawn error] " + e.message, stdout });
+    });
   });
-  return r;
 }
 
 function writeDomain(dir, name, body) {
@@ -2300,35 +2304,88 @@ async function main() {
     // 这里起一个真的装出来的服务，从库里读它写下的那一行。
     console.log("\n== J. the installed MCP server records its own lifetime and build ==");
     {
-      const probeDb = join(work, "mcp-process.db");
       // 走宿主真正用的那个入口（bin/ans-mcp.cjs → mcp/dist/index.js），不是直接
       // 拿 bundle 顶替：要验的是装出来的那条路。
-      const server = spawn(process.execPath, [mcpBin, "--transport", "stdio"], {
-        env: { ...baseEnv, ANS_DB_PATH: probeDb, USERPROFILE: join(work, "mcp-home"), HOME: join(work, "mcp-home") },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      try {
-        // 等它真的开始服务（stdio 就绪会往 stderr 写一句），而不是靠固定秒数猜。
+      const startServer = async (dbFile) => {
+        const child = spawn(process.execPath, [mcpBin, "--transport", "stdio"], {
+          env: { ...baseEnv, ANS_DB_PATH: dbFile, USERPROFILE: join(work, "mcp-home"), HOME: join(work, "mcp-home") },
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        // 等它自报就绪，不靠固定秒数猜。stderr 是一段一段来的，那句话可能被切成
+        // 两段，所以先攒 buffer 再找；超时或提前退出都要说出来，不能静悄悄当成功。
+        let stderrText = "";
+        let ready = false;
         await new Promise((resolve) => {
           const timer = setTimeout(resolve, 15_000);
-          server.stderr.on("data", (d) => {
-            if (d.toString().includes("stdio transport ready")) { clearTimeout(timer); resolve(); }
+          child.stderr.on("data", (d) => {
+            stderrText += d.toString();
+            if (!ready && stderrText.includes("stdio transport ready")) {
+              ready = true;
+              clearTimeout(timer);
+              resolve();
+            }
           });
+          child.once("exit", () => { clearTimeout(timer); resolve(); });
         });
-        const probe = new Database(probeDb, { readonly: true });
+        return { child, ready, stderrText };
+      };
+      const rowsIn = (dbFile, sql) => {
+        const db = new Database(dbFile, { readonly: true });
+        try { return db.prepare(sql).all(); } finally { db.close(); }
+      };
+      const stopGracefully = (child, signal) => new Promise((resolve) => {
+        const timer = setTimeout(() => { try { child.kill(); } catch { /* 已经没了 */ } resolve(); }, 10_000);
+        child.once("exit", () => { clearTimeout(timer); resolve(); });
+        if (signal === undefined) child.stdin.end();
+        else child.kill(signal);
+      });
+
+      // 一、登记：这一行记着它是谁、跑的是哪一版。
+      const probeDb = join(work, "mcp-process.db");
+      const first = await startServer(probeDb);
+      try {
+        check(first.ready, "常驻服务自报就绪（stderr 里有 stdio transport ready）",
+          first.stderrText.slice(0, 400) || "一句都没读到");
         try {
-          const rows = probe.prepare(
-            "SELECT entry, build FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
-          ).all();
-          check(rows.length === 1 && rows[0].entry === "mcp",
-            "常驻服务登记了一行 entry=mcp 的进程记录", JSON.stringify(rows));
-          check(typeof rows[0]?.build === "string" && /^\d+\.\d+\.\d+\+/.test(rows[0].build),
-            "那一行记下了它跑的是哪一版（打标的构建）", JSON.stringify(rows[0]));
-        } finally { probe.close(); }
-      } catch (e) {
-        check(false, "读 MCP 服务的进程记录", String(e?.message || e));
+          const open = rowsIn(probeDb, "SELECT entry, build FROM process_records WHERE ended_at IS NULL");
+          check(open.length === 1 && open[0].entry === "mcp",
+            "常驻服务登记了一行 entry=mcp 的进程记录", JSON.stringify(open));
+          check(typeof open[0]?.build === "string" && /^\d+\.\d+\.\d+\+/.test(open[0].build),
+            "那一行记下了它跑的是哪一版（打标的构建）", JSON.stringify(open));
+        } catch (e) {
+          check(false, "读 MCP 服务的进程记录", String(e?.message || e));
+        }
       } finally {
-        server.kill();
+        // 按宿主收回连接的那条路退出（关 stdin）：Windows 上 kill 是
+        // TerminateProcess，处理函数一个都不会跑，拿它验"写没写结束"永远是红的。
+        await stopGracefully(first.child);
+      }
+      // 结束那一栏也要验。升级报告把"没写结束"读成"这个入口还活着"：这栏不验，
+      // 一个已经死掉的 MCP 会永远挂在待重连清单里，而这里一条断言都不会红。
+      try {
+        const ended = rowsIn(probeDb, "SELECT ended_at FROM process_records WHERE entry = 'mcp'");
+        check(ended.length === 1 && typeof ended[0].ended_at === "string" && ended[0].ended_at.length > 0,
+          "服务正常退出后写下了结束时间", JSON.stringify(ended));
+      } catch (e) {
+        check(false, "重开库核对 ended_at", String(e?.message || e));
+      }
+
+      // 二、信号收场。宿主关机、容器停掉走的是 SIGTERM，那条路同样要写结束。
+      // Windows 上 kill 直接 TerminateProcess、不发信号，这一条只能在 POSIX 验。
+      if (process.platform === "win32") {
+        skip("信号收场写结束", "Windows 上 kill 不跑信号处理函数");
+      } else {
+        const signalDb = join(work, "mcp-signal.db");
+        const second = await startServer(signalDb);
+        check(second.ready, "第二个常驻服务自报就绪", second.stderrText.slice(0, 300));
+        await stopGracefully(second.child, "SIGTERM");
+        try {
+          const ended = rowsIn(signalDb, "SELECT ended_at FROM process_records WHERE entry = 'mcp'");
+          check(ended.length === 1 && typeof ended[0].ended_at === "string" && ended[0].ended_at.length > 0,
+            "收到 SIGTERM 也写下了结束时间", JSON.stringify(ended));
+        } catch (e) {
+          check(false, "重开库核对 SIGTERM 之后的 ended_at", String(e?.message || e));
+        }
       }
     }
   } finally {

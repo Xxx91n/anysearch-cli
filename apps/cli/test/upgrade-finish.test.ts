@@ -19,6 +19,7 @@ import { ansUpgradeHistoryPath, ansUpgradePausePath, openTaskRegistry } from "@a
 import type { ProductIdentity } from "../src/build-identity";
 import { spawn } from "node:child_process";
 import { runUpgrade } from "../src/commands/upgrade";
+import { readSwitchHistory } from "../src/upgrade-record";
 
 let passed = 0;
 let failed = 0;
@@ -43,13 +44,23 @@ function identityOf(buildId: string): ProductIdentity {
     packageRoot: "/fake/@anysearch-cli/cli",
     packageName: "@anysearch-cli/cli",
     info: {
-      schema: "anysearch/installation@1",
       version,
       commit: "0123456789abcdef0123456789abcdef01234567",
       dirty: false,
       builtAt: "2026-11-20T00:00:00.000Z",
     },
     buildId,
+    source: "package",
+  };
+}
+
+/** 磁盘上这一份没打标：没有 dist/build-info.json，也就没有版本可核对。 */
+function unstampedIdentity(): ProductIdentity {
+  return {
+    packageRoot: "/fake/@anysearch-cli/cli",
+    packageName: "@anysearch-cli/cli",
+    info: null,
+    buildId: null,
     source: "package",
   };
 }
@@ -133,13 +144,17 @@ async function main(): Promise<void> {
         from: { buildId: string };
         to: { buildId: string };
         pendingReconnect: Array<{ entry: string; build: string | null }>;
+        unknownReconnect: Array<{ entry: string; build: string | null }>;
       }>;
       check("3: 历史里是这次换版", history.length === 1 && history[0]!.from.buildId === OLD && history[0]!.to.buildId === NEW,
         JSON.stringify(history));
       const pending = history[0]!.pendingReconnect.map((entry) => entry.entry);
       check("3: 记下了要重连的旧版入口", pending.includes("mcp"), JSON.stringify(history[0]!.pendingReconnect));
-      check("3: 没记版本的入口也列进去，不假装它是新版", pending.includes("server"),
-        JSON.stringify(history[0]!.pendingReconnect));
+      // 没记版本的入口单独一栏：把它写进"还跑着旧版"，等于替一个判断不了的东西下结论。
+      const unrecorded = history[0]!.unknownReconnect.map((entry) => entry.entry);
+      check("3: 没记版本的入口单独记一栏，不塞进旧版",
+        unrecorded.includes("server") && !pending.includes("server"), JSON.stringify(history[0]!));
+      check("3: 报告里两条分开说", s.out.join("").includes("是不是旧版说不清"), s.out.join(""));
       check("3: 报告里说清本命令不重启进程", s.out.join("").includes("本命令不重启任何进程"), s.out.join(""));
     }
 
@@ -236,6 +251,40 @@ async function main(): Promise<void> {
         ghostRow.end();
         ghost.close();
         liveRow.end();
+        live.close();
+      }
+    }
+
+    // ---- 10. 磁盘上这一份没打标：核对不了，finish 不许报通过 --------------
+    {
+      const waited = await run(["wait", "--timeout", "2000"], NEW);
+      check("10: 又暂停了一次（基准是 NEW）", waited.code === 0 && existsSync(ansUpgradePausePath(env)),
+        "code=" + waited.code + " out=" + waited.out.join("") + " err=" + waited.err.join(""));
+      const historyBefore = readSwitchHistory(env).length;
+      const s = io();
+      const code = await runUpgrade(["finish", "--db", dbPath], { ...s.opts, identity: unstampedIdentity });
+      check("10: 磁盘没打标时 finish 退 1", code === 1, "code=" + code + " " + s.out.join(""));
+      check("10: 说清核对不了哪一版", s.err.join("").includes("没打标"), s.err.join(""));
+      check("10: 准入还关着（没报一个核对不了的通过）", !gateOpen());
+      check("10: 没写换版历史", readSwitchHistory(env).length === historyBefore, String(historyBefore));
+
+      // status 也不能把说不清的进程报成旧版：磁盘没打标，就没有"当前版本"可比。
+      const live = openTaskRegistry(dbPath);
+      const row = live.registerProcess({ entry: "mcp", build: OLD });
+      try {
+        const st = io();
+        await runUpgrade(["status", "--json", "--db", dbPath], { ...st.opts, identity: unstampedIdentity });
+        const parsed = JSON.parse(st.out.join("")) as {
+          processes: Array<{ stale: boolean | null }>;
+          program: { installed: { buildId: string | null } };
+        };
+        check("10: --json 里磁盘版本是 null", parsed.program.installed.buildId === null,
+          JSON.stringify(parsed.program.installed));
+        check("10: 磁盘没打标时每个进程都判不了（stale 全是 null）",
+          parsed.processes.length > 0 && parsed.processes.every((p) => p.stale === null),
+          JSON.stringify(parsed.processes));
+      } finally {
+        row.end();
         live.close();
       }
     }

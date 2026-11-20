@@ -33,8 +33,8 @@
 | `host-wiring/` | 宿主接入的操作日志和写前备份 |
 | `.layout.json` | 这次改名搬了什么、什么没搬、为什么 |
 | `.upgrade-pause.json` | 升级暂停记录：等干净的时候磁盘上是哪一版（见 [upgrade.md](upgrade.md)） |
-| `upgrade-history.json` | 换版历史：从哪版到哪版、什么时候、哪些入口还要重连 |
-| `install-migrations/` | 卸旧全局包之前写下的现场，事后照着能查回来 |
+| `.upgrade-history.json` | 换版历史：从哪版到哪版、什么时候、哪些入口还要重连 |
+| `.install-migrations/` | 卸旧全局包之前写下的现场，事后照着能查回来 |
 
 项目级（`<项目>/.ans/`）：
 

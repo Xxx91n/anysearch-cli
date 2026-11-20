@@ -1,16 +1,18 @@
 // #311 — 旧的多包全局安装怎么看、怎么换，以及"认不出来就一个都别动"。
 //
-// 这里钉住的四件事：
+// 这里钉住的几件事：
 //  1. 旧布局（三个包各装一次、命令指着旧包）能认出来，方案里给出要卸的包；
 //  2. 干净布局（只有完整产品）不给删除步骤，退 0；
 //  3. 命令指向认不出的东西时判 blocked，--apply 一个包都不删、一条命令都不执行；
-//  4. --apply 先写恢复记录再删包，删完重新看一遍，并把"哪些命令还指着旧包"报出来。
+//  4. --apply 先写恢复记录再删包，删完重新看一遍，并把"哪些命令还指着旧包"报出来；
+//  5. 包没了只剩一条断链接（POSIX 符号链接形态）也要判 legacy，不能报"没装过"；
+//  6. PRODUCT_COMMANDS 必须和 apps/cli/package.json 的 bin 一致。
 //
 // 全程离线：前缀是临时目录里搭出来的假安装，npm 是注入的假执行器。
 //
 // Run: pnpm --filter @anysearch-cli/cli test
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runUpgrade } from "../src/commands/upgrade";
@@ -19,6 +21,7 @@ import {
   applyInstallPlan,
   globalBinDir,
   inspectInstall,
+  PRODUCT_COMMANDS,
   resolveNpmPrefix,
 } from "../src/install-layout";
 
@@ -170,7 +173,7 @@ async function main(): Promise<void> {
       check("4: 只跑了一条 npm rm -g", calls.length === 1 && /^npm(\.cmd)? rm -g/.test(calls[0]!), calls.join(" | "));
       check("4: 卸掉的是旧包", calls[0]!.includes("@anysearch-cli/mcp"));
 
-      const recordsDir = join(root, ".ans", "install-migrations");
+      const recordsDir = join(root, ".ans", ".install-migrations");
       const records = existsSync(recordsDir) ? readdirSync(recordsDir).filter((f) => f.endsWith(".json")) : [];
       check("4: 写了一份恢复记录", records.length === 1, records.join(","));
       if (records.length === 1) {
@@ -375,6 +378,66 @@ async function main(): Promise<void> {
       });
       check("11: --apply 拒绝动手", code === 1 && s.out.join("").includes("一个包都没删"),
         s.out.join("") + s.err.join(""));
+    }
+    // ---- 12. 断链接：包没了、符号链接还在（POSIX 的 shim 形态）----------
+    //
+    // existsSync 跟着链接走，断链会被当成"没有这个命令"——那样一个空目录加上一条
+    // 死链接就报"这里没装过"，而那条链接还占着命令名。Windows 建符号链接要权限，
+    // 建不出来就跳过并说明原因，不假装验过。
+    const prefix = join(root, "dangling-prefix");
+    const bin = join(root, "dangling-prefix", process.platform === "win32" ? "" : "bin");
+    let canLink = true;
+    try {
+      mkdirSync(bin, { recursive: true });
+      symlinkSync(join(prefix, "node_modules", "@anysearch-cli", "mcp", "dist", "index.js"),
+        join(bin, "ans-mcp"));
+    } catch {
+      canLink = false;
+      console.log("  SKIP 12: 断链接（这台机器建不了符号链接）");
+    }
+    if (canLink) {
+      const inspection = inspectInstall(prefix, "测试");
+      check("12: 一个产品包都没有、但有一条断链接 → legacy", inspection.verdict === "legacy",
+        inspection.verdict);
+      const dangling = inspection.commands.find((c) => c.name === "ans-mcp")!;
+      check("12: 认得出它指的是哪个旧包", dangling.state === "legacy" && dangling.packageName === "@anysearch-cli/mcp",
+        JSON.stringify(dangling));
+      check("12: 方案里说这批命令指着已经不在的旧包、要装一次产品",
+        inspection.steps.some((step) => step.kind === "install" &&
+          step.text.includes("已经不在的旧包") && step.text.includes("ans-mcp") &&
+          step.command?.includes("npm i -g")),
+        JSON.stringify(inspection.steps));
+    }
+
+    // ---- 13. 命令没有 shim（产品装着，但 bin 里少几个）：说出来 -------------
+    {
+      const prefix = join(root, "shimless-prefix");
+      installPackage(prefix, "@anysearch-cli/cli", "0.2.0", PRODUCT_BIN);
+      writeShim(prefix, "ans", productTarget("bin/ans.cjs"));
+
+      const inspection = inspectInstall(prefix, "测试");
+      check("13: 所有权都对就还是 clean", inspection.verdict === "clean", inspection.verdict);
+      check("13: 但要说清哪些命令没有 shim",
+        inspection.steps.some((step) => step.kind === "note" && step.text.includes("找不到 shim")),
+        JSON.stringify(inspection.steps));
+      check("13: clean 而且什么都没换时，不叫人重开终端",
+        !inspection.steps.some((step) => step.text.includes("重开终端和宿主")),
+        JSON.stringify(inspection.steps));
+    }
+
+    // ---- 14. PRODUCT_COMMANDS 不能和 package.json 的 bin 漂开 --------------
+    //
+    // 这份清单决定"哪些名字归产品"：完整产品没装时靠它算要删谁，重装提示也靠它。
+    // package.json 加了钩子命令、这里没跟上的话，少收一个名字，还不报错。
+    {
+      const manifest = JSON.parse(
+        readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      ) as { bin: Record<string, string> };
+      const fromManifest = Object.keys(manifest.bin).sort();
+      const fromCode = [...PRODUCT_COMMANDS].sort();
+      check("14: PRODUCT_COMMANDS 和 package.json 的 bin 一致",
+        JSON.stringify(fromCode) === JSON.stringify(fromManifest),
+        "代码里：" + fromCode.join(",") + " / package.json：" + fromManifest.join(","));
     }
   } finally {
     try { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
