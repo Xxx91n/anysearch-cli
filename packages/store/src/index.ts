@@ -12,6 +12,10 @@ export * from "./budget-ledger";
 // process/task lifecycle registry the main program writes into.
 export * from "./task-budget";
 export * from "./task-registry";
+// #311: one reading of "which build is this" for the CLI, the MCP launcher and
+// the hook service, so a process record's build and an upgrade report's
+// installed build can be compared instead of guessed.
+export * from "./build-info";
 // #310: pre-migration consistent snapshot + layout marker + read-side
 // migration diagnostics (doctor). Backup happens inside the store
 // constructors; this export is the seam tests and doctor consume.

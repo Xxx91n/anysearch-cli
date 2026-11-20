@@ -16,7 +16,7 @@ import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openTaskRegistry, migrateTaskFollowupColumns } from "../src/task-registry";
+import { openTaskRegistry, migrateTaskRegistryColumns } from "../src/task-registry";
 import { beginInit, endInit } from "../src/sqlite-init";
 import { SqliteSessionStore } from "../src/session-store";
 
@@ -43,12 +43,25 @@ CREATE TABLE task_records (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`;
 
+/** The pre-#311 process_records: exactly the columns #302 shipped. */
+const OLD_PROCESS_TABLE = `
+CREATE TABLE process_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pid INTEGER NOT NULL CHECK (pid > 0),
+  owner_host TEXT NOT NULL,
+  entry TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`;
+
 /** A minimal file with an old task table and one row already in it. */
 function seedOldDatabase(dbPath: string): void {
   const db = new Database(dbPath);
   try {
     db.pragma("journal_mode = WAL");
     db.exec(OLD_TASK_TABLE);
+    db.exec(OLD_PROCESS_TABLE);
     db.prepare(
       "INSERT INTO task_records (task_id, kind, role, entry, owner_pid, owner_host) VALUES ('cli-old-1', 'cli.chat', 'business', 'cli', 4242, 'old-host')",
     ).run();
@@ -132,12 +145,19 @@ function main(): void {
       try {
         db.pragma("foreign_keys = ON");
         const deadline = beginInit(db);
-        migrateTaskFollowupColumns(db, deadline);
+        migrateTaskRegistryColumns(db, deadline);
         // A second run must absorb "duplicate column name" and change nothing.
-        migrateTaskFollowupColumns(db, deadline);
+        migrateTaskRegistryColumns(db, deadline);
         endInit(db);
         const rows = db.prepare("SELECT COUNT(*) AS n FROM task_records WHERE origin = 'independent'").get() as { n: number };
         check("C: a replay adds no rows and leaves the data alone", rows.n === 1, JSON.stringify(rows));
+        // #311: the same replay is what gives an old process_records its build
+        // column. A second run absorbing "duplicate column" is the proof the
+        // migration is safe to re-enter, not just to run once.
+        const processColumns = (db.prepare("PRAGMA table_info(process_records)").all() as Array<{ name: string }>)
+          .map((column) => column.name);
+        check("C: an old process_records gains the build column, replay included", processColumns.includes("build"),
+          processColumns.join(","));
       } finally {
         db.close();
       }

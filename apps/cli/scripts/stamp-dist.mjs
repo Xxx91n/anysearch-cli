@@ -2,7 +2,7 @@
 // Written post-tsup; the vertical-delta runner asserts this commit against
 // the working-tree HEAD (stale/absent stamp => FAIL, never a silent run).
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,10 +24,28 @@ console.log("[stamp-dist] .build-stamp.json commit=" + stamp.commit.slice(0, 8) 
 // the launchers add their actual installed path, never the source checkout path.
 const productStatus = git("status --porcelain -- apps packages domains pnpm-lock.yaml pnpm-workspace.yaml");
 const manifest = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
-writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify({
+const buildInfo = {
   schema: "anysearch/installation@1",
   packageName: manifest.name,
   version: manifest.version,
   commit: stamp.commit,
   dirty: productStatus === null ? null : productStatus !== "",
-}, null, 2) + "\n", "utf8");
+  // #311: when this bundle was stamped; the upgrade report compares it with a
+  // running process's own recorded build.
+  builtAt: new Date().toISOString(),
+};
+writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
+// Both add-on bundles sit inside the product tarball and carry the same stamp.
+// `plugin/dist` is the hook service; `mcp/dist` is the resident server whose
+// process row answers "which MCP server is still on the old build" (#311). A row
+// with no stamp answers nothing.
+const bundleDirs = [join(pkgDir, "plugin", "dist"), join(pkgDir, "mcp", "dist")];
+for (const dir of bundleDirs) {
+  if (!existsSync(dir)) {
+    // Loud on purpose: an unstamped bundle reports "no idea which build" forever,
+    // and the upgrade list will keep listing it as undecidable.
+    console.log("[stamp-dist] 跳过 " + dir + "（没有这个目录）");
+    continue;
+  }
+  writeFileSync(join(dir, "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
+}

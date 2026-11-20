@@ -32,6 +32,7 @@
 
 import { resolveDbPath } from "@anysearch-cli/kernel";
 import { AdmissionClosedError, ensureOwnerOnlyDb, openTaskRegistry, type RegisteredProcess, type RegisteredTask, type TaskRegistry, type TaskRole } from "@anysearch-cli/store";
+import { executingBuildId } from "./build-identity";
 import { runWithCliTask, type CliTaskIdentity } from "./cli-task-context";
 
 /**
@@ -131,8 +132,11 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
   // the writes too, not only the open: a registry that opened but cannot write
   // (a contended DB lock, a full disk) throws here, and the same degraded
   // shape comes back — no task, no process record, the command runs on.
+  // 没打标就不写 build（登记成 NULL）：写一个字符串顶上去，升级报告会拿它跟磁盘
+  // 版本比，把一个"说不清"的进程报成"还跑着旧版"。
+  const build = executingBuildId();
   const processRecord: RegisteredProcess | undefined = tryRegister(
-    () => registry.registerProcess({ entry: "cli" }),
+    () => registry.registerProcess({ entry: "cli", ...(build === null ? {} : { build }) }),
     "process registration",
   );
   let taskRecord: RegisteredTask | undefined;

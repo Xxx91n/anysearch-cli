@@ -117,10 +117,12 @@ async function main(): Promise<void> {
     {
       const r = await run(["upgrade", "--help"], env, project);
       check("5: --help exits 0", r.code === 0);
-      for (const cmd of ["status", "wait", "cancel", "dismiss", "prune"]) {
+      for (const cmd of ["status", "wait", "install", "finish", "cancel", "dismiss", "prune"]) {
         check("5: help lists " + cmd, r.out.includes(cmd), r.out);
       }
       check("5: help says it does not replace program files", /不替换程序文件/.test(r.out), r.out);
+      // #311: the way in when the global command itself is unusable.
+      check("5: help names the by-path migration entry", r.out.includes("dist/migrate-install.js"), r.out);
     }
   } finally {
     try { rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* best effort */ }

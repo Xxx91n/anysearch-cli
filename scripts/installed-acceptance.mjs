@@ -425,7 +425,10 @@ const textOf = (r) => (r?.result?.content ?? []).map((c) => c?.text ?? "").join(
 function sh(cmd, args, opts = {}) {
   if (process.platform !== "win32") {
     const r = spawnSync(cmd, args, { encoding: "utf8", shell: false, ...opts });
-    return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+    // `stdout` 单独留着：机器可读输出（--json）只能从它解析。`out` 是给人看的
+    // 合并流，混进一句 stderr 就会让 JSON.parse 炸掉，而那正好是"看起来跑了、
+    // 其实没断言"的坑。
+    return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
   }
   // cmd.exe 只在一种情况下会篡改被引号包住的内容：成对的 %NAME%。它会被
   // 展开成环境变量，路径随之变成别的东西。
@@ -445,7 +448,7 @@ function sh(cmd, args, opts = {}) {
   // 是命令分隔符，跟有没有空格无关。引号包住之后它就只是普通字符。
   for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
   const r = spawnSync(parts.join(" "), { encoding: "utf8", shell: true, ...opts });
-  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
 }
 
 /**
@@ -461,37 +464,41 @@ function sh(cmd, args, opts = {}) {
  * 卡住就是发现了问题，该红就红。
  */
 async function shAsync(cmd, args, opts = {}) {
-  if (process.platform !== "win32") {
-    const r = await new Promise((resolve) => {
-      const child = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
-      let out = "";
-      child.stdout.on("data", (d) => (out += d.toString()));
-      child.stderr.on("data", (d) => (out += d.toString()));
-      const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
-      child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
-      child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
-    });
-    return r;
+  // 命令行怎么拼：POSIX 直接传参数数组，Windows 走 cmd.exe 加引号。两边的纪律和
+  // sh() 一样（拦成对 %NAME%、参数一律加引号），只是换成异步 spawn。
+  let command = cmd;
+  let argv = args;
+  let spawnOpts = { ...opts };
+  if (process.platform === "win32") {
+    const EXPANDS = /%[^%]+%/;
+    if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
+      throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
+    }
+    const isPath = cmd.includes("/") || cmd.includes("\\");
+    const parts = [isPath ? '"' + cmd + '"' : cmd];
+    for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
+    command = parts.join(" ");
+    argv = [];
+    spawnOpts = { ...opts, shell: true };
   }
-  // cmd.exe 的引号纪律与 sh() 完全一致（同款两坑：成对 %NAME% 拦下、参数一律
-  // 加引号），只是换成异步 spawn。
-  const EXPANDS = /%[^%]+%/;
-  if (EXPANDS.test(cmd) || args.some((a) => EXPANDS.test(a))) {
-    throw new Error("shAsync()：命令行里有成对的 %NAME%，cmd.exe 会把它展开成别的路径：" + cmd);
-  }
-  const isPath = cmd.includes("/") || cmd.includes("\\");
-  const parts = [isPath ? '"' + cmd + '"' : cmd];
-  for (const a of args) parts.push(a === "" || /["^]/.test(a) ? a : '"' + a + '"');
-  const r = await new Promise((resolve) => {
-    const child = spawn(parts.join(" "), { ...opts, stdio: ["ignore", "pipe", "pipe"], shell: true });
+  return await new Promise((resolve) => {
+    const child = spawn(command, argv, { ...spawnOpts, stdio: ["ignore", "pipe", "pipe"] });
+    // stdout 单独收着（和 sh() 同款）：机器可读输出只能从它解析，混进 stderr 的
+    // 一句话就会让 JSON.parse 炸掉。out 是给人看的合并流。
     let out = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (out += d.toString()));
-    const timer = setTimeout(() => { child.kill(); resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" ") }); }, 240_000);
-    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out }); });
-    child.once("error", (e) => { clearTimeout(timer); resolve({ code: 1, out: out + "\n[spawn error] " + e.message }); });
+    let stdout = "";
+    child.stdout.on("data", (d) => { out += d; stdout += d; });
+    child.stderr.on("data", (d) => { out += d; });
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" "), stdout });
+    }, 240_000);
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out, stdout }); });
+    child.once("error", (e) => {
+      clearTimeout(timer);
+      resolve({ code: 1, out: out + "\n[spawn error] " + e.message, stdout });
+    });
   });
-  return r;
 }
 
 function writeDomain(dir, name, body) {
@@ -2239,6 +2246,147 @@ async function main() {
         } catch { /* 旧库不在了：自然不算「没写回」 */ }
       }
       check(legacyUntouched, "续聊没有写回旧库");
+    }
+
+    // ================= I. 迁移入口走真实产物 =================
+    //
+    // #311 要求"迁移入口须能在旧命令占用导致新包尚未装好时启动"。那条路不能靠
+    // 全局命令，只能照文件路径跑——所以必须验装出来的那个文件真的在、真的能跑。
+    // 只断言帮助文本提到这个路径不算数（那只是字符串）。
+    console.log("\n== I. the by-path migration entry runs from the installed product ==");
+    {
+      const migrateEntry = join(nm, "@anysearch-cli", "cli", "dist", "migrate-install.js");
+      check(existsSync(migrateEntry), "装出来的产品里有 dist/migrate-install.js", migrateEntry);
+      if (existsSync(migrateEntry)) {
+        // 直接 node 跑这个文件，不经过 ans 命令：旧包的 ans 还占着名字时，这就是
+        // 唯一能进来的路。--prefix 指向这次安装自己的前缀，判定应该是 clean。
+        const migrated = sh(process.execPath, [migrateEntry, "--prefix", prefix, "--json"], {
+          cwd: prefix,
+          env: { ...baseEnv, ANS_DB_PATH: join(work, "migrate.db") },
+        });
+        let inspection = null;
+        try { inspection = JSON.parse(migrated.stdout); } catch { /* 断言里会说 */ }
+        check(migrated.code === 0, "迁移入口只看不动时退出码 0", migrated.out.slice(0, 500));
+        check(inspection?.verdict === "clean", "这个前缀判成 clean（只有一个完整产品）",
+          JSON.stringify(inspection?.verdict));
+        check(inspection?.applied === false, "没加 --apply 就一个包都没动", String(inspection?.applied));
+        const product = (inspection?.packages ?? []).find((p) => p.name === "@anysearch-cli/cli");
+        check(typeof product?.version === "string" && !/^0\.0\.0$/.test(product.version),
+          "迁移入口读到的产品版本是真实版本", JSON.stringify(product));
+        const legacy = (inspection?.packages ?? []).filter((p) => p.name !== "@anysearch-cli/cli");
+        check(legacy.length === 0, "装出来的产品不夹带旧布局的独立包", JSON.stringify(legacy));
+        // 一个不存在的旧包声明：判 blocked 的路径也要在真实产物上走一遍——不装
+        // 任何东西，只造一个别人的 ans，确认它拒绝动手。
+        //
+        // 位置要跟 npm 的全局布局一致：Windows 把 shim 放在前缀根，POSIX 放在
+        // `<前缀>/bin`。放错地方就等于"没有这个命令"，判定会变成 absent——上一版
+        // 就是在这里把 ubuntu 车道跑红的。
+        const foreign = join(work, "foreign-prefix");
+        const foreignBin = process.platform === "win32" ? foreign : join(foreign, "bin");
+        mkdirSync(foreignBin, { recursive: true });
+        writeFileSync(join(foreignBin, process.platform === "win32" ? "ans.cmd" : "ans"),
+          "#!/bin/sh\nexec node /opt/someone-elses/ans \"$@\"\n", "utf8");
+        const blocked = sh(process.execPath, [migrateEntry, "--prefix", foreign, "--json"], {
+          cwd: prefix, env: { ...baseEnv, ANS_DB_PATH: join(work, "migrate2.db") },
+        });
+        let blockedInspection = null;
+        try { blockedInspection = JSON.parse(blocked.stdout); } catch { /* 断言里会说 */ }
+        check(blocked.code === 1 && blockedInspection?.verdict === "blocked",
+          "认不出归属的前缀判 blocked、退出码 1",
+          "code=" + blocked.code + " verdict=" + String(blockedInspection?.verdict));
+      }
+    }
+
+    // ================= J. 常驻 MCP 服务自己那条进程记录 =================
+    //
+    // #311 的"待重连"清单靠的就是这条记录。宿主起的 ans-mcp 是常驻进程，可以
+    // 活过整场升级；它不登记，报告只能说"没有入口还在旧版上"，而那是假的。
+    // 这里起一个真的装出来的服务，从库里读它写下的那一行。
+    console.log("\n== J. the installed MCP server records its own lifetime and build ==");
+    {
+      // 走宿主真正用的那个入口（bin/ans-mcp.cjs → mcp/dist/index.js），不是直接
+      // 拿 bundle 顶替：要验的是装出来的那条路。
+      const startServer = async (dbFile) => {
+        const child = spawn(process.execPath, [mcpBin, "--transport", "stdio"], {
+          env: { ...baseEnv, ANS_DB_PATH: dbFile, USERPROFILE: join(work, "mcp-home"), HOME: join(work, "mcp-home") },
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        // 等它自报就绪，不靠固定秒数猜。stderr 是一段一段来的，那句话可能被切成
+        // 两段，所以先攒 buffer 再找；超时或提前退出都要说出来，不能静悄悄当成功。
+        let stderrText = "";
+        let ready = false;
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 15_000);
+          child.stderr.on("data", (d) => {
+            stderrText += d.toString();
+            if (!ready && stderrText.includes("stdio transport ready")) {
+              ready = true;
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+          child.once("exit", () => { clearTimeout(timer); resolve(); });
+        });
+        return { child, ready, stderrText };
+      };
+      const rowsIn = (dbFile, sql) => {
+        const db = new Database(dbFile, { readonly: true });
+        try { return db.prepare(sql).all(); } finally { db.close(); }
+      };
+      const stopGracefully = (child, signal) => new Promise((resolve) => {
+        const timer = setTimeout(() => { try { child.kill(); } catch { /* 已经没了 */ } resolve(); }, 10_000);
+        child.once("exit", () => { clearTimeout(timer); resolve(); });
+        if (signal === undefined) child.stdin.end();
+        else child.kill(signal);
+      });
+
+      // 一、登记：这一行记着它是谁、跑的是哪一版。
+      const probeDb = join(work, "mcp-process.db");
+      const first = await startServer(probeDb);
+      try {
+        check(first.ready, "常驻服务自报就绪（stderr 里有 stdio transport ready）",
+          first.stderrText.slice(0, 400) || "一句都没读到");
+        try {
+          const open = rowsIn(probeDb, "SELECT entry, build FROM process_records WHERE ended_at IS NULL");
+          check(open.length === 1 && open[0].entry === "mcp",
+            "常驻服务登记了一行 entry=mcp 的进程记录", JSON.stringify(open));
+          check(typeof open[0]?.build === "string" && /^\d+\.\d+\.\d+\+/.test(open[0].build),
+            "那一行记下了它跑的是哪一版（打标的构建）", JSON.stringify(open));
+        } catch (e) {
+          check(false, "读 MCP 服务的进程记录", String(e?.message || e));
+        }
+      } finally {
+        // 按宿主收回连接的那条路退出（关 stdin）：Windows 上 kill 是
+        // TerminateProcess，处理函数一个都不会跑，拿它验"写没写结束"永远是红的。
+        await stopGracefully(first.child);
+      }
+      // 结束那一栏也要验。升级报告把"没写结束"读成"这个入口还活着"：这栏不验，
+      // 一个已经死掉的 MCP 会永远挂在待重连清单里，而这里一条断言都不会红。
+      try {
+        const ended = rowsIn(probeDb, "SELECT ended_at FROM process_records WHERE entry = 'mcp'");
+        check(ended.length === 1 && typeof ended[0].ended_at === "string" && ended[0].ended_at.length > 0,
+          "服务正常退出后写下了结束时间", JSON.stringify(ended));
+      } catch (e) {
+        check(false, "重开库核对 ended_at", String(e?.message || e));
+      }
+
+      // 二、信号收场。宿主关机、容器停掉走的是 SIGTERM，那条路同样要写结束。
+      // Windows 上 kill 直接 TerminateProcess、不发信号，这一条只能在 POSIX 验。
+      if (process.platform === "win32") {
+        skip("信号收场写结束", "Windows 上 kill 不跑信号处理函数");
+      } else {
+        const signalDb = join(work, "mcp-signal.db");
+        const second = await startServer(signalDb);
+        check(second.ready, "第二个常驻服务自报就绪", second.stderrText.slice(0, 300));
+        await stopGracefully(second.child, "SIGTERM");
+        try {
+          const ended = rowsIn(signalDb, "SELECT ended_at FROM process_records WHERE entry = 'mcp'");
+          check(ended.length === 1 && typeof ended[0].ended_at === "string" && ended[0].ended_at.length > 0,
+            "收到 SIGTERM 也写下了结束时间", JSON.stringify(ended));
+        } catch (e) {
+          check(false, "重开库核对 SIGTERM 之后的 ended_at", String(e?.message || e));
+        }
+      }
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

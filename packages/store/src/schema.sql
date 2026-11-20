@@ -293,6 +293,14 @@ CREATE TABLE IF NOT EXISTS process_records (
   -- 'cli' | 'mcp' | 'server' — the entry whose lifetime this row records.
   -- 'server' is the hook IPC service (#307), which now owns post-work.
   entry TEXT NOT NULL,
+  -- #311: the build this process was running when it started, e.g.
+  -- "0.2.0+cbefccab". Recorded once and never updated: a long-lived MCP server
+  -- that survives an upgrade keeps saying which code it is still executing, and
+  -- that is the only evidence an "installed version / running version" report
+  -- can stand on. NULL means the build never said (a build made before this
+  -- column existed), which is reported as unknown rather than filled in from
+  -- whatever is on disk now.
+  build TEXT,
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   -- NULL = still running; set when the process reports its own exit. A
   -- crashed process keeps NULL — a later reader probes the pid instead of

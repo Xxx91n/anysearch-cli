@@ -152,6 +152,11 @@ export interface ProcessRecordRow {
   pid: number;
   ownerHost: string;
   entry: string;
+  /**
+   * #311: the build this process started on. `null` for a build made before the
+   * column existed — reported as unknown, never back-filled from disk.
+   */
+  build: string | null;
   startedAt: string;
   /** NULL = still running. */
   endedAt: string | null;
@@ -229,13 +234,13 @@ export class TaskRegistry {
       taskById: db.prepare("SELECT " + taskColumns + " FROM task_records WHERE task_id = ?"),
       openTasks: db.prepare("SELECT " + taskColumns + " FROM task_records WHERE ended_at IS NULL ORDER BY started_at"),
       insertProcess: db.prepare(
-        "INSERT INTO process_records (pid, owner_host, entry) VALUES (?, ?, ?)",
+        "INSERT INTO process_records (pid, owner_host, entry, build) VALUES (?, ?, ?, ?)",
       ),
       endProcess: db.prepare(
         "UPDATE process_records SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL",
       ),
       openProcesses: db.prepare(
-        "SELECT id, pid, owner_host as ownerHost, entry, started_at as startedAt, ended_at as endedAt FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
+        "SELECT id, pid, owner_host as ownerHost, entry, build, started_at as startedAt, ended_at as endedAt FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
       ),
       gate: db.prepare(
         "SELECT gate_id as gateId, opened_at as openedAt, opened_by_pid as openedByPid, opened_by_host as openedByHost, note FROM upgrade_gate WHERE id = 1",
@@ -584,9 +589,15 @@ export class TaskRegistry {
     }).immediate();
   }
 
-  /** Register this process's own lifetime as a process record. */
-  registerProcess(req: { entry: string }): RegisteredProcess {
-    const info = this.stmts.insertProcess.run(this.owner.pid, this.owner.host, req.entry);
+  /**
+   * Register this process's own lifetime as a process record.
+   *
+   * `build` is the build this process is executing, captured by the caller at
+   * start. It is written once: a later `end()` only stamps the end, so the row
+   * keeps saying which code this process was running for its whole life (#311).
+   */
+  registerProcess(req: { entry: string; build?: string }): RegisteredProcess {
+    const info = this.stmts.insertProcess.run(this.owner.pid, this.owner.host, req.entry, req.build ?? null);
     const id = Number(info.lastInsertRowid);
     let ended = false;
     return {
@@ -641,7 +652,7 @@ export class TaskRegistry {
 }
 
 /**
- * #307/#309: bring an existing task_records up to the current shape.
+ * #307/#309/#311: bring an existing registry up to the current shape.
  *
  * Both openers call this: the registry can be the first process to touch an old
  * file, and the session store can be the first to assemble one. Keeping it in
@@ -652,16 +663,19 @@ export class TaskRegistry {
  * post-work links before #307), not a guess. `parent_task_id` stays nullable
  * on purpose: a follow-up whose parent cannot be named must record no link.
  * #309's dismissal columns are nullable and default NULL: an old open row has
- * NOT been acknowledged by anyone, so it must start as a blocker.
+ * NOT been acknowledged by anyone, so it must start as a blocker. #311's
+ * `process_records.build` is nullable for the same reason in the other
+ * direction: an old row never recorded a build, and inventing one would let a
+ * stale process pass for current.
  *
  * Indexes are created AFTER the ALTERs; placing them in schema.sql would make
  * them run before the columns exist and fail to open an old database (the #277
  * lesson).
  */
-export function migrateTaskFollowupColumns(db: Database.Database, initDeadline: number): void {
+export function migrateTaskRegistryColumns(db: Database.Database, initDeadline: number): void {
   const step = (ddl: string): void => {
     try {
-      withInitBusyRetry("task follow-up columns", () => db.exec(ddl), initDeadline);
+      withInitBusyRetry("task registry columns", () => db.exec(ddl), initDeadline);
     } catch (e) {
       if (isDuplicateColumnError(e)) return;
       throw e;
@@ -671,6 +685,7 @@ export function migrateTaskFollowupColumns(db: Database.Database, initDeadline: 
   step("ALTER TABLE task_records ADD COLUMN parent_task_id TEXT REFERENCES task_records(task_id)");
   step("ALTER TABLE task_records ADD COLUMN dismissed_at TEXT");
   step("ALTER TABLE task_records ADD COLUMN dismissed_reason TEXT");
+  step("ALTER TABLE process_records ADD COLUMN build TEXT");
   step("CREATE INDEX IF NOT EXISTS idx_task_records_parent ON task_records(parent_task_id) WHERE parent_task_id IS NOT NULL");
 }
 
@@ -736,11 +751,12 @@ export function openTaskRegistry(dbPath: string, opts: TaskRegistryOptions = {})
   } else {
     withInitBusyRetry("schema", () => execDdlAtomically(db, schema), initDeadline);
   }
-  // #307: an existing database's task_records predates the follow-up columns.
-  // New files already carry them from the CREATE TABLE above, so this ALTER is
-  // the migration and a duplicate column is absorbed (the schema objects here
-  // run before every ALTER, so both statements live outside createTaskTables).
-  migrateTaskFollowupColumns(db, initDeadline);
+  // #307/#311: an existing database's registry predates the follow-up columns
+  // and the process build column. New files already carry them from the CREATE
+  // TABLE above, so these ALTERs are the migration and a duplicate column is
+  // absorbed (the schema objects here run before every ALTER, so both
+  // statements live outside createTaskTables).
+  migrateTaskRegistryColumns(db, initDeadline);
   endInit(db);
   return new TaskRegistry(db, opts);
 }

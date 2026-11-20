@@ -274,6 +274,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 - `docs/mcp-server.md`: MCP server specification reference (tools, semantics, transports, environment variables, and auth)
 - `docs/rag-adapters.md`: domain retrieval adapter configs (`none` / `note` / `fts`), injected content, and size limits
 - `docs/limitations.md`: complete record of known limitations
+- `docs/upgrade.md`: 换版本的四步（`status` → `wait` → 装文件 → `finish`）、两个版本为什么分开报、旧的多包安装怎么换
 - `docs/agents/`: conventions for domain docs and GitHub issue tracker
 - Repository layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory, run traces, URL policy) · `packages/retriever` (provider adapters + RRF) · `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks)
 - Run single-package tests with `node --import tsx --test`; the full pre-release check is `node scripts/ship-gate.mjs` (no uncommitted changes, test suite, packaging, install verification, MCP initialize, startup when a component is broken)

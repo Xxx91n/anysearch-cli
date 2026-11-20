@@ -36,9 +36,10 @@ import { clearServerRegistry, projectIndexDbPath, resolveServerToken, writeServe
 import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
 import { parseDrainMs, runShutdown } from "./shutdown.js";
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { ansDurableDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+import { ansDurableDbPath, ansProjectPolicyPath, buildId, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, readBuildInfo, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so the wire format
 // stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
@@ -73,7 +74,18 @@ const OBS_DB = ansDurableDbPath();
 // durable DB (the one the policy audit writes), and the service's own lifetime
 // is a process record — not a task. A broken registry degrades to "work runs,
 // nothing recorded" and says so once; it never stops the service.
-const postWork = createPostWorkTracker(openPostWorkRegistry(OBS_DB));
+//
+// #311: this service records WHICH build it is running, read once from the
+// bundle that is actually loaded. A hook service that outlives an upgrade keeps
+// saying the old build, which is what makes "installed vs running" a real
+// answer instead of a guess. A bundle with no stamp records nothing rather than
+// borrowing the version of whatever is on disk now.
+const SELF_DIR = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
+const SELF_BUILD_INFO = readBuildInfo(join(SELF_DIR, "..", "build-info.json"));
+const postWork = createPostWorkTracker(
+  openPostWorkRegistry(OBS_DB),
+  SELF_BUILD_INFO ? buildId(SELF_BUILD_INFO) : undefined,
+);
 postWork.start();
 
 // OBS_DB permissions are tightened at startup by openPostWorkRegistry above —
