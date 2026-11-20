@@ -40,6 +40,10 @@ writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify(buildInfo,
 // it carries the same stamp. Without this its process row would read "unknown
 // build" on every install, and the reconnect list would nag about an entry that
 // was in fact built with everything else.
-if (existsSync(join(pkgDir, "plugin", "dist"))) {
-  writeFileSync(join(pkgDir, "plugin", "dist", "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
+for (const dir of [join(pkgDir, "plugin", "dist"), join(pkgDir, "mcp", "dist")]) {
+  // `mcp/dist` is the resident server's bundle: its process row is the one that
+  // answers "which MCP server is still on the old build" (#311), and a row with
+  // no stamp answers nothing.
+  if (!existsSync(dir)) continue;
+  writeFileSync(join(dir, "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
 }

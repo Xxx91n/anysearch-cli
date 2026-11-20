@@ -7,7 +7,8 @@ import { buildServer, createDefaultEngine } from "./server.js";
 import { createHttpApp } from "./http.js";
 import { createMcpToolState } from "./tool-state.js";
 import { markHttpTransport } from "./transport-mode.js";
-import { ensureAnsLayoutOrExit, resolveConfigHome } from "@anysearch-cli/store";
+import { ansDurableDbPath, ensureAnsLayoutOrExit, resolveConfigHome } from "@anysearch-cli/store";
+import { registerMcpProcess } from "./mcp-process.js";
 
 // The /health version banner moved with the HTTP wiring into http.ts (#112),
 // so this entry no longer needs the __PACKAGE_VERSION__ substitution.
@@ -31,12 +32,21 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
+/** This process's record in the task registry; registered in main(), closed on exit. */
+let processRecord: { end(): void } | undefined;
+
 async function main() {
   // Move the old directories into ~/.ans before the first read. An HTTP server
   // serves several workspaces and its startup directory is nobody's project
   // (see transport-mode.ts), so it passes the user root and the project pass
   // skips itself.
   ensureAnsLayoutOrExit("ans-mcp", process.env, transport === "http" ? resolveConfigHome() : process.cwd());
+  // #311: this entry's lifetime is a process record, so an upgrade can see that a
+  // resident server is still executing the build it started on. Registration
+  // failures only warn — a broken registry must not cost the host its MCP server.
+  processRecord = registerMcpProcess(ansDurableDbPath(), (message) => {
+    process.stderr.write("[warn] " + message + "\n");
+  });
   // #210: one process-level tool state for either transport. stdio already had
   // process-level behavior through its single long-lived server; HTTP now gets
   // the same scope even though it builds a fresh server per request.
@@ -65,7 +75,14 @@ async function main() {
   }
 }
 
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  // The record's end is written BEFORE the process goes away: a row left open is
+  // reported as an unconfirmed entry, and this one we can confirm.
+  process.once(signal, () => { processRecord?.end(); process.exit(0); });
+}
+
 main().catch((e) => {
+  processRecord?.end();
   process.stderr.write("anysearch MCP server error: " + (e instanceof Error ? e.message : String(e)) + "\n");
   process.exit(1);
 });

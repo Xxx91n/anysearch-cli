@@ -13,6 +13,7 @@ import {
   applyInstallPlan,
   describeInspection,
   inspectInstall,
+  PRODUCT_PACKAGE,
   resolveNpmPrefix,
   type InstallInspection,
 } from "../install-layout";
@@ -142,7 +143,6 @@ export async function runUpgradeInstall(
   let result;
   try {
     result = applyInstallPlan(inspection, {
-      env,
       recordDir: ansInstallMigrationsDir(env),
       ...(opts.run ? { run: opts.run } : {}),
       ...(opts.now ? { now: opts.now } : {}),
@@ -179,10 +179,18 @@ export async function runUpgradeInstall(
     return 1;
   }
   if (after) out(describeInspection(after));
+  // 卸完必须先看"还剩什么"，再说"换好了"。旧布局是完整的三个包时，卸完可能一个
+  // 命令都不剩——那时说"换好了"是最糟的谎：用户以为装好了，其实 `ans` 已经没了。
+  const productLeft = after?.packages.some((pkg) => pkg.name === PRODUCT_PACKAGE) ?? false;
+  if (!productLeft) {
+    err("[安装] 这个前缀里现在没有完整产品：旧包卸了，命令也跟着没了。先把它装上：" +
+      "npm i -g " + PRODUCT_PACKAGE + "@latest\n");
+    return 1;
+  }
   const stillLegacy = after?.commands.filter((c) => c.state === "legacy") ?? [];
   if (stillLegacy.length > 0) {
     err("[安装] 还有命令指着旧包：" + stillLegacy.map((c) => c.name).join("、") +
-      "。重装一次完整产品把名字收回来：npm i -g @anysearch-cli/cli@latest\n");
+      "。重装一次完整产品把名字收回来：npm i -g " + PRODUCT_PACKAGE + "@latest\n");
     return 1;
   }
   out("[安装] 换好了。重开终端和宿主：已经在跑的进程还执行着旧代码，重启或重连才会用上新版。\n");

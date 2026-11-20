@@ -2240,6 +2240,50 @@ async function main() {
       }
       check(legacyUntouched, "续聊没有写回旧库");
     }
+
+    // ================= I. 迁移入口走真实产物 =================
+    //
+    // #311 要求"迁移入口须能在旧命令占用导致新包尚未装好时启动"。那条路不能靠
+    // 全局命令，只能照文件路径跑——所以必须验装出来的那个文件真的在、真的能跑。
+    // 只断言帮助文本提到这个路径不算数（那只是字符串）。
+    console.log("\n== I. the by-path migration entry runs from the installed product ==");
+    {
+      const migrateEntry = join(nm, "@anysearch-cli", "cli", "dist", "migrate-install.js");
+      check(existsSync(migrateEntry), "装出来的产品里有 dist/migrate-install.js", migrateEntry);
+      if (existsSync(migrateEntry)) {
+        // 直接 node 跑这个文件，不经过 ans 命令：旧包的 ans 还占着名字时，这就是
+        // 唯一能进来的路。--prefix 指向这次安装自己的前缀，判定应该是 clean。
+        const migrated = sh(process.execPath, [migrateEntry, "--prefix", prefix, "--json"], {
+          cwd: prefix,
+          env: { ...baseEnv, ANS_DB_PATH: join(work, "migrate.db") },
+        });
+        let inspection = null;
+        try { inspection = JSON.parse(migrated.stdout); } catch { /* 断言里会说 */ }
+        check(migrated.code === 0, "迁移入口只看不动时退出码 0", migrated.out.slice(0, 500));
+        check(inspection?.verdict === "clean", "这个前缀判成 clean（只有一个完整产品）",
+          JSON.stringify(inspection?.verdict));
+        check(inspection?.applied === false, "没加 --apply 就一个包都没动", String(inspection?.applied));
+        const product = (inspection?.packages ?? []).find((p) => p.name === "@anysearch-cli/cli");
+        check(typeof product?.version === "string" && !/^0\.0\.0$/.test(product.version),
+          "迁移入口读到的产品版本是真实版本", JSON.stringify(product));
+        const legacy = (inspection?.packages ?? []).filter((p) => p.name !== "@anysearch-cli/cli");
+        check(legacy.length === 0, "装出来的产品不夹带旧布局的独立包", JSON.stringify(legacy));
+        // 一个不存在的旧包声明：判 blocked 的路径也要在真实产物上走一遍——不装
+        // 任何东西，只造一个别人的 ans，确认它拒绝动手。
+        const foreign = join(work, "foreign-prefix");
+        mkdirSync(foreign, { recursive: true });
+        writeFileSync(join(foreign, process.platform === "win32" ? "ans.cmd" : "ans"),
+          "#!/bin/sh\nexec node /opt/someone-elses/ans \"$@\"\n", "utf8");
+        const blocked = sh(process.execPath, [migrateEntry, "--prefix", foreign, "--json"], {
+          cwd: prefix, env: { ...baseEnv, ANS_DB_PATH: join(work, "migrate2.db") },
+        });
+        let blockedInspection = null;
+        try { blockedInspection = JSON.parse(blocked.stdout); } catch { /* 断言里会说 */ }
+        check(blocked.code === 1 && blockedInspection?.verdict === "blocked",
+          "认不出归属的前缀判 blocked、退出码 1",
+          "code=" + blocked.code + " verdict=" + String(blockedInspection?.verdict));
+      }
+    }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));
     endpoint.close();

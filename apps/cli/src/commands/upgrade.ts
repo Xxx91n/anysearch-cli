@@ -1,15 +1,17 @@
 // ans upgrade — 一次正常升级的全部步骤（#309 预检/等待 + #311 换版核对）。
 //
-// 这里从不换文件：不下载、不安装、不重启任何进程。换文件用什么工具由用户定
-// （npm、pnpm、内部制品库都行），本命令负责的是它前后那两件事——换之前确认
-// 没有人还在用旧代码干活，换之后确认磁盘上真的换了版本、谁还得重连。
+// 本命令不换自己的程序文件：不下载、不安装、不重启任何进程。换文件用什么工具由
+// 用户定（npm、pnpm、内部制品库都行），本命令负责的是它前后那两件事——换之前
+// 确认没有人还在用旧代码干活，换之后确认磁盘上真的换了版本、谁还得重连。
 //
-// 两个"版本"必须分开说，这是本命令最容易说错的地方：
-//   - 磁盘版本：现在 <包根>/dist/build-info.json 说的是哪一版，也就是下次启动
-//     会用哪一份代码；
-//   - 执行版本：某个进程自己记下的那一版（进程登记表的 build 列）。
-// 一个常驻 MCP 服务可以活过整场升级，磁盘早就换了它还在跑旧代码。只报磁盘版本
-// 就是把"装好了"说成"已经在跑新版"，所以 status 两边都报，并把不一样的列出来。
+// 唯一的例外是 `ans upgrade install`：它会在预览之后卸掉旧布局里那几个独立的
+// 全局包（不是本产品自己的文件，是它要取代的旧包）。默认只预览，删之前先写恢复
+// 记录，认不出归属的一个都不动。
+//
+// Design: 两个"版本"分开报，不复用同一个读数 — 磁盘版本回答"下次启动会用哪一份
+// 代码"，执行版本回答"这个进程现在跑的是哪一份"。一个常驻 MCP 服务可以活过整场
+// 升级，两者从那一刻起就不是一回事；只报磁盘版本等于把"装好了"说成"已经在跑
+// 新版"。所以 status 两边都报，并把不一样的入口列成待重连。
 //
 // 准入关着时，新的付费/干活请求被直接拒绝，不排队也不事后重放。管理类命令
 // （status、doctor、本命令）和已接请求的后置工作照常放行：前者用来处理升级，
@@ -68,6 +70,7 @@ const HELP = `Usage: ans upgrade <command> [options]
 
 换文件这一步不归本命令：它不替换程序文件、不下载、不安装、不重启任何进程。
 用什么装（npm、pnpm、内部制品库）由你决定，装完再跑 finish 核对。
+（ans upgrade install 子命令是例外：它会在预览之后卸掉旧布局的独立全局包。）
 
 Options:
   --timeout <ms>      wait 最多等多久（默认 ${DEFAULT_WAIT_MS}）
@@ -314,6 +317,20 @@ function describeProcess(p: ProcessView): string {
  * 没记构建（旧版本没有这一列）的行单独归一类，不塞进"旧版"里：说它旧是猜的，
  * 说它是新版更是猜的。分开列出来，让人自己决定要不要重启。
  */
+/**
+ * 一个入口相对磁盘版本是什么状态。
+ *
+ * 三态，不是一个布尔：`current` 跑的就是这一版，`stale` 记下的构建不一样（要
+ * 重连），`unknown` 根本没记（旧版本没有这一列）——说它旧是猜的，说它新更是猜的。
+ * 文字报告和 `--json` 都从这一个判断走，两边不会各算一套再漂移。
+ */
+type ProcessFreshness = "current" | "stale" | "unknown";
+
+function freshnessOf(process: ProcessView, installedBuildId: string): ProcessFreshness {
+  if (process.build === null) return "unknown";
+  return process.build === installedBuildId ? "current" : "stale";
+}
+
 function reconnectOf(
   processes: ProcessView[],
   installedBuildId: string,
@@ -327,8 +344,9 @@ function reconnectOf(
       build: process.build,
       startedAt: process.startedAt,
     };
-    if (process.build === null) unknown.push(entry);
-    else if (process.build !== installedBuildId) pending.push(entry);
+    const freshness = freshnessOf(process, installedBuildId);
+    if (freshness === "unknown") unknown.push(entry);
+    else if (freshness === "stale") pending.push(entry);
   }
   return { pending, unknown };
 }
@@ -357,7 +375,12 @@ function jsonSnapshot(
     // 进程不是阻塞判据，只是"哪些入口还在、哪些确认不了"的说明。
     processes: s.processes.map((p) => ({
       ...p,
-      stale: p.build === null ? null : p.build !== extra.installed.buildId,
+      // true = 旧版要重连，false = 就是这一版，null = 没记、判断不了。
+      // 和文字报告共用 freshnessOf，两边不会各算一套。
+      stale: ((): boolean | null => {
+        const freshness = freshnessOf(p, extra.installed.buildId);
+        return freshness === "unknown" ? null : freshness === "stale";
+      })(),
     })),
     dismissable: s.dismissable ?? [],
     program: {
@@ -582,7 +605,10 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
     }
     if (pause.from.buildId === identity.buildId) {
       // 最容易被糊弄过去的一步：wait 成功了、用户以为装完了、其实 npm 那步失败了。
-      // 磁盘上还是同一份，就不能报"换完了"——准入继续关着，等真换了再来。
+      //
+      // Design: 磁盘版本和暂停记录一样时拒绝收尾、准入继续关着 — 另一种做法是照常
+      // 打开准入并提示"好像没换"，但那等于用一句提示换掉唯一能拦住"报了个假升级"
+      // 的判据。没换就没有可核对的换版，宁可让人再跑一次 finish（或明确 cancel）。
       err("[upgrade] 文件没换：磁盘上还是 " + identity.buildId +
         "（" + describeIdentity(identity) + "）。\n" +
         "[upgrade] 装完新版本再跑一次 ans upgrade finish；要放弃这次暂停就用 ans upgrade cancel。\n" +
@@ -640,6 +666,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
             "，起于 " + entry.startedAt + "\n");
         }
         out("[upgrade] 本命令不重启任何进程：什么时候重启由你决定\n");
+        out("[upgrade] 宿主配置里若还写着旧安装的命令路径，用 ans host status 看、ans host repair <宿主> 更新" +
+          "（接线那套流程只管本工具条目，不动别的）\n");
       } else {
         out("[upgrade] 没有入口还在旧版上\n");
       }

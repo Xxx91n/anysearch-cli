@@ -193,8 +193,18 @@ export function installedProductPackages(prefix: string): InstalledProductPackag
   return found;
 }
 
-/** 从一个 shim 或链接目标里认出产品包名。 */
+/**
+ * 从一段路径或 shim 内容里认出产品包名。
+ *
+ * 一个正则两处用：符号链接的目标是一段路径，Windows 的 .cmd 是一段脚本，包名
+ * 在两处的写法一样。两份正则会慢慢长得不一样，最后一份认得出、另一份认不出。
+ */
 const PACKAGE_IN_PATH = /node_modules[\\/]@anysearch-cli[\\/]([^\\/"'\s]+)/;
+
+function packageNameIn(text: string): string | null {
+  const match = text.match(PACKAGE_IN_PATH);
+  return match ? "@anysearch-cli/" + match[1] : null;
+}
 
 interface ShimReading {
   /** 认出来的包名。 */
@@ -216,10 +226,8 @@ function readShim(shimPath: string): ShimReading {
   try {
     const stat = lstatSync(shimPath);
     if (stat.isSymbolicLink()) {
-      const link = readlinkSync(shimPath);
-      const target = resolve(dirname(shimPath), link);
-      const match = target.replace(/\\/g, "/").match(/node_modules\/@anysearch-cli\/([^/]+)/);
-      return { packageName: match ? "@anysearch-cli/" + match[1] : null, target, kind: "symlink" };
+      const target = resolve(dirname(shimPath), readlinkSync(shimPath));
+      return { packageName: packageNameIn(target), target, kind: "symlink" };
     }
   } catch {
     return { packageName: null, target: null, kind: "unreadable" };
@@ -232,7 +240,7 @@ function readShim(shimPath: string): ShimReading {
   }
   const match = content.match(PACKAGE_IN_PATH);
   return {
-    packageName: match ? "@anysearch-cli/" + match[1] : null,
+    packageName: packageNameIn(content),
     target: match ? match[0] : null,
     kind: "script",
   };
@@ -290,7 +298,7 @@ export function inspectInstall(prefix: string, prefixSource = "调用方指定")
   // 命令清单 = 产品历来提供的名字 ∪ 这里实际声明了的名字。用并集是为了
   // 让"旧包装着但命令被别的包抢走"这种局面也出现在报告里。
   const names = [...new Set([...PRODUCT_COMMANDS, ...declared.keys()])].sort();
-  const commands = names.map((name) => describeCommand(prefix, name, packages, declared.get(name) ?? []));
+  const commands = names.map((name) => ownershipOf(prefix, name, packages, declared.get(name) ?? []));
   const verdict = verdictOf(packages, commands);
   return {
     prefix,
@@ -302,7 +310,7 @@ export function inspectInstall(prefix: string, prefixSource = "调用方指定")
   };
 }
 
-function describeCommand(
+function ownershipOf(
   prefix: string,
   name: string,
   packages: InstalledProductPackage[],
@@ -356,8 +364,10 @@ function describeCommand(
 }
 
 function verdictOf(packages: InstalledProductPackage[], commands: CommandOwnership[]): InstallVerdict {
-  if (packages.length === 0) return "absent";
+  // 认不出归属排在"没装过"前面：一个空前缀里躺着一个别人的 `ans`，说"这里没装过"
+  // 再建议 `npm i -g`，等于建议覆盖它。归属说不清就该停下来说清楚。
   if (commands.some((c) => c.state === "unknown" || c.state === "conflict")) return "blocked";
+  if (packages.length === 0) return "absent";
   const legacyCommand = commands.some((c) => c.state === "legacy");
   return conflictingPackages(packages).length > 0 || legacyCommand ? "legacy" : "clean";
 }
@@ -366,8 +376,8 @@ function verdictOf(packages: InstalledProductPackage[], commands: CommandOwnersh
  * 按判定给出方案。方案是给人看的，不是给人猜的：每一步都写成一句能读懂的
  * 话，要动手的那步把命令原样写出来。
  *
- * `blocked` 不给删除步骤。认不出归属就先别动——把别人的 `ans` 删掉，比留着
- * 一份旧安装糟得多。
+ * `blocked` 不给删除步骤，也不给安装步骤。认不出归属就先别动——把别人的 `ans`
+ * 删掉，或者建议一次会覆盖它的安装，比留着一份旧安装糟得多。
  */
 function planSteps(
   verdict: InstallVerdict,
@@ -377,6 +387,17 @@ function planSteps(
   const steps: InstallStep[] = [];
   const removals = conflictingPackages(packages).map((pkg) => pkg.name);
   const conflicts = commands.filter((c) => c.state === "unknown" || c.state === "conflict");
+
+  if (verdict === "blocked") {
+    for (const conflict of conflicts) {
+      steps.push({ kind: "note", text: "`" + conflict.name + "` 不动：" + conflict.note });
+    }
+    steps.push({
+      kind: "note",
+      text: "归属说不清就一个包都不删，也不建议装：先弄清上面这些命令是谁的",
+    });
+    return steps;
+  }
 
   if (verdict === "absent") {
     steps.push({
@@ -454,8 +475,7 @@ export interface InstallMigrationRecord {
 }
 
 export interface ApplyOptions {
-  env?: NodeJS.ProcessEnv;
-  /** 恢复记录放哪；默认 `<用户根>/install-migrations`。 */
+  /** 恢复记录放哪：调用方给 `<用户根>/install-migrations`。 */
   recordDir: string;
   /** 注入的命令执行器（测试用），默认 spawnSync。 */
   run?: (command: string, args: string[]) => { status: number | null; stdout: string; stderr: string };

@@ -72,8 +72,29 @@
 - **升级准入**:现在还不收新活的那个开关。关着的时候，新的一次干活/付费请求当场被拒（退出 4 或 `errorKind: upgrade-in-progress`），不排队、不事后重放；管理类命令（`ans upgrade`、doctor 这类）和已经接下的请求的尾巴照常放行。它是一行记在持久库里的记录，不是某个模块里的标志，所以每个入口看的是同一个开关（代码里叫 upgrade_gate / AdmissionClosedError）。
   _Avoid_: 封门、admission gate、暂停开关
 
-- **升级预检**:换程序之前先问一句「现在行不行」，只读不改：谁还开着活、哪些进程本机确认不了、准入开没开（`ans upgrade status`）。它在准入关着的时候也能跑，这正是它有用的地方。
+- **升级预检**:换程序之前先问一句「现在行不行」，只读不改：谁还开着活、哪些进程本机确认不了、准入开没开、装的是哪一版、谁还在旧版上（`ans upgrade status`）。它在准入关着的时候也能跑，这正是它有用的地方。
   _Avoid_: preflight、升级检查
+
+- **磁盘版本**:包根下 `dist/build-info.json` 记着的那一版，也就是下次启动会用到的那份代码。它不等于正在跑的进程用的那一版——换文件不会让已经在跑的进程跟着换。
+  _Avoid_: 已安装版本、installed version
+
+- **执行版本**:一个进程启动时自己记下的那一版（进程记录里的 build 列，形如 `0.2.0+cbefccab`），写一次不改。它和磁盘版本不一样，就说明这个入口还跑着旧代码（代码里叫 process_records.build）。
+  _Avoid_: 运行版本、running version
+
+- **待重连**:磁盘已经换成新版、但某个入口进程还在执行旧版的状态。按 D1 靠重启或重连换版，不承诺透明热换；报告把「跑的是旧版」和「没记是哪一版」分开列，不把后者当旧版（`ans upgrade status` 的 `[重连]` 段，`--json` 里的 `stale`）。
+  _Avoid_: 待升级、pending restart
+
+- **暂停记录**:`ans upgrade wait` 等干净以后写下的一份「等干净的时候磁盘上是哪一版」（`~/.ans/.upgrade-pause.json`）。`ans upgrade finish` 拿它当基准：磁盘上还是同一版就拒绝报完成。写在数据根而不是程序目录，因为换版会把程序目录整份换掉。
+  _Avoid_: 升级状态文件、lockfile
+
+- **换版历史**:过去几次「从哪版到哪版、什么时候、哪几个入口还要重连」的记录，留最近 20 条（`~/.ans/upgrade-history.json`）。
+  _Avoid_: 升级日志、changelog
+
+- **旧布局**:0.2.0 以前那种「三个全局包各装一次」的安装形态（`@anysearch-cli/cli`、`@anysearch-cli/mcp`、`@anysearch-cli/plugin`）。三个包往同一个全局 bin 目录写命令，名字被两边同时声明时谁最后装谁赢，于是「装的是哪个版本」和「命令实际指向哪个包」可以不一致。`ans upgrade install` 只看不删，`--apply` 才卸掉真的在抢命令名的那些包。
+  _Avoid_: 多包安装、legacy install
+
+- **安装判定**:`ans upgrade install` 对一个 npm 全局前缀给出的四种结论之一：`clean`（只有一个完整产品，命令都指向它）、`legacy`（旧包还在或命令还指着旧包，可按方案换）、`blocked`（有命令认不出归属，一个包都别动）、`absent`（这里没装过）。`blocked` 时连安装建议都不给——那会覆盖别人的命令。
+  _Avoid_: 安装状态、install status
 
 - **放弃收尾**:一条收不了尾的任务行，由人明说「这条没人管了」并写明理由，之后不再算升级阻塞。它不写成「任务已完成」——结束时间还是空的，只多一条谁、什么时候、为什么（代码里叫 dismissed_at / dismissed_reason，`ans upgrade dismiss`）。
   _Avoid_: 清理、扫尾、dismiss

@@ -321,6 +321,61 @@ async function main(): Promise<void> {
         calls.join(" | ") + s.err.join(""));
       check("9: 那个包还在", existsSync(join(prefix, "node_modules", "@anysearch-cli", "dsh-plugin")));
     }
+    // ---- 10. 只有旧包、没有完整产品：卸完不能报"换好了" -------------------
+    {
+      const prefix = join(root, "no-product-prefix");
+      // 旧布局装齐了，完整产品从来没装过。
+      installPackage(prefix, "@anysearch-cli/mcp", "0.2.0", { "ans-mcp": "dist/index.js" });
+      installPackage(prefix, "@anysearch-cli/plugin", "0.2.0", { "ans-plugin-server": "dist/server/index.cjs" });
+      writeShim(prefix, "ans-mcp", legacyTarget("dist/index.js"));
+      writeShim(prefix, "ans-plugin-server", "node_modules/@anysearch-cli/plugin/dist/server/index.cjs");
+
+      const inspection = inspectInstall(prefix, "测试");
+      check("10: 有旧包没产品，判 legacy", inspection.verdict === "legacy", inspection.verdict);
+      check("10: 预览就说要先装产品",
+        inspection.steps.some((step) => step.kind === "install" && step.text.includes("先把产品装上")),
+        JSON.stringify(inspection.steps));
+
+      const s = { out: [] as string[], err: [] as string[] };
+      const code = await runUpgradeInstall(["--prefix", prefix, "--apply"], {
+        stdout: (t: string) => { s.out.push(t); },
+        stderr: (t: string) => { s.err.push(t); },
+        env: { ...process.env, USERPROFILE: root, HOME: root },
+        run: (command: string, args: string[]) => {
+          // 真把旧包删掉，模拟 npm rm -g 的效果。
+          for (const name of args.slice(2)) {
+            rmSync(join(prefix, "node_modules", ...name.split("/")), { recursive: true, force: true });
+          }
+          return { status: 0, stdout: "", stderr: "" };
+        },
+      });
+      check("10: 卸完没有产品时退 1", code === 1, s.out.join("") + s.err.join(""));
+      check("10: 说清现在一个命令都不剩，要装产品",
+        s.err.join("").includes("现在没有完整产品") && s.err.join("").includes("npm i -g"),
+        s.err.join(""));
+      check("10: 没有说换好了", !s.out.join("").includes("换好了"), s.out.join(""));
+    }
+
+    // ---- 11. 空前缀里躺着别人的 ans：不能建议覆盖它 -----------------------
+    {
+      const prefix = join(root, "foreign-prefix");
+      mkdirSync(prefix, { recursive: true });
+      writeShim(prefix, "ans", "opt/someone-elses/ans");
+
+      const inspection = inspectInstall(prefix, "测试");
+      check("11: 没有本产品的包，但有别人的 ans → blocked", inspection.verdict === "blocked", inspection.verdict);
+      check("11: 不给安装建议（那会覆盖别人的命令）",
+        inspection.steps.every((step) => step.kind !== "install"), JSON.stringify(inspection.steps));
+
+      const s = { out: [] as string[], err: [] as string[] };
+      const code = await runUpgradeInstall(["--prefix", prefix, "--apply"], {
+        stdout: (t: string) => { s.out.push(t); },
+        stderr: (t: string) => { s.err.push(t); },
+        env: { ...process.env, USERPROFILE: root, HOME: root },
+      });
+      check("11: --apply 拒绝动手", code === 1 && s.out.join("").includes("一个包都没删"),
+        s.out.join("") + s.err.join(""));
+    }
   } finally {
     try { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
   }
