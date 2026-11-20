@@ -1,5 +1,15 @@
-// ans upgrade — 升级预检（#309）。只回答"现在能不能换程序"，不换文件、不下载、
-// 不重启任何进程（换文件是 #311）。
+// ans upgrade — 一次正常升级的全部步骤（#309 预检/等待 + #311 换版核对）。
+//
+// 这里从不换文件：不下载、不安装、不重启任何进程。换文件用什么工具由用户定
+// （npm、pnpm、内部制品库都行），本命令负责的是它前后那两件事——换之前确认
+// 没有人还在用旧代码干活，换之后确认磁盘上真的换了版本、谁还得重连。
+//
+// 两个"版本"必须分开说，这是本命令最容易说错的地方：
+//   - 磁盘版本：现在 <包根>/dist/build-info.json 说的是哪一版，也就是下次启动
+//     会用哪一份代码；
+//   - 执行版本：某个进程自己记下的那一版（进程登记表的 build 列）。
+// 一个常驻 MCP 服务可以活过整场升级，磁盘早就换了它还在跑旧代码。只报磁盘版本
+// 就是把"装好了"说成"已经在跑新版"，所以 status 两边都报，并把不一样的列出来。
 //
 // 准入关着时，新的付费/干活请求被直接拒绝，不排队也不事后重放。管理类命令
 // （status、doctor、本命令）和已接请求的后置工作照常放行：前者用来处理升级，
@@ -8,18 +18,37 @@
 // 进程记录只报不挡。常驻 MCP 服务一直在，拿它的 PID 当"活没干完"会让等待永远等
 // 不完；反过来，一个死掉的 PID 也不证明那次任务干完了。
 
+import { existsSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveDbPath } from "@anysearch-cli/kernel";
 import {
   AdmissionClosedError,
+  ansUpgradePausePath,
   ensureOwnerOnlyDb,
   openTaskRegistry,
+  readAnsLayoutRecord,
   snapshotBeforeDestructiveOp,
   TASK_HISTORY_RETENTION_DAYS,
   type TaskRecordRow,
   type TaskRegistry,
   type UpgradeGateState,
 } from "@anysearch-cli/store";
+import {
+  describeIdentity,
+  describeSource,
+  installedProduct,
+  stampOf,
+  type ProductIdentity,
+} from "../build-identity";
+import {
+  appendSwitchRecord,
+  clearPauseRecord,
+  readPauseRecord,
+  writePauseRecord,
+  type ReconnectEntry,
+  type SwitchRecord,
+} from "../upgrade-record";
+import { runUpgradeInstall } from "./upgrade-install";
 
 /** wait 的默认上限：够长跑完一轮摘要+结算，又不至于让人对着屏幕干等。 */
 const DEFAULT_WAIT_MS = 120_000;
@@ -27,25 +56,35 @@ const POLL_MS = 250;
 
 const HELP = `Usage: ans upgrade <command> [options]
 
-Commands:
-  status              看现在能不能升级：谁还开着活、哪些进程确认不了、准入开没开
+升级按这个顺序走，每一步都能单独看结果：
+
+  status              现在是什么状况：谁还开着活、准入开没开、装的是哪一版、谁还在旧版上
   wait                关掉新任务准入，等手上的活干完（默认最多 ${DEFAULT_WAIT_MS / 1000} 秒）
+  install             看全局安装是不是旧的多包布局，给出换法（--apply 才动手）
+  finish              文件换完了：核对真的换了版本，重新打开准入，记下哪几个入口要重连
   cancel              放弃这次暂停，把准入重新打开（不杀正在跑的活）
   dismiss <taskId>    记下某条收不了尾的行没人能解决，之后不再算阻塞（必须给理由）
   prune               删掉 ${TASK_HISTORY_RETENTION_DAYS} 天前已收尾的任务行（先做备份；开着的行永远不删）
+
+换文件这一步不归本命令：它不替换程序文件、不下载、不安装、不重启任何进程。
+用什么装（npm、pnpm、内部制品库）由你决定，装完再跑 finish 核对。
 
 Options:
   --timeout <ms>      wait 最多等多久（默认 ${DEFAULT_WAIT_MS}）
   --days <n>          prune 的保留天数（默认 ${TASK_HISTORY_RETENTION_DAYS}）
   --dry-run           prune 只报会删几行，不真删
   --reason <text>     dismiss 必填：为什么这条行不再当作阻塞
+  --prefix <dir>      install 用：npm 全局前缀（默认问 npm）
+  --apply             install 用：真的执行方案
   --json              机器可读输出
   --db <path>         持久库路径（默认 ANS_DB_PATH，否则 ~/.ans/anysearch.db；
                       旧布局的库还在时会沿用那个位置）
   --help, -h          显示这段说明
 
-说明：本命令只做预检和等待，不替换程序文件、不下载包、不报告"更新已完成"。
-Exit codes: 0 可以继续（收干净了/准入已开） · 1 还有活没干完或准入关着 · 2 用法错误
+说明：新命令用不了的时候（旧包的 ans 还占着名字），迁移入口可以照路径直接跑：
+  node "$(npm root -g)/@anysearch-cli/cli/dist/migrate-install.js"
+Exit codes: 0 可以继续（收干净了/换版核对通过/准入已开） · 1 还有活没干完、准入关着、
+文件没换、或者有认不出归属的东西 · 2 用法错误
 `;
 
 export interface UpgradeCommandOptions {
@@ -55,6 +94,17 @@ export interface UpgradeCommandOptions {
   sleep?: (ms: number) => Promise<void>;
   /** 注入的时钟（测试用）。 */
   now?: () => number;
+  /**
+   * 注入的"本进程是哪一版"（测试用）。
+   *
+   * 默认读自己包根下的 build-info.json。测试要模拟"文件换了"这件事，就必须
+   * 能换掉这个读数——真去改包根是做不到的，也不该做到。
+   */
+  identity?: () => ProductIdentity;
+  /** 注入的环境变量（测试用），迁移命令拿它算 npm 前缀和用户根。 */
+  env?: NodeJS.ProcessEnv;
+  /** 注入的命令执行器（测试用），迁移命令靠它卸旧包。 */
+  run?: (command: string, args: string[]) => { status: number | null; stdout: string; stderr: string };
 }
 
 interface BlockerView {
@@ -76,6 +126,8 @@ interface ProcessView {
   entry: string;
   ownerHost: string;
   ownerState: "alive" | "dead" | "unknown";
+  /** 这个进程自己记下的构建；旧版本没记就是 null。 */
+  build: string | null;
   startedAt: string;
 }
 
@@ -126,7 +178,7 @@ function snapshotOf(registry: TaskRegistry, excludePid?: number, withDismissable
         .filter((p) => p.pid !== excludePid || p.entry !== "cli")
         .map((p) => ({
           pid: p.pid, entry: p.entry, ownerHost: p.ownerHost,
-          ownerState: p.ownerState, startedAt: p.startedAt,
+          ownerState: p.ownerState, build: p.build, startedAt: p.startedAt,
         })),
       ...(withDismissable ? { dismissable: registry.dismissableTasks().map(toBlocker) } : {}),
     };
@@ -151,6 +203,9 @@ function readSnapshot(dbPath: string, excludePid?: number, withDismissable = fal
  *
  * 成功后**不打开**准入：换程序是 #311 的事。在这里自己打开，等于在"可以换"和
  * "换完了"之间留一个谁都能进来的窗口。
+ *
+ * 成功后写一份暂停记录，记下"等干净的时候磁盘上是哪一版"。`ans upgrade finish`
+ * 靠它判断文件到底换没换——没有这个基准，finish 只能靠猜。
  */
 async function runWait(
   registry: TaskRegistry,
@@ -161,6 +216,8 @@ async function runWait(
     timeoutMs: number;
     sleep: (ms: number) => Promise<void>;
     now: () => number;
+    identity: ProductIdentity;
+    env: NodeJS.ProcessEnv;
   },
 ): Promise<number> {
   let gate: UpgradeGateState;
@@ -183,12 +240,29 @@ async function runWait(
       return 1;
     }
     if (snap.blockers.length === 0) {
+      // 暂停记录先写、再报成功：写完才说"可以换了"，否则一次崩在写盘上的
+      // wait 会留下一个没人能收尾的封门。
+      try {
+        writePauseRecord({
+          version: 1,
+          gateId: gate.gateId,
+          gateOpenedAt: gate.openedAt,
+          drainedAt: new Date(opts.now()).toISOString(),
+          from: stampOf(opts.identity),
+        }, opts.env);
+      } catch (e) {
+        opts.err("ans upgrade wait: 手上的活干完了，但暂停记录写不进去（" + errText(e) + "）。" +
+          "没有这份基准，ans upgrade finish 核对不了换没换版本；准入还关着，可以 ans upgrade cancel 打开\n");
+        return 1;
+      }
       if (opts.json) {
         opts.out(JSON.stringify({
           admission: "closed", gate, drained: true, blockers: [], processes: snap.processes,
+          pausedFrom: opts.identity.buildId,
         }, null, 2) + "\n");
       } else {
-        opts.out("[upgrade] 手上的活都干完了，可以换程序了\n");
+        opts.out("[upgrade] 手上的活都干完了，可以换程序了（记下当时磁盘上是 " + opts.identity.buildId + "）\n");
+        opts.out("[upgrade] 下一步：换文件（本命令不下载、不安装），装完跑 ans upgrade finish 核对版本并打开准入\n");
         if (snap.processes.length > 0) {
           opts.out("[upgrade] 这些入口进程还在，换好以后它们要重启或重连才会用新版本（本命令不重启任何进程）：\n");
           for (const p of snap.processes) opts.out("  - " + describeProcess(p) + "\n");
@@ -230,10 +304,50 @@ function describeProcess(p: ProcessView): string {
   const state = p.ownerState === "alive"
     ? "还在"
     : p.ownerState === "dead" ? "本机确认已经没了，但没写结束" : "别的机器，确认不了";
-  return p.entry + " pid " + p.pid + "（" + p.ownerHost + "，" + state + "，起于 " + p.startedAt + "）";
+  return p.entry + " pid " + p.pid + "（" + p.ownerHost + "，" + state + "，跑的是 " +
+    (p.build ?? "没记是哪一版") + "，起于 " + p.startedAt + "）";
 }
 
-function jsonSnapshot(s: Snapshot): string {
+/**
+ * 谁还在旧版上：记下的构建和磁盘上那一份不一样，就是"文件换了它没换"。
+ *
+ * 没记构建（旧版本没有这一列）的行单独归一类，不塞进"旧版"里：说它旧是猜的，
+ * 说它是新版更是猜的。分开列出来，让人自己决定要不要重启。
+ */
+function reconnectOf(
+  processes: ProcessView[],
+  installedBuildId: string,
+): { pending: ReconnectEntry[]; unknown: ReconnectEntry[] } {
+  const pending: ReconnectEntry[] = [];
+  const unknown: ReconnectEntry[] = [];
+  for (const process of processes) {
+    const entry: ReconnectEntry = {
+      entry: process.entry,
+      pid: process.pid,
+      build: process.build,
+      startedAt: process.startedAt,
+    };
+    if (process.build === null) unknown.push(entry);
+    else if (process.build !== installedBuildId) pending.push(entry);
+  }
+  return { pending, unknown };
+}
+
+/**
+ * 一份快照加上版本那几栏，拼成 `status --json`。
+ *
+ * 进程那一段带 `stale`：true = 记下的构建和磁盘上不一样，要重连；false = 一样；
+ * null = 它没记下自己跑的是哪一版，判断不了。三态分开，脚本就不用自己猜
+ * "没记" 是不是等于 "旧版"。
+ */
+function jsonSnapshot(
+  s: Snapshot,
+  extra: {
+    installed: ProductIdentity;
+    reconnect: { pending: ReconnectEntry[]; unknown: ReconnectEntry[] };
+    pause: ReturnType<typeof readPauseRecord>;
+  },
+): string {
   return JSON.stringify({
     admission: s.gate ? "closed" : "open",
     gate: s.gate,
@@ -241,9 +355,31 @@ function jsonSnapshot(s: Snapshot): string {
     blocked: s.blockers.length > 0,
     blockers: s.blockers,
     // 进程不是阻塞判据，只是"哪些入口还在、哪些确认不了"的说明。
-    processes: s.processes,
+    processes: s.processes.map((p) => ({
+      ...p,
+      stale: p.build === null ? null : p.build !== extra.installed.buildId,
+    })),
     dismissable: s.dismissable ?? [],
+    program: {
+      installed: {
+        buildId: extra.installed.buildId,
+        version: extra.installed.info?.version ?? null,
+        commit: extra.installed.info?.commit ?? null,
+        builtAt: extra.installed.info?.builtAt ?? null,
+        dirty: extra.installed.info?.dirty ?? null,
+        packageName: extra.installed.packageName,
+        packageRoot: extra.installed.packageRoot,
+        source: extra.installed.source,
+      },
+      reconnect: extra.reconnect,
+    },
+    pause: extra.pause ?? null,
   }, null, 2);
+}
+
+/** 本进程认的"磁盘上是哪一版"；测试可以换掉。 */
+function identityOf(opts: UpgradeCommandOptions): ProductIdentity {
+  return (opts.identity ?? installedProduct)();
 }
 
 function parseNumber(raw: string | undefined, fallback: number): number | undefined {
@@ -258,6 +394,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
   const err = opts.stderr ?? ((text: string) => process.stderr.write(text));
   const sleep = opts.sleep ?? ((ms: number) => delay(ms));
   const now = opts.now ?? (() => Date.now());
+  const env = opts.env ?? process.env;
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     out(HELP);
@@ -266,6 +403,17 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
 
   const command = args[0]!;
   const rest = args.slice(1);
+  // `install` 有自己的选项（--prefix/--apply），在通用解析之前分出去。
+  // 放后面的话 `--apply` 会被当成"不认识的选项"直接退 2——一个只在真用的时候
+  // 才发现的错。
+  if (command === "install") {
+    return runUpgradeInstall(rest, {
+      stdout: out,
+      stderr: err,
+      env,
+      ...(opts.run ? { run: opts.run } : {}),
+    });
+  }
   const json = rest.includes("--json");
   const positional: string[] = [];
   let dbPath: string | undefined;
@@ -333,7 +481,12 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       err("ans upgrade status: 读不了库 " + resolvedDb + "（" + errText(e) + "）\n");
       return 1;
     }
-    if (json) { out(jsonSnapshot(snap) + "\n"); }
+    const identity = identityOf(opts);
+    const reconnect = reconnectOf(snap.processes, identity.buildId);
+    const pause = readPauseRecord(env);
+    if (json) {
+      out(jsonSnapshot(snap, { installed: identity, reconnect, pause }) + "\n");
+    }
     else {
       out("[upgrade] 准入：" + (snap.gate
         ? "关着（" + snap.gate.gateId + "，从 " + snap.gate.openedAt + " 起）"
@@ -362,6 +515,33 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         out("[upgrade] 其中已经不在跑的 " + dead + " 条、别的机器上确认不了的 " + unknown + " 条，要人决定：" +
           "确认真的没人管了就用 ans upgrade dismiss <taskId> --reason \"...\"\n");
       }
+      // 两个版本分开报。混成一句"版本 0.2.0"会让人以为常驻服务也换了。
+      out("[版本] 磁盘上这份（下次启动会用它）：" + describeIdentity(identity) + "\n");
+      out("[版本] 来源：" + describeSource(identity.source) + "，位置：" + identity.packageRoot + "\n");
+      if (reconnect.pending.length > 0) {
+        out("[重连] 这 " + reconnect.pending.length + " 个入口还在旧版上，重启或重连才会换成 " +
+          identity.buildId + "：\n");
+        for (const entry of reconnect.pending) {
+          out("  - " + entry.entry + " pid " + entry.pid + "：跑的是 " + entry.build +
+            "，起于 " + entry.startedAt + "\n");
+        }
+      } else if (reconnect.unknown.length === 0) {
+        out("[重连] 没有入口还在旧版上\n");
+      }
+      if (reconnect.unknown.length > 0) {
+        out("[重连] 这 " + reconnect.unknown.length + " 个入口没记下自己跑的是哪一版" +
+          "（旧版本没有这条记录），是不是旧版说不清：\n");
+        for (const entry of reconnect.unknown) {
+          out("  - " + entry.entry + " pid " + entry.pid + "，起于 " + entry.startedAt + "\n");
+        }
+      }
+      if (pause) {
+        out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
+          pause.from.buildId + "；现在磁盘上是 " + identity.buildId + "——" +
+          (pause.from.buildId === identity.buildId
+            ? "文件还没换，ans upgrade finish 会拒绝报完成\n"
+            : "文件换了，可以 ans upgrade finish 收尾\n"));
+      }
     }
     // 退出码说的是"能不能开始升级"：准入关着也算不能。
     return snap.gate === null && snap.blockers.length === 0 ? 0 : 1;
@@ -378,10 +558,102 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       return 1;
     }
     try {
-      return await runWait(registry, { out, err, json, timeoutMs, sleep, now });
+      return await runWait(registry, {
+        out, err, json, timeoutMs, sleep, now,
+        identity: identityOf(opts),
+        env,
+      });
     } finally {
       registry.close();
     }
+  }
+
+  if (command === "finish") {
+    if (positional.length > 0) { err("ans upgrade finish: 不接位置参数\n"); return 2; }
+    const identity = identityOf(opts);
+    const pause = readPauseRecord(env);
+    if (!pause) {
+      // 没有暂停记录就是不知道"从哪一版停的"。这时报"升级完成"等于编一个基准。
+      err("ans upgrade finish: 没有进行中的升级暂停记录（" +
+        (existsSync(ansUpgradePausePath(env)) ? "文件坏了，读不出来" : "还没跑过 ans upgrade wait") +
+        "）。没有基准就核对不了到底换没换版本：要么 ans upgrade wait 重新走一遍，要么 " +
+        "ans upgrade cancel 直接打开准入\n");
+      return 1;
+    }
+    if (pause.from.buildId === identity.buildId) {
+      // 最容易被糊弄过去的一步：wait 成功了、用户以为装完了、其实 npm 那步失败了。
+      // 磁盘上还是同一份，就不能报"换完了"——准入继续关着，等真换了再来。
+      err("[upgrade] 文件没换：磁盘上还是 " + identity.buildId +
+        "（" + describeIdentity(identity) + "）。\n" +
+        "[upgrade] 装完新版本再跑一次 ans upgrade finish；要放弃这次暂停就用 ans upgrade cancel。\n" +
+        "[upgrade] 准入还关着——在文件真的换掉之前不打开。\n");
+      return 1;
+    }
+    let snap: Snapshot;
+    try {
+      snap = readSnapshot(resolvedDb, process.pid);
+    } catch (e) {
+      err("ans upgrade finish: 读不了库 " + resolvedDb + "（" + errText(e) + "）\n");
+      return 1;
+    }
+    const reconnect = reconnectOf(snap.processes, identity.buildId);
+    const record: SwitchRecord = {
+      version: 1,
+      at: new Date(now()).toISOString(),
+      from: pause.from,
+      to: stampOf(identity),
+      pendingReconnect: [...reconnect.pending, ...reconnect.unknown],
+    };
+    // 先记账再开准入：反过来的话，记录写失败时准入已经开了，而这次换版没有任何
+    // 痕迹——下次谁也说不清"上次是从哪版到哪版"。
+    try {
+      appendSwitchRecord(record, env);
+    } catch (e) {
+      err("ans upgrade finish: 换版记录写不进去（" + errText(e) + "）；准入还关着，先解决写盘问题\n");
+      return 1;
+    }
+    let wasOpen: boolean;
+    try {
+      const registry = openTaskRegistry(resolvedDb);
+      try {
+        wasOpen = registry.closeGate();
+      } finally {
+        registry.close();
+      }
+    } catch (e) {
+      err("ans upgrade finish: 打不开准入（" + errText(e) + "）——换版记录已经写了，准入还关着\n");
+      return 1;
+    }
+    clearPauseRecord(env);
+    if (json) {
+      out(JSON.stringify({
+        admission: "open", finished: true, reopened: wasOpen,
+        from: record.from, to: record.to, pendingReconnect: record.pendingReconnect,
+      }, null, 2) + "\n");
+    } else {
+      out("[upgrade] 换版核对通过：" + record.from.buildId + " → " + record.to.buildId + "\n");
+      out("[upgrade] 准入" + (wasOpen ? "已经重新打开，新任务可以接了" : "本来就是开的") + "\n");
+      if (record.pendingReconnect.length > 0) {
+        out("[upgrade] 下面这些入口还执行着旧代码，重启或重连之后才会换成 " + record.to.buildId + "：\n");
+        for (const entry of record.pendingReconnect) {
+          out("  - " + entry.entry + " pid " + entry.pid + "：" + (entry.build ?? "没记是哪一版") +
+            "，起于 " + entry.startedAt + "\n");
+        }
+        out("[upgrade] 本命令不重启任何进程：什么时候重启由你决定\n");
+      } else {
+        out("[upgrade] 没有入口还在旧版上\n");
+      }
+      // 旧库副本只说不动：恢复旧快照可能丢掉换版之后写进去的数据，这不是一条
+      // 命令该替人做的决定。
+      const layout = readAnsLayoutRecord(env);
+      const snapshots = (layout?.moved ?? []).filter((move) => move.how === "snapshot");
+      if (snapshots.length > 0) {
+        out("[upgrade] 旧库副本还在原处（升级前那一份，不是现在的库）：\n");
+        for (const move of snapshots) out("  - " + move.from + "（" + (move.at ?? "时间没记") + "）\n");
+        out("[upgrade] 程序不会拿它自动恢复：恢复会丢掉那之后写进去的东西，要恢复请自己确认后手动做\n");
+      }
+    }
+    return 0;
   }
 
   if (command === "cancel") {
@@ -393,6 +665,9 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       } finally {
         registry.close();
       }
+      // 暂停记录跟着这次暂停一起作废：留着它，下一次 finish 会拿一个过期的
+      // 基准去比，比出来的结论没有意义。
+      clearPauseRecord(env);
       if (json) {
         out(JSON.stringify({ admission: "open", cancelled: wasOpen }, null, 2) + "\n");
       } else {
@@ -532,7 +807,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
     }
   }
 
-  err("ans upgrade: 不认识 " + command + "。可用的有 status / wait / cancel / dismiss / prune\n");
+  err("ans upgrade: 不认识 " + command + "。可用的有 status / wait / install / finish / cancel / dismiss / prune\n");
   return 2;
 }
 

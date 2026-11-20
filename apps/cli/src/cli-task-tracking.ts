@@ -32,6 +32,7 @@
 
 import { resolveDbPath } from "@anysearch-cli/kernel";
 import { AdmissionClosedError, ensureOwnerOnlyDb, openTaskRegistry, type RegisteredProcess, type RegisteredTask, type TaskRegistry, type TaskRole } from "@anysearch-cli/store";
+import { executingBuildId } from "./build-identity";
 import { runWithCliTask, type CliTaskIdentity } from "./cli-task-context";
 
 /**
@@ -132,7 +133,7 @@ export function trackCliCommand(cmd: string): CliCommandTracking {
   // (a contended DB lock, a full disk) throws here, and the same degraded
   // shape comes back — no task, no process record, the command runs on.
   const processRecord: RegisteredProcess | undefined = tryRegister(
-    () => registry.registerProcess({ entry: "cli" }),
+    () => registry.registerProcess({ entry: "cli", build: executingBuildId() }),
     "process registration",
   );
   let taskRecord: RegisteredTask | undefined;

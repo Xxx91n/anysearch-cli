@@ -2,7 +2,7 @@
 // Written post-tsup; the vertical-delta runner asserts this commit against
 // the working-tree HEAD (stale/absent stamp => FAIL, never a silent run).
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,10 +24,22 @@ console.log("[stamp-dist] .build-stamp.json commit=" + stamp.commit.slice(0, 8) 
 // the launchers add their actual installed path, never the source checkout path.
 const productStatus = git("status --porcelain -- apps packages domains pnpm-lock.yaml pnpm-workspace.yaml");
 const manifest = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
-writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify({
+const buildInfo = {
   schema: "anysearch/installation@1",
   packageName: manifest.name,
   version: manifest.version,
   commit: stamp.commit,
   dirty: productStatus === null ? null : productStatus !== "",
-}, null, 2) + "\n", "utf8");
+  // #311: when this bundle was stamped. The upgrade report compares it with a
+  // running process's own recorded build to answer "installed vs actually
+  // running"; without it a reader could only guess which side is newer.
+  builtAt: new Date().toISOString(),
+};
+writeFileSync(join(pkgDir, "dist", "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
+// The hook service is a separate bundle in the same product (`plugin/dist`), so
+// it carries the same stamp. Without this its process row would read "unknown
+// build" on every install, and the reconnect list would nag about an entry that
+// was in fact built with everything else.
+if (existsSync(join(pkgDir, "plugin", "dist"))) {
+  writeFileSync(join(pkgDir, "plugin", "dist", "build-info.json"), JSON.stringify(buildInfo, null, 2) + "\n", "utf8");
+}

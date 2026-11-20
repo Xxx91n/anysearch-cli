@@ -223,6 +223,29 @@ export function ansUserMemoryPath(env: NodeJS.ProcessEnv = process.env): string 
   return join(ansHomeDir(env), "MEMORY.md");
 }
 
+// ---------------------------------------------------------------------------
+// Upgrade bookkeeping (#311)
+// ---------------------------------------------------------------------------
+//
+// These live in the user root, never in the program directory: an upgrade
+// replaces the program directory wholesale, and a record written there would
+// vanish with the files it was supposed to describe.
+
+/** The pause record `ans upgrade wait` writes once the drain completes. */
+export function ansUpgradePausePath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(ansHomeDir(env), ".upgrade-pause.json");
+}
+
+/** Where past `ans upgrade finish` outcomes are kept, newest first. */
+export function ansUpgradeHistoryPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(ansHomeDir(env), "upgrade-history.json");
+}
+
+/** Recovery records written before an old global package is removed. */
+export function ansInstallMigrationsDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(ansHomeDir(env), "install-migrations");
+}
+
 /** The embedding model cache. Write-only. */
 export function ansModelCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(ansHomeDir(env), "models");

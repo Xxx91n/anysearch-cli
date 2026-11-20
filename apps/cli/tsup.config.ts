@@ -6,7 +6,10 @@ import { pluginBuildOptions } from "../plugin/tsup.config";
 const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
 const cli: Options & { noExternal: string[] } = {
-  entry: ["src/index.ts"],
+  // #311: `migrate-install` is a second entry on purpose. When the old
+  // three-package layout still owns the `ans` name, the global command is not a
+  // way in — this file is, by path: `node <pkg>/dist/migrate-install.js`.
+  entry: ["src/index.ts", "src/migrate-install.ts"],
   // ESM: pi-coding-agent exports only an `import` entry and its config module
   // reads import.meta.url when loaded, so a CJS bundle cannot load it at all.
   format: ["esm"],

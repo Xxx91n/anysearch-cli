@@ -122,8 +122,13 @@ export interface PostWorkTracker {
 /**
  * Build the service's tracker. Pass no registry to run with post-work
  * unregistered (the shape a broken registry produces) — the service stays up.
+ *
+ * `build` is the build this bundle was stamped with (#311), recorded once on
+ * the process row. Omitted when the bundle carries no stamp: the row then says
+ * "no build recorded", which an upgrade report must read as unknown rather than
+ * as "current".
  */
-export function createPostWorkTracker(registry: TaskRegistry | undefined): PostWorkTracker {
+export function createPostWorkTracker(registry: TaskRegistry | undefined, build?: string): PostWorkTracker {
   let processRecord: RegisteredProcess | undefined;
   // Two counters, on purpose: `inFlight` counts units whose work has started,
   // `scheduled` counts units promised by runLater that have not started yet.
@@ -145,7 +150,7 @@ export function createPostWorkTracker(registry: TaskRegistry | undefined): PostW
     start(): void {
       if (!registry) return;
       try {
-        processRecord = registry.registerProcess({ entry: "server" });
+        processRecord = registry.registerProcess({ entry: "server", ...(build ? { build } : {}) });
       } catch (e: unknown) {
         warnOnce("process registration failed (" + errText(e) + ") — this service runs unrecorded");
       }

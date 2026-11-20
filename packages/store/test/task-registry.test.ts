@@ -177,6 +177,47 @@ async function main() {
         "6: both server follow-ups ended");
     }
 
+    // 7. #311: a process row keeps the build it started on, and an old database
+    //    gains the column instead of failing to open.
+    {
+      const stamped = registry.registerProcess({ entry: "mcp", build: "0.2.0+cbefccab" });
+      const unstamped = registry.registerProcess({ entry: "server" });
+      const rows = registry.openProcesses();
+      const byEntry = (entry: string) => rows.find((row) => row.entry === entry)!;
+      assert(byEntry("mcp").build === "0.2.0+cbefccab",
+        "7: the build a process started on is recorded");
+      assert(byEntry("server").build === null,
+        "7: a process that did not say its build records none rather than borrowing one");
+      stamped.end();
+      unstamped.end();
+
+      // An existing file from before this column landed. Opening it must add the
+      // column (the ALTER path), not throw — and afterwards a build can be
+      // recorded, so an upgraded machine stops reporting "unknown".
+      const legacyPath = join(tmpDir, "legacy-process-records.db");
+      const legacy = new Database(legacyPath);
+      legacy.exec(
+        "CREATE TABLE process_records (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, pid INTEGER NOT NULL, owner_host TEXT NOT NULL, " +
+        "entry TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT (datetime('now')), " +
+        "ended_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+      );
+      legacy.close();
+      const upgraded = openTaskRegistry(legacyPath);
+      try {
+        const probe = new Database(legacyPath, { readonly: true });
+        try {
+          const columns = (probe.prepare("PRAGMA table_info(process_records)").all() as Array<{ name: string }>)
+            .map((column) => column.name);
+          assert(columns.includes("build"), "7: opening an old database adds the build column");
+        } finally { probe.close(); }
+        const after = upgraded.registerProcess({ entry: "cli", build: "0.2.0+cbefccab" });
+        assert(upgraded.openProcesses().some((row) => row.build === "0.2.0+cbefccab"),
+          "7: the upgraded database records a build from then on");
+        after.end();
+      } finally { upgraded.close(); }
+    }
+
     registry.close();
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
