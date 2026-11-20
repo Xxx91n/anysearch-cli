@@ -76,9 +76,13 @@ async function main() {
 }
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-  // The record's end is written BEFORE the process goes away: a row left open is
-  // reported as an unconfirmed entry, and this one we can confirm.
-  process.once(signal, () => { processRecord?.end(); process.exit(0); });
+  // 写下结束，然后把这个信号重新发给自己：`once` 已经把处理函数摘掉了，所以这次
+  // 走的是默认行为——该被信号杀掉就还是被信号杀掉，退出码和以前一样。用一个
+  // `process.exit(0)` 替掉它，等于顺手改了宿主看到的东西。
+  process.once(signal, () => {
+    processRecord?.end();
+    process.kill(process.pid, signal);
+  });
 }
 
 main().catch((e) => {

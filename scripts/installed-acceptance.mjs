@@ -2284,6 +2284,45 @@ async function main() {
           "code=" + blocked.code + " verdict=" + String(blockedInspection?.verdict));
       }
     }
+
+    // ================= J. 常驻 MCP 服务自己那条进程记录 =================
+    //
+    // #311 的"待重连"清单靠的就是这条记录。宿主起的 ans-mcp 是常驻进程，可以
+    // 活过整场升级；它不登记，报告只能说"没有入口还在旧版上"，而那是假的。
+    // 这里起一个真的装出来的服务，从库里读它写下的那一行。
+    console.log("\n== J. the installed MCP server records its own lifetime and build ==");
+    {
+      const probeDb = join(work, "mcp-process.db");
+      // 走宿主真正用的那个入口（bin/ans-mcp.cjs → mcp/dist/index.js），不是直接
+      // 拿 bundle 顶替：要验的是装出来的那条路。
+      const server = spawn(process.execPath, [mcpBin, "--transport", "stdio"], {
+        env: { ...baseEnv, ANS_DB_PATH: probeDb, USERPROFILE: join(work, "mcp-home"), HOME: join(work, "mcp-home") },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      try {
+        // 等它真的开始服务（stdio 就绪会往 stderr 写一句），而不是靠固定秒数猜。
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 15_000);
+          server.stderr.on("data", (d) => {
+            if (d.toString().includes("stdio transport ready")) { clearTimeout(timer); resolve(); }
+          });
+        });
+        const probe = new Database(probeDb, { readonly: true });
+        try {
+          const rows = probe.prepare(
+            "SELECT entry, build FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
+          ).all();
+          check(rows.length === 1 && rows[0].entry === "mcp",
+            "常驻服务登记了一行 entry=mcp 的进程记录", JSON.stringify(rows));
+          check(typeof rows[0]?.build === "string" && /^\d+\.\d+\.\d+\+/.test(rows[0].build),
+            "那一行记下了它跑的是哪一版（打标的构建）", JSON.stringify(rows[0]));
+        } finally { probe.close(); }
+      } catch (e) {
+        check(false, "读 MCP 服务的进程记录", String(e?.message || e));
+      } finally {
+        server.kill();
+      }
+    }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));
     endpoint.close();
