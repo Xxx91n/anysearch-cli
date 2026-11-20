@@ -314,7 +314,7 @@ async function main(): Promise<void> {
       const fin = io();
       const { code } = await run(["finish"], NEW, fin);
       check("11: 基准没打标时 finish 退 1", code === 1, "code=" + code + " " + fin.out.join(""));
-      check("11: 说清没有基准可核对", fin.err.join("").includes("没有基准可核对"), fin.err.join(""));
+      check("11: 说清没有可核对的基准", fin.err.join("").includes("没有可核对的基准"), fin.err.join(""));
       check("11: 准入还关着", !gateOpen());
       check("11: 没写换版历史", readSwitchHistory(env).length === historyBefore, String(historyBefore));
 
@@ -332,6 +332,16 @@ async function main(): Promise<void> {
         both.includes("这次暂停补不出基准") && both.includes("ans upgrade cancel"), both);
       check("11: 两边都没打标时不叫人去重跑一个注定写 null 的 wait",
         !both.includes("再重跑一次 ans upgrade wait 建基准"), both);
+
+      // finish 说的是同一句话：两边共用 pauseOutcome，不能再出现「重跑 wait 建立
+      // 一个打了标的基准」这种注定被拒的劝法。
+      const bothFin = io();
+      const bothCode = await runUpgrade(["finish", "--db", dbPath], { ...bothFin.opts, identity: unstampedIdentity });
+      check("11: 两边都没打标时 finish 也拒", bothCode === 1, "code=" + bothCode);
+      check("11: finish 和 status 说同一句（补不出基准）",
+        bothFin.err.join("").includes("这次暂停补不出基准"), bothFin.err.join(""));
+      check("11: finish 不再劝人重跑 wait 建基准",
+        !bothFin.err.join("").includes("重跑一次 ans upgrade wait 建立一个打了标的基准"), bothFin.err.join(""));
 
       const cancel = io();
       const c = await run(["cancel"], NEW, cancel);

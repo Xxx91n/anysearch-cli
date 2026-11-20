@@ -331,29 +331,53 @@ function freshnessOf(process: ProcessView, installedBuildId: string | null): Pro
 }
 
 /**
- * `status` 对"现在能不能收尾"的那句话。
+ * 「这次暂停还能不能收尾」以及不能时该怎么走。
  *
- * 判据顺序必须和 `finish` 一致：finish 先看磁盘这份、再看基准那份、最后才比。
- * 顺序不一致就会出现"status 说可以收尾、finish 一跑就拒"的两套话。
+ * `status` 和 `finish` 共用这一份。两边各写一遍，就会出现一边说可以收尾、另一边
+ * 一跑就拒，或者劝人走一条注定被拒的路——磁盘这份没打标时重跑 `wait` 写下的还是
+ * null，装完再跑 `wait` 写下的又正好是刚装的那一版，`finish` 只会再说一次"文件
+ * 没换"，两趟都白跑。
+ *
+ * Design: 磁盘版本和暂停记录一样时拒绝收尾、准入继续关着 — 另一种做法是照常打开
+ * 准入并提示"好像没换"，但那等于用一句提示换掉唯一能拦住"报了个假升级"的判据。
+ * 没换就没有可核对的换版，宁可让人再跑一次 finish（或明确 cancel）。
  */
-function pauseVerdict(pause: PauseRecord, identity: ProductIdentity): string {
-  // 两边都空：这次暂停已经补不出基准了——磁盘这份没打标，重跑 wait 只会再写下
-  // 一个 null。所以不能叫人「重跑 wait」，那是一条走不通的路。
+function pauseOutcome(
+  pause: PauseRecord,
+  identity: ProductIdentity,
+): { canFinish: boolean; text: string } {
   if (identity.buildId === null && pause.from.buildId === null) {
-    return "这次暂停补不出基准（磁盘上和当时那份都没打标）：要收尾就用 ans upgrade cancel；" +
-      "想留一条换版记录，得先把一个打过标的旧版本装回来、重跑 ans upgrade wait 拿它当基准，" +
-      "再换到新版、跑 finish\n";
+    return {
+      canFinish: false,
+      text: "磁盘上这份和当时暂停的那份都没打标，这次暂停补不出基准：" +
+        "要收尾就用 ans upgrade cancel；想留一条换版记录，得先把一个打过标的旧版本装回来、" +
+        "重跑 ans upgrade wait 拿它当基准，再换到新版、跑 finish",
+    };
   }
   if (identity.buildId === null) {
-    return "现在磁盘上这份没打标，ans upgrade finish 会拒绝报完成：先装一个打过标的版本再跑 finish\n";
+    return {
+      canFinish: false,
+      text: "现在磁盘上这份没打标，核对不了换成了哪一版：装一个正式发出来的版本，再跑 ans upgrade finish",
+    };
   }
   if (pause.from.buildId === null) {
-    return "暂停时那一份没打标，没有可核对的基准：现在这份打了标，重跑一次 ans upgrade wait 拿它当基准、再换文件；" +
-      "要放弃这次暂停就用 ans upgrade cancel\n";
+    return {
+      canFinish: false,
+      text: "当时暂停的那一份没打标，没有可核对的基准：现在这份打了标，重跑一次 ans upgrade wait 拿它当基准、" +
+        "再换一次文件，finish 才核得上；要放弃这次暂停就用 ans upgrade cancel",
+    };
   }
-  return pause.from.buildId === identity.buildId
-    ? "现在磁盘上还是这一版，文件还没换，ans upgrade finish 会拒绝报完成\n"
-    : "现在磁盘上是 " + describeBuildId(identity.buildId) + "，文件换了，可以 ans upgrade finish 收尾\n";
+  if (pause.from.buildId === identity.buildId) {
+    return {
+      canFinish: false,
+      text: "文件没换：磁盘上还是 " + describeBuildId(identity.buildId) +
+        "。装完新版本再跑一次 ans upgrade finish；要放弃这次暂停就用 ans upgrade cancel",
+    };
+  }
+  return {
+    canFinish: true,
+    text: "现在磁盘上是 " + describeBuildId(identity.buildId) + "，文件换了，可以 ans upgrade finish 收尾",
+  };
 }
 
 /**
@@ -596,7 +620,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       }
       if (pause) {
         out("[暂停] " + pause.drainedAt + " 等干净过一次（封门 " + pause.gateId + "），当时磁盘上是 " +
-          describeBuildId(pause.from.buildId) + "——" + pauseVerdict(pause, identity));
+          describeBuildId(pause.from.buildId) + "——" + pauseOutcome(pause, identity).text + "\n");
       }
       // 换版历史只有 finish 在写，报告里得能读回来一条，否则这份文件只增不读，
       // 人想看只能自己去数据根开 JSON。
@@ -638,12 +662,6 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
   if (command === "finish") {
     if (positional.length > 0) { err("ans upgrade finish: 不接位置参数\n"); return 2; }
     const identity = identityOf(opts);
-    // 磁盘上这一份没打标：写下去就是一条编出来的"换成了哪一版"。
-    if (identity.buildId === null) {
-      err("ans upgrade finish: 磁盘上这一份没打标（" + identity.packageRoot + "/dist/build-info.json），" +
-        "核对不了换成了哪一版：装一个正式发出来的版本再跑 finish，要放弃这次暂停就用 ans upgrade cancel\n");
-      return 1;
-    }
     const pause = readPauseRecord(env);
     if (!pause) {
       // 没有暂停记录就是不知道"从哪一版停的"。这时报"升级完成"等于编一个基准。
@@ -653,24 +671,13 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         "ans upgrade cancel 直接打开准入\n");
       return 1;
     }
-    // 基准那一侧没打标：null 跟任何版本都不相等，照比就会判成"换了"，打出一句
-    // "换版核对通过：没打标 → 0.2.0+abc"——什么都没核对。
-    if (pause.from.buildId === null) {
-      err("[upgrade] 暂停时磁盘上那一份没打标（没有 dist/build-info.json），这次换版没有基准可核对。\n" +
-        "[upgrade] 重跑一次 ans upgrade wait 建立一个打了标的基准，或者 ans upgrade cancel 放弃这次暂停。\n" +
-        "[upgrade] 准入还关着——没有基准就不打开。\n");
-      return 1;
-    }
-    if (pause.from.buildId === identity.buildId) {
-      // 最容易被糊弄过去的一步：wait 成功了、用户以为装完了、其实 npm 那步失败了。
-      //
-      // Design: 磁盘版本和暂停记录一样时拒绝收尾、准入继续关着 — 另一种做法是照常
-      // 打开准入并提示"好像没换"，但那等于用一句提示换掉唯一能拦住"报了个假升级"
-      // 的判据。没换就没有可核对的换版，宁可让人再跑一次 finish（或明确 cancel）。
-      err("[upgrade] 文件没换：磁盘上还是 " + describeBuildId(identity.buildId) +
-        "（" + describeIdentity(identity) + "）。\n" +
-        "[upgrade] 装完新版本再跑一次 ans upgrade finish；要放弃这次暂停就用 ans upgrade cancel。\n" +
-        "[upgrade] 准入还关着——在文件真的换掉之前不打开。\n");
+    // 能不能收尾由 pauseOutcome 一处说了算：status 报的是同一句话，两条命令不会
+    // 各说一套，也不会劝人走一条注定被拒的路。
+    const outcome = pauseOutcome(pause, identity);
+    if (!outcome.canFinish) {
+      err("[upgrade] " + outcome.text + "。\n" +
+        "[upgrade] 磁盘上这份：" + describeIdentity(identity) + "（" + identity.packageRoot + "）\n" +
+        "[upgrade] 准入还关着——没核对通过就不打开。\n");
       return 1;
     }
     let snap: Snapshot;
