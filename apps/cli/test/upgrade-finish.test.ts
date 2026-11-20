@@ -328,8 +328,10 @@ async function main(): Promise<void> {
       const bothSt = io();
       await runUpgrade(["status", "--db", dbPath], { ...bothSt.opts, identity: unstampedIdentity });
       const both = bothSt.out.join("");
-      check("11: 两边都没打标时说清还要重跑 wait 建基准",
-        both.includes("再重跑一次 ans upgrade wait 建基准"), both);
+      check("11: 两边都没打标时说清这次暂停补不出基准",
+        both.includes("这次暂停补不出基准") && both.includes("ans upgrade cancel"), both);
+      check("11: 两边都没打标时不叫人去重跑一个注定写 null 的 wait",
+        !both.includes("再重跑一次 ans upgrade wait 建基准"), both);
 
       const cancel = io();
       const c = await run(["cancel"], NEW, cancel);

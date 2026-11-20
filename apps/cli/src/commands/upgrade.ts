@@ -337,16 +337,19 @@ function freshnessOf(process: ProcessView, installedBuildId: string | null): Pro
  * 顺序不一致就会出现"status 说可以收尾、finish 一跑就拒"的两套话。
  */
 function pauseVerdict(pause: PauseRecord, identity: ProductIdentity): string {
-  // 两边都空：只装一个打了标的版本还不够，基准那一侧还是 null，finish 第二道门
-  // 照样拒。两句一起说，免得人跑两趟。
+  // 两边都空：这次暂停已经补不出基准了——磁盘这份没打标，重跑 wait 只会再写下
+  // 一个 null。所以不能叫人「重跑 wait」，那是一条走不通的路。
   if (identity.buildId === null && pause.from.buildId === null) {
-    return "现在磁盘上这份也没打标，先装一个打过标的版本，再重跑一次 ans upgrade wait 建基准，之后 finish 才有的可核对\n";
+    return "这次暂停补不出基准（磁盘上和当时那份都没打标）：要收尾就用 ans upgrade cancel；" +
+      "想留一条换版记录，得先把一个打过标的旧版本装回来、重跑 ans upgrade wait 拿它当基准，" +
+      "再换到新版、跑 finish\n";
   }
   if (identity.buildId === null) {
     return "现在磁盘上这份没打标，ans upgrade finish 会拒绝报完成：先装一个打过标的版本再跑 finish\n";
   }
   if (pause.from.buildId === null) {
-    return "暂停时那一份没打标，没有可核对的基准：重跑一次 ans upgrade wait 建一个，或者 ans upgrade cancel 放弃这次暂停\n";
+    return "暂停时那一份没打标，没有可核对的基准：现在这份打了标，重跑一次 ans upgrade wait 拿它当基准、再换文件；" +
+      "要放弃这次暂停就用 ans upgrade cancel\n";
   }
   return pause.from.buildId === identity.buildId
     ? "现在磁盘上还是这一版，文件还没换，ans upgrade finish 会拒绝报完成\n"
