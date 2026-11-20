@@ -102,7 +102,7 @@
 - **任务历史**:已经收尾的那些任务行，是用来查「上个月都跑了什么」的账。开着的行不算历史，它是阻塞判据，永远不清。历史留 30 天，删要人显式喊一声（`ans upgrade prune`），删前先留一份能核对的快照（代码里叫 HISTORY_RETENTION_DAYS / pruneFinishedTasks / snapshotBeforeDestructiveOp；这个窗口进程登记也用同一份）。
   _Avoid_: 日志清理、归档、retention
 
-- **快照**:删数据之前用 SQLite 自带的在线备份给整个库留的一份文件，删之前必须有，恢复只能手动做（代码里叫 snapshotBeforeDestructiveOp，落盘为 `<库名>.prune-<时间戳>.db` 加同名 `.json` 记录）。和「迁移前备份」的区别：那个只在旧库还没改结构时拍一次，库已经是新的就永远不重拍；快照是每删一次就新拍一份，名字带时间戳，不覆盖旧的。
+- **快照**:删数据之前用 SQLite 自带的在线备份给整个库留的一份文件，删之前必须有，恢复只能手动做（代码里叫 snapshotBeforeDestructiveOp，落盘为 `<库名>.prune-<时间戳>.db` 加同名 `.json` 记录）。和「迁移前备份」的区别：那个只在旧库还没改结构时拍一次，库已经是新的就永远不重拍；快照是每删一次就新拍一份，名字带时间戳，不覆盖旧的。`ans upgrade status` 里说的「现场快照」是读出来的内存视图，不是这份文件。
   _Avoid_: 存档点、恢复点、restore point
 
 - **恢复存档点**:检索算完后可能写一条状态记录，重开时读它给模型一份检索摘要，不会自动重跑检索（代码里叫 ResumeAnchorsPort）。
