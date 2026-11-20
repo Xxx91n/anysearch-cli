@@ -377,7 +377,7 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
       recordPath: backupFile + ".json",
       extra: { reason: label },
       warning: (detail) =>
-        "[anysearch] 恢复存档点已建好，但记录文件写不进去（" + detail +
+        "[anysearch] 快照已建好，但记录文件写不进去（" + detail +
         "）；快照本体在 " + backupFile + "，没有受影响。",
     });
     return { backupFile, bytes: sealed.bytes, sha256: sealed.sha256 };
@@ -388,7 +388,7 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     try { rmSync(backupFile, { force: true }); } catch { /* best effort */ }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      "建立恢复存档点失败：" + detail +
+      "建立快照失败：" + detail +
       "。没有恢复依据就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
       { cause: error },
     );

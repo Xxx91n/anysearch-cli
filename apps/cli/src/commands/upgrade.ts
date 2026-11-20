@@ -1019,7 +1019,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       try {
         backup = snapshotBeforeDestructiveOp(resolvedDb, "prune");
       } catch (e) {
-        err("ans upgrade prune: 建不起恢复存档点，什么都没删（" + errText(e) + "）\n");
+        err("ans upgrade prune: 建不起快照，什么都没删（" + errText(e) + "）\n");
         return 1;
       }
       const pruned = registry.pruneFinishedTasks(retentionDays);
