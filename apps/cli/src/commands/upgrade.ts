@@ -371,7 +371,10 @@ function pruneJson(v: {
   backup: string | null;
   taskPruned: number;
   taskWouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
+  /** 计划：过期却要留的任务行（预览算出来的）。 */
   taskWouldHold: number;
+  /** 结果：真跑删完之后还留着的那些。dry-run 里与计划同值，没删当然一样。 */
+  taskHeld: number;
   plan: ProcessPrunePlan;
   processRemoved: { removed: number; closed: number; openGone: number };
 }): string {
@@ -381,7 +384,7 @@ function pruneJson(v: {
     pruned: v.taskPruned,
     wouldPrune: v.taskWouldPrune.length,
     wouldHold: v.taskWouldHold,
-    heldByChildren: v.taskWouldHold,
+    heldByChildren: v.taskHeld,
     rows: v.taskWouldPrune,
     backup: v.backup,
     processes: {
@@ -956,6 +959,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           out(pruneJson({
             days: retentionDays, dryRun, backup: null,
             taskPruned: 0, taskWouldPrune: [], taskWouldHold: preview.wouldHold.length,
+            taskHeld: preview.wouldHold.length,
             plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
           }));
         } else {
@@ -978,19 +982,21 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
             taskPruned: 0,
             taskWouldPrune: preview.wouldPrune,
             taskWouldHold: preview.wouldHold.length,
+            taskHeld: preview.wouldHold.length,
             plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
           }));
         } else {
-          if (preview.wouldPrune.length + preview.wouldHold.length > 0) {
+          if (preview.wouldPrune.length > 0) {
             out("[upgrade] 会删掉 " + preview.wouldPrune.length + " 条 " + retentionDays +
               " 天前收尾的任务行（dry-run，没删）：\n");
             for (const r of preview.wouldPrune) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
-            if (preview.wouldHold.length > 0) {
-              out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还被别的行引用着，" +
-                "真跑时会留着（删了会把那些行的归属抹掉）：\n");
-              for (const r of preview.wouldHold) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
-            }
-          } else {
+          }
+          if (preview.wouldHold.length > 0) {
+            out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还被别的行引用着，" +
+              "真跑时会留着（删了会把那些行的归属抹掉）：\n");
+            for (const r of preview.wouldHold) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
+          }
+          if (preview.wouldPrune.length + preview.wouldHold.length === 0) {
             out("[upgrade] " + retentionDays + " 天前没有要删的任务行（dry-run，没删）\n");
           }
           if (plan.deletable.length > 0) {
@@ -1024,7 +1030,8 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
           taskPruned: pruned.removed,
           // 计划与结果分开报：打算删的还是预览里那几条，真删掉几条是 pruned。
           taskWouldPrune: preview.wouldPrune,
-          taskWouldHold: pruned.heldByChildren,
+          taskWouldHold: preview.wouldHold.length,
+          taskHeld: pruned.heldByChildren,
           plan, processRemoved,
         }));
       } else {

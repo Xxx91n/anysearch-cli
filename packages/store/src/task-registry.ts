@@ -111,7 +111,8 @@ export interface TaskRegistryOptions {
  * Ended rows are history: 30 days answers "what ran last month" and keeps the
  * tables bounded. Open TASK rows are never pruned at any age — they are the
  * blocking criterion. Open PROCESS rows survive too, unless this host can prove
- * the pid is gone (see `processPrunePlan`). Dismissed rows are kept: the
+ * the pid is gone AND the row is past the window (see `processPrunePlan`).
+ * Dismissed rows are kept: the
  * dismissal is the only evidence a human looked at them.
  *
  * Pruning is never automatic. Only an operator's `ans upgrade prune` deletes,
