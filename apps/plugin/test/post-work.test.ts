@@ -16,6 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -447,6 +448,75 @@ test("real service: /index settles before the answer, /policy's audit behind it"
   } finally {
     await stopProcess(proc);
     rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// #344: a start that never listened is a clean exit too, so it has to end the
+// process record it wrote at module load. A pinned port already in use is the
+// reproducible case: without the end, the row stays open forever, the pid dies
+// with the process, and only a prune past the retention window clears it.
+test("real service: a start that cannot listen leaves no open process record", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-postwork-bind-"));
+  const durableDb = join(home, "anysearch.db");
+  const port = await freePort();
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
+  Object.assign(env, {
+    HOME: home,
+    USERPROFILE: home,
+    ANS_PROJECT_DB: join(home, "project-index.db"),
+    ANS_SERVER_REGISTRY: join(home, "server.json"),
+    ANS_SERVER_PORT: String(port),
+    ANS_SERVER_TOKEN: TOKEN,
+    ANS_DB_PATH: durableDb,
+  });
+  const spawnService = () => spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
+    cwd: PLUGIN_ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    env,
+  });
+  const serverRows = (): Array<{ pid: number; ended: string | null }> => {
+    const db = new Database(durableDb, { readonly: true });
+    try {
+      return db.prepare(
+        "SELECT pid, ended_at as ended FROM process_records WHERE entry = 'server' ORDER BY rowid",
+      ).all() as Array<{ pid: number; ended: string | null }>;
+    } finally {
+      db.close();
+    }
+  };
+
+  const live = spawnService();
+  try {
+    await waitForServer("http://127.0.0.1:" + port);
+    assert.ok(live.pid, "the live service started");
+    assert.deepEqual(
+      serverRows().map((r) => [r.pid, r.ended]),
+      [[live.pid, null]],
+      "the live service holds the one open row",
+    );
+
+    // The same pinned port: this start cannot listen, so it exits 1 — a clean
+    // exit that must close the row it wrote.
+    const failed = spawnService();
+    let stderr = "";
+    failed.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    const [code] = await once(failed, "exit");
+    assert.equal(code, 1, "a start that cannot listen exits 1");
+    assert.match(stderr, /could not listen/, "and says why");
+
+    const rows = serverRows();
+    const failedRow = rows.find((r) => r.pid === failed.pid);
+    assert.ok(failedRow, "the failed start still recorded its lifetime");
+    assert.notEqual(failedRow!.ended, null, "and ended it on the way out");
+    assert.deepEqual(
+      rows.filter((r) => r.ended === null).map((r) => r.pid),
+      [live.pid],
+      "the live service is the only row left open",
+    );
+  } finally {
+    await stopProcess(live);
     rmSync(home, { recursive: true, force: true });
   }
 });

@@ -533,6 +533,27 @@ function announce(): void {
   }
 }
 
+/**
+ * The last thing a start that never listened does (#344): say why, end the
+ * process record this process wrote at module load, then exit 1.
+ *
+ * The record is written before the bind, so a start that cannot listen leaves
+ * an open row nothing will ever end: the pid dies with the process, and only a
+ * prune past the retention window clears it. A stop signal is not the only
+ * clean exit — a pinned port already in use, or a port the OS refuses outright,
+ * exits cleanly too, and both must close their own row. `stop()` is what the
+ * graceful path calls; nothing is running yet, so there is nothing to drain.
+ *
+ * Design: end the row here rather than in a `process.on("exit")` handler —
+ * that handler would also fire on the drain-timeout exit, which deliberately
+ * writes nothing while a unit may be half done.
+ */
+function failToListen(detail: string): never {
+  process.stderr.write("[anysearch] plugin server could not listen: " + detail + "\n");
+  postWork.stop();
+  process.exit(1);
+}
+
 function bind(port: number, allowFallback: boolean): void {
   const onError = (error: NodeJS.ErrnoException) => {
     server.off("error", onError);
@@ -543,11 +564,17 @@ function bind(port: number, allowFallback: boolean): void {
       bind(0, false);
       return;
     }
-    process.stderr.write("[anysearch] plugin server could not listen: " + error.message + "\n");
-    process.exit(1);
+    failToListen(error.message);
   };
   server.once("error", onError);
-  server.listen(port, HOST, () => { server.off("error", onError); announce(); });
+  try {
+    server.listen(port, HOST, () => { server.off("error", onError); announce(); });
+  } catch (error) {
+    // A port the OS refuses before the socket exists (NaN, out of range)
+    // throws here instead of emitting 'error': same terminal failure.
+    server.off("error", onError);
+    failToListen(error instanceof Error ? error.message : String(error));
+  }
 }
 bind(REQUESTED_PORT, true);
 
