@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
 import { ansLayoutMarkerPath, ensureAnsLayout, readAnsLayoutRecord } from "../src/ans-layout";
+import { adoptDatabase } from "../src/migration-backup";
 import { ansPiSessionsDir } from "../src/ans-paths";
 
 function sandbox(): { home: string; env: NodeJS.ProcessEnv; done: () => void } {
@@ -79,6 +80,28 @@ test("a database is copied with SQLite's own backup and the old file is kept", (
     assert.deepEqual(record.moved.map((m) => m.how), ["snapshot"]);
     assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
     assert.ok(existsSync(legacyDb), "the pre-upgrade copy stays until the operator deletes it");
+  } finally { box.done(); }
+});
+
+test("an existing target that already opens is adopted as-is, not rewritten", () => {
+  const box = sandbox();
+  try {
+    // The layout pass keeps a readable file it finds in the new root and never
+    // reaches adoption, but a direct call (and a race with another process) can.
+    // Keeping the file it found is the contract: rewriting it would throw away
+    // whatever the other process already published.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    const from = join(box.home, ".anysearch", "anysearch.db");
+    const to = join(box.home, ".ans", "anysearch.db");
+    seedDatabase(from, "source");
+    seedDatabase(to, "target");
+
+    const adopted = adoptDatabase(from, to);
+
+    assert.equal(readMarkerValue(to), "target", "the readable target is kept, not overwritten");
+    assert.ok(existsSync(from), "the source stays in place; adopting it is not a move");
+    assert.equal(adopted.bytes, statSync(to).size, "the result describes the file that was kept");
   } finally { box.done(); }
 });
 

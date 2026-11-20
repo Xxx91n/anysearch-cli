@@ -497,15 +497,7 @@ export function adoptDatabase(from: string, to: string): { bytes: number; sha256
     const conn = openDatabase(from, { timeout: 5000 });
     db = conn;
     const initDeadline = beginInit(conn);
-    const prevUmask = process.umask(0o077);
-    try {
-      try { rmSync(work, { force: true }); } catch { /* nothing to clear */ }
-      withInitBusyRetry("layout adoption", () => {
-        conn.prepare("VACUUM INTO ?").run(work);
-      }, initDeadline);
-    } finally {
-      process.umask(prevUmask);
-    }
+    vacuumSnapshotInto(conn, work, "layout adoption", initDeadline);
     endInit(conn);
     try {
       renameSync(work, to);
