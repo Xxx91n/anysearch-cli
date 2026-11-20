@@ -22,7 +22,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
         "  bootstrap --dry-run    Same as bare 'bootstrap' (explicit)",
         "",
         "Options:",
-        "  --db PATH              Override database path (default: ANS_DB_PATH or ~/.anysearch/anysearch.db)",
+        "  --db PATH              Override database path (default: ANS_DB_PATH or ~/.ans/anysearch.db)",
       ].join("\n") + "\n",
     );
     return 0;

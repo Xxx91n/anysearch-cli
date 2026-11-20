@@ -187,7 +187,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   }
 
   // LLM summarize seam (fail-open when unconfigured). Layered config (#108):
-  // --llm.* flag > ANS_LLM_* env > .anysearch/config.toml > ~/.anysearch-cli/config.toml.
+  // --llm.* flag > ANS_LLM_* env > .ans/config.toml > ~/.ans/config.toml.
   // A baseUrl without api is warned by the loader and fail-closed by createLlmSession.
   const llmCfg = resolveLlmConfig({ flags: llmFlags });
   const providerName = llmCfg.provider;

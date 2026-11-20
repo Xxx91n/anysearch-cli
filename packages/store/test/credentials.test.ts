@@ -146,7 +146,7 @@ test("a malformed file is never rewritten (that would drop the other keys)", () 
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     writeFileSync(path, "{ not json", "utf8");
 
     assert.throws(
@@ -168,7 +168,7 @@ test("the parse error never quotes the file's contents", () => {
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     // A realistic hand-edit accident: a missing quote right after the key.
     writeFileSync(path, '{ "bindings": [ { "provider": "openai", "apiKey": "sk-live-SECRET-DO-NOT-PRINT" } ]', "utf8");
 
@@ -271,7 +271,7 @@ test("nothing is left behind when the config root cannot be created", () => {
   try {
     // A real, unavoidable failure: the config root is occupied by a regular
     // FILE, so mkdir cannot create the directory the credential file needs.
-    const blocked = join(home, ".anysearch-cli");
+    const blocked = join(home, ".ans");
     writeFileSync(blocked, "this is a file, not a directory", "utf8");
 
     assert.throws(
@@ -289,7 +289,7 @@ test("the temp file is protected before the key goes into it", () => {
   try {
     const path = writeUserCredential({ provider: "openai", apiKey: KEY }, { home });
     verifyFileProtection(path);
-    assert.ok(!readdirSync(join(home, ".anysearch-cli")).some((f) => f.endsWith(".tmp")),
+    assert.ok(!readdirSync(join(home, ".ans")).some((f) => f.endsWith(".tmp")),
       "no temp file survived a successful write");
     if (process.platform !== "win32") {
       // A 0600 file from the first byte means no other account could read the
@@ -365,7 +365,7 @@ test("a record missing apiKey is reported, never silently dropped on the next wr
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     // Valid JSON, one good record and one broken: a rewrite that kept only the
     // good one would permanently erase the other (review P1).
     writeFileSync(path, JSON.stringify({
@@ -393,7 +393,7 @@ test("a non-string endpoint is reported instead of being reshaped to the default
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     // An endpoint of the wrong type must not silently become "the provider
     // default" - that would change which host the key is sent to.
     writeFileSync(path, JSON.stringify({ bindings: [{ provider: "openai", apiKey: "k", endpoint: 42 }] }), "utf8");
@@ -410,7 +410,7 @@ test("two concurrent writers both keep their key (the lock covers read-modify-wr
     // lock each reads the empty file, adds its own entry and replaces the whole
     // file - the loser's key vanishes while both report success (review P1).
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     const script = join(home, "writer.mjs");
     writeFileSync(script, [
       'import { writeUserCredential } from ' + JSON.stringify(
@@ -446,7 +446,7 @@ test("a stuck lock reports who is holding it instead of writing anyway", () => {
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     // A fresh lock (well inside the stale window) belongs to a live process.
     writeFileSync(path + ".lock", "12345", "utf8");
     assert.throws(
@@ -461,7 +461,7 @@ test("an abandoned lock is reclaimed so a killed process cannot wedge the file",
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     writeFileSync(path + ".lock", "99999", "utf8");
     // Age it past the stale window: a lock older than that means its owner died.
     const old = new Date(Date.now() - 60_000);
@@ -479,7 +479,7 @@ test("a read-only config directory fails with the actionable sentence, not a bar
   // must see "refusing to write the credential file", not an errno.
   if (process.platform === "win32") return; // directory modes do not restrict writes this way on Windows
   const { home, cleanup } = tempRoot();
-  const dir = join(home, ".anysearch-cli");
+  const dir = join(home, ".ans");
   try {
     mkdirSync(dir, { recursive: true });
     chmodSync(dir, 0o500);

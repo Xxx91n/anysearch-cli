@@ -226,7 +226,7 @@ function makeStalledFactory(onStreamStart: () => void): AnsChatSessionFactory {
 
 async function main() {
   // Snapshot the operator's real PI dir BEFORE redirecting HOME (#322).
-  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realPiDir = join(homedir(), ".ans", "pi-sessions");
   const realBefore = piRecords(realPiDir);
 
   const saved: Record<string, string | undefined> = {};
@@ -575,7 +575,7 @@ async function main() {
     // ---- #322: nothing reached the operator's real home ----
     const realAfter = piRecords(realPiDir);
     assert(realBefore.join("|") === realAfter.join("|"),
-      "#322: the operator's real ~/.anysearch/pi-sessions gained no record (before="
+      "#322: the operator's real ~/.ans/pi-sessions gained no record (before="
       + realBefore.length + ", after=" + realAfter.length + ")");
   } finally {
     for (const key of ENV_KEYS) {

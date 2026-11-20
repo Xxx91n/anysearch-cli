@@ -35,7 +35,7 @@ import { accumulateUsage, emptyUsageTotals, reportBudgetFault, reserveTaskModelC
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
   RETRIEVAL_CONTENT_SCHEMA_URL,
@@ -45,7 +45,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
-import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps, type DomainReloadResult } from "@anysearch-cli/store";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, ansProjectHitlPath, ansProjectPiAgentDir, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps, type DomainReloadResult } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -78,10 +78,10 @@ export async function askAllowUrl(url: string): Promise<boolean> {
 // Headless deny path: queue the blocked URL for `ans hitl review` recovery.
 export function enqueueHitl(record: { url: string; host: string; toolName: string; reason: string; at?: string }): void {
   try {
-    const dir = join(process.cwd(), ".anysearch-cli");
-    mkdirSync(dir, { recursive: true });
+    const file = ansProjectHitlPath(process.cwd());
+    mkdirSync(dirname(file), { recursive: true });
     appendFileSync(
-      join(dir, "hitl.pending"),
+      file,
       JSON.stringify({ ...record, at: record.at ?? new Date().toISOString() }) + "\n",
       "utf8",
     );
@@ -1097,7 +1097,7 @@ export class PiAgentRuntime {
     // Design: a session handle plus a session dir means PI keeps an append-only
     // record and a later run with the same handle resumes it; without either
     // there is nothing to key a record on, so the session stays in memory.
-    const agentDir = persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent");
+    const agentDir = persistentDir ? join(persistentDir, "agent") : ansProjectPiAgentDir(cwd);
     let interruptedQuestion: string | undefined;
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });

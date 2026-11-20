@@ -76,7 +76,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   entity / vector / relation / semantic 几路结果合在一起；**不带 `session_id` 或 `domain` 过滤** ——
   同一个 store 里所有还有效（没归档、没隔离、没失效）的调研资料都能被查出来。这和
   `recall_memory` 一样，`fts` 只是在它外面包了一层。
-- 真正隔开数据的单位是 store 自己：默认 `~/.anysearch/anysearch.db`，MCP HTTP
+- 真正隔开数据的单位是 store 自己：默认 `~/.ans/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尽量把权限收紧到 0700/0600（能做就做；Windows 不认
   POSIX 权限位）；MCP 冷启动和 plugin server 的 `GET /policy` 审计库路径也调用同一个 `ensureOwnerOnlyDb`（#156）：本次新建的目录收紧到 0700，主库和附属文件收紧到 0600，全都是能做就做；`POST /index` 用的 project index 库不走这个 helper。会话和域只是检索时的
   **小范围**（L1/L2 存档点、域配置、工具白名单），不是「哪个使用方」的分界线；不同使用方应该用不同 store
@@ -221,9 +221,9 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 <!-- coderabbit-ai-generated-section:v1:bc9ebde8612aea32fe2a1d4b0677d262e29a94d60d010139b5eab276ff91fb31 -->
 
 - **CLI 的 `ans chat` 接上本地持久库（#129、#299）** —— `createPersistentEngine` 走
-  `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），每次独立启动默认新建会话；
+  `ANS_DB_PATH`（默认 `~/.ans/anysearch.db`），每次独立启动默认新建会话；
   `--continue` 续当前项目最近的对话，`--session ID` 续指定对话。
-  原来用 `~/.anysearch-cli/session` 或 `ANS_SESSION_ID` 自动续聊的行为已取消；
+  原来用 `~/.ans/session` 或 `ANS_SESSION_ID` 自动续聊的行为已取消；
   旧句柄仍可明确指定。`store.ensureSession(id, domain)` 先建会话行，满足 `sessions(id)` 外键。
 
 <!-- /coderabbit-ai-generated:v1 -->

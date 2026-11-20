@@ -14,7 +14,7 @@ export async function runSwitchState(args: string[]): Promise<number> {
         "",
         "Options:",
         "  --verify   Cross-check ledger evidenceHash against the access_events chain",
-        "  --db PATH  Durable database path (default: ANS_DB_PATH or ~/.anysearch/anysearch.db)",
+        "  --db PATH  Durable database path (default: ANS_DB_PATH or ~/.ans/anysearch.db)",
         "  --out DIR  Dir holding skip-ledger.json (default: ./.ship-gate)",
       ].join("\n") + "\n",
     );

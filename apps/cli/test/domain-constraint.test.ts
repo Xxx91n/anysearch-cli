@@ -68,11 +68,11 @@ process.env.USERPROFILE = dir;
 process.env.HOME = dir;
 delete process.env.ANS_DOMAIN;
 
-const configFile = join(dir, ".anysearch", "config.env");
+const configFile = join(dir, ".ans", "config.env");
 
 function resetSelection(): void {
   delete process.env.ANS_DOMAIN;
-  try { rmSync(join(dir, ".anysearch"), { recursive: true, force: true }); } catch { /* absent */ }
+  try { rmSync(join(dir, ".ans"), { recursive: true, force: true }); } catch { /* absent */ }
 }
 
 async function capture(fn: () => Promise<number>): Promise<{ code: number; out: string; err: string }> {
@@ -195,7 +195,7 @@ test("ans domain <broken> changes nothing and fails", async () => {
 test("a config file that cannot be written keeps the previous selection", async () => {
   resetSelection();
   // A directory where the config file belongs makes the write fail on every OS.
-  mkdirSync(join(dir, ".anysearch", "config.env"), { recursive: true });
+  mkdirSync(join(dir, ".ans", "config.env"), { recursive: true });
   delete process.env.ANS_DOMAIN;
   const r = await runDomainCaptured(["good"]);
   assert.notEqual(r.code, 0, "a failed write is a failed switch");

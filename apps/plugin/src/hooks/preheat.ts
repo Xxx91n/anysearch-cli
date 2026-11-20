@@ -10,11 +10,11 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
 import { resolveHookProject } from "./project-identity.js";
 // the server never runs open; resolve the installation token and published address.
 import { resolveActiveDomain, resolveServerEndpoint } from "../server/token.js";
+import { ansProjectPolicyPath } from "@anysearch-cli/store/paths";
 
 interface PolicyCacheSource {
   path: string;
@@ -46,7 +46,7 @@ export interface ResolvedPolicy {
 let warnedCacheFallback = false;
 
 function policyCachePath(projectRoot: string): string {
-  return join(projectRoot, ".anysearch-cli", "policy.json");
+  return ansProjectPolicyPath(projectRoot);
 }
 
 // canonical hash mirror of packages/store/src/url-policy.ts canonicalVersion() - the STORE
@@ -163,7 +163,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
     ? resolveHookProject(input.projectPath)
     : { root: null, source: "unknown" as const, reason: "the host did not name a project" };
   const projectRoot = project.root;
-  const projectReason = project.reason ?? "no Git root or .anysearch/config.toml";
+  const projectReason = project.reason ?? "no Git root or .ans/config.toml";
 
   // +: any URL in the tool input is gated against the resolved
   // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.
@@ -238,7 +238,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   if (!projectRoot) {
     return withNote({
       additionalContext: "[anysearch] project index unavailable: " + projectReason +
-        " (run from a project root, or add .anysearch/config.toml)",
+        " (run from a project root, or add .ans/config.toml)",
     });
   }
 

@@ -50,9 +50,27 @@ function loadTransformers(): Promise<TransformersModule> {
   }
   return transformersPromise;
 }
+// The product's layout root is decided in @anysearch-cli/store's ans-paths.ts
+// (#323). This package is a zero-dependency leaf that the store loads
+// dynamically, so it cannot import that module: the caller hands the directory
+// in with `setModelCacheDir` before the first embed. The literal below is only
+// the standalone default for using this package on its own.
+let modelCacheDirOverride: string | undefined;
+
+/**
+ * Point the model cache at the product's layout root.
+ *
+ * Must be called before the first embed. `configureEnv` runs once, so a later
+ * call changes nothing and does not report that — the directory is already in
+ * use. `ANYSEARCH_MODEL_CACHE` still wins over it.
+ */
+export function setModelCacheDir(dir: string): void {
+  modelCacheDirOverride = dir;
+}
+
 function configureEnv(mod: TransformersModule): void {
   if (envConfigured) return;
-  mod.env.cacheDir = process.env.ANYSEARCH_MODEL_CACHE ?? join(homedir(), ".anysearch", "models");
+  mod.env.cacheDir = process.env.ANYSEARCH_MODEL_CACHE ?? modelCacheDirOverride ?? join(homedir(), ".ans", "models");
   envConfigured = true;
 }
 
@@ -125,6 +143,10 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 }
 
 // ponytail: test-only hooks. Not part of the public contract.
+/** Run the one-time env configuration against a stand-in module. */
+export function __configureEnvForTest(mod: { env: { cacheDir?: string } }): void {
+  configureEnv(mod as unknown as TransformersModule);
+}
 export function __setExtractorForTest(fn: ExtractorFn | null): void {
   testExtractor = fn;
 }
@@ -132,6 +154,8 @@ export function __resetEmbeddingState(): void {
   testExtractor = null;
   extractorPromise = null;
   transformersPromise = null;
+  envConfigured = false;
+  modelCacheDirOverride = undefined;
   consecutiveFailures = 0;
   circuitOpen = false;
   loads = 0;

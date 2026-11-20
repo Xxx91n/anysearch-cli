@@ -107,7 +107,7 @@ export function tryRegister<T>(write: () => T, label: string): T | undefined {
  * Register this CLI invocation: a process record for the process, and — unless
  * the command is a process entry — a task record for the command's work.
  *
- * The registry shares the durable DB (ANS_DB_PATH / ~/.anysearch/anysearch.db)
+ * The registry shares the durable DB (ANS_DB_PATH / ~/.ans/anysearch.db)
  * with the engine, on its own connection, opened with the same owner-only
  * hygiene createPersistentEngine applies. Opening it here means every command
  * now touches the DB — including commands that never did — which is the cost

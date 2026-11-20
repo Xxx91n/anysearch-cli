@@ -3,6 +3,7 @@
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { ansProjectRoutingCardPath } from "@anysearch-cli/store/paths";
 
 export const DEFAULT_ROUTING_CARD = [
   "[anysearch plugin active]",
@@ -60,11 +61,11 @@ export function ensureMdc(cwd: string, rulesRoot: string): void {
   }
 }
 
-// high-user override via .anysearch/routing-card.json (fail-open).
+// high-user override via .ans/routing-card.json (fail-open).
 // Shared reader: undefined on missing file; parse error -> stderr warning
 // (same semantics for every key read off this file).
 function readRoutingCardOverride(cwd: string): Record<string, unknown> | undefined {
-  const overridePath = join(cwd, ".anysearch", "routing-card.json");
+  const overridePath = ansProjectRoutingCardPath(cwd);
   try {
     if (existsSync(overridePath)) {
       return JSON.parse(readFileSync(overridePath, "utf8"));

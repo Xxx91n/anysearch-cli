@@ -25,12 +25,12 @@ test("移除：只摘自家条目，别人家的东西、资料、对话、账�
   const f = await (async () => fixture())();
   await connectedClaude(f);
   // 用户数据：项目配置、研究资料库、项目索引（对话/账目在里面）、用户凭据。
-  writeProjectFile(f.projectRoot, ".anysearch/config.toml", '[llm]\nprovider = "anthropic"\n');
+  writeProjectFile(f.projectRoot, ".ans/config.toml", '[llm]\nprovider = "anthropic"\n');
   const dbBytes = "fake-fake-sqlite-bytes-research-data";
-  writeProjectFile(f.projectRoot, ".anysearch/project-index.db", dbBytes);
-  mkdirSync(join(f.home, ".anysearch-cli"), { recursive: true });
-  writeFileSync(join(f.home, ".anysearch-cli/server-token"), "fake-token-not-a-secret-leak", "utf8");
-  const journalBefore = readFileSync(join(f.projectRoot, ".anysearch/host-wiring/journal.jsonl"), "utf8");
+  writeProjectFile(f.projectRoot, ".ans/project-index.db", dbBytes);
+  mkdirSync(join(f.home, ".ans"), { recursive: true });
+  writeFileSync(join(f.home, ".ans/server-token"), "fake-token-not-a-secret-leak", "utf8");
+  const journalBefore = readFileSync(join(f.projectRoot, ".ans/host-wiring/journal.jsonl"), "utf8");
 
   const lines2: string[] = [];
   const result = await runHostOperation("remove", "claude", { stdout: (t) => lines2.push(t), projectRoot: f.projectRoot, home: f.home });
@@ -57,11 +57,11 @@ test("移除：只摘自家条目，别人家的东西、资料、对话、账�
   assert.equal((sp.value as any).hooks.PostToolUse, undefined);
   assert.equal((sp.value as any).hooks.SessionStart, undefined);
   // 资料/对话/账目/凭据：字节不动。
-  assert.equal(readFileSync(join(f.projectRoot, ".anysearch/config.toml"), "utf8"), '[llm]\nprovider = "anthropic"\n');
-  assert.equal(readFileSync(join(f.projectRoot, ".anysearch/project-index.db"), "utf8"), dbBytes);
-  assert.equal(readFileSync(join(f.home, ".anysearch-cli/server-token"), "utf8"), "fake-token-not-a-secret-leak");
+  assert.equal(readFileSync(join(f.projectRoot, ".ans/config.toml"), "utf8"), '[llm]\nprovider = "anthropic"\n');
+  assert.equal(readFileSync(join(f.projectRoot, ".ans/project-index.db"), "utf8"), dbBytes);
+  assert.equal(readFileSync(join(f.home, ".ans/server-token"), "utf8"), "fake-token-not-a-secret-leak");
   // journal 只增不减（恢复依据保留）。
-  const journalAfter = readFileSync(join(f.projectRoot, ".anysearch/host-wiring/journal.jsonl"), "utf8");
+  const journalAfter = readFileSync(join(f.projectRoot, ".ans/host-wiring/journal.jsonl"), "utf8");
   assert.ok(journalAfter.length > journalBefore.length);
   assert.ok(journalAfter.startsWith(journalBefore), "old entries preserved");
 });
@@ -227,8 +227,8 @@ test("中断在半个文件（partial）：repair 只补没写的，已写的不
 
 test("journal.ts 的 wiringRoot 与 journal 文件路径一致（项目级/用户级）", () => {
   const f = fixture();
-  assert.equal(wiringRoot("project", f.projectRoot, f.home), join(f.projectRoot, ".anysearch/host-wiring"));
-  assert.equal(wiringRoot("user", f.projectRoot, f.home), join(f.home, ".anysearch-cli/host-wiring"));
+  assert.equal(wiringRoot("project", f.projectRoot, f.home), join(f.projectRoot, ".ans/host-wiring"));
+  assert.equal(wiringRoot("user", f.projectRoot, f.home), join(f.home, ".ans/host-wiring"));
 });
 
 test("移除手写的同名条目（没有我们写入记录）：照样按归属删，但输出说清楚", async () => {
@@ -266,8 +266,8 @@ test("status 能力层：模型能力独立标未配置（只看设没设，不�
   assert.ok(text.includes("模型 provider：未配置"), "provider marked 未配置");
   assert.ok(text.includes("不显示值"), "no-value claim stated");
   // 设上 provider/model 之后（用户级 TOML），能力层如实翻成已配置。
-  mkdirSync(join(f.home, ".anysearch-cli"), { recursive: true });
-  writeFileSync(join(f.home, ".anysearch-cli/config.toml"), '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n', "utf8");
+  mkdirSync(join(f.home, ".ans"), { recursive: true });
+  writeFileSync(join(f.home, ".ans/config.toml"), '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n', "utf8");
   const lines3: string[] = [];
   runHostStatus(["claude"], { stdout: (t) => lines3.push(t), projectRoot: f.projectRoot, home: f.home, env: {} });
   const text3 = lines3.join("\n");

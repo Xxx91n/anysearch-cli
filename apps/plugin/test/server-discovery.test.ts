@@ -29,7 +29,7 @@ function homeEnv(tag: string): { home: string; env: NodeJS.ProcessEnv } {
 test("token: one file per installation, shared by every project's hook", () => {
   const { home, env } = homeEnv("token");
   try {
-    assert.equal(serverTokenPath(env), join(home, ".anysearch-cli", "server-token"));
+    assert.equal(serverTokenPath(env), join(home, ".ans", "server-token"));
     const first = resolveServerToken(env);
     assert.equal(first.generated, true);
     assert.equal(readFileSync(first.path, "utf8").trim(), first.token, "the token is persisted for the next caller");
@@ -37,7 +37,7 @@ test("token: one file per installation, shared by every project's hook", () => {
     assert.equal(second.generated, false);
     assert.equal(second.token, first.token, "a second caller reads the same token instead of minting one");
     assert.deepEqual(
-      readdirSync(join(home, ".anysearch-cli")),
+      readdirSync(join(home, ".ans")),
       ["server-token"],
       "publishing the token leaves no temp file behind",
     );
@@ -47,7 +47,7 @@ test("token: one file per installation, shared by every project's hook", () => {
     const repaired = resolveServerToken(env);
     assert.equal(repaired.generated, true);
     assert.ok(readFileSync(serverTokenPath(env), "utf8").trim().length > 0);
-    assert.equal(projectIndexDbPath(env), join(home, ".anysearch", "project-index.db"), "the shared index lives in the data root");
+    assert.equal(projectIndexDbPath(env), join(home, ".ans", "project-index.db"), "the shared index lives in the data root");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

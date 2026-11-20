@@ -42,7 +42,7 @@ async function main() {
   const dbPath = join(dir, "anysearch.db");
   const prevSessionEnv = process.env.ANS_SESSION_ID;
   // Pin the durable anchor id so "same id after restart" does not depend on
-  // whatever ~/.anysearch-cli/session holds on this machine.
+  // whatever ~/.ans/session holds on this machine.
   process.env.ANS_SESSION_ID = "cli-wiring-session-129";
   try {
     // 1. Both halves come back, and the sessions row exists before any child

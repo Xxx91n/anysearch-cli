@@ -230,7 +230,7 @@ export interface SessionStore {
   // Ensure a caller-supplied session id has a row in `sessions`. Every child
   // table (messages / resume_anchors / retrieval_results / budget_ledger)
   // references sessions(id) and the store runs `foreign_keys = ON`, so an id
-  // minted outside createSession() (e.g. the durable ~/.anysearch-cli/session
+  // minted outside createSession() (e.g. the durable ~/.ans/session
   // anchor) must be registered before any dependent write. Idempotent: an
   // existing row is left untouched.
   ensureSession(sessionId: string, domain: string): Promise<void>;

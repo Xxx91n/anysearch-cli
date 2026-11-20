@@ -32,9 +32,23 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { clearServerRegistry, installDataDir, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
+import { clearServerRegistry, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
 import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
 import { parseDrainMs, runShutdown } from "./shutdown.js";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
+import { ansDurableDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+// parseAndValidateHeaders lives in the hook bundle module so the wire format
+// stays single-source across hook outbound and server inbound.
+import { parseAndValidateHeaders } from "../hooks/propagation.js";
+
+// Move the pre-#323 directories into ~/.ans before the token and the index are
+// resolved; a failure is loud, because the server must not start on a layout it
+// could not establish. This sits after the imports and before the first path is
+// read — not "the first statement that runs", since imported modules initialize
+// first, so keep path reads out of their top level.
+ensureAnsLayoutOrExit("[anysearch]");
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
@@ -45,15 +59,6 @@ const TOKEN = RESOLVED_TOKEN.token;
 const MAX_BODY_BYTES = 1024 * 1024;
 const DB_PATH = projectIndexDbPath();
 
-// Ensure the data dir exists.
-import { mkdirSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
-import { existsSync } from "node:fs";
-import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
-// parseAndValidateHeaders lives in the hook bundle module so
-// the wire format stays single-source across hook outbound and server inbound.
-import { parseAndValidateHeaders } from "../hooks/propagation.js";
 // The index holds retrieved snippets; keep its directory and file owner-only
 // before the store creates them, then pass again after WAL turns on so the
 // sidecars get the same treatment.
@@ -61,7 +66,7 @@ try { ensureOwnerOnlyDb(DB_PATH); } catch { mkdirSync(dirname(DB_PATH), { recurs
 const store = new ProjectIndexStore(DB_PATH);
 try { ensureOwnerOnlyDb(DB_PATH); } catch { /* best-effort */ }
 
-const OBS_DB = process.env.ANS_DB_PATH || join(installDataDir(), "anysearch.db");
+const OBS_DB = ansDurableDbPath();
 
 // #307: this service's post-work runs under task records like every other
 // entry. The registry is opened once, on its own connection to the same
@@ -104,7 +109,7 @@ function readProjectPolicy(projectRoot: string): ProjectPolicy {
   // left while the cache check compares "default" to "default" and passes.
   const domainName = resolveActiveDomain().name;
   const tomlPath = domainTomlPath(projectRoot, domainName);
-  const cachePath = join(projectRoot, ".anysearch-cli", "policy.json");
+  const cachePath = ansProjectPolicyPath(projectRoot);
   if (existsSync(tomlPath)) {
     try {
       return { policy: loadPolicyFromToml(tomlPath), tomlPath, cachePath, domainName, sources: domainSourceVersions(tomlPath), tomlExists: true };

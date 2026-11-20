@@ -1,6 +1,6 @@
 // session_id persistence layer.
 //
-// The .anysearch-cli/session file is the single source of truth for the
+// The .ans/session file is the single source of truth for the
 // session_id grouping anchor (mirrors systemd machine-id: generate once,
 // atomic write-back, user-scoped base directory). Precedence:
 //
@@ -16,21 +16,20 @@
 // Precedent: systemd machine-id(5), K8s Lease/leader election, OPA decision log.
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { ansSessionPath } from "./ans-paths.js";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 
-// User-scoped base directory; ~/.anysearch-cli on POSIX, %USERPROFILE%/.anysearch-cli
-// on Windows. Mirrors packages/kernel/composition.ts resolveDbPath convention.
+// User-scoped base directory; ~/.ans on POSIX, %USERPROFILE%/.ans on Windows.
 // The session file lives at <userBase>/session (no extension) so its presence
 // is enough signal that the user has at least one persisted session.
-export function sessionIdBaseDir(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.USERPROFILE || env.HOME || ".";
-  return join(home, ".anysearch-cli");
+export function sessionIdPath(env: NodeJS.ProcessEnv = process.env): string {
+  return ansSessionPath(env);
 }
 
-export function sessionIdPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(sessionIdBaseDir(env), "session");
+export function sessionIdBaseDir(env: NodeJS.ProcessEnv = process.env): string {
+  return dirname(sessionIdPath(env));
 }
 
 // Stable 32-hex session_id (same length shape as trace_id; chosen for parity

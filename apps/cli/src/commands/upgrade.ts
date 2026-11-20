@@ -40,7 +40,8 @@ Options:
   --dry-run           prune 只报会删几行，不真删
   --reason <text>     dismiss 必填：为什么这条行不再当作阻塞
   --json              机器可读输出
-  --db <path>         持久库路径（默认 ANS_DB_PATH 或 ~/.anysearch/anysearch.db）
+  --db <path>         持久库路径（默认 ANS_DB_PATH，否则 ~/.ans/anysearch.db；
+                      旧布局的库还在时会沿用那个位置）
   --help, -h          显示这段说明
 
 说明：本命令只做预检和等待，不替换程序文件、不下载包、不报告"更新已完成"。

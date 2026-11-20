@@ -79,6 +79,7 @@ import {
   linkSync,
   openSync,
   readFileSync,
+  readdirSync,
   readSync,
   renameSync,
   rmSync,
@@ -86,6 +87,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
 
@@ -251,8 +253,9 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     // --- snapshot the original via SQLite's own backup path ---
     tmpPath = backupFile + tmpSuffix() + ".tmp";
     withInitBusyRetry("pre-migration backup", () => {
-      // A previous failed attempt inside the retry loop leaves the target
-      // behind and "VACUUM INTO" refuses to overwrite it — clear first.
+      // A previous attempt inside the retry loop can leave its output behind
+      // (a process killed mid-vacuum leaves a file SQLite never cleaned), and
+      // "VACUUM INTO" refuses to overwrite an existing file — clear first.
       try { rmSync(tmpPath, { force: true }); } catch { /* nothing to clear */ }
       // The snapshot file is born with SQLite's default mode (0666&~umask) —
       // readable by others for the whole vacuum. Tighten the umask around it
@@ -447,6 +450,146 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
     throw new Error(
       "建立恢复存档点失败：" + detail +
       "。没有恢复依据就不删数据；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间。",
+      { cause: error },
+    );
+  } finally {
+    if (db) {
+      try { endInit(db); } catch { /* already ended */ }
+      try { db.close(); } catch { /* already closed */ }
+    }
+  }
+}
+
+/** Whether `path` holds a database whose pages SQLite can read all the way through. */
+export function opensAsDatabase(path: string): boolean {
+  let db: Database.Database | undefined;
+  try {
+    db = openDatabase(path, { readonly: true, timeout: 1000 });
+    // `schema_version` lives in the header, so reading it only proves the open
+    // succeeded. A VACUUM killed mid-write leaves a header with missing pages
+    // behind, and that file must not be adopted as somebody's finished copy.
+    const result = db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined;
+    return Object.values(result ?? {})[0] === "ok";
+  } catch {
+    return false;
+  } finally {
+    try { db?.close(); } catch { /* already closed */ }
+  }
+}
+
+/**
+ * Moves a file we could not read out of the way, and keeps it.
+ *
+ * "Cannot open" is not the same as "corrupt": the file may be locked by another
+ * process, sit behind a permission problem, or be mid-publish by a second `ans`.
+ * Deleting any of those destroys data nobody examined, so the file is renamed
+ * aside and named in the message instead.
+ */
+/** The files a live SQLite connection keeps beside the main one. */
+export const SQLITE_SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
+
+export function setAsideUnreadable(path: string): string {
+  const aside = path + ".unreadable-" + Date.now();
+  renameSync(path, aside);
+  // The log files belong to this database. Left behind, they would pair the copy
+  // that gets published next with another generation's `-wal`, which is the
+  // corruption this module exists to avoid.
+  for (const suffix of SQLITE_SIDECAR_SUFFIXES) {
+    try { renameSync(path + suffix, aside + suffix); } catch { /* not there */ }
+  }
+  return aside;
+}
+
+/**
+ * Drop work files a killed run left next to `target`.
+ *
+ * Every run names its own staging file, so nothing else clears them and an
+ * interrupted copy leaves a whole file's (or directory's) worth of bytes behind.
+ * `suffix` is the caller's own marker: `.adopting` here, `.copying` for the
+ * cross-volume directory move. Only files old enough that no live run can still
+ * be writing them are removed.
+ */
+export function sweepStaleWorkFiles(target: string, suffix: string): void {
+  const dir = dirname(target);
+  const prefix = basename(target) + ".";
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
+    const file = join(dir, name);
+    try {
+      if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
+    } catch { /* leave it */ }
+  }
+}
+
+/**
+ * #323: publish a consistent copy of `from` at `to` for the directory rename.
+ *
+ * Same mechanism as the pre-migration snapshot (`VACUUM INTO`, never a file
+ * copy): the source may be a live WAL database held open by a running server,
+ * and a plain copy would miss committed pages still in `-wal`. The source is
+ * left untouched — the rename keeps the old file as the pre-upgrade copy, and
+ * deleting it is the operator's call, not this function's.
+ *
+ * Publish is a temp file plus a rename, and it tolerates losing the race: two
+ * `ans` processes cold-starting at once both vacuum the same source, and either
+ * copy is the answer. Nothing here holds a cross-process lock, and the comment
+ * says so rather than implying protection that does not exist — the source's
+ * busy timeout only paces them.
+ *
+ * @throws when no copy can be produced. The caller must not treat the new
+ *   directory as authoritative in that case; the old database stays in use.
+ */
+export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
+  if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
+  sweepStaleWorkFiles(to, ".adopting");
+  if (existsSync(to)) {
+    if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
+    setAsideUnreadable(to);
+  }
+  // A name of this call's own: a stray leftover from a killed run can never be
+  // mistaken for a published copy, and two processes cannot collide on it.
+  const work = to + "." + process.pid + ".adopting";
+  let db: Database.Database | undefined;
+  try {
+    const conn = openDatabase(from, { timeout: 5000 });
+    db = conn;
+    const initDeadline = beginInit(conn);
+    const prevUmask = process.umask(0o077);
+    try {
+      try { rmSync(work, { force: true }); } catch { /* nothing to clear */ }
+      withInitBusyRetry("layout adoption", () => {
+        conn.prepare("VACUUM INTO ?").run(work);
+      }, initDeadline);
+    } finally {
+      process.umask(prevUmask);
+    }
+    endInit(conn);
+    try {
+      renameSync(work, to);
+    } catch (error) {
+      // On Windows a rename cannot replace an existing file, which here means
+      // another process published first. Its copy is the result: both were
+      // vacuumed from the same source.
+      if (existsSync(to) && opensAsDatabase(to)) {
+        try { rmSync(work, { force: true }); } catch { /* best effort */ }
+        return { bytes: statSync(to).size, sha256: sha256File(to) };
+      }
+      throw error;
+    }
+    try { chmodSync(to, 0o600); } catch { /* best-effort (Windows ACL path) */ }
+    return { bytes: statSync(to).size, sha256: sha256File(to) };
+  } catch (error) {
+    // Only this call's own temp file: a copy another process published is its
+    // result, and deleting it would destroy the recovery point this module
+    // promises.
+    try { rmSync(work, { force: true }); } catch { /* best effort */ }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      "把 " + from + " 复制到 " + to + " 失败：" + detail +
+      "。旧库原样保留，本次继续用旧库；检查 " + dirname(to) + " 的写权限和磁盘空间后重试。",
       { cause: error },
     );
   } finally {

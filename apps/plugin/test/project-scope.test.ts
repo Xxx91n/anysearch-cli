@@ -124,8 +124,8 @@ test("project index: dedupe and purge stay inside one project", () => {
 test("project identity: the hook copy matches the store resolver", () => {
   const gitProject = project("drift-git");
   const configured = mkdtempSync(join(tmpdir(), "ans-scope-drift-config-"));
-  mkdirSync(join(configured, ".anysearch"), { recursive: true });
-  writeFileSync(join(configured, ".anysearch", "config.toml"), "", "utf8");
+  mkdirSync(join(configured, ".ans"), { recursive: true });
+  writeFileSync(join(configured, ".ans", "config.toml"), "", "utf8");
   const plain = mkdtempSync(join(tmpdir(), "ans-scope-drift-plain-"));
   const nested = join(gitProject, "src", "deep");
   mkdirSync(nested, { recursive: true });
@@ -139,6 +139,28 @@ test("project identity: the hook copy matches the store resolver", () => {
     }
     assert.equal(resolveHookProject(nested).root, realpathSync(gitProject), "a nested directory resolves to the project root");
     assert.equal(resolveHookProject(plain).root, null, "a plain directory has no project identity");
+
+    // The user root holds `~/.ans/config.toml` as soon as `ans llm set` ran. That
+    // is the user's own settings, not a project marker, and both resolvers have to
+    // agree on it, or hook attribution lands in the home directory.
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "ans-scope-drift-home-")));
+    const underHome = join(home, "scratch", "deep");
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "config.toml"), "", "utf8");
+    mkdirSync(underHome, { recursive: true });
+    const saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+    process.env.USERPROFILE = home;
+    process.env.HOME = home;
+    try {
+      assert.equal(resolveHookProject(underHome).root, null, "the hook does not take the home directory as a project");
+      assert.equal(resolveProjectContext(underHome).root, null, "the store does not either");
+    } finally {
+      process.env.USERPROFILE = saved.USERPROFILE;
+      process.env.HOME = saved.HOME;
+      if (saved.USERPROFILE === undefined) delete process.env.USERPROFILE;
+      if (saved.HOME === undefined) delete process.env.HOME;
+      rmSync(home, { recursive: true, force: true });
+    }
   } finally {
     for (const dir of [gitProject, configured, plain]) rmSync(dir, { recursive: true, force: true });
   }
@@ -288,8 +310,8 @@ test("plugin server: recall, index and policy require the explicit project", asy
     assert.equal(policyNoProject.status, 400, "a policy answer needs the project it belongs to");
 
     // Each project keeps its own materialized cache; neither borrows the other.
-    const cacheA = JSON.parse(readFileSync(join(a, ".anysearch-cli", "policy.json"), "utf8")) as { allow: string[] };
-    const cacheB = JSON.parse(readFileSync(join(b, ".anysearch-cli", "policy.json"), "utf8")) as { allow: string[] };
+    const cacheA = JSON.parse(readFileSync(join(a, ".ans", "policy.json"), "utf8")) as { allow: string[] };
+    const cacheB = JSON.parse(readFileSync(join(b, ".ans", "policy.json"), "utf8")) as { allow: string[] };
     assert.deepEqual(cacheA.allow, ["a.example"]);
     assert.deepEqual(cacheB.allow, ["b.example"]);
 

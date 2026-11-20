@@ -7,6 +7,7 @@ import { buildServer, createDefaultEngine } from "./server.js";
 import { createHttpApp } from "./http.js";
 import { createMcpToolState } from "./tool-state.js";
 import { markHttpTransport } from "./transport-mode.js";
+import { ensureAnsLayoutOrExit, resolveConfigHome } from "@anysearch-cli/store";
 
 // The /health version banner moved with the HTTP wiring into http.ts (#112),
 // so this entry no longer needs the __PACKAGE_VERSION__ substitution.
@@ -31,6 +32,11 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 async function main() {
+  // Move the old directories into ~/.ans before the first read. An HTTP server
+  // serves several workspaces and its startup directory is nobody's project
+  // (see transport-mode.ts), so it passes the user root and the project pass
+  // skips itself.
+  ensureAnsLayoutOrExit("ans-mcp", process.env, transport === "http" ? resolveConfigHome() : process.cwd());
   // #210: one process-level tool state for either transport. stdio already had
   // process-level behavior through its single long-lived server; HTTP now gets
   // the same scope even though it builds a fresh server per request.

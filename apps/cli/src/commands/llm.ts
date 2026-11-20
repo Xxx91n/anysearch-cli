@@ -1,6 +1,6 @@
 // ans llm: configure LLM providers (via @earendil-works/pi-ai).
 // List / set / check LLM providers.
-// #108: `set` persists to the layered TOML config (~/.anysearch-cli/config.toml);
+// #108: `set` persists to the layered TOML config (~/.ans/config.toml);
 // env still overrides the file; secrets stay out of that file.
 // #301: the key itself can now live in the user credential file (`ans auth set`),
 // which a GUI host without a shell env also reads. Resolution order for the key

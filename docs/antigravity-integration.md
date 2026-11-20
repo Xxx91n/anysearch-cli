@@ -67,13 +67,13 @@ MCP `ans_chat` session and memory behavior, see
 ans-plugin-server     # 127.0.0.1:33333 by default, Bearer token auto-generated
 ```
 
-The server writes one 0600 token to `~/.anysearch-cli/server-token`
+The server writes one 0600 token to `~/.ans/server-token`
 (`%USERPROFILE%` on Windows) and publishes the address it bound in
-`~/.anysearch-cli/server.json`; hooks read both, so one server serves every
+`~/.ans/server.json`; hooks read both, so one server serves every
 project. It serves `/recall`, `/index`, `/purge`, and `/policy`, and every
 project-scoped request names its project (the workspace's Git root or
-`.anysearch/config.toml`). The hook-side policy fallback is
-`.anysearch-cli/policy.json` inside that project.
+`.ans/config.toml`). The hook-side policy fallback is
+`.ans/policy.json` inside that project.
 
 ## 4. MCP tools — `call_mcp_tool` umbrella dispatch
 

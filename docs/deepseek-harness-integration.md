@@ -112,9 +112,9 @@ rather than a dangling id.
 Server endpoints used: `GET /policy?project=<root>`, `POST /recall`, and
 `POST /index` on the published address (`ANS_SERVER_URL` overrides it; the
 default is `http://127.0.0.1:33333`). They use the shared
-`ANS_SERVER_TOKEN` / `~/.anysearch-cli/server-token` credential and pass
+`ANS_SERVER_TOKEN` / `~/.ans/server-token` credential and pass
 `traceparent` plus `x-anysearch-session-id`. Every project-scoped request
-names the project (a Git root or `.anysearch/config.toml`); without one the
+names the project (a Git root or `.ans/config.toml`); without one the
 hook reports the capability as unavailable. Tool execution posts MCP
 JSON-RPC to `POST {ANS_MCP_URL}/mcp` (default `http://127.0.0.1:3001`; serve
 it with `ans mcp --transport http`). When set, `ANS_MCP_KEY` supplies the

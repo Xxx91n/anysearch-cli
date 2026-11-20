@@ -2,8 +2,10 @@
 // scripts/verify-access-events.mjs
 // independent verifier for the access_events tamper-evidence chain.
 // Deliberately re-implements the canonicalization from scratch ( _Avoid_ 3: no shared
-// serialization code with the writer). Node stdlib + better-sqlite3 only (resolved through the
-// store package because pnpm does not hoist it to the root).
+// serialization code with the writer). Path resolution is borrowed from ./ans-home.mjs so the
+// verifier reads the same database the product writes; the serialization stays independent.
+// Node stdlib + better-sqlite3 only (resolved through the store package because pnpm does not
+// hoist it to the root).
 //
 // Spec (verbatim from):
 // chain fields = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
@@ -23,6 +25,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { ansDbPath } from "./ans-home.mjs";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "packages", "store", "package.json"));
@@ -59,7 +62,7 @@ function main() {
   const flagIdx = process.argv.indexOf("--db");
   const flagValue = flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined;
   if (flagIdx !== -1 && (!flagValue || flagValue.startsWith("--"))) fail("usage: --db <path> (flag present but value missing) — fail-closed, refusing silent fallback");
-  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? ansDbPath();
   const t0 = performance.now();
   if (!fs.existsSync(dbPath)) {
     process.stdout.write(JSON.stringify({ verdict: "NO_DATABASE", dbPath }) + "\n");

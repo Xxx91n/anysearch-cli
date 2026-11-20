@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./local-service": "./src/local-service.ts"
+    "./local-service": "./src/local-service.ts",
+    "./paths": "./src/ans-paths.ts"
   },
   "scripts": {
     "test": "node --import tsx --import ./test/helpers/exit-teardown.mjs --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-concurrency=1 --test-timeout=30000",

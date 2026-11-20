@@ -3,8 +3,8 @@
 // independent MCP and an MCP launched by the CLI read the same user/project
 // files through the same rules. Layers per key, high → low:
 //   flag > env > project > user > default
-//   user    ~/.anysearch-cli/config.toml   [llm] section
-//   project .anysearch/config.toml         [llm] section, safety whitelist only
+//   user    ~/.ans/config.toml             [llm] section
+//   project .ans/config.toml               [llm] section, safety whitelist only
 // Model config files never hold a secret VALUE: they store an `env_key`
 // indirection naming the env var that holds the key; plaintext secret keys in
 // either file are ignored with a warning. Project files are further restricted
@@ -20,8 +20,9 @@
 // so callers can say where a value came from instead of guessing.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   lookupModelCredential,
   displayEndpoint,
@@ -30,7 +31,6 @@ import {
   providerForEnvKey,
   readUserCredentials,
   resolveConfigHome,
-  userCredentialsPath,
 } from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
@@ -111,11 +111,11 @@ export interface ResolveLlmOpts {
 // "one root" rule hold at the type level too: a caller that omits `home` writes
 // to the same file the resolver reads, on any host.
 export function userConfigPath(home: string = resolveConfigHome()): string {
-  return join(home, ".anysearch-cli", "config.toml");
+  return ansUserConfigPathFor(home);
 }
 
 export function projectConfigPath(cwd: string = process.cwd()): string {
-  return join(cwd, ".anysearch", "config.toml");
+  return ansProjectConfigPath(cwd);
 }
 
 // Parse the [llm] section of a config.toml, applying the level's key policy.
@@ -366,7 +366,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     }
 
     if (!resolved.apiKey && opts.credentials !== false) {
-      const credsPath = userCredentialsPath(home);
+      const credsPath = ansCredentialsPathFor(home);
       const file = readUserCredentials({ filePath: credsPath });
       if (file.error) {
         // A broken credential file must be visible, never treated as "no keys"
@@ -478,7 +478,7 @@ export function writeUserLlmConfig(
   }
   if (patch.model !== undefined) llm["model"] = patch.model;
   root["llm"] = llm;
-  mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true });
   // SECURITY: owner-only permissions, same convention as config.env (CWE-312).
   writeFileSync(path, tomlStringify(root), { encoding: "utf8", mode: 0o600 });
   return path;

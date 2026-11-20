@@ -1,5 +1,6 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ANS_DIR_NAME, ansHomeDir, ansProjectConfigPath, samePath } from "./ans-paths.js";
 
 export type ProjectContext =
   | { root: string; source: "git" | "config" }
@@ -13,19 +14,28 @@ export function resolveProjectContext(cwd: string = process.cwd()): ProjectConte
     for (;;) {
       // Design: accept a worktree's .git file as well as a directory — Git
       // worktrees use files. Resolve symlinks first so aliases share an identity.
-      for (const [marker, source] of [[".git", "git"], [join(".anysearch", "config.toml"), "config"]] as const) {
+      try {
+        const git = statSync(join(root, ".git"));
+        if (git.isDirectory() || git.isFile()) return { root, source: "git" };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+      }
+      // Skip the user root: there, `.ans/config.toml` is the user's own `[llm]`
+      // settings rather than a project marker. Without this, the walk up from any
+      // unrooted directory ends at the home directory and calls it that
+      // directory's project.
+      if (!samePath(join(root, ANS_DIR_NAME), ansHomeDir())) {
         try {
-          const entry = statSync(join(root, marker));
-          if (source === "git" ? entry.isDirectory() || entry.isFile() : entry.isFile()) return { root, source };
-        } catch (error: any) {
-          if (error?.code !== "ENOENT") throw error;
+          if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
         }
       }
       const parent = dirname(root);
       if (parent === root) break;
       root = parent;
     }
-    return { root: null, source: "unknown", reason: "No Git root or .anysearch/config.toml found." };
+    return { root: null, source: "unknown", reason: "No Git root or .ans/config.toml found." };
   } catch {
     return { root: null, source: "unknown", reason: "The project directory could not be read." };
   }

@@ -99,9 +99,9 @@ test("a stored key with no environment authenticates the REAL model client", asy
     // A GUI host has no shell env, but it does have the user config file that
     // `ans llm set` wrote. That is the whole point: config + key both live where
     // the host can read them without an exported variable.
-    mkdirSync(join(home, ".anysearch-cli"), { recursive: true });
+    mkdirSync(join(home, ".ans"), { recursive: true });
     writeFileSync(
-      join(home, ".anysearch-cli", "config.toml"),
+      join(home, ".ans", "config.toml"),
       '[llm]\nprovider = "openai"\nmodel = "probe-model"\nbase_url = "' + endpoint + '"\napi = "chat"\n',
       "utf8",
     );
@@ -391,7 +391,7 @@ test("a permission fault on a parse-shaped message is not advice to delete the f
     domainsDirs: [],
     env: {},
     searchCredentials: () => {
-      throw new Error("/home/me/.anysearch-cli/credentials.json: not valid JSON (line 1 column 2): EACCES");
+      throw new Error("/home/me/.ans/credentials.json: not valid JSON (line 1 column 2): EACCES");
     },
   });
   try {
@@ -484,10 +484,10 @@ test("a path survives, because the message exists to name the file", () => {
   // case here was eaten by an earlier version.
   const mustSurvive = [
     "/srv/api-gateway-service/v2/credentials.json: EACCES",
-    "/Users/me/dev/api-service/v2/.anysearch-cli/credentials.json: not valid JSON",
+    "/Users/me/dev/api-service/v2/.ans/credentials.json: not valid JSON",
     "/home/me/workspace/attributiongoldrevisions/credentials.json: EACCES",
-    "/home/me/.anysearch-cli/config.toml: not valid JSON",
-    "C:\\Users\\me\\.anysearch-cli\\credentials.json: EACCES",
+    "/home/me/.ans/config.toml: not valid JSON",
+    "C:\\Users\\me\\.ans\\credentials.json: EACCES",
   ];
   for (const input of mustSurvive) {
     assert.equal(redactPathFault(input), input, "path must stay readable: " + input);

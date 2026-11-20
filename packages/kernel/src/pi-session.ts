@@ -6,17 +6,23 @@
 import { basename, dirname, join } from "node:path";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
-import { resolveDbPath } from "./composition";
+import { ansPiSessionsDir, explicitDbPath } from "@anysearch-cli/store";
 import type { SessionLockWindows } from "./session-lock";
 
 /**
- * Directory for PI's append-only JSONL session records. Defaults to a
- * `pi-sessions/` folder next to the durable DB; `ANS_PI_SESSION_DIR` overrides.
+ * Directory for PI's append-only JSONL session records. Defaults to
+ * `pi-sessions/` under the layout root, next to the durable DB only when one was
+ * named explicitly (`ANS_DB_PATH`); `ANS_PI_SESSION_DIR` overrides both.
  */
 export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.ANS_PI_SESSION_DIR?.trim();
   if (override) return override;
-  return join(dirname(resolveDbPath(env)), "pi-sessions");
+  // An explicit database path keeps its records beside it; otherwise the
+  // records live under the layout root, which is what lets them survive a
+  // migration that moved the directory but not the database.
+  const explicitDb = explicitDbPath(env);
+  if (explicitDb) return join(dirname(explicitDb), "pi-sessions");
+  return ansPiSessionsDir(env);
 }
 
 // Design: read PI's bounded JSONL headers — listAll reads every transcript

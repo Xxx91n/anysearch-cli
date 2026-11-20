@@ -647,8 +647,8 @@ async function t(name: string, fn: () => Promise<void>) {
       git(["add", "SKILL.md"]);
       git(["commit", "--quiet", "-m", "skill"]);
       git(["tag", "v1.0.0"]);
-      fs.mkdirSync(path.join(cwd, "domains"));
-      const domainPath = path.join(cwd, "domains", "research.toml");
+      fs.mkdirSync(path.join(cwd, ".ans", "domains"), { recursive: true });
+      const domainPath = path.join(cwd, ".ans", "domains", "research.toml");
       const domain = '[skills]\nactive = ["existing"]\n';
       fs.writeFileSync(domainPath, domain);
       const env = { ...process.env, HOME: home, USERPROFILE: home };
@@ -661,18 +661,19 @@ async function t(name: string, fn: () => Promise<void>) {
       const listed = await run(["skill", "list", "--project"], env, cwd);
       assert.equal(listed.code, 0, listed.out);
       assert.match(listed.out, /e2e-skill.*v1\.0\.0/);
-      const manifestPath = path.join(cwd, ".anysearch", "skills", "synced", "installed.json");
+      const manifestPath = path.join(cwd, ".ans", "skills", "synced", "installed.json");
       fs.writeFileSync(manifestPath, "{broken");
       const refused = await run(["skill", "uninstall", "e2e-skill", "--project"], env, cwd);
       assert.equal(refused.code, 1, refused.out);
-      assert.ok(fs.existsSync(path.join(cwd, ".anysearch", "skills", "synced", "e2e-skill", "SKILL.md")));
+      assert.ok(fs.existsSync(path.join(cwd, ".ans", "skills", "synced", "e2e-skill", "SKILL.md")));
       fs.writeFileSync(manifestPath, JSON.stringify({ version: 1, skills: {
         "e2e-skill": { name: "e2e-skill", source, commit: git(["rev-parse", "HEAD"]), tag: "v1.0.0", dirty: false },
       } }));
       const removed = await run(["skill", "uninstall", "e2e-skill", "--project"], env, cwd);
       assert.equal(removed.code, 0, removed.out);
-      assert.equal(fs.existsSync(path.join(cwd, ".anysearch", "skills", "synced", "e2e-skill")), false);
+      assert.equal(fs.existsSync(path.join(cwd, ".ans", "skills", "synced", "e2e-skill")), false);
       assert.equal(fs.readFileSync(domainPath, "utf8"), domain);
+      assert.equal(fs.existsSync(path.join(cwd, "domains")), false, "the old project-level domains dir stays unused");
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }

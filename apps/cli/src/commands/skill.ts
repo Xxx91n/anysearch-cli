@@ -20,8 +20,8 @@ Commands:
   uninstall <name>   Remove only the directory recorded in installed.json
 
 Options:
-  --project          Use .anysearch/skills/synced/ (default: user scope)
-  --user             Use ~/.anysearch-cli/skills/synced/ explicitly
+  --project          Use .ans/skills/synced/ (default: user scope)
+  --user             Use ~/.ans/skills/synced/ explicitly
   --help, -h         Show this help
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.

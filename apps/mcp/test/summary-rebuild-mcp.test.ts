@@ -330,7 +330,7 @@ const roots: string[] = [];
 
 // #322: M5 is the only case that needs a real `fts` recall, whose vector arm
 // loads a local embedding model. Use ONLY a cache the operator explicitly points
-// at with ANYSEARCH_MODEL_CACHE. Never fall back to ~/.anysearch/models: probing
+// at with ANYSEARCH_MODEL_CACHE. Never fall back to ~/.ans/models: probing
 // the real home made "M5 ran or skipped" depend on whatever this machine happened
 // to have downloaded, and quietly borrowed operator data. With no explicit env
 // var, M5 is skipped loudly below — an honest skip, not a silent pass.
@@ -588,7 +588,7 @@ if (!MODEL_CACHE_AVAILABLE) {
   console.error(
     "[summary-rebuild-mcp] SKIP M5: no embedding model cache was explicitly provided via " +
     "ANYSEARCH_MODEL_CACHE — the fts RAG case needs one to run without a download, " +
-    "and the test no longer probes ~/.anysearch/models on the operator's machine. " +
+    "and the test no longer probes ~/.ans/models on the operator's machine. " +
     "The same behaviour is covered by R18 (store) and K17 (kernel).",
   );
 } else {

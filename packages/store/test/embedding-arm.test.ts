@@ -7,7 +7,7 @@
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, __setEmbeddingModuleForTest, __importEmbeddingFallbackForTest } from "../src/embedding-arm";
+import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, setEmbeddingWarn, __setEmbeddingModuleForTest, __importEmbeddingFallbackForTest, __withCacheDirForTest } from "../src/embedding-arm";
 import { SqliteSessionStore } from "../src/session-store";
 
 let passed = 0, failed = 0;
@@ -112,6 +112,27 @@ async function main() {
   const fb4 = await __importEmbeddingFallbackForTest([join(bwCli, "index.js")]);
   assert(fb4 === null || (fb4.EMBEDDING_MODEL_ID as string) !== "stub-e5",
     "broken-only layout stays absent — no throw (a real copy elsewhere is legal)");
+
+  // 6b. Cache-dir contract — a copy of the package old enough to lack the
+  // setter must report itself, not silently download models to its own default.
+  {
+    const said: string[] = [];
+    setEmbeddingWarn((m) => said.push(m));
+    const oldCopy = { embedText: async () => null } as never;
+    __withCacheDirForTest(oldCopy);
+    assert(said.length === 1 && said[0].includes("不支持指定缓存目录"),
+      "a copy without setModelCacheDir reports itself");
+
+    let handedOver = "";
+    const matching = {
+      embedText: async () => null,
+      setModelCacheDir: (dirIn: string) => { handedOver = dirIn; },
+    } as never;
+    __withCacheDirForTest(matching);
+    assert(handedOver.endsWith("models"), "a matching copy is handed the layout's model cache dir");
+    assert(said.length === 1, "a matching copy says nothing");
+    setEmbeddingWarn((m) => process.stderr.write(m));
+  }
 
   // 6. cosineSimilarity — inlined pure math, no package dependency.
   const a = new Float32Array([1, 0, 0]);

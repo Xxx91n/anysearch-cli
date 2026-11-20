@@ -45,7 +45,7 @@ export const PKG_VERSION: string =
 // Half-fixing it (refreshing the URL policy alone) would apply the domain
 // filter only partially, which is worse than the current state.
 export function createDefaultEngine(): CompositionResult {
-  // a cold HOME has no ~/.anysearch dir yet; tighten permissions before
+  // a cold HOME has no ~/.ans dir yet; tighten permissions before
   // better-sqlite3 opens it (CWE-732, same as apps/cli/src/db.ts).
   const dbPath = resolveDbPath();
   ensureOwnerOnlyDb(dbPath);

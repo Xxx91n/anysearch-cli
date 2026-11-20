@@ -16,18 +16,50 @@ import { createRequire } from "node:module";
 import { readdirSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ansModelCacheDir } from "./ans-paths.js";
 
 type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 
 let modPromise: Promise<EmbeddingModule | null> | undefined;
 let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModuleForTest)
 
+/** Where the load-time notices go; `setEmbeddingWarn` replaces it. */
+let warnSink: (message: string) => void = (message) => process.stderr.write(message);
+
+/** Replace the sink for load-time notices (a host that owns its logging). */
+export function setEmbeddingWarn(warn: (message: string) => void): void {
+  warnSink = warn;
+}
+
+/**
+ * Hand the embedding package the product's model cache directory.
+ *
+ * The directory is defined here rather than there: that package is a
+ * zero-dependency leaf and cannot import ans-paths, so a second literal would be
+ * a second answer to "where is the cache".
+ */
+function withCacheDir(m: EmbeddingModule): EmbeddingModule {
+  // `?.` would make this silently optional. `importEmbeddingFallback` can find a
+  // copy in another install tree, and an old copy without the setter would
+  // download models into its own default directory with `ans doctor` showing
+  // nothing wrong, so the mismatch is reported instead.
+  if (typeof m.setModelCacheDir !== "function") {
+    warnSink(
+      "[anysearch] 这个 embedding 副本不支持指定缓存目录，模型会下到它自己的默认位置" +
+      "（配了 ANYSEARCH_MODEL_CACHE 时按那个来）。装一个匹配的版本可以消掉这条。\n",
+    );
+    return m;
+  }
+  m.setModelCacheDir(ansModelCacheDir());
+  return m;
+}
+
 function loadEmbedding(): Promise<EmbeddingModule | null> {
   if (forced !== undefined) return Promise.resolve(forced);
   if (!modPromise) {
     modPromise = (async () => {
       try {
-        return await import("@anysearch-cli/embedding");
+        return withCacheDir(await import("@anysearch-cli/embedding"));
       } catch (e) {
         const code = (e as NodeJS.ErrnoException | undefined)?.code;
         // only a NOT-FOUND falls through to sibling-root
@@ -81,7 +113,7 @@ async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles(
   const tryImport = async (resolved: string | undefined): Promise<EmbeddingModule | null> => {
     if (!resolved) return null;
     try {
-      return (await import(pathToFileURL(resolved).href)) as EmbeddingModule;
+      return withCacheDir((await import(pathToFileURL(resolved).href)) as EmbeddingModule);
     } catch {
       return null;
     }
@@ -147,6 +179,11 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 export function __setEmbeddingModuleForTest(m: EmbeddingModule | null | "auto"): void {
   forced = m === "auto" ? undefined : m;
   modPromise = undefined;
+}
+
+// ponytail: test-only seam — run the cache-dir handoff against a stand-in module.
+export function __withCacheDirForTest(m: EmbeddingModule): EmbeddingModule {
+  return withCacheDir(m);
 }
 
 // ponytail: test-only seam — resolve the sibling-root fallback against explicit

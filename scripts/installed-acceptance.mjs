@@ -231,7 +231,7 @@ function latestUserMarker(body) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || m.role !== "user") continue;
-    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
+    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|LEGACY-FIRST-QUESTION|LEGACY-SECOND-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
@@ -611,7 +611,7 @@ async function main() {
     // ================= A. 装出来的 CLI =================
     //
     // 每条命令都把 HOME/USERPROFILE 和 ANS_DB_PATH 指进沙箱。doctor 会自己解析
-    // 持久库的路径并建目录，继承真实环境就会动到操作者自己的 ~/.anysearch。
+    // 持久库的路径并建目录，继承真实环境就会动到操作者自己的 ~/.ans。
     console.log("\n== A. CLI ==");
     const cliEnv = {
       ...process.env,
@@ -632,6 +632,11 @@ async function main() {
     const noScope = runAns(["consolidate"], { cwd: prefix, env: cliEnv });
     check(noScope.code === 2, "整理不带范围时退出码 2，不会去整理全库", noScope.out);
     check(/explicit scope is required/.test(noScope.out), "拒绝整理时说明了缺什么", noScope.out);
+
+    // #323: 全新环境只认 .ans。旧名字的目录一个都不该出现——出现了就说明还有
+    // 代码在按老路径写，用户升级后会同时看到两套目录。
+    const strayLegacy = [".anysearch", ".anysearch-cli"].filter((d) => existsSync(join(work, d)));
+    check(strayLegacy.length === 0, "全新环境没有产生 .anysearch / .anysearch-cli", strayLegacy.join(","));
 
     // ================= 假模型端点 =================
     await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
@@ -655,7 +660,7 @@ async function main() {
       ANS_DB_PATH: join(work, "anysearch.db"),
       ANS_PI_SESSION_DIR: join(work, "pi"),
       ANS_NO_INTERACTIVE: "1",
-      // HOME/USERPROFILE 指到沙箱，开发机自己的 ~/.anysearch-cli 不会混进来。
+      // HOME/USERPROFILE 指到沙箱，开发机自己的 ~/.ans 不会混进来。
       USERPROFILE: work,
       HOME: work,
     };
@@ -2049,7 +2054,7 @@ async function main() {
       // （POSIX 用只读目录；Windows 上目录权限语义不同，这条只在 POSIX 查。）
       if (process.platform !== "win32") {
         const tightHome = join(work, "tight-home");
-        const tightConfig = join(tightHome, ".anysearch-cli");
+        const tightConfig = join(tightHome, ".ans");
         mkdirSync(tightConfig, { recursive: true });
         chmodSync(tightConfig, 0o500);
         try {
@@ -2085,6 +2090,155 @@ async function main() {
       // 这里再整体裁一次，防止某条被跳过时漏掉。
       const everything = [entered, listed, credDoctor, removed].map((r) => r.out).join("\n");
       check(!everything.includes(credKey), "录入、列表、doctor、移除的输出里都没有密钥值");
+    }
+    // ================= H. 从旧目录升级：配置、token、领域选择都还在 =================
+    console.log("\n== H. upgrade from the pre-#323 directories: config, token and domain survive ==");
+    {
+      const legacyHome = join(work, "legacy-home");
+      mkdirSync(join(legacyHome, ".anysearch-cli"), { recursive: true });
+      mkdirSync(join(legacyHome, ".anysearch"), { recursive: true });
+      writeFileSync(join(legacyHome, ".anysearch-cli", "server-token"), "legacy-token-323\n", "utf8");
+      writeFileSync(join(legacyHome, ".anysearch-cli", "config.toml"), '[llm]\nprovider = "openai"\nmodel = "probe-model"\n', "utf8");
+      writeFileSync(join(legacyHome, ".anysearch", "config.env"), "ANS_DOMAIN=probe\n", "utf8");
+
+      // `ans domain` 不带参数：读持久选择、报当前领域，退出码 0。它不在只读豁免
+      // 名单里，所以这一次运行就是升级后的第一次运行，搬迁应该在这里发生。
+      const upgraded = runAns(["domain"], {
+        cwd: prefix,
+        env: { ...baseEnv, USERPROFILE: legacyHome, HOME: legacyHome, ANS_DB_PATH: join(legacyHome, "upgrade.db") },
+      });
+      check(upgraded.code === 0, "旧目录升级后 ans domain 退出码 0", upgraded.out);
+      check(/probe/.test(upgraded.out), "升级后仍然认得旧目录里记下的领域", upgraded.out.slice(0, 300));
+      check(existsSync(join(legacyHome, ".ans", "server-token")), "token 搬进了 .ans", legacyHome);
+      check(readFileSync(join(legacyHome, ".ans", "server-token"), "utf8").trim() === "legacy-token-323",
+        "token 的值一个字节都没变");
+      check(existsSync(join(legacyHome, ".ans", "config.toml")), "用户配置搬进了 .ans");
+      check(existsSync(join(legacyHome, ".ans", "config.env")), "领域选择搬进了 .ans");
+      check(!existsSync(join(legacyHome, ".anysearch-cli")), "旧的 .anysearch-cli 搬空后删掉了");
+      check(!existsSync(join(legacyHome, ".anysearch")), "旧的 .anysearch 搬空后删掉了");
+      check(existsSync(join(legacyHome, ".ans", ".layout.json")), "搬迁结果记在 .layout.json 里");
+    }
+
+    // ================= H2. 旧目录里的数据库：在线备份复制，不搬主文件 =================
+    console.log("\n== H2. a database in the old directory is snapshotted, not renamed ==");
+    {
+      // 数据库是唯一不能改名搬的东西：正在跑的插件服务可能开着它，把主文件从
+      // -wal 底下挪走就是损坏数据库的经典做法。所以这里验的是「复制一份、旧
+      // 文件留着当副本」，而不是「搬走了」。
+      const dbHome = join(work, "legacy-db-home");
+      const legacyDb = join(dbHome, ".anysearch", "anysearch.db");
+      mkdirSync(join(dbHome, ".anysearch"), { recursive: true });
+      const warm = runAns(["consolidate", "--session", "legacy-warm"], {
+        cwd: prefix,
+        env: { ...baseEnv, USERPROFILE: dbHome, HOME: dbHome, ANS_DB_PATH: legacyDb, ANS_DOMAIN: "probe" },
+      });
+      check(warm.code === 0, "旧目录里的库能建起来", warm.out.slice(0, 400));
+      {
+        const db = new Database(legacyDb);
+        try {
+          db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run("legacy-session", "probe");
+          db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source) VALUES (?,?,?,?,?)")
+            .run("legacy-session", "https://legacy.example/y", "LEGACY-ROW-TITLE", "LEGACY-ROW-SNIPPET", "exa");
+        } finally { db.close(); }
+      }
+
+      // 不带 ANS_DB_PATH：让产品自己按布局找库，这样搬迁才会碰到它。
+      const { ANS_DB_PATH: _dropDb, ANS_PI_SESSION_DIR: _dropPi, ...noExplicitPaths } = baseEnv;
+      const moved = runAns(["domain"], {
+        cwd: prefix,
+        env: { ...noExplicitPaths, USERPROFILE: dbHome, HOME: dbHome, ANS_DOMAIN: "probe" },
+      });
+      check(moved.code === 0, "旧目录里的库在场时 ans domain 退出码 0", moved.out.slice(0, 400));
+
+      const newDb = join(dbHome, ".ans", "anysearch.db");
+      check(existsSync(newDb), "库被复制进了 .ans", newDb);
+      if (existsSync(newDb)) {
+        const db = new Database(newDb, { readonly: true });
+        try {
+          const row = db.prepare("SELECT title FROM retrieval_results WHERE title = ?").get("LEGACY-ROW-TITLE");
+          check(Boolean(row), "复制出来的库里旧数据还在");
+        } finally { db.close(); }
+      }
+      check(existsSync(legacyDb), "旧库文件原地留着，当作升级前的副本", legacyDb);
+      const layout = JSON.parse(readFileSync(join(dbHome, ".ans", ".layout.json"), "utf8"));
+      check(layout.moved.some((m) => m.how === "snapshot" && /anysearch\.db$/.test(m.from)),
+        "搬迁记录把这条标成 snapshot（在线备份），不是改名");
+      check(layout.pending.length === 0, "没有留下没搬成的条目");
+    }
+
+    // ================= H3. 升级前开始的对话，升级后能接着聊 =================
+    console.log("\n== H3. a conversation started before the upgrade continues after it ==");
+    {
+      // 验收单上写的是「历史会话仍能续聊」。H2 只证明库里的行还在；这一段真的
+      // 用旧库开一段对话，升级以后再问一句，看上游请求里有没有上一轮的内容。
+      const resumeHome = join(work, "legacy-chat-home");
+      const legacyDb = join(resumeHome, ".anysearch", "anysearch.db");
+      mkdirSync(join(resumeHome, ".anysearch"), { recursive: true });
+      const chatProject = join(work, "legacy-chat-project");
+      mkdirSync(join(chatProject, ".git"), { recursive: true });
+      const { ANS_PI_SESSION_DIR: _dropPi, ...chatEnv } = baseEnv;
+      const beforeUpgrade = {
+        ...chatEnv,
+        USERPROFILE: resumeHome,
+        HOME: resumeHome,
+        ANS_DB_PATH: legacyDb,
+        ANS_DOMAIN: "probe",
+      };
+
+      const firstTurn = await runAnsAsync(["chat", "LEGACY-FIRST-QUESTION"], { cwd: chatProject, env: beforeUpgrade });
+      check(firstTurn.code === 0 && firstTurn.out.includes("REPLY-TO-LEGACY-FIRST-QUESTION"),
+        "升级前那一轮能跑完并落库", firstTurn.out.slice(0, 400));
+      const legacySession = firstTurn.out.match(/\[session\] (\S+)/)?.[1];
+      check(Boolean(legacySession), "升级前的会话有句柄", firstTurn.out.slice(0, 300));
+
+      // 不带 ANS_DB_PATH：让产品按布局自己找库，搬迁才会碰到这一段对话。
+      const { ANS_DB_PATH: _dropDb, ...layoutPicked } = chatEnv;
+      const upgraded = runAns(["domain"], {
+        cwd: chatProject,
+        env: { ...layoutPicked, USERPROFILE: resumeHome, HOME: resumeHome, ANS_DOMAIN: "probe" },
+      });
+      check(upgraded.code === 0, "会话库在场时升级运行退出码 0", upgraded.out.slice(0, 400));
+
+      const legacyStamp = existsSync(legacyDb) ? statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs : "";
+      const beforeSecond = requestLog.length;
+      const secondTurn = await runAnsAsync(["chat", "--continue", "LEGACY-SECOND-QUESTION"], {
+        cwd: chatProject,
+        env: { ...layoutPicked, USERPROFILE: resumeHome, HOME: resumeHome, ANS_DOMAIN: "probe" },
+      });
+      check(secondTurn.code === 0 && secondTurn.out.includes("REPLY-TO-LEGACY-SECOND-QUESTION"),
+        "升级后能接着同一条会话问下一句", secondTurn.out.slice(0, 400));
+      const resumedBody = requestLog.slice(beforeSecond).filter((r) => r.role === "chat").pop()?.body ?? "";
+      let resumedMessages = [];
+      try { resumedMessages = JSON.parse(resumedBody)?.messages ?? []; } catch { /* not JSON */ }
+      check(resumedMessages.some((m) => m.role === "user" && messageText(m).includes("LEGACY-FIRST-QUESTION")),
+        "续聊的上游请求里带着升级前那一轮的问题", resumedBody.slice(0, 300));
+      // 文件存在只说明搬迁做过，说明不了第二轮读的是哪个库。查第二轮那句话落在
+      // 哪份库里，再确认旧库一个字节都没动。
+      // 搬迁失败时这里要给出结论，而不是甩一段 stack 把前面的计数全吃掉。但结论
+      // 只能是这条断言自己的结论：「拿不到句柄」是上面那条的账，在这里再报一次
+      // 会把人指向错误的库。
+      if (!legacySession) {
+        check(false, "续聊那一轮写进了搬到 .ans 的库", "拿不到升级前的会话句柄，判断不了这一轮落在哪个库");
+      } else {
+        let rows;
+        try {
+          const db = new Database(join(resumeHome, ".ans", "anysearch.db"), { readonly: true });
+          try {
+            rows = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND content LIKE ?")
+              .get(legacySession, "%LEGACY-SECOND-QUESTION%");
+          } finally { db.close(); }
+        } catch { /* 开不了库，按没查到处理，detail 里说明 */ }
+        check((rows?.n ?? 0) > 0, "续聊那一轮写进了搬到 .ans 的库",
+          rows ? "" : "打不开 " + join(resumeHome, ".ans", "anysearch.db"));
+      }
+      let legacyUntouched = false;
+      if (legacyStamp !== "") {
+        try {
+          legacyUntouched = existsSync(legacyDb) &&
+            statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs === legacyStamp;
+        } catch { /* 旧库不在了：自然不算「没写回」 */ }
+      }
+      check(legacyUntouched, "续聊没有写回旧库");
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

@@ -2,9 +2,9 @@
 // The script re-enters under workspace-local tsx for extensionless TS imports.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ansAttributionRoot } from "./ans-home.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -31,11 +31,11 @@ async function run() {
   if (!/^[a-z][a-z0-9-]*$/.test(line)) fail(2, "--line must be a slug");
   const rootEnv = line === "attribution-gold" ? "ANS_ATTRIBUTION_GOLD_REVISION_ROOT" : "ANS_CALIBRATION_REVISION_ROOT";
   // audit: the attribution-gold default mirrors the packaged runtime
-  // (~/.anysearch/attribution-gold-revisions), not the repo, so writers and
+  // (~/.ans/attribution-gold-revisions), not the repo, so writers and
   // the CLI/MCP reader agree without an env override.
   const defaultRoot =
     line === "attribution-gold"
-      ? path.join(os.homedir(), ".anysearch", "attribution-gold-revisions")
+      ? ansAttributionRoot()
       : path.join(root, "packages", "store", "calibration-revisions");
   const revisionRoot = process.env[rootEnv]
     ? path.resolve(process.env[rootEnv])

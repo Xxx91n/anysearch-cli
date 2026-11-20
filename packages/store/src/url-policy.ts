@@ -8,6 +8,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ansProjectDomainsDir } from "./ans-paths.js";
 import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
 import { isDomainNotFoundError } from "./domain-schema";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
@@ -119,7 +120,7 @@ export function domainTomlPath(
     const envPath = join(envDir, name + ".toml");
     if (existsSync(envPath)) return envPath;
   }
-  const primary = join(cwd, "domains", name + ".toml");
+  const primary = join(ansProjectDomainsDir(cwd), name + ".toml");
   if (existsSync(primary)) return primary;
   for (const dir of extraDomainsDirs) {
     const candidate = join(dir, name + ".toml");
@@ -165,7 +166,7 @@ function defaultChainDirs(tomlPath: string): string[] {
   const envDir = process.env.ANS_DOMAINS_DIR?.trim();
   if (envDir) dirs.push(envDir);
   dirs.push(dirname(tomlPath));
-  dirs.push(join(process.cwd(), "domains"));
+  dirs.push(ansProjectDomainsDir());
   return dirs;
 }
 
@@ -294,7 +295,7 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 // Can this cached policy still be trusted to describe the current project?
 // Three things have to hold, and none is a guess:
 //   1. it was materialized for THIS project (a cache copied into another
-//      project's .anysearch-cli must not answer for it);
+//      project's .ans must not answer for it);
 //   2. it names the Active Domain the caller is running now;
 //   3. every file it was materialized from still has the same version, so the
 //      declaration it encodes has not moved since.

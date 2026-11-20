@@ -166,7 +166,7 @@ async function main() {
   // Snapshot the operator's real PI dir BEFORE touching HOME/USERPROFILE —
   // homedir() derives from those, so reading it after redirecting would make
   // the guard below watch the temp dir instead of the real one.
-  const realPiDir = join(homedir(), ".anysearch", "pi-sessions");
+  const realPiDir = join(homedir(), ".ans", "pi-sessions");
   const realBefore = piRecords(realPiDir);
 
   const saved: Record<string, string | undefined> = {};
@@ -176,7 +176,7 @@ async function main() {
   }
 
   // A chat that mints a session handle writes a PI record. Until #322 this
-  // suite had no isolation and appended that record to ~/.anysearch/pi-sessions.
+  // suite had no isolation and appended that record to ~/.ans/pi-sessions.
   const tempRoot = mkdtempSync(join(tmpdir(), "ans-322-cancellation-"));
 
   process.env.HOME = tempRoot;
@@ -306,7 +306,7 @@ async function main() {
     const realAfter = piRecords(realPiDir);
     assert(
       realBefore.join("|") === realAfter.join("|"),
-      "#322: the operator's real ~/.anysearch/pi-sessions gained no record (before=" +
+      "#322: the operator's real ~/.ans/pi-sessions gained no record (before=" +
         realBefore.length + ", after=" + realAfter.length + ")",
     );
   } finally {

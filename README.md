@@ -49,7 +49,7 @@ ans doctor                    # "vector arm (present ...)" means it is active
 ans memory backfill-vectors   # backfill vectors for existing rows; downloads the model on first run (~130 MB)
 ```
 
-- The model downloads from huggingface.co on first use and caches in `~/.anysearch/models`
+- The model downloads from huggingface.co on first use and caches in `~/.ans/models`
 (override the location with `ANYSEARCH_MODEL_CACHE`).
 - On offline machines, you can copy an already populated cache directory from a connected machine. After uninstalling this package, the CLI falls back to FTS-only without crashing, and `ans doctor` marks this check as SKIP.
 
@@ -70,7 +70,7 @@ ans auth list                  # what is stored, and which provider/endpoint eac
 ans auth remove openai         # drop that entry
 ```
 
-- Stored in `~/.anysearch-cli/credentials.json`. It is **plain text** — not encrypted, not a system keychain — and the file says so itself.
+- Stored in `~/.ans/credentials.json`. It is **plain text** — not encrypted, not a system keychain — and the file says so itself.
 - Every entry on this machine and account reads it, including a GUI host that inherits no shell environment. That is why one entry is enough.
 - An explicit env value still wins: `ANS_LLM_API_KEY`, or the provider's own `*_API_KEY`.
 - Each entry is bound to one provider; a model key is also bound to the endpoint it was entered for. Change the endpoint or the provider and the key is not sent — enter it again.
@@ -78,7 +78,8 @@ ans auth remove openai         # drop that entry
 
 ## Domains & Abstain
 
-A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`).
+A *domain* is a TOML file under `<project>/.ans/domains/` (or `ANS_DOMAINS_DIR`;
+    a `domains/` left at the project root is still read until the next run moves it in).
 It declares which providers this domain uses, along with an authoritative allowlist `urlAllowlist`.
 
 ```bash

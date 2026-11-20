@@ -51,7 +51,7 @@ test("claude 接入：注释、别的工具条目原样保留，自家条目就�
   ]);
   assert.deepEqual((sp.value as any).permissions, { allow: ["Bash(git:*)"] });
   // journal：done + verified。
-  const journal = readFileSync(join(f.projectRoot, ".anysearch/host-wiring/journal.jsonl"), "utf8");
+  const journal = readFileSync(join(f.projectRoot, ".ans/host-wiring/journal.jsonl"), "utf8");
   const lastLine = journal.trimEnd().split("\n").pop()!;
   const entry = JSON.parse(lastLine);
   assert.equal(entry.status, "done");
@@ -99,7 +99,7 @@ test("预览：不落盘一个字节，输出会改什么", async () => {
   assert.equal(readFileSync(join(f.projectRoot, "mcp.json"), "utf8"), MCP_JSON_WITH_COMMENT);
   assert.equal(readFileSync(join(f.projectRoot, ".claude/settings.json"), "utf8"), SETTINGS_WITH_FOREIGN_HOOK);
   // journal 都不该出现（预览不算操作）。
-  assert.ok(!existsSync(join(f.projectRoot, ".anysearch/host-wiring/journal.jsonl")));
+  assert.ok(!existsSync(join(f.projectRoot, ".ans/host-wiring/journal.jsonl")));
 });
 
 test("codex 接入（用户级 TOML）：别的 mcp_servers、别的 hooks 段、注释都保留", async () => {
@@ -138,7 +138,7 @@ test("codex 接入（用户级 TOML）：别的 mcp_servers、别的 hooks 段�
       hooks: [{ type: "command", command: "ans-hook-codex", timeout: 5 }] },
   ]);
   // journal 在用户级 wiring root。
-  assert.ok(existsSync(join(f.home, ".anysearch-cli/host-wiring/journal.jsonl")));
+  assert.ok(existsSync(join(f.home, ".ans/host-wiring/journal.jsonl")));
   // 待办里如实说 [features].hooks 开关不替宿主动。
   const text = f.lines.join("\n");
   assert.ok(text.includes("[features].hooks"));

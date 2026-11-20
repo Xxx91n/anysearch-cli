@@ -1,0 +1,468 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openDatabase } from "../src/db";
+import { ansLayoutMarkerPath, ensureAnsLayout, readAnsLayoutRecord } from "../src/ans-layout";
+import { ansPiSessionsDir } from "../src/ans-paths";
+
+function sandbox(): { home: string; env: NodeJS.ProcessEnv; done: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "ans-layout-"));
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  return {
+    home,
+    env: { USERPROFILE: home, HOME: home },
+    done: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+function seedDatabase(path: string, value: string): void {
+  const db = openDatabase(path);
+  try {
+    db.exec("CREATE TABLE marker (value TEXT NOT NULL)");
+    db.prepare("INSERT INTO marker (value) VALUES (?)").run(value);
+  } finally {
+    db.close();
+  }
+}
+
+function readMarkerValue(path: string): string {
+  const db = openDatabase(path, { readonly: true });
+  try {
+    return (db.prepare("SELECT value FROM marker").get() as { value: string }).value;
+  } finally {
+    db.close();
+  }
+}
+
+test("a fresh install has nothing to move and does not create ~/.ans", () => {
+  const box = sandbox();
+  try {
+    assert.equal(ensureAnsLayout(box.env, () => {}), undefined);
+    assert.equal(existsSync(join(box.home, ".ans")), false, "no marker directory for a no-op");
+  } finally { box.done(); }
+});
+
+test("both pre-#323 families move into ~/.ans and the emptied directories go away", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+    mkdirSync(join(box.home, ".anysearch-cli", "skills", "synced"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch-cli", "server-token"), "token-1\n");
+    writeFileSync(join(box.home, ".anysearch-cli", "skills", "synced", "installed.json"), "{}\n");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
+    assert.equal(readFileSync(join(box.home, ".ans", "server-token"), "utf8"), "token-1\n");
+    assert.equal(readFileSync(join(box.home, ".ans", "skills", "synced", "installed.json"), "utf8"), "{}\n");
+    assert.equal(existsSync(join(box.home, ".anysearch")), false, "the emptied data root is gone");
+    assert.equal(existsSync(join(box.home, ".anysearch-cli")), false, "the emptied config root is gone");
+    assert.ok(existsSync(ansLayoutMarkerPath(box.env)), "the outcome is recorded on disk");
+  } finally { box.done(); }
+});
+
+test("a database is copied with SQLite's own backup and the old file is kept", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    const legacyDb = join(box.home, ".anysearch", "anysearch.db");
+    seedDatabase(legacyDb, "history");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.deepEqual(record.moved.map((m) => m.how), ["snapshot"]);
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
+    assert.ok(existsSync(legacyDb), "the pre-upgrade copy stays until the operator deletes it");
+  } finally { box.done(); }
+});
+
+test("the kept pre-upgrade database copy is not reported as a conflict on later runs", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "history");
+    ensureAnsLayout(box.env, () => {});
+
+    const warnings: string[] = [];
+    const second = ensureAnsLayout(box.env, (m) => warnings.push(m));
+    assert.ok(second);
+    assert.deepEqual(second.pending, [], "the old file is the copy we chose to keep");
+    assert.deepEqual(warnings, [], "and it is not re-reported every run");
+    assert.equal(second.moved.length, 1, "the record of what moved survives");
+  } finally { box.done(); }
+});
+
+test("a database that cannot be copied does not take the rest of the move down with it", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch", "pi-sessions"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "pi-sessions", "record.jsonl"), "{}\n");
+    // Not a database: VACUUM INTO cannot read it, so the copy must fail.
+    writeFileSync(join(box.home, ".anysearch", "anysearch.db"), "not a database");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.equal(record.pending.length, 1, "the database is reported, not silently skipped");
+    assert.match(record.pending[0]!.path, /anysearch\.db$/);
+    assert.ok(existsSync(join(box.home, ".ans", "pi-sessions", "record.jsonl")), "the rest still moved");
+    assert.equal(
+      ansPiSessionsDir(box.env),
+      join(box.home, ".ans", "pi-sessions"),
+      "history is read from where it actually is, not from beside the database that stayed",
+    );
+  } finally { box.done(); }
+});
+
+test("a project's pre-#323 directories move on the first run in that project", () => {
+  const box = sandbox();
+  try {
+    const cwd = join(box.home, "work");
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "config.toml"), "[llm]\n");
+    mkdirSync(join(cwd, ".anysearch-cli"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch-cli", "policy.json"), "{}\n");
+
+    ensureAnsLayout(box.env, () => {}, cwd);
+    assert.equal(readFileSync(join(cwd, ".ans", "config.toml"), "utf8"), "[llm]\n");
+    assert.equal(readFileSync(join(cwd, ".ans", "policy.json"), "utf8"), "{}\n");
+    assert.equal(existsSync(join(cwd, ".anysearch")), false);
+    assert.equal(existsSync(join(cwd, ".anysearch-cli")), false);
+  } finally { box.done(); }
+});
+
+test("a name that already exists in ~/.ans is kept and reported, never overwritten", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "config.env"), "ANS_DOMAIN=new\n");
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=old\n");
+
+    const warnings: string[] = [];
+    const record = ensureAnsLayout(box.env, (m) => warnings.push(m));
+    assert.ok(record);
+    assert.equal(record.pending.length, 1);
+    assert.match(record.pending[0]!.path, /\.anysearch/);
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=new\n");
+    assert.equal(readFileSync(join(box.home, ".anysearch", "config.env"), "utf8"), "ANS_DOMAIN=old\n");
+    assert.ok(warnings.some((w) => w.includes("没能搬进")), "the operator is told, not left guessing");
+  } finally { box.done(); }
+});
+
+test("run from the home directory, the database is snapshotted and not renamed", () => {
+  const box = sandbox();
+  try {
+    // In the home directory the project roots ARE the user roots. If the project
+    // pass handled it, the database would be renamed out from under its -wal.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "history");
+    ensureAnsLayout(box.env, () => {}, box.home);
+
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
+    assert.ok(existsSync(join(box.home, ".anysearch", "anysearch.db")), "the pre-upgrade copy stays");
+  } finally { box.done(); }
+});
+
+test("the home directory in another case is still the home directory", { skip: process.platform !== "win32" }, () => {
+  const box = sandbox();
+  try {
+    // Windows answers to several spellings of one directory: another drive-letter
+    // case, an 8.3 short name, a junction. A string comparison calls those
+    // different, so the project pass claims the user roots — it moves the file
+    // instead of the user pass, and the run then records nothing at all.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+
+    const record = ensureAnsLayout(box.env, () => {}, box.home.toUpperCase());
+    assert.ok(record, "the user pass handled the home directory");
+    assert.deepEqual(record.pending, []);
+    assert.ok(
+      record.moved.some((m) => m.from.endsWith("config.env") && m.how === "moved"),
+      "the user pass is the one that moved it",
+    );
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
+  } finally { box.done(); }
+});
+
+test("a junction to the home directory is still the home directory", { skip: process.platform !== "win32" }, () => {
+  const box = sandbox();
+  try {
+    // USERPROFILE may itself be a junction while the shell sits in the real
+    // directory. Both spellings are the same place, so the user pass owns the
+    // old roots. Get it wrong and the project pass claims them, then tells the
+    // operator their only database is a leftover they can delete.
+    const realHome = join(box.home, "real");
+    const link = join(box.home, "link");
+    mkdirSync(realHome, { recursive: true });
+    symlinkSync(realHome, link, "junction");
+    mkdirSync(join(realHome, ".anysearch"), { recursive: true });
+    writeFileSync(join(realHome, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+
+    const said: string[] = [];
+    const record = ensureAnsLayout({ USERPROFILE: link, HOME: link }, (m) => said.push(m), realHome);
+    assert.ok(record, "the user pass handled the home directory");
+    assert.deepEqual(record.moved.map((m) => m.how), ["moved"]);
+    assert.doesNotMatch(said.join(""), /没有搬/, "nothing was reported as a leftover");
+    assert.equal(readFileSync(join(realHome, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=research\n");
+  } finally { box.done(); }
+});
+
+test("a half-written snapshot in the new root does not strand the real database", () => {
+  const box = sandbox();
+  try {
+    // An interrupted snapshot leaves a file at the target name. Treating it as
+    // "the newer file, keep it" would leave the real database in the old
+    // directory for good, and the reader would open the torn copy because the
+    // new path exists.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "history");
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "anysearch.db"), "not a database at all");
+
+    const said: string[] = [];
+    const record = ensureAnsLayout(box.env, (m) => said.push(m));
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
+    // The unreadable file is moved aside and named, never deleted: "will not
+    // open" also covers a lock or a second process publishing right now.
+    assert.match(said.join(""), /unreadable-/, "the message says where the bad copy went");
+  } finally { box.done(); }
+});
+
+test("an entry that stays unmoved is reported on every run, not just the first", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "config.env"), "ANS_DOMAIN=new\n");
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=old\n");
+
+    // The record stops changing after the first run, so a "nothing changed"
+    // shortcut placed before the warning would report the conflict once and
+    // then say nothing while the file was still sitting there unmoved.
+    const runs = [1, 2, 3].map(() => {
+      const said: string[] = [];
+      ensureAnsLayout(box.env, (message) => said.push(message));
+      return said.join("");
+    });
+    assert.match(runs[0], /config\.env/);
+    assert.match(runs[1], /config\.env/, "the second run still names the entry");
+    assert.match(runs[2], /config\.env/, "and so does the third");
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=new\n");
+  } finally { box.done(); }
+});
+
+test("a second run is a no-op once everything moved", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=research\n");
+    ensureAnsLayout(box.env, () => {});
+    const first = readAnsLayoutRecord(box.env);
+    assert.ok(first);
+
+    // A file written after the move must not be re-migrated or reported.
+    writeFileSync(join(box.home, ".ans", "config.env"), "ANS_DOMAIN=docs\n");
+    assert.equal(ensureAnsLayout(box.env, () => {}), undefined, "nothing left to move");
+    assert.deepEqual(readAnsLayoutRecord(box.env), first, "the recorded outcome is unchanged");
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=docs\n");
+  } finally { box.done(); }
+});
+
+test("an entry left behind is retried on the next run", () => {
+  const box = sandbox();
+  try {
+    mkdirSync(join(box.home, ".ans"), { recursive: true });
+    writeFileSync(join(box.home, ".ans", "config.env"), "ANS_DOMAIN=new\n");
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    writeFileSync(join(box.home, ".anysearch", "config.env"), "ANS_DOMAIN=old\n");
+    ensureAnsLayout(box.env, () => {});
+
+    // The operator resolves the conflict by hand; the next run finishes the job.
+    rmSync(join(box.home, ".ans", "config.env"));
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.equal(readFileSync(join(box.home, ".ans", "config.env"), "utf8"), "ANS_DOMAIN=old\n");
+  } finally { box.done(); }
+});
+
+test("a database that appears in the old root after the move is still snapshotted", () => {
+  const box = sandbox();
+  try {
+    // An empty pre-#323 root records "nothing to do" — and that record is not a
+    // promise the root stays empty.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    const first = ensureAnsLayout(box.env, () => {});
+    assert.ok(first);
+    assert.deepEqual(first.moved, []);
+    assert.ok(existsSync(ansLayoutMarkerPath(box.env)));
+
+    // Something else on the machine writes a database there afterwards, such as
+    // an older `ans` that still calls that directory home — it recreates the
+    // directory the move deleted.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    seedDatabase(join(box.home, ".anysearch", "anysearch.db"), "late");
+
+    const record = ensureAnsLayout(box.env, () => {});
+    assert.ok(record);
+    assert.deepEqual(record.pending, []);
+    assert.ok(record.moved.some((m) => m.how === "snapshot"), "the late database is carried over as a snapshot");
+    assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "late");
+    assert.equal(
+      readMarkerValue(join(box.home, ".anysearch", "anysearch.db")),
+      "late",
+      "the old file stays where it is, as the pre-upgrade copy",
+    );
+  } finally { box.done(); }
+});
+
+test("the written-since warning compares against that snapshot, not the first run", () => {
+  const box = sandbox();
+  try {
+    // First run: nothing to move. The record's `migratedAt` is stamped now and
+    // never moves again, so it cannot say when a later snapshot was taken.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    ensureAnsLayout(box.env, () => {});
+
+    // The first run removes the emptied legacy directory, so put it back the way
+    // an old build would.
+    mkdirSync(join(box.home, ".anysearch"), { recursive: true });
+    const legacyDb = join(box.home, ".anysearch", "anysearch.db");
+    seedDatabase(legacyDb, "late");
+    ensureAnsLayout(box.env, () => {});
+
+    const record = JSON.parse(readFileSync(ansLayoutMarkerPath(box.env), "utf8")) as {
+      migratedAt: string;
+      moved: { how: string; at?: string }[];
+    };
+    record.migratedAt = "2020-01-01T00:00:00.000Z";
+    const snapshot = record.moved.find((m) => m.how === "snapshot");
+    assert.ok(snapshot, "the late database was snapshotted");
+
+    // The old file was written in 2024: after the first run, before the snapshot.
+    utimesSync(legacyDb, new Date("2024-01-01T00:00:00.000Z"), new Date("2024-01-01T00:00:00.000Z"));
+
+    snapshot.at = "2025-01-01T00:00:00.000Z";
+    writeFileSync(ansLayoutMarkerPath(box.env), JSON.stringify(record));
+    const quiet: string[] = [];
+    ensureAnsLayout(box.env, (m) => quiet.push(m));
+    assert.deepEqual(quiet.filter((m) => m.includes("又被写过")), [],
+      "written before its own snapshot: nothing to report");
+
+    // Same file, snapshot taken first: now those rows really are missing.
+    snapshot.at = "2023-01-01T00:00:00.000Z";
+    writeFileSync(ansLayoutMarkerPath(box.env), JSON.stringify(record));
+    const loud: string[] = [];
+    ensureAnsLayout(box.env, (m) => loud.push(m));
+    assert.equal(loud.filter((m) => m.includes("又被写过")).length, 1,
+      "written after its snapshot: the old rows are not in the new database");
+  } finally { box.done(); }
+});
+
+test("a project's domains directory moves into .ans", () => {
+  const box = sandbox();
+  try {
+    // The domain TOMLs used to sit at the project root. They belong to the layout
+    // now, so the project pass carries them in with everything else.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, "domains"), { recursive: true });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(
+      readFileSync(join(project, ".ans", "domains", "probe.toml"), "utf8"),
+      "[domain]\nname = \"probe\"\n",
+    );
+    assert.equal(existsSync(join(project, "domains")), false, "the old directory is gone");
+  } finally { box.done(); }
+});
+
+test("an explicit ANS_DOMAINS_DIR keeps its directory where the operator pointed it", () => {
+  const box = sandbox();
+  try {
+    // The variable names where the domains live. Moving the files out from under
+    // it would leave the setting pointing at an empty directory, so the override
+    // wins over the layout move.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, "domains"), { recursive: true });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+
+    ensureAnsLayout({ ...box.env, ANS_DOMAINS_DIR: join(project, "domains") }, () => {}, project);
+    assert.equal(existsSync(join(project, "domains", "probe.toml")), true, "left where it was");
+    assert.equal(existsSync(join(project, ".ans", "domains")), false, "nothing was copied either");
+  } finally { box.done(); }
+});
+
+test("a user's monorepo with a turbo.json still moves its domains", () => {
+  const box = sandbox();
+  try {
+    // turborepo is common outside this product; a `turbo.json` does not make a
+    // directory part of the product, only its package name does.
+    const project = join(box.home, "monorepo");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(join(project, "domains"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+    writeFileSync(join(project, "turbo.json"), "{}\n");
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "my-app" }));
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(existsSync(join(project, ".ans", "domains", "probe.toml")), true, "moved into .ans");
+    assert.equal(existsSync(join(project, "domains")), false, "the old directory is gone");
+  } finally { box.done(); }
+});
+
+test("a partially written domains directory never hides the old one", () => {
+  const box = sandbox();
+  try {
+    // The move is all-or-nothing: `ans-paths` picks `.ans/domains` the moment it
+    // exists, so a half-moved set would make the TOMLs left behind unreadable.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    mkdirSync(join(project, "domains"), { recursive: true });
+    writeFileSync(join(project, "domains", "a.toml"), "[domain]\nname = \"a\"\n");
+    writeFileSync(join(project, "domains", "b.toml"), "[domain]\nname = \"b\"\n");
+    mkdirSync(join(project, ".ans", "domains"), { recursive: true });
+    writeFileSync(join(project, ".ans", "domains", "a.toml"), "[domain]\nname = \"a\"\n");
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(existsSync(join(project, "domains", "b.toml")), true, "nothing is moved into an existing .ans/domains");
+    assert.equal(existsSync(join(project, ".ans", "domains", "b.toml")), false);
+  } finally { box.done(); }
+});
+
+test("the product's own checkout keeps its builtin domains where the build expects them", () => {
+  const box = sandbox();
+  try {
+    // `domains/` at the monorepo root is the builtin source `sync-domains.mjs`
+    // copies into the CLI package at build time. Renaming it into `.ans` breaks
+    // the next build, and a package under that tree ships its own copy for the
+    // same reason.
+    const root = join(box.home, "checkout");
+    mkdirSync(join(root, ".git"), { recursive: true });
+    mkdirSync(join(root, "domains"), { recursive: true });
+    writeFileSync(join(root, "domains", "builtin.toml"), "[domain]\nname = \"builtin\"\n");
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "anysearch-cli" }));
+
+    const pkg = join(root, "apps", "mcp");
+    mkdirSync(join(pkg, "domains"), { recursive: true });
+    writeFileSync(join(pkg, "domains", "shipped.toml"), "[domain]\nname = \"shipped\"\n");
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@anysearch-cli/mcp" }));
+
+    ensureAnsLayout(box.env, () => {}, root);
+    ensureAnsLayout(box.env, () => {}, pkg);
+
+    assert.equal(existsSync(join(root, "domains", "builtin.toml")), true, "the monorepo root keeps its builtin source");
+    assert.equal(existsSync(join(pkg, "domains", "shipped.toml")), true, "a product package keeps the copy it ships");
+    assert.equal(existsSync(join(root, ".ans", "domains")), false, "nothing was moved into .ans either");
+  } finally { box.done(); }
+});
