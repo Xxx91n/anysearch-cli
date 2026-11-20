@@ -320,7 +320,7 @@ export function ensurePreMigrationBackup(dbPath: string): PreMigrationBackupOutc
     // and the original message stays inline so its shape stays discoverable.
     const wrapped = new Error(
       "旧版数据库需要先做迁移前备份，但备份失败了：" + detail +
-      "。没有快照就不会改数据库；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间，修好后重试。",
+      "。没有迁移前备份就不会改数据库；请检查对 " + dbPath + " 所在目录的写权限和磁盘空间，修好后重试。",
       { cause: error },
     );
     (wrapped as { code?: unknown }).code = (error as { code?: unknown })?.code;
