@@ -647,8 +647,8 @@ async function t(name: string, fn: () => Promise<void>) {
       git(["add", "SKILL.md"]);
       git(["commit", "--quiet", "-m", "skill"]);
       git(["tag", "v1.0.0"]);
-      fs.mkdirSync(path.join(cwd, "domains"));
-      const domainPath = path.join(cwd, "domains", "research.toml");
+      fs.mkdirSync(path.join(cwd, ".ans", "domains"), { recursive: true });
+      const domainPath = path.join(cwd, ".ans", "domains", "research.toml");
       const domain = '[skills]\nactive = ["existing"]\n';
       fs.writeFileSync(domainPath, domain);
       const env = { ...process.env, HOME: home, USERPROFILE: home };
@@ -673,6 +673,7 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.equal(removed.code, 0, removed.out);
       assert.equal(fs.existsSync(path.join(cwd, ".ans", "skills", "synced", "e2e-skill")), false);
       assert.equal(fs.readFileSync(domainPath, "utf8"), domain);
+      assert.equal(fs.existsSync(path.join(cwd, "domains")), false, "the old project-level domains dir stays unused");
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }

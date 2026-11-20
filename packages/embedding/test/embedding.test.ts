@@ -8,6 +8,8 @@ import {
   embeddingTelemetry,
   __setExtractorForTest,
   __resetEmbeddingState,
+  __configureEnvForTest,
+  setModelCacheDir,
 } from "../src/index";
 
 // Deterministic stub extractor: FNV-1a hash per dimension -> L2-normalized unit vector.
@@ -78,6 +80,25 @@ async function main(): Promise<void> {
   __setExtractorForTest(async (input) => { void input; return { data: new Float32Array([1, 0]) }; });
   const r = await embedText("x", "passage");
   assert.ok(r instanceof Float32Array, "healthy extractor returns a vector");
+
+  // 6. the product's layout root reaches the model cache, and the explicit
+  //    env var still wins over it
+  __resetEmbeddingState();
+  delete process.env.ANYSEARCH_MODEL_CACHE;
+  setModelCacheDir("/layout/root/models");
+  const envStub: { env: { cacheDir?: string } } = { env: {} };
+  __configureEnvForTest(envStub);
+  assert.strictEqual(envStub.env.cacheDir, "/layout/root/models",
+    "the handed-in layout root must become the model cache dir");
+
+  __resetEmbeddingState();
+  process.env.ANYSEARCH_MODEL_CACHE = "/explicit/models";
+  setModelCacheDir("/layout/root/models");
+  const envStub2: { env: { cacheDir?: string } } = { env: {} };
+  __configureEnvForTest(envStub2);
+  assert.strictEqual(envStub2.env.cacheDir, "/explicit/models",
+    "ANYSEARCH_MODEL_CACHE must win over the layout root");
+  delete process.env.ANYSEARCH_MODEL_CACHE;
 
   __resetEmbeddingState();
   console.log("embedding.test: all assertions passed (stubbed, offline-hermetic)");

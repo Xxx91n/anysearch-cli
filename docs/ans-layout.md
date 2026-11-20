@@ -45,8 +45,9 @@
 | `MEMORY.md` | 项目级记忆投影 |
 | `pi-agent/` | PI 的项目内临时目录 |
 | `host-wiring/` | 项目级接入日志和备份 |
+| `domains/` | 你自己写的领域 TOML，`ans hitl --allow-url` 往里追加 |
 
-项目根下还有一个目录**故意不在 `.ans` 里**：`<项目>/domains/`，放你自己写的领域 TOML，`ans hitl --allow-url` 会往里追加。那是手写文件，`ANS_DOMAINS_DIR` 也一直能指到别处，所以位置照旧；它由 `ans-paths.ts` 的 `ansProjectDomainsDir()` 定名，不散落在调用点上。
+`domains/` 以前在项目根（`<项目>/domains`），现在跟其它文件一样住进 `.ans`；搬家规则和别的目录一样，下一次在那个项目里跑 `ans` 时改名进来。旧位置的目录在产品认得的时候照样读得到，`ANS_DOMAINS_DIR` 仍然可以把整条链指到别处。
 
 ## 旧目录怎么处理
 

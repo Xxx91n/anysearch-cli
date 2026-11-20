@@ -1,5 +1,7 @@
 // 操作日志：接入/修复/移除共用一份 journal，落盘在目标同 scope
 // 的目录下（项目级 → <项目>/.ans/host-wiring/；用户级 → ~/.ans/host-wiring/）。
+// 旧目录还在就先读写旧的那份（<项目>/.anysearch/host-wiring 或
+// ~/.anysearch-cli/host-wiring），搬迁完成之前两边一致。
 // 一行一个 JSON，append-only：一次操作按 planned → partial →
 // done 追加多行（同 id），读的时候按 id 取最后一行。它同时干三件事：
 //   1. 恢复依据：每个目标文件写前备份（backups/<entry-id>/ 下），原文字节不动；

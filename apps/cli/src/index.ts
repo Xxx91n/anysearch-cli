@@ -104,16 +104,17 @@ if (!known.has(cmd)) {
 
 const cmdArgs = argv.slice(1);
 
-// #323: move the pre-#323 directories into ~/.ans before anything reads them.
-// A failure here stops the command: continuing would write into a layout we
-// could not establish, which is the silent half of the same mistake.
+// Move the pre-#323 directories into ~/.ans before anything reads them. A
+// failure stops the command: continuing would write into a layout we could not
+// establish.
 //
-// Design: read-only commands are exempt from the move. `ans upgrade status` is
-// documented as "只读不改", and `ans doctor` is the command you run to see the
-// current state — a migration in front of either would make the report describe
-// a layout the command itself just changed. Both read the old location through
-// the layout fallback, so they still answer correctly before the move.
-const readOnly = cmd === "doctor" || (cmd === "upgrade" && (cmdArgs[0] ?? "status") === "status");
+// Read-only commands are exempt: `ans upgrade status` and `ans doctor` report
+// the current state, and a migration in front of either would make the report
+// describe a layout the command itself just changed. Flags are not the
+// subcommand, so `--help` and `--json status` stay read-only too; only a
+// non-flag word selects the "wait" / "cancel" branches that write.
+const upgradeWord = cmdArgs.filter((arg) => !arg.startsWith("-"))[0] ?? "status";
+const readOnly = cmd === "doctor" || (cmd === "upgrade" && upgradeWord === "status");
 if (!readOnly) ensureAnsLayoutOrExit("ans");
 
 // CLI wiring: dispatch to command implementation.

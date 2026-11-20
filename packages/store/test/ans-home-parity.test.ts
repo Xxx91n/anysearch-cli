@@ -1,0 +1,94 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import {
+  ANS_DIR_NAME,
+  LEGACY_CONFIG_DIR_NAME,
+  LEGACY_DATA_DIR_NAME,
+  ansAttributionRoot,
+  ansDbPath,
+  ansUserSkillsDirFor,
+} from "../src/ans-paths";
+
+// The release scripts cannot import TypeScript, so `scripts/ans-home.mjs` is a
+// hand-kept copy of the same two rules. A copy nobody checks is a second answer:
+// a rename on one side and not the other would have the gate inspect one
+// database while the product reads another. This recomputes both sides in one
+// sandbox, so drift fails here instead of in production.
+interface AnsHomeModule {
+  resolveHome(env: NodeJS.ProcessEnv): string;
+  ansDbPath(env: NodeJS.ProcessEnv): string;
+  ansUserDirPath(name: string, env: NodeJS.ProcessEnv): string;
+  ansAttributionRoot(env: NodeJS.ProcessEnv): string;
+  NEW_DIR: string;
+  LEGACY_DATA_DIR: string;
+  LEGACY_CONFIG_DIR: string;
+}
+
+const modulePath = new URL("../../../scripts/ans-home.mjs", import.meta.url).href;
+const ansHome = (await import(modulePath)) as AnsHomeModule;
+
+function sandbox(): { home: string; env: NodeJS.ProcessEnv; done: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "ans-home-parity-"));
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  return {
+    home,
+    env: { USERPROFILE: home, HOME: home },
+    done: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+test("the scripts' directory names are the product's", () => {
+  assert.equal(ansHome.NEW_DIR, ANS_DIR_NAME);
+  assert.equal(ansHome.LEGACY_DATA_DIR, LEGACY_DATA_DIR_NAME);
+  assert.equal(ansHome.LEGACY_CONFIG_DIR, LEGACY_CONFIG_DIR_NAME);
+});
+
+test("both sides answer the database path the same way, in every layout", () => {
+  const box = sandbox();
+  try {
+    assert.equal(ansHome.ansDbPath(box.env), ansDbPath(box.env), "fresh install");
+
+    mkdirSync(join(box.home, LEGACY_DATA_DIR_NAME), { recursive: true });
+    writeFileSync(join(box.home, LEGACY_DATA_DIR_NAME, "anysearch.db"), "legacy");
+    assert.equal(ansHome.ansDbPath(box.env), ansDbPath(box.env), "before the move");
+
+    mkdirSync(join(box.home, ANS_DIR_NAME), { recursive: true });
+    writeFileSync(join(box.home, ANS_DIR_NAME, "anysearch.db"), "new");
+    assert.equal(ansHome.ansDbPath(box.env), ansDbPath(box.env), "after the move");
+    assert.equal(ansHome.ansDbPath(box.env), join(box.home, ".ans", "anysearch.db"));
+  } finally { box.done(); }
+});
+
+test("a legacy directory in either old family is found by both sides", () => {
+  const box = sandbox();
+  try {
+    // `skills/` lived under `.anysearch-cli` before the rename, the database under
+    // `.anysearch`. A helper that only looks at the data root returns the new path
+    // for the config-side directories and reads nothing.
+    mkdirSync(join(box.home, LEGACY_CONFIG_DIR_NAME, "skills"), { recursive: true });
+    assert.equal(ansHome.ansUserDirPath("skills", box.env), ansUserSkillsDirFor(box.home));
+    assert.equal(ansHome.ansUserDirPath("skills", box.env), join(box.home, ".anysearch-cli", "skills"));
+
+    mkdirSync(join(box.home, LEGACY_DATA_DIR_NAME, "host-wiring"), { recursive: true });
+    assert.equal(ansHome.ansUserDirPath("host-wiring", box.env), join(box.home, ".anysearch", "host-wiring"));
+  } finally { box.done(); }
+});
+
+test("the attribution root agrees, including its legacy fallback", () => {
+  const box = sandbox();
+  try {
+    assert.equal(ansHome.ansAttributionRoot(box.env), ansAttributionRoot(box.env));
+
+    mkdirSync(join(box.home, LEGACY_DATA_DIR_NAME, "attribution-gold-revisions"), { recursive: true });
+    assert.equal(ansHome.ansAttributionRoot(box.env), ansAttributionRoot(box.env));
+    assert.equal(
+      ansHome.ansAttributionRoot(box.env),
+      join(box.home, ".anysearch", "attribution-gold-revisions"),
+      "the old location is read while it is the only one",
+    );
+  } finally { box.done(); }
+});

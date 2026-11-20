@@ -1,33 +1,20 @@
-// #323: the one place the on-disk layout is decided.
+// The one place the on-disk layout is decided: one directory per scope, named
+// after the command (`ans`).
 //
-// Design: one directory per scope, named after the command (`ans`), instead of
-// two families that differed by a suffix — a reader that has to know which of
-// `~/.anysearch` and `~/.anysearch-cli` holds a file is a reader that can
-// disagree with the writer about it.
-//
-// Two roots, one name:
 //   user     ~/.ans            (USERPROFILE on Windows, HOME elsewhere)
 //   project  <project>/.ans
 //
-// Before #323 the same data lived in two families that differed only by a
-// suffix — ~/.anysearch and ~/.anysearch-cli, ./.anysearch and ./.anysearch-cli
-// — so "which directory is this file in" was a question every reader answered
-// for itself. Both families now resolve to one directory per scope, and every
-// file's home is named here.
-//
 // Each resolver returns the file currently in use: the new one when it exists,
-// the old one when only that exists, and the new path otherwise. So an upgrade
-// never starts from an empty config or an empty database, and a writer lands on
-// the same file its reader does instead of splitting one setting across two.
-// Moving the old files is `ans-layout.ts`'s job; this module only guarantees
-// nothing is lost meanwhile.
-//
-// Builtins only, like local-service.ts: hook bundles are esbuild-bundled and
-// must not pull the store index's native dependencies.
+// the old pre-#323 one when only that exists, and the new path otherwise. So an
+// upgrade never starts from an empty config or database, and a writer lands on
+// the same file its reader does. Moving the old files is `ans-layout.ts`'s job;
+// this module only guarantees nothing is lost meanwhile. Builtins only: hook
+// bundles are esbuild-bundled and must not pull the store index's native
+// dependencies.
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /** The directory name both scopes use. */
 export const ANS_DIR_NAME = ".ans";
@@ -55,6 +42,39 @@ export function resolveConfigHome(explicit?: string, env: NodeJS.ProcessEnv = pr
   return explicit || env.USERPROFILE || env.HOME || homedir();
 }
 
+/**
+ * Whether two paths name the same directory.
+ *
+ * Windows answers to several spellings of one directory — another drive-letter
+ * case, an 8.3 short name, a junction — and comparing `join`-ed strings calls
+ * those different. Callers use this to decide whether a directory IS the user
+ * root, so a wrong "no" hands the user roots to the project rules.
+ */
+export function samePath(left: string, right: string): boolean {
+  const a = canonicalPath(left);
+  const b = canonicalPath(right);
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function canonicalPath(target: string): string {
+  const resolved = resolve(target);
+  const missing: string[] = [];
+  let head = resolved;
+  for (;;) {
+    try {
+      // The nearest existing ancestor is what the filesystem can answer for;
+      // `~/.ans` itself usually does not exist yet, and resolving only the leaf
+      // would leave a junction in the parent unexpanded.
+      return join(realpathSync.native(head), ...missing.reverse());
+    } catch {
+      const parent = dirname(head);
+      if (parent === head) return resolved;
+      missing.push(basename(head));
+      head = parent;
+    }
+  }
+}
+
 function homeOf(env: NodeJS.ProcessEnv): string {
   return resolveConfigHome(undefined, env);
 }
@@ -65,7 +85,7 @@ export function ansHomeDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** User root for an already-resolved home directory (callers that took one as an argument). */
-export function ansHomeDirFor(home: string): string {
+function ansHomeDirFor(home: string): string {
   return join(home, ANS_DIR_NAME);
 }
 
@@ -93,7 +113,7 @@ export function legacyProjectDirs(cwd: string = process.cwd()): string[] {
  * remember. A writer that lands on the old path is not a bug: it keeps one
  * file instead of splitting the same setting across two.
  */
-export function pathInUse(next: string, legacy: string): string {
+function pathInUse(next: string, legacy: string): string {
   if (existsSync(next)) return next;
   if (existsSync(legacy)) return legacy;
   return next;
@@ -107,8 +127,9 @@ export function pathInUse(next: string, legacy: string): string {
 export const ANS_DB_FILENAME = "anysearch.db";
 /** The shared project index's file name, shared with the migration. */
 export const ANS_PROJECT_INDEX_FILENAME = "project-index.db";
+/** The provider credentials file. */
+export const CREDENTIALS_FILENAME = "credentials.json";
 
-/** The durable database. */
 export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), ANS_DB_FILENAME),
@@ -116,7 +137,6 @@ export function ansDbPath(env: NodeJS.ProcessEnv = process.env): string {
   );
 }
 
-/** The shared project index. */
 export function ansProjectIndexDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), ANS_PROJECT_INDEX_FILENAME),
@@ -151,12 +171,11 @@ export function ansUserConfigPathFor(home: string): string {
 /** The plaintext, owner-only provider credential file. */
 export function ansCredentialsPathFor(home: string): string {
   return pathInUse(
-    join(ansHomeDirFor(home), "credentials.json"),
-    join(home, LEGACY_CONFIG_DIR_NAME, "credentials.json"),
+    join(ansHomeDirFor(home), CREDENTIALS_FILENAME),
+    join(home, LEGACY_CONFIG_DIR_NAME, CREDENTIALS_FILENAME),
   );
 }
 
-/** The installation's one server token. */
 export function ansServerTokenPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), "server-token"),
@@ -164,7 +183,6 @@ export function ansServerTokenPath(env: NodeJS.ProcessEnv = process.env): string
   );
 }
 
-/** The address record the running plugin server publishes. */
 export function ansServerRegistryPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), "server.json"),
@@ -172,7 +190,6 @@ export function ansServerRegistryPath(env: NodeJS.ProcessEnv = process.env): str
   );
 }
 
-/** The observation session anchor. */
 export function ansSessionPath(env: NodeJS.ProcessEnv = process.env): string {
   return pathInUse(
     join(ansHomeDir(env), "session"),
@@ -180,7 +197,6 @@ export function ansSessionPath(env: NodeJS.ProcessEnv = process.env): string {
   );
 }
 
-/** User-scope installed skills. */
 export function ansUserSkillsDirFor(home: string): string {
   return pathInUse(
     join(ansHomeDirFor(home), "skills"),
@@ -198,7 +214,6 @@ export function ansModelCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(ansHomeDir(env), "models");
 }
 
-/** User-scope host-wiring journal and backups. */
 export function ansUserWiringDirFor(home: string): string {
   return pathInUse(
     join(ansHomeDirFor(home), "host-wiring"),
@@ -224,18 +239,19 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
 // ---------------------------------------------------------------------------
 
 /**
- * The project's own domain TOMLs.
+ * The project's own domain TOMLs, inside the layout root like everything else.
  *
- * Outside the layout root on purpose: these are files the operator writes by
- * hand, and `ans hitl --allow-url` appends to them. They keep the location they
- * had before #323 (`ANS_DOMAINS_DIR` still overrides it); the only thing this
- * module decides is that the answer is named here rather than re-derived at
- * every call site.
+ * They lived at `<project>/domains` before the rename, so the old location is
+ * read while it is the only one that exists; `ans-layout.ts` moves it on the
+ * next run in that project. `ANS_DOMAINS_DIR` still overrides both.
  */
 export const ANS_DOMAINS_DIR_NAME = "domains";
 
 export function ansProjectDomainsDir(cwd: string = process.cwd()): string {
-  return join(cwd, ANS_DOMAINS_DIR_NAME);
+  return pathInUse(
+    join(ansProjectDir(cwd), ANS_DOMAINS_DIR_NAME),
+    join(cwd, ANS_DOMAINS_DIR_NAME),
+  );
 }
 
 /** The project-level `[llm]` config, and the marker that makes a directory a project. */
@@ -246,7 +262,6 @@ export function ansProjectConfigPath(cwd: string = process.cwd()): string {
   );
 }
 
-/** Project-scope installed skills. */
 export function ansProjectSkillsDir(cwd: string = process.cwd()): string {
   return pathInUse(
     join(ansProjectDir(cwd), "skills"),
@@ -254,7 +269,6 @@ export function ansProjectSkillsDir(cwd: string = process.cwd()): string {
   );
 }
 
-/** The hook-side URL policy cache. */
 export function ansProjectPolicyPath(cwd: string = process.cwd()): string {
   return pathInUse(
     join(ansProjectDir(cwd), "policy.json"),
@@ -262,7 +276,6 @@ export function ansProjectPolicyPath(cwd: string = process.cwd()): string {
   );
 }
 
-/** The headless HITL queue. */
 export function ansProjectHitlPath(cwd: string = process.cwd()): string {
   return pathInUse(
     join(ansProjectDir(cwd), "hitl.pending"),
@@ -270,7 +283,6 @@ export function ansProjectHitlPath(cwd: string = process.cwd()): string {
   );
 }
 
-/** The user's routing-card override. */
 export function ansProjectRoutingCardPath(cwd: string = process.cwd()): string {
   return pathInUse(
     join(ansProjectDir(cwd), "routing-card.json"),
@@ -288,7 +300,6 @@ export function ansProjectPiAgentDir(cwd: string = process.cwd()): string {
   return join(ansProjectDir(cwd), "pi-agent");
 }
 
-/** Project-scope host-wiring journal and backups. */
 export function ansProjectWiringDir(cwd: string = process.cwd()): string {
   return pathInUse(
     join(ansProjectDir(cwd), "host-wiring"),

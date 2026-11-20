@@ -55,7 +55,7 @@ export async function runMemory(args: string[]): Promise<number> {
     // leaving a bare count (npm arm transcript: raw ENOTDIR gave no guidance).
     if (r.failed > 0) {
       process.stderr.write(
-        "hint: embedding failed — the model downloads on first use; check huggingface.co reachability" +
+        "hint: embedding failed — the model downloads on first use; check huggingface.co reachability " +
         "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.ans/models) " +
         "from a connected host; run ans doctor to confirm the vector arm is present.\n"
       );

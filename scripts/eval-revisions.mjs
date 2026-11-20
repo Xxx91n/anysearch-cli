@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ansUserDirPath } from "./ans-home.mjs";
+import { ansAttributionRoot } from "./ans-home.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
@@ -35,7 +35,7 @@ async function run() {
   // the CLI/MCP reader agree without an env override.
   const defaultRoot =
     line === "attribution-gold"
-      ? ansUserDirPath("attribution-gold-revisions")
+      ? ansAttributionRoot()
       : path.join(root, "packages", "store", "calibration-revisions");
   const revisionRoot = process.env[rootEnv]
     ? path.resolve(process.env[rootEnv])

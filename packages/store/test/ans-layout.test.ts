@@ -230,7 +230,9 @@ test("a half-written snapshot in the new root does not strand the real database"
     assert.ok(record);
     assert.deepEqual(record.pending, []);
     assert.equal(readMarkerValue(join(box.home, ".ans", "anysearch.db")), "history");
-    assert.equal(said.join(""), "", "a recovered snapshot is not a warning");
+    // The unreadable file is moved aside and named, never deleted: "will not
+    // open" also covers a lock or a second process publishing right now.
+    assert.match(said.join(""), /unreadable-/, "the message says where the bad copy went");
   } finally { box.done(); }
 });
 
@@ -319,5 +321,41 @@ test("a database that appears in the old root after the move is still snapshotte
       "late",
       "the old file stays where it is, as the pre-upgrade copy",
     );
+  } finally { box.done(); }
+});
+
+test("a project's domains directory moves into .ans", () => {
+  const box = sandbox();
+  try {
+    // The domain TOMLs used to sit at the project root. They belong to the layout
+    // now, so the project pass carries them in with everything else.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, "domains"), { recursive: true });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+
+    ensureAnsLayout(box.env, () => {}, project);
+    assert.equal(
+      readFileSync(join(project, ".ans", "domains", "probe.toml"), "utf8"),
+      "[domain]\nname = \"probe\"\n",
+    );
+    assert.equal(existsSync(join(project, "domains")), false, "the old directory is gone");
+  } finally { box.done(); }
+});
+
+test("an explicit ANS_DOMAINS_DIR keeps its directory where the operator pointed it", () => {
+  const box = sandbox();
+  try {
+    // The variable names where the domains live. Moving the files out from under
+    // it would leave the setting pointing at an empty directory, so the override
+    // wins over the layout move.
+    const project = join(box.home, "project");
+    mkdirSync(join(project, "domains"), { recursive: true });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    writeFileSync(join(project, "domains", "probe.toml"), "[domain]\nname = \"probe\"\n");
+
+    ensureAnsLayout({ ...box.env, ANS_DOMAINS_DIR: join(project, "domains") }, () => {}, project);
+    assert.equal(existsSync(join(project, "domains", "probe.toml")), true, "left where it was");
+    assert.equal(existsSync(join(project, ".ans", "domains")), false, "nothing was copied either");
   } finally { box.done(); }
 });

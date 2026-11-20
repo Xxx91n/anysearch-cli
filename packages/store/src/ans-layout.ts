@@ -1,28 +1,20 @@
-// #323: one-time move of the pre-#323 directories into `.ans`.
+// The one-time move of the pre-#323 directories into `.ans`.
 //
-// Design: move the old directories once, at the entry points, instead of
-// teaching every reader two names — a reader that has to try two paths is a
-// reader that can disagree with the writer about which one is live.
-//
-// The rule, in one paragraph: on the first run after the rename, everything
-// under ~/.anysearch and ~/.anysearch-cli is moved into ~/.ans, and everything
-// under <project>/.anysearch and <project>/.anysearch-cli is moved into
-// <project>/.ans. Small files and directories are renamed (a copy-then-drop
-// when the two roots sit on different volumes). Databases are NOT renamed: a
-// live WAL database can be held open by a running server, and moving the main
-// file out from under its -wal is how a database gets corrupted. They are
-// copied with SQLite's own online backup (`VACUUM INTO`, the same mechanism
-// #310 trusts) and the old file is left where it is as the pre-upgrade copy.
+// Small files and directories are renamed, or copied then dropped when the two
+// roots sit on different volumes. Databases are never renamed: a live WAL
+// database can be held open by a running server, and moving the main file out
+// from under its -wal is how a database gets corrupted. They are copied with
+// SQLite's own online backup (`VACUUM INTO`) and the old file stays where it is
+// as the pre-upgrade copy.
 //
 // What cannot be moved is not lost: `ans-paths.ts` reads the old location when
-// the new one is absent, so a file left behind keeps working, and the next run
+// the new one is absent, so a file left behind keeps working and the next run
 // retries it. The marker at ~/.ans/.layout.json records what moved, what was
-// left, and why — so "did the rename finish" is a question with an answer on
-// disk instead of a guess.
+// left, and why.
 //
-// Project scope has no marker: what moves there is never a database of the new
-// layout's, so the move is a plain rename that is safe to retry on every run,
-// and a marker file in every project would be a worse trade than a few `stat`
+// Project scope has no marker: nothing that moves there is a database of the
+// new layout's, so the move is a plain rename that is safe to retry on every
+// run, and a marker file in every project would cost more than a few `stat`
 // calls. A database found in one is a leftover from an older layout; it stays
 // where it is, with a message saying why (see projectDatabaseNotice).
 //
@@ -31,6 +23,7 @@
 // `ans-paths.ts` and read the old location directly.
 
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -40,23 +33,30 @@ import {
   renameSync,
   rmSync,
   rmdirSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   ANS_DB_FILENAME,
   ANS_PROJECT_INDEX_FILENAME,
+  ANS_DOMAINS_DIR_NAME,
   ansDbPath,
   ansHomeDir,
+  ansProjectConfigPath,
   ansProjectIndexDbPath,
   ansProjectDir,
+  samePath,
   legacyHomeDirs,
   legacyProjectDirs,
 } from "./ans-paths.js";
-import { adoptDatabase, opensAsDatabase } from "./migration-backup.js";
+import { adoptDatabase, opensAsDatabase, setAsideUnreadable } from "./migration-backup.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
+
+/** Named so the multi-line operator messages below stay readable in source. */
+const NL = "\n";
 
 /** Databases that must be copied, never renamed (see the header). */
 const DATABASE_ENTRIES = new Set([ANS_DB_FILENAME, ANS_PROJECT_INDEX_FILENAME]);
@@ -115,41 +115,6 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Whether two paths name the same directory.
- *
- * The layout guard asks "is this cwd the home directory", and on Windows the
- * same directory answers to several spellings: a drive letter in another case,
- * an 8.3 short name (`ADMINI~1`), a junction. Comparing `join`-ed strings calls
- * those different, and a wrong "not the home directory" verdict hands the user
- * roots to the project pass, which renames a database instead of snapshotting
- * it. `realpath` asks the filesystem; the case fold covers a path that does not
- * exist yet, where `realpath` has nothing to canonicalize.
- */
-function sameDir(left: string, right: string): boolean {
-  const a = canonicalPath(left);
-  const b = canonicalPath(right);
-  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
-}
-
-function canonicalPath(target: string): string {
-  const resolved = resolve(target);
-  const missing: string[] = [];
-  let head = resolved;
-  for (;;) {
-    try {
-      // The nearest existing ancestor is what the filesystem can answer for.
-      // `~/.ans` itself usually does not exist yet, and resolving only the leaf
-      // would leave a junction in the parent unexpanded.
-      return join(realpathSync.native(head), ...missing.reverse());
-    } catch {
-      const parent = dirname(head);
-      if (parent === head) return resolved;
-      missing.push(basename(head));
-      head = parent;
-    }
-  }
-}
 
 /**
  * Rename one entry, falling back to a copy when the two roots are on different
@@ -162,7 +127,18 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== "EXDEV") throw error;
   }
-  cpSync(from, to, { recursive: true, errorOnExist: true, force: false });
+  // Across volumes the copy is staged beside the target and published with a
+  // rename. Copying straight to `to` would leave a half-written entry under the
+  // name the reader prefers when an interrupted run is retried, and the intact
+  // source would then be ignored forever.
+  const staging = to + "." + process.pid + ".copying";
+  try {
+    cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
+    renameSync(staging, to);
+  } catch (error) {
+    try { rmSync(staging, { recursive: true, force: true }); } catch { /* best effort */ }
+    throw error;
+  }
   rmSync(from, { recursive: true, force: true });
   return "copied";
 }
@@ -181,6 +157,63 @@ function projectDatabaseNotice(path: string, entry: string, env: NodeJS.ProcessE
   const override = isIndex ? "ANS_PROJECT_DB" : "ANS_DB_PATH";
   return "[anysearch] " + path + " 没有搬：现在这个库在 " + live + "，不在项目目录里。" +
     "这份是旧布局留下的，产品不再读它，确认不要了可以删掉，或用 " + override + " 指过去。\n";
+}
+
+/**
+ * Move `<project>/domains` into the layout root.
+ *
+ * The domain TOMLs used to sit at the project root; the rename puts them with
+ * everything else, so `"所有文件住哪只在 ans-paths.ts 定义一次"` stays true. A
+ * plain rename per entry, with the same collision rule as the rest of the
+ * project pass: an existing name wins and is reported.
+ *
+ * `ANS_DOMAINS_DIR` pointing at the old directory is an operator saying where
+ * the domains live. Moving them out from under that setting would leave the
+ * variable naming an empty directory, so an explicit override wins here too.
+ *
+ * Only a directory the product itself calls a project is touched. A package
+ * that ships domain TOMLs next to its own source has a `domains/` directory
+ * too, and renaming that one out of the package would delete shipped defaults
+ * the first time anything ran there. The project marker is the product's own
+ * definition of "this directory is a project", so it is the condition used.
+ */
+function adoptProjectDomains(
+  cwd: string,
+  target: string,
+  warn: (message: string) => void,
+  env: NodeJS.ProcessEnv,
+): void {
+  const from = join(cwd, ANS_DOMAINS_DIR_NAME);
+  const to = join(target, ANS_DOMAINS_DIR_NAME);
+  if (!existsSync(from) || samePath(from, to)) return;
+  // Only a project has project domains. A package directory that ships its own
+  // `domains/` (the builtin set) is not one, and moving those out from under it
+  // would leave the package with nothing to read.
+  if (!existsSync(join(cwd, ".git")) && !existsSync(ansProjectConfigPath(cwd))) return;
+  const override = env.ANS_DOMAINS_DIR?.trim();
+  if (override && samePath(override, from)) return;
+  let entries: string[];
+  try {
+    entries = readdirSync(from);
+  } catch (error) {
+    warn("[anysearch] 读不出 " + from + "：" + errorText(error) + "；本次继续从旧位置读取。" + NL + "");
+    return;
+  }
+  for (const entry of entries) {
+    const source = join(from, entry);
+    const dest = join(to, entry);
+    if (existsSync(dest)) {
+      warn("[anysearch] " + source + " 没有搬：新目录里已经有同名文件，保留新的那份。" + NL + "");
+      continue;
+    }
+    try {
+      mkdirSync(to, { recursive: true });
+      moveEntry(source, dest);
+    } catch (error) {
+      warn("[anysearch] " + source + " 没有搬：" + errorText(error) + "；本次继续从旧位置读取。" + NL + "");
+    }
+  }
+  try { rmdirSync(from); } catch { /* not empty, or already gone */ }
 }
 
 /**
@@ -232,6 +265,7 @@ function adoptProjectLayout(cwd: string, env: NodeJS.ProcessEnv, warn: (message:
     }
     try { rmdirSync(dir); } catch { /* not empty, or already gone */ }
   }
+  adoptProjectDomains(cwd, target, warn, env);
 }
 
 /**
@@ -255,7 +289,7 @@ export function ensureAnsLayout(
   // project roots ARE the user roots. Letting the project pass handle them would
   // rename the databases instead of snapshotting them — the one thing this
   // module exists to prevent — so the user branch owns that case.
-  if (!sameDir(ansProjectDir(cwd), ansHomeDir(env))) adoptProjectLayout(cwd, env, warn);
+  if (!samePath(ansProjectDir(cwd), ansHomeDir(env))) adoptProjectLayout(cwd, env, warn);
 
   const legacy = legacyHomeDirs(env).filter((dir) => existsSync(dir));
   if (legacy.length === 0) return undefined;
@@ -272,8 +306,14 @@ export function ensureAnsLayout(
   const recorded = readAnsLayoutRecord(env);
 
   const home = ansHomeDir(env);
+  const createdHome = !existsSync(home);
   try {
-    mkdirSync(home, { recursive: true });
+    // The root holds the database, the token and the credentials file, so it is
+    // owner-only by the same rule those files are. Only a root this call created
+    // is tightened: an operator who widened an existing one made a choice this
+    // module should not silently undo.
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    if (createdHome) { try { chmodSync(home, 0o700); } catch { /* Windows ACL path */ } }
   } catch (error) {
     throw new Error(
       "无法创建配置根 " + home + "：" + errorText(error) +
@@ -306,7 +346,21 @@ export function ensureAnsLayout(
         // A database that was already copied stays behind on purpose (it is the
         // pre-upgrade copy), so "the target exists" is the finished state here,
         // not a conflict to report on every run.
-        if (DATABASE_ENTRIES.has(entry) && adopted.has(from)) continue;
+        if (DATABASE_ENTRIES.has(entry) && adopted.has(from)) {
+          // The old file stays behind as the pre-upgrade copy, so a newer mtime
+          // means something wrote to it after the snapshot. Those rows are not in
+          // the new database, and no later run will bring them over.
+          try {
+            const copiedAt = recorded?.migratedAt ? Date.parse(recorded.migratedAt) : NaN;
+            if (Number.isFinite(copiedAt) && statSync(from).mtimeMs > copiedAt) {
+              warn(
+                "[anysearch] " + from + " 在升级之后又被写过，那些内容不在 " + to +
+                " 里；新的库才是现在在用的那个，旧文件确认不要了可以删掉。" + NL + "",
+              );
+            }
+          } catch { /* stat failed: nothing to report */ }
+          continue;
+        }
         // A target that will not open is not a newer file to preserve: it is
         // what an interrupted snapshot left half-written. Keeping it would
         // strand the real database in the old directory forever — and `pathInUse`
@@ -317,7 +371,16 @@ export function ensureAnsLayout(
           pending.push({ path: from, reason: "新目录里已经有同名文件，保留新的那份" });
           continue;
         }
-        try { rmSync(to, { force: true }); } catch { /* already gone */ }
+        // Moved aside, not deleted: "will not open" also covers a lock held
+        // elsewhere, a permission problem, or a second `ans` mid-publish, and
+        // none of those are a file this module may destroy unread.
+        try {
+          const aside = setAsideUnreadable(to);
+          warn("[anysearch] " + to + " 读不出来，已挪到 " + aside + "，这次重新做一份。\n");
+        } catch (error) {
+          pending.push({ path: from, reason: "新目录里的同名文件读不出来，也挪不开：" + errorText(error) });
+          continue;
+        }
       }
       try {
         if (DATABASE_ENTRIES.has(entry)) {
@@ -370,9 +433,13 @@ export function ensureAnsLayout(
  * the same way: a layout that could not be established is not something to
  * carry on past, and three hand-written copies of that decision drift.
  */
-export function ensureAnsLayoutOrExit(program: string, env: NodeJS.ProcessEnv = process.env): void {
+export function ensureAnsLayoutOrExit(
+  program: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): void {
   try {
-    ensureAnsLayout(env);
+    ensureAnsLayout(env, undefined, cwd);
   } catch (error) {
     process.stderr.write(program + ": " + errorText(error) + "\n");
     process.exit(1);

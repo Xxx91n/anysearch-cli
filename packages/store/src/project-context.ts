@@ -1,6 +1,6 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ansProjectConfigPath } from "./ans-paths.js";
+import { ANS_DIR_NAME, ansHomeDir, ansProjectConfigPath, samePath } from "./ans-paths.js";
 
 export type ProjectContext =
   | { root: string; source: "git" | "config" }
@@ -17,16 +17,21 @@ export function resolveProjectContext(cwd: string = process.cwd()): ProjectConte
       try {
         const git = statSync(join(root, ".git"));
         if (git.isDirectory() || git.isFile()) return { root, source: "git" };
-      } catch (error: any) {
-        if (error?.code !== "ENOENT") throw error;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       }
-      // `ansProjectConfigPath` also answers for a project that still has the
-      // pre-#323 `.anysearch/config.toml`, so an existing project keeps its
-      // identity across the rename.
-      try {
-        if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
-      } catch (error: any) {
-        if (error?.code !== "ENOENT") throw error;
+      // The user root answers for a project config too — `~/.ans/config.toml` is
+      // the user's own `[llm]` settings, written by `ans llm set`. Accepting it
+      // would make the home directory every unrooted directory's project, so the
+      // layer that IS the user root is skipped before the marker is read.
+      // `ansProjectConfigPath` still answers for a project that has the pre-#323
+      // `.anysearch/config.toml`, so an existing project keeps its identity.
+      if (!samePath(join(root, ANS_DIR_NAME), ansHomeDir())) {
+        try {
+          if (statSync(ansProjectConfigPath(root)).isFile()) return { root, source: "config" };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+        }
       }
       const parent = dirname(root);
       if (parent === root) break;

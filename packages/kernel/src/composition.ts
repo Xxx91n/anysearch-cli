@@ -293,9 +293,13 @@ const PATH_RE = new RegExp(
 // ANS_DB_PATH overrides; default ~/.ans/anysearch.db (#323).
 // Kernel does not read env elsewhere, but path resolution is composition-root I/O (pits: keep it here).
 export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env.ANS_DB_PATH && env.ANS_DB_PATH.trim();
-  if (explicit) return explicit;
-  return ansDbPath(env);
+  return explicitDbPath(env) ?? ansDbPath(env);
+}
+
+/** The database path the operator named explicitly, if any. */
+export function explicitDbPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const explicit = env.ANS_DB_PATH?.trim();
+  return explicit ? explicit : undefined;
 }
 
 // attribution calibration lives on disk as a revision-root head

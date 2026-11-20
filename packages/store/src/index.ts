@@ -52,8 +52,7 @@ export * from "./access-chain";
 // and export mapping at the volatile OTel GenAI boundary.
 export * from "./observation";
 
-// #323: the one place the on-disk layout is decided (~/.ans, <project>/.ans)
-// and the one-time move of the pre-#323 directories into it.
+// The on-disk layout; ans-layout.ts moves the old directories once.
 export * from "./ans-paths";
 export * from "./ans-layout";
 

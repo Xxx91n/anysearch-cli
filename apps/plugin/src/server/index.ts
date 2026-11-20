@@ -35,10 +35,18 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { clearServerRegistry, projectIndexDbPath, resolveServerToken, writeServerRegistry } from "./token.js";
 import { createPostWorkTracker, openPostWorkRegistry, type PostWorkOutcome } from "./post-work.js";
 import { parseDrainMs, runShutdown } from "./shutdown.js";
+import { mkdirSync } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
+import { existsSync } from "node:fs";
+import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
+import { ansDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
+// parseAndValidateHeaders lives in the hook bundle module so the wire format
+// stays single-source across hook outbound and server inbound.
+import { parseAndValidateHeaders } from "../hooks/propagation.js";
 
-// #323: move the pre-#323 directories into ~/.ans before the token and the
-// index are resolved. A failure is loud: the server must not start on a layout
-// it could not establish.
+// Move the pre-#323 directories into ~/.ans before the token and the index are
+// resolved. A failure is loud: the server must not start on a layout it could
+// not establish. Imports are hoisted, so this is the first statement that runs.
 ensureAnsLayoutOrExit("[anysearch]");
 
 const REQUESTED_PORT = Number(process.env.ANS_SERVER_PORT || 33333);
@@ -50,15 +58,6 @@ const TOKEN = RESOLVED_TOKEN.token;
 const MAX_BODY_BYTES = 1024 * 1024;
 const DB_PATH = projectIndexDbPath();
 
-// Ensure the data dir exists.
-import { mkdirSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
-import { existsSync } from "node:fs";
-import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { ansDbPath, ansProjectPolicyPath, domainTomlPath, domainSourceVersions, emitConfigChangeAudit, ensureAnsLayoutOrExit, ensureOwnerOnlyDb, loadPolicyFromToml, policyCacheApplies, resolveProjectContext, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type PolicySourceVersion, type UrlPolicy } from "@anysearch-cli/store";
-// parseAndValidateHeaders lives in the hook bundle module so
-// the wire format stays single-source across hook outbound and server inbound.
-import { parseAndValidateHeaders } from "../hooks/propagation.js";
 // The index holds retrieved snippets; keep its directory and file owner-only
 // before the store creates them, then pass again after WAL turns on so the
 // sidecars get the same treatment.

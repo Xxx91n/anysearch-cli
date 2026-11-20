@@ -28,7 +28,18 @@ let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModu
 // import ans-paths, and a second literal would be a second answer to "where is
 // the cache" (#323).
 function withCacheDir(m: EmbeddingModule): EmbeddingModule {
-  m.setModelCacheDir?.(ansModelCacheDir());
+  // `?.` would make this contract silently optional: `importEmbeddingFallback`
+  // can find a copy in another install tree, and an old copy without the setter
+  // would quietly download models into its own default directory — the pre-#323
+  // one — and `ans doctor` would show nothing wrong.
+  if (typeof m.setModelCacheDir !== "function") {
+    process.stderr.write(
+      "[anysearch] 这个 embedding 副本不支持指定缓存目录，模型会下到它自己的默认位置，" +
+      "不在 ~/.ans 下。装一个匹配的版本可以消掉这条。\n",
+    );
+    return m;
+  }
+  m.setModelCacheDir(ansModelCacheDir());
   return m;
 }
 

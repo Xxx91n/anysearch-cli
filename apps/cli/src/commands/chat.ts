@@ -2,8 +2,10 @@
 // #258: uses the full PI AgentSession through PiAgentRuntime.
 // uses createLlmSession deep module from kernel.
 // LLM config resolves through the layered loader (cli > env > project > user >
-// default; #108): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
-// ANS_LLM_* env, .ans/config.toml (whitelisted keys), ~/.ans/config.toml.
+// default): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
+// ANS_LLM_* env, .ans/config.toml (whitelisted keys), ~/.ans/config.toml. Both
+// config files fall back to the pre-#323 location while an upgrade has not
+// finished, so the paths named here are the defaults, not the only answer.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
@@ -11,7 +13,7 @@ import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
-import { resolveLlmConfig } from "../config-llm";
+import { resolveLlmConfig, userConfigPath } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
@@ -129,7 +131,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const cfg = resolveLlmConfig({ flags });
   if (!cfg.provider || !cfg.model) {
     process.stderr.write("LLM provider not configured.\n");
-    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.ans/config.toml)\n");
+    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes " + userConfigPath() + ")\n");
     process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
     return 3;
   }

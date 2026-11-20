@@ -30,10 +30,9 @@ Thumbs.db
 !.ship-gate/calibration-l2-preregistration.json
 !.ship-gate/attribution-gold-preregistration.json
 
-# #323: the one runtime directory, user and project scope.
+# runtime directory, user and project scope
 .ans/
-# Pre-#323 names, still read by the layout fallback and still written by a
-# checkout that has not moved yet.
+# pre-#323 name, read while a checkout has not moved yet
 .anysearch/
 apps/plugin/dist/
 apps/dsh-plugin/lib/

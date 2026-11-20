@@ -2188,6 +2188,8 @@ async function main() {
       const firstTurn = await runAnsAsync(["chat", "LEGACY-FIRST-QUESTION"], { cwd: chatProject, env: beforeUpgrade });
       check(firstTurn.code === 0 && firstTurn.out.includes("REPLY-TO-LEGACY-FIRST-QUESTION"),
         "升级前那一轮能跑完并落库", firstTurn.out.slice(0, 400));
+      const legacySession = firstTurn.out.match(/\[session\] (\S+)/)?.[1];
+      check(Boolean(legacySession), "升级前的会话有句柄", firstTurn.out.slice(0, 300));
 
       // 不带 ANS_DB_PATH：让产品按布局自己找库，搬迁才会碰到这一段对话。
       const { ANS_DB_PATH: _dropDb, ...layoutPicked } = chatEnv;
@@ -2197,6 +2199,7 @@ async function main() {
       });
       check(upgraded.code === 0, "会话库在场时升级运行退出码 0", upgraded.out.slice(0, 400));
 
+      const legacyStamp = statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs;
       const beforeSecond = requestLog.length;
       const secondTurn = await runAnsAsync(["chat", "--continue", "LEGACY-SECOND-QUESTION"], {
         cwd: chatProject,
@@ -2205,10 +2208,22 @@ async function main() {
       check(secondTurn.code === 0 && secondTurn.out.includes("REPLY-TO-LEGACY-SECOND-QUESTION"),
         "升级后能接着同一条会话问下一句", secondTurn.out.slice(0, 400));
       const resumedBody = requestLog.slice(beforeSecond).filter((r) => r.role === "chat").pop()?.body ?? "";
-      check(resumedBody.includes("LEGACY-FIRST-QUESTION"),
-        "续聊的上游请求里带着升级前那一轮的内容");
-      check(existsSync(join(resumeHome, ".ans", "anysearch.db")),
-        "这段对话读的是搬到 .ans 的库");
+      let resumedMessages = [];
+      try { resumedMessages = JSON.parse(resumedBody)?.messages ?? []; } catch { /* not JSON */ }
+      check(resumedMessages.some((m) => m.role === "user" && messageText(m).includes("LEGACY-FIRST-QUESTION")),
+        "续聊的上游请求里带着升级前那一轮的问题", resumedBody.slice(0, 300));
+      // 文件存在只说明搬迁做过，说明不了第二轮读的是哪个库。查第二轮那句话落在
+      // 哪份库里，再确认旧库一个字节都没动。
+      {
+        const db = new Database(join(resumeHome, ".ans", "anysearch.db"), { readonly: true });
+        try {
+          const row = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND content LIKE ?")
+            .get(legacySession, "%LEGACY-SECOND-QUESTION%");
+          check((row?.n ?? 0) > 0, "续聊那一轮写进了搬到 .ans 的库");
+        } finally { db.close(); }
+      }
+      check(statSync(legacyDb).size + ":" + statSync(legacyDb).mtimeMs === legacyStamp,
+        "续聊没有写回旧库");
     }
   } finally {
     await Promise.all(clients.map((c) => c.kill()));

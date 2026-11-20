@@ -18,6 +18,16 @@ import { activeIds, expiredEntries, readQuarantine } from "./quarantine-ledger";
 import { SqliteObservationStore } from "../observation";
 import { runTeardown, unrefPendingHandles } from "../teardown";
 
+/**
+ * The database this run may write to: `ANS_DB_PATH` when set, else the layout's
+ * durable database. Both the observation write and the switch-state probe use it,
+ * so the override rule is decided once.
+ */
+function durableDbPath(): string {
+  const override = process.env.ANS_DB_PATH?.trim();
+  return override ? override : ansDbPath();
+}
+
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
   for (; ;) {
@@ -271,9 +281,7 @@ async function main(): Promise<number> {
   // observation. This write is deliberately after evaluateGate and never feeds
   // the decision path above it.
   try {
-    const observationDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
-      ? process.env.ANS_DB_PATH
-      : ansDbPath();
+    const observationDb = durableDbPath();
     mkdirSync(dirname(observationDb), { recursive: true });
     const observation = new SqliteObservationStore(observationDb);
     observation.recordEvaluationTrace({
@@ -339,9 +347,7 @@ async function main(): Promise<number> {
   // IO failures are loud stderr but never crash the run (exit-code contract unchanged);
   // the chain verifier at ship-gate step 1 remains the authority on chain health.
   try {
-    const swDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
-      ? process.env.ANS_DB_PATH
-      : ansDbPath();
+    const swDb = durableDbPath();
     const gateBoundary = decisionIdx >= 0 || overrideIdx >= 0;
     const probe = gateBoundary ? probeSwitchIntegrity(outDir, swDb) : null;
     // build the verdict AFTER the probe runs and AFTER advanceSwitch has

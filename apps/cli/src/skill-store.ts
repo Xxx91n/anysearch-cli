@@ -234,10 +234,10 @@ function skillsRootFromManaged(managed: string): string {
   return resolve(managed, "..");
 }
 
-// Design: the selected scope anchor (the user root or the project root) is part
-// of the trust boundary — a project-controlled .ans symlink must not alias the
-// user store, so it is validated before manifest read/write/delete authority.
-/** Derive the scope anchor (the user root or the project root) from a managed path. */
+// Design: the selected scope anchor (`~/.ans` or `<project>/.ans`) is part of the
+// trust boundary — a project-controlled .ans symlink must not alias the user
+// store, so it is validated before manifest read/write/delete authority.
+/** Derive the scope anchor (`~/.ans` or `<project>/.ans`) from a managed path. */
 function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
 }

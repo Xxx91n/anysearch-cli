@@ -459,18 +459,35 @@ export function snapshotBeforeDestructiveOp(dbPath: string, label: string): { ba
   }
 }
 
-/** Whether `path` holds a database SQLite can read, as opposed to a torn leftover. */
+/** Whether `path` holds a database whose pages SQLite can read all the way through. */
 export function opensAsDatabase(path: string): boolean {
   let db: Database.Database | undefined;
   try {
     db = openDatabase(path, { readonly: true, timeout: 1000 });
-    db.prepare("PRAGMA schema_version").get();
-    return true;
+    // `schema_version` lives in the header, so reading it only proves the open
+    // succeeded. A VACUUM killed mid-write leaves a header with missing pages
+    // behind, and that file must not be adopted as somebody's finished copy.
+    const result = db.prepare("PRAGMA quick_check").get() as Record<string, unknown> | undefined;
+    return Object.values(result ?? {})[0] === "ok";
   } catch {
     return false;
   } finally {
     try { db?.close(); } catch { /* already closed */ }
   }
+}
+
+/**
+ * Moves a file we could not read out of the way, and keeps it.
+ *
+ * "Cannot open" is not the same as "corrupt": the file may be locked by another
+ * process, sit behind a permission problem, or be mid-publish by a second `ans`.
+ * Deleting any of those destroys data nobody examined, so the file is renamed
+ * aside and named in the message instead.
+ */
+export function setAsideUnreadable(path: string): string {
+  const aside = path + ".unreadable-" + Date.now();
+  renameSync(path, aside);
+  return aside;
 }
 
 /**
@@ -482,51 +499,58 @@ export function opensAsDatabase(path: string): boolean {
  * left untouched — the rename keeps the old file as the pre-upgrade copy, and
  * deleting it is the operator's call, not this function's.
  *
+ * Publish is a temp file plus a rename, and it tolerates losing the race: two
+ * `ans` processes cold-starting at once both vacuum the same source, and either
+ * copy is the answer. Nothing here holds a cross-process lock, and the comment
+ * says so rather than implying protection that does not exist — the source's
+ * busy timeout only paces them.
+ *
  * @throws when no copy can be produced. The caller must not treat the new
  *   directory as authoritative in that case; the old database stays in use.
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  if (existsSync(to)) throw new Error("cannot adopt " + from + ": " + to + " already exists");
+  if (existsSync(to)) {
+    if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
+    setAsideUnreadable(to);
+  }
+  // A name of this call's own: a stray leftover from a killed run can never be
+  // mistaken for a published copy, and two processes cannot collide on it.
+  const work = to + "." + process.pid + ".adopting";
   let db: Database.Database | undefined;
-  /** Set only while this call owns `to`, so a failure never deletes another process's snapshot. */
-  let written = false;
   try {
     const conn = openDatabase(from, { timeout: 5000 });
     db = conn;
     const initDeadline = beginInit(conn);
     const prevUmask = process.umask(0o077);
     try {
+      try { rmSync(work, { force: true }); } catch { /* nothing to clear */ }
       withInitBusyRetry("layout adoption", () => {
-        // A process that held the lock first may have published the snapshot
-        // while this one waited. Its file is the winner: vacuuming over it
-        // would replace a completed copy with a second one, the swap this
-        // module's publish path refuses to make. A file that will not open is
-        // not a published copy — a process killed mid-vacuum leaves one — so it
-        // is cleared instead of adopted, and the failure cannot masquerade as a
-        // finished move.
-        if (existsSync(to) && opensAsDatabase(to)) {
-          written = false;
-          return;
-        }
-        try { rmSync(to, { force: true }); } catch { /* nothing to clear */ }
-        conn.prepare("VACUUM INTO ?").run(to);
-        written = true;
+        conn.prepare("VACUUM INTO ?").run(work);
       }, initDeadline);
     } finally {
       process.umask(prevUmask);
     }
     endInit(conn);
+    try {
+      renameSync(work, to);
+    } catch (error) {
+      // On Windows a rename cannot replace an existing file, which here means
+      // another process published first. Its copy is the result: both were
+      // vacuumed from the same source.
+      if (existsSync(to) && opensAsDatabase(to)) {
+        try { rmSync(work, { force: true }); } catch { /* best effort */ }
+        return { bytes: statSync(to).size, sha256: sha256File(to) };
+      }
+      throw error;
+    }
     try { chmodSync(to, 0o600); } catch { /* best-effort (Windows ACL path) */ }
     return { bytes: statSync(to).size, sha256: sha256File(to) };
   } catch (error) {
-    // A half-written copy next to the live database looks like a valid one;
-    // remove it so the failure cannot be mistaken for a finished move. Only
-    // this call's own file: a copy another process published is its result,
-    // and deleting it would destroy the recovery point this module promises.
-    if (written) {
-      try { rmSync(to, { force: true }); } catch { /* best effort */ }
-    }
+    // Only this call's own temp file: a copy another process published is its
+    // result, and deleting it would destroy the recovery point this module
+    // promises.
+    try { rmSync(work, { force: true }); } catch { /* best effort */ }
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       "把 " + from + " 复制到 " + to + " 失败：" + detail +

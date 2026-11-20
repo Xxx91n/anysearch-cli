@@ -45,7 +45,6 @@ import { ansCredentialsPathFor, resolveConfigHome } from "./ans-paths.js";
 
 export { resolveConfigHome };
 
-export const CREDENTIALS_FILENAME = "credentials.json";
 
 /** Written into every file so its plaintext nature is obvious to a human who opens it. */
 export const CREDENTIALS_NOTE =

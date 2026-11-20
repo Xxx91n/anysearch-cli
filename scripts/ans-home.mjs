@@ -13,6 +13,7 @@ import path from "node:path";
 const NEW_DIR = ".ans";
 const LEGACY_DATA_DIR = ".anysearch";
 const LEGACY_CONFIG_DIR = ".anysearch-cli";
+const ATTRIBUTION_DIR = "attribution-gold-revisions";
 
 /** The user's home directory: USERPROFILE (Windows), else HOME, else the platform's. */
 export function resolveHome(env = process.env) {
@@ -35,13 +36,26 @@ export function ansDbPath(env = process.env) {
   );
 }
 
-/** A user-level directory under the layout root, read from the old location when that is all there is. */
+/**
+ * A user-level directory under the layout root, read from the old location when
+ * that is all there is.
+ *
+ * Both pre-#323 roots are consulted, in the product's order: a file's old home
+ * depended on which family it belonged to, and `skills/` or `host-wiring/` lived
+ * under `.anysearch-cli` while the database lived under `.anysearch`. Looking only
+ * at the data root would quietly return the new path for those and read nothing.
+ */
 export function ansUserDirPath(name, env = process.env) {
   const home = resolveHome(env);
   return pathInUse(
     path.join(home, NEW_DIR, name),
-    path.join(home, LEGACY_DATA_DIR, name),
+    pathInUse(path.join(home, LEGACY_DATA_DIR, name), path.join(home, LEGACY_CONFIG_DIR, name)),
   );
 }
 
-export { NEW_DIR, LEGACY_DATA_DIR, LEGACY_CONFIG_DIR };
+/** The attribution calibration revisions directory. */
+export function ansAttributionRoot(env = process.env) {
+  return ansUserDirPath(ATTRIBUTION_DIR, env);
+}
+
+export { NEW_DIR, LEGACY_DATA_DIR, LEGACY_CONFIG_DIR, ATTRIBUTION_DIR };

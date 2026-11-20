@@ -10,7 +10,6 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
 import { resolveHookProject } from "./project-identity.js";
 // the server never runs open; resolve the installation token and published address.

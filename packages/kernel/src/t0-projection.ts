@@ -81,7 +81,7 @@ export async function writeProjection(
   // Project scope file (only when project rows exist — no auto-creation).
   if (projectScope && hasProject) {
     try {
-      const projPath = ansProjectMemoryPath();
+      const projPath = ansProjectMemoryPath(projectScope);
       atomicWrite(projPath, merged.text);
       results.push({ path: projPath, warned: merged.warned });
     } catch (e) {

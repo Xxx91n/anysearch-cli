@@ -7,6 +7,7 @@ import { basename, dirname, join } from "node:path";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, truncateSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { ansPiSessionsDir } from "@anysearch-cli/store";
+import { explicitDbPath } from "./composition";
 import type { SessionLockWindows } from "./session-lock";
 
 /**
@@ -20,7 +21,7 @@ export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): strin
   // An explicit database path keeps its records beside it; otherwise the
   // records live under the layout root, which is what lets them survive a
   // migration that moved the directory but not the database.
-  const explicitDb = env.ANS_DB_PATH?.trim();
+  const explicitDb = explicitDbPath(env);
   if (explicitDb) return join(dirname(explicitDb), "pi-sessions");
   return ansPiSessionsDir(env);
 }

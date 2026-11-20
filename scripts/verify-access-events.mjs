@@ -2,8 +2,10 @@
 // scripts/verify-access-events.mjs
 // independent verifier for the access_events tamper-evidence chain.
 // Deliberately re-implements the canonicalization from scratch ( _Avoid_ 3: no shared
-// serialization code with the writer). Node stdlib + better-sqlite3 only (resolved through the
-// store package because pnpm does not hoist it to the root).
+// serialization code with the writer). Path resolution is borrowed from ./ans-home.mjs so the
+// verifier reads the same database the product writes; the serialization stays independent.
+// Node stdlib + better-sqlite3 only (resolved through the store package because pnpm does not
+// hoist it to the root).
 //
 // Spec (verbatim from):
 // chain fields = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
