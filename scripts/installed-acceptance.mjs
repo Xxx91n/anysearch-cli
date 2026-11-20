@@ -2273,9 +2273,14 @@ async function main() {
         check(legacy.length === 0, "装出来的产品不夹带旧布局的独立包", JSON.stringify(legacy));
         // 一个不存在的旧包声明：判 blocked 的路径也要在真实产物上走一遍——不装
         // 任何东西，只造一个别人的 ans，确认它拒绝动手。
+        //
+        // 位置要跟 npm 的全局布局一致：Windows 把 shim 放在前缀根，POSIX 放在
+        // `<前缀>/bin`。放错地方就等于"没有这个命令"，判定会变成 absent——上一版
+        // 就是在这里把 ubuntu 车道跑红的。
         const foreign = join(work, "foreign-prefix");
-        mkdirSync(foreign, { recursive: true });
-        writeFileSync(join(foreign, process.platform === "win32" ? "ans.cmd" : "ans"),
+        const foreignBin = process.platform === "win32" ? foreign : join(foreign, "bin");
+        mkdirSync(foreignBin, { recursive: true });
+        writeFileSync(join(foreignBin, process.platform === "win32" ? "ans.cmd" : "ans"),
           "#!/bin/sh\nexec node /opt/someone-elses/ans \"$@\"\n", "utf8");
         const blocked = sh(process.execPath, [migrateEntry, "--prefix", foreign, "--json"], {
           cwd: prefix, env: { ...baseEnv, ANS_DB_PATH: join(work, "migrate2.db") },
