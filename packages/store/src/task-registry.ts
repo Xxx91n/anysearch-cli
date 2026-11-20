@@ -105,25 +105,20 @@ export interface TaskRegistryOptions {
 }
 
 /**
- * #309: how long a FINISHED task row is kept when `pruneFinishedTasks` runs.
+ * How long an ENDED row is kept, for BOTH registry tables (#309, #343). One
+ * window, because two would drift the first time someone tuned one.
  *
- * The #307 comment asked this ticket to settle "how much of task_records to
- * read", and the table has no cleanup path: every hook write adds a row (an
- * INSERT plus an UPDATE). The rule this constant encodes:
+ * Ended rows are history: 30 days answers "what ran last month" and keeps the
+ * tables bounded. Open TASK rows are never pruned at any age — they are the
+ * blocking criterion. Open PROCESS rows survive too, unless this host can prove
+ * the pid is gone AND the row is past the window (see `processPrunePlan`).
+ * Dismissed rows are kept: the
+ * dismissal is the only evidence a human looked at them.
  *
- * - an OPEN row (`ended_at IS NULL`) is never pruned, whatever its age — it is
- *   the blocking criterion, and deleting it would make an upgrade stop waiting
- *   for work that is still running;
- * - a dismissed-but-open row is also kept (it is still open, and the dismissal
- *   record is the only evidence a human looked at it);
- * - a finished row is audit history. 30 days is long enough to answer "what ran
- *   last month" and short enough that the table stays bounded;
- * - pruning is NEVER automatic. It runs only when an operator asks
- *   (`ans upgrade prune`), takes a consistent snapshot first, and reports the
- *   count it removed — the ticket forbids silently sweeping the very records an
- *   upgrade reads.
+ * Pruning is never automatic. Only an operator's `ans upgrade prune` deletes,
+ * and it snapshots first.
  */
-export const TASK_HISTORY_RETENTION_DAYS = 30;
+export const HISTORY_RETENTION_DAYS = 30;
 
 export interface TaskRecordRow {
   taskId: string;
@@ -160,6 +155,32 @@ export interface ProcessRecordRow {
   startedAt: string;
   /** NULL = still running. */
   endedAt: string | null;
+}
+
+/**
+ * #343: why this host may delete a process row.
+ *
+ * `closed-aged` — the process wrote its end, and the row is past the window.
+ * `open-gone-aged` — the row is past the window AND this host proved the pid is
+ * no longer running (the crash case: the host killed the child before it could
+ * write its end).
+ */
+export type ProcessPruneReason = "closed-aged" | "open-gone-aged";
+
+/**
+ * #343: one pass of the process-table cleanup, as decisions rather than actions
+ * so `--dry-run` and the real run read the same one. The kept side is counts,
+ * not rows: every caller reports "why these stay" as a number.
+ */
+export interface ProcessPrunePlan {
+  /** Rows this host can delete, with the reason each one qualified. */
+  deletable: Array<{ row: ProcessRecordRow; reason: ProcessPruneReason }>;
+  /** Rows too young to touch, whatever their state. */
+  withinWindow: number;
+  /** Open rows whose pid is still in use: kept, because the pid may be reused. */
+  pidInUse: number;
+  /** Open rows from another host: this machine cannot prove anything about them. */
+  otherHost: number;
 }
 
 /** An open task and how to end it. `finish` is idempotent (a second call is a no-op). */
@@ -204,6 +225,14 @@ export class TaskRegistry {
     allTaskIds: Database.Statement;
     parentReferences: Database.Statement;
     pruneFinishedTasks: Database.Statement;
+    // #343: the process table's cleanup. Rows are picked by age+state, then
+    // deleted one id at a time under the SAME predicate — a row that changed
+    // between the plan and the delete (its owner wrote the end) simply does not
+    // match any more, which is the safe direction.
+    agedClosedProcesses: Database.Statement;
+    agedOpenProcesses: Database.Statement;
+    inWindowProcesses: Database.Statement;
+    deleteProcessRow: Database.Statement;
   };
   private readonly owner: { pid: number; host: string };
   private readonly isOwnerAlive: (pid: number) => boolean;
@@ -217,6 +246,8 @@ export class TaskRegistry {
       "task_id as taskId, kind, role, entry, owner_pid as ownerPid, owner_host as ownerHost, " +
       "session_id as sessionId, origin, parent_task_id as parentTaskId, started_at as startedAt, " +
       "ended_at as endedAt, exit_code as exitCode, dismissed_at as dismissedAt, dismissed_reason as dismissedReason";
+    const processColumns =
+      "id, pid, owner_host as ownerHost, entry, build, started_at as startedAt, ended_at as endedAt";
     this.stmts = {
       // ended_at IS NULL in the WHERE keeps `finish` from rewriting history:
       // a task that already reported its end keeps the code it ended with.
@@ -240,7 +271,7 @@ export class TaskRegistry {
         "UPDATE process_records SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL",
       ),
       openProcesses: db.prepare(
-        "SELECT id, pid, owner_host as ownerHost, entry, build, started_at as startedAt, ended_at as endedAt FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
+        "SELECT " + processColumns + " FROM process_records WHERE ended_at IS NULL ORDER BY started_at",
       ),
       gate: db.prepare(
         "SELECT gate_id as gateId, opened_at as openedAt, opened_by_pid as openedByPid, opened_by_host as openedByHost, note FROM upgrade_gate WHERE id = 1",
@@ -287,6 +318,32 @@ export class TaskRegistry {
       agedFinishedTasksHeldByChildren: db.prepare(
         "SELECT COUNT(*) as n FROM task_records WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) " +
         "AND task_id IN (SELECT parent_task_id FROM task_records WHERE parent_task_id IS NOT NULL)",
+      ),
+      // #343: same age rule as the task table, no parent links to respect (no
+      // foreign key points at process_records, and `entry` is a free string).
+      agedClosedProcesses: db.prepare(
+        "SELECT " + processColumns + " FROM process_records " +
+        "WHERE ended_at IS NOT NULL AND ended_at < datetime('now', ?) ORDER BY ended_at",
+      ),
+      // An open row's only timestamp is started_at, so that is its age.
+      agedOpenProcesses: db.prepare(
+        "SELECT " + processColumns + " FROM process_records " +
+        "WHERE ended_at IS NULL AND started_at < datetime('now', ?) ORDER BY started_at",
+      ),
+      // Rows that are still history-in-the-making: too young to delete. Counted
+      // only, because reporting them one by one is what this ticket exists to stop.
+      inWindowProcesses: db.prepare(
+        "SELECT COUNT(*) as n FROM process_records WHERE " +
+        "(ended_at IS NOT NULL AND ended_at >= datetime('now', ?)) OR " +
+        "(ended_at IS NULL AND started_at >= datetime('now', ?))",
+      ),
+      // One statement, both reasons: the age predicate is written ONCE, so
+      // changing the window cannot leave the preview and the delete disagreeing.
+      // A row that changed state since the plan no longer matches, and stays.
+      deleteProcessRow: db.prepare(
+        "DELETE FROM process_records WHERE id = ? AND (" +
+        "(ended_at IS NOT NULL AND ended_at < datetime('now', ?)) OR " +
+        "(ended_at IS NULL AND started_at < datetime('now', ?)))",
       ),
     };
   }
@@ -498,10 +555,10 @@ export class TaskRegistry {
   /**
    * #309: finished rows older than the retention window, as a preview.
    *
-   * `olderThanDays` defaults to TASK_HISTORY_RETENTION_DAYS. An open row is
+   * `olderThanDays` defaults to HISTORY_RETENTION_DAYS. An open row is
    * never listed, however old — it is a blocker, not history.
    */
-  agedFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): Array<{ taskId: string; kind: string; endedAt: string }> {
+  agedFinishedTasks(olderThanDays: number = HISTORY_RETENTION_DAYS): Array<{ taskId: string; kind: string; endedAt: string }> {
     const days = requirePositiveDays(olderThanDays);
     return this.stmts.agedFinishedTasks.all("-" + days + " days") as Array<{ taskId: string; kind: string; endedAt: string }>;
   }
@@ -515,7 +572,7 @@ export class TaskRegistry {
    * held". Read-only: one deferred read transaction (a stable WAL snapshot),
    * no write lock, nothing to roll back.
    */
-  previewPrune(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): {
+  previewPrune(olderThanDays: number = HISTORY_RETENTION_DAYS): {
     wouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
     wouldHold: Array<{ taskId: string; kind: string; endedAt: string }>;
   } {
@@ -567,7 +624,7 @@ export class TaskRegistry {
    * Open rows are untouched by the WHERE clause, so a crash mid-prune can never
    * delete work an upgrade is waiting for.
    */
-  pruneFinishedTasks(olderThanDays: number = TASK_HISTORY_RETENTION_DAYS): { removed: number; heldByChildren: number } {
+  pruneFinishedTasks(olderThanDays: number = HISTORY_RETENTION_DAYS): { removed: number; heldByChildren: number } {
     const days = requirePositiveDays(olderThanDays);
     const window = "-" + days + " days";
     return this.db.transaction((): { removed: number; heldByChildren: number } => {
@@ -586,6 +643,78 @@ export class TaskRegistry {
       // from "something is holding these back".
       const heldByChildren = (this.stmts.agedFinishedTasksHeldByChildren.get(window) as { n: number }).n;
       return { removed, heldByChildren };
+    }).immediate();
+  }
+
+  /**
+   * #343: what the process-table half of `ans upgrade prune` would do.
+   *
+   * Read-only, one deferred read snapshot. The rules (settled on the ticket):
+   *
+   * - ENDED and past the window: history, deletable.
+   * - OPEN and past the window: deletable ONLY when this host proves the pid is
+   *   gone. A row on another host stays (unprovable), and a row whose pid is
+   *   still in use stays too — the pid may have been reused by an unrelated
+   *   process, and a false "still running" costs one stale line, while deleting
+   *   a row that describes a live entry loses the only evidence it exists.
+   * - Within the window: kept, whatever the state.
+   *
+   * The number of within-window rows is a count, not a list: printing hundreds
+   * of young rows is exactly the noise the ticket is removing from the report.
+   *
+   * Design: an open row is deletable only on PROOF (same host + pid gone + past
+   * the window), never on age alone — #343 option 1 ("never touch an open row")
+   * leaves the crash residue growing forever (this host gains ~20 a day), and
+   * option 3 (dismiss each row by hand) asks a human to click through them.
+   */
+  processPrunePlan(olderThanDays: number = HISTORY_RETENTION_DAYS): ProcessPrunePlan {
+    const days = requirePositiveDays(olderThanDays);
+    const window = "-" + days + " days";
+    return this.consistentRead(() => {
+      const deletable: ProcessPrunePlan["deletable"] = [];
+      for (const row of this.stmts.agedClosedProcesses.all(window) as ProcessRecordRow[]) {
+        deletable.push({ row, reason: "closed-aged" });
+      }
+      let pidInUse = 0;
+      let otherHost = 0;
+      for (const row of this.stmts.agedOpenProcesses.all(window) as ProcessRecordRow[]) {
+        const ownerState = this.probeOwnerState(row.ownerHost, row.pid);
+        if (ownerState === "dead") deletable.push({ row, reason: "open-gone-aged" });
+        else if (ownerState === "alive") pidInUse++;
+        else otherHost++;
+      }
+      const withinWindow = (this.stmts.inWindowProcesses.get(window, window) as { n: number }).n;
+      return { deletable, withinWindow, pidInUse, otherHost };
+    });
+  }
+
+  /**
+   * #343: delete the rows a `processPrunePlan` marked deletable.
+   *
+   * Takes the plan instead of recomputing it so the dry-run the operator just
+   * read and the run that deletes are the same judgment, not two. Each DELETE
+   * still re-checks age and state in SQL: a row whose owner wrote its end
+   * between the plan and this call no longer matches (it is young history now,
+   * not proven-gone work) and is left alone. The caller takes the recovery
+   * snapshot first — same rule as `pruneFinishedTasks`.
+   */
+  pruneProcessRecords(plan: ProcessPrunePlan, olderThanDays: number = HISTORY_RETENTION_DAYS): {
+    removed: number;
+    closed: number;
+    openGone: number;
+  } {
+    const days = requirePositiveDays(olderThanDays);
+    const window = "-" + days + " days";
+    return this.db.transaction((): { removed: number; closed: number; openGone: number } => {
+      const counts = { removed: 0, closed: 0, openGone: 0 };
+      for (const entry of plan.deletable) {
+        const changes = this.stmts.deleteProcessRow.run(entry.row.id, window, window).changes;
+        if (changes === 0) continue;
+        counts.removed += changes;
+        if (entry.reason === "closed-aged") counts.closed += changes;
+        else counts.openGone += changes;
+      }
+      return counts;
     }).immediate();
   }
 
@@ -692,7 +821,7 @@ export function migrateTaskRegistryColumns(db: Database.Database, initDeadline: 
 /** Reject a retention window that would silently mean something else. */
 function requirePositiveDays(days: number): number {
   if (!Number.isFinite(days) || days <= 0) {
-    throw new Error("task history retention must be a positive number of days (got " + String(days) + ")");
+    throw new Error("history retention must be a positive number of days (got " + String(days) + ")");
   }
   return days;
 }

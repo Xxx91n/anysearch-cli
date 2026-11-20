@@ -30,7 +30,10 @@ import {
   openTaskRegistry,
   readAnsLayoutRecord,
   snapshotBeforeDestructiveOp,
-  TASK_HISTORY_RETENTION_DAYS,
+  HISTORY_RETENTION_DAYS,
+  type ProcessPrunePlan,
+  type ProcessPruneReason,
+  type ProcessRecordRow,
   type TaskRecordRow,
   type TaskRegistry,
   type UpgradeGateState,
@@ -69,7 +72,8 @@ const HELP = `Usage: ans upgrade <command> [options]
   finish              文件换完了：核对真的换了版本，重新打开准入，记下哪几个入口要重连
   cancel              放弃这次暂停，把准入重新打开（不杀正在跑的活）
   dismiss <taskId>    记下某条收不了尾的行没人能解决，之后不再算阻塞（必须给理由）
-  prune               删掉 ${TASK_HISTORY_RETENTION_DAYS} 天前已收尾的任务行（先做备份；开着的行永远不删）
+  prune               清掉 ${HISTORY_RETENTION_DAYS} 天前收尾的行（任务历史 + 进程登记；真删前先备份）
+                      开着的任务行永远不删；开着的进程行只清「本机确认进程已不在且过了窗口」的那种
 
 换文件这一步不归本命令：它不替换程序文件、不下载、不安装、不重启任何进程。
 用什么装（npm、pnpm、内部制品库）由你决定，装完再跑 finish 核对。
@@ -77,7 +81,7 @@ const HELP = `Usage: ans upgrade <command> [options]
 
 Options:
   --timeout <ms>      wait 最多等多久（默认 ${DEFAULT_WAIT_MS}）
-  --days <n>          prune 的保留天数（默认 ${TASK_HISTORY_RETENTION_DAYS}）
+  --days <n>          prune 的保留天数（默认 ${HISTORY_RETENTION_DAYS}）
   --dry-run           prune 只报会删几行，不真删
   --reason <text>     dismiss 必填：为什么这条行不再当作阻塞
   --prefix <dir>      install 用：npm 全局前缀（默认问 npm）
@@ -271,8 +275,16 @@ async function runWait(
           describeBuildId(opts.identity.buildId) + "）\n");
         opts.out("[upgrade] 下一步：换文件（本命令不下载、不安装），装完跑 ans upgrade finish 核对版本并打开准入\n");
         if (snap.processes.length > 0) {
-          opts.out("[upgrade] 这些入口进程还在，换好以后它们要重启或重连才会用新版本（本命令不重启任何进程）：\n");
-          for (const p of snap.processes) opts.out("  - " + describeProcess(p) + "\n");
+          const { present, gone } = splitProcesses(snap.processes);
+          if (present.length > 0) {
+            opts.out("[upgrade] 这些入口进程还在，换好以后它们要重启或重连才会用新版本（本命令不重启任何进程）：\n");
+            for (const p of present) opts.out("  - " + describeProcess(p) + "\n");
+          }
+          // #343: 已经不在的那些不是重连对象，只报一行；要清走由 ans upgrade prune 决定。
+          if (gone.length > 0) {
+            opts.out("[upgrade] 另有 " + gone.length + " 条入口进程本机已经确认不在了，不在此列" +
+              "（要清就跑 ans upgrade prune，过窗口的会删；明细看 --json）\n");
+          }
         }
       }
       return 0;
@@ -307,12 +319,92 @@ function describeBlocker(b: BlockerView): string {
     (b.parentTaskId ? "，属于 " + b.parentTaskId : "");
 }
 
-function describeProcess(p: ProcessView): string {
-  const state = p.ownerState === "alive"
-    ? "还在"
-    : p.ownerState === "dead" ? "本机确认已经没了，但没写结束" : "别的机器，确认不了";
+/** 一个本机还能说点什么的入口：还活着，或者别的机器上确认不了。 */
+type LiveProcess = ProcessView & { ownerState: "alive" | "unknown" };
+
+const isLive = (p: ProcessView): p is LiveProcess => p.ownerState !== "dead";
+
+function describeProcess(p: LiveProcess): string {
+  const state = p.ownerState === "alive" ? "还在" : "别的机器，确认不了";
   return p.entry + " pid " + p.pid + "（" + p.ownerHost + "，" + state + "，跑的是 " +
     (p.build ?? "没记是哪一版") + "，起于 " + p.startedAt + "）";
+}
+
+/** 本机确认已经不在了的行只报总数，明细在 `--json`。 */
+function splitProcesses(processes: ProcessView[]): { present: LiveProcess[]; gone: ProcessView[] } {
+  return {
+    present: processes.filter(isLive),
+    gone: processes.filter((p) => !isLive(p)),
+  };
+}
+
+/** 一条准备删掉的进程登记，说清它凭什么可删。 */
+function describeProcessDelete(entry: { row: ProcessRecordRow; reason: ProcessPruneReason }): string {
+  const row = entry.row;
+  return row.entry + " pid " + row.pid + "（" +
+    (entry.reason === "closed-aged"
+      ? "已收尾于 " + (row.endedAt ?? "?")
+      : "开着，本机确认这个进程已经不在了，起于 " + row.startedAt) + "）";
+}
+
+/** 进程登记留下的那些，一句话说清为什么留。 */
+function reportKeptProcesses(out: (text: string) => void, plan: ProcessPrunePlan): void {
+  const why: string[] = [];
+  if (plan.withinWindow > 0) why.push(plan.withinWindow + " 条还没到保留窗口");
+  if (plan.pidInUse > 0) why.push(plan.pidInUse + " 条本机这个进程号还被占着（可能被别的进程复用了）");
+  if (plan.otherHost > 0) why.push(plan.otherHost + " 条是别的机器记的，本机确认不了");
+  if (why.length === 0) return;
+  out("[upgrade] 进程登记还留着：" + why.join("；") + "\n");
+}
+
+/**
+ * prune 的 `--json` 只有一种形状：dry-run、真跑、本来就干净，三种都带同一组字段。
+ * 任务那几栏沿用原来的字段名（脚本已经在读），不顺手改别人的接口。
+ *
+ * `wouldPrune` / `wouldHold` 说的是「这份计划打算怎么处理」（dry-run 与真跑同一份），
+ * `pruned` / `heldByChildren` 说的是「实际发生了什么」。两个数不等，就说明中间有人动过
+ * 库——这正是对账时要看的。
+ */
+function pruneJson(v: {
+  days: number;
+  dryRun: boolean;
+  backup: string | null;
+  taskPruned: number;
+  taskWouldPrune: Array<{ taskId: string; kind: string; endedAt: string }>;
+  /** 计划：过期却要留的任务行（预览算出来的）。 */
+  taskWouldHold: number;
+  /** 结果：真跑删完之后还留着的那些。dry-run 里与计划同值，没删当然一样。 */
+  taskHeld: number;
+  plan: ProcessPrunePlan;
+  processRemoved: { removed: number; closed: number; openGone: number };
+}): string {
+  return JSON.stringify({
+    days: v.days,
+    dryRun: v.dryRun,
+    pruned: v.taskPruned,
+    wouldPrune: v.taskWouldPrune.length,
+    wouldHold: v.taskWouldHold,
+    heldByChildren: v.taskHeld,
+    rows: v.taskWouldPrune,
+    backup: v.backup,
+    processes: {
+      wouldDelete: v.plan.deletable.length,
+      deleted: v.processRemoved.removed,
+      deletedClosed: v.processRemoved.closed,
+      deletedOpenGone: v.processRemoved.openGone,
+      withinWindow: v.plan.withinWindow,
+      pidInUse: v.plan.pidInUse,
+      otherHost: v.plan.otherHost,
+      rows: v.plan.deletable.map((d) => ({
+        id: d.row.id,
+        pid: d.row.pid,
+        entry: d.row.entry,
+        startedAt: d.row.startedAt,
+        endedAt: d.row.endedAt,
+        reason: d.reason,
+      })),
+    },
+  }, null, 2) + "\n";
 }
 
 /**
@@ -389,8 +481,8 @@ function pauseOutcome(
  *
  * 判断不了的行（自己没记构建、或磁盘这份没打标）单独归一类，不塞进"旧版"里。
  *
- * 本机确认已经没了的行两边都不进：它没在跑，说它"还要重连"是假话。它仍然出现在
- * 上面那份入口清单里（标着"进程已不在，行没收尾"），那才是它的真实状态。
+ * 本机确认已经没了的行两边都不进：它没在跑，说它"还要重连"是假话。入口清单里它们
+ * 折成一行汇总（#343），逐条明细只在 --json 里。
  */
 function reconnectOf(
   processes: ProcessView[],
@@ -547,7 +639,7 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
     return 2;
   }
 
-  const retentionDays = daysRaw === undefined ? TASK_HISTORY_RETENTION_DAYS : Number(daysRaw);
+  const retentionDays = daysRaw === undefined ? HISTORY_RETENTION_DAYS : Number(daysRaw);
   if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
     err("ans upgrade: --days 要一个大于 0 的天数（收到 " + String(daysRaw) + "）\n");
     return 2;
@@ -591,8 +683,17 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         for (const b of snap.blockers) out("  - " + describeBlocker(b) + "\n");
       }
       if (snap.processes.length > 0) {
-        out("[upgrade] 还在的入口进程（只说明情况，不当作阻塞）：\n");
-        for (const p of snap.processes) out("  - " + describeProcess(p) + "\n");
+        const { present, gone } = splitProcesses(snap.processes);
+        if (present.length > 0) {
+          out("[upgrade] 还在的入口进程（只说明情况，不当作阻塞）：\n");
+          for (const p of present) out("  - " + describeProcess(p) + "\n");
+        }
+        // #343: 本机确认已经不在的那些只报一行——它们是几十条同一种东西，
+        // 逐条列出来就把报告塞满了。明细在 --json 里，清不清由 prune 决定。
+        if (gone.length > 0) {
+          out("[upgrade] 另有 " + gone.length + " 条入口进程本机已经确认不在了，只是没写结束：" +
+            "不当作阻塞。要清就跑 ans upgrade prune（过窗口的会删掉；明细看 --json）\n");
+        }
       }
       // "dead" 和 "unknown" 不是一回事：前者本机已经查清（进程没了），后者查不了。
       // 混着数会让人以为这些行全都无从判断。
@@ -843,40 +944,68 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
       return 1;
     }
     try {
-      const aged = registry.agedFinishedTasks(retentionDays);
-      if (aged.length === 0) {
-        // 同一个 --json 只有一种形状：脚本读 wouldPrune 不会在"库本来就干净"
-        // 这条路上拿到 undefined。
+      // #343: 两张表一次算清。dry-run 和真跑读的是同一份计划——真跑不重新判断
+      // 一遍，预览说过要删的，就是它要删的那几条。
+      //
+      // 预览算在这里而不是只给 --dry-run 用：真跑拿它决定"到底有没有东西可删"。
+      // 只有"过期但删不得"（被别的行引用着）时不该写快照——什么都没删，快照就是
+      // 一份多余的存档点。
+      const preview = registry.previewPrune(retentionDays);
+      const plan = registry.processPrunePlan(retentionDays);
+      if (preview.wouldPrune.length === 0 && plan.deletable.length === 0) {
+        // 同一个 --json 只有一种形状：脚本读任何一个字段，在"库本来就干净"这条
+        // 路上都不会拿到 undefined。
         if (json) {
-          out(JSON.stringify({
-            pruned: 0, wouldPrune: 0, wouldHold: 0, days: retentionDays, rows: [],
-          }, null, 2) + "\n");
+          out(pruneJson({
+            days: retentionDays, dryRun, backup: null,
+            taskPruned: 0, taskWouldPrune: [], taskWouldHold: preview.wouldHold.length,
+            taskHeld: preview.wouldHold.length,
+            plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
+          }));
         } else {
-          out("[upgrade] " + retentionDays + " 天前没有已收尾的任务行，没什么可删\n");
+          out("[upgrade] 没有要删的行（保留窗口 " + retentionDays + " 天" +
+            (dryRun ? "，dry-run 没删" : "") + "）\n");
+          if (preview.wouldHold.length > 0) {
+            out("[upgrade] 有 " + preview.wouldHold.length + " 条任务行虽然过期了，但还被别的行引用着，" +
+              "留着（删了会把那些行的归属抹掉）\n");
+          }
+          reportKeptProcesses(out, plan);
         }
         return 0;
       }
       if (dryRun) {
         // 预览必须和真跑对得上，包括多层父子：真跑是一层一层剥，父行在子行删掉
         // 之后下一轮就能删，所以"被谁指着"要在剥完的图上算，不能只看当前引用。
-        const preview = registry.previewPrune(retentionDays);
         if (json) {
-          out(JSON.stringify({
-            pruned: 0,
-            wouldPrune: preview.wouldPrune.length,
-            wouldHold: preview.wouldHold.length,
-            days: retentionDays,
-            rows: preview.wouldPrune,
-          }, null, 2) + "\n");
+          out(pruneJson({
+            days: retentionDays, dryRun: true, backup: null,
+            taskPruned: 0,
+            taskWouldPrune: preview.wouldPrune,
+            taskWouldHold: preview.wouldHold.length,
+            taskHeld: preview.wouldHold.length,
+            plan, processRemoved: { removed: 0, closed: 0, openGone: 0 },
+          }));
         } else {
-          out("[upgrade] 会删掉 " + preview.wouldPrune.length + " 条 " + retentionDays +
-            " 天前收尾的任务行（dry-run，没删）：\n");
-          for (const r of preview.wouldPrune) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
+          if (preview.wouldPrune.length > 0) {
+            out("[upgrade] 会删掉 " + preview.wouldPrune.length + " 条 " + retentionDays +
+              " 天前收尾的任务行（dry-run，没删）：\n");
+            for (const r of preview.wouldPrune) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
+          }
           if (preview.wouldHold.length > 0) {
             out("[upgrade] 另有 " + preview.wouldHold.length + " 条虽然过期了，但还被别的行引用着，" +
               "真跑时会留着（删了会把那些行的归属抹掉）：\n");
             for (const r of preview.wouldHold) out("  - " + r.kind + " 结束于 " + r.endedAt + "\n");
           }
+          if (preview.wouldPrune.length + preview.wouldHold.length === 0) {
+            out("[upgrade] " + retentionDays + " 天前没有要删的任务行（dry-run，没删）\n");
+          }
+          if (plan.deletable.length > 0) {
+            out("[upgrade] 进程登记会删掉 " + plan.deletable.length + " 条（dry-run，没删）：\n");
+            for (const d of plan.deletable) out("  - " + describeProcessDelete(d) + "\n");
+          } else {
+            out("[upgrade] 进程登记没有要删的行（dry-run，没删）\n");
+          }
+          reportKeptProcesses(out, plan);
         }
         return 0;
       }
@@ -894,19 +1023,34 @@ export async function runUpgrade(args: string[], opts: UpgradeCommandOptions = {
         return 1;
       }
       const pruned = registry.pruneFinishedTasks(retentionDays);
+      const processRemoved = registry.pruneProcessRecords(plan, retentionDays);
       if (json) {
-        out(JSON.stringify({
-          pruned: pruned.removed, heldByChildren: pruned.heldByChildren,
-          days: retentionDays, backup: backup.backupFile,
-        }, null, 2) + "\n");
+        out(pruneJson({
+          days: retentionDays, dryRun: false, backup: backup.backupFile,
+          taskPruned: pruned.removed,
+          // 计划与结果分开报：打算删的还是预览里那几条，真删掉几条是 pruned。
+          taskWouldPrune: preview.wouldPrune,
+          taskWouldHold: preview.wouldHold.length,
+          taskHeld: pruned.heldByChildren,
+          plan, processRemoved,
+        }));
       } else {
-        out("[upgrade] 删掉了 " + pruned.removed + " 条 " + retentionDays + " 天前收尾的任务行；" +
-          "恢复依据在 " + backup.backupFile + "（连同它的 .json 记录）\n");
-        out("[upgrade] 开着的行一条没动——它们是升级阻塞的判据\n");
+        // 恢复依据单独一行：只删了进程行、或只删了任务行，这一句都得说出来。
+        out("[upgrade] 恢复依据在 " + backup.backupFile + "（连同它的 .json 记录）\n");
+        if (pruned.removed > 0) {
+          out("[upgrade] 删掉了 " + pruned.removed + " 条 " + retentionDays + " 天前收尾的任务行\n");
+        }
+        out("[upgrade] 开着的任务行一条没动——它们是升级阻塞的判据\n");
         if (pruned.heldByChildren > 0) {
           out("[upgrade] 有 " + pruned.heldByChildren + " 条虽然过期了，但还被别的行引用着，" +
             "所以留着没删（删了会把那些行的归属抹掉）\n");
         }
+        if (processRemoved.removed > 0) {
+          out("[upgrade] 进程登记删掉了 " + processRemoved.removed + " 条：" +
+            "已收尾的 " + processRemoved.closed + " 条、开着但本机确认进程已经不在的 " +
+            processRemoved.openGone + " 条\n");
+        }
+        reportKeptProcesses(out, plan);
       }
       return 0;
     } catch (e) {

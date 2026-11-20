@@ -196,8 +196,8 @@ ans upgrade status                 # read-only: who is still working, what this 
 ans upgrade wait --timeout 120000  # pause NEW tasks, wait for accepted work to finish
 ans upgrade cancel                 # give up on the pause and admit new work again
 ans upgrade dismiss <taskId> --reason "..."   # acknowledge a row nobody can finish
-ans upgrade prune --dry-run        # how many finished rows a prune would remove
-ans upgrade prune                  # snapshot first, then delete rows finished >30 days ago
+ans upgrade prune --dry-run        # how many rows a prune would remove, per table
+ans upgrade prune                  # snapshot first, then delete rows older than 30 days
 ```
 
 While a pause is in effect, new paid/work requests are refused on the spot — the
@@ -210,10 +210,15 @@ and it never reports the program as updated: replacing files is a separate step.
 A PID or a heartbeat is not proof that a task finished. A row whose owner this
 host cannot confirm stays a blocker until a human runs `upgrade dismiss`.
 
-`task_records` grows with every hook write, so `upgrade prune` bounds it: **open
-rows are never deleted** (they are the blocking criterion), finished rows older
-than 30 days are, and a prune snapshots the database first and prints where the
-snapshot is. Pruning never runs on its own.
+`task_records` and `process_records` both grow with every command, hook write and
+service start, so `upgrade prune` bounds both. Open task rows are never deleted
+(they are the blocking criterion); rows finished more than 30 days ago are, in
+both tables. An open process row is deleted only when this host can prove its pid
+is gone AND the row is past that same window; a row whose pid is still in use
+stays, because that number may belong to something else by now. A prune snapshots
+the database before it deletes anything and prints where the snapshot is, so a
+run with nothing to delete leaves no snapshot behind. Pruning never runs on its
+own.
 
 ## How It Works
 
