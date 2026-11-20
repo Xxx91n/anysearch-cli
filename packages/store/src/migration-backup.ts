@@ -628,8 +628,8 @@ function tmpSuffix(): string {
 }
 
 /**
- * Writes a standalone database snapshot at `targetFile` with SQLite's own
- * online backup path, shared by both snapshot sites in this module.
+ * Produces the standalone snapshot file at `targetFile` through SQLite's own
+ * online backup path — the first half of the shared snapshot mechanism.
  *
  * Design: vacuum and record-write stay two helpers, not one — the migration
  * path publishes the vacuumed file under a cross-process lock BEFORE any
@@ -651,8 +651,9 @@ function vacuumSnapshotInto(
 ): void {
   withInitBusyRetry(retryLabel, () => {
     try { rmSync(targetFile, { force: true }); } catch { /* nothing to clear */ }
-    // umask is process-global, but this section is synchronous startup code and
-    // owns the only file creation happening in this process right now.
+    // umask is process-global; this section is synchronous, single-threaded
+    // command code that owns the only file creation happening in this process
+    // right now, so the window cannot leak into anyone else's file.
     const prevUmask = process.umask(0o077);
     try {
       conn.prepare("VACUUM INTO ?").run(targetFile);
