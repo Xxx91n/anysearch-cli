@@ -102,16 +102,16 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
-  // Assert the state (未配置), not just the row name, and show that row when it fails.
-  const vectorLine = d1.out.split("\n").find((line) => line.includes("vector arm")) ?? d1.out;
-  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), vectorLine);
+  // Every doctor check below shows the row it is about: the output's tail is all summary.
+  const rowOf = (needle) => d1.out.split("\n").find((line) => line.includes(needle)) ?? d1.out;
+  // Assert the state (未配置), not just the row name.
+  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), rowOf("vector arm"));
   // Four layers: [安装]/[能力]/[宿主]/[数据].
-  check("doctor shows the four layers", ["[安装]", "[能力]", "[宿主]", "[数据]"].every((l) => d1.out.includes(l)), d1.out.slice(-600));
-  check("doctor shows the DB layout row", d1.out.includes("库布局"), d1.out.slice(-600));
+  check("doctor shows the four layers", ["[安装]", "[能力]", "[宿主]", "[数据]"].every((l) => d1.out.includes(l)), d1.out.slice(0, 400));
+  check("doctor shows the DB layout row", d1.out.includes("库布局"), rowOf("库布局"));
   // Name the shipped domain: the bare 领域文件 also appears on the failure row
   // ("领域文件发现"), which fires when no TOML was found at all.
-  check("doctor shows the domain rows", d1.out.includes("领域文件 docs"), d1.out.slice(-400));
-  check("doctor lists docs domain", d1.out.includes("docs"), d1.out.slice(-400));
+  check("doctor shows the domain rows", d1.out.includes("领域文件 docs"), rowOf("领域文件 docs"));
 
   const dom = ans("domain docs");
   check("ans domain docs exit 0", dom.code === 0, dom.out);

@@ -196,7 +196,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           name: `provider ${id}`,
           state: instance.id.length > 0 && instance.modes.length >= 3 ? "ready" : "failed",
           mode: "offline",
-          detail: `id=${instance.id} modes=${instance.modes.join(",")}`,
+          detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「搜索源」）`,
         });
       } catch (error) {
         // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
@@ -374,12 +374,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   {
     // warn 是这个解析器唯一说「你那份配置有问题」的出口（TOML 坏了、[llm] 不是表、
     // 值不认、文件读不出来）。咽掉它，doctor 就会把「配坏了」说成「没配」。
+    // 没有模型 key 时这个解析器也会去读同一份 credentials.json，文件坏了它报的那条
+    // 和上面「user credential file」说的是同一件事；这里只留它自己的配置问题。
+    const credentialPath = userCredentialsPath(configHome);
     const configWarnings: string[] = [];
     const llm = resolveLlmConfig({
       cwd,
       home: configHome,
       env: process.env,
-      warn: (msg) => configWarnings.push(msg),
+      warn: (msg) => {
+        if (!msg.includes(credentialPath)) configWarnings.push(msg);
+      },
     });
     const configured = Boolean(llm.provider && llm.model);
     report.add({
@@ -459,7 +464,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: schema.hooks.toolWhitelist.length > 0
           ? `${schema.hooks.toolWhitelist.length} 个工具`
-          : "没限定工具；hooks 开着时会拦下所有工具",
+          : "没设白名单上限：所有工具都放行（声明了 toolRequires 时才按启用技能的工具集过滤）",
       });
       report.add({
         layer: "capability",

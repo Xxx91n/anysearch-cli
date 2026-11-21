@@ -42,7 +42,7 @@ const help = [
   "",
   "Commands:",
   "  doctor    分层诊断：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败",
-  "            options: --json（结构化输出）· --strict（有未检查就退 5）",
+  "            options: --json（结构化输出）· --strict（没失败但有未检查时退 5）",
   "  auth      Provider API keys: status, or store one once (ans auth set <provider>)",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",

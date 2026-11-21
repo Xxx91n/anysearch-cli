@@ -9,8 +9,8 @@
 // 冲突基线来自 journal 里上次我们写入的规范化内容（见 journal.ts）。
 
 import { existsSync, readFileSync } from "node:fs";
+import { resolveConfigHome } from "@anysearch-cli/store";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type { HostDef, HostFileDef, UnitDef } from "./hosts.js";
 import type { JsoncPath } from "./jsonc-edit.js";
 import { readJsoncPath, findOurItems, parseJsonc, hookEntryIsMixed } from "./jsonc-edit.js";
@@ -185,7 +185,7 @@ export function computePlan(
   mode: PlanMode,
   opts: { projectRoot: string; home?: string },
 ): HostPlan {
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? resolveConfigHome();
   const plan: HostPlan = { host, projectRoot: opts.projectRoot, home, files: [] };
   for (const file of host.files) {
     const base = file.scope === "project" ? opts.projectRoot : home;

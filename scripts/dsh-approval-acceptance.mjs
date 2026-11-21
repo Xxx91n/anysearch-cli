@@ -386,18 +386,26 @@ async function main() {
 
   // 这一轮装的是 apps/dsh-plugin，版本就读它；读不出来也要让车道跑起来。
   const pluginPkg = join(REPO, "apps", "dsh-plugin", "package.json");
-  let pluginVersion = "读不出来";
-  try {
-    const parsed = JSON.parse(readFileSync(pluginPkg, "utf8"));
-    if (typeof parsed?.version === "string" && parsed.version.trim() !== "") pluginVersion = parsed.version.trim();
-  } catch {
-    // 下面记一条 FAIL，抬头照实写。
+  let pluginVersion = null;
+  let versionProblem = "文件不在";
+  if (existsSync(pluginPkg)) {
+    try {
+      const parsed = JSON.parse(readFileSync(pluginPkg, "utf8"));
+      if (typeof parsed?.version === "string" && parsed.version.trim() !== "") {
+        pluginVersion = parsed.version.trim();
+      } else {
+        versionProblem = "没有 version 字段";
+      }
+    } catch (error) {
+      versionProblem = error instanceof Error ? error.message : String(error);
+    }
   }
-  if (pluginVersion === "读不出来") {
+  if (pluginVersion === null) {
     exitCode = 1;
-    console.error(`[FAIL] 读得出被测包的版本 — ${pluginPkg}`);
+    results.push({ name: "读得出被测包的版本", detail: pluginPkg + " — " + versionProblem });
+    console.error(`[FAIL] 读得出被测包的版本 — ${pluginPkg} — ${versionProblem}`);
   }
-  printAcceptanceHeader({ product: "anysearch-cli/dsh-plugin", version: pluginVersion });
+  printAcceptanceHeader({ product: "anysearch-cli/dsh-plugin", version: pluginVersion ?? "读不出来" });
 
   const dshBin = process.env.DSH_BIN || "dsh";
   const version = run(dshBin, ["--version"]);
