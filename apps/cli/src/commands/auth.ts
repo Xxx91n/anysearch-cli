@@ -98,8 +98,7 @@ function statusLines(
   home: string,
   file: CredentialFileContents,
 ): string[] {
-  // 调用方读一次，把结果传进来：这里不再摸磁盘，模型解析器吃的也是这一份，
-  // 所以同一个文件故障不会在这儿变成两句话。
+  // 模型解析器吃的是调用方给的这一份，不再自己读一遍。
   const llm = resolveLlmConfig({ env, home, credentialsFile: file });
   const lines: string[] = [];
 

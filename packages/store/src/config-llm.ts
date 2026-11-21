@@ -112,9 +112,12 @@ export interface ResolveLlmOpts {
    * stops warning about the file's own fault: the caller reports that fault once
    * for every consumer, so no one has to match error text. The key lookup and
    * its endpoint-mismatch warning still run on this same result. `credentials:
-   * false` keeps its meaning: no credential file at all. Same rule, and the
-   * reason it replaced text matching, as `resolveSearchCredentials` in
-   * `credentials.ts`.
+   * false` keeps its meaning: no credential file at all.
+   *
+   * Design: a supplied result silences this resolver's own read and its
+   * file-level warning — the file is parsed once, and its fault is said once, by
+   * the caller. That is what replaced error-text matching here; the
+   * endpoint-mismatch warning still comes from the lookup on this same result.
    */
   credentialsFile?: CredentialFileContents;
 }

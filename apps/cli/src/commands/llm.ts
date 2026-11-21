@@ -42,7 +42,10 @@ export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
-    const cfg = resolveLlmConfig({ home });
+    // One read for the whole listing (#357): the resolver and the entry list
+    // below both work from this result, so a broken file is reported once.
+    const storedFile = readUserCredentials({ home });
+    const cfg = resolveLlmConfig({ home, credentialsFile: storedFile });
     const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
@@ -54,10 +57,9 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Credentials: " + credentialsPath(home) + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
-    const storedFile = readUserCredentials({ home });
     if (storedFile.error) {
-      // A broken file must not read as "no keys": the resolver already warned,
-      // and this listing has to agree with it rather than contradict it.
+      // This line is the one place the command says the file is broken: the
+      // resolver was handed the same result and stays quiet about it (#357).
       console.log("Credentials file: BROKEN - " + storedFile.error);
     }
     for (const [name, models] of Object.entries(MODELS)) {
@@ -139,8 +141,8 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
-    const cfg = resolveLlmConfig({ home });
     const storedFile = readUserCredentials({ home });
+    const cfg = resolveLlmConfig({ home, credentialsFile: storedFile });
     if (storedFile.error) {
       console.log("Credentials file: BROKEN - " + storedFile.error);
     }
