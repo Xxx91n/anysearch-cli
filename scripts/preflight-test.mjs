@@ -247,14 +247,14 @@ function stopChild(child, signal) {
     process.kill(-child.pid, signal);
   } catch (error) {
     // ESRCH: the group is already gone. Darwin returns EPERM while a draining
-    // group's members exit, so keep going and let SIGKILL land there. On any
-    // other platform EPERM is a real permission problem: report it, never throw
-    // — an exception in a signal handler would kill the gate before it can keep
-    // the home and exit 130/143.
+    // group's members exit, so there SIGKILL still has a chance. Any other
+    // error means the group cannot be signalled at all: say so and leave
+    // instead of waiting on a close that will never come. Never throw from a
+    // signal handler — the gate would die before it can keep the home.
     if (error.code === "ESRCH") return;
-    if (error.code !== "EPERM" || process.platform !== "darwin") {
+    if (!(error.code === "EPERM" && process.platform === "darwin")) {
       console.error(`[preflight] could not signal the test process group: ${error.message}`);
-      return;
+      process.exit(interrupted || 1);
     }
   }
   // A child that ignores the signal must not keep the gate alive.
