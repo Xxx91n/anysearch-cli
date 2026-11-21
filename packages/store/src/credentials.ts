@@ -290,14 +290,11 @@ export function readUserCredentials(
 }
 
 /**
- * The sentence a *warning line* says about a credential file that could not be
- * read or parsed: `resolveSearchCredentials` puts it in `warnings` (the kernel and
- * MCP entries print those) and `ans auth status` prints it after `[WARN] `. The
- * diagnosis surfaces word it their own way instead - doctor's failed row, `ans
- * auth list`'s `BROKEN —` and `ans llm`'s `BROKEN -` all print `file.error`,
- * because a diagnosis names the fix rather than just what is missing. All of them
- * read the same `error`, so the fault text itself is written once. Undefined for
- * a healthy (or absent) file.
+ * The sentence a warning line says about a credential file that could not be read
+ * or parsed: `resolveSearchCredentials` puts it in `warnings`, and `ans auth
+ * status` prints it after `[WARN] `. Diagnosis rows (doctor, `ans auth list`, `ans
+ * llm`) print `file.error` in their own shape instead, because they also say how
+ * to fix it. Undefined for a healthy (or absent) file.
  */
 export function credentialFileWarning(file: CredentialFileContents): string | undefined {
   return file.error ? file.error + "; continuing without the user credential file" : undefined;
@@ -323,15 +320,10 @@ export interface ResolvedSearchCredentials {
  * documented way to point that arm at a mirror.
  *
  * Design: the command that reads the user credential file parses it once and
- * passes that result to every resolver and report that needs it; that caller owns
- * the file's fault. A resolver given the result neither re-reads the
- * file nor repeats the fault, so nothing has to decide "is this the same fault as
- * the line above?" — matching error text makes one module depend on another's
- * wording, and matching the path is a second guess at identity. The parsed
- * result itself is what makes it the same fault.
- *
- * `filePath` only applies when this resolver reads the file itself: a supplied
- * `credentialsFile` already settled which file that was.
+ * passes the result to every resolver and report; whoever parsed it reports its
+ * fault. A resolver given `credentialsFile` neither reads the file again nor
+ * reports it, so nothing has to decide whether a message repeats another.
+ * `filePath` only applies when this resolver reads the file itself.
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,

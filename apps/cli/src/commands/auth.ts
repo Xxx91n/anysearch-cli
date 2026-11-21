@@ -144,8 +144,8 @@ export async function runAuth(args: string[]): Promise<number> {
   const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
-    // Design: 整条命令只读一次凭据文件 — 来源表和模型解析器吃同一份结果，读坏了
-    // status 在来源表后说一次、list 只在文件块里说一次，两种排版不互相复述。
+    // Design: 整条命令读一次凭据文件，来源表和模型解析器共用；读坏了 status 说一次，
+    // list 只在文件块里说一次。
     const file = readUserCredentials({ home });
     console.log("ans auth - provider API keys");
     console.log("---");

@@ -22,12 +22,9 @@ import {
   writeUserLlmConfig,
 } from "../config-llm";
 
-/**
- * The BROKEN line both listings below print for a credential file that could not
- * be read: one wording for this command, and the same result goes to the resolver.
- */
+/** The BROKEN line both listings below print; the same result also goes to the resolver. */
 function printCredentialFault(file: CredentialFileContents): void {
-  if (file.error) console.log("Credentials file: BROKEN - " + file.error);
+  if (file.error) console.log("Credentials file: BROKEN — " + file.error);
 }
 
 /** Which stored entries exist for this provider, as plain words (never a key). */
@@ -51,9 +48,7 @@ export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
-    // Design: 整个列表只读一次凭据文件，坏文件这句话只由下面的 BROKEN 行说 —
-    // 解析器拿到同一份结果就不再自己读、也不再报一次（规则和出处见 store 的
-    // resolveSearchCredentials）。
+    // Design: 列表和解析器共用一次读取，下面那行 BROKEN 是这句话唯一的出口。
     const credentialFile = readUserCredentials({ home });
     const cfg = resolveLlmConfig({ home, credentialsFile: credentialFile });
     const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";

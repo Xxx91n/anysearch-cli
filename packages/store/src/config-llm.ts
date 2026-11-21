@@ -113,9 +113,12 @@ export interface ResolveLlmOpts {
    * its endpoint-mismatch warning still run on this same result, and
    * `credentials: false` keeps its meaning: no credential file at all.
    *
-   * Design: a supplied result silences this resolver's read and its file-level
-   * warning — the file is parsed once, so its fault is said once, by the caller.
-   * The long version of the rule lives with `resolveSearchCredentials`.
+   * Design: a supplied result silences this resolver's read and its file warning;
+   * the caller that parsed the file reports that fault once.
+   *
+   * It must come from `readUserCredentials` for `ansCredentialsPathFor(home)` with
+   * THIS `home`: the endpoint-mismatch warning names that path, so a result from
+   * another root would point the user at the wrong file.
    */
   credentialsFile?: CredentialFileContents;
 }
