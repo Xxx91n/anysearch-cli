@@ -10,7 +10,9 @@
 //
 // A file belongs to the package whose directory contains it. A workspace that
 // cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
-// an empty list or null, and the caller runs the full suite.
+// an empty list or null, and the caller runs the full suite. A directory whose
+// manifest has no name is not a package, so a change under it belongs to no
+// package and runs the full suite too.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -31,14 +33,30 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   if (forceFull) return { mode: "full", reason: "forced", files, packages: [] };
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
 
-  const packages = readWorkspace(root);
+  const { packages, nameless } = readWorkspaceReport(root);
   if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
-  if (packages.length === 0) return { mode: "full", reason: "no workspace packages found", files, packages: [] };
+  if (packages.length === 0) {
+    // The workspace looks empty because its manifests have no name; naming the
+    // directories says more than "no workspace packages found" on its own.
+    const reason =
+      nameless.length > 0
+        ? `no workspace packages found; package.json without a name in: ${nameless.join(", ")}`
+        : "no workspace packages found";
+    return { mode: "full", reason, files, packages: [] };
+  }
 
   const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
   const outside = files.filter((file) => !owners.get(file));
   if (outside.length > 0) {
-    return { mode: "full", reason: "files outside the workspace packages", files, outside, packages: [] };
+    // A path under apps/ that lost its package still has to say so: "outside
+    // the workspace packages" reads as "not in apps/", which is not the case.
+    const underNameless = outside.every((file) =>
+      nameless.some((dir) => file === dir || file.startsWith(`${dir}/`)),
+    );
+    const reason = underNameless
+      ? "files under a directory whose package.json has no name"
+      : "files outside the workspace packages";
+    return { mode: "full", reason, files, outside, packages: [] };
   }
 
   const touched = [...new Set(files.map((file) => owners.get(file).name))].sort();
@@ -48,24 +66,42 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
 /**
  * Read the workspace packages and their workspace-internal dependencies.
  * Missing or unreadable pnpm-workspace.yaml reads as an empty list. A manifest
- * that cannot be read or parsed returns null, so the caller runs the full suite
- * instead of silently dropping a package and everything that depends on it.
+ * that cannot be read or parsed makes this return null, so the caller runs the
+ * full suite instead of silently dropping a package and everything that depends
+ * on it. A directory without a package.json, or a manifest without a name, is
+ * not a package: it is skipped, and a change under it runs the full suite.
  *
  * @param {string} root
  * @returns {{ name: string, dir: string, deps: string[] }[] | null}
  */
 export function readWorkspace(root) {
+  return readWorkspaceReport(root).packages;
+}
+
+// readWorkspace plus the directories a nameless manifest left out, so the plan
+// can say why a change under one of them ran the full suite. Private: the plan
+// is its only reader, and readWorkspace's doc owns the null contract.
+function readWorkspaceReport(root) {
   const packages = [];
+  const nameless = [];
   for (const dir of workspaceDirectories(root, workspacePatterns(root))) {
     const manifest = readManifest(path.join(root, dir, "package.json"));
-    if (manifest === UNREADABLE) return null;
+    if (manifest === UNREADABLE) return { packages: null, nameless: [] };
     if (manifest === null) continue; // no package.json: not a package
+    if (manifest === NAMELESS) {
+      nameless.push(dir);
+      continue;
+    }
     packages.push({ name: manifest.name, dir, deps: workspaceDeps(manifest) });
   }
-  return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return {
+    packages: packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+    nameless: nameless.sort(),
+  };
 }
 
 const UNREADABLE = Symbol("unreadable manifest");
+const NAMELESS = Symbol("manifest without a name");
 
 function readManifest(file) {
   let text;
@@ -74,12 +110,13 @@ function readManifest(file) {
   } catch (error) {
     return error.code === "ENOENT" ? null : UNREADABLE;
   }
+  let manifest;
   try {
-    const manifest = JSON.parse(text);
-    return typeof manifest?.name === "string" && manifest.name !== "" ? manifest : UNREADABLE;
+    manifest = JSON.parse(text);
   } catch {
     return UNREADABLE;
   }
+  return typeof manifest?.name === "string" && manifest.name !== "" ? manifest : NAMELESS;
 }
 
 function withDependents(touched, packages) {

@@ -1,14 +1,17 @@
 // Which files a commit or push carries: the index for a commit, git's refs on
-// stdin for a push, origin/HEAD plus the working tree for a plain run. A reader
-// that cannot name the change returns null or PUSH_UNKNOWN, and the caller runs
-// the whole suite.
+// stdin for a push, origin/HEAD plus the working tree for a plain run. An
+// unreadable change runs the whole suite; a push with no refs on stdin looks at
+// the working tree instead. PUSH_UNKNOWN marks a ref that cannot be read.
 
 import { spawnSync } from "node:child_process";
 
 /** A pre-push line that cannot be read; the caller must run everything. */
 export const PUSH_UNKNOWN = Symbol("unreadable push");
 
-/** Files staged for the commit about to run. */
+/**
+ * Files staged for the commit about to run. Returns null when git cannot read
+ * the index; the caller runs the whole suite.
+ */
 export function stagedFiles(root) {
   return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "-z"]);
 }
@@ -18,7 +21,8 @@ export function stagedFiles(root) {
  * "<local ref> <local sha> <remote ref> <remote sha>".
  *
  * Returns null when the hook got no refs (the caller then looks at the working
- * tree) and PUSH_UNKNOWN when a ref cannot be read.
+ * tree) and PUSH_UNKNOWN when a ref cannot be read (the caller runs the whole
+ * suite).
  */
 export function pushedFiles(root, input) {
   const lines = String(input ?? "")
@@ -41,7 +45,11 @@ export function pushedFiles(root, input) {
   return [...files];
 }
 
-/** Everything not yet on origin/HEAD, plus the working tree and new files. */
+/**
+ * Everything not yet on origin/HEAD, plus the working tree and new files.
+ * Returns null when git cannot name the change; the caller runs the whole
+ * suite.
+ */
 export function localFiles(root) {
   const head = gitLine(root, ["rev-parse", "HEAD"]);
   const base = head && gitLine(root, ["merge-base", "HEAD", "origin/HEAD"]);
