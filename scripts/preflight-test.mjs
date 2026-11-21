@@ -171,7 +171,9 @@ function listFirst(files) {
 // inherit keys — no test in the suite reads them from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
+  // Windows env names are case-insensitive, so the filter is too: a lowercase
+  // ans_db_path still resolves as ANS_DB_PATH in the child.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ans_/i.test(key)));
   return { home, env: { ...env, HOME: home, USERPROFILE: home } };
 }
 

@@ -14,7 +14,7 @@ test("a red run exits non-zero and names the failed task", () => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /@anysearch-cli\/kernel#test/);
-    dropKeptHome(result);
+    clearKeptHome(result);
   });
 });
 
@@ -33,10 +33,13 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
     withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
       writeLeakyPnpm(bin, 0);
       // Two runs in a row, like the ticket's acceptance: neither may write into
-      // the home or the database path the operator actually uses.
+      // the home or the database path the operator actually uses. Windows env
+      // names are case-insensitive, so the lowercase key is the harder case
+      // there; POSIX only knows the exact name.
+      const dbKey = process.platform === "win32" ? "ans_db_path" : "ANS_DB_PATH";
       for (let run = 1; run <= 2; run += 1) {
         const result = runCliIn(root, bin, ["--staged"], {
-          overrides: { HOME: operatorHome, USERPROFILE: operatorHome, ANS_DB_PATH: operatorDb },
+          overrides: { HOME: operatorHome, USERPROFILE: operatorHome, [dbKey]: operatorDb },
         });
         assert.equal(result.status, 0, result.stderr);
         const home = childHome(result.stdout);
@@ -83,7 +86,7 @@ test("a red self-test blocks the run", () => {
     const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: "scripts/test/preflight-missing.test.mjs" });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /the gate's own tests/);
-    dropKeptHome(result);
+    clearKeptHome(result);
   });
 });
 
@@ -144,7 +147,7 @@ test("an unreadable push ref runs the full suite", () => {
     assert.equal(result.status, 1); // the fixture's fake pnpm exits 1
     assert.match(result.stdout, /full suite: could not read the pushed commits/);
     assert.match(result.stdout, /pnpm ran/);
-    dropKeptHome(result);
+    clearKeptHome(result);
   });
 });
 
@@ -282,7 +285,7 @@ function keptHome(output) {
 
 // A red run keeps its test home on purpose; a fixture is not an operator's
 // failed run, so the test deletes what the gate printed.
-function dropKeptHome(result) {
+function clearKeptHome(result) {
   const home = keptHome(result.stderr);
   assert.ok(home, `no kept test home in: ${result.stderr}`);
   rmSync(home, { recursive: true, force: true });
