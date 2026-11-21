@@ -8,8 +8,8 @@
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
 //
-// Every run gets a throwaway home: HOME and USERPROFILE point at a fresh temp
-// dir, so a test that forgets its own sandbox writes there instead of the
+// Every test run gets a throwaway home: HOME and USERPROFILE point at a fresh
+// temp dir, so a test that forgets its own sandbox writes there instead of the
 // operator's ~/.ans. A green run deletes it; a red one keeps it and prints the
 // path, so whatever the tests left behind can still be looked at.
 //
@@ -79,7 +79,7 @@ if (selfTest) {
   delete gateEnv.NODE_TEST_CONTEXT;
   const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, stdio: "inherit" });
   if (gate.status !== 0) {
-    leaveTestHome(testHome);
+    reportKeptTestHome(testHome);
     console.error("[preflight] blocked: the gate's own tests failed");
     process.exit(gate.status ?? 1);
   }
@@ -110,7 +110,7 @@ try {
     child.on("close", resolve);
   });
 } catch (error) {
-  leaveTestHome(testHome);
+  reportKeptTestHome(testHome);
   console.error(`[preflight] could not start pnpm: ${error.message}`);
   process.exit(1);
 }
@@ -119,7 +119,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (status !== 0) {
   const failed = failedTask(tail);
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  leaveTestHome(testHome);
+  reportKeptTestHome(testHome);
   process.exitCode = status ?? 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
@@ -162,10 +162,13 @@ function listFirst(files) {
 }
 
 // The child's whole home is a fresh temp dir, so a test that writes to ~/.ans
-// without sandboxing its own run lands here instead of the operator's. Every
-// ANS_* is dropped first, like apps/plugin/test/server-sandbox.ts: an
-// operator's own ANS_DB_PATH or ANS_PI_SESSION_DIR would otherwise point a
-// path back at the real user root and make the temp home useless.
+// without sandboxing its own run lands here instead of the operator's.
+//
+// Design: replace the child's whole home and drop every ANS_* — a test that
+// resolves the home itself is covered too, and an operator's own ANS_DB_PATH
+// or ANS_PI_SESSION_DIR cannot point a path back at the real user root.
+// Rejected: redirecting only ~/.ans, and keeping ANS_LLM_* so live lanes
+// inherit keys — no test in the suite reads them from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
@@ -173,7 +176,7 @@ function makeTestHome() {
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
-function leaveTestHome({ home }) {
+function reportKeptTestHome({ home }) {
   console.error(`[preflight] test home kept for inspection: ${home}`);
 }
 
@@ -181,8 +184,9 @@ function removeTestHome({ home }) {
   try {
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   } catch (error) {
-    // The tests passed, so a locked file is not worth failing the gate over —
-    // but the directory is still there, and the operator should know where.
+    // Design: a cleanup failure keeps the run green and prints where the dir
+    // is. Rejected: failing a green run over a locked file — on Windows that
+    // is a handle, not a test failure.
     console.error(`[preflight] could not delete the test home, left it at ${home}: ${error.message}`);
   }
 }

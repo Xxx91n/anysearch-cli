@@ -26,7 +26,7 @@ test("a green run reports the mode and how long it took", () => {
   });
 });
 
-test("a run points the child's home at a throwaway dir and deletes it when green", () => {
+test("a run gives the child a throwaway home and leaves the operator's home alone", () => {
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
   const operatorDb = join(operatorHome, "anysearch.db");
   try {
@@ -36,8 +36,7 @@ test("a run points the child's home at a throwaway dir and deletes it when green
       // the home or the database path the operator actually uses.
       for (let run = 1; run <= 2; run += 1) {
         const result = runCliIn(root, bin, ["--staged"], {
-          home: operatorHome,
-          overrides: { ANS_DB_PATH: operatorDb },
+          overrides: { HOME: operatorHome, USERPROFILE: operatorHome, ANS_DB_PATH: operatorDb },
         });
         assert.equal(result.status, 0, result.stderr);
         const home = childHome(result.stdout);
@@ -158,17 +157,13 @@ test("no refs on stdin falls back to the working tree and says so", () => {
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false, input, home, overrides } = {}) {
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrides } = {}) {
   const env = { ...process.env };
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
-  if (home) {
-    env.HOME = home;
-    env.USERPROFILE = home;
-  }
   if (overrides) Object.assign(env, overrides);
   delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {
