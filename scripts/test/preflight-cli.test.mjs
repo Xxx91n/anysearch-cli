@@ -25,7 +25,13 @@ test("a green run exits 0 and prints how long it took", () => {
 });
 
 function runCli(bin) {
-  const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` };
+  const env = {
+    ...process.env,
+    PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+    // A full run starts the gate's own tests, which include this file; the fake
+    // pnpm is here to test the runner, not to re-enter it.
+    PREFLIGHT_SELF_TEST: "0",
+  };
   if (process.platform === "win32") env.Path = env.PATH;
   return spawnSync(process.execPath, [cli, "--full"], { encoding: "utf8", env });
 }

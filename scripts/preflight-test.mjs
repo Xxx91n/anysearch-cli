@@ -15,7 +15,7 @@
 //   node scripts/preflight-test.mjs --full     # always run the whole suite
 //   node scripts/preflight-test.mjs --dry-run  # print the plan, run nothing
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,8 +24,14 @@ import { planPreflight } from "./preflight-plan.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
+const GATE_TESTS = [
+  "scripts/test/preflight-plan.test.mjs",
+  "scripts/test/preflight-change.test.mjs",
+  "scripts/test/preflight-cli.test.mjs",
+];
 
 const change = readChange();
+if (change.note) console.log(`[preflight] ${change.note}`);
 const plan = change.unknown
   ? { mode: "full", reason: change.unknown, files: [], packages: [] }
   : planPreflight(root, change.files, { forceFull: args.includes("--full") });
@@ -52,6 +58,17 @@ const runArgs =
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
   process.exit(0);
+}
+
+// A scripts/ change falls back to pnpm test, which only knows the workspace
+// packages — the gate's own tests have to run here or a broken gate ships.
+if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
+  console.log("[preflight] running the gate's own tests");
+  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, stdio: "inherit" });
+  if (gate.status !== 0) {
+    console.error("[preflight] blocked: the gate's own tests failed");
+    process.exit(gate.status ?? 1);
+  }
 }
 
 const started = Date.now();
@@ -99,6 +116,9 @@ function readChange() {
     const pushed = pushedFiles(root, input);
     if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits" };
     if (pushed !== null) return { files: pushed };
+    const files = localFiles(root);
+    if (files === null) return { unknown: "git could not name the change" };
+    return { files, note: "no refs on stdin, looked at the working tree instead" };
   }
   const files = args.includes("--staged") ? stagedFiles(root) : localFiles(root);
   return files === null ? { unknown: "git could not name the change" } : { files };

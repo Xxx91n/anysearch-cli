@@ -2,16 +2,12 @@
 // stdin; the pre-commit hook asks for the index. A plain run compares against
 // origin/HEAD and adds the working tree, so a dry run sees what is still local.
 //
-// Design: a commit reads only the index — a scratch file left in the tree
-// should not turn every commit into a full run; a push reads exactly the refs
-// it sends.
-//
-// A reader that cannot answer returns null, and the caller falls back to the
-// full suite rather than guessing.
-//
-// Design: an unreadable change falls back to the whole suite instead of a
-// guess — under-selecting makes the gate pass silently, which is worse than
+// Design: a commit reads only the index, and an unreadable change falls back
+// to the whole suite — a scratch file in the tree should not turn every commit
+// into a full run, but under-selecting passes silently, which is worse than
 // running too much.
+//
+// A reader that cannot answer returns null; the caller decides what to do.
 
 import { spawnSync } from "node:child_process";
 
