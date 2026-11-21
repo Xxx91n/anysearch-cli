@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { writeStderr } from "../preflight-stderr.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -280,7 +281,13 @@ function makeWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
-  for (const name of ["preflight-test.mjs", "preflight-change.mjs", "preflight-plan.mjs", "preflight-command.mjs"]) {
+  for (const name of [
+    "preflight-test.mjs",
+    "preflight-change.mjs",
+    "preflight-plan.mjs",
+    "preflight-command.mjs",
+    "preflight-stderr.mjs",
+  ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
@@ -428,3 +435,51 @@ function write(file, content) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content);
 }
+
+// The kept-home line goes out through a hand-rolled sync write, so the pipe
+// under it can refuse. These three cases pin that behaviour without needing a
+// real stalled pipe, which no test harness can produce on demand.
+test("a full stderr pipe is retried until the whole line is written", () => {
+  const chunks = [];
+  let refusals = 0;
+  writeStderr("kept at /tmp/ans-home", {
+    write(fd, bytes, offset) {
+      if (refusals < 2) {
+        refusals += 1;
+        throw Object.assign(new Error("full"), { code: "EAGAIN" });
+      }
+      const slice = bytes.subarray(offset);
+      chunks.push(slice);
+      return slice.length;
+    },
+    pause() {},
+  });
+  assert.equal(Buffer.concat(chunks).toString(), "kept at /tmp/ans-home\n");
+  assert.equal(refusals, 2);
+});
+
+test("a pipe that never drains gives up instead of hanging, and ends the line", () => {
+  const attempts = [];
+  writeStderr("kept at /tmp/ans-home", {
+    write(fd, bytes, offset) {
+      attempts.push(bytes.subarray(offset).toString());
+      if (attempts.length === 1) return 4;
+      throw Object.assign(new Error("full"), { code: "EAGAIN" });
+    },
+    pause() {},
+  });
+  assert.equal(attempts.at(-1), "\n");
+  assert.ok(attempts.length > 2, "the write should have been retried");
+});
+
+test("an error other than EAGAIN is not retried", () => {
+  let calls = 0;
+  writeStderr("kept at /tmp/ans-home", {
+    write() {
+      calls += 1;
+      throw Object.assign(new Error("bad fd"), { code: "EBADF" });
+    },
+    pause() {},
+  });
+  assert.equal(calls, 1);
+});
