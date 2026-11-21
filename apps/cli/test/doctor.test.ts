@@ -278,13 +278,13 @@ async function runInHome(config: {
   credentials?: string;
   configToml?: string;
   env: Record<string, string | undefined>;
-}): Promise<{ payload: DiagJson; entries: Array<{ name: string; state: string; detail?: string }>; code: number }> {
+}): Promise<DoctorRun & { payload: DiagJson }> {
   const run = await doctorInHome(config, ["--json"]);
-  return { payload: run.payload!, entries: run.entries, code: run.code };
+  return { ...run, payload: run.payload! };
 }
 
 test("ans doctor：凭据文件读坏了只报一条失败", async () => {
-  // 没配模型 key 时 LLM 解析器也会去读这份文件，它那条报错和上面那条重复。
+  // 票面要求原样保留的守卫：文件读坏了只出一条失败，失败数不多算。
   const { payload, entries } = await runInHome({
     credentials: "not json",
     env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
@@ -297,23 +297,19 @@ test("ans doctor：凭据文件读坏了只报一条失败", async () => {
   assert.equal(payload.summary.failed, 1, "失败数不能多算");
 });
 
-test("ans doctor：凭据文件坏了，文字输出和 --json 都只有一条说到它", async () => {
-  // 验收第二条：文字和 --json 里都只有一条。--json 按报告内容找，不按条目名字找，
-  // 免得以后换个名字再说一遍还能全绿；文字模式直接数行，因为那才是用户看到的东西。
-  const config = {
-    credentials: "not json",
-    env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
-  };
-  const { payload, entries } = await runInHome(config);
+test("ans doctor：凭据文件坏了，文字输出里只说一条", async () => {
+  // 验收第二条的文字那一半：用户看到的就是这些行，所以直接数行。--json 那一半由
+  // 上面那条守卫用例钉着，这里不再重复跑一遍 --json。
+  const printed = await doctorInHome(
+    {
+      credentials: "not json",
+      env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
+    },
+    [],
+  );
 
-  const mentioning = entries.filter((entry) => (entry.detail ?? "").includes("not valid JSON"));
-  assert.equal(mentioning.length, 1, "同一份文件故障只说一次");
-  assert.equal(mentioning[0]!.name, "user credential file");
-  assert.equal(payload.summary.failed, 1, "失败数不能多算");
-
-  const printed = await doctorInHome(config, []);
   const faultLines = printed.text.split("\n").filter((line) => line.includes("not valid JSON"));
-  assert.equal(faultLines.length, 1, "文字输出里也只出现一次：\n" + printed.text);
+  assert.equal(faultLines.length, 1, "文字输出里只出现一次：\n" + printed.text);
   assert.match(faultLines[0]!, /user credential file/);
   assert.equal(
     printed.text.split("\n").filter((line) => line.includes("配置文件")).length,

@@ -321,8 +321,9 @@ export interface ResolvedSearchCredentials {
  * endpoint of these SDKs is fixed, and an explicit ANYSEARCH_ENDPOINT is the
  * documented way to point that arm at a mirror.
  *
- * Design: one parse of the user credential file per command, and the caller that
- * did the parse owns the fault. A resolver given the result neither re-reads the
+ * Design: the command that reads the user credential file parses it once and
+ * passes that result to every resolver and report that needs it; that caller owns
+ * the file's fault. A resolver given the result neither re-reads the
  * file nor repeats the fault, so nothing has to decide "is this the same fault as
  * the line above?" — matching error text makes one module depend on another's
  * wording, and matching the path is a second guess at identity. The parsed

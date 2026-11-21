@@ -9,8 +9,8 @@
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
-import type { CredentialFileContents } from "../config-llm";
 import {
+  type CredentialFileContents,
   displayEndpoint,
   KEY_SOURCE_LABELS,
   readUserCredentials,
@@ -23,8 +23,8 @@ import {
 } from "../config-llm";
 
 /**
- * The one voice for a credential file that could not be read: callers print this
- * and hand the same result to the resolver, so the fault is said once (#357).
+ * The BROKEN line both listings below print for a credential file that could not
+ * be read: one wording for this command, and the same result goes to the resolver.
  */
 function printCredentialFault(file: CredentialFileContents): void {
   if (file.error) console.log("Credentials file: BROKEN - " + file.error);
