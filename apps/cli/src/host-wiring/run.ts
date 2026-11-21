@@ -9,8 +9,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import { resolveLlmConfig } from "@anysearch-cli/store";
+import { resolveConfigHome, resolveLlmConfig } from "@anysearch-cli/store";
 import { getHost, binOnPath, INSTALL_BINS, type HostDef, type UnitDef } from "./hosts.js";
 import { writeJsoncPath, appendJsoncItem, removeJsoncPath, removeJsoncItem, findOurItems, readJsoncPath } from "./jsonc-edit.js";
 import {
@@ -317,7 +316,7 @@ export async function runHostOperation(
 ): Promise<HostRunResult> {
   const out = opts.stdout ?? ((text: string) => process.stdout.write(text));
   const projectRoot = opts.projectRoot ?? process.cwd();
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? resolveConfigHome();
   const host = getHost(hostId);
   if (!host) {
     out(`没有这个宿主：${hostId}（可用：claude、codebuddy、codex、antigravity）\n`);
@@ -541,7 +540,7 @@ export function runHostStatus(
 ): HostRunResult {
   const out = opts.stdout ?? ((text: string) => process.stdout.write(text));
   const projectRoot = opts.projectRoot ?? process.cwd();
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? resolveConfigHome();
   const lines: string[] = [];
 
   // 安装层：接线命令是不是当前完整安装提供的（只找文件，不执行进程）。

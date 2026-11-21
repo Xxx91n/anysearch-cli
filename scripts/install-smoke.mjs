@@ -102,12 +102,16 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
-  // arm-absent telemetry is a doctor-visible SKIP, not a failure.
-  check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
-  // #310: the migration-state section sits between the config block and Domains.
-  check("doctor shows [5] Database migration state", d1.out.includes("[5] Database migration state"), d1.out.slice(-600));
-  check("doctor shows [6] Domains", d1.out.includes("[6] Domains"), d1.out.slice(-400));
-  check("doctor lists docs domain", d1.out.includes("docs"), d1.out.slice(-400));
+  // Every doctor check below shows the row it is about: the output's tail is all summary.
+  const rowOf = (needle) => d1.out.split("\n").find((line) => line.includes(needle)) ?? d1.out;
+  // Assert the state (未配置), not just the row name.
+  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), rowOf("vector arm"));
+  // Four layers: [安装]/[能力]/[宿主]/[数据].
+  check("doctor shows the four layers", ["[安装]", "[能力]", "[宿主]", "[数据]"].every((l) => d1.out.includes(l)), d1.out.slice(0, 400));
+  check("doctor shows the DB layout row", d1.out.includes("库布局"), rowOf("库布局"));
+  // Name the shipped domain: the bare 领域文件 also appears on the failure row
+  // ("领域文件发现"), which fires when no TOML was found at all.
+  check("doctor shows the domain rows", d1.out.includes("领域文件 docs"), rowOf("领域文件 docs"));
 
   const dom = ans("domain docs");
   check("ans domain docs exit 0", dom.code === 0, dom.out);
@@ -115,7 +119,7 @@ try {
   check("domain switch echoes the resolved declaration", dom.out.includes("信息源："), dom.out);
 
   const d2 = ans("doctor");
-  check("doctor shows active domain docs", d2.out.includes("active: docs"), d2.out.slice(-400));
+  check("doctor shows active domain docs", d2.out.includes("当前生效：docs"), d2.out.slice(-400));
 
   // 3b.: peer-optional dual-install — npm i cli + embedding into one
   // prefix lands both under the same node_modules root, and the app's bundled
@@ -163,7 +167,7 @@ try {
   symlinkSync(join(nm, "@anysearch-cli", "embedding"), join(hashB, "@anysearch-cli", "embedding"), "junction");
   const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix });
   check("pnpm-layout: doctor runs under isolated roots", pd.code === 0, pd.out.slice(-500));
-  check("pnpm-layout: sibling-root fallback reports vector arm present", /vector arm \(present/.test(pd.out), pd.out.slice(-500));
+  check("pnpm-layout: sibling-root fallback reports vector arm present", /vector arm.*present/.test(pd.out), pd.out.slice(-500));
 
   // 4. Search leg — online hard assertion or offline abstain contract.
   const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);

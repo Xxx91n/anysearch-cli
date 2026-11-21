@@ -41,6 +41,7 @@ import { existsSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { printAcceptanceHeader } from "./acceptance-header.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -591,6 +592,30 @@ async function main() {
     const Database = createRequire(join(ROOT, "apps", "mcp", "package.json"))("better-sqlite3");
 
     const nm = join(prefix, "node_modules");
+    // 装包那步挂了也别在这里抛：上面已经记过 FAIL，这里再抛就把整轮拦腰砍断。
+    const installedPkg = join(nm, "@anysearch-cli", "cli", "package.json");
+    let installedVersion = null;
+    let versionProblem = "文件不在";
+    if (existsSync(installedPkg)) {
+      try {
+        const parsed = JSON.parse(readFileSync(installedPkg, "utf8"));
+        if (typeof parsed?.version === "string" && parsed.version.trim() !== "") {
+          installedVersion = parsed.version.trim();
+        } else {
+          versionProblem = "没有 version 字段";
+        }
+      } catch (error) {
+        versionProblem = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (installedVersion === null) {
+      check(false, "读得出装进去的产品版本", installedPkg + " — " + versionProblem);
+    }
+    printAcceptanceHeader({
+      product: "anysearch-cli",
+      version: installedVersion ?? "读不出来",
+      notes: preset ? ["包来自: " + preset] : [],
+    });
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
     const mcpBin = join(nm, "@anysearch-cli", "cli", "bin", "ans-mcp.cjs");
     check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);

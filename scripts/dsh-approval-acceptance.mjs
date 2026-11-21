@@ -40,6 +40,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
 import zlib from "node:zlib";
+import { printAcceptanceHeader } from "./acceptance-header.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const KEEP = process.argv.includes("--keep");
@@ -383,6 +384,29 @@ async function runHeadlessScenario(ctx) {
 async function main() {
   must(zlib.zstdDecompressSync, "this Node cannot decode zstd; Node 22.15+ is required");
 
+  // 这一轮装的是 apps/dsh-plugin，版本就读它；读不出来也要让车道跑起来。
+  const pluginPkg = join(REPO, "apps", "dsh-plugin", "package.json");
+  let pluginVersion = null;
+  let versionProblem = "文件不在";
+  if (existsSync(pluginPkg)) {
+    try {
+      const parsed = JSON.parse(readFileSync(pluginPkg, "utf8"));
+      if (typeof parsed?.version === "string" && parsed.version.trim() !== "") {
+        pluginVersion = parsed.version.trim();
+      } else {
+        versionProblem = "没有 version 字段";
+      }
+    } catch (error) {
+      versionProblem = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (pluginVersion === null) {
+    exitCode = 1;
+    results.push({ name: "读得出被测包的版本", detail: pluginPkg + " — " + versionProblem });
+    console.error(`[FAIL] 读得出被测包的版本 — ${pluginPkg} — ${versionProblem}`);
+  }
+  printAcceptanceHeader({ product: "anysearch-cli/dsh-plugin", version: pluginVersion ?? "读不出来" });
+
   const dshBin = process.env.DSH_BIN || "dsh";
   const version = run(dshBin, ["--version"]);
   must(version.status === 0, `cannot run ${dshBin} --version:\n${version.stderr}`);
@@ -539,7 +563,7 @@ async function main() {
   );
 
   console.log("");
-  console.log(`acceptance complete: ${results.length} checks, all passed`);
+  console.log(`acceptance complete: ${results.length} checks, ${exitCode === 0 ? "all passed" : "see the FAIL lines above"}`);
 }
 
 function sessionIsListening(port) {

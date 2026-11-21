@@ -24,7 +24,7 @@ A vertical-domain information specialist CLI: put search, research, memory, and 
 
 ```bash
 npm i -g @anysearch-cli/cli
-ans doctor                                          # self-check: keys, database path, domain config parsing, provider readiness
+ans doctor                                          # layered self-check: install / capability / host / data, each line ready·unconfigured·unchecked·failed
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # search inside the docs domain only
 
@@ -45,13 +45,13 @@ Vector search remains optional.
 After installing it (with npm or pnpm), first verify that it is actually active, then backfill vectors for existing records:
 
 ```bash
-ans doctor                    # "vector arm (present ...)" means it is active
+ans doctor                    # "vector arm：present ..." means it is active
 ans memory backfill-vectors   # backfill vectors for existing rows; downloads the model on first run (~130 MB)
 ```
 
 - The model downloads from huggingface.co on first use and caches in `~/.ans/models`
 (override the location with `ANYSEARCH_MODEL_CACHE`).
-- On offline machines, you can copy an already populated cache directory from a connected machine. After uninstalling this package, the CLI falls back to FTS-only without crashing, and `ans doctor` marks this check as SKIP.
+- On offline machines, you can copy an already populated cache directory from a connected machine. After uninstalling this package, the CLI falls back to FTS-only without crashing, and `ans doctor` reports that row as 未配置 (unconfigured, not a failure).
 
 ## Requirements
 

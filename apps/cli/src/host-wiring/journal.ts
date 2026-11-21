@@ -13,8 +13,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import { ansProjectWiringDir, ansUserWiringDirFor } from "@anysearch-cli/store";
+import { ansProjectWiringDir, ansUserWiringDirFor, resolveConfigHome } from "@anysearch-cli/store";
 
 export type HostOp = "connect" | "repair" | "remove";
 export type EntryStatus = "planned" | "partial" | "done";
@@ -45,7 +44,7 @@ export interface JournalEntry {
 }
 
 /** journal 与备份的存放根目录。 */
-export function wiringRoot(scope: "project" | "user", projectRoot: string, home: string = homedir()): string {
+export function wiringRoot(scope: "project" | "user", projectRoot: string, home: string = resolveConfigHome()): string {
   return scope === "project" ? ansProjectWiringDir(projectRoot) : ansUserWiringDirFor(home);
 }
 
