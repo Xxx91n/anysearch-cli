@@ -220,3 +220,84 @@ test("ans doctor --strict：有未检查、没有失败时退出 5", async () =>
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+// 去重靠「两次读同一个文件、报错文字一字不差」，store 改一句措辞就可能悄悄回来；
+// 反过来把 endpoint 不匹配也咽掉同样没人发现。这两条各自钉住一头。
+async function runInHome(config: {
+  credentials?: string;
+  configToml?: string;
+  env: Record<string, string | undefined>;
+}): Promise<{ payload: DiagJson; entries: Array<{ name: string; state: string; detail?: string }>; code: number }> {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-cred-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", ...Object.keys(config.env)];
+  const saved: Record<string, string | undefined> = {};
+  for (const key of keys) saved[key] = process.env[key];
+  const lines: string[] = [];
+  try {
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    if (config.credentials !== undefined) {
+      writeFileSync(join(home, ".ans", "credentials.json"), config.credentials, "utf8");
+    }
+    if (config.configToml !== undefined) {
+      writeFileSync(join(home, ".ans", "config.toml"), config.configToml, "utf8");
+    }
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    for (const [key, value] of Object.entries(config.env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    return {
+      payload,
+      code,
+      entries: payload.layers.flatMap((layer) => layer.entries),
+    };
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+test("ans doctor：凭据文件读坏了只报一条失败", async () => {
+  // 没配模型 key 时 LLM 解析器也会去读这份文件，它那条报错和上面那条重复。
+  const { payload, entries } = await runInHome({
+    credentials: "not json",
+    env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
+  });
+
+  const credentialRows = entries.filter((entry) => entry.name === "user credential file");
+  assert.equal(credentialRows.length, 1, "同一份文件只报一条");
+  assert.equal(credentialRows[0]!.state, "failed");
+  assert.equal(entries.filter((entry) => entry.name === "配置文件").length, 0, "同一句故障不要再报一遍");
+  assert.equal(payload.summary.failed, 1, "失败数不能多算");
+});
+
+test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () => {
+  const stored = "https://a.example/v1";
+  const effective = "https://b.example/v1";
+  const { entries } = await runInHome({
+    credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: "sk-not-a-real-key", endpoint: stored }] }),
+    configToml: [
+      "[llm]",
+      'provider = "openai"',
+      'model = "gpt-4o"',
+      'api = "chat"',
+      'base_url = "' + effective + '"',
+      "",
+    ].join("\n"),
+    env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined, ANS_LLM_BASE_URL: undefined },
+  });
+
+  const configRow = entries.find((entry) => entry.name === "配置文件");
+  assert.ok(configRow, "绑定对不上要有一条「配置文件」");
+  assert.equal(configRow!.state, "failed");
+  assert.match(configRow!.detail ?? "", /endpoint/);
+  assert.ok((configRow!.detail ?? "").includes(stored), "要说清 key 绑在哪：" + configRow!.detail);
+  assert.ok((configRow!.detail ?? "").includes(effective), "要说清当前生效的是哪个：" + configRow!.detail);
+});

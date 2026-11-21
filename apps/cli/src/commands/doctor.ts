@@ -180,7 +180,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
 
   // ── 能力层 ────────────────────────────────────────────────────────────
   const credentials = resolveSearchCredentials(process.env, { home: configHome });
-  /** The credential file's own fault text, so the LLM resolver does not report it twice. */
+  // 凭据文件的报错原文，用来给下面的解析器去重。
   let credentialFileFault = "";
   {
     // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
@@ -375,12 +375,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     }
   }
   {
-    // warn 是这个解析器唯一说「你那份配置有问题」的出口（TOML 坏了、[llm] 不是表、
-    // 值不认、key 绑在别的 endpoint 上）。咽掉它，doctor 就会把「配坏了」说成「没配」。
-    //
-    // 只滤掉一条：没有模型 key 时它也会去读同一份 credentials.json，读坏了报的是和上面
-    // 「user credential file」一模一样的文字。按那句原文过滤——不能按路径过滤，因为
-    // 「key 绑在别的 endpoint 上，拒绝发出去」也带同一个路径，那条必须露出来。
+    // 没有模型 key 时这个解析器也会读同一份凭据文件，读坏了和上面那条重复；这里只跳过
+    // 文字相同的那条（按路径跳过会连「key 绑在别的 endpoint 上」一起咽掉）。
     const configWarnings: string[] = [];
     const llm = resolveLlmConfig({
       cwd,
