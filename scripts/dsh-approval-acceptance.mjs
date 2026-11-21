@@ -383,6 +383,14 @@ async function runHeadlessScenario(ctx) {
 async function main() {
   must(zlib.zstdDecompressSync, "this Node cannot decode zstd; Node 22.15+ is required");
 
+  // #312：真实宿主这一轮也要记下版本、系统、日期，否则说不清是哪一版、
+  // 在哪台机器上、什么时候观察到的。
+  const productVersion = JSON.parse(readFileSync(join(REPO, "apps", "cli", "package.json"), "utf8")).version;
+  console.log("== 验收对象 ==");
+  console.log("  产品版本: " + productVersion);
+  console.log("  系统: " + process.platform + " " + process.arch + " / Node " + process.version);
+  console.log("  日期: " + new Date().toISOString());
+
   const dshBin = process.env.DSH_BIN || "dsh";
   const version = run(dshBin, ["--version"]);
   must(version.status === 0, `cannot run ${dshBin} --version:\n${version.stderr}`);

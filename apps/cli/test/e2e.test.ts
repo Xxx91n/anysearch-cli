@@ -121,17 +121,24 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /unknown command/);
   });
 
-  await t("doctor runs smoke suite and exits 0", async () => {
+  await t("doctor runs layered diagnosis and exits 0", async () => {
     const r = await run(["doctor"]);
     assert.equal(r.code, 0, "doctor stdout: " + r.out.slice(0, 500));
-    for (const marker of ["[OK]", "Result:", "passed"]) {
+    for (const marker of ["[OK]", "Result:", "汇总："]) {
       assert.ok(r.out.includes(marker), "missing " + marker);
     }
-    // B1: doctor surfaces the real domains section + the docs domain.
-    // #310 moved Domains to [6]; the migration-state section is the new [5].
-    assert.ok(r.out.includes("[5] Database migration state"), "missing migration-state section");
-    assert.ok(r.out.includes("[6] Domains"), "missing domains section");
+    // #312：四层分开报——安装 / 能力 / 宿主 / 数据，每层内部再逐条。
+    for (const layer of ["[安装]", "[能力]", "[宿主]", "[数据]"]) {
+      assert.ok(r.out.includes(layer), "missing layer " + layer);
+    }
+    // 迁移状态仍要报（#310 那一行，现在归到数据层），领域清单仍要出现。
+    assert.ok(r.out.includes("库布局"), "missing migration-state row");
     assert.ok(r.out.includes("docs"), "docs domain not listed");
+    // 未配置 / 未检查都要明确写出来，不能悄悄当成通过。
+    assert.ok(
+      r.out.includes("[未配置]") || r.out.includes("[未检查]"),
+      "unconfigured/unchecked rows must be named",
+    );
   });
 
   await t("llm (no args) prints provider list, exit 0", async () => {

@@ -41,7 +41,7 @@ const help = [
   "Usage: ans <command> [options]",
   "",
   "Commands:",
-  "  doctor    Run smoke tests: provider ping + store check + domain validate",
+  "  doctor    分层诊断：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败",
   "  auth      Provider API keys: status, or store one once (ans auth set <provider>)",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",

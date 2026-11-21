@@ -544,6 +544,14 @@ function rmTempWithRetry(dir) {
 async function main() {
   // ANS_ACC_TMPDIR 只挪沙箱的位置，不动 TEMP。改 TEMP 会连带影响子进程找
   // npm，那不是这条车道想测的东西。
+  // #312：真实跑过的东西要记下版本、系统、日期，否则这份结果说不清是哪一版、
+  // 在哪台机器上得到的。
+  const productVersion = JSON.parse(readFileSync(join(ROOT, "apps", "cli", "package.json"), "utf8")).version;
+  console.log("== 验收对象 ==");
+  console.log("  产品版本: " + productVersion);
+  console.log("  系统: " + process.platform + " " + process.arch + " / Node " + process.version);
+  console.log("  日期: " + new Date().toISOString());
+
   const work = mkdtempSync(join(process.env.ANS_ACC_TMPDIR?.trim() || tmpdir(), "ans-installed-acc-"));
   const outDir = join(work, "out");
   const prefix = join(work, "prefix");
