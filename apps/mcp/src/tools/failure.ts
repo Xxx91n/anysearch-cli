@@ -37,7 +37,7 @@ const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
 };
 
 /** provider id → plain-language remedy, for failed arms whose class has one. */
-export function providerErrorHints(
+function providerErrorHints(
   providersFailed: readonly string[],
   providerErrorClasses?: Record<string, ProviderErrorClass>,
 ): Record<string, string> {
