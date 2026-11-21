@@ -534,13 +534,9 @@ function announce(): void {
 }
 
 /**
- * The last thing a start that never listened does (#344): say why, end the
- * process record written at module load, then exit 1.
- *
- * Design: end the row here rather than in a `process.on("exit")` handler —
- * that handler would also fire on the drain-timeout exit, which deliberately
- * writes nothing while a unit may be half done. `stop()` is the call the
- * graceful path makes; nothing is in flight yet.
+ * Design: end the row here, not in a `process.on("exit")` handler — that
+ * handler would also fire on the drain-timeout exit, which deliberately writes
+ * nothing while a unit may be half done (#344).
  */
 function failToListen(detail: string): never {
   // A dead stderr must not swallow the end write: that would put back the open
@@ -555,9 +551,9 @@ function bind(port: number, allowFallback: boolean): void {
     server.off("error", onError);
     if (allowFallback && error.code === "EADDRINUSE" && !process.env.ANS_SERVER_PORT) {
       // The documented default port was taken. Bind an ephemeral port and
-      // publish the address, so callers read it instead of guessing. Guarded
-      // like every other stderr write: an uncaught throw from this event
-      // callback would kill the process with its record still open.
+      // publish the address, so callers read it instead of guessing. The write
+      // is guarded because an uncaught throw from this event callback would
+      // kill the process with its record still open.
       try { process.stderr.write("[anysearch] port " + port + " is taken; trying an ephemeral port\n"); } catch { /* dead stderr */ }
       bind(0, false);
       return;
