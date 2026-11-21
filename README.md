@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero-dark.svg">
-    <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli: search, research, and memory for agents, behind a domain allowlist that actually holds">
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/readme/hero-dark.svg">
+    <img src="./docs/assets/readme/hero.svg" width="100%" alt="anysearch-cli: search, research, and memory for agents, behind a domain allowlist that actually holds">
   </picture>
 </p>
 
