@@ -139,7 +139,7 @@ if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
   const failed = failedTask(tail);
-  writeStderr(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
+  console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome);
   process.exitCode = status ?? 1;
 } else {
@@ -282,6 +282,6 @@ function removeTestHome({ home }) {
     // Design: a cleanup failure keeps the run green and prints where the dir
     // is — a Windows file lock is a handle, not a test failure; failing a
     // green run over it was rejected.
-    writeStderr(`[preflight] could not delete the test home, left it at ${home}: ${error.message}`);
+    console.error(`[preflight] could not delete the test home, left it at ${home}: ${error.message}`);
   }
 }

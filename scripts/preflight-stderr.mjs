@@ -1,7 +1,7 @@
-// Synchronous stderr writer for the gate. A signal handler may exit right
-// after a line is written, and a piped stderr drops unsent async lines, so the
-// last words are written by hand. A full pipe makes fd 2 throw EAGAIN: retry
-// for about 100 ms, then give up instead of hanging the gate.
+// Synchronous stderr writer for the gate. Written by hand because a signal
+// handler or a hard exit may follow at once, and a piped stderr drops unsent
+// async lines. A full pipe makes fd 2 throw EAGAIN: retry for about 100 ms on
+// the line and as much again on its newline, then give up instead of hanging.
 import fs from "node:fs";
 
 export const RETRY_LIMIT = 20;
