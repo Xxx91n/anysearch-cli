@@ -62,9 +62,6 @@ export function createPersistentEngine(
   // #301: search keys may live in the user credential file, not only in the
   // process env — a GUI host inherits no shell env, so resolving here is what
   // makes "enter the key once" actually reach the real search clients.
-  // #370: the caller's parse wins when it handed one in; `undefined` is the same
-  // as not handing one, since the resolver then reads the file and reports its
-  // fault itself.
   const credentialsFile = opts?.credentialsFile;
   const result = createEngine(domain, {
     dbPath,

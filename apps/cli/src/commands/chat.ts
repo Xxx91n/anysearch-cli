@@ -49,11 +49,9 @@ export async function runChat(argv: string[]): Promise<number> {
   const active = resolveActiveDomain();
   const domainName = active.name;
 
-  // #370 Design: one parse here, handed to both consumers — chat used to read
-  // this file at the engine's search arms and again at the model resolver (when
-  // no model key was in the env), so one broken file printed its fault twice.
-  // Whoever parses reports it; neither downstream resolver reports it again.
-  // The model resolver also gets this `home`, because its endpoint-mismatch
+  // #370 Design: parse the user credential file once here, hand the result to
+  // both consumers, and report its fault here — so a broken file is said once.
+  // The model resolver also gets this `home`, since its endpoint-mismatch
   // warning names that path.
   const configHome = resolveConfigHome();
   const credentialFile = readUserCredentials({ home: configHome });
