@@ -238,13 +238,14 @@ Rules behind the table:
   both the content JSON and `structuredContent`.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
-  most one plain sentence, and `PROVIDER_ERROR_HINTS` in
-  `apps/mcp/src/tools/failure.ts` is the only place that wording is written
-  down — read it there rather than in a copy. `providerErrorHints` maps each
-  failed provider whose class has a sentence to that sentence. The
-  all-providers-failed text appends them after the class list, one
-  `provider: sentence` per arm separated by ` | `. `unknown` has no hint —
-  nobody classified it, so nothing is invented.
+  most one plain sentence, no two classes share one, and
+  `PROVIDER_ERROR_HINTS` in `apps/mcp/src/tools/failure.ts` is the only place
+  that wording is written down — read it there rather than in a copy.
+  `providerErrorHints` maps each failed provider whose class has a sentence to
+  that sentence. The all-providers-failed text appends them after the class
+  list, one `provider: sentence` per arm separated by ` | `, in
+  `providersFailed` order: `. tavily: <sentence> | exa: <sentence>.` `unknown`
+  has no hint — nobody classified it, so nothing is invented.
 - **Abstain is a successful policy outcome.** It leaves `isError` absent and
   exposes the marker in `structuredContent.abstain`. For `research_web`, the
   marker describes the **last round only**. Results merged from earlier

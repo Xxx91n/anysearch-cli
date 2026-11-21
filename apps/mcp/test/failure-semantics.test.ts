@@ -493,6 +493,7 @@ async function main() {
       );
     }
 
+    // ---- 14. Hint sentences are pairwise distinct (#356) ----
     // Reading the expected text from the table cannot catch a wrong entry on
     // its own: if the table changes, the expectation moves with it. This
     // invariant never reads the wording. Every class that has a sentence must
