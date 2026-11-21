@@ -533,21 +533,41 @@ function announce(): void {
   }
 }
 
+/**
+ * Design: end the row here, not in a `process.on("exit")` handler — that
+ * handler would also fire on the drain-timeout exit, which deliberately writes
+ * nothing while a unit may be half done (#344).
+ */
+function failToListen(detail: string): never {
+  // A dead stderr must not swallow the end write: that would put back the open
+  // row this function exists to close.
+  try { process.stderr.write("[anysearch] plugin server could not listen: " + detail + "\n"); } catch { /* dead stderr */ }
+  postWork.stop();
+  process.exit(1);
+}
+
 function bind(port: number, allowFallback: boolean): void {
   const onError = (error: NodeJS.ErrnoException) => {
     server.off("error", onError);
     if (allowFallback && error.code === "EADDRINUSE" && !process.env.ANS_SERVER_PORT) {
       // The documented default port was taken. Bind an ephemeral port and
-      // publish the address, so callers read it instead of guessing.
-      process.stderr.write("[anysearch] port " + port + " is taken; trying an ephemeral port\n");
+      // publish the address, so callers read it instead of guessing. The write
+      // is guarded because an uncaught throw from this event callback would
+      // kill the process with its record still open.
+      try { process.stderr.write("[anysearch] port " + port + " is taken; trying an ephemeral port\n"); } catch { /* dead stderr */ }
       bind(0, false);
       return;
     }
-    process.stderr.write("[anysearch] plugin server could not listen: " + error.message + "\n");
-    process.exit(1);
+    failToListen(error.message);
   };
   server.once("error", onError);
-  server.listen(port, HOST, () => { server.off("error", onError); announce(); });
+  try {
+    server.listen(port, HOST, () => { server.off("error", onError); announce(); });
+  } catch (error) {
+    // A port the OS refuses before the socket exists (NaN, out of range)
+    // throws here instead of emitting 'error': same terminal failure.
+    failToListen(error instanceof Error ? error.message : String(error));
+  }
 }
 bind(REQUESTED_PORT, true);
 
