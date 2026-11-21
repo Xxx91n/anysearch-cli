@@ -375,8 +375,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     }
   }
   {
-    // 没有模型 key 时这个解析器也会读同一份凭据文件，读坏了和上面那条重复；这里只跳过
-    // 文字相同的那条（按路径跳过会连「key 绑在别的 endpoint 上」一起咽掉）。
+    // 没有模型 key 时这个解析器也会读同一份凭据文件，读坏了和上面那条重复，这里只跳过文字相同的那条。
     const configWarnings: string[] = [];
     const llm = resolveLlmConfig({
       cwd,
