@@ -51,12 +51,11 @@ if (plan.mode === "full") {
 }
 
 const runArgs = commandArgs(plan);
+const selfTest = plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0";
 
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
-  if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
-    console.log(`[preflight] dry run, would also run the gate's own tests: ${GATE_TESTS.join(", ")}`);
-  }
+  if (selfTest) console.log(`[preflight] dry run, would also run the gate's own tests: ${GATE_TESTS.join(", ")}`);
   process.exit(0);
 }
 
@@ -67,7 +66,7 @@ const started = Date.now();
 // PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
 // fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
 // re-enter the whole suite.
-if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
+if (selfTest) {
   console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
   const gateEnv = { ...process.env };
   delete gateEnv.NODE_TEST_CONTEXT;

@@ -222,6 +222,20 @@ test("a workspace: alias dependency names the package it points at", () => {
   }
 });
 
+test("a broken package manifest sends the gate to the full suite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-broken-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
+    write(dir, "apps/dsh-plugin/package.json", "{ not json");
+    assert.equal(readWorkspace(dir), null);
+    const plan = planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]);
+    assert.equal(plan.mode, "full");
+    assert.equal(plan.reason, "workspace unreadable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function write(dir, file, content) {
   const target = join(dir, file);
   mkdirSync(dirname(target), { recursive: true });

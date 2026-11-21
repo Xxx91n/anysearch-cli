@@ -4,13 +4,13 @@
 // Design: the gate runs the changed packages plus every package that depends
 // on them. A change outside apps/ and packages/ runs the whole suite: turbo's
 // --filter only pulls upstream tests, so a filtered run skipped apps/cli's
-// build after a kernel change. Root files have no single owner — the lockfile,
-// turbo.json and scripts/ change what every package runs — and docs ride along
-// rather than split the rule.
+// build after a kernel change. Root files change what every package runs (the
+// lockfile, turbo.json) and belong to no package, so they run the whole suite
+// too; docs follow the same rule.
 //
-// A file belongs to the package whose directory contains it. An unreadable
-// workspace (no pnpm-workspace.yaml, a directory in its place, a permission
-// error) reads as no packages, which sends the caller to the full suite.
+// A file belongs to the package whose directory contains it. A workspace that
+// cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
+// an empty list or null, and the caller runs the full suite.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,6 +32,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
 
   const packages = readWorkspace(root);
+  if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
   if (packages.length === 0) return { mode: "full", reason: "no workspace packages found", files, packages: [] };
 
   const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
@@ -46,26 +47,39 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
 
 /**
  * Read the workspace packages and their workspace-internal dependencies.
- * Missing or unreadable pnpm-workspace.yaml just means an empty list; the
- * caller then falls back to the full suite.
+ * Missing or unreadable pnpm-workspace.yaml reads as an empty list. A manifest
+ * that cannot be read or parsed returns null, so the caller runs the full suite
+ * instead of silently dropping a package and everything that depends on it.
  *
  * @param {string} root
- * @returns {{ name: string, dir: string, deps: string[] }[]}
+ * @returns {{ name: string, dir: string, deps: string[] }[] | null}
  */
 export function readWorkspace(root) {
   const packages = [];
   for (const dir of workspaceDirectories(root, workspacePatterns(root))) {
-    const manifestPath = path.join(root, dir, "package.json");
-    let manifest;
-    try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    } catch {
-      continue;
-    }
-    if (!manifest?.name) continue;
+    const manifest = readManifest(path.join(root, dir, "package.json"));
+    if (manifest === UNREADABLE) return null;
+    if (manifest === null) continue; // no package.json: not a package
     packages.push({ name: manifest.name, dir, deps: workspaceDeps(manifest) });
   }
   return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+const UNREADABLE = Symbol("unreadable manifest");
+
+function readManifest(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (error) {
+    return error.code === "ENOENT" ? null : UNREADABLE;
+  }
+  try {
+    const manifest = JSON.parse(text);
+    return typeof manifest?.name === "string" && manifest.name !== "" ? manifest : UNREADABLE;
+  } catch {
+    return UNREADABLE;
+  }
 }
 
 function withDependents(touched, packages) {

@@ -85,13 +85,32 @@ test("nothing staged reports nothing to run", () => {
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false } = {}) {
+test("a pushed ref runs the gate on the files it carries", () => {
+  withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin, refs }) => {
+    const result = runCliIn(root, bin, ["--pushed"], { input: refs });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
+    assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
+  });
+});
+
+test("no refs on stdin falls back to the working tree and says so", () => {
+  withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--pushed"], { input: "" });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /no refs on stdin, looked at the working tree instead/);
+    assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
+  });
+});
+
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input } = {}) {
   const env = { ...process.env };
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
+  delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {
     delete env.PREFLIGHT_SELF_TEST;
     if (gateTests) env.PREFLIGHT_GATE_TESTS = gateTests;
@@ -103,12 +122,15 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false } = {}) {
     cwd: root,
     encoding: "utf8",
     env,
+    input,
   });
 }
 
-// A stand-in workspace with one app, its scripts copied in, and the named file
-// staged. The fake pnpm echoes its argv when echoArgs is set and fails otherwise.
-function withWorkspace({ staged, echoArgs = false } = {}, run) {
+// A stand-in workspace with one app and its scripts copied in. `staged` leaves
+// the named file in the index; `pushed` commits it and returns the ref line a
+// pre-push hook would send. The fake pnpm echoes its argv when echoArgs is set
+// and fails otherwise.
+function withWorkspace({ staged, pushed, echoArgs = false } = {}, run) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   try {
@@ -119,16 +141,35 @@ function withWorkspace({ staged, echoArgs = false } = {}, run) {
     write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
     write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
     git(root, ["init", "-q"]);
+    let refs;
     if (staged) {
       write(join(root, staged), "export const one = 1;\n");
       git(root, ["add", staged]);
+    } else if (pushed) {
+      git(root, ["config", "user.email", "preflight@example.test"]);
+      git(root, ["config", "user.name", "preflight"]);
+      git(root, ["config", "commit.gpgsign", "false"]);
+      git(root, ["add", "."]);
+      git(root, ["commit", "-q", "-m", "base"]);
+      const base = rev(root, "HEAD");
+      git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
+      write(join(root, pushed), "export const two = 2;\n");
+      git(root, ["add", "."]);
+      git(root, ["commit", "-q", "-m", "change"]);
+      refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
     }
     writeFakePnpm(bin, echoArgs ? { echoArgs: true } : { code: 1, lines: ["pnpm ran"] });
-    run({ root, bin });
+    run({ root, bin, refs });
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(bin, { recursive: true, force: true });
   }
+}
+
+function rev(root, ref) {
+  const result = spawnSync("git", ["rev-parse", ref], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 0, `git rev-parse ${ref}: ${result.stderr}`);
+  return result.stdout.trim();
 }
 
 function withFakePnpm({ code = 0, lines = [] }, run) {

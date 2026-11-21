@@ -21,12 +21,13 @@ test("an incremental run lists one filter per package, in order", () => {
   ]);
 });
 
-test("the incremental command carries the root test script's turbo flags", () => {
+test("the incremental command runs the same turbo task and flags as the root test script", () => {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const script = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).scripts.test;
-  const scriptFlags = script.split(/\s+/).filter((part) => part.startsWith("--"));
-  const gateFlags = commandArgs({ mode: "incremental", packages: ["@anysearch-cli/cli"] }).filter(
-    (part) => part.startsWith("--") && !part.startsWith("--filter="),
+  const scriptArgs = script.split(/\s+/);
+  const gateArgs = commandArgs({ mode: "incremental", packages: ["@anysearch-cli/cli"] }).filter(
+    (part) => !part.startsWith("--filter="),
   );
-  assert.deepEqual(gateFlags, scriptFlags, "the gate must run turbo with the same flags as `pnpm test`");
+  // "turbo run test" and every flag; only the filters are the gate's own.
+  assert.deepEqual(gateArgs.slice(1), scriptArgs, "the gate must run the same turbo task and flags as `pnpm test`");
 });
