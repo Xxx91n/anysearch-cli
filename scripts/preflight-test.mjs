@@ -151,7 +151,7 @@ if (interrupted) {
 } else if (status !== 0) {
   const failed = failedTask(tail);
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  reportKeptTestHome(testHome);
+  reportKeptTestHome(testHome, console.error);
   process.exitCode = status ?? 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
@@ -223,10 +223,10 @@ function corepackHome(env, home) {
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
-// Sync write: a signal handler may exit right after, and a piped stderr drops
-// unsent lines.
-function reportKeptTestHome({ home }) {
-  writeStderr(`[preflight] test home kept for inspection: ${home}`);
+// The default is the sync writer; a caller that lets the event loop drain
+// passes console.error so the line stays behind pnpm's own stderr.
+function reportKeptTestHome({ home }, write = writeStderr) {
+  write(`[preflight] test home kept for inspection: ${home}`);
 }
 
 async function runGateTests() {
