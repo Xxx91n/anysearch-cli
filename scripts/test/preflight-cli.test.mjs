@@ -42,8 +42,10 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
           overrides: { HOME: operatorHome, USERPROFILE: operatorHome, [dbKey]: operatorDb },
         });
         assert.equal(result.status, 0, result.stderr);
-        const home = childHome(result.stdout);
+        const { home, profile } = childHomes(result.stdout);
         assert.ok(home, `run ${run} did not say which home it used: ${result.stdout}`);
+        assert.equal(profile, home, "USERPROFILE and HOME must point at the same throwaway dir");
+        assert.notEqual(home, operatorHome, "the gate handed the child the operator's own home");
         if (existsSync(home)) {
           // A locked file is allowed to keep the dir, but the gate must say so.
           assert.match(result.stderr, /could not delete the test home/, `run ${run} left ${home} behind without saying so`);
@@ -249,12 +251,13 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
 }
 
 // A stand-in pnpm that writes where a sloppy test would: the home it was given,
-// and the database path if the gate let that override through. It prints the
-// home as HOME=... so the test can check what the gate chose.
+// and the database path if the gate let that override through. It prints both
+// home names so the test can see each one was redirected.
 function writeLeakyPnpm(bin, code) {
   const sh = [
     "#!/bin/sh",
-    'echo "HOME=$USERPROFILE"',
+    'echo "HOME=$HOME"',
+    'echo "PROFILE=$USERPROFILE"',
     'mkdir -p "$USERPROFILE/.ans"',
     'echo leak > "$USERPROFILE/.ans/leak"',
     'if [ -n "$ANS_DB_PATH" ]; then echo leak > "$ANS_DB_PATH"; fi',
@@ -262,7 +265,8 @@ function writeLeakyPnpm(bin, code) {
   ].join("\n");
   const cmd = [
     "@echo off",
-    "echo HOME=%USERPROFILE%",
+    "echo HOME=%HOME%",
+    "echo PROFILE=%USERPROFILE%",
     'mkdir "%USERPROFILE%\\.ans" 2>nul',
     'echo leak > "%USERPROFILE%\\.ans\\leak"',
     "if defined ANS_DB_PATH echo leak > \"%ANS_DB_PATH%\"",
@@ -273,9 +277,12 @@ function writeLeakyPnpm(bin, code) {
   chmodSync(join(bin, "pnpm"), 0o755);
 }
 
-function childHome(output) {
-  const match = /^HOME=(.*)$/m.exec(output);
-  return match ? match[1].trim() : null;
+function childHomes(output) {
+  const read = (name) => {
+    const match = new RegExp(`^${name}=(.*)$`, "m").exec(output);
+    return match ? match[1].trim() : null;
+  };
+  return { home: read("HOME"), profile: read("PROFILE") };
 }
 
 function keptHome(output) {

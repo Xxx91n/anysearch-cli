@@ -68,6 +68,14 @@ if (args.includes("--dry-run")) {
 const started = Date.now();
 const testHome = makeTestHome();
 
+// Ctrl-C is not a green run: say where the home is before the process dies.
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    reportKeptTestHome(testHome);
+    process.exit(130);
+  });
+}
+
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
 // PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
@@ -166,9 +174,9 @@ function listFirst(files) {
 //
 // Design: replace the child's whole home and drop every ANS_* — a test that
 // resolves the home itself is covered too, and an operator's own ANS_DB_PATH
-// or ANS_PI_SESSION_DIR cannot point a path back at the real user root.
-// Rejected: redirecting only ~/.ans, and keeping ANS_LLM_* so live lanes
-// inherit keys — no test in the suite reads them from the runner.
+// or ANS_PI_SESSION_DIR cannot point a path back at the real user root;
+// redirecting only ~/.ans or keeping ANS_LLM_* for live lanes was rejected
+// because no test in the suite reads those keys from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
   // Windows env names are case-insensitive, so the filter is too: a lowercase
@@ -187,8 +195,8 @@ function removeTestHome({ home }) {
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   } catch (error) {
     // Design: a cleanup failure keeps the run green and prints where the dir
-    // is. Rejected: failing a green run over a locked file — on Windows that
-    // is a handle, not a test failure.
+    // is — a Windows file lock is a handle, not a test failure; failing a
+    // green run over it was rejected.
     console.error(`[preflight] could not delete the test home, left it at ${home}: ${error.message}`);
   }
 }
