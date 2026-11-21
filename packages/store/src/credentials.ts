@@ -290,13 +290,13 @@ export function readUserCredentials(
 }
 
 /**
- * The sentence a warning line says about a credential file that could not be
- * read or parsed. `resolveSearchCredentials` puts it in `warnings` (the kernel
- * and MCP entries print those) and `ans auth` prints it after `[WARN] `, so the
- * wording lives here only. `ans doctor` deliberately does not use it: its row
- * turns `file.error` into a diagnosis and names the fix, and that tail belongs
- * to doctor. Both read the same `error`. Undefined for a healthy (or absent)
- * file.
+ * The sentence a *warning line* says about a credential file that could not be
+ * read or parsed: `resolveSearchCredentials` puts it in `warnings` (the kernel and
+ * MCP entries print those) and `ans auth` prints it after `[WARN] `. The
+ * diagnosis surfaces do not use it - doctor's row and `ans llm`'s BROKEN line
+ * print `file.error` in their own shape, because a diagnosis names the fix. All
+ * of them read the same `error`, so the fault text itself is written once.
+ * Undefined for a healthy (or absent) file.
  */
 export function credentialFileWarning(file: CredentialFileContents): string | undefined {
   return file.error ? file.error + "; continuing without the user credential file" : undefined;
@@ -322,10 +322,11 @@ export interface ResolvedSearchCredentials {
  * documented way to point that arm at a mirror.
  *
  * Design: one parse of the user credential file per command, and the caller that
- * did the parse reports a fault once — a resolver given the result neither reads
- * the file again nor repeats the fault. That removes the error-text comparison
- * (a reworded message silently reported twice) and the path comparison (which
- * swallowed the endpoint-mismatch warning along with it).
+ * did the parse owns the fault. A resolver given the result neither re-reads the
+ * file nor repeats the fault, so nothing has to decide "is this the same fault as
+ * the line above?" - matching error text makes one module depend on another's
+ * wording, and matching the path is a second guess at identity. The parsed
+ * result itself is what makes it the same fault.
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,

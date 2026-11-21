@@ -115,9 +115,9 @@ export interface ResolveLlmOpts {
    * false` keeps its meaning: no credential file at all.
    *
    * Design: a supplied result silences this resolver's own read and its
-   * file-level warning — the file is parsed once, and its fault is said once, by
-   * the caller. That is what replaced error-text matching here; the
-   * endpoint-mismatch warning still comes from the lookup on this same result.
+   * file-level warning - the file is parsed once and its fault is said once, by
+   * the caller, so nothing here has to recognize a repeat. The endpoint-mismatch
+   * warning still comes from the lookup on this same result.
    */
   credentialsFile?: CredentialFileContents;
 }

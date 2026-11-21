@@ -179,9 +179,9 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
 
   // ── 能力层 ────────────────────────────────────────────────────────────
-  // Design: 凭据文件整轮只读一次，读坏了只报一条 — 报错原文不再拿去给解析器去重
-  // （措辞一变就失效，按路径比又会把 endpoint 那条一起咽掉），这条由这次读取说一次。
-  // 搜索解析器、模型解析器和下面那条「user credential file」都吃这一份结果。
+  // Design: 凭据文件整轮只读一次，读坏了只报一条 — 搜索解析器、模型解析器和这一行
+  // 都吃同一份结果，所以不用再判断「这条是不是上面已经说过的那条」。靠原文或靠路径
+  // 去重，都是让诊断去猜别的模块怎么写字；同一份解析结果本身才是「同一件事」的凭据。
   const credentialFile = readUserCredentials({ home: configHome });
   const credentials = resolveSearchCredentials(process.env, {
     home: configHome,
