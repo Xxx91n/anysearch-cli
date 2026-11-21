@@ -11,9 +11,10 @@
 // cannot point one of those paths back at the real user root.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** The plugin package root: the service is started from here as `src/server/index.ts`. */
-export const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+export const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export interface ServerSandbox {
   /** Environment for the spawned service: every path it writes lives under `home`. */

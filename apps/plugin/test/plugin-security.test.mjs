@@ -8,8 +8,7 @@ import path from "node:path";
 import { serverSandbox, spawnServer } from "./server-sandbox.js";
 
 const TOKEN = "sec-test-token";
-// #351: the shared sandbox keeps every path this run writes — the durable
-// database included — inside this temp dir.
+// #351: the shared sandbox keeps every path this run writes inside this temp dir.
 const HOME = mkdtempSync(path.join(tmpdir(), "ans-plugin-security-"));
 
 let passed = 0, failed = 0;
