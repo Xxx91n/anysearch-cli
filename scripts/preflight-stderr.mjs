@@ -1,16 +1,23 @@
-// The gate's last words. Written synchronously, because a signal handler may
-// exit right after and a piped stderr drops unsent lines. A full pipe makes fd
-// 2 throw EAGAIN: retry briefly (about 100 ms), then give up instead of
-// hanging the gate.
-
+// Synchronous stderr writer for the gate. A signal handler may exit right
+// after a line is written, and a piped stderr drops unsent async lines, so the
+// last words are written by hand. A full pipe makes fd 2 throw EAGAIN: retry
+// for about 100 ms, then give up instead of hanging the gate.
 import fs from "node:fs";
 
-const RETRY_LIMIT = 20;
+export const RETRY_LIMIT = 20;
 const RETRY_PAUSE_MS = 5;
 
 export function writeStderr(line, { write = writeOnce, pause = pauseSync } = {}) {
   const bytes = Buffer.from(`${line}\n`);
-  let written = 0;
+  const written = writeAll(bytes, 0, { write, pause });
+  // A half line would glue onto whatever gets printed next. The newline gets
+  // its own retries: the loop above may have left the pipe blocked.
+  if (written > 0 && written < bytes.length) {
+    writeAll(Buffer.from("\n"), 0, { write, pause });
+  }
+}
+
+function writeAll(bytes, written, { write, pause }) {
   let retries = 0;
   while (written < bytes.length) {
     try {
@@ -23,12 +30,7 @@ export function writeStderr(line, { write = writeOnce, pause = pauseSync } = {})
       pause(RETRY_PAUSE_MS);
     }
   }
-  if (written > 0 && written < bytes.length) {
-    // A half line would glue onto whatever gets printed next.
-    try {
-      write(2, Buffer.from("\n"), 0);
-    } catch {}
-  }
+  return written;
 }
 
 function writeOnce(fd, bytes, offset) {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { writeStderr } from "../preflight-stderr.mjs";
+import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -436,9 +436,7 @@ function write(file, content) {
   writeFileSync(file, content);
 }
 
-// The kept-home line goes out through a hand-rolled sync write, so the pipe
-// under it can refuse. These three cases pin that behaviour without needing a
-// real stalled pipe, which no test harness can produce on demand.
+// These cases pin the retry loop without a real stalled pipe.
 test("a full stderr pipe is retried until the whole line is written", () => {
   const chunks = [];
   let refusals = 0;
@@ -458,7 +456,7 @@ test("a full stderr pipe is retried until the whole line is written", () => {
   assert.equal(refusals, 2);
 });
 
-test("a pipe that never drains gives up instead of hanging, and ends the line", () => {
+test("a pipe that never drains gives up at the cap, then ends the line", { timeout: 5000 }, () => {
   const attempts = [];
   writeStderr("kept at /tmp/ans-home", {
     write(fd, bytes, offset) {
@@ -469,7 +467,9 @@ test("a pipe that never drains gives up instead of hanging, and ends the line", 
     pause() {},
   });
   assert.equal(attempts.at(-1), "\n");
-  assert.ok(attempts.length > 2, "the write should have been retried");
+  // One partial write, then a full retry budget for the rest of the line and
+  // another for the newline. A changed cap or a dropped counter lands here.
+  assert.equal(attempts.length, 1 + (RETRY_LIMIT + 1) * 2);
 });
 
 test("an error other than EAGAIN is not retried", () => {
