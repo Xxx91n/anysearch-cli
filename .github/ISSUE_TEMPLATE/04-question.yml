@@ -8,9 +8,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        发问前可以先翻一下 [使用说明](https://github.com/Xxx91n/anysearch-cli/blob/main/README.zh-CN.md) 和 [已知限制文档](https://github.com/Xxx91n/anysearch-cli/blob/main/docs/limitations.md)；没找到答案的话，把背景说清楚我们尽量帮着看。
+        发问前可以先翻一下仓库里的 `README.zh-CN.md` 和 `docs/limitations.md`（在上一页也能直接点开）；没找到答案的话，把背景说清楚我们尽量帮着看。
 
-        **提醒**：贴配置或终端输出前，请先把 API Key、令牌等私密内容删掉或打码。
+        **提醒**：贴配置或终端输出前，请先把 API Key、令牌以及本机家目录/用户名等敏感内容删掉或打码。
 
   - type: dropdown
     id: topic
@@ -20,8 +20,8 @@ body:
         - 安装、升级与凭据配置
         - 领域配置、信息源与域过滤
         - MCP 服务与工具调用
-        - 宿主接入与钩子
-        - 记忆、对话恢复与知识整理
+        - 宿主接线与钩子
+        - 记忆、会话记录与整理
         - 其他
     validations:
       required: true

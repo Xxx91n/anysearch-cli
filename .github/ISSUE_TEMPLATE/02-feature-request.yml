@@ -17,9 +17,9 @@ body:
       options:
         - 命令行（ans）
         - MCP 服务（ans-mcp）
-        - 宿主接入与钩子（Claude Code / Codex / CodeBuddy / Antigravity / dsh 等）
+        - 宿主接线与钩子（Claude Code / Codex / CodeBuddy / Antigravity / dsh 等）
         - 检索、信息源与域过滤
-        - 记忆、对话恢复与知识整理
+        - 记忆、会话记录与整理
         - 安装、升级与分层诊断（ans doctor / ans upgrade）
         - 其他
     validations:

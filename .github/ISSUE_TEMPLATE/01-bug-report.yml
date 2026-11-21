@@ -10,7 +10,7 @@ body:
       value: |
         谢谢你帮忙找问题！把复现步骤和报错贴清楚，我们修起来会快很多。
 
-        **提醒**：贴日志、配置或诊断输出之前，请把里面的 API Key、令牌或 `~/.ans/credentials.json` 中的私密内容打码。
+        **提醒**：如果涉及安全漏洞（例如凭据泄露、绕过域过滤等），请不要发公开 issue，先私下联系维护者处理。贴日志、配置或诊断输出前，请先把里面的 API Key、令牌、`~/.ans/credentials.json` 里的私密内容，以及本机家目录/用户名等敏感路径打码。
 
   - type: dropdown
     id: area
@@ -20,9 +20,9 @@ body:
       options:
         - 命令行（ans）
         - MCP 服务（ans-mcp）
-        - 宿主接入与钩子（Claude Code / Codex / CodeBuddy / Antigravity / dsh 等）
+        - 宿主接线与钩子（Claude Code / Codex / CodeBuddy / Antigravity / dsh 等）
         - 检索、信息源与域过滤
-        - 记忆、对话恢复与知识整理
+        - 记忆、会话记录与整理
         - 安装、升级与分层诊断（ans doctor / ans upgrade）
         - 其他 / 不太确定
     validations:
@@ -55,7 +55,7 @@ body:
     id: logs
     attributes:
       label: 报错信息或诊断输出（选填）
-      description: 可以贴终端报错，或者 `ans --installation`、`ans doctor` 的输出（记得先去掉 API Key）。
+      description: 可以贴终端报错，或者 `ans --installation`、`ans doctor` 的输出。注意这些命令会打印本机绝对路径，贴出来前请把 API Key 删掉，并把家目录/用户名换成 `<HOME>`。
       render: text
     validations:
       required: false
@@ -78,7 +78,5 @@ body:
     attributes:
       label: 提交前顺手确认
       options:
-        - label: 我已经确认，上面贴出的内容里没有 API Key、令牌或其他私密凭据
+        - label: 我已经确认，上面贴出的内容里没有 API Key、令牌、其他私密凭据或未打码的本机家目录路径
           required: true
-        - label: 我翻过已知限制文档和现有 issue，暂时没看到同样的问题
-          required: false
