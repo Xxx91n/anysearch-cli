@@ -54,8 +54,8 @@ test("a full dry run also announces the gate's own tests", () => {
 });
 
 test("an incremental dry run prints the selected packages and the turbo command", () => {
-  withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged", "--dry-run"]);
+  withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--dry-run"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
     assert.match(
@@ -68,17 +68,17 @@ test("an incremental dry run prints the selected packages and the turbo command"
 });
 
 test("an incremental run hands pnpm one filter per selected package", () => {
-  withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged"]);
+  withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
     assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
   });
 });
 
-test("nothing staged reports nothing to run", () => {
+test("a clean tree reports nothing to run", () => {
   withWorkspace({}, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged"]);
+    const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /nothing to run/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
@@ -135,11 +135,12 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input } = {}) 
   });
 }
 
-// A stand-in workspace with one app and its scripts copied in. `staged` leaves
-// the named file in the index; `pushed` commits it and returns the ref line a
-// pre-push hook would send. The fake pnpm echoes its argv when echoArgs is set
+// A stand-in workspace with one app and its scripts copied in, on an initial
+// commit that origin/HEAD also points at. `changed` leaves the named file
+// uncommitted in the working tree; `pushed` commits it and returns the ref line
+// a pre-push hook would send. The fake pnpm echoes its argv when echoArgs is set
 // and fails otherwise.
-function withWorkspace({ staged, pushed, echoArgs = false } = {}, run) {
+function withWorkspace({ changed, pushed, echoArgs = false } = {}, run) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   try {
@@ -150,18 +151,17 @@ function withWorkspace({ staged, pushed, echoArgs = false } = {}, run) {
     write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
     write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
     git(root, ["init", "-q"]);
+    git(root, ["config", "user.email", "preflight@example.test"]);
+    git(root, ["config", "user.name", "preflight"]);
+    git(root, ["config", "commit.gpgsign", "false"]);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "base"]);
+    const base = rev(root, "HEAD");
+    git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
     let refs;
-    if (staged) {
-      write(join(root, staged), "export const one = 1;\n");
-      git(root, ["add", staged]);
+    if (changed) {
+      write(join(root, changed), "export const two = 2;\n");
     } else if (pushed) {
-      git(root, ["config", "user.email", "preflight@example.test"]);
-      git(root, ["config", "user.name", "preflight"]);
-      git(root, ["config", "commit.gpgsign", "false"]);
-      git(root, ["add", "."]);
-      git(root, ["commit", "-q", "-m", "base"]);
-      const base = rev(root, "HEAD");
-      git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
       write(join(root, pushed), "export const two = 2;\n");
       git(root, ["add", "."]);
       git(root, ["commit", "-q", "-m", "change"]);

@@ -1,20 +1,12 @@
-// Which files a commit or push carries: the index for a commit, git's refs on
-// stdin for a push, origin/HEAD plus the working tree for a plain run. An
-// unreadable change runs the whole suite; a push with no refs on stdin looks at
-// the working tree instead. PUSH_UNKNOWN marks a ref that cannot be read.
+// Which files a push carries: git's refs on stdin for a push, origin/HEAD plus
+// the working tree for a plain run. An unreadable change runs the whole suite;
+// a push with no refs on stdin looks at the working tree instead. PUSH_UNKNOWN
+// marks a ref that cannot be read.
 
 import { spawnSync } from "node:child_process";
 
 /** A pre-push line that cannot be read; the caller must run everything. */
 export const PUSH_UNKNOWN = Symbol("unreadable push");
-
-/**
- * Files staged for the commit about to run. Returns null when git cannot read
- * the index; the caller runs the whole suite.
- */
-export function stagedFiles(root) {
-  return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "-z"]);
-}
 
 /**
  * Files carried by the refs on a pre-push hook's stdin. Each line is
