@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ test("a red run exits non-zero and names the failed task", () => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /@anysearch-cli\/kernel#test/);
+    dropKeptHome(result);
   });
 });
 
@@ -22,6 +23,40 @@ test("a green run reports the mode and how long it took", () => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /green in \d+\.\ds \(full\)/);
+  });
+});
+
+test("a run points the child's home at a throwaway dir and deletes it when green", () => {
+  const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
+  try {
+    withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+      writeLeakyPnpm(bin, 0);
+      // Two runs in a row, like the ticket's acceptance: neither may write into
+      // the home the operator actually uses.
+      for (let run = 1; run <= 2; run += 1) {
+        const result = runCliIn(root, bin, ["--staged"], { home: operatorHome });
+        assert.equal(result.status, 0, result.stderr);
+        const home = childHome(result.stdout);
+        assert.ok(home, `run ${run} did not say which home it used: ${result.stdout}`);
+        assert.equal(existsSync(home), false, `run ${run} left ${home} behind`);
+      }
+      assert.equal(existsSync(join(operatorHome, ".ans")), false, "the operator's own home was written to");
+    });
+  } finally {
+    rmSync(operatorHome, { recursive: true, force: true });
+  }
+});
+
+test("a red run keeps the test home and prints where it is", () => {
+  withWorkspace({}, ({ root, bin }) => {
+    writeLeakyPnpm(bin, 1);
+    const result = runCliIn(root, bin, ["--full"]);
+    assert.equal(result.status, 1);
+    const home = keptHome(result.stderr);
+    assert.ok(home, `no kept test home in: ${result.stderr}`);
+    assert.equal(existsSync(home), true, "the kept home is gone");
+    assert.equal(existsSync(join(home, ".ans", "leak")), true, "the test's write did not land in the kept home");
+    rmSync(home, { recursive: true, force: true });
   });
 });
 
@@ -40,6 +75,7 @@ test("a red self-test blocks the run", () => {
     const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: "scripts/test/preflight-missing.test.mjs" });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /the gate's own tests/);
+    dropKeptHome(result);
   });
 });
 
@@ -100,6 +136,7 @@ test("an unreadable push ref runs the full suite", () => {
     assert.equal(result.status, 1); // the fixture's fake pnpm exits 1
     assert.match(result.stdout, /full suite: could not read the pushed commits/);
     assert.match(result.stdout, /pnpm ran/);
+    dropKeptHome(result);
   });
 });
 
@@ -112,13 +149,17 @@ test("no refs on stdin falls back to the working tree and says so", () => {
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false, input } = {}) {
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input, home } = {}) {
   const env = { ...process.env };
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
+  if (home) {
+    env.HOME = home;
+    env.USERPROFILE = home;
+  }
   delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {
     delete env.PREFLIGHT_SELF_TEST;
@@ -197,6 +238,46 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   write(join(bin, "pnpm"), `${sh}\n`);
   write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
   chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+// A stand-in pnpm that writes where a sloppy test would: the home it was given.
+// It prints that home as HOME=... so the test can check what the gate chose.
+function writeLeakyPnpm(bin, code) {
+  const sh = [
+    "#!/bin/sh",
+    'echo "HOME=$USERPROFILE"',
+    'mkdir -p "$USERPROFILE/.ans"',
+    'echo leak > "$USERPROFILE/.ans/leak"',
+    `exit ${code}`,
+  ].join("\n");
+  const cmd = [
+    "@echo off",
+    "echo HOME=%USERPROFILE%",
+    'mkdir "%USERPROFILE%\\.ans" 2>nul',
+    'echo leak > "%USERPROFILE%\\.ans\\leak"',
+    `exit /b ${code}`,
+  ].join("\r\n");
+  write(join(bin, "pnpm"), `${sh}\n`);
+  write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
+  chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+function childHome(output) {
+  const match = /^HOME=(.*)$/m.exec(output);
+  return match ? match[1].trim() : null;
+}
+
+function keptHome(output) {
+  const match = /\[preflight\] test home kept for inspection: (.+)$/m.exec(output);
+  return match ? match[1].trim() : null;
+}
+
+// A red run keeps its test home on purpose; a fixture is not an operator's
+// failed run, so the test deletes what the gate printed.
+function dropKeptHome(result) {
+  const home = keptHome(result.stderr);
+  assert.ok(home, `no kept test home in: ${result.stderr}`);
+  rmSync(home, { recursive: true, force: true });
 }
 
 function git(root, args) {

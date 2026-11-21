@@ -8,6 +8,11 @@
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
 //
+// Every run gets a throwaway home: HOME and USERPROFILE point at a fresh temp
+// dir, so a test that forgets its own sandbox writes there instead of the
+// operator's ~/.ans. A green run deletes it; a red one keeps it and prints the
+// path, so whatever the tests left behind can still be looked at.
+//
 // Called by .git/hooks/pre-commit-user (with --staged) and by
 // .git/hooks/pre-push (with --pushed). GitButler's managed pre-commit chains to
 // the former; `but push` and `git push` both run the latter. See AGENTS.md.
@@ -20,6 +25,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
@@ -60,6 +66,7 @@ if (args.includes("--dry-run")) {
 }
 
 const started = Date.now();
+const sandbox = makeTestHome();
 
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
@@ -68,10 +75,11 @@ const started = Date.now();
 // re-enter the whole suite.
 if (selfTest) {
   console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
-  const gateEnv = { ...process.env };
+  const gateEnv = { ...sandbox.env };
   delete gateEnv.NODE_TEST_CONTEXT;
   const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, stdio: "inherit" });
   if (gate.status !== 0) {
+    keepTestHome(sandbox);
     console.error("[preflight] blocked: the gate's own tests failed");
     process.exit(gate.status ?? 1);
   }
@@ -79,6 +87,7 @@ if (selfTest) {
 
 const child = spawn("pnpm", runArgs, {
   cwd: root,
+  env: sandbox.env,
   stdio: ["inherit", "pipe", "pipe"],
   shell: process.platform === "win32",
 });
@@ -101,6 +110,7 @@ try {
     child.on("close", resolve);
   });
 } catch (error) {
+  keepTestHome(sandbox);
   console.error(`[preflight] could not start pnpm: ${error.message}`);
   process.exit(1);
 }
@@ -109,9 +119,11 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (status !== 0) {
   const failed = failedTask(tail);
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
+  keepTestHome(sandbox);
   process.exitCode = status ?? 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
+  removeTestHome(sandbox);
 }
 
 function readChange() {
@@ -147,4 +159,26 @@ function readStdin() {
 function listFirst(files) {
   const shown = files.slice(0, 5).join(", ");
   return files.length > 5 ? `${shown}, +${files.length - 5} more` : shown;
+}
+
+// The child's whole home is a fresh temp dir, so a test that writes to ~/.ans
+// without sandboxing its own run lands here instead of the operator's.
+function makeTestHome() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
+  return { home, env: { ...process.env, HOME: home, USERPROFILE: home } };
+}
+
+// A red run keeps the home: the files in it are the evidence of what leaked.
+function keepTestHome({ home }) {
+  console.error(`[preflight] test home kept for inspection: ${home}`);
+}
+
+function removeTestHome({ home }) {
+  try {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch (error) {
+    // The tests passed, so a locked file is not worth failing the gate over —
+    // but the directory is still there, and the operator should know where.
+    console.error(`[preflight] could not delete the test home, left it at ${home}: ${error.message}`);
+  }
 }
