@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -71,6 +71,45 @@ test("a red run keeps the test home and prints where it is", () => {
   });
 });
 
+test("an interrupted run keeps the test home and stops pnpm", { skip: process.platform === "win32" }, async () => {
+  const workspace = makeWorkspace({ pnpm: writeSleepingPnpm });
+  try {
+    const env = { ...process.env };
+    env.PATH = `${workspace.bin}${delimiter}${process.env.PATH ?? ""}`;
+    delete env.PREFLIGHT_GATE_TESTS;
+    env.PREFLIGHT_SELF_TEST = "0";
+    const gate = spawn(process.execPath, [join(workspace.root, "scripts", "preflight-test.mjs"), "--full"], {
+      cwd: workspace.root,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    let err = "";
+    gate.stderr.on("data", (chunk) => {
+      err += chunk;
+    });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`pnpm never started: ${err}`)), 10000);
+      gate.stdout.on("data", (chunk) => {
+        out += chunk;
+        if (!out.includes("PNPM=")) return;
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    gate.kill("SIGTERM");
+    const code = await new Promise((resolve) => gate.on("close", resolve));
+    assert.equal(code, 143, err);
+    const home = keptHome(err);
+    assert.ok(home, `no kept test home in: ${err}`);
+    assert.equal(existsSync(join(home, ".ans", "leak")), true, "the leak is not in the kept home");
+    await waitGone(Number(/^PNPM=(\d+)$/m.exec(out)[1]));
+    rmSync(home, { recursive: true, force: true });
+  } finally {
+    dropWorkspace(workspace);
+  }
+});
+
 test("a full run runs the gate's own tests first", () => {
   withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: "scripts/test/preflight-plan.test.mjs" });
@@ -79,6 +118,32 @@ test("a full run runs the gate's own tests first", () => {
     // The child's reporter output must reach this pipe, not vanish.
     assert.match(result.stdout, /# pass \d+|✔/);
   });
+});
+
+test("the gate's own tests also run under the throwaway home", () => {
+  const probeDir = mkdtempSync(join(tmpdir(), "ans-preflight-probe-"));
+  const probe = join(probeDir, "home-probe.test.mjs");
+  writeFileSync(
+    probe,
+    [
+      'import assert from "node:assert/strict";',
+      'import test from "node:test";',
+      "",
+      'test("the gate sees the throwaway home", () => {',
+      '  const home = process.env.USERPROFILE ?? process.env.HOME ?? "";',
+      "  assert.match(home, /ans-preflight-home-/);",
+      "});",
+    ].join("\n"),
+  );
+  try {
+    withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: probe });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /the gate sees the throwaway home/);
+    });
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
 });
 
 test("a red self-test blocks the run", () => {
@@ -184,46 +249,56 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
   });
 }
 
+function withWorkspace(options = {}, run) {
+  let workspace;
+  try {
+    workspace = makeWorkspace(options);
+    run(workspace);
+  } finally {
+    if (workspace) dropWorkspace(workspace);
+  }
+}
+
 // A stand-in workspace with one app and its scripts copied in. `staged` leaves
 // the named file in the index; `pushed` commits it and returns the ref line a
 // pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function withWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}, run) {
+function makeWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
-  try {
-    mkdirSync(join(root, "scripts"));
-    for (const name of ["preflight-test.mjs", "preflight-change.mjs", "preflight-plan.mjs", "preflight-command.mjs"]) {
-      copyFileSync(join(scripts, name), join(root, "scripts", name));
-    }
-    write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
-    write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
-    git(root, ["init", "-q"]);
-    let refs;
-    if (staged) {
-      write(join(root, staged), "export const one = 1;\n");
-      git(root, ["add", staged]);
-    } else if (pushed) {
-      git(root, ["config", "user.email", "preflight@example.test"]);
-      git(root, ["config", "user.name", "preflight"]);
-      git(root, ["config", "commit.gpgsign", "false"]);
-      git(root, ["add", "."]);
-      git(root, ["commit", "-q", "-m", "base"]);
-      const base = rev(root, "HEAD");
-      git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
-      write(join(root, pushed), "export const two = 2;\n");
-      git(root, ["add", "."]);
-      git(root, ["commit", "-q", "-m", "change"]);
-      refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
-    }
-    if (pnpm) pnpm(bin);
-    else writeFakePnpm(bin, echoArgs ? { echoArgs: true } : { code: 1, lines: ["pnpm ran"] });
-    run({ root, bin, refs });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(bin, { recursive: true, force: true });
+  mkdirSync(join(root, "scripts"));
+  for (const name of ["preflight-test.mjs", "preflight-change.mjs", "preflight-plan.mjs", "preflight-command.mjs"]) {
+    copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
+  write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
+  write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
+  git(root, ["init", "-q"]);
+  let refs;
+  if (staged) {
+    write(join(root, staged), "export const one = 1;\n");
+    git(root, ["add", staged]);
+  } else if (pushed) {
+    git(root, ["config", "user.email", "preflight@example.test"]);
+    git(root, ["config", "user.name", "preflight"]);
+    git(root, ["config", "commit.gpgsign", "false"]);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "base"]);
+    const base = rev(root, "HEAD");
+    git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
+    write(join(root, pushed), "export const two = 2;\n");
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "change"]);
+    refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
+  }
+  if (pnpm) pnpm(bin);
+  else writeFakePnpm(bin, echoArgs ? { echoArgs: true } : { code: 1, lines: ["pnpm ran"] });
+  return { root, bin, refs };
+}
+
+function dropWorkspace({ root, bin }) {
+  rmSync(root, { recursive: true, force: true });
+  rmSync(bin, { recursive: true, force: true });
 }
 
 function rev(root, ref) {
@@ -277,6 +352,34 @@ function writePnpmShim(bin, { sh, cmd }) {
   write(join(bin, "pnpm"), `${sh}\n`);
   write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
   chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+// A stand-in pnpm that stays alive until the gate forwards the signal, and
+// prints its pid so the test can prove it is gone afterwards.
+function writeSleepingPnpm(bin) {
+  const sh = [
+    "#!/bin/sh",
+    'echo "HOME=$HOME"',
+    'echo "PROFILE=$USERPROFILE"',
+    'echo "PNPM=$$"',
+    'mkdir -p "$USERPROFILE/.ans"',
+    'echo leak > "$USERPROFILE/.ans/leak"',
+    "exec sleep 30",
+  ].join("\n");
+  write(join(bin, "pnpm"), `${sh}\n`);
+  chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+async function waitGone(pid) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`pnpm (${pid}) is still running after the gate exited`);
 }
 
 function childHomes(output) {

@@ -67,12 +67,17 @@ if (args.includes("--dry-run")) {
 
 const started = Date.now();
 const testHome = makeTestHome();
+let child;
+let interrupted = 0;
 
-// An interrupt is not a green run: say where the home is before the process dies.
+// An interrupt is not a green run. Keep the home, forward the signal so pnpm
+// and turbo stop too, and let the child close before exiting — a hard exit
+// here would leave them writing into the directory this run is keeping.
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
+    interrupted = code;
     reportKeptTestHome(testHome);
-    process.exit(code);
+    child?.kill(signal);
   });
 }
 
@@ -93,7 +98,7 @@ if (selfTest) {
   }
 }
 
-const child = spawn("pnpm", runArgs, {
+child = spawn("pnpm", runArgs, {
   cwd: root,
   env: testHome.env,
   stdio: ["inherit", "pipe", "pipe"],
@@ -124,7 +129,9 @@ try {
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
-if (status !== 0) {
+if (interrupted) {
+  process.exitCode = interrupted;
+} else if (status !== 0) {
   const failed = failedTask(tail);
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome);
@@ -179,10 +186,23 @@ function listFirst(files) {
 // because no test in the suite reads those keys from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
+  const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
   // Windows env names are case-insensitive, so the filter is too: a lowercase
   // ans_db_path still resolves as ANS_DB_PATH in the child.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ans_/i.test(key)));
+  const corepack = corepackHome(env, realHome);
+  if (corepack) env.COREPACK_HOME = corepack;
   return { home, env: { ...env, HOME: home, USERPROFILE: home } };
+}
+
+// Corepack, which the README names as a way to get the pinned pnpm, keeps its
+// cache under HOME on Linux and macOS. Point it at the real cache so a gated
+// run does not download pnpm again; Windows uses LOCALAPPDATA and is fine.
+function corepackHome(env, home) {
+  if (env.COREPACK_HOME || process.platform === "win32") return undefined;
+  if (process.platform === "darwin") return path.join(home, "Library", "Caches", "node", "corepack");
+  if (env.XDG_CACHE_HOME) return undefined;
+  return path.join(home, ".cache", "node", "corepack");
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
