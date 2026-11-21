@@ -289,12 +289,26 @@ export function readUserCredentials(
   return { bindings };
 }
 
+/**
+ * The one wording for a credential file that could not be read or parsed.
+ * `ans doctor` adds its own "fix or remove it" tail, `ans auth` prefixes
+ * `[WARN] `; neither writes the sentence again, so a reworded message changes in
+ * one place. Undefined for a healthy (or absent) file.
+ */
+export function credentialFileWarning(file: CredentialFileContents): string | undefined {
+  return file.error ? file.error + "; continuing without the user credential file" : undefined;
+}
+
 /** Search credentials resolved for the retriever's three arms. */
 export interface ResolvedSearchCredentials {
   tavily?: { apiKey?: string; source: "env" | "user" };
   exa?: { apiKey?: string; source: "env" | "user" };
   anysearch?: { apiKey?: string; endpoint?: string; source: "env" | "user" };
-  /** Human-readable notes for stderr; never contains a secret value. */
+  /**
+   * Human-readable notes for stderr; never contains a secret value. Empty when
+   * the caller supplied `credentialsFile`: that caller already holds the file's
+   * `error` and reports it once (see `credentialFileWarning`).
+   */
   warnings: string[];
 }
 
@@ -303,6 +317,12 @@ export interface ResolvedSearchCredentials {
  * user credential file. Search keys are bound to their provider only - the
  * endpoint of these SDKs is fixed, and an explicit ANYSEARCH_ENDPOINT is the
  * documented way to point that arm at a mirror.
+ *
+ * Design: one parse of the user credential file per command, and the caller that
+ * did the parse reports a fault once — a resolver given the result neither reads
+ * the file again nor repeats the fault. That removes the error-text comparison
+ * (a reworded message silently reported twice) and the path comparison (which
+ * swallowed the endpoint-mismatch warning along with it).
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -312,18 +332,13 @@ export function resolveSearchCredentials(
   // installation uses (one shared resolver, so the reader and the writer can
   // never disagree about which file is in force).
   const home = resolveConfigHome(opts.home, env);
-  // One read per command: a caller that already parsed the file passes it in
-  // (#357). Then this resolver neither touches the disk again nor reports the
-  // file-level fault — the caller says that one sentence, once, on behalf of
-  // every consumer. Nobody has to compare error text to avoid a second copy.
   const file = opts.credentialsFile ?? readUserCredentials({ home, filePath: opts.filePath });
   const warnings: string[] = [];
   // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
   // stderr, `[credentials] ` in doctor, `[WARN] ` in `ans auth status`). Tagging
   // here would couple them to this string and double the prefix.
-  if (!opts.credentialsFile && file.error) {
-    warnings.push(file.error + "; continuing without the user credential file");
-  }
+  const fault = credentialFileWarning(file);
+  if (!opts.credentialsFile && fault) warnings.push(fault);
   const out: ResolvedSearchCredentials = { warnings };
 
   // One rule for all three arms: an explicit env value wins over the stored

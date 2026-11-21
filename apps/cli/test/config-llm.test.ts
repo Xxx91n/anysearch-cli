@@ -685,7 +685,7 @@ test("a supplied credential file is used as-is, and the resolver says nothing ab
   }));
   assert.equal(cfg.apiKey, "sk-from-supplied");
   assert.equal(cfg.sources.apiKey, "credentials");
-  assert.deepEqual(f.warnings, [], "文件级的那句话由调用方说，解析器闭嘴");
+  assert.deepEqual(f.warnings, [], "文件读坏了只报一条，这一条由调用方报；解析器闭嘴");
 
   // The same broken file with no supplied result is still reported, so the
   // silence above comes from the input and not from a vanished check.

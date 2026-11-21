@@ -13,6 +13,7 @@
 
 import {
   CREDENTIAL_PROVIDERS,
+  credentialFileWarning,
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
@@ -95,11 +96,10 @@ function describeSource(layer: LlmLayer | undefined): string {
 function statusLines(
   env: NodeJS.ProcessEnv,
   home: string,
-  credentialsFile?: CredentialFileContents,
+  file: CredentialFileContents,
 ): string[] {
-  // 一次读取：调用方读过就传进来，这里不再摸磁盘；模型解析器吃的也是这一份，
+  // 调用方读一次，把结果传进来：这里不再摸磁盘，模型解析器吃的也是这一份，
   // 所以同一个文件故障不会在这儿变成两句话。
-  const file = credentialsFile ?? readUserCredentials({ home });
   const llm = resolveLlmConfig({ env, home, credentialsFile: file });
   const lines: string[] = [];
 
@@ -150,10 +150,9 @@ export async function runAuth(args: string[]): Promise<number> {
     console.log("ans auth - provider API keys");
     console.log("---");
     for (const line of statusLines(env, home, file)) console.log(line);
-    // `list` 紧接着的「BROKEN —」那行说的就是这句话，那里说一遍就够了。
-    if (sub !== "list" && file.error) {
-      console.log("[WARN] " + file.error + "; continuing without the user credential file");
-    }
+    // `list` 紧接着的「BROKEN —」那行说的就是这句，那里说一遍就够了。
+    const fault = credentialFileWarning(file);
+    if (sub !== "list" && fault) console.log("[WARN] " + fault);
     console.log("---");
     if (sub === "list") {
       const path = userCredentialsPath(home);

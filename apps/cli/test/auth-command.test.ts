@@ -275,7 +275,7 @@ test("statusLines names the source for each provider and shows no key", () => {
       ANS_LLM_API_KEY: "sk-override",
       ANS_LLM_PROVIDER: "openai",
       ANS_LLM_MODEL: "gpt-5",
-    }, home);
+    }, home, readUserCredentials({ home }));
     const joined = lines.join("\n");
     assert.match(joined, /\[SET\]\s+exa\s+env EXA_API_KEY/);
     // The effective model key came from ANS_LLM_API_KEY, not from OPENAI_API_KEY,
@@ -296,7 +296,7 @@ test("statusLines distinguishes the provider's own env var from the override", (
       OPENAI_API_KEY: "sk-provider-own",
       ANS_LLM_PROVIDER: "openai",
       ANS_LLM_MODEL: "gpt-5",
-    }, home);
+    }, home, readUserCredentials({ home }));
     assert.match(lines.join("\n"), /\[SET\]\s+openai\s+env OPENAI_API_KEY/);
   } finally {
     cleanup();

@@ -175,7 +175,7 @@ test("a supplied parse result wins: the broken file on disk is never consulted a
     const resolved = resolveSearchCredentials({}, { home, credentialsFile: supplied });
     assert.equal(resolved.exa?.apiKey, "exa-from-supplied");
     assert.equal(resolved.exa?.source, "user");
-    assert.deepEqual(resolved.warnings, [], "文件级的那句话由调用方说，解析器不再说第二遍");
+    assert.deepEqual(resolved.warnings, [], "文件读坏了只报一条，由调用方报；解析器不再说第二遍");
 
     // The same call WITHOUT a supplied result does report the broken file, so
     // the silence above comes from the input and not from a vanished check.
