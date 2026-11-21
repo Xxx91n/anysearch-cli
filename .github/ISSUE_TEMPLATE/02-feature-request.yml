@@ -37,11 +37,11 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: 你希望做成什么样？
-      description: 讲讲你理想中的命令、交互方式或者效果。
+      label: 你希望做成什么样？（选填）
+      description: 如果你已经有想法，可以讲讲理想中的命令、交互方式或效果；还没想好也可以先留空。
       placeholder: 例如：希望能加一个参数 / 子命令，跑完后直接输出……
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: alternatives

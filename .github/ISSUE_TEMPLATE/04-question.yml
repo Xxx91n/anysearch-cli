@@ -8,8 +8,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        发问前可以先翻一下 README 和已知限制文档；没找到答案的话，把背景说清楚我们尽量帮着看。
-        提醒一下：贴配置或终端输出前，请先把 API Key、令牌等私密内容删掉或打码。
+        发问前可以先翻一下 [使用说明](https://github.com/Xxx91n/anysearch-cli/blob/main/README.zh-CN.md) 和 [已知限制文档](https://github.com/Xxx91n/anysearch-cli/blob/main/docs/limitations.md)；没找到答案的话，把背景说清楚我们尽量帮着看。
+
+        **提醒**：贴配置或终端输出前，请先把 API Key、令牌等私密内容删掉或打码。
 
   - type: dropdown
     id: topic

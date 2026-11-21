@@ -9,7 +9,8 @@ body:
     attributes:
       value: |
         谢谢你帮忙找问题！把复现步骤和报错贴清楚，我们修起来会快很多。
-        提醒一下：贴日志、配置或诊断输出之前，请把里面的 API Key、令牌或 `~/.ans/credentials.json` 中的私密内容打码。
+
+        **提醒**：贴日志、配置或诊断输出之前，请把里面的 API Key、令牌或 `~/.ans/credentials.json` 中的私密内容打码。
 
   - type: dropdown
     id: area
