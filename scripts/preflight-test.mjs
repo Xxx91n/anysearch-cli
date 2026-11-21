@@ -4,7 +4,7 @@
 // it into a package list. A change outside apps/ and packages/ has no clear
 // owner, so it falls back to the full suite.
 //
-// Design: no commit gate — a commit runs nothing, so fixing a message or
+// Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
 // for one full run. See AGENTS.md.
 //
