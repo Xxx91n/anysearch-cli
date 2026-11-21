@@ -251,12 +251,47 @@ test("a package.json that is a directory sends the gate to the full suite", () =
 test("a directory with no package.json is not a package", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nopkg-"));
   try {
-    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "tools/cli"\n');
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n  - "tools/cli"\n');
+    write(dir, "apps/real/package.json", JSON.stringify({ name: "@anysearch-cli/real" }));
     mkdirSync(join(dir, "tools", "cli"), { recursive: true });
-    assert.deepEqual(readWorkspace(dir), []);
+    assert.deepEqual(
+      readWorkspace(dir).map((pkg) => pkg.name),
+      ["@anysearch-cli/real"],
+    );
+    // The workspace is readable and has a package, so this lands on the
+    // "file belongs to no package" branch rather than "no packages found".
     const plan = planPreflight(dir, ["tools/cli/src/index.ts"]);
     assert.equal(plan.mode, "full");
-    assert.equal(plan.reason, "no workspace packages found");
+    assert.equal(plan.reason, "files outside the workspace packages");
+    assert.deepEqual(plan.outside, ["tools/cli/src/index.ts"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a manifest without a name is not a package, and a change under it runs everything", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nameless-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
+    write(dir, "apps/real/package.json", JSON.stringify({ name: "@anysearch-cli/real" }));
+    write(dir, "apps/nameless/package.json", JSON.stringify({ private: true }));
+    assert.deepEqual(
+      readWorkspace(dir).map((pkg) => pkg.name),
+      ["@anysearch-cli/real"],
+    );
+    const plan = planPreflight(dir, ["apps/nameless/src/index.ts"]);
+    assert.equal(plan.mode, "full");
+    // The path is inside apps/, so the reason has to name the nameless manifest
+    // rather than say the file is outside the workspace.
+    assert.equal(plan.reason, "files under a directory whose package.json has no name");
+    // The named package next to it still runs incrementally.
+    const named = planPreflight(dir, ["apps/real/src/index.ts"]);
+    assert.equal(named.mode, "incremental");
+    assert.deepEqual(named.packages, ["@anysearch-cli/real"]);
+    // A root file mixed in is not explained by the nameless directory, so the
+    // reason stays the general one.
+    const mixed = planPreflight(dir, ["apps/nameless/src/index.ts", "turbo.json"]);
+    assert.equal(mixed.reason, "files outside the workspace packages");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
