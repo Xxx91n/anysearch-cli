@@ -102,7 +102,7 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
-  // arm-absent telemetry is a doctor-visible SKIP, not a failure.
+  // arm-absent telemetry reports 未配置 (unconfigured), not a failure.
   check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
   // #312: the four layers are [安装]/[能力]/[宿主]/[数据]; the DB layout row and
   // the discovered-domain rows moved into the data and capability layers.

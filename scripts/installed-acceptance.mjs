@@ -41,6 +41,7 @@ import { existsSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { printAcceptanceHeader } from "./acceptance-header.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -544,14 +545,6 @@ function rmTempWithRetry(dir) {
 async function main() {
   // ANS_ACC_TMPDIR 只挪沙箱的位置，不动 TEMP。改 TEMP 会连带影响子进程找
   // npm，那不是这条车道想测的东西。
-  // #312：真实跑过的东西要记下版本、系统、日期，否则这份结果说不清是哪一版、
-  // 在哪台机器上得到的。
-  const productVersion = JSON.parse(readFileSync(join(ROOT, "apps", "cli", "package.json"), "utf8")).version;
-  console.log("== 验收对象 ==");
-  console.log("  产品版本: " + productVersion);
-  console.log("  系统: " + process.platform + " " + process.arch + " / Node " + process.version);
-  console.log("  日期: " + new Date().toISOString());
-
   const work = mkdtempSync(join(process.env.ANS_ACC_TMPDIR?.trim() || tmpdir(), "ans-installed-acc-"));
   const outDir = join(work, "out");
   const prefix = join(work, "prefix");
@@ -599,6 +592,16 @@ async function main() {
     const Database = createRequire(join(ROOT, "apps", "mcp", "package.json"))("better-sqlite3");
 
     const nm = join(prefix, "node_modules");
+    // 抬头写在这里而不是开头：带 ANS_ACC_TARBALLS 时装的是别处打好的包，版本
+    // 只能从装进去的那一份读，不能从检出里读。
+    const installedVersion = JSON.parse(
+      readFileSync(join(nm, "@anysearch-cli", "cli", "package.json"), "utf8"),
+    ).version;
+    printAcceptanceHeader({
+      product: "anysearch-cli",
+      version: installedVersion,
+      notes: preset ? ["包来自: " + preset] : [],
+    });
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
     const mcpBin = join(nm, "@anysearch-cli", "cli", "bin", "ans-mcp.cjs");
     check(existsSync(ansBin), "装出来的 ans 命令在", ansBin);

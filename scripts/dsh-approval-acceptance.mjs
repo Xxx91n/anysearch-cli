@@ -40,6 +40,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
 import zlib from "node:zlib";
+import { printAcceptanceHeader } from "./acceptance-header.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const KEEP = process.argv.includes("--keep");
@@ -383,13 +384,11 @@ async function runHeadlessScenario(ctx) {
 async function main() {
   must(zlib.zstdDecompressSync, "this Node cannot decode zstd; Node 22.15+ is required");
 
-  // #312：真实宿主这一轮也要记下版本、系统、日期，否则说不清是哪一版、
-  // 在哪台机器上、什么时候观察到的。
-  const productVersion = JSON.parse(readFileSync(join(REPO, "apps", "cli", "package.json"), "utf8")).version;
-  console.log("== 验收对象 ==");
-  console.log("  产品版本: " + productVersion);
-  console.log("  系统: " + process.platform + " " + process.arch + " / Node " + process.version);
-  console.log("  日期: " + new Date().toISOString());
+  // 这一轮装的是 apps/dsh-plugin，版本就读它，不读 apps/cli 的。
+  const pluginVersion = JSON.parse(
+    readFileSync(join(REPO, "apps", "dsh-plugin", "package.json"), "utf8"),
+  ).version;
+  printAcceptanceHeader({ product: "anysearch-cli/dsh-plugin", version: pluginVersion });
 
   const dshBin = process.env.DSH_BIN || "dsh";
   const version = run(dshBin, ["--version"]);
