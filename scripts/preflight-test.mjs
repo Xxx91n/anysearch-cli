@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { planPreflight } from "./preflight-plan.mjs";
+import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -215,20 +216,6 @@ function corepackHome(env, home) {
 // unsent lines.
 function reportKeptTestHome({ home }) {
   writeStderr(`[preflight] test home kept for inspection: ${home}`);
-}
-
-function writeStderr(line) {
-  const bytes = Buffer.from(`${line}\n`);
-  let written = 0;
-  for (let attempt = 0; written < bytes.length; attempt += 1) {
-    try {
-      written += fs.writeSync(2, bytes, written);
-    } catch (error) {
-      // A full pipe makes fd 2 throw EAGAIN; give the reader a moment to drain.
-      if (error.code !== "EAGAIN" || attempt >= 20) return;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-    }
-  }
 }
 
 async function runGateTests() {
