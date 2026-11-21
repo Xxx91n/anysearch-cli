@@ -36,11 +36,11 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const { packages, nameless } = readWorkspaceReport(root);
   if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
   if (packages.length === 0) {
-    // Naming the nameless manifests here matters: "no workspace packages found"
-    // would hide the case this file works hardest to explain.
+    // The workspace looks empty because its manifests have no name; naming the
+    // directories says more than "no workspace packages found" on its own.
     const reason =
       nameless.length > 0
-        ? "no workspace packages found: every package.json in the workspace has no name"
+        ? `no workspace packages found; package.json without a name in: ${nameless.join(", ")}`
         : "no workspace packages found";
     return { mode: "full", reason, files, packages: [] };
   }

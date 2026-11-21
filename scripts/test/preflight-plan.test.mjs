@@ -306,8 +306,9 @@ test("a workspace whose every manifest has no name says so", () => {
     assert.deepEqual(readWorkspace(dir), []);
     const plan = planPreflight(dir, ["apps/one/src/index.ts"]);
     assert.equal(plan.mode, "full");
-    // "no workspace packages found" alone would hide the nameless manifests.
-    assert.equal(plan.reason, "no workspace packages found: every package.json in the workspace has no name");
+    // "no workspace packages found" alone would hide the nameless manifests;
+    // the reason names the directories so nobody has to grep for them.
+    assert.equal(plan.reason, "no workspace packages found; package.json without a name in: apps/one, apps/two");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
