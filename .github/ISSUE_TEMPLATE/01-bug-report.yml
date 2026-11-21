@@ -1,0 +1,83 @@
+name: Bug 反馈
+description: 程序报错、结果不对、命令跑不通，或者实际行为和文档说的不一样
+title: "[bug] "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢你帮忙找问题！把复现步骤和报错贴清楚，我们修起来会快很多。
+        提醒一下：贴日志、配置或诊断输出之前，请把里面的 API Key、令牌或 `~/.ans/credentials.json` 中的私密内容打码。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 哪一块出了问题？
+      description: 挑一个最接近的入口或功能就行。
+      options:
+        - 命令行（ans）
+        - MCP 服务（ans-mcp）
+        - 宿主接入与钩子（Claude Code / Codex / CodeBuddy / Antigravity / dsh 等）
+        - 检索、信息源与域过滤
+        - 记忆、对话恢复与知识整理
+        - 安装、升级与分层诊断（ans doctor / ans upgrade）
+        - 其他 / 不太确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 怎么复现？
+      description: 一步一步写清楚你做了什么、跑了哪条命令，或者给了什么配置。
+      placeholder: |
+        1. 运行 `ans ...`
+        2. 传入了 `ANS_DOMAIN=...`
+        3. 看到报错或异常结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 原本以为会怎样，实际发生了什么？
+      description: 对比说一下你期待的结果和程序真实的表现。
+      placeholder: |
+        原本以为：...
+        实际发生：...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 报错信息或诊断输出（选填）
+      description: 可以贴终端报错，或者 `ans --installation`、`ans doctor` 的输出（记得先去掉 API Key）。
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境（选填）
+      description: 如果问题和系统、版本或宿主有关，顺手填一下。
+      placeholder: |
+        - 操作系统：例如 Windows 11 / macOS 15 / Ubuntu 24.04
+        - Node.js 版本：`node -v`
+        - ans 版本：`ans --version` 或 `ans --installation`
+        - 使用的宿主（如有）：例如 Claude Code / Codex CLI / dsh 及版本
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前顺手确认
+      options:
+        - label: 我已经确认，上面贴出的内容里没有 API Key、令牌或其他私密凭据
+          required: true
+        - label: 我翻过已知限制文档和现有 issue，暂时没看到同样的问题
+          required: false

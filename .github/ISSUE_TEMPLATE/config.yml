@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用说明与快速上手
+    url: https://github.com/Xxx91n/anysearch-cli/blob/main/README.zh-CN.md
+    about: 安装、配置、常用命令和已验证宿主清单都在这里，提问前可以先翻一眼。
+  - name: 已知限制清单
+    url: https://github.com/Xxx91n/anysearch-cli/blob/main/docs/limitations.md
+    about: 汇总了目前明确知道的边界和限制，先看看是不是已经写明的情况。

@@ -1,0 +1,36 @@
+name: 文档改进
+description: 文档写错了、过时了、没讲明白，或者缺某个场景的使用说明
+title: "[docs] "
+labels:
+  - documentation
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        文档有错漏、链接打不开、步骤和现在对不上，或者读着费劲，都可以直接在这里说。
+
+  - type: input
+    id: location
+    attributes:
+      label: 涉及哪篇文档或帮助信息？
+      description: 写上文件路径、标题，或者命令名就行。
+      placeholder: 例如：README.zh-CN.md、docs/mcp-server.md、ans doctor --help
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: 哪里有问题，或者少了什么？
+      description: 说清楚读到哪里卡住了、哪一步实际跑不通，或者希望补哪部分说明。
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 你觉得怎么改会更好懂？（选填）
+      description: 如果你有现成的改法或表述建议，欢迎直接贴在这里。
+    validations:
+      required: false
