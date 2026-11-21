@@ -45,7 +45,7 @@ export function createPersistentEngine(
   opts?: {
     domainDeclared?: boolean;
     /**
-     * #370 Design: the caller's one parse of the user credential file, handed in
+     * Design: the caller's one parse of the user credential file, handed in
      * so this engine's search arms never read the file themselves — that caller
      * hands the same parse to its other resolver too, and reports the fault once.
      * Omitted means this engine parses the file, as it always has.

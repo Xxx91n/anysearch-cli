@@ -49,7 +49,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const active = resolveActiveDomain();
   const domainName = active.name;
 
-  // #370 Design: parse the user credential file once here, hand the result to
+  // Design: parse the user credential file once here, hand the result to
   // both consumers, and report its fault here — so a broken file is said once.
   // The model resolver also gets this `home`, since its endpoint-mismatch
   // warning names that path.
