@@ -60,8 +60,11 @@ if (args.includes("--dry-run")) {
   process.exit(0);
 }
 
+const started = Date.now();
+
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
+// PREFLIGHT_SELF_TEST=0 is for the test that drives this script with a fake pnpm.
 if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
   console.log("[preflight] running the gate's own tests");
   const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, stdio: "inherit" });
@@ -71,7 +74,6 @@ if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
   }
 }
 
-const started = Date.now();
 const child = spawn("pnpm", runArgs, {
   cwd: root,
   stdio: ["inherit", "pipe", "pipe"],

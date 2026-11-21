@@ -94,11 +94,17 @@ test("a change in embedding reaches store, kernel, plugin and the apps", () => {
 });
 
 test("one app runs that app alone, not the apps that do not use it", () => {
+  const plan = planPreflight(root, ["apps/dsh-plugin/src/index.ts"]);
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.packages, ["@anysearch-cli/dsh-plugin"]);
+  assert.ok(!plan.packages.includes("@anysearch-cli/cli"));
+  assert.ok(!plan.packages.includes("@anysearch-cli/mcp"));
+});
+
+test("an mcp change also runs cli, whose product build bundles mcp source", () => {
   const plan = planPreflight(root, ["apps/mcp/src/index.ts"]);
   assert.equal(plan.mode, "incremental");
-  assert.deepEqual(plan.packages, ["@anysearch-cli/mcp"]);
-  assert.ok(!plan.packages.includes("@anysearch-cli/cli"));
-  assert.ok(!plan.packages.includes("@anysearch-cli/dsh-plugin"));
+  assert.deepEqual(plan.packages, ["@anysearch-cli/cli", "@anysearch-cli/mcp"]);
 });
 
 test("windows separators name the same package", () => {
@@ -151,6 +157,7 @@ test("the workspace reader picks up both directions of the dependency graph", ()
     [
       "@anysearch-cli/embedding",
       "@anysearch-cli/kernel",
+      "@anysearch-cli/mcp",
       "@anysearch-cli/plugin",
       "@anysearch-cli/retriever",
       "@anysearch-cli/store",
