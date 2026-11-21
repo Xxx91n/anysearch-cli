@@ -31,14 +31,14 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
   const operatorDb = join(operatorHome, "anysearch.db");
   try {
-    await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeLeakyPnpm(bin, 0) }, ({ root, bin }) => {
+    await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeLeakyPnpm(bin, 0) }, ({ root, bin }) => {
       // Two runs in a row, like the ticket's acceptance: neither may write into
       // the home or the database path the operator actually uses. Windows env
       // names are case-insensitive, so the lowercase key is the harder case
       // there; POSIX only knows the exact name.
       const dbKey = process.platform === "win32" ? "ans_db_path" : "ANS_DB_PATH";
       for (let run = 1; run <= 2; run += 1) {
-        const result = runCliIn(root, bin, ["--staged"], {
+        const result = runCliIn(root, bin, [], {
           overrides: { HOME: operatorHome, USERPROFILE: operatorHome, [dbKey]: operatorDb },
         });
         assert.equal(result.status, 0, result.stderr);
@@ -179,8 +179,8 @@ test("a full dry run also announces the gate's own tests", () => {
 });
 
 test("an incremental dry run prints the selected packages and the turbo command", async () => {
-  await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged", "--dry-run"]);
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--dry-run"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
     assert.match(
@@ -193,20 +193,38 @@ test("an incremental dry run prints the selected packages and the turbo command"
 });
 
 test("an incremental run hands pnpm one filter per selected package", async () => {
-  await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged"]);
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
     assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
   });
 });
 
-test("nothing staged reports nothing to run", async () => {
+test("a clean tree reports nothing to run", async () => {
   await withWorkspace({}, ({ root, bin }) => {
-    const result = runCliIn(root, bin, ["--staged"]);
+    const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /nothing to run/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
+test("the old --staged flag names the hook to delete and runs nothing", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--staged"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /delete the old pre-commit-user hook/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
+test("--staged next to another mode flag runs that mode, not the notice", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--staged", "--full"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /\[preflight\] full suite: /);
+    assert.equal(result.stdout.includes("no commit gate"), false);
   });
 });
 
@@ -272,12 +290,13 @@ async function withWorkspace(options = {}, run) {
   }
 }
 
-// A stand-in workspace with one app and its scripts copied in. `staged` leaves
-// the named file in the index; `pushed` commits it and returns the ref line a
-// pre-push hook would send. `pnpm` writes a different fake pnpm when a test
+// A stand-in workspace with one app and its scripts copied in, on an initial
+// commit that origin/HEAD also points at. `changed` leaves the named file
+// uncommitted in the working tree; `pushed` commits it and returns the ref line
+// a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
@@ -293,19 +312,17 @@ function makeWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}) {
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);
+  git(root, ["config", "user.email", "preflight@example.test"]);
+  git(root, ["config", "user.name", "preflight"]);
+  git(root, ["config", "commit.gpgsign", "false"]);
+  git(root, ["add", "."]);
+  git(root, ["commit", "-q", "-m", "base"]);
+  const base = rev(root, "HEAD");
+  git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
+  const changedFile = changed ?? pushed;
+  if (changedFile) write(join(root, changedFile), "export const two = 2;\n");
   let refs;
-  if (staged) {
-    write(join(root, staged), "export const one = 1;\n");
-    git(root, ["add", staged]);
-  } else if (pushed) {
-    git(root, ["config", "user.email", "preflight@example.test"]);
-    git(root, ["config", "user.name", "preflight"]);
-    git(root, ["config", "commit.gpgsign", "false"]);
-    git(root, ["add", "."]);
-    git(root, ["commit", "-q", "-m", "base"]);
-    const base = rev(root, "HEAD");
-    git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
-    write(join(root, pushed), "export const two = 2;\n");
+  if (pushed) {
     git(root, ["add", "."]);
     git(root, ["commit", "-q", "-m", "change"]);
     refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
