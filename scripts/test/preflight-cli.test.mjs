@@ -30,8 +30,7 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
   const operatorDb = join(operatorHome, "anysearch.db");
   try {
-    withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
-      writeLeakyPnpm(bin, 0);
+    withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeLeakyPnpm(bin, 0) }, ({ root, bin }) => {
       // Two runs in a row, like the ticket's acceptance: neither may write into
       // the home or the database path the operator actually uses. Windows env
       // names are case-insensitive, so the lowercase key is the harder case
@@ -61,8 +60,7 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
 });
 
 test("a red run keeps the test home and prints where it is", () => {
-  withWorkspace({}, ({ root, bin }) => {
-    writeLeakyPnpm(bin, 1);
+  withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"]);
     assert.equal(result.status, 1);
     const home = keptHome(result.stderr);
@@ -188,9 +186,10 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
 
 // A stand-in workspace with one app and its scripts copied in. `staged` leaves
 // the named file in the index; `pushed` commits it and returns the ref line a
-// pre-push hook would send. The fake pnpm echoes its argv when echoArgs is set
-// and fails otherwise.
-function withWorkspace({ staged, pushed, echoArgs = false } = {}, run) {
+// pre-push hook would send. `pnpm` writes a different fake pnpm when a test
+// needs one; the default echoes its argv when echoArgs is set and fails
+// otherwise.
+function withWorkspace({ staged, pushed, echoArgs = false, pnpm } = {}, run) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   try {
@@ -218,7 +217,8 @@ function withWorkspace({ staged, pushed, echoArgs = false } = {}, run) {
       git(root, ["commit", "-q", "-m", "change"]);
       refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
     }
-    writeFakePnpm(bin, echoArgs ? { echoArgs: true } : { code: 1, lines: ["pnpm ran"] });
+    if (pnpm) pnpm(bin);
+    else writeFakePnpm(bin, echoArgs ? { echoArgs: true } : { code: 1, lines: ["pnpm ran"] });
     run({ root, bin, refs });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -245,9 +245,7 @@ function withFakePnpm({ code = 0, lines = [] }, run) {
 function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   const sh = ["#!/bin/sh", ...(echoArgs ? ['echo "$@"'] : lines.map((line) => `echo "${line}"`)), `exit ${code}`].join("\n");
   const cmd = ["@echo off", ...(echoArgs ? ["echo %*"] : lines.map((line) => `echo ${line}`)), `exit /b ${code}`].join("\r\n");
-  write(join(bin, "pnpm"), `${sh}\n`);
-  write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
-  chmodSync(join(bin, "pnpm"), 0o755);
+  writePnpmShim(bin, { sh, cmd });
 }
 
 // A stand-in pnpm that writes where a sloppy test would: the home it was given,
@@ -272,6 +270,10 @@ function writeLeakyPnpm(bin, code) {
     "if defined ANS_DB_PATH echo leak > \"%ANS_DB_PATH%\"",
     `exit /b ${code}`,
   ].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
+
+function writePnpmShim(bin, { sh, cmd }) {
   write(join(bin, "pnpm"), `${sh}\n`);
   write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
   chmodSync(join(bin, "pnpm"), 0o755);

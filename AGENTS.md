@@ -18,7 +18,7 @@ AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps re
 
 The rule is kept by discipline, not by a machine. Branch protection is not available (private repo on GitHub Free returns `403`), `--no-verify` can skip the pre-push hook, and a delete may skip the hook entirely. So:
 
-- Before every merge, run the full `pnpm test` locally and wait for it to pass. A red CI tells you something, but it does not block anything.
+- Before every merge, run the full suite through the gate — `node scripts/preflight-test.mjs --full` — and wait for it to pass. It runs `pnpm test` plus the gate's own tests, under the throwaway home. A red CI tells you something, but it does not block anything.
 - `pre-push` is the last real gate, because it is the only hook that runs on a real push. It runs the changed packages and their dependents, not the whole suite. It is still not a guarantee: a push that passed the hook never replaces a full green run before the merge.
 - We do not make the repo public and do not upgrade the GitHub plan. That option was rejected in #58 and recorded in #59.
 - #67 showed, by pushing a commit that was meant to fail, that the pre-push hook really does block a push unless you pass `--no-verify`. Proof: [the closeout comment on #67](https://github.com/Xxx91n/anysearch-cli/issues/67#issuecomment-6431860529).

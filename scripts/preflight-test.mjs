@@ -68,11 +68,11 @@ if (args.includes("--dry-run")) {
 const started = Date.now();
 const testHome = makeTestHome();
 
-// Ctrl-C is not a green run: say where the home is before the process dies.
-for (const signal of ["SIGINT", "SIGTERM"]) {
+// An interrupt is not a green run: say where the home is before the process dies.
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     reportKeptTestHome(testHome);
-    process.exit(130);
+    process.exit(code);
   });
 }
 
