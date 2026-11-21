@@ -5,8 +5,9 @@
 // list. A change outside apps/ and packages/ has no clear owner, so it falls
 // back to the full suite.
 //
-// There is no commit gate: a commit runs nothing, so `git commit` stays quick.
-// A push runs this gate, and a merge waits for one full run. See AGENTS.md.
+// Design: no commit gate — a commit runs nothing, so fixing a message or
+// splitting a commit costs no test run. A push runs this gate and a merge waits
+// for one full run. See AGENTS.md.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -30,6 +31,14 @@ import { planPreflight } from "./preflight-plan.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
+
+// A clone that installed the old commit hook still calls --staged. Name the
+// file to delete instead of quietly running the working-tree plan at commit
+// time.
+if (args.includes("--staged")) {
+  console.log("[preflight] no commit gate: delete .git/hooks/pre-commit-user — pushes still run this gate");
+  process.exit(0);
+}
 
 const change = readChange();
 if (change.note) console.log(`[preflight] ${change.note}`);

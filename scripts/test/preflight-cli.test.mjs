@@ -85,6 +85,15 @@ test("a clean tree reports nothing to run", () => {
   });
 });
 
+test("the old --staged flag names the hook to delete and runs nothing", () => {
+  withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--staged"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /delete \.git\/hooks\/pre-commit-user/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
 test("a pushed ref runs the gate on the files it carries", () => {
   withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin, refs }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: refs });
@@ -158,11 +167,10 @@ function withWorkspace({ changed, pushed, echoArgs = false } = {}, run) {
     git(root, ["commit", "-q", "-m", "base"]);
     const base = rev(root, "HEAD");
     git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
+    const target = changed ?? pushed;
+    if (target) write(join(root, target), "export const two = 2;\n");
     let refs;
-    if (changed) {
-      write(join(root, changed), "export const two = 2;\n");
-    } else if (pushed) {
-      write(join(root, pushed), "export const two = 2;\n");
+    if (pushed) {
       git(root, ["add", "."]);
       git(root, ["commit", "-q", "-m", "change"]);
       refs = `refs/heads/x ${rev(root, "HEAD")} refs/heads/x ${base}`;
