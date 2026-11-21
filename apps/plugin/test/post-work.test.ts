@@ -26,8 +26,8 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { openTaskRegistry } from "@anysearch-cli/store";
 import { createPostWorkTracker, resetPostWorkWarnings } from "../src/server/post-work.js";
+import { serverSandbox, spawnServer } from "./server-sandbox.js";
 
-const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const TOKEN = "post-work-token";
 
 function freePort(): Promise<number> {
@@ -83,34 +83,6 @@ function stopProcess(proc: ReturnType<typeof spawn>): Promise<void> {
     }
     if (proc.pid) { try { process.kill(-proc.pid, "SIGKILL"); } catch { /* gone */ } }
     proc.once("exit", () => resolve());
-  });
-}
-
-/**
- * Everything a spawned service needs to stay inside this test's temp dir: no
- * operator home, no operator database, its own pinned port and token.
- */
-function serviceSandbox(home: string, port: number): { env: NodeJS.ProcessEnv; durableDb: string } {
-  const durableDb = join(home, "anysearch.db");
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
-  Object.assign(env, {
-    HOME: home,
-    USERPROFILE: home,
-    ANS_PROJECT_DB: join(home, "project-index.db"),
-    ANS_SERVER_REGISTRY: join(home, "server.json"),
-    ANS_SERVER_PORT: String(port),
-    ANS_SERVER_TOKEN: TOKEN,
-    ANS_DB_PATH: durableDb,
-  });
-  return { env, durableDb };
-}
-
-function spawnService(env: NodeJS.ProcessEnv): ReturnType<typeof spawn> {
-  return spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
-    cwd: PLUGIN_ROOT,
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: process.platform !== "win32",
-    env,
   });
 }
 
@@ -345,8 +317,8 @@ test("real service: /index settles before the answer, /policy's audit behind it"
   const root = project("live");
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-home-"));
   const port = await freePort();
-  const { env, durableDb } = serviceSandbox(home, port);
-  const proc = spawnService(env);
+  const { env, durableDb } = serverSandbox(home, port, TOKEN);
+  const proc = spawnServer(env);
   const base = "http://127.0.0.1:" + port;
   try {
     await waitForServer(base);
@@ -473,7 +445,7 @@ test("real service: /index settles before the answer, /policy's audit behind it"
 test("real service: a start that cannot listen leaves no open process record", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-postwork-bind-"));
   const port = await freePort();
-  const { env, durableDb } = serviceSandbox(home, port);
+  const { env, durableDb } = serverSandbox(home, port, TOKEN);
   const serverRows = (): Array<{ pid: number; ended: string | null }> => {
     const db = new Database(durableDb, { readonly: true });
     try {
@@ -494,7 +466,7 @@ test("real service: a start that cannot listen leaves no open process record", a
     return (code ?? null) as number | null;
   };
 
-  const live = spawnService(env);
+  const live = spawnServer(env);
   try {
     await waitForServer("http://127.0.0.1:" + port);
     assert.ok(live.pid, "the live service started");
@@ -506,12 +478,12 @@ test("real service: a start that cannot listen leaves no open process record", a
 
     // The same pinned port: this start cannot listen, so it exits 1 — a clean
     // exit that must close the row it wrote.
-    const taken = spawnService(env);
+    const taken = spawnServer(env);
     assert.equal(await exitCodeOf(taken), 1, "a start on a port already in use exits 1");
 
     // A port the OS refuses before the socket exists throws instead of
     // emitting 'error': same rule, and nothing was ever listening.
-    const refused = spawnService({ ...env, ANS_SERVER_PORT: "abc" });
+    const refused = spawnServer({ ...env, ANS_SERVER_PORT: "abc" });
     assert.equal(await exitCodeOf(refused), 1, "a start on a port the OS refuses exits 1");
 
     const rows = serverRows();

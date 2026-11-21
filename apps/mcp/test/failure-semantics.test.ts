@@ -137,6 +137,32 @@ function partialEnvelope(): FusedEnvelope {
   } as FusedEnvelope;
 }
 
+function quotaAllFailedEnvelope(): FusedEnvelope {
+  return {
+    results: [],
+    answers: [],
+    metadata: {
+      providersQueried: ["tavily"],
+      providersFailed: ["tavily"],
+      providersCancelled: [],
+      providerErrorClasses: { tavily: "quota-exhausted" },
+      elapsedMs: 1,
+    },
+  } as FusedEnvelope;
+}
+
+function quotaPartialEnvelope(): FusedEnvelope {
+  const env = partialEnvelope();
+  env.metadata.providerErrorClasses = { tavily: "quota-exhausted" };
+  return env;
+}
+
+function unknownPartialEnvelope(): FusedEnvelope {
+  const env = partialEnvelope();
+  env.metadata.providerErrorClasses = { tavily: "unknown" };
+  return env;
+}
+
 const ENV_KEYS = ["ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANS_LLM_API_KEY", "ANS_PROJECT_DB"];
 function clearEnv() {
   for (const k of ENV_KEYS) delete process.env[k];
@@ -392,6 +418,63 @@ async function main() {
       const rwDoc = JSON.parse(String(rw?.content?.[0]?.text));
       assert(Array.isArray(rwDoc.attribution?.claims), "research_web content JSON carries attribution");
       assert(Array.isArray(rw?.structuredContent?.attribution?.claims), "research_web structuredContent carries attribution");
+    }
+
+    // ---- 13. An error class travels with its remedy (#294) ----
+    // "tavily=quota-exhausted" is a machine tag; the reader cannot tell that
+    // the account owner has to top up. The plain sentence rides beside it.
+    {
+      const res = await captureHandlers(makeEngine(async () => quotaAllFailedEnvelope())).search_web({ query: "x" });
+      assert(res?.isError === true, "quota all-failed: isError true");
+      const text = String(res?.content?.[0]?.text);
+      assert(text.includes("tavily=quota-exhausted"), "quota all-failed: still names the class");
+      assert(
+        text.includes("tavily: the key is fine but the plan is used up"),
+        "quota all-failed: text says whose move it is (top up or upgrade)",
+      );
+      assert(!text.includes("{"), "quota all-failed: text is not a JSON payload");
+      assert(res?.structuredContent === undefined, "quota all-failed: no structuredContent");
+    }
+
+    // Two failed arms keep their hints apart: each hint reads "id: sentence",
+    // so the join separator must not look like part of the sentence.
+    {
+      const res = await captureHandlers(makeEngine(async () => allFailedEnvelope(["tavily", "exa"]))).search_web({
+        query: "x",
+      });
+      const text = String(res?.content?.[0]?.text);
+      assert(text.includes("tavily: the upstream had a temporary problem"), "two arms: first hint present");
+      assert(
+        text.includes(" | exa: no key is set, or the key is wrong or lacks permission"),
+        "two arms: second hint separated from the first",
+      );
+    }
+
+    {
+      const res = await captureHandlers(makeEngine(async () => quotaPartialEnvelope())).search_web({ query: "x" });
+      assert(res?.isError !== true, "quota partial: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(
+        String(doc.providerErrorHints?.tavily ?? "").includes("top up or upgrade"),
+        "quota partial: content JSON carries the remedy",
+      );
+      assert(
+        String(res?.structuredContent?.providerErrorHints?.tavily ?? "").includes("top up or upgrade"),
+        "quota partial: structuredContent carries the remedy",
+      );
+      assert(doc.providerErrorClasses?.tavily === "quota-exhausted", "quota partial: class tag unchanged");
+    }
+
+    // `unknown` means nobody classified it, so nothing is invented for it.
+    {
+      const res = await captureHandlers(makeEngine(async () => unknownPartialEnvelope())).search_web({ query: "x" });
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.providerErrorClasses?.tavily === "unknown", "unknown class: tag preserved");
+      assert(doc.providerErrorHints === undefined, "unknown class: no hint invented");
+      assert(
+        res?.structuredContent?.providerErrorHints === undefined,
+        "unknown class: structuredContent carries no hint",
+      );
     }
   } finally {
     for (const k of Object.keys(saved)) {
