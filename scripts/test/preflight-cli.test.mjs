@@ -167,8 +167,8 @@ function withWorkspace({ changed, pushed, echoArgs = false } = {}, run) {
     git(root, ["commit", "-q", "-m", "base"]);
     const base = rev(root, "HEAD");
     git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
-    const target = changed ?? pushed;
-    if (target) write(join(root, target), "export const two = 2;\n");
+    const changedFile = changed ?? pushed;
+    if (changedFile) write(join(root, changedFile), "export const two = 2;\n");
     let refs;
     if (pushed) {
       git(root, ["add", "."]);

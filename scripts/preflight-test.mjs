@@ -11,7 +11,7 @@
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
 //
-// Called by .git/hooks/pre-push (with --pushed); `but push` and `git push` both
+// Called by the pre-push hook (with --pushed); `but push` and `git push` both
 // run that hook. See AGENTS.md.
 //
 //   node scripts/preflight-test.mjs            # everything not on origin/HEAD, plus the tree

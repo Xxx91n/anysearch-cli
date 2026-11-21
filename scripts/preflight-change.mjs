@@ -1,4 +1,4 @@
-// Which files a push carries: git's refs on stdin for a push, origin/HEAD plus
+// Which files a push carries: the refs on stdin for a push, origin/HEAD plus
 // the working tree for a plain run. An unreadable change runs the whole suite;
 // a push with no refs on stdin looks at the working tree instead. PUSH_UNKNOWN
 // marks a ref that cannot be read.

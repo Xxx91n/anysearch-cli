@@ -18,8 +18,8 @@ AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps re
 
 Three steps, three different amounts of testing.
 
-- **A commit runs nothing.** There is no commit hook in the repo, so fixing a message or splitting a commit costs no test run.
-- **A push runs the incremental gate.** `.git/hooks/pre-push` runs the changed workspace packages plus every package that depends on them, and falls back to the full suite when a change lands outside `apps/` and `packages/`. It fires for `git push` and for `but push`, and it is the only check that runs on a real push.
+- **A commit runs no tests.** There is no commit hook in the repo, so fixing a message or splitting a commit costs no test run.
+- **A push runs the incremental gate.** The pre-push hook runs the changed workspace packages plus every package that depends on them, and falls back to the full suite when a change lands outside `apps/` and `packages/`. It fires for `git push` and for `but push`, and it is the only check that runs on a real push.
 - **A merge waits for one full run.** Before every merge, run `pnpm test` locally and wait for it to pass. A green incremental push only covers the packages the push touched, so it does not replace this run.
 
 The rule is kept by discipline, not by a machine: branch protection is not available (private repo on GitHub Free returns `403`), `--no-verify` can skip the pre-push hook, and a delete may skip it entirely. Two things are on record here:
