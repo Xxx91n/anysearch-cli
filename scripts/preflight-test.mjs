@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-// Preflight gate: before a push, run the tests the change can break. The change
-// set comes from git (the pushed refs for a push, origin/HEAD plus the working
-// tree for a plain run); scripts/preflight-plan.mjs turns it into a package
-// list. A change outside apps/ and packages/ has no clear owner, so it falls
-// back to the full suite.
+// Preflight gate: before a push, run the tests the change can break.
+// scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
+// it into a package list. A change outside apps/ and packages/ has no clear
+// owner, so it falls back to the full suite.
 //
 // Design: no commit gate — a commit runs nothing, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
@@ -32,11 +31,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
 
-// A clone that installed the old commit hook still calls --staged. Name the
-// file to delete instead of quietly running the working-tree plan at commit
-// time.
+// Design: the old commit hook gets a notice, not a test run — a clone that
+// still has pre-commit-user calls this with --staged. Name the file to delete
+// and exit 0, so the commit goes through; the install command in AGENTS.md
+// removes the file anyway.
 if (args.includes("--staged")) {
-  console.log("[preflight] no commit gate: delete .git/hooks/pre-commit-user — pushes still run this gate");
+  console.log("[preflight] no commit gate: delete the old pre-commit-user hook; pushes still run this gate");
   process.exit(0);
 }
 

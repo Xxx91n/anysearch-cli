@@ -11,18 +11,18 @@ AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps re
 - `node scripts/installed-acceptance.mjs` — 包装好以后到底能不能用。它启动装出来的 MCP、跑一轮 `ans_chat` 再续一轮、整理选定的材料、让另一个会话召回内部搜索写进去的东西、打开一个旧一点的库（迁移、行还在、再迁移一次）。模型是本地假端点，验的是接线和记账，不是模型判断得好不好。`ANS_ACC_TARBALLS=<目录>` 直接装那个目录里的包，不用本地编译。没有搜索 key 时那一条打 SKIPPED。CI 里作为 `install-smoke` 的两步跑（车道本身 + 一条不需要 key 的解析器自测：`node scripts/installed-acceptance.mjs --self-test-parser`）。
 - `pnpm -C packages/store eval --offline` — offline run of the fixed memory test set.
 - `node scripts/dsh-approval-acceptance.mjs` — real-host check of the dsh approval channel (allow once, reject, cancel, headless no-channel). It builds its own temp `DSH_HOME`, workspace, servers and model patch, then deletes them on exit; `--keep` leaves the sandbox. Needs Node 22.15+ (zstd session logs), `ANS_LLM_BASE_URL`, `ANS_LLM_API_KEY`, `ANS_LLM_MODEL`, plus `ANS_ACCEPTANCE_PLAYWRIGHT` (module or directory) and optionally `ANS_ACCEPTANCE_BROWSER`. `DSH_BIN` picks the host; no version is pinned.
-- `cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-push` — install the push gate. `node scripts/preflight-test.mjs --dry-run` prints the plan; `--full` runs everything. What runs at each step is under "Gate rules" below.
+- `H="$(git rev-parse --git-path hooks)" && rm -f "$H/pre-commit-user" && cp scripts/hooks/pre-push-user "$H/pre-push" && chmod +x "$H/pre-push"` — install the push gate; the `rm` drops the old commit hook from a clone that still has it. `node scripts/preflight-test.mjs --dry-run` prints the plan; `--full` runs everything. What runs at each step is under "Gate rules" below.
 - `node --test "scripts/test/preflight-*.test.mjs"` — the gate's rules: which files a push carries, which packages that selects, what a red run prints, and that a red self-test blocks. CI runs them in `check-build`, and a full gate run runs them too.
 
 ### Gate rules (#367 — a commit, a push, a merge)
 
 Three steps, three different amounts of testing.
 
-- **A commit runs nothing.** There is no commit hook in the repo, so a commit takes about a second. Fixing a message or splitting a commit costs no test run.
+- **A commit runs nothing.** There is no commit hook in the repo, so fixing a message or splitting a commit costs no test run.
 - **A push runs the incremental gate.** `.git/hooks/pre-push` runs the changed workspace packages plus every package that depends on them, and falls back to the full suite when a change lands outside `apps/` and `packages/`. It fires for `git push` and for `but push`, and it is the only check that runs on a real push.
 - **A merge waits for one full run.** Before every merge, run `pnpm test` locally and wait for it to pass. A green incremental push only covers the packages the push touched, so it does not replace this run.
 
-The rule is kept by discipline, not by a machine: branch protection is not available (private repo on GitHub Free returns `403`), `--no-verify` can skip the pre-push hook, and a delete may skip it entirely. Two decisions stand behind this:
+The rule is kept by discipline, not by a machine: branch protection is not available (private repo on GitHub Free returns `403`), `--no-verify` can skip the pre-push hook, and a delete may skip it entirely. Two things are on record here:
 
 - We do not make the repo public and do not upgrade the GitHub plan. That option was rejected in #58 and recorded in #59.
 - #67 showed, by pushing a commit that was meant to fail, that the pre-push hook really does block a push unless you pass `--no-verify`. Proof: [the closeout comment on #67](https://github.com/Xxx91n/anysearch-cli/issues/67#issuecomment-6431860529).

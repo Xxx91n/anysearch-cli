@@ -89,7 +89,7 @@ test("the old --staged flag names the hook to delete and runs nothing", () => {
   withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /delete \.git\/hooks\/pre-commit-user/);
+    assert.match(result.stdout, /delete the old pre-commit-user hook/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
