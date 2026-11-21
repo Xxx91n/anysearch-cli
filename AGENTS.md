@@ -11,14 +11,15 @@ AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps re
 - `node scripts/installed-acceptance.mjs` — 包装好以后到底能不能用。它启动装出来的 MCP、跑一轮 `ans_chat` 再续一轮、整理选定的材料、让另一个会话召回内部搜索写进去的东西、打开一个旧一点的库（迁移、行还在、再迁移一次）。模型是本地假端点，验的是接线和记账，不是模型判断得好不好。`ANS_ACC_TARBALLS=<目录>` 直接装那个目录里的包，不用本地编译。没有搜索 key 时那一条打 SKIPPED。CI 里作为 `install-smoke` 的两步跑（车道本身 + 一条不需要 key 的解析器自测：`node scripts/installed-acceptance.mjs --self-test-parser`）。
 - `pnpm -C packages/store eval --offline` — offline run of the fixed memory test set.
 - `node scripts/dsh-approval-acceptance.mjs` — real-host check of the dsh approval channel (allow once, reject, cancel, headless no-channel). It builds its own temp `DSH_HOME`, workspace, servers and model patch, then deletes them on exit; `--keep` leaves the sandbox. Needs Node 22.15+ (zstd session logs), `ANS_LLM_BASE_URL`, `ANS_LLM_API_KEY`, `ANS_LLM_MODEL`, plus `ANS_ACCEPTANCE_PLAYWRIGHT` (module or directory) and optionally `ANS_ACCEPTANCE_BROWSER`. `DSH_BIN` picks the host; no version is pinned.
-- `cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user && cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-commit-user .git/hooks/pre-push` — install the test gates. Both run the full workspace test suite. `git push` and `but push` run the pre-push hook; a plain `git commit` runs pre-commit. `but commit` runs no git hooks at all, so the push gate is the last one that really runs.
+- `cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user && cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-commit-user .git/hooks/pre-push` — install the test gates. Each gate runs the changed workspace packages plus every package that depends on them; a change outside `apps/` and `packages/` (root config, `scripts/`, `.github/`, docs) falls back to the full suite. `git push` and `but push` run the pre-push hook; a plain `git commit` runs pre-commit. `but commit` runs no git hooks at all, so the push gate is the last one that really runs.
+- `node --test scripts/test/preflight-plan.test.mjs` — the selection rules behind that gate: changed package, root file, no change. CI runs it in `check-build`.
 
 ### Merge gate (#58 direction — decided, see #59)
 
 The rule is kept by discipline, not by a machine. Branch protection is not available (private repo on GitHub Free returns `403`), `--no-verify` can skip the pre-push hook, and a delete may skip the hook entirely. So:
 
 - Before every merge, run the full `pnpm test` locally and wait for it to pass. A red CI tells you something, but it does not block anything.
-- `pre-push` is the last real gate, because it is the only hook that runs on a real push. It is still not a guarantee. A push that passed the hook never replaces a full green run before the merge.
+- `pre-push` is the last real gate, because it is the only hook that runs on a real push. It runs the changed packages and their dependents, not the whole suite. It is still not a guarantee: a push that passed the hook never replaces a full green run before the merge.
 - We do not make the repo public and do not upgrade the GitHub plan. That option was rejected in #58 and recorded in #59.
 - #67 showed, by pushing a commit that was meant to fail, that the pre-push hook really does block a push unless you pass `--no-verify`. Proof: [the closeout comment on #67](https://github.com/Xxx91n/anysearch-cli/issues/67#issuecomment-6431860529).
 
