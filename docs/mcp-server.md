@@ -239,10 +239,10 @@ Rules behind the table:
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` that the account owner has to top up.
   `providerErrorHints` maps each failed provider whose class has a known remedy
-  to one plain sentence (top up or upgrade, replace the key, retry later,
-  re-initialize). The all-providers-failed text says the same thing after the
-  class list. `unknown` has no hint — nobody classified it, so nothing is
-  invented.
+  to one plain sentence (top up or upgrade, set a valid key, retry later,
+  re-initialize). The all-providers-failed text appends them after the class
+  list, one `provider: sentence` per arm separated by ` | `. `unknown` has no
+  hint — nobody classified it, so nothing is invented.
 - **Abstain is a successful policy outcome.** It leaves `isError` absent and
   exposes the marker in `structuredContent.abstain`. For `research_web`, the
   marker describes the **last round only**. Results merged from earlier

@@ -436,6 +436,20 @@ async function main() {
       assert(res?.structuredContent === undefined, "quota all-failed: no structuredContent");
     }
 
+    // Two failed arms keep their hints apart: each hint reads "id: sentence",
+    // so the join separator must not look like part of the sentence.
+    {
+      const res = await captureHandlers(makeEngine(async () => allFailedEnvelope(["tavily", "exa"]))).search_web({
+        query: "x",
+      });
+      const text = String(res?.content?.[0]?.text);
+      assert(text.includes("tavily: the upstream had a temporary problem"), "two arms: first hint present");
+      assert(
+        text.includes(" | exa: no key is set, or the key is wrong or lacks permission"),
+        "two arms: second hint separated from the first",
+      );
+    }
+
     {
       const res = await captureHandlers(makeEngine(async () => quotaPartialEnvelope())).search_web({ query: "x" });
       assert(res?.isError !== true, "quota partial: isError is not true");

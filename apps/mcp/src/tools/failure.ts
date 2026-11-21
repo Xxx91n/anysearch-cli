@@ -26,16 +26,12 @@ export interface ProviderFailureMetadata {
   providerBuildErrors: Record<string, string>;
 }
 
-/**
- * One plain sentence per error class saying who has to act, so the reader does
- * not have to know what `quota-exhausted` means. `unknown` has no entry on
- * purpose: there is nothing honest to say about an error nobody classified.
- */
+/** One plain sentence per error class saying what to do next. */
 const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
-  "quota-exhausted": "the key is fine but the plan is used up — top up or upgrade; retrying or swapping the key will not help",
-  "permanent-auth": "the key is wrong or lacks permission — replace it with a valid one; retrying will not help",
+  "quota-exhausted": "the key is fine but the plan is used up — top up or upgrade, retrying and swapping the key will not help",
+  "permanent-auth": "no key is set, or the key is wrong or lacks permission — set a valid one",
   "transient": "the upstream had a temporary problem — retry in a moment",
-  "permanent-protocol": "the upstream reply could not be read — check for a newer version",
+  "permanent-protocol": "the upstream reply could not be read — check what it returned",
   "session-expired": "the session ended — re-initialize the connection",
   "unknown": undefined,
 };
@@ -103,7 +99,7 @@ export function allProvidersFailedText(
     .join(", ");
   const hints = Object.entries(providerErrorHints(providersFailed, providerErrorClasses))
     .map(([id, hint]) => id + ": " + hint)
-    .join("; ");
+    .join(" | ");
   return (
     toolName +
     " error: all providers failed (providersFailed: " +
