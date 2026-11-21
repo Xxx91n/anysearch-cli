@@ -199,10 +199,10 @@ The server follows the MCP rule that an execution failure is an
 | `search_web` / `research_web` stopped by their task budget (refused, or declared but not established) | `true` | `operation` (the tool name), `errorKind`, `budget`, optional `taskId`, plus `closeout` when a task was registered — see [Search and research tasks](#search-and-research-tasks-304) |
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
-| Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed` and their error classes |
+| Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
 | Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
 | Domain gate emptied the pool (abstain) | absent (success) | `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}` |
-| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerBuildErrors` |
+| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
@@ -233,9 +233,16 @@ Rules behind the table:
   outage. A cancelled provider never counts as an answered one.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
-  `quota-exhausted` / `permanent-protocol` / `session-expired` / `unknown`)
-  and construction-time `providerBuildErrors` appear in both the content JSON
-  and `structuredContent`.
+  `quota-exhausted` / `permanent-protocol` / `session-expired` / `unknown`),
+  `providerErrorHints` and construction-time `providerBuildErrors` appear in
+  both the content JSON and `structuredContent`.
+- **An error class carries its remedy.** The class is a machine tag; a reader
+  cannot tell from `quota-exhausted` that the account owner has to top up.
+  `providerErrorHints` maps each failed provider whose class has a known remedy
+  to one plain sentence (top up or upgrade, set a valid key, retry later,
+  re-initialize). The all-providers-failed text appends them after the class
+  list, one `provider: sentence` per arm separated by ` | `. `unknown` has no
+  hint — nobody classified it, so nothing is invented.
 - **Abstain is a successful policy outcome.** It leaves `isError` absent and
   exposes the marker in `structuredContent.abstain`. For `research_web`, the
   marker describes the **last round only**. Results merged from earlier
