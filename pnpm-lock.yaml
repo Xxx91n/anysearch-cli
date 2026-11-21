@@ -251,6 +251,12 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: 1.5.1
         version: 1.5.1(@aws-sdk/credential-provider-node@3.972.96)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(@smithy/signature-v4@5.7.5)(ws@8.21.3)(zod@4.4.3)
+      '@modelcontextprotocol/node':
+        specifier: ^2.1.2
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
+      '@modelcontextprotocol/server':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
@@ -275,12 +281,6 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
-      '@modelcontextprotocol/node':
-        specifier: ^2.1.2
-        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
-      '@modelcontextprotocol/server':
-        specifier: ^2.4.0
-        version: 2.4.0
       zod:
         specifier: '>=4.2.0'
         version: 4.4.3
@@ -288,6 +288,9 @@ importers:
       '@anysearch-cli/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@anysearch-cli/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@anysearch-cli/plugin':
         specifier: workspace:*
         version: link:../plugin

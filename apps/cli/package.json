@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@anysearch-cli/kernel": "workspace:*",
+    "@anysearch-cli/mcp": "workspace:*",
     "@anysearch-cli/plugin": "workspace:*",
     "@anysearch-cli/retriever": "workspace:*",
     "@anysearch-cli/store": "workspace:*",
