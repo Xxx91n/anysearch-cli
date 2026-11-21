@@ -246,8 +246,15 @@ function stopChild(child, signal) {
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
+    // ESRCH: the group is already gone. EPERM: it is draining (macOS returns
+    // this while members exit), so keep going and let SIGKILL land. Anything
+    // else is reported, never thrown — an exception in a signal handler would
+    // kill the gate before it can keep the home and exit 130/143.
     if (error.code === "ESRCH") return;
-    throw error;
+    if (error.code !== "EPERM") {
+      console.error(`[preflight] could not signal the test process group: ${error.message}`);
+      return;
+    }
   }
   // A child that ignores the signal must not keep the gate alive.
   setTimeout(() => {

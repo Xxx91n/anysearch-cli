@@ -107,10 +107,13 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       await waitGone(Number(/^GRANDCHILD=(\d+)$/m.exec(out)[1]));
     } finally {
       gate.kill("SIGKILL");
-      // Clean up whatever the run left behind, including a failed assertion's.
-      for (const match of out.matchAll(/^(?:PNPM|GRANDCHILD)=(\d+)$/gm)) {
+      // pnpm is the group leader (the gate spawns it detached), so one group
+      // kill takes the grandchild with it; killing the grandchild's own pid as
+      // a group would target an unrelated group number on a busy machine.
+      const pnpm = /^PNPM=(\d+)$/m.exec(out);
+      if (pnpm) {
         try {
-          process.kill(-Number(match[1]), "SIGKILL");
+          process.kill(-Number(pnpm[1]), "SIGKILL");
         } catch {}
       }
       const home = keptHome(err);
