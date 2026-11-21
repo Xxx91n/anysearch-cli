@@ -4,6 +4,10 @@
 //
 // Every reader returns repo-relative paths, or null when git cannot answer —
 // the caller then falls back to the full suite rather than guessing.
+//
+// Design: an unreadable change falls back to the whole suite instead of a
+// guess — under-selecting makes the gate pass silently, which is worse than
+// running too much.
 
 import { spawnSync } from "node:child_process";
 

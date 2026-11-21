@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
-import { failedTask, planPreflight, readWorkspace } from "../preflight-plan.mjs";
+import { planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
 // The same shape as the real workspace: four apps on top, three shared
 // packages below, embedding as a peer of store and the three apps.
@@ -132,6 +133,16 @@ test("--full wins even when only one package changed", () => {
   assert.equal(planPreflight(root, ["apps/mcp/src/index.ts"], { forceFull: true }).mode, "full");
 });
 
+test("the real workspace: a retriever change selects all four apps", () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const plan = planPreflight(repo, ["packages/retriever/package.json"]);
+  assert.equal(plan.mode, "incremental");
+  assert.equal(plan.packages.length, 7);
+  for (const app of ["@anysearch-cli/cli", "@anysearch-cli/dsh-plugin", "@anysearch-cli/mcp", "@anysearch-cli/plugin"]) {
+    assert.ok(plan.packages.includes(app), app);
+  }
+});
+
 test("the workspace reader picks up both directions of the dependency graph", () => {
   const packages = readWorkspace(root);
   assert.equal(packages.length, 8);
@@ -146,12 +157,6 @@ test("the workspace reader picks up both directions of the dependency graph", ()
     ],
   );
   assert.deepEqual(packages.find((pkg) => pkg.name === "@anysearch-cli/embedding").deps, []);
-});
-
-test("the red task is read from turbo's summary", () => {
-  assert.equal(failedTask(" Tasks:    1 successful, 2 total\nFailed:    @anysearch-cli/kernel#test\n"), "@anysearch-cli/kernel#test");
-  assert.equal(failedTask("\u001b[31mFailed:\u001b[0m @anysearch-cli/cli#test"), "@anysearch-cli/cli#test");
-  assert.equal(failedTask("ERROR run failed: command exited (1)"), null);
 });
 
 function write(dir, file, content) {

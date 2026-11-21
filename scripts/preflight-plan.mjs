@@ -66,18 +66,6 @@ export function readWorkspace(root) {
   return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-/**
- * The task turbo names on its "Failed:" summary line, or null when the output
- * has none (the caller then prints a generic message).
- *
- * @param {string} output
- * @returns {string | null}
- */
-export function failedTask(output) {
-  const match = /^Failed:\s*(.+)$/m.exec(String(output).replace(/\u001b\[[0-9;]*m/g, ""));
-  return match ? match[1].trim() : null;
-}
-
 function withDependents(touched, packages) {
   const known = new Set(packages.map((pkg) => pkg.name));
   const dependents = new Map(packages.map((pkg) => [pkg.name, []]));

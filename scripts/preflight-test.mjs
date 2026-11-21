@@ -20,29 +20,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
-import { failedTask, planPreflight } from "./preflight-plan.mjs";
+import { planPreflight } from "./preflight-plan.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
-let changed;
-let unknownReason = "git could not name the change";
-if (args.includes("--pushed")) {
-  const pushed = pushedFiles(root, readStdin());
-  if (pushed === PUSH_UNKNOWN) {
-    changed = null;
-    unknownReason = "could not read the pushed commits";
-  } else {
-    changed = pushed ?? localFiles(root);
-  }
-} else {
-  changed = args.includes("--staged") ? stagedFiles(root) : localFiles(root);
-}
-
-const plan =
-  changed === null
-    ? { mode: "full", reason: unknownReason, files: [], packages: [] }
-    : planPreflight(root, changed, { forceFull: args.includes("--full") });
+const change = readChange();
+const plan = change.unknown
+  ? { mode: "full", reason: change.unknown, files: [], packages: [] }
+  : planPreflight(root, change.files, { forceFull: args.includes("--full") });
 
 if (plan.mode === "none") {
   console.log("[preflight] nothing to run: no changed files");
@@ -102,6 +88,23 @@ if (status !== 0) {
   process.exitCode = status ?? 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
+}
+
+function readChange() {
+  if (args.includes("--pushed")) {
+    const pushed = pushedFiles(root, readStdin());
+    if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits" };
+    if (pushed !== null) return { files: pushed };
+  }
+  const files = args.includes("--staged") ? stagedFiles(root) : localFiles(root);
+  return files === null ? { unknown: "git could not name the change" } : { files };
+}
+
+// turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
+function failedTask(output) {
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
+  const named = [...plain.matchAll(/^Failed:\s*(.+)$/gm)].map((match) => match[1].trim());
+  return named.length > 0 ? named.join(", ") : null;
 }
 
 function readStdin() {

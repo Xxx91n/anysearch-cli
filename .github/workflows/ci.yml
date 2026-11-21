@@ -40,7 +40,7 @@ jobs:
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
       - name: Preflight selection tests (#366)
-        run: node --test scripts/test/preflight-plan.test.mjs scripts/test/preflight-change.test.mjs
+        run: node --test scripts/test/preflight-plan.test.mjs scripts/test/preflight-change.test.mjs scripts/test/preflight-cli.test.mjs
       - run: pnpm -w turbo check
       - name: "Test — all packages (node:test discovery, full truth)"
         run: pnpm -w turbo run test --continue=dependencies-successful
