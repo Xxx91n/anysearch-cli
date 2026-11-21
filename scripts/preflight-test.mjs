@@ -92,12 +92,12 @@ if (selfTest) {
     status = await runGateTests();
   } catch (error) {
     status = null;
-    console.error(`[preflight] could not start the gate's own tests: ${error.message}`);
+    writeStderr(`[preflight] could not start the gate's own tests: ${error.message}`);
   }
   if (interrupted) process.exit(interrupted);
   if (status !== 0) {
     reportKeptTestHome(testHome);
-    console.error("[preflight] blocked: the gate's own tests failed");
+    writeStderr("[preflight] blocked: the gate's own tests failed");
     process.exit(status ?? 1);
   }
 }
@@ -129,7 +129,7 @@ try {
   });
 } catch (error) {
   reportKeptTestHome(testHome);
-  console.error(`[preflight] could not start pnpm: ${error.message}`);
+  writeStderr(`[preflight] could not start pnpm: ${error.message}`);
   process.exit(1);
 }
 
@@ -211,16 +211,24 @@ function corepackHome(env, home) {
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
-// fs.writeSync, not console.error: a signal handler may exit right after, and
-// a piped stderr would lose the line that says where the evidence is.
+// Sync write: a signal handler may exit right after, and a piped stderr drops
+// unsent lines.
 function reportKeptTestHome({ home }) {
   writeStderr(`[preflight] test home kept for inspection: ${home}`);
 }
 
 function writeStderr(line) {
-  try {
-    fs.writeSync(2, `${line}\n`);
-  } catch {}
+  const bytes = Buffer.from(`${line}\n`);
+  let written = 0;
+  for (let attempt = 0; written < bytes.length; attempt += 1) {
+    try {
+      written += fs.writeSync(2, bytes, written);
+    } catch (error) {
+      // A full pipe makes fd 2 throw EAGAIN; give the reader a moment to drain.
+      if (error.code !== "EAGAIN" || attempt >= 20) return;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
 }
 
 async function runGateTests() {
@@ -254,15 +262,12 @@ function stopChild(child, signal) {
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
-    // ESRCH: the group is already gone. Darwin returns EPERM while a draining
-    // group's members exit, so there SIGKILL still has a chance. Any other
-    // error means the group cannot be signalled at all: say so and leave
-    // instead of waiting on a close that will never come. Never throw from a
-    // signal handler — the gate would die before it can keep the home.
+    // ESRCH: the group is gone. Darwin's EPERM means it is still draining, so
+    // SIGKILL still gets a chance. Anything else cannot be signalled: report
+    // and leave instead of waiting on a close that will never come.
     if (error.code === "ESRCH") return;
     if (!(error.code === "EPERM" && process.platform === "darwin")) {
-      writeStderr(`[preflight] could not signal the test process group: ${error.message}`);
-      process.exit(interrupted || 1);
+      leaveUnstoppable(`could not signal the test process group: ${error.message}`);
     }
   }
   // A child that ignores the signal must not keep the gate alive.
@@ -272,11 +277,15 @@ function stopChild(child, signal) {
     } catch (error) {
       if (error.code === "ESRCH") return;
       // The group cannot be stopped, so waiting on its close would hang the
-      // gate forever; say so and leave with the interrupt code.
-      writeStderr(`[preflight] could not stop the test process group: ${error.message}`);
-      process.exit(interrupted || 1);
+      // gate forever.
+      leaveUnstoppable(`could not stop the test process group: ${error.message}`);
     }
   }, 5000).unref();
+}
+
+function leaveUnstoppable(message) {
+  writeStderr(`[preflight] ${message}`);
+  process.exit(interrupted || 1);
 }
 
 function removeTestHome({ home }) {
