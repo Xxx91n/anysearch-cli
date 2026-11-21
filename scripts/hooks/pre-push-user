@@ -3,8 +3,8 @@
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.
 # A change outside apps/ and packages/ falls back to the full workspace suite.
-# Install:  H="$(git rev-parse --git-path hooks)" && rm -f "$H/pre-commit-user" \
-#           && cp scripts/hooks/pre-push-user "$H/pre-push" && chmod +x "$H/pre-push"
+# Install (one line, runnable from any subdirectory of the repo):
+# H="$(git rev-parse --path-format=absolute --git-path hooks)" && rm -f "$H/pre-commit-user" && cp "$(git rev-parse --show-toplevel)/scripts/hooks/pre-push-user" "$H/pre-push" && chmod +x "$H/pre-push"
 # Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default
 # (see `but push --help`: "--no-hooks, --no-verify  Bypass pre-push hooks").
 # The pre-push hook is NOT GitButler-managed (GitButler only manages

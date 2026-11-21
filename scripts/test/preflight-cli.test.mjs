@@ -94,6 +94,15 @@ test("the old --staged flag names the hook to delete and runs nothing", () => {
   });
 });
 
+test("--staged next to another mode flag runs that mode, not the notice", () => {
+  withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--staged", "--full"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /\[preflight\] full suite: /);
+    assert.equal(result.stdout.includes("no commit gate"), false);
+  });
+});
+
 test("a pushed ref runs the gate on the files it carries", () => {
   withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin, refs }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: refs });

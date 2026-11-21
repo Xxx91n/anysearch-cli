@@ -32,11 +32,12 @@ const args = process.argv.slice(2);
 const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
 
 // Design: the old commit hook gets a notice, not a test run — a clone that
-// still has pre-commit-user calls this with --staged. Name the file to delete
-// and exit 0, so the commit goes through; the install command in AGENTS.md
-// removes the file anyway.
-if (args.includes("--staged")) {
-  console.log("[preflight] no commit gate: delete the old pre-commit-user hook; pushes still run this gate");
+// still has pre-commit-user calls this with --staged and nothing else. Name the
+// file to delete and exit 0, so the commit goes through; the install command in
+// AGENTS.md removes the file anyway. Any other argument list is a real run, so
+// `--staged --full` still runs the suite instead of being swallowed.
+if (args.length === 1 && args[0] === "--staged") {
+  console.log("[preflight] no commit gate: delete the old pre-commit-user hook (git rev-parse --git-path hooks); pushes still run this gate");
   process.exit(0);
 }
 
