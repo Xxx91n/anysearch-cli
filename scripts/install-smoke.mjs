@@ -104,7 +104,9 @@ try {
   check("installed doctor exit 0", d1.code === 0, d1.out);
   // arm-absent telemetry reports 未配置 (unconfigured), not a failure. Asserting the
   // state, not just the row name: otherwise a regression back to 失败 still reads green.
-  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), d1.out.slice(-600));
+  // 失败时 detail 要能直接看见那一行：vector arm 在「能力」层中间，截输出尾巴截不到。
+  const vectorLine = d1.out.split("\n").find((line) => line.includes("vector arm")) ?? d1.out;
+  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), vectorLine);
   // #312: the four layers are [安装]/[能力]/[宿主]/[数据]; the DB layout row and
   // the discovered-domain rows moved into the data and capability layers.
   check("doctor shows the four layers", ["[安装]", "[能力]", "[宿主]", "[数据]"].every((l) => d1.out.includes(l)), d1.out.slice(-600));

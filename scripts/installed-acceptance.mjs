@@ -596,19 +596,24 @@ async function main() {
     // 只能从装进去的那一份读，不能从检出里读。
     // 读不到也不能在这里抛：装包那步挂了已经记过 FAIL，这里再抛就整轮死在开头，
     // 后面的检查一条都不跑，也拼不出「过了几项、挂了几项」。
+    // 没有版本号也算读不出来：只判文件在不在，会在 package.json 存在但没有
+    // version 时打出一行「@undefined」，而这条抬头存在的意义就是「验的是哪一版」。
     const installedPkg = join(nm, "@anysearch-cli", "cli", "package.json");
-    let installedVersion = "读不出来";
+    let installedVersion = null;
     if (existsSync(installedPkg)) {
       try {
-        installedVersion = JSON.parse(readFileSync(installedPkg, "utf8")).version;
+        const parsed = JSON.parse(readFileSync(installedPkg, "utf8"));
+        if (typeof parsed?.version === "string" && parsed.version.trim() !== "") {
+          installedVersion = parsed.version.trim();
+        }
       } catch {
-        installedVersion = "读不出来";
+        // 读不成 JSON 一样是「读不出来」，交给下面那条 FAIL。
       }
     }
-    if (installedVersion === "读不出来") check(false, "读得出装进去的产品版本", installedPkg);
+    if (installedVersion === null) check(false, "读得出装进去的产品版本", installedPkg);
     printAcceptanceHeader({
       product: "anysearch-cli",
-      version: installedVersion,
+      version: installedVersion ?? "读不出来",
       notes: preset ? ["包来自: " + preset] : [],
     });
     const ansBin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
