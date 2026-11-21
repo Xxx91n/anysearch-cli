@@ -289,12 +289,27 @@ export function readUserCredentials(
   return { bindings };
 }
 
+/**
+ * The sentence a warning line says about a credential file that could not be read
+ * or parsed: `resolveSearchCredentials` puts it in `warnings`, and `ans auth
+ * status` prints it after `[WARN] `. Diagnosis rows (doctor, `ans auth list`, `ans
+ * llm`) print `file.error` in their own shape instead, because they also say how
+ * to fix it. Undefined for a healthy (or absent) file.
+ */
+export function credentialFileWarning(file: CredentialFileContents): string | undefined {
+  return file.error ? file.error + "; continuing without the user credential file" : undefined;
+}
+
 /** Search credentials resolved for the retriever's three arms. */
 export interface ResolvedSearchCredentials {
   tavily?: { apiKey?: string; source: "env" | "user" };
   exa?: { apiKey?: string; source: "env" | "user" };
   anysearch?: { apiKey?: string; endpoint?: string; source: "env" | "user" };
-  /** Human-readable notes for stderr; never contains a secret value. */
+  /**
+   * Human-readable notes for stderr; never contains a secret value. Empty when
+   * the caller supplied `credentialsFile`: that caller already holds the file's
+   * `error` and reports it once (see `credentialFileWarning`).
+   */
   warnings: string[];
 }
 
@@ -303,21 +318,28 @@ export interface ResolvedSearchCredentials {
  * user credential file. Search keys are bound to their provider only - the
  * endpoint of these SDKs is fixed, and an explicit ANYSEARCH_ENDPOINT is the
  * documented way to point that arm at a mirror.
+ *
+ * Design: the command that reads the user credential file parses it once and
+ * passes the result to every resolver and report; whoever parsed it reports its
+ * fault. A resolver given `credentialsFile` neither reads the file again nor
+ * reports it, so nothing has to decide whether a message repeats another.
+ * `filePath` only applies when this resolver reads the file itself.
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,
-  opts: { home?: string; filePath?: string } = {},
+  opts: { home?: string; filePath?: string; credentialsFile?: CredentialFileContents } = {},
 ): ResolvedSearchCredentials {
   // The config root follows the same HOME/USERPROFILE convention the rest of the
   // installation uses (one shared resolver, so the reader and the writer can
   // never disagree about which file is in force).
   const home = resolveConfigHome(opts.home, env);
-  const file = readUserCredentials({ ...opts, home });
+  const file = opts.credentialsFile ?? readUserCredentials({ home, filePath: opts.filePath });
   const warnings: string[] = [];
   // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
-  // stderr, `[credentials] ` in doctor, `[WARN] ` in `ans auth status`). Tagging
-  // here would couple them to this string and double the prefix.
-  if (file.error) warnings.push(file.error + "; continuing without the user credential file");
+  // stderr, `[WARN] ` in `ans auth status`). Tagging here would couple them to
+  // this string and double the prefix.
+  const fault = credentialFileWarning(file);
+  if (!opts.credentialsFile && fault) warnings.push(fault);
   const out: ResolvedSearchCredentials = { warnings };
 
   // One rule for all three arms: an explicit env value wins over the stored

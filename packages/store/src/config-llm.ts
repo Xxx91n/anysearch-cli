@@ -32,6 +32,7 @@ import {
   readUserCredentials,
   resolveConfigHome,
 } from "./credentials";
+import type { CredentialFileContents } from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
@@ -105,6 +106,21 @@ export interface ResolveLlmOpts {
    * env/config values (the acceptance lane's "no user store at all" case).
    */
   credentials?: boolean;
+  /**
+   * An already-parsed credential file (#357). Pass the one result of
+   * `readUserCredentials` and this resolver uses it instead of reading the file
+   * again; it also stops warning about the file's own fault. The key lookup and
+   * its endpoint-mismatch warning still run on this same result, and
+   * `credentials: false` keeps its meaning: no credential file at all.
+   *
+   * Design: a supplied result silences this resolver's read and its file warning;
+   * the caller that parsed the file reports that fault once.
+   *
+   * It must come from `readUserCredentials` for `ansCredentialsPathFor(home)` with
+   * THIS `home`: the endpoint-mismatch warning names that path, so a result from
+   * another root would point the user at the wrong file.
+   */
+  credentialsFile?: CredentialFileContents;
 }
 
 // Defaulting through `resolveConfigHome` (not `homedir()`) is what makes the
@@ -367,10 +383,11 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
 
     if (!resolved.apiKey && opts.credentials !== false) {
       const credsPath = ansCredentialsPathFor(home);
-      const file = readUserCredentials({ filePath: credsPath });
-      if (file.error) {
+      const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+      if (!opts.credentialsFile && file.error) {
         // A broken credential file must be visible, never treated as "no keys"
-        // when it is the last remaining source.
+        // when it is the last remaining source. A caller that supplied the file
+        // already said this, in its own words, once.
         warn("[config] " + file.error);
       }
       const lookup = lookupModelCredential(resolved.provider, resolved.baseUrl ?? null, file);

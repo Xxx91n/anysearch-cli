@@ -10,6 +10,7 @@
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
 import {
+  type CredentialFileContents,
   displayEndpoint,
   KEY_SOURCE_LABELS,
   readUserCredentials,
@@ -21,8 +22,13 @@ import {
   writeUserLlmConfig,
 } from "../config-llm";
 
+/** The BROKEN line both listings below print; the same result also goes to the resolver. */
+function printCredentialFault(file: CredentialFileContents): void {
+  if (file.error) console.log("Credentials file: BROKEN — " + file.error);
+}
+
 /** Which stored entries exist for this provider, as plain words (never a key). */
-function storedBindings(file: ReturnType<typeof readUserCredentials>, provider: string): string[] {
+function storedBindings(file: CredentialFileContents, provider: string): string[] {
   return file.bindings
     .filter((b) => b.provider === provider)
     .map((b) => displayEndpoint(b.endpoint));
@@ -42,7 +48,9 @@ export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
-    const cfg = resolveLlmConfig({ home });
+    // Design: 列表和解析器共用一次读取，下面那行 BROKEN 是这句话唯一的出口。
+    const credentialFile = readUserCredentials({ home });
+    const cfg = resolveLlmConfig({ home, credentialsFile: credentialFile });
     const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
@@ -54,14 +62,9 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Credentials: " + credentialsPath(home) + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
-    const storedFile = readUserCredentials({ home });
-    if (storedFile.error) {
-      // A broken file must not read as "no keys": the resolver already warned,
-      // and this listing has to agree with it rather than contradict it.
-      console.log("Credentials file: BROKEN - " + storedFile.error);
-    }
+    printCredentialFault(credentialFile);
     for (const [name, models] of Object.entries(MODELS)) {
-      const stored = storedBindings(storedFile, name);
+      const stored = storedBindings(credentialFile, name);
       // Three facts, three outcomes: the provider's own env var is set, its key
       // is the one in effect (possibly from another source), or only a stored
       // binding exists and is not being used. Every env name the provider's key
@@ -139,14 +142,12 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
-    const cfg = resolveLlmConfig({ home });
-    const storedFile = readUserCredentials({ home });
-    if (storedFile.error) {
-      console.log("Credentials file: BROKEN - " + storedFile.error);
-    }
+    const credentialFile = readUserCredentials({ home });
+    const cfg = resolveLlmConfig({ home, credentialsFile: credentialFile });
+    printCredentialFault(credentialFile);
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
       const envName = envKeySet(name);
-      const fromStore = storedFile.bindings.some((b) => b.provider === name);
+      const fromStore = credentialFile.bindings.some((b) => b.provider === name);
       const effective = name === cfg.provider && !!cfg.apiKey;
       // The resolver's source label IS the answer, so map it instead of
       // collapsing it into "resolved" (which told the user nothing).

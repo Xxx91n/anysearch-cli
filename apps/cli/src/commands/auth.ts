@@ -13,6 +13,8 @@
 
 import {
   CREDENTIAL_PROVIDERS,
+  credentialFileWarning,
+  type CredentialFileContents,
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
@@ -20,7 +22,6 @@ import {
   removeUserCredential,
   resolveConfigHome,
   resolveLlmConfig,
-  resolveSearchCredentials,
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
@@ -92,15 +93,18 @@ function describeSource(layer: LlmLayer | undefined): string {
   return layer ? KEY_SOURCE_LABELS[layer] : "set";
 }
 
-function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {
-  const search = resolveSearchCredentials(env, { home });
-  const llm = resolveLlmConfig({ env, home });
-  const stored = readUserCredentials({ home });
+function statusLines(
+  env: NodeJS.ProcessEnv,
+  home: string,
+  file: CredentialFileContents,
+): string[] {
+  // 模型解析器吃的是调用方给的这一份，不再自己读一遍。
+  const llm = resolveLlmConfig({ env, home, credentialsFile: file });
   const lines: string[] = [];
 
   for (const info of CREDENTIAL_PROVIDERS) {
     const envValue = env[info.envKey]?.trim();
-    const binding = stored.bindings.find((b) => b.provider === info.id);
+    const binding = file.bindings.find((b) => b.provider === info.id);
     let where: string;
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
       // Report where the EFFECTIVE model key came from. `env` covers two
@@ -122,7 +126,6 @@ function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {
     const mark = where === "not set" ? "[EMPTY]" : "[SET]  ";
     lines.push(mark + " " + info.id.padEnd(10) + " " + where);
   }
-  if (search.warnings.length > 0) lines.push(...search.warnings.map((w) => "[WARN] " + w));
   return lines;
 }
 
@@ -141,13 +144,18 @@ export async function runAuth(args: string[]): Promise<number> {
   const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
+    // Design: 整条命令读一次凭据文件，来源表和模型解析器共用；读坏了 status 说一次，
+    // list 只在文件块里说一次。
+    const file = readUserCredentials({ home });
     console.log("ans auth - provider API keys");
     console.log("---");
-    for (const line of statusLines(env, home)) console.log(line);
+    for (const line of statusLines(env, home, file)) console.log(line);
+    // `list` 紧接着的「BROKEN —」那行说的就是这句，那里说一遍就够了。
+    const fault = credentialFileWarning(file);
+    if (sub !== "list" && fault) console.log("[WARN] " + fault);
     console.log("---");
     if (sub === "list") {
       const path = userCredentialsPath(home);
-      const file = readUserCredentials({ home });
       console.log("Credential file: " + path);
       console.log("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
       if (file.bindings.length > 0) {

@@ -668,3 +668,30 @@ test("an injected env with a home never reads the machine's own config", () => {
   assert.equal(cfg.sources.provider, "user");
   assert.equal(resolveConfigHome(undefined, { HOME: f.home }), f.home);
 });
+
+test("a supplied credential file is used as-is, and the resolver says nothing about the file", () => {
+  // #357: doctor and `ans auth status` read the credential file once and pass
+  // the result down. A resolver given that result must not read the disk again
+  // and must not warn about the file's fault: the caller says it once, in its
+  // own words, instead of the two sides having to agree on wording.
+  const f = fixture();
+  mkdirSync(join(f.home, ".ans"), { recursive: true });
+  writeFileSync(join(f.home, ".ans", "credentials.json"), "{ not json", "utf8");
+
+  const supplied = { bindings: [{ provider: "openai", endpoint: null, apiKey: "sk-from-supplied" }] };
+  const cfg = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" },
+    credentialsFile: supplied,
+  }));
+  assert.equal(cfg.apiKey, "sk-from-supplied");
+  assert.equal(cfg.sources.apiKey, "credentials");
+  assert.deepEqual(f.warnings, [], "文件读坏了只报一条，这一条由调用方报；解析器闭嘴");
+
+  // The same broken file with no supplied result is still reported, so the
+  // silence above comes from the input and not from a vanished check.
+  const ownRead = resolveLlmConfig(f.opts({
+    env: { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" },
+  }));
+  assert.equal(ownRead.apiKey, undefined);
+  assert.ok(f.warnings.some((w) => w.includes("not valid JSON")));
+});

@@ -160,6 +160,31 @@ test("a malformed file is never rewritten (that would drop the other keys)", () 
   } finally { cleanup(); }
 });
 
+test("a supplied parse result wins: the broken file on disk is never consulted again", () => {
+  // #357: doctor and `ans auth status` parse the file once and hand the result
+  // to the resolver. While the on-disk file is broken, the resolver works off
+  // what it was given and stays silent about the file it never read - so no
+  // consumer has to match error text to avoid a second copy.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, "{ not json", "utf8");
+
+    const supplied = { bindings: [{ provider: "exa", endpoint: null, apiKey: "exa-from-supplied" }] };
+    const resolved = resolveSearchCredentials({}, { home, credentialsFile: supplied });
+    assert.equal(resolved.exa?.apiKey, "exa-from-supplied");
+    assert.equal(resolved.exa?.source, "user");
+    assert.deepEqual(resolved.warnings, [], "文件读坏了只报一条，由调用方报；解析器不再说第二遍");
+
+    // The same call WITHOUT a supplied result does report the broken file, so
+    // the silence above comes from the input and not from a vanished check.
+    const ownRead = resolveSearchCredentials({}, { home });
+    assert.equal(ownRead.exa, undefined);
+    assert.ok(ownRead.warnings.some((w) => w.includes("not valid JSON")));
+  } finally { cleanup(); }
+});
+
 test("the parse error never quotes the file's contents", () => {
   // SECURITY (spec S2: 秘密不出现在...错误详情). JSON.parse's own message
   // quotes ~10 characters around the error, and in this file those characters

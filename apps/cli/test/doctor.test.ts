@@ -221,13 +221,21 @@ test("ans doctor --strict：有未检查、没有失败时退出 5", async () =>
   }
 });
 
-// 去重靠「两次读同一个文件、报错文字一字不差」，store 改一句措辞就可能悄悄回来；
-// 反过来把 endpoint 不匹配也咽掉同样没人发现。这两条各自钉住一头。
-async function runInHome(config: {
-  credentials?: string;
-  configToml?: string;
-  env: Record<string, string | undefined>;
-}): Promise<{ payload: DiagJson; entries: Array<{ name: string; state: string; detail?: string }>; code: number }> {
+// 一次诊断只解析一次凭据文件之后，「坏文件只报一条」是结构保证，不是文字比对：
+// 文件读坏了这条由读取的那一处说一次，两个解析器都不再说。下面几条各自钉住一头。
+type DoctorRun = {
+  /** --json 时的结构化结果；文字模式是 null。 */
+  payload: DiagJson | null;
+  entries: Array<{ name: string; state: string; detail?: string }>;
+  /** 原样收下的输出，文字模式就靠它断言「只出现一次」。 */
+  text: string;
+  code: number;
+};
+
+async function doctorInHome(
+  config: { credentials?: string; configToml?: string; env: Record<string, string | undefined> },
+  args: string[],
+): Promise<DoctorRun> {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-cred-"));
   const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", ...Object.keys(config.env)];
   const saved: Record<string, string | undefined> = {};
@@ -248,12 +256,14 @@ async function runInHome(config: {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
-    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const code = await runDoctor(args, { stdout: (line) => lines.push(line) });
+    const text = lines.join("\n");
+    const payload = args.includes("--json") ? (JSON.parse(text) as DiagJson) : null;
     return {
       payload,
+      text,
       code,
-      entries: payload.layers.flatMap((layer) => layer.entries),
+      entries: payload ? payload.layers.flatMap((layer) => layer.entries) : [],
     };
   } finally {
     for (const [key, value] of Object.entries(saved)) {
@@ -264,8 +274,17 @@ async function runInHome(config: {
   }
 }
 
+async function runInHome(config: {
+  credentials?: string;
+  configToml?: string;
+  env: Record<string, string | undefined>;
+}): Promise<DoctorRun & { payload: DiagJson }> {
+  const run = await doctorInHome(config, ["--json"]);
+  return { ...run, payload: run.payload! };
+}
+
 test("ans doctor：凭据文件读坏了只报一条失败", async () => {
-  // 没配模型 key 时 LLM 解析器也会去读这份文件，它那条报错和上面那条重复。
+  // 票面要求原样保留的守卫：文件读坏了只出一条失败，失败数不多算。
   const { payload, entries } = await runInHome({
     credentials: "not json",
     env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
@@ -276,6 +295,27 @@ test("ans doctor：凭据文件读坏了只报一条失败", async () => {
   assert.equal(credentialRows[0]!.state, "failed");
   assert.equal(entries.filter((entry) => entry.name === "配置文件").length, 0, "同一句故障不要再报一遍");
   assert.equal(payload.summary.failed, 1, "失败数不能多算");
+});
+
+test("ans doctor：凭据文件坏了，文字输出里只说一条", async () => {
+  // 验收第二条的文字那一半：用户看到的就是这些行，所以直接数行。--json 那一半由
+  // 上面那条守卫用例钉着，这里不再重复跑一遍 --json。
+  const printed = await doctorInHome(
+    {
+      credentials: "not json",
+      env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
+    },
+    [],
+  );
+
+  const faultLines = printed.text.split("\n").filter((line) => line.includes("not valid JSON"));
+  assert.equal(faultLines.length, 1, "文字输出里只出现一次：\n" + printed.text);
+  assert.match(faultLines[0]!, /user credential file/);
+  assert.equal(
+    printed.text.split("\n").filter((line) => line.includes("配置文件")).length,
+    0,
+    "同一句故障没有再挂到「配置文件」名下",
+  );
 });
 
 test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () => {
