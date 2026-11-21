@@ -297,6 +297,22 @@ test("a manifest without a name is not a package, and a change under it runs eve
   }
 });
 
+test("a workspace whose every manifest has no name says so", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-all-nameless-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
+    write(dir, "apps/one/package.json", JSON.stringify({ private: true }));
+    write(dir, "apps/two/package.json", JSON.stringify({ private: true }));
+    assert.deepEqual(readWorkspace(dir), []);
+    const plan = planPreflight(dir, ["apps/one/src/index.ts"]);
+    assert.equal(plan.mode, "full");
+    // "no workspace packages found" alone would hide the nameless manifests.
+    assert.equal(plan.reason, "no workspace packages found: every package.json in the workspace has no name");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function write(dir, file, content) {
   const target = join(dir, file);
   mkdirSync(dirname(target), { recursive: true });

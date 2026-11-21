@@ -35,7 +35,15 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
 
   const { packages, nameless } = readWorkspaceReport(root);
   if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
-  if (packages.length === 0) return { mode: "full", reason: "no workspace packages found", files, packages: [] };
+  if (packages.length === 0) {
+    // Naming the nameless manifests here matters: "no workspace packages found"
+    // would hide the case this file works hardest to explain.
+    const reason =
+      nameless.length > 0
+        ? "no workspace packages found: every package.json in the workspace has no name"
+        : "no workspace packages found";
+    return { mode: "full", reason, files, packages: [] };
+  }
 
   const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
   const outside = files.filter((file) => !owners.get(file));
@@ -70,16 +78,10 @@ export function readWorkspace(root) {
   return readWorkspaceReport(root).packages;
 }
 
-/**
- * readWorkspace plus the directories a nameless manifest left out, so the plan
- * can say why a change under one of them ran the full suite. A manifest that
- * cannot be read or parsed makes `packages` null, as readWorkspace documents.
- *
- * @param {string} root
- * @returns {{ packages: { name: string, dir: string, deps: string[] }[] | null,
- *            nameless: string[] }}
- */
-export function readWorkspaceReport(root) {
+// readWorkspace plus the directories a nameless manifest left out, so the plan
+// can say why a change under one of them ran the full suite. Private: the plan
+// is its only reader, and readWorkspace's doc owns the null contract.
+function readWorkspaceReport(root) {
   const packages = [];
   const nameless = [];
   for (const dir of workspaceDirectories(root, workspacePatterns(root))) {
