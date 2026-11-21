@@ -124,7 +124,7 @@ async function t(name: string, fn: () => Promise<void>) {
   await t("doctor runs layered diagnosis and exits 0", async () => {
     const r = await run(["doctor"]);
     assert.equal(r.code, 0, "doctor stdout: " + r.out.slice(0, 500));
-    for (const marker of ["[OK]", "Result:", "汇总："]) {
+    for (const marker of ["[OK]", "结论：", "汇总："]) {
       assert.ok(r.out.includes(marker), "missing " + marker);
     }
     // #312：四层分开报——安装 / 能力 / 宿主 / 数据，每层内部再逐条。

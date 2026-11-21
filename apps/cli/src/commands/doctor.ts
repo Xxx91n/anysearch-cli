@@ -176,12 +176,14 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
 
   // ── 能力层 ────────────────────────────────────────────────────────────
+  const configHome = resolveConfigHome();
+  const credentials = resolveSearchCredentials(process.env, { home: configHome });
   {
     const providers = [
       { id: "tavily", make: () => new TavilyProvider() },
       { id: "exa", make: () => new ExaProvider() },
       { id: "anysearch", make: () => new AnySearchProvider() },
-    ];
+    ] as const;
     for (const provider of providers) {
       try {
         const instance = provider.make();
@@ -193,12 +195,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           detail: `id=${instance.id} modes=${instance.modes.join(",")}`,
         });
       } catch (error) {
+        // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
+        // 配了 key 还构造不出来，那才是真的坏了。
+        const configured = Boolean(credentials[provider.id]);
         report.add({
           layer: "capability",
           name: `provider ${provider.id}`,
-          state: "failed",
+          state: configured ? "failed" : "unconfigured",
           mode: "offline",
-          detail: errorText(error).slice(0, 160),
+          detail: configured
+            ? errorText(error).slice(0, 160)
+            : `没配 key，构造器会拒：${errorText(error).slice(0, 120)}`,
         });
       }
     }
@@ -286,8 +293,6 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     }
   }
   {
-    const configHome = resolveConfigHome();
-    const resolved = resolveSearchCredentials(process.env, { home: configHome });
     const credentialsPath = userCredentialsPath(configHome);
     const file = readUserCredentials({ home: configHome });
     if (file.error) {
@@ -310,7 +315,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       });
     }
     for (const provider of SEARCH_PROVIDER_IDS) {
-      const entry = resolved[provider];
+      const entry = credentials[provider];
       if (!entry) {
         report.add({
           layer: "capability",
@@ -329,7 +334,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         detail: entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件",
       });
     }
-    for (const warning of resolved.warnings) {
+    for (const warning of credentials.warnings) {
       report.add({
         layer: "capability",
         name: "凭据警告",
