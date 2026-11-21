@@ -87,7 +87,10 @@ test("nothing staged reports nothing to run", () => {
 
 function runCliIn(root, bin, args, { gateTests, selfTest = false } = {}) {
   const env = { ...process.env };
-  env.PATH = `${bin}${delimiter}${env.PATH ?? ""}`;
+  // Read PATH through process.env, which is case-insensitive on Windows: the
+  // spread above keeps the original key's casing, so env.PATH can be undefined
+  // and the real PATH would be dropped, hiding git from the child.
+  env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
   if (gateTests || selfTest) {
     delete env.PREFLIGHT_SELF_TEST;
