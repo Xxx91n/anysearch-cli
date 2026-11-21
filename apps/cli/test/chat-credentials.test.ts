@@ -10,7 +10,7 @@
 // own reasons; under this package's tsx test lane the ESM-only pi runtime loads
 // fine, and the command fails before anything that needs a live model.
 //
-// Run: node --import tsx --test test/chat-credentials.test.ts
+// Run: pnpm --filter @anysearch-cli/cli test
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -65,8 +65,8 @@ test("a broken credential file is reported once per `ans chat`", async () => {
   (process.stderr as any).write = (chunk: any) => { err += String(chunk); return true; };
   try {
     // No model key anywhere and no registered task, so the run stops at its
-    // task-budget gate without a provider call. That is enough: both parses of
-    // the credential file — the ones this test counts — happen before it.
+    // task-budget gate without a provider call. That is enough: both places that
+    // used to parse the credential file are behind this point.
     await runChat(["-p", "hello"]);
   } finally {
     (process.stderr as any).write = realErr;
