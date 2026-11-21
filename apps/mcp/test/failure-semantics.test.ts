@@ -1,5 +1,8 @@
 // #204 acceptance — MCP execution-result semantics.
 //
+//   - #356: the remedy sentences live only in PROVIDER_ERROR_HINTS. Every
+//     expected hint string here is derived from that table, and the sentences
+//     of the classes that have one are checked to be pairwise distinct.
 //   - Handler exceptions in search_web / research_web / recall_memory return
 //     isError:true with the existing actionable text and no structuredContent.
 //   - ans_chat without LLM configuration and a thrown runtime error are errors.
