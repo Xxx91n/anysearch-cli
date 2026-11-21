@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } from "../src/index.js";
 import { ensureMdc } from "../src/hooks/routing-card.js";
+import { serverSandbox, spawnServer } from "./server-sandbox.js";
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
 
@@ -302,7 +303,6 @@ test("ensureMdc: bad JSON writes .mdc and warns on stderr like the existing over
 
 // === Server liveness ===
 testAsync("Server: /health endpoint returns 200", async () => {
-  const { spawn } = await import("node:child_process");
   const net = await import("node:net");
   // start the server with the same node + tsx loader
   // the runner uses - never via `npx` (registry fallback) and never with a stdin
@@ -319,21 +319,11 @@ testAsync("Server: /health endpoint returns 200", async () => {
       probe.close(() => resolve(p));
     });
   });
-  const proc = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
-    cwd: PLUGIN_ROOT,
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: process.platform !== "win32",
-    // the server is never open; pin a token so the liveness probe authenticates.
-    // Keep the index database and the published address inside this test's temp
-    // dir so the run never touches the operator's home.
-    env: {
-      ...process.env,
-      ANS_SERVER_PORT: String(port),
-      ANS_SERVER_TOKEN: "plugin-test-token",
-      ANS_PROJECT_DB: join(tmpDir, "server-project-index.db"),
-      ANS_SERVER_REGISTRY: join(tmpDir, "server.json"),
-    },
-  });
+  // #351: the whole environment comes from the shared sandbox, durable database
+  // included. Redirecting only the index database and the published address left
+  // the service recording its lifetime in the operator's own ~/.ans/anysearch.db.
+  const { env } = serverSandbox(tmpDir, port, "plugin-test-token");
+  const proc = spawnServer(env);
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
   try {
     let ready = false;
