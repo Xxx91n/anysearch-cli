@@ -27,13 +27,12 @@ export interface ProviderFailureMetadata {
 }
 
 /**
- * One plain sentence per error class saying what to do next.
+ * One plain sentence per error class saying what to do next; `unknown` has
+ * none.
  *
- * Design: the wording lives only here — the suite derives its expected text
- * from this table and the MCP docs point here instead of restating the
- * sentences, so rewording is one edit and no copy can drift (#356). The suite
- * also requires the sentences to be pairwise distinct, because a copy is what
- * actually goes wrong: pointing one class at another's sentence has to fail.
+ * Design: these five sentences live only here — the tests and the MCP docs
+ * read this table instead of carrying a copy, so a reword is one edit. A copy
+ * is what actually goes wrong, so no two classes may share one sentence.
  */
 export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
   "quota-exhausted": "the key is fine but the plan is used up — top up or upgrade; retrying or swapping the key will not help",
