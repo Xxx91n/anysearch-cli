@@ -18,6 +18,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runChat } from "../src/commands/chat.js";
+import { createPersistentEngine } from "../src/db.js";
 
 const dir = mkdtempSync(join(tmpdir(), "ans-370-chat-"));
 mkdirSync(join(dir, ".ans"), { recursive: true });
@@ -41,6 +42,7 @@ const REMOVED = [
   "ANS_DOMAIN", "ANS_DOMAINS_DIR",
   "ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API",
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+  "EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY",
   // pi-ai reads these two as well, and any usable key would stop the model
   // resolver from consulting the credential file at all.
   "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
@@ -73,4 +75,27 @@ test("a broken credential file is reported once per `ans chat`", async () => {
   }
   const reports = err.split("not valid JSON").length - 1;
   assert.equal(reports, 1, `凭据文件的故障应当只说一次，实际说了 ${reports} 次:\n${err}`);
+});
+
+// The half the chat test cannot see: the search arms must take the caller's
+// parse, not read the file again behind it. The key below exists ONLY in the
+// handed-in result, so an arm that shows up as "user" proves the injection; the
+// file on disk is still the broken one, so a second read would also print its
+// fault here.
+test("the engine's search arms use the caller's parse, not a second read", () => {
+  const realErr = process.stderr.write.bind(process.stderr);
+  let err = "";
+  (process.stderr as any).write = (chunk: any) => { err += String(chunk); return true; };
+  let engine;
+  try {
+    engine = createPersistentEngine(undefined, {
+      domainDeclared: false,
+      credentialsFile: { bindings: [{ provider: "exa", endpoint: null, apiKey: "only-in-the-parsed-result" }] },
+    });
+  } finally {
+    (process.stderr as any).write = realErr;
+  }
+  assert.equal(engine.credentialSources?.exa, "user");
+  assert.equal(err.split("not valid JSON").length - 1, 0, `引擎不该自己去读那份坏文件:
+${err}`);
 });

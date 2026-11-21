@@ -49,13 +49,12 @@ export async function runChat(argv: string[]): Promise<number> {
   const active = resolveActiveDomain();
   const domainName = active.name;
 
-  // #370 Design: one parse for the whole command, handed to both consumers.
-  // chat is the only command that needs the user credential file for two
-  // different jobs — the search arms' keys and the model key — and parsing it
-  // at each printed the same fault twice. Whoever parses reports the file's own
-  // fault; neither downstream resolver reports it again. The model resolver also
-  // gets this `home`: its endpoint-mismatch warning names that path, so the read
-  // and the warning can never point at two different files.
+  // #370 Design: one parse here, handed to both consumers — chat used to read
+  // this file at the engine's search arms and again at the model resolver (when
+  // no model key was in the env), so one broken file printed its fault twice.
+  // Whoever parses reports it; neither downstream resolver reports it again.
+  // The model resolver also gets this `home`, because its endpoint-mismatch
+  // warning names that path.
   const configHome = resolveConfigHome();
   const credentialFile = readUserCredentials({ home: configHome });
   const credentialFault = credentialFileWarning(credentialFile);
