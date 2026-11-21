@@ -53,7 +53,9 @@ export async function runChat(argv: string[]): Promise<number> {
   // chat is the only command that needs the user credential file for two
   // different jobs — the search arms' keys and the model key — and parsing it
   // at each printed the same fault twice. Whoever parses reports the file's own
-  // fault; neither downstream resolver reports it again.
+  // fault; neither downstream resolver reports it again. Both consumers get the
+  // result WITH this `home` (the resolver's endpoint-mismatch warning names that
+  // path), so the read and the reports can never point at two different files.
   const configHome = resolveConfigHome();
   const credentialFile = readUserCredentials({ home: configHome });
   const credentialFault = credentialFileWarning(credentialFile);

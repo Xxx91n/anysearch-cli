@@ -23,31 +23,36 @@ const dir = mkdtempSync(join(tmpdir(), "ans-370-chat-"));
 mkdirSync(join(dir, ".ans"), { recursive: true });
 writeFileSync(join(dir, ".ans", "credentials.json"), "not json", "utf8");
 
-// A provider/model from the env is what makes the model resolver reach for the
-// credential file at all: with a model key in the env it never reads the file.
-const ENV_KEYS = [
-  "USERPROFILE", "HOME", "ANS_DB_PATH", "ANS_DOMAIN", "ANS_DOMAINS_DIR",
-  "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API",
+// One list per purpose, and the restore list is their union: a key added in one
+// place cannot leave the other behind.
+//
+// PINNED keeps this run on the temp root and gives the model resolver a
+// provider/model without a key — exactly the state that makes it consult the
+// credential file. REMOVED takes away everything that would let a resolver find
+// a key (or a domain setting) somewhere else instead.
+const PINNED: Record<string, string> = {
+  USERPROFILE: dir,
+  HOME: dir,
+  ANS_DB_PATH: join(dir, "anysearch.db"),
+  ANS_LLM_PROVIDER: "anthropic",
+  ANS_LLM_MODEL: "claude-sonnet-4-6",
+};
+const REMOVED = [
+  "ANS_DOMAIN", "ANS_DOMAINS_DIR",
+  "ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API",
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
-  // pi-ai also accepts these two, and any usable key would stop the model
+  // pi-ai reads these two as well, and any usable key would stop the model
   // resolver from consulting the credential file at all.
   "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
 ];
+const TOUCHED = [...Object.keys(PINNED), ...REMOVED];
 const previousEnv: Record<string, string | undefined> = {};
-for (const key of ENV_KEYS) previousEnv[key] = process.env[key];
-process.env.USERPROFILE = dir;
-process.env.HOME = dir;
-process.env.ANS_DB_PATH = join(dir, "anysearch.db");
-process.env.ANS_LLM_PROVIDER = "anthropic";
-process.env.ANS_LLM_MODEL = "claude-sonnet-4-6";
-delete process.env.ANS_DOMAIN;
-delete process.env.ANS_DOMAINS_DIR;
-for (const key of ["ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"]) {
-  delete process.env[key];
-}
+for (const key of TOUCHED) previousEnv[key] = process.env[key];
+Object.assign(process.env, PINNED);
+for (const key of REMOVED) delete process.env[key];
 
 test.after(() => {
-  for (const key of ENV_KEYS) {
+  for (const key of TOUCHED) {
     if (previousEnv[key] === undefined) delete process.env[key];
     else process.env[key] = previousEnv[key];
   }
