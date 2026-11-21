@@ -26,8 +26,14 @@ export interface ProviderFailureMetadata {
   providerBuildErrors: Record<string, string>;
 }
 
-/** One plain sentence per error class saying what to do next. */
-const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
+/**
+ * One plain sentence per error class saying what to do next; `unknown` has
+ * none.
+ *
+ * Design: these sentences live only here — the tests read this table and the
+ * MCP docs point here, instead of carrying a copy, so a reword is one edit.
+ */
+export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
   "quota-exhausted": "the key is fine but the plan is used up — top up or upgrade; retrying or swapping the key will not help",
   "permanent-auth": "no key is set, or the key is wrong or lacks permission — set a valid one",
   "transient": "the upstream had a temporary problem — retry in a moment",
