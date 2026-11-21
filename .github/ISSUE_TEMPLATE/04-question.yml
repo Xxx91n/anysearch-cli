@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        发问前可以先翻一下仓库里的 `README.zh-CN.md` 和 `docs/limitations.md`（在上一页也能直接点开）；没找到答案的话，把背景说清楚我们尽量帮着看。
+        发问前可以先翻一下仓库里的 `README.zh-CN.md` 和 `docs/limitations.md`；没找到答案的话，把背景说清楚我们尽量帮着看。
 
         **提醒**：贴配置或终端输出前，请先把 API Key、令牌以及本机家目录/用户名等敏感内容删掉或打码。
 
