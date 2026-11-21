@@ -8,7 +8,6 @@
 // bearer-token checks stay as they were.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -16,8 +15,8 @@ import { join } from "node:path";
 import { ProjectIndexStore } from "../src/index.js";
 import { resolveHookProject } from "../src/hooks/project-identity.js";
 import { resolveProjectContext } from "@anysearch-cli/store";
+import { serverSandbox, spawnServer } from "./server-sandbox.js";
 
-const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const TOKEN = "project-scope-token";
 
 const A_ROWS = [
@@ -204,21 +203,8 @@ test("plugin server: recall, index and policy require the explicit project", asy
   writeDomainToml(a, ["a.example"], ["deny.example"]);
   writeDomainToml(b, ["b.example"], []);
   const port = await freePort();
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
-  Object.assign(env, {
-    HOME: home,
-    USERPROFILE: home,
-    ANS_PROJECT_DB: join(home, "project-index.db"),
-    ANS_SERVER_REGISTRY: join(home, "server.json"),
-    ANS_SERVER_PORT: String(port),
-    ANS_SERVER_TOKEN: TOKEN,
-  });
-  const proc = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
-    cwd: PLUGIN_ROOT,
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: process.platform !== "win32",
-    env,
-  });
+  const { env } = serverSandbox(home, port, TOKEN);
+  const proc = spawnServer(env);
   const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
   const base = "http://127.0.0.1:" + port;
   const call = async (pathname: string, body: unknown) => {
