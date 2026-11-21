@@ -29,7 +29,8 @@ test("a full run runs the gate's own tests before pnpm", () => {
     const result = runCli(bin, { selfTest: true, gateTests: "scripts/test/preflight-plan.test.mjs" });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /running the gate's own tests/);
-    assert.match(result.stdout, /ℹ pass/);
+    // TAP when stdout is a pipe, spec in a terminal: match a test name.
+    assert.match(result.stdout, /a lower package runs itself/);
   });
 });
 
