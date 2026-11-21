@@ -22,6 +22,14 @@ import {
   writeUserLlmConfig,
 } from "../config-llm";
 
+/**
+ * The one voice for a credential file that could not be read: callers print this
+ * and hand the same result to the resolver, so the fault is said once (#357).
+ */
+function printCredentialFault(file: CredentialFileContents): void {
+  if (file.error) console.log("Credentials file: BROKEN - " + file.error);
+}
+
 /** Which stored entries exist for this provider, as plain words (never a key). */
 function storedBindings(file: CredentialFileContents, provider: string): string[] {
   return file.bindings
@@ -59,11 +67,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Credentials: " + credentialsPath(home) + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
-    if (credentialFile.error) {
-      // This line is the one place the command says the file is broken: the
-      // resolver was handed the same result and stays quiet about it (#357).
-      console.log("Credentials file: BROKEN - " + credentialFile.error);
-    }
+    printCredentialFault(credentialFile);
     for (const [name, models] of Object.entries(MODELS)) {
       const stored = storedBindings(credentialFile, name);
       // Three facts, three outcomes: the provider's own env var is set, its key
@@ -145,9 +149,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("---");
     const credentialFile = readUserCredentials({ home });
     const cfg = resolveLlmConfig({ home, credentialsFile: credentialFile });
-    if (credentialFile.error) {
-      console.log("Credentials file: BROKEN - " + credentialFile.error);
-    }
+    printCredentialFault(credentialFile);
     for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
       const envName = envKeySet(name);
       const fromStore = credentialFile.bindings.some((b) => b.provider === name);

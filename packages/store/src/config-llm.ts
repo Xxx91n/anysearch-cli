@@ -108,16 +108,14 @@ export interface ResolveLlmOpts {
   credentials?: boolean;
   /**
    * An already-parsed credential file (#357). Pass the one result of
-   * `readUserCredentials` and this resolver stops reading the file again, and
-   * stops warning about the file's own fault: the caller reports that fault once
-   * for every consumer, so no one has to match error text. The key lookup and
-   * its endpoint-mismatch warning still run on this same result. `credentials:
-   * false` keeps its meaning: no credential file at all.
+   * `readUserCredentials` and this resolver uses it instead of reading the file
+   * again; it also stops warning about the file's own fault. The key lookup and
+   * its endpoint-mismatch warning still run on this same result, and
+   * `credentials: false` keeps its meaning: no credential file at all.
    *
-   * Design: a supplied result silences this resolver's own read and its
-   * file-level warning - the file is parsed once and its fault is said once, by
-   * the caller, so nothing here has to recognize a repeat. The endpoint-mismatch
-   * warning still comes from the lookup on this same result.
+   * Design: the caller that parsed the file owns its fault — the parsed result is
+   * what makes two reports the same fault, so nothing here has to recognize a
+   * repeat by matching text.
    */
   credentialsFile?: CredentialFileContents;
 }

@@ -324,9 +324,12 @@ export interface ResolvedSearchCredentials {
  * Design: one parse of the user credential file per command, and the caller that
  * did the parse owns the fault. A resolver given the result neither re-reads the
  * file nor repeats the fault, so nothing has to decide "is this the same fault as
- * the line above?" - matching error text makes one module depend on another's
+ * the line above?" — matching error text makes one module depend on another's
  * wording, and matching the path is a second guess at identity. The parsed
  * result itself is what makes it the same fault.
+ *
+ * `filePath` only applies when this resolver reads the file itself: a supplied
+ * `credentialsFile` already settled which file that was.
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -339,8 +342,8 @@ export function resolveSearchCredentials(
   const file = opts.credentialsFile ?? readUserCredentials({ home, filePath: opts.filePath });
   const warnings: string[] = [];
   // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
-  // stderr, `[credentials] ` in doctor, `[WARN] ` in `ans auth status`). Tagging
-  // here would couple them to this string and double the prefix.
+  // stderr, `[WARN] ` in `ans auth status`). Tagging here would couple them to
+  // this string and double the prefix.
   const fault = credentialFileWarning(file);
   if (!opts.credentialsFile && fault) warnings.push(fault);
   const out: ResolvedSearchCredentials = { warnings };
