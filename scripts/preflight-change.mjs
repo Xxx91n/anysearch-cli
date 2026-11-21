@@ -1,7 +1,9 @@
 // Which files a commit or push carries: the index for a commit, git's refs on
 // stdin for a push, origin/HEAD plus the working tree for a plain run. A reader
-// that cannot name the change returns null or PUSH_UNKNOWN, and the caller runs
-// the whole suite.
+// that cannot read the change returns null and the caller runs the whole suite;
+// pushedFiles also returns null when stdin carried no refs, and the caller looks
+// at the working tree instead. An unreadable ref returns PUSH_UNKNOWN, and the
+// caller runs the whole suite.
 
 import { spawnSync } from "node:child_process";
 

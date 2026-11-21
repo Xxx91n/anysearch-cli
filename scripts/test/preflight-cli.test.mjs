@@ -94,6 +94,15 @@ test("a pushed ref runs the gate on the files it carries", () => {
   });
 });
 
+test("an unreadable push ref runs the full suite", () => {
+  withWorkspace({}, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--pushed"], { input: "not a ref line" });
+    assert.equal(result.status, 1); // the fixture's fake pnpm exits 1
+    assert.match(result.stdout, /full suite: could not read the pushed commits/);
+    assert.match(result.stdout, /pnpm ran/);
+  });
+});
+
 test("no refs on stdin falls back to the working tree and says so", () => {
   withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: "" });

@@ -48,8 +48,10 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
 /**
  * Read the workspace packages and their workspace-internal dependencies.
  * Missing or unreadable pnpm-workspace.yaml reads as an empty list. A manifest
- * that cannot be read or parsed returns null, so the caller runs the full suite
- * instead of silently dropping a package and everything that depends on it.
+ * that cannot be read or parsed makes this return null, so the caller runs the
+ * full suite instead of silently dropping a package and everything that depends
+ * on it. A directory without a package.json, or a manifest without a name, is
+ * not a package: it is skipped, and a change under it runs the full suite.
  *
  * @param {string} root
  * @returns {{ name: string, dir: string, deps: string[] }[] | null}
@@ -74,12 +76,13 @@ function readManifest(file) {
   } catch (error) {
     return error.code === "ENOENT" ? null : UNREADABLE;
   }
+  let manifest;
   try {
-    const manifest = JSON.parse(text);
-    return typeof manifest?.name === "string" && manifest.name !== "" ? manifest : UNREADABLE;
+    manifest = JSON.parse(text);
   } catch {
     return UNREADABLE;
   }
+  return typeof manifest?.name === "string" && manifest.name !== "" ? manifest : null;
 }
 
 function withDependents(touched, packages) {

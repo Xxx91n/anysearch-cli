@@ -236,6 +236,32 @@ test("a broken package manifest sends the gate to the full suite", () => {
   }
 });
 
+test("a package.json that is a directory sends the gate to the full suite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-eisdir-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
+    mkdirSync(join(dir, "apps", "dsh-plugin", "package.json"), { recursive: true });
+    assert.equal(readWorkspace(dir), null);
+    assert.equal(planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]).reason, "workspace unreadable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a directory with no package.json is not a package", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nopkg-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "tools/cli"\n');
+    mkdirSync(join(dir, "tools", "cli"), { recursive: true });
+    assert.deepEqual(readWorkspace(dir), []);
+    const plan = planPreflight(dir, ["tools/cli/src/index.ts"]);
+    assert.equal(plan.mode, "full");
+    assert.equal(plan.reason, "no workspace packages found");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function write(dir, file, content) {
   const target = join(dir, file);
   mkdirSync(dirname(target), { recursive: true });
