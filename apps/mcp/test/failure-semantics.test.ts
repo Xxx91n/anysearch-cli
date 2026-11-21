@@ -21,8 +21,9 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import { createMcpToolState } from "../src/tool-state.js";
+import { PROVIDER_ERROR_HINTS } from "../src/tools/failure.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
-import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
+import type { FusedEnvelope, AttributionReport, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -53,6 +54,21 @@ type Handler = (args: unknown) => Promise<any>;
 
 // Empty resolver roots created below, removed in main()'s finally.
 const failureRoots: string[] = [];
+
+/**
+ * The sentence for one class, read from the table instead of copied here so a
+ * reworded hint never needs a test edit (#356). A class without a sentence is
+ * a broken fixture, not a silent skip.
+ */
+function hintFor(cls: ProviderErrorClass): string {
+  const sentence = PROVIDER_ERROR_HINTS[cls];
+  if (!sentence) throw new Error("PROVIDER_ERROR_HINTS has no sentence for " + cls);
+  return sentence;
+}
+
+const QUOTA_SENTENCE = hintFor("quota-exhausted");
+const TRANSIENT_SENTENCE = hintFor("transient");
+const AUTH_SENTENCE = hintFor("permanent-auth");
 
 function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
@@ -421,32 +437,32 @@ async function main() {
     }
 
     // ---- 13. An error class travels with its remedy (#294) ----
-    // "tavily=quota-exhausted" is a machine tag; the reader cannot tell that
-    // the account owner has to top up. The plain sentence rides beside it.
+    // "tavily=quota-exhausted" is a machine tag; the reader cannot tell what
+    // the account owner has to do about it. The plain sentence rides beside it.
     {
       const res = await captureHandlers(makeEngine(async () => quotaAllFailedEnvelope())).search_web({ query: "x" });
       assert(res?.isError === true, "quota all-failed: isError true");
       const text = String(res?.content?.[0]?.text);
       assert(text.includes("tavily=quota-exhausted"), "quota all-failed: still names the class");
       assert(
-        text.includes("tavily: the key is fine but the plan is used up"),
-        "quota all-failed: text says whose move it is (top up or upgrade)",
+        text.includes("tavily: " + QUOTA_SENTENCE),
+        "quota all-failed: text carries that class's sentence in full",
       );
       assert(!text.includes("{"), "quota all-failed: text is not a JSON payload");
       assert(res?.structuredContent === undefined, "quota all-failed: no structuredContent");
     }
 
     // Two failed arms keep their hints apart: each hint reads "id: sentence",
-    // so the join separator must not look like part of the sentence.
+    // so the join separator must not look like part of the sentence. Comparing
+    // the whole tail also pins the order and the closing period.
     {
       const res = await captureHandlers(makeEngine(async () => allFailedEnvelope(["tavily", "exa"]))).search_web({
         query: "x",
       });
       const text = String(res?.content?.[0]?.text);
-      assert(text.includes("tavily: the upstream had a temporary problem"), "two arms: first hint present");
       assert(
-        text.includes(" | exa: no key is set, or the key is wrong or lacks permission"),
-        "two arms: second hint separated from the first",
+        text.endsWith(". tavily: " + TRANSIENT_SENTENCE + " | exa: " + AUTH_SENTENCE + "."),
+        "two arms: text ends with one `id: sentence` per arm in providersFailed order",
       );
     }
 
@@ -455,12 +471,12 @@ async function main() {
       assert(res?.isError !== true, "quota partial: isError is not true");
       const doc = JSON.parse(String(res?.content?.[0]?.text));
       assert(
-        String(doc.providerErrorHints?.tavily ?? "").includes("top up or upgrade"),
-        "quota partial: content JSON carries the remedy",
+        doc.providerErrorHints?.tavily === QUOTA_SENTENCE,
+        "quota partial: content JSON carries exactly that class's sentence",
       );
       assert(
-        String(res?.structuredContent?.providerErrorHints?.tavily ?? "").includes("top up or upgrade"),
-        "quota partial: structuredContent carries the remedy",
+        res?.structuredContent?.providerErrorHints?.tavily === QUOTA_SENTENCE,
+        "quota partial: structuredContent carries exactly that class's sentence",
       );
       assert(doc.providerErrorClasses?.tavily === "quota-exhausted", "quota partial: class tag unchanged");
     }
@@ -475,6 +491,26 @@ async function main() {
         res?.structuredContent?.providerErrorHints === undefined,
         "unknown class: structuredContent carries no hint",
       );
+    }
+
+    // Reading the expected text from the table cannot catch a wrong entry on
+    // its own: if the table changes, the expectation moves with it. This
+    // invariant never reads the wording. Every class that has a sentence must
+    // own it alone, so copying one class's sentence onto another — the
+    // realistic mistake, and the one the acceptance criteria name — collapses
+    // two classes into one group and fails here. A mutual swap stays
+    // undetected; catching that would mean hard-coding the sentences again.
+    {
+      const classesBySentence = new Map<string, ProviderErrorClass[]>();
+      for (const [cls, sentence] of Object.entries(PROVIDER_ERROR_HINTS) as Array<
+        [ProviderErrorClass, string | undefined]
+      >) {
+        if (!sentence) continue;
+        classesBySentence.set(sentence, [...(classesBySentence.get(sentence) ?? []), cls]);
+      }
+      const shared = [...classesBySentence.values()].filter((classes) => classes.length > 1);
+      const detail = shared.map((classes) => classes.join(" + ")).join("; ");
+      assert(shared.length === 0, "hint sentences are pairwise distinct (shared by: " + detail + ")");
     }
   } finally {
     for (const k of Object.keys(saved)) {
