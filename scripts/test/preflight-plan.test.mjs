@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
 import { planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
-// The same shape as the real workspace: four apps on top, three shared
-// packages below, embedding as a peer of store and the three apps.
+// The same shape as the real workspace: four apps on top, four shared
+// packages below, embedding as a peer of store and the apps.
 const MANIFESTS = {
   "packages/embedding": { name: "@anysearch-cli/embedding" },
   "packages/retriever": { name: "@anysearch-cli/retriever" },
@@ -150,6 +150,13 @@ test("the real workspace: a retriever change selects all four apps", () => {
   }
 });
 
+test("the real workspace: an mcp change runs cli, which bundles mcp source", () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const plan = planPreflight(repo, ["apps/mcp/src/index.ts"]);
+  assert.equal(plan.mode, "incremental");
+  assert.ok(plan.packages.includes("@anysearch-cli/cli"));
+});
+
 test("the workspace reader picks up both directions of the dependency graph", () => {
   const packages = readWorkspace(root);
   assert.equal(packages.length, 8);
@@ -165,6 +172,54 @@ test("the workspace reader picks up both directions of the dependency graph", ()
     ],
   );
   assert.deepEqual(packages.find((pkg) => pkg.name === "@anysearch-cli/embedding").deps, []);
+});
+
+test("a workspace with no pnpm-workspace.yaml falls back to the full suite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-empty-"));
+  try {
+    assert.deepEqual(readWorkspace(dir), []);
+    const plan = planPreflight(dir, ["apps/mcp/src/index.ts"]);
+    assert.equal(plan.mode, "full");
+    assert.equal(plan.reason, "no workspace packages found");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable pnpm-workspace.yaml reads as no workspace, not a crash", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-unreadable-"));
+  try {
+    // A directory where the file belongs: reading it throws, which must not escape.
+    mkdirSync(join(dir, "pnpm-workspace.yaml"));
+    assert.deepEqual(readWorkspace(dir), []);
+    assert.equal(planPreflight(dir, ["apps/mcp/src/index.ts"]).mode, "full");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a workspace: alias dependency names the package it points at", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-alias-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "packages/*"\n');
+    write(dir, "packages/real/package.json", JSON.stringify({ name: "@anysearch-cli/real" }));
+    write(
+      dir,
+      "packages/alias/package.json",
+      JSON.stringify({
+        name: "@anysearch-cli/alias",
+        dependencies: { "local-alias": "workspace:@anysearch-cli/real@*" },
+      }),
+    );
+    const packages = readWorkspace(dir);
+    assert.deepEqual(packages.find((pkg) => pkg.name === "@anysearch-cli/alias").deps, ["@anysearch-cli/real"]);
+    // The alias points at the real package, so changing real runs alias too.
+    assert.deepEqual(planPreflight(dir, ["packages/real/src/index.ts"]).touched, ["@anysearch-cli/real"]);
+    const plan = planPreflight(dir, ["packages/real/src/index.ts"]);
+    assert.deepEqual(plan.packages, ["@anysearch-cli/alias", "@anysearch-cli/real"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function write(dir, file, content) {

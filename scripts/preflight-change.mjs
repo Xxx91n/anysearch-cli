@@ -1,15 +1,6 @@
-// Which files a commit or push carries. The pre-push hook hands git's refs on
-// stdin; the pre-commit hook asks for the index. A plain run compares against
-// origin/HEAD and adds the working tree, so a dry run sees what is still local.
-//
-// Design: a commit reads only the index, and an unreadable change falls back
-// to the whole suite — a scratch file in the tree should not turn every commit
-// into a full run, but under-selecting passes silently, which is worse than
-// running too much.
-//
-// A reader that cannot answer returns null; the caller decides what to do.
-// These lists pick which packages run; the tests themselves run on the working
-// tree, so an uncommitted edit can differ from the commit or the pushed refs.
+// Which files a commit or push carries: the index for a commit, git's refs on
+// stdin for a push, origin/HEAD plus the working tree for a plain run. A reader
+// that cannot name the change returns null, and the caller runs the whole suite.
 
 import { spawnSync } from "node:child_process";
 

@@ -2,13 +2,15 @@
 // to run because they use one of them.
 //
 // Design: the gate runs the changed packages plus every package that depends
-// on them, and falls back to the whole suite outside apps/ and packages/ —
-// turbo's --filter pulls only upstream tests, so filtering to one package never
-// ran apps/cli after a kernel change (the hole the always-full gate was
-// reacting to). Root files and docs fall back too, because tests in
-// apps/plugin and packages/kernel read README, GLOSSARY.md and docs/.
+// on them. A change outside apps/ and packages/ runs the whole suite: turbo's
+// --filter only pulls upstream tests, so a filtered run skipped apps/cli's
+// build after a kernel change. Root files have no single owner — the lockfile,
+// turbo.json and scripts/ change what every package runs — and docs ride along
+// rather than split the rule.
 //
-// A file belongs to the package whose directory contains it.
+// A file belongs to the package whose directory contains it. An unreadable
+// workspace (no pnpm-workspace.yaml, a directory in its place, a permission
+// error) reads as no packages, which sends the caller to the full suite.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -102,11 +104,16 @@ function packageForFile(file, packages) {
 // undiscovered, which falls back to the full suite.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
-  if (!fs.existsSync(file)) return [];
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
 
   const patterns = [];
   let inPackages = false;
-  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+  for (const line of text.split(/\r?\n/)) {
     if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
     if (!/^\s/.test(line)) {
       inPackages = line.trim() === "packages:";
@@ -132,7 +139,13 @@ function workspaceDirectories(root, patterns) {
     const head = glob[1];
     const base = path.join(root, head);
     if (!isDirectory(base)) continue;
-    for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = fs.readdirSync(base, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const dir = head === "" ? entry.name : `${head}/${entry.name}`;
       if (fs.existsSync(path.join(root, dir, "package.json"))) dirs.add(dir);

@@ -23,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
+import { commandArgs } from "./preflight-command.mjs";
 import { planPreflight } from "./preflight-plan.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,13 +50,13 @@ if (plan.mode === "full") {
   console.log("[preflight] turbo also tests what these packages depend on");
 }
 
-const runArgs =
-  plan.mode === "incremental"
-    ? ["exec", "turbo", "run", "test", "--concurrency=2", ...plan.packages.map((name) => `--filter=${name}`)]
-    : ["test"];
+const runArgs = commandArgs(plan);
 
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
+  if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
+    console.log(`[preflight] dry run, would also run the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  }
   process.exit(0);
 }
 
@@ -67,12 +68,10 @@ const started = Date.now();
 // fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
 // re-enter the whole suite.
 if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
-  console.log("[preflight] running the gate's own tests");
+  console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
   const gateEnv = { ...process.env };
   delete gateEnv.NODE_TEST_CONTEXT;
-  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, encoding: "utf8" });
-  if (gate.stdout) process.stdout.write(gate.stdout);
-  if (gate.stderr) process.stderr.write(gate.stderr);
+  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, stdio: "inherit" });
   if (gate.status !== 0) {
     console.error("[preflight] blocked: the gate's own tests failed");
     process.exit(gate.status ?? 1);
