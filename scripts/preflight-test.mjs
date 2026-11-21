@@ -211,8 +211,16 @@ function corepackHome(env, home) {
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
+// fs.writeSync, not console.error: a signal handler may exit right after, and
+// a piped stderr would lose the line that says where the evidence is.
 function reportKeptTestHome({ home }) {
-  console.error(`[preflight] test home kept for inspection: ${home}`);
+  writeStderr(`[preflight] test home kept for inspection: ${home}`);
+}
+
+function writeStderr(line) {
+  try {
+    fs.writeSync(2, `${line}\n`);
+  } catch {}
 }
 
 async function runGateTests() {
@@ -253,7 +261,7 @@ function stopChild(child, signal) {
     // signal handler — the gate would die before it can keep the home.
     if (error.code === "ESRCH") return;
     if (!(error.code === "EPERM" && process.platform === "darwin")) {
-      console.error(`[preflight] could not signal the test process group: ${error.message}`);
+      writeStderr(`[preflight] could not signal the test process group: ${error.message}`);
       process.exit(interrupted || 1);
     }
   }
@@ -265,7 +273,7 @@ function stopChild(child, signal) {
       if (error.code === "ESRCH") return;
       // The group cannot be stopped, so waiting on its close would hang the
       // gate forever; say so and leave with the interrupt code.
-      console.error(`[preflight] could not stop the test process group: ${error.message}`);
+      writeStderr(`[preflight] could not stop the test process group: ${error.message}`);
       process.exit(interrupted || 1);
     }
   }, 5000).unref();
