@@ -3,7 +3,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
+import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // B1: the domains-dir resolution chain for this CLI.
@@ -42,7 +42,16 @@ export function createPersistentEngine(
   // #306: `domainDeclared: false` says the name is the caller's convention
   // default, so a missing TOML keeps the old no-filtering fallback instead of
   // stopping the command. Omitted means the name is a real declaration.
-  opts?: { domainDeclared?: boolean },
+  opts?: {
+    domainDeclared?: boolean;
+    /**
+     * #370: the caller's one parse of the user credential file. When given, the
+     * search arms take their keys from this result and the kernel never reads
+     * the file itself, so that caller can hand the same bytes to another
+     * resolver. Omitted means this engine parses the file, as it always has.
+     */
+    credentialFile?: CredentialFileContents;
+  },
 ): CompositionResult {
   const dbPath = resolveDbPath();
   // Owner-only permissions (dir 0700, file 0600) — CWE-732 mitigation.
@@ -53,10 +62,15 @@ export function createPersistentEngine(
   // #301: search keys may live in the user credential file, not only in the
   // process env — a GUI host inherits no shell env, so resolving here is what
   // makes "enter the key once" actually reach the real search clients.
+  // #370: when the caller already parsed that file, the arms take this result
+  // instead, so the command keeps one read and one report of its fault.
+  const credentialFile = opts?.credentialFile;
   const result = createEngine(domain, {
     dbPath,
     domainsDirs: domainSearchDirs(),
-    searchCredentials: resolveSearchCredentials,
+    searchCredentials: credentialFile
+      ? (env) => resolveSearchCredentials(env, { credentialsFile: credentialFile })
+      : resolveSearchCredentials,
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
   });
   registerTeardown(() => {
