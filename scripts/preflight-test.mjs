@@ -1,19 +1,20 @@
 #!/usr/bin/env node
-// Preflight gate: before a commit or push, run the tests the change can break.
-// The change set comes from git (staged files for a commit, the pushed refs for
-// a push, the working tree for a plain run); scripts/preflight-plan.mjs turns
+// Preflight gate: before a push, run the tests the change can break.
+// scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
 // it into a package list. A change outside apps/ and packages/ has no clear
 // owner, so it falls back to the full suite.
+//
+// Design: no commit gate — a commit runs no tests, so fixing a message or
+// splitting a commit costs no test run. A push runs this gate and a merge waits
+// for one full run. See AGENTS.md.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
 //
-// Called by .git/hooks/pre-commit-user (with --staged) and by
-// .git/hooks/pre-push (with --pushed). GitButler's managed pre-commit chains to
-// the former; `but push` and `git push` both run the latter. See AGENTS.md.
+// Called by the pre-push hook (with --pushed); `but push` and `git push` both
+// run that hook. See AGENTS.md.
 //
 //   node scripts/preflight-test.mjs            # everything not on origin/HEAD, plus the tree
-//   node scripts/preflight-test.mjs --staged   # pre-commit: the staged files
 //   node scripts/preflight-test.mjs --pushed   # pre-push: the refs on stdin
 //   node scripts/preflight-test.mjs --full     # always run the whole suite
 //   node scripts/preflight-test.mjs --dry-run  # print the plan, run nothing
@@ -22,13 +23,23 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
+import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { planPreflight } from "./preflight-plan.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
+
+// Design: the old commit hook gets a notice, not a test run — a clone that
+// still has pre-commit-user calls this with --staged and nothing else. Name the
+// file to delete and exit 0, so the commit goes through; the install command in
+// AGENTS.md removes the file anyway. Any other argument list is a real run, so
+// `--staged --full` still runs the suite instead of being swallowed.
+if (args.length === 1 && args[0] === "--staged") {
+  console.log("[preflight] no commit gate: delete the old pre-commit-user hook (git rev-parse --git-path hooks); pushes still run this gate");
+  process.exit(0);
+}
 
 const change = readChange();
 if (change.note) console.log(`[preflight] ${change.note}`);
@@ -125,7 +136,7 @@ function readChange() {
     if (files === null) return { unknown: "git could not name the change" };
     return { files, note: "no refs on stdin, looked at the working tree instead" };
   }
-  const files = args.includes("--staged") ? stagedFiles(root) : localFiles(root);
+  const files = localFiles(root);
   return files === null ? { unknown: "git could not name the change" } : { files };
 }
 

@@ -4,19 +4,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { localFiles, pushedFiles, stagedFiles, PUSH_UNKNOWN } from "../preflight-change.mjs";
+import { localFiles, pushedFiles, PUSH_UNKNOWN } from "../preflight-change.mjs";
 
 const ZEROS = "0".repeat(40);
-
-test("staged files come from the index, not the working tree", () => {
-  withRepo((root) => {
-    write(root, "apps/mcp/src/index.ts", "two\n");
-    write(root, "packages/kernel/src/index.ts", "two\n");
-    git(root, ["add", "apps/mcp/src/index.ts"]);
-
-    assert.deepEqual(stagedFiles(root), ["apps/mcp/src/index.ts"]);
-  });
-});
 
 test("a push reports the files its refs add", () => {
   withRepo((root) => {
@@ -53,10 +43,9 @@ test("no origin/HEAD asks for the full suite", () => {
   });
 });
 
-test("outside a git repo every reader asks for the full suite", () => {
+test("outside a git repo the reader asks for the full suite", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nogit-"));
   try {
-    assert.equal(stagedFiles(dir), null);
     assert.equal(localFiles(dir), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
