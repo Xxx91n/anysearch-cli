@@ -24,7 +24,7 @@
 
 ```bash
 npm i -g @anysearch-cli/cli
-ans doctor                                          # 自检：key、数据库路径、域配置解析、信息源是否就绪
+ans doctor                                          # 分层自检：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # 只在 docs 域里搜
 
@@ -43,13 +43,13 @@ npm i -g @anysearch-cli/embedding
 装好之后（npm 或 pnpm 都行），先确认它真的激活了，再给已有记录补向量：
 
 ```bash
-ans doctor                    # "vector arm (present ...)" 表示已激活
+ans doctor                    # 「vector arm：present …」表示已激活
 ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模型（约 130 MB）
 ```
 
 - 模型第一次使用时从 huggingface.co 下载，缓存在 `~/.ans/models`
 （可以用 `ANYSEARCH_MODEL_CACHE` 改位置）。
-- 离线机器可以从联网机器拷贝已经填好的缓存目录。卸载这个包后，CLI 会退回只用 FTS，不会崩，`ans doctor` 会把这一项标成 SKIP。
+- 离线机器可以从联网机器拷贝已经填好的缓存目录。卸载这个包后，CLI 会退回只用 FTS，不会崩，`ans doctor` 会把这一项标成未配置（不是失败）。
 
 ## 环境要求
 

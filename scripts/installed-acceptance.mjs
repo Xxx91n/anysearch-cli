@@ -592,25 +592,25 @@ async function main() {
     const Database = createRequire(join(ROOT, "apps", "mcp", "package.json"))("better-sqlite3");
 
     const nm = join(prefix, "node_modules");
-    // 抬头写在这里而不是开头：带 ANS_ACC_TARBALLS 时装的是别处打好的包，版本
-    // 只能从装进去的那一份读，不能从检出里读。
-    // 读不到也不能在这里抛：装包那步挂了已经记过 FAIL，这里再抛就整轮死在开头，
-    // 后面的检查一条都不跑，也拼不出「过了几项、挂了几项」。
-    // 没有版本号也算读不出来：只判文件在不在，会在 package.json 存在但没有
-    // version 时打出一行「@undefined」，而这条抬头存在的意义就是「验的是哪一版」。
+    // 装包那步挂了也别在这里抛：上面已经记过 FAIL，这里再抛就把整轮拦腰砍断。
     const installedPkg = join(nm, "@anysearch-cli", "cli", "package.json");
     let installedVersion = null;
+    let versionProblem = "文件不在";
     if (existsSync(installedPkg)) {
       try {
         const parsed = JSON.parse(readFileSync(installedPkg, "utf8"));
         if (typeof parsed?.version === "string" && parsed.version.trim() !== "") {
           installedVersion = parsed.version.trim();
+        } else {
+          versionProblem = "没有 version 字段";
         }
-      } catch {
-        // 读不成 JSON 一样是「读不出来」，交给下面那条 FAIL。
+      } catch (error) {
+        versionProblem = error instanceof Error ? error.message : String(error);
       }
     }
-    if (installedVersion === null) check(false, "读得出装进去的产品版本", installedPkg);
+    if (installedVersion === null) {
+      check(false, "读得出装进去的产品版本", installedPkg + " — " + versionProblem);
+    }
     printAcceptanceHeader({
       product: "anysearch-cli",
       version: installedVersion ?? "读不出来",

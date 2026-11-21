@@ -384,10 +384,19 @@ async function runHeadlessScenario(ctx) {
 async function main() {
   must(zlib.zstdDecompressSync, "this Node cannot decode zstd; Node 22.15+ is required");
 
-  // 这一轮装的是 apps/dsh-plugin，版本就读它，不读 apps/cli 的。
-  const pluginVersion = JSON.parse(
-    readFileSync(join(REPO, "apps", "dsh-plugin", "package.json"), "utf8"),
-  ).version;
+  // 这一轮装的是 apps/dsh-plugin，版本就读它；读不出来也要让车道跑起来。
+  const pluginPkg = join(REPO, "apps", "dsh-plugin", "package.json");
+  let pluginVersion = "读不出来";
+  try {
+    const parsed = JSON.parse(readFileSync(pluginPkg, "utf8"));
+    if (typeof parsed?.version === "string" && parsed.version.trim() !== "") pluginVersion = parsed.version.trim();
+  } catch {
+    // 下面记一条 FAIL，抬头照实写。
+  }
+  if (pluginVersion === "读不出来") {
+    exitCode = 1;
+    console.error(`[FAIL] 读得出被测包的版本 — ${pluginPkg}`);
+  }
   printAcceptanceHeader({ product: "anysearch-cli/dsh-plugin", version: pluginVersion });
 
   const dshBin = process.env.DSH_BIN || "dsh";
@@ -546,7 +555,7 @@ async function main() {
   );
 
   console.log("");
-  console.log(`acceptance complete: ${results.length} checks, all passed`);
+  console.log(`acceptance complete: ${results.length} checks, ${exitCode === 0 ? "all passed" : "see the FAIL lines above"}`);
 }
 
 function sessionIsListening(port) {

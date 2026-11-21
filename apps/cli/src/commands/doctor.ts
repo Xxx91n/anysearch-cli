@@ -19,6 +19,7 @@ import {
   preMigrationBackupPath,
   preMigrationRecordPath,
   readMigrationStatus,
+  type MigrationLayoutStatus,
   readUserCredentials,
   resolveConfigHome,
   resolveSearchCredentials,
@@ -35,7 +36,6 @@ import { computePlan } from "../host-wiring/plan";
 import { findInterrupted, wiringRoot } from "../host-wiring/journal";
 import { readSwitchHistory } from "../upgrade-record";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 
 declare const __PACKAGE_VERSION__: string | undefined;
@@ -105,7 +105,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
 
   const report = new DiagReport("ans", PKG_VERSION);
   const cwd = process.cwd();
-  const home = homedir();
+  // 一份家目录走到底：凭据、配置、宿主接线都从同一个根算，别一半读到临时家目录。
+  const configHome = resolveConfigHome();
   const identity = installedProduct();
 
   // ── 安装层 ────────────────────────────────────────────────────────────
@@ -178,7 +179,6 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
 
   // ── 能力层 ────────────────────────────────────────────────────────────
-  const configHome = resolveConfigHome();
   const credentials = resolveSearchCredentials(process.env, { home: configHome });
   {
     // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
@@ -205,17 +205,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         // 原始报错一个字都不打：构造器手里就有 key，运行时报错可能把它带出来
         // （Node 的 "Headers.append: <value> is an invalid header value"）。
         const configured = Boolean(credentials[id]);
-        const fault = classifyProviderBuildError(error);
+        let detail: string;
+        if (!configured) detail = "没配 key，构造器会拒；配好了才会用";
+        else if (classifyProviderBuildError(error) === "credential")
+          detail = "配了 key，但构造器没建起来：key 可能格式不对或服务端不认。原始报错不打印，免得把 key 带出来";
+        else detail = "构造器出了意外的错。原始报错不打印，免得把 key 带出来";
         report.add({
           layer: "capability",
           name: `provider ${id}`,
           state: configured ? "failed" : "unconfigured",
           mode: "offline",
-          detail: configured
-            ? fault === "credential"
-              ? "配了 key，但构造器没建起来：key 可能格式不对或服务端不认。原始报错不打印，免得把 key 带出来"
-              : "构造器出了意外的错。原始报错不打印，免得把 key 带出来"
-            : "没配 key，构造器会拒；配好了才会用",
+          detail,
         });
       }
     }
@@ -351,6 +351,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         });
         continue;
       }
+      // 只有 endpoint、没有 key 也算没配：install-smoke 把 arm 指到死端口时就是这种现场。
+      if (!entry.apiKey) {
+        report.add({
+          layer: "capability",
+          name: `搜索源 ${provider}`,
+          state: "unconfigured",
+          mode: "offline",
+          detail: "endpoint 设了，但没有 key；这个源不会参与检索",
+        });
+        continue;
+      }
       report.add({
         layer: "capability",
         name: `搜索源 ${provider}`,
@@ -361,7 +372,15 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     }
   }
   {
-    const llm = resolveLlmConfig({ cwd, home, env: process.env, warn: () => {} });
+    // warn 是这个解析器唯一说「你那份配置有问题」的出口（TOML 坏了、[llm] 不是表、
+    // 值不认、文件读不出来）。咽掉它，doctor 就会把「配坏了」说成「没配」。
+    const configWarnings: string[] = [];
+    const llm = resolveLlmConfig({
+      cwd,
+      home: configHome,
+      env: process.env,
+      warn: (msg) => configWarnings.push(msg),
+    });
     const configured = Boolean(llm.provider && llm.model);
     report.add({
       layer: "capability",
@@ -379,6 +398,15 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       mode: "offline",
       detail: llm.apiKey ? `有（来源：${llm.sources.apiKey ?? "?"}）` : "没配；模型调用会失败（ans auth 配）",
     });
+    for (const warning of configWarnings) {
+      report.add({
+        layer: "capability",
+        name: "配置文件",
+        state: "failed",
+        mode: "offline",
+        detail: warning,
+      });
+    }
     report.add({
       layer: "capability",
       name: "真实模型调用",
@@ -420,23 +448,25 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       report.add({
         layer: "capability",
         name: "领域 skills.active",
-        state: "ready",
+        state: schema.skills.active.length > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: schema.skills.active.join(",") || "none",
+        detail: schema.skills.active.join(",") || "这个域没有启用技能",
       });
       report.add({
         layer: "capability",
         name: "领域 hooks.toolWhitelist",
-        state: "ready",
+        state: schema.hooks.toolWhitelist.length > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: `${schema.hooks.toolWhitelist.length} 个工具`,
+        detail: schema.hooks.toolWhitelist.length > 0
+          ? `${schema.hooks.toolWhitelist.length} 个工具`
+          : "没限定工具；hooks 开着时会拦下所有工具",
       });
       report.add({
         layer: "capability",
         name: "领域 prompts",
-        state: "ready",
+        state: (schema.prompts?.length ?? 0) > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: `${schema.prompts?.length ?? 0} 条`,
+        detail: `${schema.prompts?.length ?? 0} 条提示词`,
       });
       report.add({
         layer: "capability",
@@ -512,8 +542,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     const host = getHost(hostId);
     if (!host) continue;
     try {
-      const plan = computePlan(host, "connect", { projectRoot: cwd, home });
-      const roots = new Set(plan.files.map((file) => wiringRoot(file.file.scope, cwd, home)));
+      const plan = computePlan(host, "connect", { projectRoot: cwd, home: configHome });
+      const roots = new Set(plan.files.map((file) => wiringRoot(file.file.scope, cwd, configHome)));
       const interrupted = [...roots].map((root) => findInterrupted(root, host.id)).find(Boolean);
       const units = plan.files.flatMap((file) => file.units);
       const conflicts = units.filter((unit) => unit.action === "conflict" || unit.action === "blocked");
@@ -594,7 +624,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       report.add({
         layer: "host",
         name: "换版后待重连",
-        state: pending === 0 ? "ready" : "unchecked",
+        state: pending === 0 ? "ready" : "unconfigured",
         mode: "offline",
         detail:
           pending === 0
@@ -608,7 +638,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   {
     const dbPath = resolveDbPath();
     const dbDir = path.dirname(dbPath);
-    if (existsSync(dbPath)) {
+    if (dbPath === ":memory:") {
+      // 内存库没有文件也没有目录：dirname(":memory:") 是 "."，一定存在又可写，
+      // 走下面那段探测会说「目录在」，和「库布局」那行的「内存库，不落盘」打架。
+      report.add({
+        layer: "data",
+        name: "durable DB path",
+        state: "unconfigured",
+        mode: "offline",
+        detail: "内存库，不落盘（ANS_DB_PATH=:memory:）",
+      });
+    } else if (existsSync(dbPath)) {
       report.add({
         layer: "data",
         name: "durable DB path",
@@ -640,14 +680,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       });
     }
     const status = readMigrationStatus(dbPath);
-    const layoutText: Record<string, string> = {
+    const layoutText: Record<Exclude<MigrationLayoutStatus, "unknown">, string> = {
       memory: "内存库，不落盘",
       absent: "还没有库，第一次用时按当前布局建",
       fresh: "库文件在，还没有表",
       legacy: "旧布局；下次用时先做迁移前备份，再迁移",
       sessionless: "只有观测数据，没有会话表；不需要迁移",
       current: "当前布局",
-      unknown: "读不出来",
     };
     if (status.layout === "unknown") {
       report.add({
@@ -697,13 +736,11 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   } else {
     write(`ans doctor v${PKG_VERSION}`);
     for (const line of report.render(strict)) write(line);
-    write(
-      exitCode === 0
-        ? "结论：没有失败项。未配置和未检查不是坏，但也不是“已验证”。"
-        : exitCode === 1
-          ? "结论：有失败项，先修再继续。"
-          : "结论：没有失败项，但有未检查项；--strict 下未检查不算通过。",
-    );
+    let conclusion: string;
+    if (exitCode === 0) conclusion = "结论：没有失败项。未配置和未检查不是坏，但也不是“已验证”。";
+    else if (exitCode === 1) conclusion = "结论：有失败项，先修再继续。";
+    else conclusion = "结论：没有失败项，但有未检查项；--strict 下未检查不算通过。";
+    write(conclusion);
   }
   return exitCode;
 }

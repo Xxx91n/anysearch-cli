@@ -73,10 +73,6 @@ function writeProviderDiagnostic(message: string): void {
   }
 }
 
-// Builds one provider arm; a construction failure is recorded into
-// providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
-// protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
-// concern, not a construction failure).
 /**
  * Which of the two things a provider-construction throw means, for callers that
  * have to word it themselves. The message is never returned or reprinted: it can
@@ -87,6 +83,10 @@ export function classifyProviderBuildError(error: unknown): "credential" | "unex
   return /api[ _-]?key|401|unauthorized|invalid header value/i.test(raw) ? "credential" : "unexpected";
 }
 
+// Builds one provider arm; a construction failure is recorded into
+// providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
+// protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
+// concern, not a construction failure).
 function buildProvider(
   id: string,
   providerBuildErrors: Record<string, string>,
