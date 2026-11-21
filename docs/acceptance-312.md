@@ -134,6 +134,8 @@
 
 返修提交 `bd5e2dd` 上又跑了一轮，结果一样：17 条通过、1 条跳过（CodeRabbit）、0 失败，上面这些腿全在。
 
+`20adba4` 那一轮 `coverage` 红过一次，跟本票无关：`packages/store/test/coldstart-race.test.ts` 第 2 轮撞到 `SQLITE_SCHEMA: vtable constructor failed: messages_fts`。这个文件在 #257 里就被记为偶发（CHANGELOG 也记了两次，重跑都过），这次 diff 没碰 `packages/store`。按 acceptance-267 的做法定点重跑（`gh run rerun --failed`），红的那次留着不抹。
+
 装出来的产品上，分层诊断这几条逐条点到了（ubuntu 与 windows 两条腿的输出一致）：
 
 ```text
