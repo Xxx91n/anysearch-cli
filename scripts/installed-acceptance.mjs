@@ -594,9 +594,18 @@ async function main() {
     const nm = join(prefix, "node_modules");
     // 抬头写在这里而不是开头：带 ANS_ACC_TARBALLS 时装的是别处打好的包，版本
     // 只能从装进去的那一份读，不能从检出里读。
-    const installedVersion = JSON.parse(
-      readFileSync(join(nm, "@anysearch-cli", "cli", "package.json"), "utf8"),
-    ).version;
+    // 读不到也不能在这里抛：装包那步挂了已经记过 FAIL，这里再抛就整轮死在开头，
+    // 后面的检查一条都不跑，也拼不出「过了几项、挂了几项」。
+    const installedPkg = join(nm, "@anysearch-cli", "cli", "package.json");
+    let installedVersion = "读不出来";
+    if (existsSync(installedPkg)) {
+      try {
+        installedVersion = JSON.parse(readFileSync(installedPkg, "utf8")).version;
+      } catch {
+        installedVersion = "读不出来";
+      }
+    }
+    if (installedVersion === "读不出来") check(false, "读得出装进去的产品版本", installedPkg);
     printAcceptanceHeader({
       product: "anysearch-cli",
       version: installedVersion,

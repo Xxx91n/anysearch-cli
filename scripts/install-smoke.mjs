@@ -102,8 +102,9 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
-  // arm-absent telemetry reports 未配置 (unconfigured), not a failure.
-  check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
+  // arm-absent telemetry reports 未配置 (unconfigured), not a failure. Asserting the
+  // state, not just the row name: otherwise a regression back to 失败 still reads green.
+  check("doctor reports vector arm as 未配置 (absent in a clean prefix)", d1.out.includes("[未配置] vector arm"), d1.out.slice(-600));
   // #312: the four layers are [安装]/[能力]/[宿主]/[数据]; the DB layout row and
   // the discovered-domain rows moved into the data and capability layers.
   check("doctor shows the four layers", ["[安装]", "[能力]", "[宿主]", "[数据]"].every((l) => d1.out.includes(l)), d1.out.slice(-600));
