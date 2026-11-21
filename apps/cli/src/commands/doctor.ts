@@ -6,9 +6,11 @@
 // 联网、模型、宿主真的能用。真实能力要在 live 里单独跑，doctor 不替它打包票。
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import type { SearchProvider } from "@anysearch-cli/retriever";
 import {
   MANUAL_RECOVERY_NOTE,
   SEARCH_PROVIDER_IDS,
+  type SearchProviderId,
   SqliteSessionStore,
   domainTomlPath,
   listDomainTomls,
@@ -22,7 +24,7 @@ import {
   resolveSearchCredentials,
   userCredentialsPath,
 } from "@anysearch-cli/store";
-import { resolveDbPath, resolveDomainConstraint } from "@anysearch-cli/kernel";
+import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveLlmConfig } from "../config-llm";
@@ -179,17 +181,19 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   const configHome = resolveConfigHome();
   const credentials = resolveSearchCredentials(process.env, { home: configHome });
   {
-    const providers = [
-      { id: "tavily", make: () => new TavilyProvider() },
-      { id: "exa", make: () => new ExaProvider() },
-      { id: "anysearch", make: () => new AnySearchProvider() },
-    ] as const;
-    for (const provider of providers) {
+    // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
+    // 只回落到环境变量的构造器会把这类机器误判成失败。规则和运行时一致。
+    const make: Record<SearchProviderId, () => SearchProvider> = {
+      tavily: () => new TavilyProvider(credentials.tavily?.apiKey),
+      exa: () => new ExaProvider(credentials.exa?.apiKey),
+      anysearch: () => new AnySearchProvider(credentials.anysearch?.apiKey, credentials.anysearch?.endpoint),
+    };
+    for (const id of SEARCH_PROVIDER_IDS) {
       try {
-        const instance = provider.make();
+        const instance = make[id]();
         report.add({
           layer: "capability",
-          name: `provider ${provider.id}`,
+          name: `provider ${id}`,
           state: instance.id.length > 0 && instance.modes.length >= 3 ? "ready" : "failed",
           mode: "offline",
           detail: `id=${instance.id} modes=${instance.modes.join(",")}`,
@@ -197,22 +201,31 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       } catch (error) {
         // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
         // 配了 key 还构造不出来，那才是真的坏了。
-        const configured = Boolean(credentials[provider.id]);
+        //
+        // 原始报错一个字都不打：构造器手里就有 key，运行时报错可能把它带出来
+        // （Node 的 "Headers.append: <value> is an invalid header value"）。
+        const configured = Boolean(credentials[id]);
+        const fault = classifyProviderBuildError(error);
         report.add({
           layer: "capability",
-          name: `provider ${provider.id}`,
+          name: `provider ${id}`,
           state: configured ? "failed" : "unconfigured",
           mode: "offline",
           detail: configured
-            ? errorText(error).slice(0, 160)
-            : `没配 key，构造器会拒：${errorText(error).slice(0, 120)}`,
+            ? fault === "credential"
+              ? "配了 key，但构造器没建起来：key 可能格式不对或服务端不认。原始报错不打印，免得把 key 带出来"
+              : "构造器出了意外的错。原始报错不打印，免得把 key 带出来"
+            : "没配 key，构造器会拒；配好了才会用",
         });
       }
     }
   }
   {
-    const store = new SqliteSessionStore(":memory:");
+    // 构造器自己会建表、跑列迁移、加载原生模块，任何一步都可能抛。放在 try
+    // 外面就是整轮 doctor 崩掉、前面查过的一行都出不来。
+    let store: SqliteSessionStore | undefined;
     try {
+      store = new SqliteSessionStore(":memory:");
       const session = await store.createSession("doctor");
       await store.append(session.id, { role: "user", content: "doctor smoke test" });
       const hits = await store.searchFts5(session.id, "doctor");
@@ -223,22 +236,34 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: `建会话、写一条、FTS 搜到 ${hits.length} 条`,
       });
-      const telemetry = await store.vectorTelemetry();
-      if (telemetry.absent) {
+      // 单独一段：向量臂坏了要报在它自己名下，别让「内存会话库」出现两条一好
+      // 一坏、看的人还要猜哪条算数。
+      try {
+        const telemetry = await store.vectorTelemetry();
+        if (telemetry.absent) {
+          report.add({
+            layer: "capability",
+            name: "vector arm",
+            state: "unconfigured",
+            mode: "offline",
+            detail: "@anysearch-cli/embedding absent — FTS-only; enable: npm i -g @anysearch-cli/embedding (pnpm add -g @anysearch-cli/embedding) && ans memory backfill-vectors",
+          });
+        } else {
+          report.add({
+            layer: "capability",
+            name: "vector arm",
+            state: "ready",
+            mode: "offline",
+            detail: `present embeds=${telemetry.embeds} failures=${telemetry.failures}${telemetry.circuitOpen ? " circuitOpen" : ""}`,
+          });
+        }
+      } catch (error) {
         report.add({
           layer: "capability",
           name: "vector arm",
-          state: "unconfigured",
+          state: "failed",
           mode: "offline",
-          detail: "@anysearch-cli/embedding absent — FTS-only; enable: npm i -g @anysearch-cli/embedding (pnpm add -g @anysearch-cli/embedding) && ans memory backfill-vectors",
-        });
-      } else {
-        report.add({
-          layer: "capability",
-          name: "vector arm",
-          state: "ready",
-          mode: "offline",
-          detail: `present embeds=${telemetry.embeds} failures=${telemetry.failures}${telemetry.circuitOpen ? " circuitOpen" : ""}`,
+          detail: errorText(error).slice(0, 160),
         });
       }
     } catch (error) {
@@ -250,7 +275,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         detail: errorText(error).slice(0, 160),
       });
     } finally {
-      store.close();
+      store?.close();
     }
   }
   {
@@ -332,15 +357,6 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         state: "ready",
         mode: "offline",
         detail: entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件",
-      });
-    }
-    for (const warning of credentials.warnings) {
-      report.add({
-        layer: "capability",
-        name: "凭据警告",
-        state: "failed",
-        mode: "offline",
-        detail: warning,
       });
     }
   }
@@ -442,7 +458,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       report.add({
         layer: "capability",
         name: `当前领域 ${active.name}`,
-        state: "failed",
+        state: constraint.fatal ? "failed" : "unconfigured",
         mode: "offline",
         detail: constraint.fatal
           ? `声明了但建不起来，运行时会被拦住：${constraint.reason}。修：ans domain <上面列的名字>`
@@ -647,7 +663,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "库布局",
         state: "ready",
         mode: "offline",
-        detail: layoutText[status.layout] ?? status.layout,
+        detail: layoutText[status.layout],
       });
       if (status.layout === "current" || status.layout === "legacy") {
         const backup = preMigrationBackupPath(dbPath);
@@ -680,11 +696,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     write(JSON.stringify(report.toJson(strict), null, 2));
   } else {
     write(`ans doctor v${PKG_VERSION}`);
-    for (const line of report.render()) write(line);
+    for (const line of report.render(strict)) write(line);
     write(
       exitCode === 0
         ? "结论：没有失败项。未配置和未检查不是坏，但也不是“已验证”。"
-        : "结论：有失败项，先修再继续。",
+        : exitCode === 1
+          ? "结论：有失败项，先修再继续。"
+          : "结论：没有失败项，但有未检查项；--strict 下未检查不算通过。",
     );
   }
   return exitCode;

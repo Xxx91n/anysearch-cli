@@ -1,17 +1,8 @@
-// #312: 分层诊断的统一说法。
-//
-// 一条结果只属于一层（安装 / 能力 / 宿主 / 数据），只取四种状态之一：
-// - ready：查过，是好的。
-// - unconfigured：还没配，或者本来就不需要配。这是合法的空，不是坏。
-// - unchecked：没能查，或者没去查。不冒充通过。
-// - failed：查过，确实坏了。
-//
-// 每条结果还带一个 mode：offline 是离线检查（构造对象、看文件、看环境变量），
-// live 是真实调用（真的联网、真的起宿主）。离线检查通过不等于真实调用通过，
-// 所以两者分开写，不互相顶替。
-//
-// 退出码：有 failed 就是 1；--strict 时还有 unchecked 就是 5；否则 0。
-// unconfigured 不抬退出码：没配 provider 是合法状态，不是故障。
+// 分层诊断的统一说法：一条结果只属于一层（安装 / 能力 / 宿主 / 数据），只取四种状态之一。
+// ready 是查过、好的；unconfigured 是还没配或本来不需要配（合法的空，不是坏）；
+// unchecked 是没能查或没去查，不冒充通过；failed 是查过、确实坏了。
+// mode 只说这条是离线检查（offline）还是真实调用（live），离线通过不等于真实通过。
+// 退出码：有 failed 是 1；--strict 下还有 unchecked 是 5；否则 0。unconfigured 不抬退出码。
 
 export type DiagLayer = "install" | "capability" | "host" | "data";
 export type DiagState = "ready" | "unconfigured" | "unchecked" | "failed";
@@ -71,9 +62,8 @@ export class DiagReport {
     readonly version: string,
   ) {}
 
-  add(entry: DiagEntry): DiagEntry {
+  add(entry: DiagEntry): void {
     this.entries.push(entry);
-    return entry;
   }
 
   summary(): DiagSummary {
@@ -89,8 +79,8 @@ export class DiagReport {
     return 0;
   }
 
-  /** 文字版：按层分组，逐条打印。 */
-  render(): string[] {
+  /** 文字版：按层分组，逐条打印。strict 决定汇总下面那句按哪个模式说退出码。 */
+  render(strict = false): string[] {
     const lines: string[] = [];
     for (const layer of LAYER_ORDER) {
       const entries = this.entries.filter((entry) => entry.layer === layer);
@@ -106,7 +96,11 @@ export class DiagReport {
     lines.push(
       `汇总：${summary.ready} 可用 · ${summary.unconfigured} 未配置 · ${summary.unchecked} 未检查 · ${summary.failed} 失败`,
     );
-    lines.push("未配置和未检查都不算通过；只有失败会让退出码变成 1。");
+    lines.push(
+      strict
+        ? "未配置和未检查都不算通过；失败退 1，--strict 下未检查也退 5。"
+        : "未配置和未检查都不算通过；只有失败会让退出码变成 1。",
+    );
     return lines;
   }
 

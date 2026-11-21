@@ -77,6 +77,16 @@ function writeProviderDiagnostic(message: string): void {
 // providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
 // protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
 // concern, not a construction failure).
+/**
+ * Which of the two things a provider-construction throw means, for callers that
+ * have to word it themselves. The message is never returned or reprinted: it can
+ * carry the key (see buildProvider).
+ */
+export function classifyProviderBuildError(error: unknown): "credential" | "unexpected" {
+  const raw = String(error instanceof Error ? error.message : error);
+  return /api[ _-]?key|401|unauthorized|invalid header value/i.test(raw) ? "credential" : "unexpected";
+}
+
 function buildProvider(
   id: string,
   providerBuildErrors: Record<string, string>,
@@ -93,8 +103,7 @@ function buildProvider(
     // category rides stderr and providerBuildErrors (CWE-532). An invalid
     // header value at construction time is a malformed auth header — worded as
     // a credential fault regardless of which provider threw.
-    const raw = String(error instanceof Error ? error.message : error);
-    const message = /api[ _-]?key|401|unauthorized|invalid header value/i.test(raw)
+    const message = classifyProviderBuildError(error) === "credential"
       ? "permanent: missing/invalid credential — set the provider's API key env"
       : "unexpected construction fault";
     providerBuildErrors[id] = message;

@@ -12,7 +12,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagReport, type DiagJson } from "../src/diagnostics.js";
@@ -81,6 +81,59 @@ test("DiagReport: JSON 带层、状态与退出码", () => {
   const data = json.layers.find((layer) => layer.layer === "data")!;
   assert.equal(data.entries.length, 1);
   assert.equal(data.entries[0]!.state, "ready");
+});
+
+test("DiagReport: --strict 下汇总那句要说 5，不能再说只有失败才非 0", () => {
+  const report = new DiagReport("ans", "9.9.9");
+  report.add({ layer: "host", name: "宿主 claude 实际连接", state: "unchecked", mode: "live" });
+
+  assert.match(report.render(false).join("\n"), /只有失败会让退出码变成 1/);
+  assert.match(report.render(true).join("\n"), /--strict 下未检查也退 5/);
+});
+
+test("ans doctor：key 只在凭据文件里时，provider 不算失败", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-creds-"));
+  const saved = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    ANS_DB_PATH: process.env.ANS_DB_PATH,
+    EXA_API_KEY: process.env.EXA_API_KEY,
+  };
+  const fileKey = "exa-file-only-7d2c-doctor-test";
+  const lines: string[] = [];
+  try {
+    const configHome = join(home, ".ans");
+    mkdirSync(configHome, { recursive: true });
+    writeFileSync(
+      join(configHome, "credentials.json"),
+      JSON.stringify({ bindings: [{ provider: "exa", apiKey: fileKey }] }),
+      "utf8",
+    );
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    // 环境变量这一路必须空着，测的才是「只存在凭据文件里」。
+    delete process.env.EXA_API_KEY;
+
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    const raw = lines.join("\n");
+    const payload = JSON.parse(raw) as DiagJson;
+    const exa = payload.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "provider exa");
+
+    assert.ok(exa, "能力层要报 provider exa");
+    assert.equal(exa.state, "ready", "写进凭据文件的 key 是产品推荐做法，不能算失败");
+    assert.equal(code, 0, "没有真故障就不该退 1");
+    assert.equal(payload.summary.failed, 0);
+    assert.equal(raw.includes(fileKey), false, "凭据文件里的 key 不能出现在输出里");
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("ans doctor --json：四层都在，状态只四种，实测项绝不报 ready", async () => {
