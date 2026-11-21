@@ -49,10 +49,11 @@ export async function runChat(argv: string[]): Promise<number> {
   const active = resolveActiveDomain();
   const domainName = active.name;
 
-  // #370: chat is the one command that needs the user credential file for two
-  // different jobs — the search arms' keys and the model key. Parse it once
-  // here and hand the same result to both; whoever parses reports the file's
-  // own fault, so a broken file says its piece once instead of twice.
+  // #370 Design: one parse for the whole command, handed to both consumers.
+  // chat is the only command that needs the user credential file for two
+  // different jobs — the search arms' keys and the model key — and parsing it
+  // at each printed the same fault twice. Whoever parses reports the file's own
+  // fault; neither downstream resolver reports it again.
   const configHome = resolveConfigHome();
   const credentialFile = readUserCredentials({ home: configHome });
   const credentialFault = credentialFileWarning(credentialFile);
@@ -67,7 +68,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // store must not be registered as a resumable session.
   let durableStore = true;
   try {
-    engine = createPersistentEngine(domainName, { domainDeclared: active.declared, credentialFile });
+    engine = createPersistentEngine(domainName, { domainDeclared: active.declared, credentialsFile: credentialFile });
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     // A configured-but-broken domain is a configuration error, not an
@@ -91,7 +92,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // trade; the warning says exactly what was lost.
     let persistentOk = true;
     try {
-      engine = createPersistentEngine(undefined, { credentialFile });
+      engine = createPersistentEngine(undefined, { credentialsFile: credentialFile });
     } catch (e2: any) {
       persistentOk = false;
       console.error("[warn] Durable database unavailable (" + (e2?.message || String(e2)) +

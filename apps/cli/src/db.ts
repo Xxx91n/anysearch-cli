@@ -45,12 +45,12 @@ export function createPersistentEngine(
   opts?: {
     domainDeclared?: boolean;
     /**
-     * #370: the caller's one parse of the user credential file. When given, the
-     * search arms take their keys from this result and the kernel never reads
-     * the file itself, so that caller can hand the same bytes to another
-     * resolver. Omitted means this engine parses the file, as it always has.
+     * #370 Design: the caller's one parse of the user credential file, handed in
+     * so this engine's search arms never read the file themselves — that caller
+     * hands the same parse to its other resolver too, and reports the fault once.
+     * Omitted means this engine parses the file, as it always has.
      */
-    credentialFile?: CredentialFileContents;
+    credentialsFile?: CredentialFileContents;
   },
 ): CompositionResult {
   const dbPath = resolveDbPath();
@@ -64,12 +64,12 @@ export function createPersistentEngine(
   // makes "enter the key once" actually reach the real search clients.
   // #370: when the caller already parsed that file, the arms take this result
   // instead, so the command keeps one read and one report of its fault.
-  const credentialFile = opts?.credentialFile;
+  const credentialsFile = opts?.credentialsFile;
   const result = createEngine(domain, {
     dbPath,
     domainsDirs: domainSearchDirs(),
-    searchCredentials: credentialFile
-      ? (env) => resolveSearchCredentials(env, { credentialsFile: credentialFile })
+    searchCredentials: credentialsFile
+      ? (env) => resolveSearchCredentials(env, { credentialsFile })
       : resolveSearchCredentials,
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
   });

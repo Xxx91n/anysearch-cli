@@ -6,6 +6,10 @@
 // resolver's `[config] …` line. This drives the real `runChat` against a broken
 // file and counts the sentences, which is the behaviour the user sees.
 //
+// It imports `runChat` directly, which chat-memory-wiring.test.ts avoids for its
+// own reasons; under this package's tsx test lane the ESM-only pi runtime loads
+// fine, and the command fails before anything that needs a live model.
+//
 // Run: node --import tsx --test test/chat-credentials.test.ts
 
 import { test } from "node:test";
@@ -25,6 +29,9 @@ const ENV_KEYS = [
   "USERPROFILE", "HOME", "ANS_DB_PATH", "ANS_DOMAIN", "ANS_DOMAINS_DIR",
   "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API",
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+  // pi-ai also accepts these two, and any usable key would stop the model
+  // resolver from consulting the credential file at all.
+  "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
 ];
 const previousEnv: Record<string, string | undefined> = {};
 for (const key of ENV_KEYS) previousEnv[key] = process.env[key];
@@ -35,7 +42,7 @@ process.env.ANS_LLM_PROVIDER = "anthropic";
 process.env.ANS_LLM_MODEL = "claude-sonnet-4-6";
 delete process.env.ANS_DOMAIN;
 delete process.env.ANS_DOMAINS_DIR;
-for (const key of ["ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]) {
+for (const key of ["ANS_LLM_API_KEY", "ANS_LLM_BASE_URL", "ANS_LLM_API", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"]) {
   delete process.env[key];
 }
 
@@ -52,9 +59,9 @@ test("a broken credential file is reported once per `ans chat`", async () => {
   let err = "";
   (process.stderr as any).write = (chunk: any) => { err += String(chunk); return true; };
   try {
-    // No model key anywhere, so the run stops right after config resolution.
-    // That is enough: every parse of the credential file happens before it, and
-    // the run's later exit code is not what this test is about.
+    // No model key anywhere and no registered task, so the run stops at its
+    // task-budget gate without a provider call. That is enough: both parses of
+    // the credential file — the ones this test counts — happen before it.
     await runChat(["-p", "hello"]);
   } finally {
     (process.stderr as any).write = realErr;
