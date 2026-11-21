@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -228,6 +228,45 @@ test("status names the effective source per provider without printing values", a
 // of that report is that it stays true for every source. It takes the config
 // root as an argument, so a test gives it an empty one and no key can leak in
 // from the operator's own home directory.
+test("a broken credential file is one line in `ans auth status`, not a [config] and a [WARN]", async () => {
+  // #357: status used to read the file three times - the search resolver, the
+  // model resolver and the report itself - so the same fault printed a
+  // `[config] …` line and a `[WARN] …` line. Now the command parses once and
+  // says the fault itself, once.
+  const { home, cleanup } = tempHome();
+  const saved: Record<string, string | undefined> = {};
+  for (const key of ["HOME", "USERPROFILE", "EXA_API_KEY", "ANS_LLM_API_KEY", "ANS_LLM_PROVIDER", "ANS_LLM_MODEL"]) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "credentials.json"), "not json", "utf8");
+
+    const { code, out } = await capture(() => runAuth([]));
+    assert.equal(code, 0, out);
+    const faultLines = out.split("\n").filter((line) => line.includes("not valid JSON"));
+    assert.equal(faultLines.length, 1, "同一份文件故障只说一次：" + out);
+    assert.match(faultLines[0]!, /^\[WARN\] /);
+
+    // `list` says it next to the file block instead of in the status block, and
+    // still only once.
+    const listed = await capture(() => runAuth(["list"]));
+    assert.equal(
+      listed.out.split("\n").filter((line) => line.includes("not valid JSON")).length,
+      1,
+      "list 不再把同一句说两遍：" + listed.out,
+    );
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    cleanup();
+  }
+});
+
 test("statusLines names the source for each provider and shows no key", () => {
   const { home, cleanup } = tempHome();
   try {

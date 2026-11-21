@@ -20,10 +20,10 @@ import {
   removeUserCredential,
   resolveConfigHome,
   resolveLlmConfig,
-  resolveSearchCredentials,
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
+import type { CredentialFileContents } from "@anysearch-cli/store";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
@@ -92,15 +92,20 @@ function describeSource(layer: LlmLayer | undefined): string {
   return layer ? KEY_SOURCE_LABELS[layer] : "set";
 }
 
-function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {
-  const search = resolveSearchCredentials(env, { home });
-  const llm = resolveLlmConfig({ env, home });
-  const stored = readUserCredentials({ home });
+function statusLines(
+  env: NodeJS.ProcessEnv,
+  home: string,
+  credentialsFile?: CredentialFileContents,
+): string[] {
+  // 一次读取：调用方读过就传进来，这里不再摸磁盘；模型解析器吃的也是这一份，
+  // 所以同一个文件故障不会在这儿变成两句话。
+  const file = credentialsFile ?? readUserCredentials({ home });
+  const llm = resolveLlmConfig({ env, home, credentialsFile: file });
   const lines: string[] = [];
 
   for (const info of CREDENTIAL_PROVIDERS) {
     const envValue = env[info.envKey]?.trim();
-    const binding = stored.bindings.find((b) => b.provider === info.id);
+    const binding = file.bindings.find((b) => b.provider === info.id);
     let where: string;
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
       // Report where the EFFECTIVE model key came from. `env` covers two
@@ -122,7 +127,6 @@ function statusLines(env: NodeJS.ProcessEnv, home: string): string[] {
     const mark = where === "not set" ? "[EMPTY]" : "[SET]  ";
     lines.push(mark + " " + info.id.padEnd(10) + " " + where);
   }
-  if (search.warnings.length > 0) lines.push(...search.warnings.map((w) => "[WARN] " + w));
   return lines;
 }
 
@@ -141,13 +145,18 @@ export async function runAuth(args: string[]): Promise<number> {
   const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
+    // 整条命令只读一次凭据文件：来源表、文件块、模型解析器都用这一份。
+    const file = readUserCredentials({ home });
     console.log("ans auth - provider API keys");
     console.log("---");
-    for (const line of statusLines(env, home)) console.log(line);
+    for (const line of statusLines(env, home, file)) console.log(line);
+    // `list` 紧接着的「BROKEN —」那行说的就是这句话，那里说一遍就够了。
+    if (sub !== "list" && file.error) {
+      console.log("[WARN] " + file.error + "; continuing without the user credential file");
+    }
     console.log("---");
     if (sub === "list") {
       const path = userCredentialsPath(home);
-      const file = readUserCredentials({ home });
       console.log("Credential file: " + path);
       console.log("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
       if (file.bindings.length > 0) {

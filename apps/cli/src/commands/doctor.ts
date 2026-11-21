@@ -179,9 +179,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
 
   // ── 能力层 ────────────────────────────────────────────────────────────
-  const credentials = resolveSearchCredentials(process.env, { home: configHome });
-  // 凭据文件的报错原文，用来给下面的解析器去重。
-  let credentialFileFault = "";
+  // 凭据文件整轮只读一次：搜索解析器、模型解析器、下面那条「user credential file」
+  // 都吃这一份结果。谁都不用拿报错原文去比对，文件级的那句话这里只说一遍。
+  const credentialFile = readUserCredentials({ home: configHome });
+  const credentials = resolveSearchCredentials(process.env, {
+    home: configHome,
+    credentialsFile: credentialFile,
+  });
   {
     // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
     // 只回落到环境变量的构造器会把这类机器误判成失败。规则和运行时一致。
@@ -321,15 +325,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
   {
     const credentialsPath = userCredentialsPath(configHome);
-    const file = readUserCredentials({ home: configHome });
-    credentialFileFault = file.error ?? "";
-    if (file.error) {
+    if (credentialFile.error) {
       report.add({
         layer: "capability",
         name: "user credential file",
         state: "failed",
         mode: "offline",
-        detail: `${file.error} — 修好或删掉它，再跑 ans auth set <provider>`,
+        detail: `${credentialFile.error} — 修好或删掉它，再跑 ans auth set <provider>`,
       });
     } else {
       report.add({
@@ -338,7 +340,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         state: "ready",
         mode: "offline",
         detail: existsSync(credentialsPath)
-          ? `${credentialsPath} (${file.bindings.length} key(s), plain text)`
+          ? `${credentialsPath} (${credentialFile.bindings.length} key(s), plain text)`
           : `${credentialsPath} (not created yet)`,
       });
     }
@@ -375,16 +377,14 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     }
   }
   {
-    // 没有模型 key 时这个解析器也会读同一份凭据文件，读坏了和上面那条重复，这里只跳过文字相同的那条。
+    // 模型解析器拿同一份已解析结果：它不再读盘，也不再就这份文件报第二条。
     const configWarnings: string[] = [];
     const llm = resolveLlmConfig({
       cwd,
       home: configHome,
       env: process.env,
-      warn: (msg) => {
-        if (credentialFileFault && msg.includes(credentialFileFault)) return;
-        configWarnings.push(msg);
-      },
+      credentialsFile: credentialFile,
+      warn: (msg) => configWarnings.push(msg),
     });
     const configured = Boolean(llm.provider && llm.model);
     report.add({

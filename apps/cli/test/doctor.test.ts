@@ -221,8 +221,8 @@ test("ans doctor --strict：有未检查、没有失败时退出 5", async () =>
   }
 });
 
-// 去重靠「两次读同一个文件、报错文字一字不差」，store 改一句措辞就可能悄悄回来；
-// 反过来把 endpoint 不匹配也咽掉同样没人发现。这两条各自钉住一头。
+// 一次诊断只解析一次凭据文件之后，「坏文件只报一条」是结构保证，不是文字比对：
+// 文件级的报错由调用方说一次，两个解析器都不再说。下面两条各自钉住一头。
 async function runInHome(config: {
   credentials?: string;
   configToml?: string;
@@ -275,6 +275,20 @@ test("ans doctor：凭据文件读坏了只报一条失败", async () => {
   assert.equal(credentialRows.length, 1, "同一份文件只报一条");
   assert.equal(credentialRows[0]!.state, "failed");
   assert.equal(entries.filter((entry) => entry.name === "配置文件").length, 0, "同一句故障不要再报一遍");
+  assert.equal(payload.summary.failed, 1, "失败数不能多算");
+});
+
+test("ans doctor：凭据文件坏了，整份报告只有一条说到它", async () => {
+  // 验收第二条：文字输出和 --json 里都只有一条。这里按报告内容找，不按条目名字找，
+  // 免得以后换个名字再说一遍还能全绿。
+  const { payload, entries } = await runInHome({
+    credentials: "not json",
+    env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
+  });
+
+  const mentioning = entries.filter((entry) => (entry.detail ?? "").includes("not valid JSON"));
+  assert.equal(mentioning.length, 1, "同一份文件故障只说一次");
+  assert.equal(mentioning[0]!.name, "user credential file");
   assert.equal(payload.summary.failed, 1, "失败数不能多算");
 });
 

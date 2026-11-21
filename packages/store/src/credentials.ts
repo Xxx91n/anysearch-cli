@@ -306,18 +306,24 @@ export interface ResolvedSearchCredentials {
  */
 export function resolveSearchCredentials(
   env: NodeJS.ProcessEnv = process.env,
-  opts: { home?: string; filePath?: string } = {},
+  opts: { home?: string; filePath?: string; credentialsFile?: CredentialFileContents } = {},
 ): ResolvedSearchCredentials {
   // The config root follows the same HOME/USERPROFILE convention the rest of the
   // installation uses (one shared resolver, so the reader and the writer can
   // never disagree about which file is in force).
   const home = resolveConfigHome(opts.home, env);
-  const file = readUserCredentials({ ...opts, home });
+  // One read per command: a caller that already parsed the file passes it in
+  // (#357). Then this resolver neither touches the disk again nor reports the
+  // file-level fault — the caller says that one sentence, once, on behalf of
+  // every consumer. Nobody has to compare error text to avoid a second copy.
+  const file = opts.credentialsFile ?? readUserCredentials({ home, filePath: opts.filePath });
   const warnings: string[] = [];
   // Untagged: each consumer adds its own prefix (`[anysearch] ` on the kernel's
   // stderr, `[credentials] ` in doctor, `[WARN] ` in `ans auth status`). Tagging
   // here would couple them to this string and double the prefix.
-  if (file.error) warnings.push(file.error + "; continuing without the user credential file");
+  if (!opts.credentialsFile && file.error) {
+    warnings.push(file.error + "; continuing without the user credential file");
+  }
   const out: ResolvedSearchCredentials = { warnings };
 
   // One rule for all three arms: an explicit env value wins over the stored
