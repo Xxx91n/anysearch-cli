@@ -23,13 +23,13 @@ export interface ServerSandbox {
 }
 
 /**
- * The service's whole environment for one test, with nothing inherited.
+ * The service's whole environment for one test.
  *
  * `home` is that test's temp dir: the durable database (`home/anysearch.db`),
  * the project index (`home/project-index.db`) and the published address
- * (`home/server.json`) all land inside it. Every `ANS_*` the runner happens to
- * carry is dropped first, so an operator's own override cannot win and point
- * one of them back at the real user root.
+ * (`home/server.json`) all land inside it. The rest of the runner's environment
+ * is kept as it is; only every `ANS_*` is dropped first, so an operator's own
+ * override cannot win and point one of those paths back at the real user root.
  */
 export function serverSandbox(home: string, port: number, token: string): ServerSandbox {
   const durableDb = join(home, "anysearch.db");
