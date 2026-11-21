@@ -10,7 +10,8 @@ body:
       value: |
         谢谢你帮忙找问题！把复现步骤和报错贴清楚，我们修起来会快很多。
 
-        **提醒**：贴日志、配置或诊断输出前，请先把里面的 API Key、令牌、`~/.ans/credentials.json` 里的私密内容，以及本机家目录/用户名等敏感路径打码。
+        - **安全漏洞**：如涉及凭据泄露、绕过域过滤等安全问题，请不要发公开 issue，改走 [私密安全上报入口](https://github.com/Xxx91n/anysearch-cli/security/advisories/new)。
+        - **注意打码**：贴日志、配置或诊断输出前，请先把里面的 API Key、令牌、`~/.ans/credentials.json` 里的私密内容，以及本机家目录/用户名等敏感路径打码。
 
   - type: dropdown
     id: area

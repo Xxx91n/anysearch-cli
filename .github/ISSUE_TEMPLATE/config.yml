@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: 报告安全漏洞（私密通道）
+    url: https://github.com/Xxx91n/anysearch-cli/security/advisories/new
+    about: 如涉及凭据泄露、绕过域过滤等安全问题，请走这里私下上报，不要发公开 issue。
   - name: 使用说明与快速上手
     url: https://github.com/Xxx91n/anysearch-cli/blob/main/README.zh-CN.md
     about: 安装、配置、常用命令和已验证宿主清单都在这里，提问前可以先翻一眼。
