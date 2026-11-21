@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero.zh-CN-dark.svg">
-    <img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="anysearch-cli：给 agent 用的搜索、调研和记忆工具，外面有一道真能拦住内容的域名白名单">
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/assets/readme/hero.zh-CN-dark.svg">
+    <img src="./docs/assets/readme/hero.zh-CN.svg" width="100%" alt="anysearch-cli：给 agent 用的搜索、调研和记忆工具，外面有一道真能拦住内容的域名白名单">
   </picture>
 </p>
 
