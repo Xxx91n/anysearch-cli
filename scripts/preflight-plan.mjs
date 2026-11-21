@@ -97,8 +97,9 @@ function packageForFile(file, packages) {
   return owner;
 }
 
-// Only the `packages:` list matters here, and the root has no YAML parser
-// (the `yaml` module lives under apps/cli), so read that block directly.
+// The root has no direct YAML dependency and only the `packages:` list matters,
+// so read that block here. A pattern this cannot expand leaves packages
+// undiscovered, which falls back to the full suite.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
   if (!fs.existsSync(file)) return [];

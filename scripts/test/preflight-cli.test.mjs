@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const cli = join(dirname(fileURLToPath(import.meta.url)), "..", "preflight-test.mjs");
 
 test("a red run exits non-zero and names the failed task", () => {
-  withFakePnpm({ code: 1, lines: [" Tasks:    2 successful, 3 total", "Failed:    @anysearch-cli/kernel#test"] }, (bin) => {
+  withFakePnpm({ code: 1, lines: [" Tasks:    2 successful, 3 total", "\u001b[31mFailed:\u001b[0m @anysearch-cli/kernel#test"] }, (bin) => {
     const result = runCli(bin);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /@anysearch-cli\/kernel#test/);

@@ -44,16 +44,18 @@ if (plan.mode === "full") {
   console.log("[preflight] turbo also tests what these packages depend on");
 }
 
-const turboArgs = ["exec", "turbo", "run", "test", "--concurrency=2"];
-if (plan.mode === "incremental") turboArgs.push(...plan.packages.map((name) => `--filter=${name}`));
+const runArgs =
+  plan.mode === "incremental"
+    ? ["exec", "turbo", "run", "test", "--concurrency=2", ...plan.packages.map((name) => `--filter=${name}`)]
+    : ["test"];
 
 if (args.includes("--dry-run")) {
-  console.log(`[preflight] dry run, would run: pnpm ${turboArgs.join(" ")}`);
+  console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
   process.exit(0);
 }
 
 const started = Date.now();
-const child = spawn("pnpm", turboArgs, {
+const child = spawn("pnpm", runArgs, {
   cwd: root,
   stdio: ["inherit", "pipe", "pipe"],
   shell: process.platform === "win32",
@@ -92,7 +94,9 @@ if (status !== 0) {
 
 function readChange() {
   if (args.includes("--pushed")) {
-    const pushed = pushedFiles(root, readStdin());
+    const input = readStdin();
+    if (input === null) return { unknown: "could not read the pushed refs" };
+    const pushed = pushedFiles(root, input);
     if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits" };
     if (pushed !== null) return { files: pushed };
   }
@@ -102,9 +106,8 @@ function readChange() {
 
 // turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
 function failedTask(output) {
-  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
-  const named = [...plain.matchAll(/^Failed:\s*(.+)$/gm)].map((match) => match[1].trim());
-  return named.length > 0 ? named.join(", ") : null;
+  const match = /^Failed:\s*(.+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
+  return match ? match[1].trim() : null;
 }
 
 function readStdin() {
@@ -112,7 +115,7 @@ function readStdin() {
   try {
     return fs.readFileSync(0, "utf8");
   } catch {
-    return "";
+    return null;
   }
 }
 

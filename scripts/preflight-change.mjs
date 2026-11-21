@@ -2,8 +2,12 @@
 // stdin; the pre-commit hook asks for the index. A plain run compares against
 // origin/HEAD and adds the working tree, so a dry run sees what is still local.
 //
-// Every reader returns repo-relative paths, or null when git cannot answer —
-// the caller then falls back to the full suite rather than guessing.
+// Design: a commit reads only the index — a scratch file left in the tree
+// should not turn every commit into a full run; a push reads exactly the refs
+// it sends.
+//
+// A reader that cannot answer returns null, and the caller falls back to the
+// full suite rather than guessing.
 //
 // Design: an unreadable change falls back to the whole suite instead of a
 // guess — under-selecting makes the gate pass silently, which is worse than
@@ -23,8 +27,8 @@ export function stagedFiles(root) {
  * Files carried by the refs on a pre-push hook's stdin. Each line is
  * "<local ref> <local sha> <remote ref> <remote sha>".
  *
- * Returns null when the hook got no refs (the caller can look at the working
- * tree instead) and PUSH_UNKNOWN when a ref cannot be read.
+ * Returns null when the hook got no refs (the caller then looks at the working
+ * tree) and PUSH_UNKNOWN when a ref cannot be read.
  */
 export function pushedFiles(root, input) {
   const lines = String(input ?? "")
