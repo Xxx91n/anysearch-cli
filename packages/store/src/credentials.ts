@@ -290,10 +290,13 @@ export function readUserCredentials(
 }
 
 /**
- * The one wording for a credential file that could not be read or parsed.
- * `ans doctor` adds its own "fix or remove it" tail, `ans auth` prefixes
- * `[WARN] `; neither writes the sentence again, so a reworded message changes in
- * one place. Undefined for a healthy (or absent) file.
+ * The sentence a warning line says about a credential file that could not be
+ * read or parsed. `resolveSearchCredentials` puts it in `warnings` (the kernel
+ * and MCP entries print those) and `ans auth` prints it after `[WARN] `, so the
+ * wording lives here only. `ans doctor` deliberately does not use it: its row
+ * turns `file.error` into a diagnosis and names the fix, and that tail belongs
+ * to doctor. Both read the same `error`. Undefined for a healthy (or absent)
+ * file.
  */
 export function credentialFileWarning(file: CredentialFileContents): string | undefined {
   return file.error ? file.error + "; continuing without the user credential file" : undefined;
