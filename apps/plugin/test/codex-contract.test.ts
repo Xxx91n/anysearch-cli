@@ -18,6 +18,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -34,7 +35,7 @@ async function testAsync(name: string, fn: () => Promise<void>) {
   catch (e) { failed++; console.error("  FAIL " + name + ": " + (e instanceof Error ? e.message : String(e))); }
 }
 
-const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CODEX_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "codex.cjs");
 
 function runHook(cjsPath: string, stdinPayload: string, env?: Record<string, string>, args: string[] = []): Promise<{ code: number; stdout: string }> {
