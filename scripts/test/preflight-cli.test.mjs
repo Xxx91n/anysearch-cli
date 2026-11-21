@@ -355,15 +355,17 @@ function writePnpmShim(bin, { sh, cmd }) {
 }
 
 // A stand-in pnpm that stays alive until the gate forwards the signal, and
-// prints its pid so the test can prove it is gone afterwards.
+// prints its pid so the test can prove it is gone afterwards. The pid line is
+// last: the test signals as soon as it sees it, so everything before must be
+// on disk by then.
 function writeSleepingPnpm(bin) {
   const sh = [
     "#!/bin/sh",
     'echo "HOME=$HOME"',
     'echo "PROFILE=$USERPROFILE"',
-    'echo "PNPM=$$"',
     'mkdir -p "$USERPROFILE/.ans"',
     'echo leak > "$USERPROFILE/.ans/leak"',
+    'echo "PNPM=$$"',
     "exec sleep 30",
   ].join("\n");
   write(join(bin, "pnpm"), `${sh}\n`);
