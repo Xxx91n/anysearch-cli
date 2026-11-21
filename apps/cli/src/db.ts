@@ -3,7 +3,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
+import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // B1: the domains-dir resolution chain for this CLI.
@@ -42,7 +42,16 @@ export function createPersistentEngine(
   // #306: `domainDeclared: false` says the name is the caller's convention
   // default, so a missing TOML keeps the old no-filtering fallback instead of
   // stopping the command. Omitted means the name is a real declaration.
-  opts?: { domainDeclared?: boolean },
+  opts?: {
+    domainDeclared?: boolean;
+    /**
+     * Design: the caller's one parse of the user credential file, handed in
+     * so this engine's search arms never read the file themselves — that caller
+     * hands the same parse to its other resolver too, and reports the fault once.
+     * Omitted means this engine parses the file, as it always has.
+     */
+    credentialsFile?: CredentialFileContents;
+  },
 ): CompositionResult {
   const dbPath = resolveDbPath();
   // Owner-only permissions (dir 0700, file 0600) — CWE-732 mitigation.
@@ -53,10 +62,11 @@ export function createPersistentEngine(
   // #301: search keys may live in the user credential file, not only in the
   // process env — a GUI host inherits no shell env, so resolving here is what
   // makes "enter the key once" actually reach the real search clients.
+  const credentialsFile = opts?.credentialsFile;
   const result = createEngine(domain, {
     dbPath,
     domainsDirs: domainSearchDirs(),
-    searchCredentials: resolveSearchCredentials,
+    searchCredentials: (env) => resolveSearchCredentials(env, { credentialsFile }),
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
   });
   registerTeardown(() => {

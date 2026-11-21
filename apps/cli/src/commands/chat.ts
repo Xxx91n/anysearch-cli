@@ -14,7 +14,7 @@ import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel"
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { resolveLlmConfig, userConfigPath } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
+import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 import { wireChatTaskBudget } from "./chat-task-budget";
@@ -49,6 +49,15 @@ export async function runChat(argv: string[]): Promise<number> {
   const active = resolveActiveDomain();
   const domainName = active.name;
 
+  // Design: parse the user credential file once here, hand the result to
+  // both consumers, and report its fault here — so a broken file is said once.
+  // The model resolver also gets this `home`, since its endpoint-mismatch
+  // warning names that path.
+  const configHome = resolveConfigHome();
+  const credentialFile = readUserCredentials({ home: configHome });
+  const credentialFault = credentialFileWarning(credentialFile);
+  if (credentialFault) process.stderr.write("[config] " + credentialFault + "\n");
+
   let engine: CompositionResult;
   let domain: DomainConfigPort;
   // sessions.domain is metadata only; record the domain actually in use so a
@@ -58,7 +67,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // store must not be registered as a resumable session.
   let durableStore = true;
   try {
-    engine = createPersistentEngine(domainName, { domainDeclared: active.declared });
+    engine = createPersistentEngine(domainName, { domainDeclared: active.declared, credentialsFile: credentialFile });
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     // A configured-but-broken domain is a configuration error, not an
@@ -82,7 +91,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // trade; the warning says exactly what was lost.
     let persistentOk = true;
     try {
-      engine = createPersistentEngine();
+      engine = createPersistentEngine(undefined, { credentialsFile: credentialFile });
     } catch (e2: any) {
       persistentOk = false;
       console.error("[warn] Durable database unavailable (" + (e2?.message || String(e2)) +
@@ -128,7 +137,7 @@ export async function runChat(argv: string[]): Promise<number> {
   } catch (error: any) { process.stderr.write(error.message + "\n"); return 1; }
 
   // Resolve LLM config: CLI flag > env > project > user > default.
-  const cfg = resolveLlmConfig({ flags });
+  const cfg = resolveLlmConfig({ home: configHome, flags, credentialsFile: credentialFile });
   if (!cfg.provider || !cfg.model) {
     process.stderr.write("LLM provider not configured.\n");
     process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes " + userConfigPath() + ")\n");
