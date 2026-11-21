@@ -15,12 +15,6 @@ import path from "node:path";
 
 const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 
-// apps/cli's product build reads ../mcp/src/index.ts into apps/cli/mcp/dist
-// (apps/cli/tsup.config.ts), but apps/cli declares no dependency on
-// @anysearch-cli/mcp. Record the edge here so an mcp change still builds and
-// tests the cli product that packages it.
-const SOURCE_EDGES = new Map([["@anysearch-cli/cli", ["@anysearch-cli/mcp"]]]);
-
 /**
  * Decide what a preflight run should do.
  *
@@ -67,8 +61,7 @@ export function readWorkspace(root) {
       continue;
     }
     if (!manifest?.name) continue;
-    const deps = [...new Set([...workspaceDeps(manifest), ...(SOURCE_EDGES.get(manifest.name) ?? [])])].sort();
-    packages.push({ name: manifest.name, dir, deps });
+    packages.push({ name: manifest.name, dir, deps: workspaceDeps(manifest) });
   }
   return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

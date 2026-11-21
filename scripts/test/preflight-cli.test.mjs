@@ -24,14 +24,36 @@ test("a green run exits 0 and prints how long it took", () => {
   });
 });
 
-function runCli(bin) {
+test("a full run runs the gate's own tests before pnpm", () => {
+  withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
+    const result = runCli(bin, { selfTest: true, gateTests: "scripts/test/preflight-plan.test.mjs" });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /running the gate's own tests/);
+    assert.match(result.stdout, /ℹ pass/);
+  });
+});
+
+test("a red gate self-test blocks the run", () => {
+  withFakePnpm({ code: 0, lines: [] }, (bin) => {
+    const result = runCli(bin, { selfTest: true, gateTests: "scripts/test/preflight-missing.test.mjs" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /the gate's own tests failed/);
+  });
+});
+
+function runCli(bin, { selfTest = false, gateTests } = {}) {
   const env = {
     ...process.env,
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+  };
+  if (selfTest) {
+    delete env.PREFLIGHT_SELF_TEST;
+    env.PREFLIGHT_GATE_TESTS = gateTests ?? "scripts/test/preflight-plan.test.mjs";
+  } else {
     // A full run starts the gate's own tests, which include this file; the fake
     // pnpm is here to test the runner, not to re-enter it.
-    PREFLIGHT_SELF_TEST: "0",
-  };
+    env.PREFLIGHT_SELF_TEST = "0";
+  }
   if (process.platform === "win32") env.Path = env.PATH;
   return spawnSync(process.execPath, [cli, "--full"], { encoding: "utf8", env });
 }

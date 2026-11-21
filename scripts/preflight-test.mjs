@@ -5,6 +5,9 @@
 // it into a package list. A change outside apps/ and packages/ has no clear
 // owner, so it falls back to the full suite.
 //
+// The tests run on the working tree, not on the exact commit being pushed: an
+// uncommitted edit can turn the gate green for code that is not in the push.
+//
 // Called by .git/hooks/pre-commit-user (with --staged) and by
 // .git/hooks/pre-push (with --pushed). GitButler's managed pre-commit chains to
 // the former; `but push` and `git push` both run the latter. See AGENTS.md.
@@ -24,11 +27,7 @@ import { planPreflight } from "./preflight-plan.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const GATE_TESTS = [
-  "scripts/test/preflight-plan.test.mjs",
-  "scripts/test/preflight-change.test.mjs",
-  "scripts/test/preflight-cli.test.mjs",
-];
+const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
 
 const change = readChange();
 if (change.note) console.log(`[preflight] ${change.note}`);
@@ -64,10 +63,16 @@ const started = Date.now();
 
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
-// PREFLIGHT_SELF_TEST=0 is for the test that drives this script with a fake pnpm.
+// PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
+// fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
+// re-enter the whole suite.
 if (plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0") {
   console.log("[preflight] running the gate's own tests");
-  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, stdio: "inherit" });
+  const gateEnv = { ...process.env };
+  delete gateEnv.NODE_TEST_CONTEXT;
+  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, encoding: "utf8" });
+  if (gate.stdout) process.stdout.write(gate.stdout);
+  if (gate.stderr) process.stderr.write(gate.stderr);
   if (gate.status !== 0) {
     console.error("[preflight] blocked: the gate's own tests failed");
     process.exit(gate.status ?? 1);

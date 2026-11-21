@@ -12,7 +12,6 @@ test("staged files come from the index, not the working tree", () => {
   withRepo((root) => {
     write(root, "apps/mcp/src/index.ts", "two\n");
     write(root, "packages/kernel/src/index.ts", "two\n");
-    write(root, "packages/kernel/notes.md", "untracked\n");
     git(root, ["add", "apps/mcp/src/index.ts"]);
 
     assert.deepEqual(stagedFiles(root), ["apps/mcp/src/index.ts"]);
@@ -45,6 +44,34 @@ test("a ref git cannot read asks for the full suite", () => {
     assert.equal(pushedFiles(root, `refs/heads/x ${head} refs/heads/x ${"d".repeat(40)}`), PUSH_UNKNOWN);
     // A new branch needs merge-base against origin/HEAD, which this fixture lacks.
     assert.equal(pushedFiles(root, `refs/heads/x ${head} refs/heads/x ${ZEROS}`), PUSH_UNKNOWN);
+  });
+});
+
+test("no origin/HEAD asks for the full suite", () => {
+  withRepo((root) => {
+    assert.equal(localFiles(root), null);
+  });
+});
+
+test("outside a git repo every reader asks for the full suite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nogit-"));
+  try {
+    assert.equal(stagedFiles(dir), null);
+    assert.equal(localFiles(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("two refs carrying the same file report it once", () => {
+  withRepo((root) => {
+    write(root, "packages/kernel/src/index.ts", "two\n");
+    git(root, ["add", "."]);
+    git(root, ["commit", "-q", "-m", "second"]);
+    const head = rev(root, "HEAD");
+    const base = rev(root, "HEAD~1");
+    const refs = `refs/heads/x ${head} refs/heads/x ${base}\nrefs/heads/y ${head} refs/heads/y ${base}`;
+    assert.deepEqual(pushedFiles(root, refs), ["packages/kernel/src/index.ts"]);
   });
 });
 

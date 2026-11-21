@@ -8,6 +8,8 @@
 // running too much.
 //
 // A reader that cannot answer returns null; the caller decides what to do.
+// These lists pick which packages run; the tests themselves run on the working
+// tree, so an uncommitted edit can differ from the commit or the pushed refs.
 
 import { spawnSync } from "node:child_process";
 
