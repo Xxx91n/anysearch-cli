@@ -1,9 +1,14 @@
 // Work out which workspace packages a change touches, and which packages have
 // to run because they use one of them.
 //
-// A file belongs to the package whose directory contains it. A change anywhere
-// else (root config, scripts/, .github/, docs/) has no clear owner, so the
-// caller falls back to the full suite.
+// Design: the gate runs the changed packages plus every package that depends
+// on them, and falls back to the whole suite outside apps/ and packages/ —
+// turbo's --filter pulls only upstream tests, so filtering to one package never
+// ran apps/cli after a kernel change (the hole the always-full gate was
+// reacting to). Root files and docs fall back too, because tests in
+// apps/plugin and packages/kernel read README, GLOSSARY.md and docs/.
+//
+// A file belongs to the package whose directory contains it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +21,7 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "full" | "incremental", reason: string, files: string[],
+ * @returns {{ mode: "none" | "full" | "incremental", reason?: string, files: string[],
  *            packages: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
@@ -27,20 +32,14 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const packages = readWorkspace(root);
   if (packages.length === 0) return { mode: "full", reason: "no workspace packages found", files, packages: [] };
 
-  const owners = files.map((file) => packageForFile(file, packages));
-  const outside = files.filter((file, index) => !owners[index]);
+  const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
+  const outside = files.filter((file) => !owners.get(file));
   if (outside.length > 0) {
     return { mode: "full", reason: "files outside the workspace packages", files, outside, packages: [] };
   }
 
-  const touched = [...new Set(owners.map((owner) => owner.name))].sort(compare);
-  return {
-    mode: "incremental",
-    reason: "changed packages and everything that depends on them",
-    files,
-    touched,
-    packages: withDependents(touched, packages),
-  };
+  const touched = [...new Set(files.map((file) => owners.get(file).name))].sort();
+  return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
 }
 
 /**
@@ -64,7 +63,7 @@ export function readWorkspace(root) {
     if (!manifest?.name) continue;
     packages.push({ name: manifest.name, dir, deps: workspaceDeps(manifest) });
   }
-  return packages.sort((a, b) => compare(a.name, b.name));
+  return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /**
@@ -97,7 +96,7 @@ function withDependents(touched, packages) {
       queue.push(name);
     }
   }
-  return [...selected].sort(compare);
+  return [...selected].sort();
 }
 
 function packageForFile(file, packages) {
@@ -110,6 +109,8 @@ function packageForFile(file, packages) {
   return owner;
 }
 
+// Only the `packages:` list matters here, and the root has no YAML parser
+// (the `yaml` module lives under apps/cli), so read that block directly.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
   if (!fs.existsSync(file)) return [];
@@ -148,7 +149,7 @@ function workspaceDirectories(root, patterns) {
       if (fs.existsSync(path.join(root, dir, "package.json"))) dirs.add(dir);
     }
   }
-  return [...dirs].sort(compare);
+  return [...dirs].sort();
 }
 
 function workspaceDeps(manifest) {
@@ -164,7 +165,7 @@ function workspaceDeps(manifest) {
       deps.add(at > 0 ? target.slice(0, at) : key);
     }
   }
-  return [...deps].sort(compare);
+  return [...deps].sort();
 }
 
 function normalizePath(file) {
@@ -177,8 +178,4 @@ function isDirectory(dir) {
   } catch {
     return false;
   }
-}
-
-function compare(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

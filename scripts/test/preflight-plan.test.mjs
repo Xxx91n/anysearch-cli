@@ -6,13 +6,14 @@ import test, { after, before } from "node:test";
 import { failedTask, planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
 // The same shape as the real workspace: four apps on top, three shared
-// packages below, embedding standing alone.
+// packages below, embedding as a peer of store and the three apps.
 const MANIFESTS = {
   "packages/embedding": { name: "@anysearch-cli/embedding" },
   "packages/retriever": { name: "@anysearch-cli/retriever" },
   "packages/store": {
     name: "@anysearch-cli/store",
     dependencies: { "@anysearch-cli/retriever": "workspace:*" },
+    peerDependencies: { "@anysearch-cli/embedding": "workspace:*" },
   },
   "packages/kernel": {
     name: "@anysearch-cli/kernel",
@@ -25,6 +26,7 @@ const MANIFESTS = {
       "@anysearch-cli/retriever": "workspace:*",
       "@anysearch-cli/store": "workspace:*",
     },
+    peerDependencies: { "@anysearch-cli/embedding": "workspace:*" },
   },
   "apps/cli": {
     name: "@anysearch-cli/cli",
@@ -34,6 +36,7 @@ const MANIFESTS = {
       "@anysearch-cli/retriever": "workspace:*",
       "@anysearch-cli/store": "workspace:*",
     },
+    peerDependencies: { "@anysearch-cli/embedding": "workspace:*" },
   },
   "apps/mcp": {
     name: "@anysearch-cli/mcp",
@@ -43,6 +46,7 @@ const MANIFESTS = {
       "@anysearch-cli/retriever": "workspace:*",
       "@anysearch-cli/store": "workspace:*",
     },
+    peerDependencies: { "@anysearch-cli/embedding": "workspace:*" },
   },
   "apps/dsh-plugin": {
     name: "@anysearch-cli/dsh-plugin",
@@ -70,6 +74,20 @@ test("a lower package runs itself and every app that depends on it", () => {
     "@anysearch-cli/mcp",
     "@anysearch-cli/plugin",
     "@anysearch-cli/retriever",
+    "@anysearch-cli/store",
+  ]);
+});
+
+test("a change in embedding reaches store, kernel, plugin and the apps", () => {
+  const plan = planPreflight(root, ["packages/embedding/src/model.ts"]);
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.packages, [
+    "@anysearch-cli/cli",
+    "@anysearch-cli/dsh-plugin",
+    "@anysearch-cli/embedding",
+    "@anysearch-cli/kernel",
+    "@anysearch-cli/mcp",
+    "@anysearch-cli/plugin",
     "@anysearch-cli/store",
   ]);
 });
@@ -119,7 +137,13 @@ test("the workspace reader picks up both directions of the dependency graph", ()
   assert.equal(packages.length, 8);
   assert.deepEqual(
     packages.find((pkg) => pkg.name === "@anysearch-cli/cli").deps,
-    ["@anysearch-cli/kernel", "@anysearch-cli/plugin", "@anysearch-cli/retriever", "@anysearch-cli/store"],
+    [
+      "@anysearch-cli/embedding",
+      "@anysearch-cli/kernel",
+      "@anysearch-cli/plugin",
+      "@anysearch-cli/retriever",
+      "@anysearch-cli/store",
+    ],
   );
   assert.deepEqual(packages.find((pkg) => pkg.name === "@anysearch-cli/embedding").deps, []);
 });
