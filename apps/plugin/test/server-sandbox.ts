@@ -1,15 +1,19 @@
 // #351: every test that starts the real service builds its environment here.
 //
-// The service records its own lifetime in the DURABLE database at startup. A
-// test that redirects only the project index and the published address still
-// writes that process row into the operator's ~/.ans/anysearch.db, and the hard
-// kill at the end of the test leaves the row open forever. One place builds the
-// whole environment, so a new spawn site cannot miss a path variable.
+// Design: one helper builds the service's whole environment for tests, and one
+// helper starts it — a test that redirects only the project index and the
+// published address still records its process row in the operator's own
+// ~/.ans/anysearch.db, and the hard kill at the end leaves that row open
+// forever. Rejected: each spawn site building its own env, which is how the leak
+// survived in one site and could come back in the next one.
+//
+// Every ANS_* the runner carries is dropped first, so an operator's own override
+// cannot point one of those paths back at the real user root.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 
 /** The plugin package root: the service is started from here as `src/server/index.ts`. */
-const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+export const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 export interface ServerSandbox {
   /** Environment for the spawned service: every path it writes lives under `home`. */

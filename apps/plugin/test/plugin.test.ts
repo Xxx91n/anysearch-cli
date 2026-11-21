@@ -6,12 +6,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } from "../src/index.js";
 import { ensureMdc } from "../src/hooks/routing-card.js";
-import { serverSandbox, spawnServer } from "./server-sandbox.js";
+import { PLUGIN_ROOT, serverSandbox, spawnServer } from "./server-sandbox.js";
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
-
-// ponytail: pnpm runs test from apps/plugin/. Use import.meta.url so cwd doesn't break paths.
-const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 let passed = 0;
 let failed = 0;
