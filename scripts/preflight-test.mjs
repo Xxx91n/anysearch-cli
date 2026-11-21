@@ -66,7 +66,7 @@ if (args.includes("--dry-run")) {
 }
 
 const started = Date.now();
-const sandbox = makeTestHome();
+const testHome = makeTestHome();
 
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
@@ -75,11 +75,11 @@ const sandbox = makeTestHome();
 // re-enter the whole suite.
 if (selfTest) {
   console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
-  const gateEnv = { ...sandbox.env };
+  const gateEnv = { ...testHome.env };
   delete gateEnv.NODE_TEST_CONTEXT;
   const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, stdio: "inherit" });
   if (gate.status !== 0) {
-    keepTestHome(sandbox);
+    leaveTestHome(testHome);
     console.error("[preflight] blocked: the gate's own tests failed");
     process.exit(gate.status ?? 1);
   }
@@ -87,7 +87,7 @@ if (selfTest) {
 
 const child = spawn("pnpm", runArgs, {
   cwd: root,
-  env: sandbox.env,
+  env: testHome.env,
   stdio: ["inherit", "pipe", "pipe"],
   shell: process.platform === "win32",
 });
@@ -110,7 +110,7 @@ try {
     child.on("close", resolve);
   });
 } catch (error) {
-  keepTestHome(sandbox);
+  leaveTestHome(testHome);
   console.error(`[preflight] could not start pnpm: ${error.message}`);
   process.exit(1);
 }
@@ -119,11 +119,11 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (status !== 0) {
   const failed = failedTask(tail);
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  keepTestHome(sandbox);
+  leaveTestHome(testHome);
   process.exitCode = status ?? 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
-  removeTestHome(sandbox);
+  removeTestHome(testHome);
 }
 
 function readChange() {
@@ -162,14 +162,18 @@ function listFirst(files) {
 }
 
 // The child's whole home is a fresh temp dir, so a test that writes to ~/.ans
-// without sandboxing its own run lands here instead of the operator's.
+// without sandboxing its own run lands here instead of the operator's. Every
+// ANS_* is dropped first, like apps/plugin/test/server-sandbox.ts: an
+// operator's own ANS_DB_PATH or ANS_PI_SESSION_DIR would otherwise point a
+// path back at the real user root and make the temp home useless.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
-  return { home, env: { ...process.env, HOME: home, USERPROFILE: home } };
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ANS_/.test(key)));
+  return { home, env: { ...env, HOME: home, USERPROFILE: home } };
 }
 
 // A red run keeps the home: the files in it are the evidence of what leaked.
-function keepTestHome({ home }) {
+function leaveTestHome({ home }) {
   console.error(`[preflight] test home kept for inspection: ${home}`);
 }
 

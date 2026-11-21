@@ -28,19 +28,28 @@ test("a green run reports the mode and how long it took", () => {
 
 test("a run points the child's home at a throwaway dir and deletes it when green", () => {
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
+  const operatorDb = join(operatorHome, "anysearch.db");
   try {
     withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
       writeLeakyPnpm(bin, 0);
       // Two runs in a row, like the ticket's acceptance: neither may write into
-      // the home the operator actually uses.
+      // the home or the database path the operator actually uses.
       for (let run = 1; run <= 2; run += 1) {
-        const result = runCliIn(root, bin, ["--staged"], { home: operatorHome });
+        const result = runCliIn(root, bin, ["--staged"], {
+          home: operatorHome,
+          overrides: { ANS_DB_PATH: operatorDb },
+        });
         assert.equal(result.status, 0, result.stderr);
         const home = childHome(result.stdout);
         assert.ok(home, `run ${run} did not say which home it used: ${result.stdout}`);
-        assert.equal(existsSync(home), false, `run ${run} left ${home} behind`);
+        if (existsSync(home)) {
+          // A locked file is allowed to keep the dir, but the gate must say so.
+          assert.match(result.stderr, /could not delete the test home/, `run ${run} left ${home} behind without saying so`);
+          rmSync(home, { recursive: true, force: true });
+        }
       }
       assert.equal(existsSync(join(operatorHome, ".ans")), false, "the operator's own home was written to");
+      assert.equal(existsSync(operatorDb), false, "the operator's ANS_DB_PATH was written to");
     });
   } finally {
     rmSync(operatorHome, { recursive: true, force: true });
@@ -149,7 +158,7 @@ test("no refs on stdin falls back to the working tree and says so", () => {
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false, input, home } = {}) {
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input, home, overrides } = {}) {
   const env = { ...process.env };
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
@@ -160,6 +169,7 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, home } 
     env.HOME = home;
     env.USERPROFILE = home;
   }
+  if (overrides) Object.assign(env, overrides);
   delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {
     delete env.PREFLIGHT_SELF_TEST;
@@ -240,14 +250,16 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   chmodSync(join(bin, "pnpm"), 0o755);
 }
 
-// A stand-in pnpm that writes where a sloppy test would: the home it was given.
-// It prints that home as HOME=... so the test can check what the gate chose.
+// A stand-in pnpm that writes where a sloppy test would: the home it was given,
+// and the database path if the gate let that override through. It prints the
+// home as HOME=... so the test can check what the gate chose.
 function writeLeakyPnpm(bin, code) {
   const sh = [
     "#!/bin/sh",
     'echo "HOME=$USERPROFILE"',
     'mkdir -p "$USERPROFILE/.ans"',
     'echo leak > "$USERPROFILE/.ans/leak"',
+    'if [ -n "$ANS_DB_PATH" ]; then echo leak > "$ANS_DB_PATH"; fi',
     `exit ${code}`,
   ].join("\n");
   const cmd = [
@@ -255,6 +267,7 @@ function writeLeakyPnpm(bin, code) {
     "echo HOME=%USERPROFILE%",
     'mkdir "%USERPROFILE%\\.ans" 2>nul',
     'echo leak > "%USERPROFILE%\\.ans\\leak"',
+    "if defined ANS_DB_PATH echo leak > \"%ANS_DB_PATH%\"",
     `exit /b ${code}`,
   ].join("\r\n");
   write(join(bin, "pnpm"), `${sh}\n`);
