@@ -77,7 +77,7 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     interrupted = code;
     reportKeptTestHome(testHome);
-    child?.kill(signal);
+    stopChild(child, signal);
   });
 }
 
@@ -87,14 +87,18 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 // fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
 // re-enter the whole suite.
 if (selfTest) {
-  console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
-  const gateEnv = { ...testHome.env };
-  delete gateEnv.NODE_TEST_CONTEXT;
-  const gate = spawnSync(process.execPath, ["--test", ...GATE_TESTS], { cwd: root, env: gateEnv, stdio: "inherit" });
-  if (gate.status !== 0) {
+  let status;
+  try {
+    status = await runGateTests();
+  } catch (error) {
+    status = null;
+    console.error(`[preflight] could not start the gate's own tests: ${error.message}`);
+  }
+  if (interrupted) process.exit(interrupted);
+  if (status !== 0) {
     reportKeptTestHome(testHome);
     console.error("[preflight] blocked: the gate's own tests failed");
-    process.exit(gate.status ?? 1);
+    process.exit(status ?? 1);
   }
 }
 
@@ -103,6 +107,7 @@ child = spawn("pnpm", runArgs, {
   env: testHome.env,
   stdio: ["inherit", "pipe", "pipe"],
   shell: process.platform === "win32",
+  detached: process.platform !== "win32",
 });
 
 let tail = "";
@@ -208,6 +213,48 @@ function corepackHome(env, home) {
 // A red run keeps the home: the files in it are the evidence of what leaked.
 function reportKeptTestHome({ home }) {
   console.error(`[preflight] test home kept for inspection: ${home}`);
+}
+
+async function runGateTests() {
+  console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  const gateEnv = { ...testHome.env };
+  delete gateEnv.NODE_TEST_CONTEXT;
+  child = spawn(process.execPath, ["--test", ...GATE_TESTS], {
+    cwd: root,
+    env: gateEnv,
+    stdio: "inherit",
+    detached: process.platform !== "win32",
+  });
+  try {
+    return await new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", resolve);
+    });
+  } finally {
+    child = null;
+  }
+}
+
+// Stop the whole tree: pnpm's turbo and the tests it starts are grandchildren,
+// and on Windows `shell: true` puts a cmd.exe between the gate and pnpm.
+function stopChild(child, signal) {
+  if (!child?.pid) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+    return;
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code === "ESRCH") return;
+    throw error;
+  }
+  // A child that ignores the signal must not keep the gate alive.
+  setTimeout(() => {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {}
+  }, 5000).unref();
 }
 
 function removeTestHome({ home }) {

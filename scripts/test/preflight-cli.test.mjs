@@ -26,11 +26,11 @@ test("a green run reports the mode and how long it took", () => {
   });
 });
 
-test("a run gives the child a throwaway home and leaves the operator's home alone", () => {
+test("a run gives the child a throwaway home and leaves the operator's home alone", async () => {
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
   const operatorDb = join(operatorHome, "anysearch.db");
   try {
-    withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeLeakyPnpm(bin, 0) }, ({ root, bin }) => {
+    await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeLeakyPnpm(bin, 0) }, ({ root, bin }) => {
       // Two runs in a row, like the ticket's acceptance: neither may write into
       // the home or the database path the operator actually uses. Windows env
       // names are case-insensitive, so the lowercase key is the harder case
@@ -59,8 +59,8 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   }
 });
 
-test("a red run keeps the test home and prints where it is", () => {
-  withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
+test("a red run keeps the test home and prints where it is", async () => {
+  await withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"]);
     assert.equal(result.status, 1);
     const home = keptHome(result.stderr);
@@ -71,15 +71,14 @@ test("a red run keeps the test home and prints where it is", () => {
   });
 });
 
-test("an interrupted run keeps the test home and stops pnpm", { skip: process.platform === "win32" }, async () => {
-  const workspace = makeWorkspace({ pnpm: writeSleepingPnpm });
-  try {
+test("an interrupted run keeps the test home and stops the whole tree", { skip: process.platform === "win32" }, async () => {
+  await withWorkspace({ pnpm: writeSleepingPnpm }, async ({ root, bin }) => {
     const env = { ...process.env };
-    env.PATH = `${workspace.bin}${delimiter}${process.env.PATH ?? ""}`;
+    env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
     delete env.PREFLIGHT_GATE_TESTS;
     env.PREFLIGHT_SELF_TEST = "0";
-    const gate = spawn(process.execPath, [join(workspace.root, "scripts", "preflight-test.mjs"), "--full"], {
-      cwd: workspace.root,
+    const gate = spawn(process.execPath, [join(root, "scripts", "preflight-test.mjs"), "--full"], {
+      cwd: root,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -88,26 +87,36 @@ test("an interrupted run keeps the test home and stops pnpm", { skip: process.pl
     gate.stderr.on("data", (chunk) => {
       err += chunk;
     });
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`pnpm never started: ${err}`)), 10000);
-      gate.stdout.on("data", (chunk) => {
-        out += chunk;
-        if (!out.includes("PNPM=")) return;
-        clearTimeout(timer);
-        resolve();
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`pnpm never started: ${err}`)), 10000);
+        gate.stdout.on("data", (chunk) => {
+          out += chunk;
+          if (!/^GRANDCHILD=\d+$/m.test(out)) return;
+          clearTimeout(timer);
+          resolve();
+        });
       });
-    });
-    gate.kill("SIGTERM");
-    const code = await new Promise((resolve) => gate.on("close", resolve));
-    assert.equal(code, 143, err);
-    const home = keptHome(err);
-    assert.ok(home, `no kept test home in: ${err}`);
-    assert.equal(existsSync(join(home, ".ans", "leak")), true, "the leak is not in the kept home");
-    await waitGone(Number(/^PNPM=(\d+)$/m.exec(out)[1]));
-    rmSync(home, { recursive: true, force: true });
-  } finally {
-    dropWorkspace(workspace);
-  }
+      gate.kill("SIGTERM");
+      const code = await new Promise((resolve) => gate.on("close", resolve));
+      assert.equal(code, 143, err);
+      const home = keptHome(err);
+      assert.ok(home, `no kept test home in: ${err}`);
+      assert.equal(existsSync(join(home, ".ans", "leak")), true, "the leak is not in the kept home");
+      await waitGone(Number(/^PNPM=(\d+)$/m.exec(out)[1]));
+      await waitGone(Number(/^GRANDCHILD=(\d+)$/m.exec(out)[1]));
+    } finally {
+      gate.kill("SIGKILL");
+      // Clean up whatever the run left behind, including a failed assertion's.
+      for (const match of out.matchAll(/^(?:PNPM|GRANDCHILD)=(\d+)$/gm)) {
+        try {
+          process.kill(-Number(match[1]), "SIGKILL");
+        } catch {}
+      }
+      const home = keptHome(err);
+      if (home) rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
 
 test("a full run runs the gate's own tests first", () => {
@@ -165,8 +174,8 @@ test("a full dry run also announces the gate's own tests", () => {
   });
 });
 
-test("an incremental dry run prints the selected packages and the turbo command", () => {
-  withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+test("an incremental dry run prints the selected packages and the turbo command", async () => {
+  await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged", "--dry-run"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
@@ -179,8 +188,8 @@ test("an incremental dry run prints the selected packages and the turbo command"
   });
 });
 
-test("an incremental run hands pnpm one filter per selected package", () => {
-  withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+test("an incremental run hands pnpm one filter per selected package", async () => {
+  await withWorkspace({ staged: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
@@ -188,8 +197,8 @@ test("an incremental run hands pnpm one filter per selected package", () => {
   });
 });
 
-test("nothing staged reports nothing to run", () => {
-  withWorkspace({}, ({ root, bin }) => {
+test("nothing staged reports nothing to run", async () => {
+  await withWorkspace({}, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /nothing to run/);
@@ -197,8 +206,8 @@ test("nothing staged reports nothing to run", () => {
   });
 });
 
-test("a pushed ref runs the gate on the files it carries", () => {
-  withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin, refs }) => {
+test("a pushed ref runs the gate on the files it carries", async () => {
+  await withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin, refs }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: refs });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
@@ -206,8 +215,8 @@ test("a pushed ref runs the gate on the files it carries", () => {
   });
 });
 
-test("an unreadable push ref runs the full suite", () => {
-  withWorkspace({}, ({ root, bin }) => {
+test("an unreadable push ref runs the full suite", async () => {
+  await withWorkspace({}, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: "not a ref line" });
     assert.equal(result.status, 1); // the fixture's fake pnpm exits 1
     assert.match(result.stdout, /full suite: could not read the pushed commits/);
@@ -216,8 +225,8 @@ test("an unreadable push ref runs the full suite", () => {
   });
 });
 
-test("no refs on stdin falls back to the working tree and says so", () => {
-  withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+test("no refs on stdin falls back to the working tree and says so", async () => {
+  await withWorkspace({ pushed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: "" });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /no refs on stdin, looked at the working tree instead/);
@@ -249,11 +258,11 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
   });
 }
 
-function withWorkspace(options = {}, run) {
+async function withWorkspace(options = {}, run) {
   let workspace;
   try {
     workspace = makeWorkspace(options);
-    run(workspace);
+    await run(workspace);
   } finally {
     if (workspace) dropWorkspace(workspace);
   }
@@ -354,10 +363,10 @@ function writePnpmShim(bin, { sh, cmd }) {
   chmodSync(join(bin, "pnpm"), 0o755);
 }
 
-// A stand-in pnpm that stays alive until the gate forwards the signal, and
-// prints its pid so the test can prove it is gone afterwards. The pid line is
-// last: the test signals as soon as it sees it, so everything before must be
-// on disk by then.
+// A stand-in pnpm that starts a grandchild, stays alive until the gate
+// forwards the signal, and prints both pids so the test can prove the whole
+// group is gone. The pid lines are last: the test signals as soon as it sees
+// the grandchild, so everything before must be on disk by then.
 function writeSleepingPnpm(bin) {
   const sh = [
     "#!/bin/sh",
@@ -365,8 +374,10 @@ function writeSleepingPnpm(bin) {
     'echo "PROFILE=$USERPROFILE"',
     'mkdir -p "$USERPROFILE/.ans"',
     'echo leak > "$USERPROFILE/.ans/leak"',
+    "sleep 30 &",
     'echo "PNPM=$$"',
-    "exec sleep 30",
+    'echo "GRANDCHILD=$!"',
+    "wait",
   ].join("\n");
   write(join(bin, "pnpm"), `${sh}\n`);
   chmodSync(join(bin, "pnpm"), 0o755);
