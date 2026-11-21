@@ -223,11 +223,6 @@ test("status names the effective source per provider without printing values", a
   }
 });
 
-// The `statusLines` helper is the one piece of `runAuth` a test needs directly:
-// it is what decides "where does this provider's key come from", and the point
-// of that report is that it stays true for every source. It takes the config
-// root as an argument, so a test gives it an empty one and no key can leak in
-// from the operator's own home directory.
 test("a broken credential file is one line in `ans auth status`, not a [config] and a [WARN]", async () => {
   // #357: status used to read the file three times - the search resolver, the
   // model resolver and the report itself - so the same fault printed a
@@ -267,6 +262,11 @@ test("a broken credential file is one line in `ans auth status`, not a [config] 
   }
 });
 
+// The `statusLines` helper is the one piece of `runAuth` a test needs directly:
+// it is what decides "where does this provider's key come from", and the point
+// of that report is that it stays true for every source. It takes the config
+// root as an argument, so a test gives it an empty one and no key can leak in
+// from the operator's own home directory.
 test("statusLines names the source for each provider and shows no key", () => {
   const { home, cleanup } = tempHome();
   try {

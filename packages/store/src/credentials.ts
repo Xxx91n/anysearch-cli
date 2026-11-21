@@ -292,11 +292,12 @@ export function readUserCredentials(
 /**
  * The sentence a *warning line* says about a credential file that could not be
  * read or parsed: `resolveSearchCredentials` puts it in `warnings` (the kernel and
- * MCP entries print those) and `ans auth` prints it after `[WARN] `. The
- * diagnosis surfaces do not use it - doctor's row and `ans llm`'s BROKEN line
- * print `file.error` in their own shape, because a diagnosis names the fix. All
- * of them read the same `error`, so the fault text itself is written once.
- * Undefined for a healthy (or absent) file.
+ * MCP entries print those) and `ans auth status` prints it after `[WARN] `. The
+ * diagnosis surfaces word it their own way instead - doctor's failed row, `ans
+ * auth list`'s `BROKEN —` and `ans llm`'s `BROKEN -` all print `file.error`,
+ * because a diagnosis names the fix rather than just what is missing. All of them
+ * read the same `error`, so the fault text itself is written once. Undefined for
+ * a healthy (or absent) file.
  */
 export function credentialFileWarning(file: CredentialFileContents): string | undefined {
   return file.error ? file.error + "; continuing without the user credential file" : undefined;
