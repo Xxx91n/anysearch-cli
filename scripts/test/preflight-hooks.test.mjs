@@ -14,8 +14,7 @@ const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")
 
 const hookPath = (cwd) => join(cwd, ".git", "hooks", "pre-push");
 
-/** A temp dir whose git sees no config of the operator's, plus a fresh clone in it. */
-/** Drop what would move the repository or inject config; i matters on Windows. */
+/** Drop what would move the repository or inject config; the i flag is for Windows. */
 function withoutRepoVariables(inherited) {
   const env = { ...inherited };
   const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/i;
@@ -25,6 +24,7 @@ function withoutRepoVariables(inherited) {
   return env;
 }
 
+/** A temp dir whose git sees no config of the operator's, plus a fresh clone in it. */
 function withSandbox(fn) {
   const base = mkdtempSync(join(tmpdir(), "ans-hooks-"));
   const home = join(base, "home");
