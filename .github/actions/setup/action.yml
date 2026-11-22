@@ -1,0 +1,75 @@
+# Design: #407 (parent #389) — collapse the repeated job bootstrap (pnpm setup,
+# Node setup with pnpm cache, temporary dep-age override, pnpm install) into a
+# single local composite action instead of duplicating it across workflows or
+# wrapping whole jobs in reusable workflows. `actions/checkout` stays in each
+# caller because GitHub Actions requires the repo on disk before resolving a
+# local `./.github/actions/*` path; `knowledge-ranking.yml` stays separate
+# because it checks out two subdirectories (`candidate/` and `baseline/`) and
+# has no repo root package.json.
+#
+# Design: keep every varying piece input-driven with zero behavior change —
+# `node-version` defaults to "22" (`install-smoke` passes 22.19.0, `conformance`
+# passes 24, and `ship-gate.yml` passes 22 explicitly so its Node-22 alignment
+# test keeps asserting the workflow directly), `install-args` defaults to
+# "--ignore-scripts" (`native-smoke` and `coverage` pass "--frozen-lockfile"),
+# and `dep-age-override` defaults to "true" while `release.yml` and
+# `conformance.yml` pass "false" so release stays strict at all times.
+
+name: Setup Node, pnpm, and dependencies
+description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
+
+inputs:
+  node-version:
+    description: "Node.js version passed to actions/setup-node"
+    required: false
+    default: "22"
+  install-args:
+    description: "Space-separated flags passed to `pnpm install`"
+    required: false
+    default: "--ignore-scripts"
+  dep-age-override:
+    description: "Whether to run scripts/ci-dep-age-override.mjs before install ('true' or 'false')"
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
+      with:
+        install: false
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+
+    # Design: keep the #260 bypass wired through the self-expiring script rather
+    # than setting PNPM_CONFIG_MINIMUM_RELEASE_AGE directly (enforced by
+    # ship-gate E6); retiring the override later is a single edit here.
+    - name: dependency-age override (temporary)
+      if: ${{ inputs.dep-age-override == 'true' }}
+      shell: bash
+      run: node scripts/ci-dep-age-override.mjs
+
+    # Design: pass `install-args` via env and split into a bash array instead of
+    # interpolating `${{ inputs.install-args }}` into `run:` — prevents script
+    # injection and avoids empty-array issues under macOS bash 3.2.
+    # `--ignore-scripts` is the default because better-sqlite3 ships prebuilds
+    # and pnpm-workspace.yaml intentionally pins allowBuilds=false for it.
+    - name: Install dependencies
+      shell: bash
+      env:
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      run: |
+        if [ -n "${INSTALL_ARGS:-}" ]; then
+          IFS=' ' read -r -a args <<< "$INSTALL_ARGS"
+          if [ "${#args[@]}" -gt 0 ]; then
+            pnpm install "${args[@]}"
+          else
+            pnpm install
+          fi
+        else
+          pnpm install
+        fi

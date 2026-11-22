@@ -24,19 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
-        with: { install: false }
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # ponytail: --ignore-scripts required because better-sqlite3 ships prebuilds
-      # and our allowBuilds=false pnpm-workspace.yaml entry is intentional.
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - run: pnpm install --ignore-scripts
+      - uses: ./.github/actions/setup
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
       - name: Preflight selection tests
@@ -84,17 +72,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
-        with: { install: false }
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # Same install as check-build; the dependency-age override is temporary.
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - run: pnpm install --ignore-scripts
+      - uses: ./.github/actions/setup
 
       # Design: copy instead of reinstall — pnpm links are relative, so the copy
       # resolves into its own store. `.git` stays behind; no test reads it. This
@@ -134,17 +112,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
-        with: { install: false }
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: 22.19.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - run: pnpm install --ignore-scripts
       - run: pnpm -w turbo build
       - name: install-smoke lane
         run: node scripts/install-smoke.mjs
@@ -195,17 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
-        with: { install: false }
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - run: pnpm install --ignore-scripts
+      - uses: ./.github/actions/setup
       - name: vector-arm golden cases (store test:online)
         run: pnpm -C packages/store test:online
         env:
@@ -226,17 +186,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
-        with: { install: false }
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - run: pnpm install --ignore-scripts
+      - uses: ./.github/actions/setup
       - name: anysearch MCP live probe (retriever test:online)
         run: pnpm -C packages/retriever test:online
         env:
