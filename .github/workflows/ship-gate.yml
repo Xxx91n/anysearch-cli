@@ -74,10 +74,9 @@ jobs:
           node-version: 22
           dep-age-override: true
 
-      # Design: docs-only PRs skip the gate step, not the job — a job-level
-      # `if` would register each leg as skipped, and skipped is not evidence.
+      # Design: lane flag at step level; see scripts/ci-changes.mjs. A missing flag runs.
       - name: ship-gate (9 steps; matrix install runs per-OS in CI)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-ship-gate != 'false' }}
         run: node scripts/ship-gate.mjs
         env:
           CI: "true"
@@ -85,7 +84,7 @@ jobs:
 
       # — Layer-2 artifact upload, runs even when ship-gate fails.
       - name: upload ship-gate report
-        if: ${{ always() && steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ always() && steps.setup.outputs.run-ship-gate != 'false' }}
         uses: actions/upload-artifact@v4
         with:
           name: ship-gate-${{ matrix.os }}
@@ -96,14 +95,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # golden memory-eval as a dedicated path-filtered job (signal fast,
-  # avoid paying eval cost for doc/CI-only diffs). ship-gate above stays the merge gate.
+  # golden memory-eval as a dedicated lane (signal fast; the lane list lives in
+  # scripts/ci-changes.mjs). ship-gate above stays the merge gate.
   memory-eval:
-    name: memory-eval (golden, path-filtered)
+    name: memory-eval (golden, lane-selected)
     runs-on: ubuntu-latest
     steps:
-      # Design: the changed-file list comes from setup — this job reads it
-      # instead of recomputing a merge-base.
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
@@ -112,20 +109,8 @@ jobs:
           node-version: 22
           dep-age-override: true
 
-      - name: path filter (packages/store/**, eval scripts)
-        id: changes
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
-        shell: bash
-        env:
-          CHANGED_FILES: ${{ steps.setup.outputs.changed-files }}
-          CHANGES_READABLE: ${{ steps.setup.outputs.changes-readable }}
-        run: |
-          # Design: an unreadable change set runs the eval — green with no
-          # evidence is exactly what the release gate forbids.
-          if [ "$CHANGES_READABLE" != "true" ] || grep -Eq '^(packages/store/|scripts/eval-(judge|calibrate)\.mjs$)' <<< "$CHANGED_FILES"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
-
       - name: memory eval (golden gate, /0028)
-        if: ${{ steps.changes.outputs.run == '1' }}
+        if: ${{ steps.setup.outputs.run-memory-eval != 'false' }}
         # round-59 audit R-2: the golden gate runs the offline slice; the vector-arm slice is
         # re-established by the test-online job in ci.yml.
         run: pnpm -C packages/store eval --offline
@@ -162,7 +147,7 @@ jobs:
           dep-age-override: true
 
       - name: node baseline (env facts before any native load)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         run: node -v
 
       # Signature split A: a require-time SIGSEGV/exit-139 here = better-sqlite3
@@ -172,15 +157,15 @@ jobs:
       # root-level require dies with MODULE_NOT_FOUND (split A) before the probe
       # ever reaches split B. Build and abstain-path repro stay at repo root.
       - name: better-sqlite3 registration check
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         working-directory: packages/store
         run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
 
       - name: build cli (bundled artifact is the shipped exit path)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         run: pnpm --filter @anysearch-cli/cli build
 
       # Signature split B: libc++abi/mutex abort on process exit = family.
       - name: abstain-path repro + crash-signature summary
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         run: node scripts/macos-exit-probe.mjs

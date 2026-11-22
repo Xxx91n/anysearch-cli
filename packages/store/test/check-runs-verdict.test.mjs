@@ -17,7 +17,7 @@ const healthy = () => [
   run("check-build (windows-latest)", "success"),
   run("install-smoke (B2: pack -> clean install -> doctor -> domain -> search)", "success"),
   run("test:online (online-gated: store vector-arm + embedding, network required)", "success"),
-  run("memory-eval (golden, path-filtered)", "success"),
+  run("memory-eval (golden, lane-selected)", "success"),
   run("ship-gate (ubuntu-latest)", "success"),
   run("ship-gate (macos-latest)", "success"),
   run("ship-gate (windows-latest)", "success"),
