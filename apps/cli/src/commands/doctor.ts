@@ -465,13 +465,16 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       });
       const installedSkills = new Map<string, string[]>();
       const manifestErrors: string[] = [];
+      const seenRoots = new Set<string>();
       for (const project of [false, true]) {
         const scopeOpts = { home: configHome, cwd, project };
+        const root = managedSkillsRoot(scopeOpts);
+        if (seenRoots.has(root)) continue;
+        seenRoots.add(root);
         try {
-          const root = managedSkillsRoot(scopeOpts);
           for (const skill of readInstalledSkillsReadOnly(scopeOpts)) {
             const roots = installedSkills.get(skill.name) ?? [];
-            roots.push(root);
+            if (!roots.includes(root)) roots.push(root);
             installedSkills.set(skill.name, roots);
           }
         } catch (error) {
@@ -487,22 +490,19 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
       const installedNotInAnyDomain = [...installedSkills.keys()].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
-      const isSubset = activeNotInstalled.length < schema.skills.active.length;
       const skillNotes: string[] = [...manifestErrors];
-      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && hasToolRequires) {
-        const missingNames = activeNotInstalled.join(",");
-        skillNotes.push(
-          isSubset
-            ? `${missingNames} 不在 ${MANAGED_SKILLS_REL_PATH}——不影响筛工具，当前域按域 TOML 的 toolRequires 筛工具`
-            : `当前域按 toolRequires 筛工具——只看域 TOML，装没装进 ${MANAGED_SKILLS_REL_PATH} 都不影响`,
-        );
+      if (hasToolRequires) {
+        if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+          skillNotes.push(`未装进 ${MANAGED_SKILLS_REL_PATH}：${activeNotInstalled.join("、")}`);
+        }
+        skillNotes.push(`toolRequires：只按域 TOML 筛工具，装没装进 ${MANAGED_SKILLS_REL_PATH} 都不影响`);
       }
       if (installedNotInAnyDomain.length > 0) {
         const formatted = installedNotInAnyDomain
           .map((name) => `${name}（${(installedSkills.get(name) ?? []).join("、")}）`)
-          .join(", ");
+          .join("、");
         skillNotes.push(
-          `装了但没在任何域里启用：${formatted}——供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
+          `装了但没在任何域里启用：${formatted}，供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
         );
       }
       const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";

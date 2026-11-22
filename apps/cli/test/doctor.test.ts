@@ -510,7 +510,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowAll);
     const detailAll = rowAll!.detail ?? "";
-    assert.match(detailAll, /^search,doctor（当前域按 toolRequires 筛工具——只看域 TOML，装没装进 skills\/synced\/ 都不影响/, "全部未装且配了 toolRequires：" + detailAll);
+    assert.match(detailAll, /未装进 skills\/synced\/：search、doctor；toolRequires：只按域 TOML 筛工具/, "全部未装且配了 toolRequires：" + detailAll);
 
     // 2. 只装了一部分（装了 doctor，没装 search）
     const synced = join(home, ".ans", "skills", "synced");
@@ -544,7 +544,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowSub);
     const detailSub = rowSub!.detail ?? "";
-    assert.match(detailSub, /^search,doctor（search 不在 skills\/synced\/——不影响筛工具，当前域按域 TOML 的 toolRequires 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
+    assert.match(detailSub, /未装进 skills\/synced\/：search；toolRequires：只按域 TOML 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
