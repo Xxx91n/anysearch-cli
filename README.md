@@ -144,7 +144,10 @@ ans skill uninstall ans --project
 `ans skill` only copies a directory inside a local Git checkout (one that contains a `SKILL.md`) into `skills/synced/`,
 recording its source and commit. It is not a package manager and does not execute skill code. Locking, manifests, and cleanup live in `apps/cli/src/skill-store.ts`.
 
-**Installed does not mean active.** These commands never touch domain TOML files. Which skills can run is still decided by `[skills].active` in the current domain. You activate them the same way as before: by editing the domain config.
+**Installed does not mean active.** These commands never touch domain TOML files:
+- **What `[skills].active` names**: skill keys declared in the domain TOML (shipped domains list runtime tags like `search`, `doctor`, `research`), not an auto-loader for `skills/synced/` directories.
+- **What `[skills.toolRequires]` is**: a reserved optional skill-to-tool filter (`filterAgentTools` keeps `hooks.toolWhitelist ∩ (∪ toolRequires[active] ∪ {search})`). No shipped domain declares `toolRequires`; when omitted, `hooks.toolWhitelist` alone filters tools and `[skills].active` does not change runtime behavior.
+- **How an installed skill is actually used**: `ans skill install` copies the skill directory (with `SKILL.md`) into `skills/synced/` for a host agent (or human) to read (`PiAgentRuntime` runs with `noSkills: true` and never reads `skills/synced/`); to let `[skills].active` filter runtime tools for a skill, declare both `[skills].active` and `[skills.toolRequires]` in the domain TOML.
 
 ## Provider Connections & Capabilities
 

@@ -14,7 +14,7 @@ import {
   SqliteSessionStore,
   domainTomlPath,
   listDomainTomls,
-  loadDomain,
+  loadDomainByNameIn,
   loadDomainFromString,
   preMigrationBackupPath,
   preMigrationRecordPath,
@@ -35,6 +35,7 @@ import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/ho
 import { computePlan } from "../host-wiring/plan";
 import { findInterrupted, wiringRoot } from "../host-wiring/journal";
 import { readSwitchHistory } from "../upgrade-record";
+import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly } from "../skill-store";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -428,11 +429,23 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     });
   }
   {
+    const dirs = domainSearchDirs();
+    const found = listDomainTomls(dirs);
+    const parsedDomains = new Map<string, { dir: string; schema?: ReturnType<typeof loadDomainByNameIn>; error?: unknown }>();
+    for (const [file, dir] of found) {
+      const domainName = file.replace(/\.toml$/, "");
+      try {
+        parsedDomains.set(file, { dir, schema: loadDomainByNameIn(domainName, dirs) });
+      } catch (error) {
+        parsedDomains.set(file, { dir, error });
+      }
+    }
+
     const active = resolveActiveDomain();
     const constraint = resolveDomainConstraint({
       name: active.name,
       declared: active.declared,
-      dirs: domainSearchDirs(),
+      dirs,
     });
     if (constraint.state === "established") {
       const schema = constraint.schema;
@@ -441,7 +454,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: `当前领域 ${active.name}`,
         state: "ready",
         mode: "offline",
-        detail: `当前生效：${schema.name}（${domainTomlPath(cwd, active.name, domainSearchDirs())}）${active.declared ? "" : "（没指定，用默认）"}`,
+        detail: `当前生效：${schema.name}（${domainTomlPath(cwd, active.name, dirs)}）${active.declared ? "" : "（没指定，用默认）"}`,
       });
       report.add({
         layer: "capability",
@@ -450,12 +463,49 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: schema.sources.enabled.join(",") || "(空)",
       });
+      const installedSkills = new Set<string>();
+      const manifestErrors: string[] = [];
+      const seenRoots = new Set<string>();
+      for (const project of [false, true]) {
+        const scopeOpts = { home: configHome, cwd, project };
+        const root = managedSkillsRoot(scopeOpts);
+        if (seenRoots.has(root)) continue;
+        seenRoots.add(root);
+        try {
+          for (const skill of readInstalledSkillsReadOnly(scopeOpts)) {
+            installedSkills.add(skill.name);
+          }
+        } catch (error) {
+          manifestErrors.push(`${project ? "项目级" : "用户级"}清单读不出：${errorText(error).slice(0, 80)}`);
+        }
+      }
+      const allActiveInDomains = new Set<string>(schema.skills.active);
+      for (const entry of parsedDomains.values()) {
+        if (entry.schema) {
+          for (const s of entry.schema.skills.active) allActiveInDomains.add(s);
+        }
+      }
+      const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
+      const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
+      const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
+      const skillNotes: string[] = [...manifestErrors];
+      if (hasToolRequires && manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+        skillNotes.push(
+          `清单里没这几个名字：${activeNotInstalled.join("、")}，筛工具只看域 TOML，不读 ${MANAGED_SKILLS_REL_PATH}`,
+        );
+      }
+      if (installedNotInAnyDomain.length > 0) {
+        skillNotes.push(
+          `装了但没在任何域里启用：${installedNotInAnyDomain.join("、")}，只供宿主直接读`,
+        );
+      }
+      const baseSkillsDetail = schema.skills.active.join("、") || "这个域没有启用技能";
       report.add({
         layer: "capability",
         name: "领域 skills.active",
         state: schema.skills.active.length > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: schema.skills.active.join(",") || "这个域没有启用技能",
+        detail: skillNotes.length > 0 ? `${baseSkillsDetail}（${skillNotes.join("；")}）` : baseSkillsDetail,
       });
       report.add({
         layer: "capability",
@@ -508,9 +558,6 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         detail: "没指定领域，也不做领域过滤；想限定就 ans domain <名字>",
       });
     }
-  }
-  {
-    const found = listDomainTomls(domainSearchDirs());
     if (found.size === 0) {
       report.add({
         layer: "capability",
@@ -520,23 +567,22 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         detail: "解析链上没找到任何 domains/*.toml；装完整产品应该带一个",
       });
     }
-    for (const [file, dir] of found) {
-      try {
-        const schema = loadDomain(path.join(dir, file));
+    for (const [file, parsed] of parsedDomains) {
+      if (parsed.schema) {
         report.add({
           layer: "capability",
           name: `领域文件 ${file.replace(/\.toml$/, "")}`,
-          state: schema.name.length > 0 ? "ready" : "failed",
+          state: parsed.schema.name.length > 0 ? "ready" : "failed",
           mode: "offline",
-          detail: dir,
+          detail: parsed.dir,
         });
-      } catch (error) {
+      } else {
         report.add({
           layer: "capability",
           name: `领域文件 ${file}`,
           state: "failed",
           mode: "offline",
-          detail: errorText(error).slice(0, 160),
+          detail: errorText(parsed.error).slice(0, 160),
         });
       }
     }

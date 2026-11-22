@@ -2,7 +2,8 @@
 // Installation never changes the Active Domain or its active skill list.
 
 import {
-  inspectInstalledSkills, installSkill, managedSkillsRoot, skillManifestPath,
+  inspectInstalledSkills, installSkill, MANAGED_SKILLS_REL_PATH,
+  managedSkillsRoot, skillManifestPath,
   uninstallSkill, validateInstalledSkills, SkillError, type SkillOptions,
 } from "../skill-store";
 
@@ -20,14 +21,16 @@ Commands:
   uninstall <name>   Remove only the directory recorded in installed.json
 
 Options:
-  --project          Use .ans/skills/synced/ (default: user scope)
-  --user             Use ~/.ans/skills/synced/ explicitly
+  --project          Use .ans/${MANAGED_SKILLS_REL_PATH} (default: user scope)
+  --user             Use ~/.ans/${MANAGED_SKILLS_REL_PATH} explicitly
   --help, -h         Show this help
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
 Frontmatter must be a YAML mapping with a safe lowercase name (1–64 characters).
-Machine-managed skills live in synced/; sibling directories are user-authored.
-Installation does not activate a skill: edit [skills].active in Active Domain TOML.
+Managed skills live in ${MANAGED_SKILLS_REL_PATH}; sibling directories under skills/ are user-authored.
+install copies the whole skill directory into ${MANAGED_SKILLS_REL_PATH}; the runtime never loads it (a host agent reads the files directly).
+[skills].active is just a list of keys for [skills.toolRequires], unrelated to directories in ${MANAGED_SKILLS_REL_PATH}.
+Without [skills.toolRequires] (all shipped domains omit it), [skills].active changes nothing at runtime.
 Exit codes: 0 success · 1 validation/filesystem/manifest failure · 2 usage error
 `;
 

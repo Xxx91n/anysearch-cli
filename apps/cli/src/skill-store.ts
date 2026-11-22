@@ -88,9 +88,14 @@ export function skillsRoot(opts: SkillOptions = {}): string {
     : ansUserSkillsDirFor(resolve(opts.home ?? homedir()));
 }
 
+/** Subdirectory name inside skills/ that holds installer-managed skills. */
+export const MANAGED_SKILLS_SUBDIR = "synced";
+/** Display-relative path for installer-managed skills (`skills/synced/`). */
+export const MANAGED_SKILLS_REL_PATH = `skills/${MANAGED_SKILLS_SUBDIR}/`;
+
 /** Resolve the machine-managed synced/ directory inside the selected scope. */
 export function managedSkillsRoot(opts: SkillOptions = {}): string {
-  return join(skillsRoot(opts), "synced");
+  return join(skillsRoot(opts), MANAGED_SKILLS_SUBDIR);
 }
 
 /** Resolve the manifest path inside a managed root. */
@@ -985,6 +990,15 @@ function missingDirectoryWarnings(managed: string, entries: InstalledSkill[]): s
   });
 }
 
+/** Read the manifest-backed skill list from a managed root without taking locks or deleting residue. */
+function readInstalledFromManaged(managed: string): InstalledSkill[] {
+  if (!statIfPresent(manifestIn(managed))) {
+    requireScopeAnchors(managed);
+    if (isEmptyManagedRoot(managed)) return [];
+  }
+  return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Reconcile residue when safe, then read the manifest-backed listing. */
 function readInstallationListing(opts: SkillOptions): SkillListing {
   const managed = managedSkillsRoot(opts);
@@ -992,14 +1006,23 @@ function readInstallationListing(opts: SkillOptions): SkillListing {
   // Design: read commands clean only while holding the lock — a live writer keeps
   // the read path lock-free, since the manifest replace is an atomic rename.
   maintainScope(managed);
-  if (!statIfPresent(manifestIn(managed)) && isEmptyManagedRoot(managed)) return { skills: [], warnings: [] };
-  const skills = Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+  const skills = readInstalledFromManaged(managed);
   return { skills, warnings: missingDirectoryWarnings(managed, skills) };
 }
 
 /** List installed skills together with recovery hints. */
 export function inspectInstalledSkills(opts: SkillOptions = {}): SkillListing {
   return readInstallationListing(opts);
+}
+
+/**
+ * Pure read-only manifest listing for diagnostics (`ans doctor`).
+ * Never acquires locks, reclaims stale locks, or deletes residue files.
+ */
+export function readInstalledSkillsReadOnly(opts: SkillOptions = {}): InstalledSkill[] {
+  const managed = managedSkillsRoot(opts);
+  if (!statIfPresent(managed)) return [];
+  return readInstalledFromManaged(managed);
 }
 
 /** Resolve an installed directory and verify it stays inside the managed root. */
