@@ -25,15 +25,11 @@ function withSandbox(fn) {
   // installs outside the sandbox — and --force could then overwrite a real hook
   // on the operator's machine.
   const env = { ...process.env };
-  for (const key of [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_COMMON_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  ]) {
-    delete env[key];
+  // GIT_DIR and friends move the repository; GIT_CONFIG_COUNT plus KEY/VALUE
+  // pairs injects config without a file, core.hooksPath included.
+  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/;
+  for (const key of Object.keys(env)) {
+    if (locating.test(key)) delete env[key];
   }
   Object.assign(env, {
     HOME: home,
@@ -352,7 +348,7 @@ test("outside a git repo it says it cannot tell instead of guessing", () => {
 test("an unknown command is a usage error, not a silent success", () => {
   withSandbox((box) => {
     const clone = box.clone();
-    for (const args of [[], ["instal"], ["status", "--wat"]]) {
+    for (const args of [[], ["instal"], ["status", "--wat"], ["constructor"], ["toString", "--force"]]) {
       const result = box.run(clone, args);
       assert.equal(result.status, 2, `${args.join(" ") || "(no args)"} exited ${result.status}`);
       assert.match(result.stderr, /usage:/);

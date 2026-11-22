@@ -322,7 +322,7 @@ const FLAGS = { install: ["--force"], status: [] };
 
 if (isEntryPoint()) {
   const [command, ...flags] = process.argv.slice(2);
-  const allowed = FLAGS[command];
+  const allowed = Object.hasOwn(FLAGS, command) ? FLAGS[command] : null;
   if (!allowed || flags.some((flag) => !allowed.includes(flag))) {
     console.error("[hooks] usage: node scripts/preflight-hooks.mjs install [--force] | status");
     process.exit(2);
