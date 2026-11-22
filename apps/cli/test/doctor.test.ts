@@ -386,7 +386,7 @@ test("ans doctor：领域 skills.active 同时解释「装了但没在任何域�
     assert.ok(row, "能力层要有「领域 skills.active」");
     assert.equal(row!.state, "ready");
     const detail = row!.detail ?? "";
-    assert.match(detail, /域里写了但不在 skills\/synced\/：search,doctor/, "要指出当前域里写了但不在 skills/synced/ 的名字：" + detail);
+    assert.match(detail, /域里的技能键名：search,doctor——未装在 skills\/synced\//, "要解释当前域里写了但未装在 skills/synced/ 的名字：" + detail);
     assert.match(detail, /装了但没在任何域里启用：ans/, "要指出已装但没在任何域里列出的 skill：" + detail);
     assert.match(detail, /toolRequires/, "要讲清和 toolRequires 的关系：" + detail);
   } finally {
@@ -450,7 +450,7 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     const detail = row!.detail ?? "";
     assert.match(detail, /项目级清单读不出/, "损坏的那一边要报出清单读不出：" + detail);
     assert.match(detail, /装了但没在任何域里启用：ans/, "完好的用户级已装 skill 仍要被报出：" + detail);
-    assert.equal(detail.includes("域里写了但不在 skills/synced/"), false, "有一边清单读不出时不能断言没装：" + detail);
+    assert.equal(detail.includes("域里的技能键名："), false, "有一边清单读不出时不能断言没装：" + detail);
   } finally {
     process.chdir(prevCwd);
     for (const [key, value] of Object.entries(saved)) {

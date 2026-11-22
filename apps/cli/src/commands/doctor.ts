@@ -486,7 +486,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const mismatchNotes: string[] = [...manifestErrors];
       if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
         mismatchNotes.push(
-          `域里写了但不在 skills/synced/：${activeNotInstalled.join(",")}——这是 toolRequires 的技能键名，${hasToolRequires ? "当前域按它筛工具" : "当前域没配 toolRequires，不筛工具"}`,
+          `域里的技能键名：${activeNotInstalled.join(",")}——未装在 skills/synced/，${hasToolRequires ? "当前域按 toolRequires 筛工具" : "当前域没配 toolRequires，不筛工具"}`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {
