@@ -9,7 +9,9 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test --concurrency=2",
-    "check": "turbo run check"
+    "check": "turbo run check",
+    "hooks:install": "node scripts/preflight-hooks.mjs install",
+    "hooks:status": "node scripts/preflight-hooks.mjs status"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

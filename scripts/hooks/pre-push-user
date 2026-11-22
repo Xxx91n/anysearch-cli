@@ -1,11 +1,12 @@
 #!/bin/sh
+# anysearch push gate — hooks:status recognizes this file by this line and the exec
+# below: keep both as they are, or the hook reads as someone else's.
 # anysearch pre-push: run the tests this push can break — the changed workspace
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.
 # A change outside apps/ and packages/ falls back to the full workspace suite.
-# Install: drop the leading "# " from the next line, then paste it anywhere in
-# the repo — it resolves the hooks directory and the source path itself.
-# ( cd "$(git rev-parse --show-toplevel)" && H="$(git rev-parse --git-path hooks)" && rm -f "$H/pre-commit-user" && cp scripts/hooks/pre-push-user "$H/pre-push" && chmod +x "$H/pre-push" )
+# Install and check it from the repo root: pnpm hooks:install / pnpm hooks:status
+# (pnpm -w … from a subdirectory). AGENTS.md has both, and what each exit code means.
 # Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default
 # (see `but push --help`: "--no-hooks, --no-verify  Bypass pre-push hooks").
 # The pre-push hook is NOT GitButler-managed (GitButler only manages
