@@ -16,6 +16,9 @@ jobs:
         with:
           install-args: --frozen-lockfile
           dep-age-override: true
+      # Design: docs-only PRs skip the run — coverage is informational and the
+      # job still reports success, so the release gate keeps its check-run
+      # (#408).
       - name: Run tests with coverage
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: pnpm test
