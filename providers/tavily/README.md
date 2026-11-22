@@ -27,9 +27,12 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 - 成功：`results[]`，每条 `title` / `url` / `content` / `publishedDate` / `score`；`answer` 模式下多
   一个 `answer` 字段。
-- `include_domains` 支持两档：默认（加权）和 `include_domains_mode:"filter"`（硬过滤）。
+- `include_domains` 两档：`restrict`（上游默认，硬过滤）和 `prefer`（也搜全网）。适配器和探针发的
+  是 `include_domains_mode:"filter"`——上游文档里没有这个值，所以那两处「硬过滤」实际发的是未定义取值，
+  待修（#444）。
 - SDK 包装后的 `usage` **永远是 `undefined`**：`@tavily/core` 只在单次回包里给
-  `response.usage.credits`，没有独立的用量 API，所以契约里的 `usage()` 没实现。
+  `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事，
+  见上面「端点」一节——现在没人打。
 
 ## 已知异常
 
