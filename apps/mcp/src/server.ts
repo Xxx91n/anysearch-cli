@@ -16,8 +16,8 @@ import { createMcpToolState, type McpToolState } from "./tool-state.js";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
 // ponytail: single source of truth for server version. Tsup substitutes
-// __PACKAGE_VERSION__ at build time (see tsup.config.ts `define`); dev-mode
-// tsx runs read it from the nearest package.json via a small helper.
+// __PACKAGE_VERSION__ at build time (see tsup.config.ts `define`); a dev-mode
+// tsx run has no substitution and reports "0.0.0".
 declare const __PACKAGE_VERSION__: string | undefined;
 export const PKG_VERSION: string =
   typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__

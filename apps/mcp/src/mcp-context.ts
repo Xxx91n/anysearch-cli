@@ -12,11 +12,12 @@
 // and the audit event records client_id = "mcp_unknown" (still safe).
 // - Fallback never set (stdio transport bypasses the HTTP shim): same fallback.
 //
-// session_id is intentionally NOT stashed here - MCP keeps session_id empty
-// per (protocol carries no per-instance session identifier). Cross-call state is
+// session_id is intentionally NOT stashed here - this server runs stateless and
+// never issues an Mcp-Session-Id (the 2026-07-28 revision removed the header
+// outright, SEP-2567). Cross-call state is
 // explicit instead: `ans_chat` threads a server-minted handle as an ordinary tool
-// argument (#132, MCP 2026-07-28 / SEP-2567); that handle is not a transport
-// session and never becomes a request identity here.
+// argument (#132); that handle is not a transport session and never becomes a
+// request identity here.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { CLIENT_INFO_META_KEY, type ServerContext } from "@modelcontextprotocol/server";
 

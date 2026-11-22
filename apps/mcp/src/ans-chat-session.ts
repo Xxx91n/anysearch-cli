@@ -49,9 +49,10 @@ export interface AnsChatSessionWiring {
   ledger?: BudgetLedgerPort;
 }
 
-// Wire contract mirrors AnsChatInput.sessionId (tool-schemas.ts): visible ASCII,
-// 1..128 chars. MCP's own session-id rule uses visible ASCII too, and the value
-// becomes a SQLite key, so control characters and unbounded lengths are refused.
+// The handle rule is enforced here, not on the wire (tool-schemas.ts leaves
+// sessionId unconstrained so a malformed handle fails open): visible ASCII,
+// 1..128 chars, and the value becomes a SQLite key, so control characters and
+// unbounded lengths are refused.
 const HANDLE_MAX_CHARS = 128;
 const HANDLE_PATTERN = /^[\x21-\x7E]+$/;
 

@@ -5,8 +5,8 @@
 // settlement, the observation write). So the task row is ended AFTER the handler
 // resolves — a cancellation ends the wait, not the work. Registration is
 // fail-open like the CLI's; a declared [budget] that cannot be attached is the
-// one thing that stops the run. A standalone `ans-mcp` entry still registers no
-// process record of its own (#309).
+// one thing that stops the run. The standalone `ans-mcp` entry registers its own
+// process record (#311); this module only owns the per-call task rows.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isBudgetStopReason, type CompositionResult } from "@anysearch-cli/kernel";
