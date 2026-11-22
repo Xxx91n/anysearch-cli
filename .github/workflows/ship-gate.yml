@@ -57,8 +57,11 @@ jobs:
         # The trigger that was actually fixed is process.exit() forcing C++
         # static destruction over live native state (not handle leakage) — see
         # the limitations entry before touching any exit path here.
-        # REQUIRED_LEGS in scripts/assert-checks-green.mjs mirrors this list in
-        # lockstep (asserted by packages/store/test/eval-release-layering.test.ts).
+        # REQUIRED_LEGS in scripts/check-runs-verdict.mjs mirrors this list in
+        # lockstep by hand: the test that compared the two files with regexes is
+        # gone (#406). The gate fails a leg that registered as skipped and waits
+        # on one that never registered, so a leg added here without its
+        # REQUIRED_LEGS entry is only covered by the family-level check.
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:

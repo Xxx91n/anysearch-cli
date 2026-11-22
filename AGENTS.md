@@ -29,7 +29,7 @@ The rule is kept by discipline, not by a machine: branch protection is not avail
 - We do not make the repo public and do not upgrade the GitHub plan. That option was rejected in #58 and recorded in #59.
 - #67 showed, by pushing a commit that was meant to fail, that the pre-push hook really does block a push unless you pass `--no-verify`. Proof: [the closeout comment on #67](https://github.com/Xxx91n/anysearch-cli/issues/67#issuecomment-6431860529).
 
-CI checks do not block a merge either. `spaced-path` (#358) is advisory: it is not in `release.yml`'s wait list or `scripts/assert-checks-green.mjs`'s `FAMILIES`, so a red run does not stop a release.
+CI checks do not block a merge either. `spaced-path` (#358) is advisory: it is not in `release.yml`'s wait list or `scripts/check-runs-verdict.mjs`'s `FAMILIES`, so a red run does not stop a release.
 
 ## Directory conventions
 - `packages/{kernel,store,retriever,embedding}` are shared libraries. `apps/{cli,mcp,plugin,dsh-plugin}` are the four ways users run the tool. `GLOSSARY.md` is the word list. `docs/agents/` holds notes for agents.

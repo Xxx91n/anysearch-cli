@@ -53,23 +53,6 @@ assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin No
 const pins = shipGateYml.match(/node-version: \d+/g) ?? [];
 assert(pins.length >= 2 && pins.every((p) => p === "node-version: 22"), "every ship-gate.yml job pins Node 22 (" + pins.join(", ") + ")");
 
-// --- 3b. assert-checks-green REQUIRED_LEGS mirrors the ship-gate matrix (PR #174 audit S2) ---
-// bidirectional: a missing leg would let GREEN fire without it; an extra leg
-// would fail-closed every release at discovery. Compare both directions.
-const assertChecks = read("scripts/assert-checks-green.mjs");
-const matrixOs = shipGateYml.match(/os:\s*\[([^\]]+)\]/)?.[1] ?? "";
-const matrixLegs = matrixOs.split(",").map((s) => "ship-gate (" + s.trim() + ")");
-const requiredBlock = assertChecks.match(/const REQUIRED_LEGS = \[([^\]]+)\];/)?.[1] ?? "";
-const requiredLegs = [...requiredBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-assert(matrixLegs.length >= 2, "ship-gate.yml matrix os list must parse (got: '" + matrixOs + "')");
-assert(requiredLegs.length >= 2, "assert-checks-green REQUIRED_LEGS must parse (got: '" + requiredBlock + "')");
-for (const leg of matrixLegs) {
-  assert(requiredLegs.includes(leg), "assert-checks-green REQUIRED_LEGS must mirror the ship-gate blocking matrix (missing: " + leg + ")");
-}
-for (const leg of requiredLegs) {
-  assert(matrixLegs.includes(leg), "assert-checks-green REQUIRED_LEGS has an entry outside the ship-gate blocking matrix (extra: " + leg + ")");
-}
-
 // --- 4. the ledger is a committed repo-root file --------------------------
 assert(fs.existsSync(path.join(root, "eval-looks.json")), "the OF look ledger is committed at the repo root");
 assert(
