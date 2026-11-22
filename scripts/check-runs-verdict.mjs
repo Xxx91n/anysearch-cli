@@ -4,26 +4,22 @@
 // Design: only a check that actually ran counts as evidence — a skipped
 // check-run used to sit in the same allowed set as a passing one, so a check
 // that never ran still produced GREEN. The accident this closes (#389 D4): the
-// job that works out which checks to run fails, its name misses the family
-// regex below, the checks it gates register as skipped, and the release goes
-// out with no evidence behind it.
+// job that decides which checks run fails, its name misses the family regex, the
+// checks it gates register as skipped, and the release ships on no evidence.
 //
 // Phases: discovery asks whether every required family and blocking leg has a
-// check-run registered at all. One that registered as skipped is red at once;
-// one that has not registered may still show up, so the caller waits for its
-// discovery window. Completion asks whether the registered checks finish,
-// bounded by the caller's absolute deadline.
+// check-run registered at all; completion asks whether the registered checks
+// finish, bounded by the caller's absolute deadline.
 //
-// Skipped is red for every check in these families, not only the blocking legs,
-// and this rule catches check-run-level skips only: a job that decides there is
-// nothing to run still reports success (#408 keeps those skips at step level),
-// so a successful check-run means "this job handled the change" — the gate
-// cannot tell a real pass from a by-design skip.
+// Family membership is by name, so the non-blocking anysearch probe counts as
+// test:online too: a skipped conclusion there refuses the gate as well. A
+// successful check-run means "this job handled the change" — a job that decides
+// there is nothing to run still reports success — so the gate cannot tell a real
+// pass from a by-design skip, and the rule only catches check-run-level skips.
 //
-// Native-smoke and the non-blocking macos-spillover probe match no family, so
-// they stay outside the gate. macOS is a blocking leg again since #183
-// (docs/limitations.md), and REQUIRED_LEGS mirrors ship-gate.yml's matrix by
-// hand — the regex test that compared the two files is gone (#406).
+// Native-smoke and the macos spillover probe match no family, so they stay
+// outside the gate. REQUIRED_LEGS mirrors ship-gate.yml's matrix by hand, and
+// macOS is a blocking leg again since #183 (docs/limitations.md).
 
 export const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
 export const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"];
@@ -131,9 +127,9 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
     return answer("red", 1, "failed: " + failed.map((check) => check.name + "=" + check.conclusion).join("; "));
   }
 
-  // Design: a skipped check-run is red at once — it is terminal, so waiting
-  // cannot turn it into evidence; the discovery phase is the one that asks
-  // "did every required check run at all?", so that is where it fails.
+  // Design: a skipped check-run is answered at once rather than at a deadline —
+  // it is terminal, so waiting cannot turn it into evidence, and the discovery
+  // phase is the one that asks "did every required check run at all?".
   if (skipped.length > 0) {
     return answer(
       "red",
@@ -172,10 +168,8 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
  * What the gate does with a verdict right now.
  *
  * @param {{ verdict: "green" | "red" | "wait", exitCode: 0 | 1 | 2 | null }} verdict
- * @param {{ once?: boolean }} [mode] once: a dry-run probe, which reports a
- *   snapshot instead of waiting for the gate to converge.
+ * @param {{ once?: boolean }} [mode] once: report a snapshot instead of waiting.
  * @returns {{ action: "exit" | "poll", kind?: "green" | "failed" | "no-signal" | "probe", exitCode?: 0 | 1 | 2 | 10 }}
- *   kind names what to print; exitCode is the process code.
  */
 export function gateAction(verdict, { once = false } = {}) {
   if (verdict.verdict === "green") return { action: "exit", kind: "green", exitCode: 0 };
