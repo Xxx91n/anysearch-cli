@@ -40,9 +40,9 @@
 // Usage: node scripts/assert-checks-green.mjs --sha <sha> [--once]
 // [--timeout-min 10] [--discovery-sec 120] [--interval-sec 20]
 // Exit: 0 green | 1 red | 2 no-signal/timeout (fail-closed either way) |
-// 10 --once snapshot without a converged verdict (dry-run probe only).
+// 10 --once, still waiting: the snapshot of a dry-run probe.
 import { execFileSync } from "node:child_process";
-import { judgeCheckRuns } from "./check-runs-verdict.mjs";
+import { gateAction, judgeCheckRuns } from "./check-runs-verdict.mjs";
 
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
@@ -94,21 +94,17 @@ for (; ;) {
     (verdict.missingLegs.length ? " missing-legs=" + verdict.missingLegs.join(",") : ""),
   );
 
-  if (verdict.verdict === "green") {
+  const action = gateAction(verdict, { once });
+  if (action.exitCode === 0) {
     console.log("[assert-checks] GREEN: " + verdict.reason);
-    process.exit(0);
-  }
-  // A decided red is an answer, not a snapshot: print the reason and exit with
-  // it in either mode, so a probe says what the gate would do.
-  if (verdict.verdict === "red") {
-    const tag = verdict.exitCode === 1 ? "RED" : "FAIL-CLOSED (phase=" + verdict.phase + ")";
-    console.error("[assert-checks] " + tag + ": " + verdict.reason);
-    process.exit(verdict.exitCode);
-  }
-  if (once) {
+  } else if (action.exitCode === 1) {
+    console.error("[assert-checks] RED: " + verdict.reason);
+  } else if (action.exitCode === 2) {
+    console.error("[assert-checks] FAIL-CLOSED (phase=" + verdict.phase + "): " + verdict.reason);
+  } else if (action.exitCode === 10) {
     console.log("[assert-checks] --once snapshot: " + verdict.checks.map((check) => check.name + ":" + check.status + "/" + (check.conclusion ?? "-")).join(" | "));
-    process.exit(10);
   }
+  if (action.action === "exit") process.exit(action.exitCode);
 
   await new Promise((r) => setTimeout(r, intervalSec * 1000));
 }

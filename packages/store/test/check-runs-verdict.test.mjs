@@ -5,7 +5,7 @@
 // leg that only registered as skipped", which used to read as GREEN.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FAMILIES, REQUIRED_LEGS, judgeCheckRuns } from "../../../scripts/check-runs-verdict.mjs";
+import { FAMILIES, REQUIRED_LEGS, gateAction, judgeCheckRuns } from "../../../scripts/check-runs-verdict.mjs";
 
 const AT = "2026-11-22T00:00:00Z";
 const run = (name, conclusion, status = "completed", startedAt = AT) => ({ name, status, conclusion, started_at: startedAt });
@@ -112,7 +112,7 @@ test("pending checks wait, and the absolute deadline turns them red", () => {
   const late = judgeCheckRuns(runs, { completionExpired: true });
   assert.equal(late.verdict, "red");
   assert.equal(late.exitCode, 2);
-  assert.match(late.reason, /deadline passed/);
+  assert.match(late.reason, /absolute deadline reached, still not done/);
 });
 
 test("a completed check with a conclusion the gate does not model is never green", () => {
@@ -159,4 +159,16 @@ test("no check-runs at all: waits in discovery, red once the window closes", () 
   const closed = judgeCheckRuns([], { discoveryExpired: true });
   assert.equal(closed.verdict, "red");
   assert.equal(closed.exitCode, 2);
+});
+
+test("a probe reports a decided verdict, and exits 10 only while the gate is still waiting", () => {
+  const failing = healthy().map((r) => (r.name === "check-build (ubuntu-latest)" ? run(r.name, "failure") : r));
+  const skippedLeg = healthy().map((r) => (r.name === "ship-gate (macos-latest)" ? run(r.name, "skipped") : r));
+  const pending = healthy().map((r) => (r.name === "check-build (windows-latest)" ? run(r.name, null, "in_progress") : r));
+
+  assert.deepEqual(gateAction(judgeCheckRuns(healthy()), { once: true }), { action: "exit", exitCode: 0 });
+  assert.deepEqual(gateAction(judgeCheckRuns(failing), { once: true }), { action: "exit", exitCode: 1 });
+  assert.deepEqual(gateAction(judgeCheckRuns(skippedLeg), { once: true }), { action: "exit", exitCode: 2 });
+  assert.deepEqual(gateAction(judgeCheckRuns(pending), { once: true }), { action: "exit", exitCode: 10 });
+  assert.deepEqual(gateAction(judgeCheckRuns(pending)), { action: "poll" });
 });
