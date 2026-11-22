@@ -236,11 +236,11 @@ export function structuralCheck(text) {
   return { problems, topKeys };
 }
 
-function resolveYaml() {
+export function resolveYaml(rootDir = ROOT) {
   try {
-    return createRequire(path.join(ROOT, "package.json"))("yaml");
+    return createRequire(path.join(rootDir, "package.json"))("yaml");
   } catch { /* not a direct dep */ }
-  const store = path.join(ROOT, "node_modules", ".pnpm");
+  const store = path.join(rootDir, "node_modules", ".pnpm");
   if (fs.existsSync(store)) {
     for (const d of fs.readdirSync(store).filter((x) => /^yaml@/.test(x))) {
       try {

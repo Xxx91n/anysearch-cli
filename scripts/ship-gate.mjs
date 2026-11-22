@@ -29,35 +29,15 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
-import { discoverAllLocalActions, classifyLocalUsesRef } from "./check-workflows.mjs";
+import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
 import { ansDbPath } from "./ans-home.mjs";
 import fs from "node:fs";
 import os from "node:os";
-import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-// Design: resolve the workspace's YAML parser without adding a runtime
-// dependency — try the root package require, then scan the .pnpm store
-// (same resolution ladder scripts/check-workflows.mjs uses for its full
-// workflow parse; CodeRabbit #73 review round 2).
-function resolveWorkflowYaml() {
-  try {
-    return createRequire(path.join(ROOT, "package.json"))("yaml");
-  } catch { /* not a direct dep */ }
-  const store = path.join(ROOT, "node_modules", ".pnpm");
-  if (fs.existsSync(store)) {
-    for (const d of fs.readdirSync(store).filter((x) => /^yaml@/.test(x))) {
-      try {
-        return createRequire(path.join(store, d, "package.json"))("yaml");
-      } catch { /* keep looking */ }
-    }
-  }
-  return null;
-}
 
 // do NOT hardcode ".cmd". The standalone pnpm that pnpm/setup@v2
 // installs on CI ships pnpm.exe (no pnpm.cmd), while a corepack/npm install
@@ -641,7 +621,7 @@ function stepStaticAssertions() {
     // (CodeRabbit #73 review round 2). Parser unavailable -> fail closed,
     // never pass on unverified text matches.
     const ciSrc = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
-    const YAML = resolveWorkflowYaml();
+    const YAML = resolveYaml(ROOT);
     if (!YAML) failUnverifiable("ci.yml test-online lane unverifiable: no YAML parser resolvable (root dep nor .pnpm store)");
     let ciDoc = null;
     try { ciDoc = YAML.parse(ciSrc); } catch (e) { fail("ci.yml does not parse: " + String(e.message).split("\n")[0]); }
@@ -806,7 +786,7 @@ function stepStaticAssertions() {
     // would be a permanent bypass that outlives its reason, so it is refused here.
     {
       // Design: scan workflows plus all local composite actions from check-workflows.mjs so both gates guard the same set.
-      const YAML = resolveWorkflowYaml();
+      const YAML = resolveYaml(ROOT);
       if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
       const ciYamlFiles = [];
       const wfDir = path.join(ROOT, ".github/workflows");

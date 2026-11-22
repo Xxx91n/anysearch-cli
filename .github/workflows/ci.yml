@@ -31,6 +31,8 @@ jobs:
         run: node scripts/eval-labels.mjs validate
       - name: Preflight selection tests
         run: node --test "scripts/test/preflight-*.test.mjs"
+      - name: Workflow checker tests
+        run: node --test scripts/test/check-workflows.test.mjs
       - run: pnpm -w turbo check
       - name: "Test — all packages (node:test discovery, full truth)"
         run: pnpm -w turbo run test --continue=dependencies-successful
