@@ -11,7 +11,7 @@ function runCli(input, options = {}) {
   return spawnSync(process.execPath, [CLI], { input, encoding: "utf8", ...options });
 }
 
-test("the doc boundary is docs/ plus the four root markdown files", () => {
+test("the doc boundary is docs/ except docs/eval/, plus the four root markdown files", () => {
   for (const file of [
     "docs/limitations.md",
     "docs/assets/readme/hero.png",

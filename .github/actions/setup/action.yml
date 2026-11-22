@@ -13,8 +13,7 @@
 # docs-only plus the changed files. Anything it cannot read reports
 # docs-only=false, so every lane runs. Release and conformance turn detection
 # off because they never read docs-only, so their checkout stays shallow. The
-# doc boundary (docs/ except docs/eval/, plus the four root markdown files)
-# lives in scripts/ci-changes.mjs.
+# doc boundary lives in scripts/ci-changes.mjs.
 #
 # Design: docs-only skips the bootstrap and the caller's expensive steps, while
 # the job still reports success — a skipped check-run is not evidence, and the
