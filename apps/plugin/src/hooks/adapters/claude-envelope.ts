@@ -1,8 +1,8 @@
-// Claude Code PreToolUse return value: the host's key names in one place.
+// Claude Code PreToolUse return value.
 //
-// Design: the PreToolUse return value is built by one typed function with its
-// own test — the host drops a key it does not know without an error, so a wrong
-// name has to fail at typecheck or in the test, not silently in the host.
+// Design: one typed function with a test on the JSON we send — the host drops a
+// key it does not know without an error, so a wrong name has to fail at
+// typecheck or in the test, not silently in the host.
 
 import type { HookDecision } from "../core.js";
 
