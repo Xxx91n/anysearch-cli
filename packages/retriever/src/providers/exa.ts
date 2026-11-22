@@ -1,6 +1,6 @@
 // Exa provider adapter (decision 3).
 // atomcode research: exa-js >=2.26.0, new Exa(apiKey), search(query, {contents}, {signal}), answer(query, opts, {signal}).
-// NormalizedResult mapping: title/url direct, text/highlights->snippet, publishedDate->publishedAt, score preserved.
+// NormalizedResult mapping: title/url direct, text->snippet (contents.text, 500 chars), publishedDate->publishedAt, score preserved.
 // searchAndContents is deprecated - use search(query, {contents: {text: true}}) instead.
 // Design: forward the contract AbortSignal as exa-js trailing RequestOptions on
 // search()/answer() — exa-js >=2.26.0 exposes per-request transport options, and

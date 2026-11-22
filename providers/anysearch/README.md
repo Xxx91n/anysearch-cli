@@ -17,8 +17,10 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 - `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；没设就是匿名调用。
 - 匿名过了配额，上游回的是「自动签发」提示体：HTTP 200、`isError:null`、没有结果体。适配器把它判成
   `permanent-auth`，不是 `malformed`。
-- 适配器和两条探针都**只读环境变量**，不读 `~/.ans/credentials.json`。把 key 存凭据文件的人跑探针会
-  静默变成匿名调用——没有报错、照样 `ok:true`，看不出区别（#422）。
+- 两条探针**只读环境变量**（`ANYSEARCH_API_KEY`），不读 `~/.ans/credentials.json`。适配器本身同理，但
+  `ans` 装配时会把「环境变量 → 用户凭据文件」解析出来的 key 传进构造函数（`packages/kernel/src/composition.ts`），
+  所以探针和产品看到的可能不是同一把。把 key 只存在凭据文件里的人跑探针会静默变成匿名调用——没报错、
+  照样 `ok:true`，看不出区别（#422）。
 
 ## 协议版本
 
@@ -48,7 +50,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 | 脚本 | 什么时候跑 | 回答什么 | 期望输出 | 退出码 |
 |---|---|---|---|---|
-| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一行 JSON：`ok:true`、`httpStatus:200`、`hasResultsHeader:true` | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败 |
+| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`ok:true`、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带原文开头） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败 |
 | `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON：成功给 `results` / 失败给 `errorName`+`errorClass` | 0 通 / 2 失败并给出类别 |
 
 和另外两个面的分工：`packages/retriever/test/online/anysearch-mcp.online.ts` 是 CI 的活体冒烟
@@ -66,13 +68,14 @@ node providers/anysearch/probe-anysearch-provider.ts --default-endpoint # 忽略
 ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysearch-provider.ts  # 死端点臂
 ```
 
-输出只走 stdout 一行 JSON，人读、贴进 issue，**不落盘**。key 和 endpoint 的值不打印，只打
-`endpointSource` / `keyPresent`；错误消息里出现的值会遮成 `<endpoint>` / `<key>`。
+输出只走 stdout，人读、贴进 issue，**不落盘**：provider 探针一行 JSON，raw 探针一份缩进过的 JSON。key
+和 endpoint 的值不打印，只打 `endpointSource` / `keyPresent`；错误消息里出现的值会遮成 `<endpoint>` /
+`<key>`。
 
 `probe-anysearch-provider.ts` 头顶那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
 （`../contract`），tsc 的 Bundler 解析和 tsx 都放行，Node 的 ESM 解析不放行。钩子只在 `.ts` 文件真的
-存在时补一次，坏路径照样报错。另一个办法是往适配器里写 `.ts` 后缀，但那要给 retriever / kernel /
-store / apps/cli 四份 `tsconfig` 打开 `allowImportingTsExtensions`——为一个手跑夹具不值得。
+存在时补一次，坏路径照样报错。另一个办法是往适配器里写 `.ts` 后缀，但那要给编译到适配器源码的三份
+`tsconfig`（retriever / kernel / apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值得。
 
 ## 最近一次真跑
 

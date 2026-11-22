@@ -15,8 +15,9 @@
 // both accept and Node's ESM resolver does not. ".ts" is appended only when
 // that file really exists, so a genuinely bad specifier still fails loudly.
 // The alternative — writing ".ts" into the adapter — needs
-// allowImportingTsExtensions in retriever, kernel, store and apps/cli, which is
-// too wide a change for a manual-probe fixture (decision #413: plain `node <file>`).
+// allowImportingTsExtensions in the three tsconfigs that compile the adapter
+// (retriever, kernel, apps/cli), which is too wide a change for a manual probe
+// (decision #413: plain `node <file>`).
 import { registerHooks } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";

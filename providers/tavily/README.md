@@ -7,14 +7,16 @@ Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
 
 - `https://api.tavily.com`，写死在 `@tavily/core` 的 `BASE_URL` 里；适配器构造 `tavily({})` 不传
   baseURL，**没有**环境变量开关（#421 查实，三家只有 anysearch 有）。
-- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。探针用前两个；`/usage` 是 doctor 的联网
-  检查（`--live`）打算用的——那个决定在 #416，代码还没建，所以现在只有探针真的在用这个 host。
+- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。适配器只打 `/search`，探针打 `/search` 和
+  `/research`；`/usage` 现在没人打——#416 打算让它进 doctor 的联网检查，那个决定还没实现（今天的 doctor
+  只有 `--json` / `--strict`，live 行一律 `unchecked`，写着「doctor 不联网」）。
 
 ## 认证
 
 - `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 就报 `TAVILY_API_KEY unset`。
-- 探针**只读环境变量**，不读 `~/.ans/credentials.json`：key 存在凭据文件里时探针会退 2 并明说
-  `TAVILY_API_KEY unset`，不会静默匿名（这一点比 anysearch 友好，#422）。
+- 探针**只读环境变量** `TAVILY_API_KEY`；产品走 composition 的「env 优先、再用户凭据文件」解析
+  （`packages/kernel/src/composition.ts`）。所以 key 只在凭据文件里时，`ans` 能跑、探针会退 2 并明说
+  `TAVILY_API_KEY unset`——不会静默匿名（这一点比 anysearch 友好，#422）。
 
 ## 协议版本
 
