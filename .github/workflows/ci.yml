@@ -28,9 +28,10 @@ jobs:
         id: setup
         with:
           dep-age-override: true
-      # Design: a docs-only PR skips every expensive step. The `if` stays on
-      # steps, never the job: a job-level skip does not register the check-run
-      # the release gate requires (#408, scripts/check-runs-verdict.mjs).
+      # Design: a docs-only PR skips every expensive step — the job still
+      # registers and reports success, because a skipped check-run is not
+      # evidence and the release gate still needs every family present
+      # (#408, scripts/check-runs-verdict.mjs).
       - name: Validate calibration labels
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/eval-labels.mjs validate

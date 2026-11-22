@@ -1,11 +1,11 @@
 // Which changed files count as documentation, for the CI lanes that skip on a
 // docs-only change.
 //
-// Design: the boundary is a fixed list, not a glob — `docs/` plus the four root
-// markdown files. `apps/plugin/*.md` and `domains/docs.toml` are product assets
-// (tests read their contents), so they stay on the "run everything" side (#408).
+// Design: the boundary is a fixed list, not a glob — a glob like `**/*.md` would
+// swallow product assets (`apps/plugin/*.md`, `domains/docs.toml`) whose
+// contents tests read (#408).
 //
-// Design: an empty list is not a docs-only change. A change set we could not
+// Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.
 //
 // The setup action pipes `git diff --name-only --no-renames -z` here and reads

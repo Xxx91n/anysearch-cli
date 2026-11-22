@@ -37,8 +37,8 @@ jobs:
       statuses: write  # red ledger commit gets a release-gate/failed status
       issues: write    # red gate auto-opens an issue
     steps:
-      # Design: full history is the setup action's job (#408), so this stays a
-      # plain checkout; release never runs docs-only (that output is PR-only).
+      # Design: full history is the setup action's job — release never runs
+      # docs-only (that output is PR-only), so a plain checkout is enough (#408).
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
@@ -211,8 +211,8 @@ jobs:
       id-token: write # npm OIDC trusted publishing
       contents: read
     steps:
-      # Design: full history is the setup action's job (#408), so this stays a
-      # plain checkout; release never runs docs-only (that output is PR-only).
+      # Design: full history is the setup action's job — release never runs
+      # docs-only (that output is PR-only), so a plain checkout is enough (#408).
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
