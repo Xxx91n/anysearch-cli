@@ -29,18 +29,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
-        with: { install: false }
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: pnpm
+          install-args: --frozen-lockfile
+          dep-age-override: true
       - name: Verify probe process-tree cleanup
         run: node --test scripts/test/probe-process.test.mjs
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - name: Install (frozen-lockfile, builds disabled)
-        run: pnpm install --frozen-lockfile
       - name: Verify native prebuild loads (${{ matrix.label }})
         run: node scripts/verify-native.mjs

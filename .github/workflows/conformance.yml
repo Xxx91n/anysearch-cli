@@ -22,18 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
-        with: { install: false }
-
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/setup
         with:
           node-version: 24
-          cache: pnpm
 
-      - name: install + build
-        run: |
-          pnpm install --ignore-scripts
-          pnpm turbo run build
+      - name: build
+        run: pnpm turbo run build
 
       - name: start MCP server (Streamable HTTP, port 3001)
         run: |

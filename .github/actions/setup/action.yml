@@ -1,0 +1,65 @@
+# Design: collapse the repeated job bootstrap (pnpm, Node + cache, optional
+# dep-age override, pnpm install) into one local composite action. Callers keep
+# `actions/checkout` first because GitHub Actions needs the repo on disk before
+# resolving `./.github/actions/*`; `knowledge-ranking.yml` stays separate
+# because it checks out two subdirectories with no root package.json.
+# Design: every varying piece stays input-driven, and `dep-age-override`
+# defaults to "false" (fail-closed) so release jobs stay strict unless a job
+# explicitly opts into the temporary CI bypass.
+
+name: Setup Node, pnpm, and dependencies
+description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
+
+inputs:
+  node-version:
+    description: "Node.js version passed to actions/setup-node"
+    required: false
+    default: "22"
+  install-args:
+    description: "Space-separated flags passed to `pnpm install`"
+    required: false
+    default: "--ignore-scripts"
+  dep-age-override:
+    description: "Whether to run scripts/ci-dep-age-override.mjs before install ('true' or 'false')"
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
+      with:
+        install: false
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+
+    # Design: bypass minimumReleaseAge only via the self-expiring script, never
+    # a bare env var (enforced by ship-gate E6 across workflows and actions).
+    - name: dependency-age override (temporary)
+      if: ${{ inputs.dep-age-override == 'true' }}
+      shell: bash
+      run: node scripts/ci-dep-age-override.mjs
+
+    # Design: default `--ignore-scripts` skips all package lifecycle scripts
+    # (stricter than pnpm-workspace allowBuilds); passing `install-args`
+    # replaces this default rather than appending, so `--frozen-lockfile` lets
+    # `allowBuilds: true` packages run their scripts again.
+    - name: Install dependencies
+      shell: bash
+      env:
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      run: |
+        if [ -n "${INSTALL_ARGS:-}" ]; then
+          IFS=' ' read -r -a args <<< "$INSTALL_ARGS"
+          if [ "${#args[@]}" -gt 0 ]; then
+            pnpm install "${args[@]}"
+          else
+            pnpm install
+          fi
+        else
+          pnpm install
+        fi

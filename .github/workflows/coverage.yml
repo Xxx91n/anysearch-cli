@@ -10,16 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@v4
+      # Design: use the shared setup template while keeping --frozen-lockfile.
+      - uses: ./.github/actions/setup
         with:
-          node-version: '22'
-          cache: 'pnpm'
-      # Temporary dependency-age bypass for #260; self-expires (see the script).
-      - name: dependency-age override (temporary)
-        run: node scripts/ci-dep-age-override.mjs
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          install-args: --frozen-lockfile
+          dep-age-override: true
       - name: Run tests with coverage
         run: pnpm test
 
