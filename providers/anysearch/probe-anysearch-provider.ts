@@ -48,10 +48,12 @@ const NO_KEY = ARGS.includes("--nokey");
 // A dropped or renamed export is undefined, and --default-endpoint would then fall back
 // to env while envClass still prints default(forced) — refuse instead of lying.
 if (FORCE_DEFAULT && (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0)) {
+  const message = "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted";
   console.log(JSON.stringify({
     schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
-    errorName: "MissingExport",
-    errorMessage: "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted",
+    errorName: "MissingExport", errorMessage: message,
+    errorClass: classifyProviderError("MissingExport: " + message),
+    endpointSource: "default(forced)", keyPresent: NO_KEY ? false : !!process.env.ANYSEARCH_API_KEY,
   }));
   process.exit(2);
 }

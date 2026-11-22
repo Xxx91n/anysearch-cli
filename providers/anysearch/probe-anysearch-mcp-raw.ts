@@ -61,10 +61,8 @@ type JsonRpcReply = {
 
 function parseRpc(text: string, expectedId: number): JsonRpcReply {
   // Streamable HTTP may answer with plain JSON or an SSE stream, and a stream can
-  // carry other messages ahead of the reply. The id rules are the adapter's: the
-  // JSON branch compares as strings, the SSE branch strictly and keeps the last
-  // match (anysearch.ts post() / readSseJsonRpc). Accepting more than the product
-  // would report a difference the product does not have.
+  // carry other messages ahead of the reply. Id matching follows the adapter: JSON
+  // compares as strings, SSE strictly and takes the last match.
   const json = text.trimStart().startsWith("{");
   const candidates = json
     ? [text]
