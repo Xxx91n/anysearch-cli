@@ -463,7 +463,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: schema.sources.enabled.join(",") || "(空)",
       });
-      const installedSkills = new Map<string, string[]>();
+      const installedSkills = new Set<string>();
       const manifestErrors: string[] = [];
       const seenRoots = new Set<string>();
       for (const project of [false, true]) {
@@ -473,9 +473,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         seenRoots.add(root);
         try {
           for (const skill of readInstalledSkillsReadOnly(scopeOpts)) {
-            const roots = installedSkills.get(skill.name) ?? [];
-            roots.push(root);
-            installedSkills.set(skill.name, roots);
+            installedSkills.add(skill.name);
           }
         } catch (error) {
           manifestErrors.push(`${project ? "项目级" : "用户级"}清单读不出：${errorText(error).slice(0, 80)}`);
@@ -488,20 +486,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         }
       }
       const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
-      const installedNotInAnyDomain = [...installedSkills.keys()].filter((s) => !allActiveInDomains.has(s)).sort();
+      const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
       const skillNotes: string[] = [...manifestErrors];
       if (hasToolRequires && manifestErrors.length === 0 && activeNotInstalled.length > 0) {
         skillNotes.push(
-          `未装进 ${MANAGED_SKILLS_REL_PATH}：${activeNotInstalled.join("、")}（不影响筛工具，只看域 TOML 的 toolRequires）`,
+          `未装进 ${MANAGED_SKILLS_REL_PATH}：${activeNotInstalled.join("、")}，装没装都不影响筛工具`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {
-        const formatted = installedNotInAnyDomain
-          .map((name) => `${name}（${(installedSkills.get(name) ?? []).join("、")}）`)
-          .join("、");
         skillNotes.push(
-          `装了但没在任何域里启用：${formatted}——宿主可以直接读；想让域按技能筛工具，才需要把它写进 [skills].active 和 [skills.toolRequires]`,
+          `装了但没在任何域里启用：${installedNotInAnyDomain.join("、")}，只供宿主直接读`,
         );
       }
       const baseSkillsDetail = schema.skills.active.join("、") || "这个域没有启用技能";

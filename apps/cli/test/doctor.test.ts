@@ -342,7 +342,7 @@ test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () =
   assert.ok((configRow!.detail ?? "").includes(effective), "要说清当前生效的是哪个：" + configRow!.detail);
 });
 
-test("ans doctor：默认域（没配 toolRequires）不报 active 漏装，但报出已装却没在任何域里启用的 skill 及真实路径", async () => {
+test("ans doctor：默认域（没配 toolRequires）不报 active 漏装，但报出已装却没在任何域里启用的 skill", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-"));
   const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN"];
   const saved: Record<string, string | undefined> = {};
@@ -385,10 +385,10 @@ test("ans doctor：默认域（没配 toolRequires）不报 active 漏装，但�
 
     assert.ok(row, "能力层要有「领域 skills.active」");
     assert.equal(row!.state, "ready");
-    const detail = row!.detail ?? "";
-    assert.match(detail, /装了但没在任何域里启用：ans（.*skills[/\\]synced）/, "要指出已装但没在任何域里列出的 skill 和真实路径：" + detail);
-    assert.ok(detail.includes(synced), "要包含真实 synced 目录路径：" + detail);
-    assert.match(detail, /toolRequires/, "要讲清和 toolRequires 的关系：" + detail);
+    assert.equal(
+      row!.detail,
+      "search、doctor（装了但没在任何域里启用：ans，只供宿主直接读）",
+    );
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
@@ -476,7 +476,7 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     assert.ok(row, "能力层要有「领域 skills.active」");
     const detail = row!.detail ?? "";
     assert.match(detail, /项目级清单读不出/, "损坏的那一边要报出清单读不出：" + detail);
-    assert.match(detail, /装了但没在任何域里启用：ans/, "完好的用户级已装 skill 仍要被报出：" + detail);
+    assert.match(detail, /装了但没在任何域里启用：ans，只供宿主直接读/, "完好的用户级已装 skill 仍要被报出：" + detail);
     assert.equal(detail.includes("未装进 skills/synced/"), false, "有一边清单读不出时不能断言另一侧未装：" + detail);
   } finally {
     process.chdir(prevCwd);
@@ -540,7 +540,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
     const detailAll = rowAll!.detail ?? "";
     assert.equal(
       detailAll,
-      "search、doctor（未装进 skills/synced/：search、doctor（不影响筛工具，只看域 TOML 的 toolRequires））",
+      "search、doctor（未装进 skills/synced/：search、doctor，装没装都不影响筛工具）",
     );
 
     // 2. 只装了一部分（装了 doctor，没装 search）
@@ -577,7 +577,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
     const detailSub = rowSub!.detail ?? "";
     assert.equal(
       detailSub,
-      "search、doctor（未装进 skills/synced/：search（不影响筛工具，只看域 TOML 的 toolRequires））",
+      "search、doctor（未装进 skills/synced/：search，装没装都不影响筛工具）",
     );
 
     // 3. 全部装齐时不挂多余说明
