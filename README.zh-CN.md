@@ -163,31 +163,7 @@ ans skill uninstall ans --project
 
 ## 信息源怎么连、能干什么
 
-| 信息源 | 怎么连 | 已经接上的功能 | 直接答（answer） | 搜前筛域名 | 垂直领域路由 | 能取消吗 | 单独的用量接口 |
-|----------|------|----------------|-------------|--------------|----------|------|--------------|
-| anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求会退成普通检索） | no | no（只能搜完再筛） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共用握手的细节见下） | no |
-| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 带 citations，`verified:false`；answer 失败会退成普通检索结果，并往 stderr 写一行） | yes（`includeDomains`，只对 `search()` 生效；见下） | no | yes（`signal` 作为 `search()` / `answer()` 请求选项的最后一个参数；#216） | no |
-| tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，强制筛） | no | no（`@tavily/core@0.7.7` 没有 signal；#32） | no |
-
-信息源从 domain TOML 的 `sources.enabled` 里选。缺 key 的信息源会被跳过，
-搜索不会崩；要是一个信息源都没接上，搜索直接报错，不会当成拒答。
-
-这张表只写适配器真接上的功能，不是上游目录里写的全部。AnySearch 是这里唯一的
-MCP 上游；Exa 和 Tavily 继续用官方 SDK，它们托管的 MCP 是让 agent 直接用的工具，
-不是本仓服务端信息源要用的接口。**我们没打算把 Exa/Tavily 迁到 MCP。**
-
-表里有两点要单独说：AnySearch 每次 POST 都带 signal，但几个搜索并发时共用
-一次 MCP 握手，这次握手只听第一个调用方的话；后来的调用方取消不了这段等待，
-第一个调用方取消也可能让两个搜索一起失败。Exa 的 `includeDomains` 只对
-`search()` 生效；单独的 `answer()` 收不到白名单，检索引擎也不会去筛答案文字或
-citations 里的网址。
-
-AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`extract`
-和线上有、但官方文档没写的 `score` 都没接。上游工具数量不写死：官方文档列四个，
-线上还返回过 `score`。成功的 `search` 回复如果带非空 `_meta.request_id`，并且
-调用方给了运行记录（CLI 和 MCP 工具调用都会给），才把它记成排查用的关联 id
-（`retrieval.provider.diagnostic`）；失败的回复在提取前就抛了，不记。这个 id
-不会进结果，也不能拿来当幂等键（重试时不能靠它去重）。
+每家信息源连什么、适配器真接上了哪些能力、能不能取消，只在一处写：[上游信息源对照表](docs/mcp-server.md#upstream-provider-transport-matrix)。
 
 ## AnySearch 垂直领域
 
