@@ -151,8 +151,8 @@ test("the newest run per name wins, so a re-run replaces its first attempt", () 
 
 test("checks outside the five families never move the verdict", () => {
   // None of these gates a release: spaced-path is advisory (AGENTS.md), the
-  // macos spillover probe only reports crash signatures, and CodeRabbit skips
-  // itself. CodeRabbit's skip must not read as a skipped lane either.
+  // macos spillover probe doesn't gate anything, and CodeRabbit's own skip must
+  // not be read as a skipped lane.
   const runs = [
     ...healthy(),
     run("spaced-path", "failure"),

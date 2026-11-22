@@ -2,21 +2,21 @@
 // green / red / keep waiting back.
 //
 // Design: only a check that actually ran counts as evidence — a skipped
-// check-run used to sit in the same allowed set as a passing one, so a check
-// that never ran still produced GREEN. The accident this closes (#389 D4): the
-// job that decides which checks run fails, its name misses the family regex, the
-// checks it gates register as skipped, and the release ships on no evidence.
+// check-run used to count as passing, so a lane that never started could still
+// produce GREEN. The accident that closed: the job that decides which checks run
+// fails, its name misses the family regex, the lanes it gates register as
+// skipped, and the release ships on no evidence.
 //
 // Phases: discovery asks whether every required family and blocking leg has a
 // check-run registered at all; completion asks whether the registered checks
 // finish, bounded by the caller's absolute deadline.
 //
 // Family membership is by name, so the non-blocking anysearch probe counts as
-// test:online too: a skipped conclusion there refuses the gate as well. A failed
-// probe is not special-cased either — continue-on-error is what keeps it from
-// blocking, not this module. A successful check-run means "this job handled the
-// change" (a job that decides there is nothing to run still reports success), so
-// the gate cannot tell a real pass from a by-design skip.
+// test:online too: a skipped conclusion there refuses the gate, and a failed one
+// lands in the failed branch — whether GitHub reports a tolerated failure as
+// "failure" is not verified here. A successful check-run means "this job handled
+// the change" (a job that decides there is nothing to run still reports
+// success), so the gate cannot tell a real pass from a by-design skip.
 //
 // Native-smoke and the macos spillover probe match no family, so they stay
 // outside the gate. REQUIRED_LEGS mirrors ship-gate.yml's matrix by hand, and
@@ -29,7 +29,7 @@ const FAMILY = new RegExp("^(" + FAMILIES.join("|") + ")\\b");
 const FAILED_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 // neutral is allowed next to success because release.yml's wait step (layer 1)
 // allows it too: the two layers must not disagree about a conclusion that did
-// run. The one conclusion that moved is skipped (#406).
+// run. The one conclusion that moved is skipped.
 const PASSING_CONCLUSIONS = new Set(["success", "neutral"]);
 
 function familyOf(name) {
@@ -128,9 +128,9 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
     return answer("red", 1, "failed: " + failed.map((check) => check.name + "=" + check.conclusion).join("; "));
   }
 
-  // Design: a skipped check-run is answered at once rather than at a deadline —
-  // it is terminal, so waiting cannot turn it into evidence, and the discovery
-  // phase is the one that asks "did every required check run at all?".
+  // Design: a skipped check-run is answered at once, not at a deadline — it is
+  // terminal, so no wait changes it, and the discovery phase is the one that asks
+  // whether every required check ran.
   if (skipped.length > 0) {
     return answer(
       "red",
