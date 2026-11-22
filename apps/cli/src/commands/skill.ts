@@ -2,7 +2,8 @@
 // Installation never changes the Active Domain or its active skill list.
 
 import {
-  inspectInstalledSkills, installSkill, managedSkillsRoot, skillManifestPath,
+  inspectInstalledSkills, installSkill, MANAGED_SKILLS_REL_PATH, MANAGED_SKILLS_SUBDIR,
+  managedSkillsRoot, skillManifestPath,
   uninstallSkill, validateInstalledSkills, SkillError, type SkillOptions,
 } from "../skill-store";
 
@@ -20,15 +21,15 @@ Commands:
   uninstall <name>   Remove only the directory recorded in installed.json
 
 Options:
-  --project          Use .ans/skills/synced/ (default: user scope)
-  --user             Use ~/.ans/skills/synced/ explicitly
+  --project          Use .ans/${MANAGED_SKILLS_REL_PATH} (default: user scope)
+  --user             Use ~/.ans/${MANAGED_SKILLS_REL_PATH} explicitly
   --help, -h         Show this help
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
 Frontmatter must be a YAML mapping with a safe lowercase name (1–64 characters).
-Machine-managed skills live in synced/; sibling directories are user-authored.
-Installation copies the skill directory into skills/synced/ for a host agent to read; the runtime does not auto-load it.
-[skills].active in a domain TOML only names keys for [skills.toolRequires], not directories in skills/synced/.
+Machine-managed skills live in ${MANAGED_SKILLS_SUBDIR}/; sibling directories are user-authored.
+Installation copies the skill directory into ${MANAGED_SKILLS_REL_PATH} for a host agent to read; the runtime does not auto-load it.
+[skills].active in a domain TOML only names keys for [skills.toolRequires], not directories in ${MANAGED_SKILLS_REL_PATH}.
 When a domain omits [skills.toolRequires] (as all shipped domains do), [skills].active does not filter runtime tools.
 Exit codes: 0 success · 1 validation/filesystem/manifest failure · 2 usage error
 `;

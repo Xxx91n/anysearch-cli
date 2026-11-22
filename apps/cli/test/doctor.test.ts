@@ -563,7 +563,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，输出「当前�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowAll);
     const detailAll = rowAll!.detail ?? "";
-    assert.match(detailAll, /^search,doctor（技能键名 不在 skills\/synced\/——当前域按 toolRequires 筛工具/, "全部未装且配了 toolRequires：" + detailAll);
+    assert.match(detailAll, /^search,doctor（当前域按 toolRequires 筛工具——只看域 TOML，装没装进 skills\/synced\/ 都不影响/, "全部未装且配了 toolRequires：" + detailAll);
     assert.equal(detailAll.includes("不影响运行时"), false, "配了 toolRequires 时不能说不影响运行时：" + detailAll);
 
     // 2. 只装了一部分（装了 doctor，没装 search）
@@ -598,7 +598,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，输出「当前�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowSub);
     const detailSub = rowSub!.detail ?? "";
-    assert.match(detailSub, /^search,doctor（search 不在 skills\/synced\/——当前域按 toolRequires 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
+    assert.match(detailSub, /^search,doctor（search 不在 skills\/synced\/——不影响筛工具，当前域按域 TOML 的 toolRequires 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
     assert.equal(detailSub.includes("不影响运行时"), false, "配了 toolRequires 时不能说不影响运行时：" + detailSub);
   } finally {
     for (const [key, value] of Object.entries(saved)) {

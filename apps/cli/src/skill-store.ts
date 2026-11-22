@@ -88,9 +88,14 @@ export function skillsRoot(opts: SkillOptions = {}): string {
     : ansUserSkillsDirFor(resolve(opts.home ?? homedir()));
 }
 
+/** Subdirectory name inside skills/ that holds installer-managed skills. */
+export const MANAGED_SKILLS_SUBDIR = "synced";
+/** Display-relative path for installer-managed skills (`skills/synced/`). */
+export const MANAGED_SKILLS_REL_PATH = `skills/${MANAGED_SKILLS_SUBDIR}/`;
+
 /** Resolve the machine-managed synced/ directory inside the selected scope. */
 export function managedSkillsRoot(opts: SkillOptions = {}): string {
-  return join(skillsRoot(opts), "synced");
+  return join(skillsRoot(opts), MANAGED_SKILLS_SUBDIR);
 }
 
 /** Resolve the manifest path inside a managed root. */
