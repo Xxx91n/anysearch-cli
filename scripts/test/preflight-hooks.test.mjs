@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -47,6 +47,7 @@ test("a fresh clone says the hook is missing until one command installs it", () 
     const before = run(clone, ["status"]);
     assert.equal(before.status, 1, before.stderr);
     assert.match(before.stderr, /pre-push is missing/);
+    assert.match(before.stderr, /pnpm -w hooks:install from a subdirectory/);
 
     const install = run(clone, ["install"]);
     assert.equal(install.status, 0, install.stderr);
@@ -112,7 +113,7 @@ test("a hook left behind by an older script is reported, and install refreshes i
 
     const stale = run(clone, ["status"]);
     assert.equal(stale.status, 1);
-    assert.match(stale.stderr, /older script line/);
+    assert.match(stale.stderr, /runs older commands/);
 
     assert.equal(run(clone, ["install"]).status, 0);
     assert.equal(readFileSync(hook, "utf8"), source);
@@ -163,6 +164,46 @@ test("someone else's pre-push is reported, and install refuses to overwrite it w
     const forced = run(clone, ["install", "--force"]);
     assert.equal(forced.status, 0, forced.stderr);
     assert.equal(readFileSync(hook, "utf8"), source);
+  });
+});
+
+test("a copy that gained a command is out of date, and install brings it back", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    assert.equal(run(clone, ["install"]).status, 0);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    // Still our hook (its banner is there), but it now runs something the
+    // source does not: comments may differ between checkouts, commands may not.
+    writeFileSync(hook, readFileSync(hook, "utf8").replace(/^exec /m, "set -e\nexec "));
+
+    const stale = run(clone, ["status"]);
+    assert.equal(stale.status, 1);
+    assert.match(stale.stderr, /runs older commands/);
+    assert.match(stale.stderr, /runs: scripts\/preflight-test\.mjs --pushed/);
+
+    assert.equal(run(clone, ["install"]).status, 0);
+    assert.equal(readFileSync(hook, "utf8"), source);
+  });
+});
+
+test("a clone that holds the script runs both commands itself", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    for (const dir of ["scripts/hooks", "scripts"]) mkdirSync(join(clone, dir), { recursive: true });
+    copyFileSync(join(repoRoot, "package.json"), join(clone, "package.json"));
+    copyFileSync(join(repoRoot, "scripts", "preflight-hooks.mjs"), join(clone, "scripts", "preflight-hooks.mjs"));
+    copyFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"), join(clone, "scripts", "hooks", "pre-push-user"));
+    const installed = join(clone, "scripts", "preflight-hooks.mjs");
+
+    const before = spawnSync(process.execPath, [installed, "status"], { cwd: clone, encoding: "utf8" });
+    assert.equal(before.status, 1, before.stderr);
+
+    const install = spawnSync(process.execPath, [installed, "install"], { cwd: clone, encoding: "utf8" });
+    assert.equal(install.status, 0, install.stderr);
+
+    const after = spawnSync(process.execPath, [installed, "status"], { cwd: clone, encoding: "utf8" });
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(readFileSync(join(clone, ".git", "hooks", "pre-push"), "utf8"), source);
   });
 });
 

@@ -24,25 +24,33 @@ const HOOK_SOURCE = path.join("scripts", "hooks", "pre-push-user");
 const OLD_COMMIT_HOOK = "pre-commit-user";
 const INSTALL = "pnpm hooks:install";
 
-function git(cwd, args) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
-  if (result.error) return { error: `cannot run git: ${result.error.message}` };
-  if (result.status !== 0) return { error: "not inside a git repo" };
-  const out = result.stdout.trim();
-  return out ? { out } : { error: "not inside a git repo" };
+// Design: a hook is ours when it carries our banner, not when its shape or a
+// file name looks right — a hand-written hook that happens to mention the gate
+// stays untouched, and our own hook keeps its banner across versions. The
+// second banner is what hooks installed before this command existed carry.
+const OWN_BANNERS = ["# anysearch push gate", "# anysearch pre-push"];
+
+function firstLine(text) {
+  return text.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "";
 }
 
-function repoRootOf(cwd) {
-  const result = git(cwd, ["rev-parse", "--show-toplevel"]);
+function revParse(cwd, args, what) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.error) return { error: `cannot run git: ${result.error.message}` };
+  if (result.status !== 0) return { error: `${what}: ${firstLine(result.stderr)}` };
+  const out = result.stdout.trim();
+  return out ? { out } : { error: `${what}: git printed nothing` };
+}
+
+function repoRoot(cwd) {
+  const result = revParse(cwd, ["rev-parse", "--show-toplevel"], "cannot find the repo");
   return result.error ? result : { root: path.resolve(cwd, result.out) };
 }
 
 /** The hooks directory git actually reads: core.hooksPath when set, else .git/hooks. */
-function hooksDirOf(root) {
-  const result = git(root, ["rev-parse", "--git-path", "hooks"]);
-  return result.error
-    ? { error: `cannot find the hooks directory: ${result.error}` }
-    : { dir: path.resolve(root, result.out) };
+function hooksDir(root) {
+  const result = revParse(root, ["rev-parse", "--git-path", "hooks"], "cannot find the hooks directory");
+  return result.error ? result : { dir: path.resolve(root, result.out) };
 }
 
 function readText(file) {
@@ -59,36 +67,36 @@ function hookCommand(text) {
   return line ? line.trim() : null;
 }
 
-/** That line as a person reads it: scripts/preflight-test.mjs --pushed. */
-function hookTarget(command) {
-  const match = command?.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
+/** Everything the hook actually does, comments and blank lines dropped. */
+function hookCode(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .join("\n");
+}
+
+/** What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed. */
+function hookTarget(text) {
+  const match = hookCommand(text)?.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
   if (!match) return null;
   const script = match[1].replace(/\\/g, "/");
   const flags = (match[2] ?? "").trim();
   return flags ? `${script} ${flags}` : script;
 }
 
-/**
- * Design: our hook is a shebang, comments, and exactly one exec of the gate —
- * nothing else. Matching the file name alone would claim a hand-written hook
- * that merely mentions the script, and then silently overwrite it.
- */
 function isOurs(text) {
-  const command = hookCommand(text);
-  if (!command || !/scripts[\\/]preflight-test\.mjs/.test(command)) return false;
-  return text
-    .split(/\r?\n/)
-    .every((line) => line.trim() === "" || line.trim().startsWith("#") || line.trim() === command);
+  return OWN_BANNERS.some((banner) => text.includes(banner));
 }
 
 /**
- * Design: current means the same exec line, not the same bytes — linked
+ * Design: current means the same code lines, not the same bytes — linked
  * worktrees share one hooks directory, so the installed copy often comes from a
- * sibling checkout and differs only in comments. Only the exec line changes
- * what the hook runs, so only the exec line can be out of date.
+ * sibling checkout and differs in its comments. A comment cannot change what
+ * the hook does; a changed command can, so the command lines decide.
  */
-function runsCurrentScript(text, currentCommand) {
-  return hookCommand(text) === currentCommand;
+function runsCurrentScript(text, sourceText) {
+  return hookCode(text) === hookCode(sourceText);
 }
 
 function isExecutable(file) {
@@ -118,20 +126,18 @@ function removeOldCommitHook(dir) {
   }
 }
 
-/** Where the hook goes and what the current source runs, or why neither is known. */
+/** Where the hook goes and what the current source does, or why neither is known. */
 function locate() {
-  const repo = repoRootOf(process.cwd());
+  const repo = repoRoot(process.cwd());
   if (repo.error) return { reason: repo.error };
-  const hooks = hooksDirOf(repo.root);
+  const hooks = hooksDir(repo.root);
   if (hooks.error) return { reason: hooks.error };
 
   const source = readText(path.join(sourceRoot, HOOK_SOURCE));
   if (source.error?.code === "ENOENT") return { dir: hooks.dir, reason: `${HOOK_SOURCE} is missing from ${sourceRoot}` };
   if (source.error) return { dir: hooks.dir, reason: `cannot read ${HOOK_SOURCE}: ${source.error.message}` };
-
-  const command = hookCommand(source.text);
-  if (!command) return { dir: hooks.dir, reason: `${HOOK_SOURCE} has no exec line` };
-  return { dir: hooks.dir, source: source.text, command };
+  if (!hookCode(source.text)) return { dir: hooks.dir, reason: `${HOOK_SOURCE} runs nothing` };
+  return { dir: hooks.dir, source: source.text };
 }
 
 /**
@@ -151,11 +157,11 @@ function prePushStatus() {
     return { state: "unknown", dir: found.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
 
-  const target = hookTarget(hookCommand(installed.text));
-  if (!isOurs(installed.text)) return { state: "foreign", dir: found.dir, hookPath, target };
-  if (!runsCurrentScript(installed.text, found.command)) return { state: "stale", dir: found.dir, hookPath, target };
-  if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", dir: found.dir, hookPath, target };
-  return { state: "ok", dir: found.dir, hookPath, target };
+  const hook = { dir: found.dir, hookPath, target: hookTarget(installed.text) };
+  if (!isOurs(installed.text)) return { state: "foreign", ...hook };
+  if (!runsCurrentScript(installed.text, found.source)) return { state: "stale", ...hook };
+  if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", ...hook };
+  return { state: "ok", ...hook };
 }
 
 /**
@@ -179,7 +185,7 @@ function installHook({ force = false } = {}) {
   // such a hook (husky, a hand-written one) may do real work, and this command
   // is only asked to put our hook in place, not to delete someone else's.
   if (exists && !isOurs(installed.text) && !force) {
-    return { state: "refused", dir: found.dir, hookPath, target: hookTarget(hookCommand(installed.text)) };
+    return { state: "refused", dir: found.dir, hookPath, target: hookTarget(installed.text) };
   }
 
   // Design: the old pre-commit-user is deleted, GitButler's pre-commit never is
@@ -188,9 +194,9 @@ function installHook({ force = false } = {}) {
   const removed = removeOldCommitHook(found.dir);
   fs.mkdirSync(found.dir, { recursive: true });
 
-  // Same behaviour, possibly older comments: leave the bytes as they are, so
-  // two checkouts sharing one hooks directory do not rewrite each other.
-  const current = exists && runsCurrentScript(installed.text, found.command);
+  // Same code, possibly older comments: leave the bytes as they are, so two
+  // checkouts sharing one hooks directory do not rewrite each other.
+  const current = exists && runsCurrentScript(installed.text, found.source);
   if (!current) fs.writeFileSync(hookPath, found.source, { mode: 0o755 });
 
   // Windows has no execute bit for git to read, so there is nothing to set.
@@ -200,7 +206,7 @@ function installHook({ force = false } = {}) {
     state: !exists ? "installed" : current ? "current" : "replaced",
     dir: found.dir,
     hookPath,
-    target: hookTarget(found.command),
+    target: hookTarget(found.source),
     removed,
     chmodError,
     preCommit: fs.existsSync(path.join(found.dir, "pre-commit")),
@@ -208,8 +214,8 @@ function installHook({ force = false } = {}) {
 }
 
 function installHint(force) {
-  const command = force ? `${INSTALL} --force` : INSTALL;
-  return `${command} (from the repo root; pnpm -w ${command} from a subdirectory)`;
+  const script = force ? "hooks:install --force" : "hooks:install";
+  return `pnpm ${script} at the repo root, or pnpm -w ${script} from a subdirectory`;
 }
 
 const INSTALLED_LINE = {
@@ -220,7 +226,7 @@ const INSTALLED_LINE = {
 
 const STATUS_PROBLEM = {
   missing: "pre-push is missing",
-  stale: "pre-push is out of date, it runs an older script line",
+  stale: "pre-push is out of date, it runs older commands",
   "not-executable": "pre-push is not executable",
   foreign: "pre-push is another script, not ours",
 };
@@ -238,10 +244,14 @@ function reportInstall(result) {
 
   console.log(`[hooks] ${INSTALLED_LINE[result.state]}: ${result.hookPath}`);
   if (result.target) console.log(`[hooks] runs: ${result.target}`);
-  if (result.chmodError) console.error(`[hooks] could not add the execute bit: ${result.chmodError}`);
   if (result.removed?.error) console.error(`[hooks] could not remove the old commit hook ${result.removed.file}: ${result.removed.error}`);
   else if (result.removed) console.log(`[hooks] removed the old commit hook: ${result.removed.file}`);
   if (result.preCommit) console.log("[hooks] pre-commit belongs to GitButler, left alone");
+  if (result.chmodError) {
+    // git skips a hook it cannot execute, so this is a failed install, not a note.
+    console.error(`[hooks] could not add the execute bit, so git would skip it: ${result.chmodError}`);
+    return 1;
+  }
   return 0;
 }
 
@@ -257,6 +267,7 @@ function reportStatus(result) {
   }
 
   console.error(`[hooks] ${STATUS_PROBLEM[result.state]}: ${result.hookPath}`);
+  if (result.target) console.error(`[hooks] runs: ${result.target}`);
   const foreign = result.state === "foreign";
   console.error(`[hooks] ${foreign ? "replace it with" : "install it"}: ${installHint(foreign)}`);
   return 1;

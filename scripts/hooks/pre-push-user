@@ -1,4 +1,5 @@
 #!/bin/sh
+# anysearch push gate — installed by pnpm hooks:install; pnpm hooks:status checks this file.
 # anysearch pre-push: run the tests this push can break — the changed workspace
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.
