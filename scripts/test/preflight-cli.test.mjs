@@ -60,6 +60,41 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   }
 });
 
+test("the throwaway home gets turbo's config dir on Windows only", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
+    try {
+      assert.equal(result.status, 0, result.stderr);
+      const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
+      // Off Windows the home keeps exactly what it had.
+      assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
+    } finally {
+      dropLeftoverHome(result);
+    }
+  });
+});
+
+// The probe above pins the layer the fix adds; this one makes the repo's real
+// turbo find it, so a turbo that looks somewhere else fails here instead of on
+// an operator's push. Windows only: the failure cannot happen off Windows.
+test(
+  "the real turbo starts under the throwaway home",
+  { skip: process.platform !== "win32" ? "Windows only" : turboEntry() === null && "turbo is not installed" },
+  async () => {
+    await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeRealTurboPnpm }, ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      try {
+        // Any turbo failure blocks the gate, the missing config dir included,
+        // so exit 0 is the signal. Pinning turbo's banner wording would turn a
+        // turbo upgrade into a red that looks like a home problem.
+        assert.equal(result.status, 0, result.stderr);
+      } finally {
+        dropLeftoverHome(result);
+      }
+    });
+  },
+);
+
 test("a red run keeps the test home and prints where it is", async () => {
   await withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"]);
@@ -384,6 +419,62 @@ function writeLeakyPnpm(bin, code) {
   writePnpmShim(bin, { sh, cmd });
 }
 
+// A stand-in pnpm that reports whether the home it was handed carries the
+// config dir turbo resolves from the user profile. turbo exits 1 with "Global
+// config path not found." before running any task when that dir is missing, so
+// a gated run is only green if it is there.
+function writeTurboConfigProbePnpm(bin) {
+  const sh = [
+    "#!/bin/sh",
+    'if [ -d "$USERPROFILE/AppData/Roaming" ]; then echo TURBO_CONFIG_DIR_PRESENT=yes; else echo TURBO_CONFIG_DIR_PRESENT=no; fi',
+    "exit 0",
+  ].join("\n");
+  const cmd = [
+    "@echo off",
+    'if exist "%USERPROFILE%\\AppData\\Roaming\\" (echo TURBO_CONFIG_DIR_PRESENT=yes) else (echo TURBO_CONFIG_DIR_PRESENT=no)',
+    "exit /b 0",
+  ].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm that runs the repo's own turbo instead: `test --dry` resolves
+// every package and prints the plan without running a task, so the gate stays
+// fast while turbo still has to locate its global config dir in the home the
+// gate handed it.
+function writeRealTurboPnpm(bin) {
+  const entry = turboEntry();
+  const sh = ["#!/bin/sh", `cd "${repoRoot}"`, `exec "${process.execPath}" "${entry}" run test --dry`].join("\n");
+  const cmd = [
+    "@echo off",
+    `cd /d "${repoRoot}"`,
+    `"${process.execPath}" "${entry}" run test --dry`,
+    "exit /b %ERRORLEVEL%",
+  ].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
+
+// A gate run can leave its home behind two ways: a red run says it kept it for
+// inspection, and a green run that could not delete it says where it left it.
+//
+// Design: retry, then swallow a cleanup failure — a Windows file lock keeping the
+// dir is not news this test reports, and throwing in the finally hides the
+// assertion that ran before it.
+function dropLeftoverHome(result) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const home =
+    keptHome(output) ??
+    /\[preflight\] could not delete the test home, left it at (.+?): /m.exec(output)?.[1];
+  if (!home) return;
+  try {
+    rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch {}
+}
+
+function turboEntry() {
+  const entry = join(repoRoot, "node_modules", "turbo", "bin", "turbo");
+  return existsSync(entry) ? entry : null;
+}
+
 function writePnpmShim(bin, { sh, cmd }) {
   write(join(bin, "pnpm"), `${sh}\n`);
   write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
@@ -436,11 +527,12 @@ function keptHome(output) {
 }
 
 // A red run keeps its test home on purpose; a fixture is not an operator's
-// failed run, so the test deletes what the gate printed.
+// failed run, so the test deletes what the gate printed. The home is dropped
+// before the assertion, so a failing assertion does not leave the dir behind.
 function clearKeptHome(result) {
   const home = keptHome(result.stderr);
+  dropLeftoverHome(result);
   assert.ok(home, `no kept test home in: ${result.stderr}`);
-  rmSync(home, { recursive: true, force: true });
 }
 
 function git(root, args) {
