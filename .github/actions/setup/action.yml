@@ -45,6 +45,10 @@ inputs:
     description: "Whether to run scripts/ci-dep-age-override.mjs before install ('true' or 'false')"
     required: false
     default: "false"
+  detect-changes:
+    description: "Whether to compute docs-only / changed-files from the event ('true' or 'false')"
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -53,6 +57,7 @@ runs:
     # only matters for the workspace build and tests.
     - name: work out what changed
       id: changes
+      if: ${{ inputs.detect-changes == 'true' }}
       shell: bash
       env:
         EVENT_NAME: ${{ github.event_name }}
@@ -64,9 +69,10 @@ runs:
         git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
         history_complete=true
         if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
-          # Design: blobless history is enough for a name-only diff — the full
-          # blob fetch was this template's most expensive step; a plain
-          # unshallow is the fallback when the server ignores the filter.
+          # Design: blobless history keeps the name-only diff cheap — only
+          # commits and trees are needed. This makes origin a promisor remote;
+          # current CI git commands read only commits, trees and the working
+          # tree. A plain unshallow is the fallback if git rejects the filter.
           git fetch --no-tags --filter=blob:none --unshallow origin \
             || git fetch --no-tags --unshallow origin \
             || true
@@ -90,6 +96,7 @@ runs:
         changed_files=""
         changes_readable=false
         diff_file="$(mktemp)"
+        err_file="$(mktemp)"
         if [ -n "$base" ]; then
           if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$base" || true
@@ -99,15 +106,15 @@ runs:
             changed_files="$(tr '\0' '\n' < "$diff_file")"
             changes_readable=true
             if [ "$EVENT_NAME" = "pull_request" ]; then
-              if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>&1)"; then
+              if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>"$err_file")"; then
                 if [ "$verdict" = "true" ]; then docs_only=true; fi
               else
-                echo "::warning::ci-changes failed, treating the change set as unknown: $verdict"
+                echo "::warning::ci-changes failed, treating the change set as unknown: $(cat "$err_file")"
               fi
             fi
           fi
         fi
-        rm -f "$diff_file"
+        rm -f "$diff_file" "$err_file"
 
         delim="ANS_CHANGED_FILES_${GITHUB_RUN_ID}_$RANDOM"
         {

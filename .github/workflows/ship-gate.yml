@@ -74,8 +74,8 @@ jobs:
           node-version: 22
           dep-age-override: true
 
-      # Design: skip the step, not the job — the three OS legs must keep
-      # reporting, or the release gate's discovery phase fails closed.
+      # Design: docs-only PRs skip the gate step; each OS leg still reports
+      # green, so the release gate keeps seeing them.
       - name: ship-gate (9 steps; matrix install runs per-OS in CI)
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/ship-gate.mjs

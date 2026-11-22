@@ -49,19 +49,16 @@ test("separators and ./- prefixes do not escape the boundary", () => {
 });
 
 test("the command-line entry reads NUL-separated paths from any cwd", () => {
-  const docs = runCli("docs/limitations.md\0README.md\0", { cwd: os.tmpdir() });
-  assert.equal(docs.status, 0);
-  assert.equal(docs.stdout, "true");
-
-  const mixed = runCli("docs/a.md\0apps/plugin/AGENTS.md\0", { cwd: os.tmpdir() });
-  assert.equal(mixed.status, 0);
-  assert.equal(mixed.stdout, "false");
-
-  const newline = runCli("README.md\nCHANGELOG.md\n");
-  assert.equal(newline.status, 0);
-  assert.equal(newline.stdout, "true");
-
-  const empty = runCli("");
-  assert.equal(empty.status, 0);
-  assert.equal(empty.stdout, "false");
+  const cases = [
+    ["docs/limitations.md\0README.md\0", "true"],
+    ["docs/a.md\0apps/plugin/AGENTS.md\0", "false"],
+    ["README.md\nCHANGELOG.md\n", "true"],
+    ["", "false"],
+  ];
+  for (const [input, expected] of cases) {
+    const result = runCli(input, { cwd: os.tmpdir() });
+    assert.equal(result.status, 0, input);
+    assert.equal(result.stdout, expected, input);
+    assert.equal(result.stderr, "", input);
+  }
 });

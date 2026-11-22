@@ -34,8 +34,8 @@ jobs:
         with:
           install-args: --frozen-lockfile
           dep-age-override: true
-      # Design: docs-only PRs skip both probes — the probes say nothing about a
-      # doc change.
+      # Design: docs-only PRs skip both probes; native-smoke is not a
+      # release-gate family.
       - name: Verify probe process-tree cleanup
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node --test scripts/test/probe-process.test.mjs

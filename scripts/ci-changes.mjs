@@ -1,9 +1,9 @@
 // Which changed files count as documentation, for the CI lanes that skip on a
 // docs-only change.
 //
-// Design: the boundary is a fixed list, not a glob — a glob like `**/*.md` would
-// swallow product assets (`apps/plugin/*.md`, `domains/docs.toml`) whose
-// contents tests read.
+// Design: the boundary is a fixed list, not a glob — `**/*.md` would swallow
+// product assets such as `apps/plugin/AGENTS.md`, whose contents tests read.
+// `domains/docs.toml` is not documentation either, so the list stays explicit.
 //
 // Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.

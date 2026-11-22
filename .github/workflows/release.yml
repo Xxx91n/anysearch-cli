@@ -40,6 +40,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
+        with:
+          detect-changes: false
 
       - name: pre-tag — decision-grade peek (spends one OF look)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
@@ -212,6 +214,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
+        with:
+          detect-changes: false
 
       - name: npm CLI >= 11.5.1 (required for trusted publishing)
         run: npm i -g npm@11.6.1
