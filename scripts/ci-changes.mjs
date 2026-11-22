@@ -3,7 +3,9 @@
 //
 // Design: the boundary is a fixed list, not a glob — `**/*.md` would swallow
 // product assets such as `apps/plugin/AGENTS.md`, whose contents tests read.
-// `domains/docs.toml` is not documentation either, so the list stays explicit.
+// Known cost: `docs/eval/*.md` sits inside docs/ but is also a live provenance
+// anchor in eval-looks.json; a PR that only deletes or renames it must run the
+// store tests itself.
 //
 // Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.

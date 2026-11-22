@@ -50,15 +50,15 @@ test("separators and ./- prefixes do not escape the boundary", () => {
 
 test("the command-line entry reads NUL-separated paths from any cwd", () => {
   const cases = [
-    ["docs/limitations.md\0README.md\0", "true"],
-    ["docs/a.md\0apps/plugin/AGENTS.md\0", "false"],
-    ["README.md\nCHANGELOG.md\n", "true"],
-    ["", "false"],
+    ["nul docs + readme", "docs/limitations.md\0README.md\0", "true"],
+    ["nul mixed", "docs/a.md\0apps/plugin/AGENTS.md\0", "false"],
+    ["newline docs", "README.md\nCHANGELOG.md\n", "true"],
+    ["empty", "", "false"],
   ];
-  for (const [input, expected] of cases) {
+  for (const [name, input, expected] of cases) {
     const result = runCli(input, { cwd: os.tmpdir() });
-    assert.equal(result.status, 0, input);
-    assert.equal(result.stdout, expected, input);
-    assert.equal(result.stderr, "", input);
+    assert.equal(result.status, 0, name);
+    assert.equal(result.stdout, expected, name);
+    assert.equal(result.stderr, "", name);
   }
 });

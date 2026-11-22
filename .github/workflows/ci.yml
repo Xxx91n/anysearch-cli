@@ -28,8 +28,9 @@ jobs:
         id: setup
         with:
           dep-age-override: true
-      # Design: docs-only PRs skip the expensive steps; the job still reports
-      # green, so the release gate keeps seeing this family.
+      # Design: docs-only PRs skip the expensive steps at step level — a
+      # job-level `if` would register the check-run as skipped, which is not
+      # evidence (and a matrix leg may not register at all).
       - name: Validate calibration labels
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/eval-labels.mjs validate

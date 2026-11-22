@@ -7,11 +7,13 @@
 # defaults to "false" (fail-closed) so release jobs stay strict unless a job
 # explicitly opts into the temporary CI bypass.
 
-# Design: one place works out the change set — the template unshallows, takes
-# the base from the event (pull_request: base.sha, push: event.before,
-# workflow_dispatch: the default branch), and reports docs-only plus the changed
-# files. Anything it cannot read reports docs-only=false, so every lane runs.
-# The doc boundary (docs/ plus the four root markdown files) lives in
+# Design: one place works out the change set — when detection is on, the
+# template unshallows, takes the base from the event (pull_request: base.sha,
+# push: event.before, workflow_dispatch: the default branch), and reports
+# docs-only plus the changed files. Anything it cannot read reports
+# docs-only=false, so every lane runs. Release and conformance turn detection
+# off because they never read docs-only, so their checkout stays shallow. The
+# doc boundary (docs/ plus the four root markdown files) lives in
 # scripts/ci-changes.mjs.
 #
 # Design: docs-only skips the bootstrap and the caller's expensive steps, while
@@ -46,7 +48,7 @@ inputs:
     required: false
     default: "false"
   detect-changes:
-    description: "Whether to compute docs-only / changed-files from the event ('true' or 'false')"
+    description: "Whether to compute docs-only / changed-files from the event ('true' or 'false'). Set false only where no caller reads them (release, conformance): the outputs stay empty and the checkout is not unshallowed."
     required: false
     default: "true"
 
@@ -109,7 +111,7 @@ runs:
               if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>"$err_file")"; then
                 if [ "$verdict" = "true" ]; then docs_only=true; fi
               else
-                echo "::warning::ci-changes failed, treating the change set as unknown: $(cat "$err_file")"
+                echo "::warning::ci-changes failed, treating the change set as unknown: $(tr '\n' ' ' < "$err_file")"
               fi
             fi
           fi

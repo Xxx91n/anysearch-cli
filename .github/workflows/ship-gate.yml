@@ -74,8 +74,8 @@ jobs:
           node-version: 22
           dep-age-override: true
 
-      # Design: docs-only PRs skip the gate step; each OS leg still reports
-      # green, so the release gate keeps seeing them.
+      # Design: docs-only PRs skip the gate step, not the job — a job-level
+      # `if` would register each leg as skipped, and skipped is not evidence.
       - name: ship-gate (9 steps; matrix install runs per-OS in CI)
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/ship-gate.mjs
