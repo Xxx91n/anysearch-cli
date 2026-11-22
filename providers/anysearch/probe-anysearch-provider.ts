@@ -35,6 +35,16 @@ registerHooks({
 const { AnySearchProvider, ANYSEARCH_ENDPOINT } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
 
+// The --default-endpoint arm claims "this run used the baked-in public endpoint",
+// so the import is checked rather than trusted: a renamed or dropped export is
+// `undefined`, the provider then silently falls back to env, and envClass still
+// prints default(forced) — a probe reporting the wrong arm is worse than one
+// that refuses to run.
+if (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0) {
+  console.error("anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted");
+  process.exit(2);
+}
+
 // Probe overrides (P1 env/key/endpoint separation):
 // --default-endpoint force the baked-in public endpoint (env ignored)
 // --nokey anonymous call (env key suppressed)

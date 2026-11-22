@@ -53,21 +53,37 @@ async function post(body: unknown, sessionId: string | null, protocolVersion: st
   return { status: resp.status, sessionId: sid, text };
 }
 
-function parseRpc(text: string, expectedId: number): any {
+type JsonRpcReply = {
+  id?: number | string;
+  result?: { protocolVersion?: string; isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+  error?: { code?: number; message?: string };
+};
+
+function parseRpc(text: string, expectedId: number): JsonRpcReply {
   // Streamable HTTP may answer with plain JSON or an SSE stream, and a stream
-  // can carry other messages ahead of the reply. Pick by JSON-RPC id — the same
-  // discipline the adapter's readSseJsonRpc applies — so a stray notification
-  // is never read as this call's result.
-  const candidates = text.trimStart().startsWith("{")
+  // can carry other messages ahead of the reply. The id rules mirror the
+  // adapter on purpose — a probe that accepts more (or less) than the product
+  // reports a difference the product does not have: the JSON branch compares
+  // ids as strings, the SSE branch compares them strictly and keeps the last
+  // match (anysearch.ts post() / readSseJsonRpc).
+  const json = text.trimStart().startsWith("{");
+  const candidates = json
     ? [text]
     : text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
   let parseable = 0;
+  let match: JsonRpcReply | undefined;
   for (const raw of candidates) {
-    let msg: any;
-    try { msg = JSON.parse(raw); } catch { continue; }
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { continue; }
     parseable += 1;
-    if (msg?.id === expectedId) return msg;
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const reply = parsed as JsonRpcReply;
+    const sameId = json ? String(reply.id) === String(expectedId) : reply.id === expectedId;
+    if (!sameId) continue;
+    match = reply;
+    if (json) break; // one body, one reply; an SSE stream keeps the last match like the adapter
   }
+  if (match) return match;
   throw new Error(
     (parseable ? "no JSON-RPC reply for id " + expectedId + " in: " : "unparseable response body: ") + text.slice(0, 120),
   );
@@ -105,14 +121,16 @@ try {
   if (rpc.error) out.stage = "tools/call";
   const result = rpc.result;
   out.isError = result?.isError ?? null;
-  const texts = (result?.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => sanitize(String(c.text ?? "")));
+  const texts = (result?.content ?? []).filter((c) => c?.type === "text").map((c) => sanitize(String(c.text ?? "")));
   const joined = texts.join("\n---\n");
   out.textHead = joined.slice(0, 600);
   out.textLen = joined.length;
   out.hasResultsHeader = joined.includes("## Search Results");
   out.ok = out.hasResultsHeader && !out.isError;
   console.log(JSON.stringify(out, null, 2));
-  process.exit(out.ok ? 0 : out.isError || rpc.error ? 2 : 3);
+  if (out.ok) process.exit(0);
+  // tool failure (HTTP handled above, or JSON-RPC error) vs reply-shape drift
+  process.exit(out.isError === true || rpc.error !== undefined ? 2 : 3);
 } catch (e) {
   out.ok = false; out.stage = "exception";
   out.errorName = (e as Error).name; out.errorMessage = sanitize(String((e as Error).message ?? e).slice(0, 300));

@@ -6,8 +6,10 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 ## 端点
 
 - 默认 `https://api.anysearch.com/mcp`（MCP Streamable HTTP，只有 `POST /mcp`）。**这个值的第一来源是
-  代码**：`packages/retriever/src/providers/anysearch.ts` 的 `ANYSEARCH_ENDPOINT`（探针 import 的就是
-  它，不另写一份）；改那边要同步这份 README。
+  代码**：`packages/retriever/src/providers/anysearch.ts` 的 `ANYSEARCH_ENDPOINT`；`probe-anysearch-provider.ts`
+  import 的就是它（拿到后先校验不是空串，不然 `--default-endpoint` 那一路会静默退回 env 还打
+  `default(forced)`）。`probe-anysearch-mcp-raw.ts` 故意自己留一份字面量——它不能经过 provider 层。
+  改代码里那个常量要同步这份 README。
 - `ANYSEARCH_ENDPOINT` 可覆盖。值以 `/v1/search` 结尾时自动改写成 `base+/mcp` 并打一次 stderr 警告——
   REST 还活着（`POST /v1/search` 200），改写成兼容垫片，不是 REST 退役。
 - 官方归属 2026-11-04 确认（#15，证据在适配器头注释）；证书 `*.anysearch.com` 有效期到 2027-04-07，
@@ -72,7 +74,7 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 
 输出只走 stdout，人读、贴进 issue，**不落盘**：provider 探针一行 JSON，raw 探针一份缩进过的 JSON。key
 和 endpoint 的值不打印，只打 `endpointSource` / `keyPresent`；错误消息里出现的值会遮成 `<endpoint>` /
-`<key>`。
+`<key>`。SSE 多帧那条路径（同一条流里夹着别的消息）现在没有自动覆盖，手跑成功只证明单帧。
 
 `probe-anysearch-provider.ts` 头顶那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
 （`../contract`），tsc 的 Bundler 解析和 tsx 都放行，Node 的 ESM 解析不放行。钩子只在 `.ts` 文件真的

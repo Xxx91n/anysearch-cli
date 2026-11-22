@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // criterion 5: Tavily include_domains leakage probe — INJECT-style
 // deterministic ledger. Re-runnable: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs
-// Output: $PROBE_TAVILY_OUT_DIR (default .scratch/grill-round-62, relative to cwd; .scratch/ is
+// Output: $PROBE_TAVILY_OUT_DIR (default .scratch/tavily-probe, relative to cwd; .scratch/ is
 // gitignored), one file per run: tavily-probe-ledger-<ranAt>.{json,md} — a rerun never overwrites
 // an earlier run, so the ledger quoted from a past round stays readable.
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
@@ -13,7 +13,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
-const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "grill-round-62"); // per-run file names, so a rerun never overwrites an earlier ledger
+const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "tavily-probe"); // per-run file names, so a rerun never overwrites an earlier ledger
 const KEY = process.env.TAVILY_API_KEY;
 const HOST = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const inDomain = (u, allow) => { const h = HOST(u); return allow.some((e) => h === e || h.endsWith("." + e)); };
