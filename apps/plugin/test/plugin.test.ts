@@ -158,16 +158,7 @@ test("AGENTS.md: minimal and has required sections", () => {
 
 
 
-// ===: Cursor dual channel + .mdc generation ===
-test("cursor.ts uses additional_context (snake_case)", () => {
-  const cursorSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "cursor.ts"), "utf8");
-  assert.ok(cursorSrc.includes("additional_context"), "cursor.ts should use additional_context (snake_case)");
-  assert.ok(cursorSrc.includes("ensureMdc"), "cursor.ts should have ensureMdc function for .mdc generation");
-  assert.ok(cursorSrc.includes(".cursor"), "cursor.ts should write to .cursor/rules/");
-  // Verify it handles sessionStart event
-  assert.ok(cursorSrc.includes("sessionstart"), "cursor.ts should handle sessionStart event");
-});
-
+// ===: .mdc generation ===
 test("antigravity.ts has .mdc fallback", () => {
   const antigravitySrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "antigravity.ts"), "utf8");
   assert.ok(antigravitySrc.includes("ensureMdc"), "antigravity.ts should have ensureMdc for .mdc fallback");
@@ -175,9 +166,8 @@ test("antigravity.ts has .mdc fallback", () => {
   assert.ok(antigravitySrc.includes("SessionStart"), "antigravity.ts should keep SessionStart for forward-compat");
 });
 
-test("session-start.ts has .mdc generation logic", () => {
+test("routing card text and the .mdc writer both live in routing-card.ts", () => {
   const sessionStartSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "session-start.ts"), "utf8");
-  assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should call ensureMdc");
   assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
   assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should use ROUTING_CARD");
   // audit (ensureMdc×3): the write/exists/MDC_CONTENT logic was deduplicated
@@ -186,16 +176,6 @@ test("session-start.ts has .mdc generation logic", () => {
   assert.ok(rcSrc.includes("MDC_CONTENT"), "routing-card.ts ensureMdc should use MDC_CONTENT");
   assert.ok(rcSrc.includes("writeFileSync"), "routing-card.ts ensureMdc should write .mdc file");
   assert.ok(rcSrc.includes("existsSync"), "routing-card.ts ensureMdc should check if .mdc exists before writing");
-});
-
-test("cursor hooks.json has no _degradation_note", () => {
-  const hooksPath = join(PLUGIN_ROOT, "configs", "cursor", "hooks.json");
-  const hooksContent = fs.readFileSync(hooksPath, "utf8");
-  const parsed = JSON.parse(hooksContent);
-  assert.ok(!parsed._degradation_note, "cursor hooks.json should NOT have _degradation_note");
-  assert.ok(parsed.hooks.sessionStart, "cursor hooks.json should have sessionStart config");
-  assert.ok(parsed.hooks.preToolUse, "cursor hooks.json should have preToolUse config");
-  assert.ok(parsed.hooks.postToolUse, "cursor hooks.json should have postToolUse config");
 });
 
 test("routing card 4-block structure in shared module", () => {
@@ -222,9 +202,7 @@ test("ensureMdc: {\"mdc\": false} suppresses .mdc write (no file created)", () =
   try {
     mkdirSync(join(cwd, ".ans"), { recursive: true });
     writeFileSync(join(cwd, ".ans", "routing-card.json"), JSON.stringify({ mdc: false }));
-    ensureMdc(cwd, ".cursor");
     ensureMdc(cwd, ".antigravity");
-    assert.ok(!existsSync(join(cwd, ".cursor", "rules", "anysearch.mdc")), "cursor .mdc should not be written when mdc:false");
     assert.ok(!existsSync(join(cwd, ".antigravity", "rules", "anysearch.mdc")), "antigravity .mdc should not be written when mdc:false");
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
@@ -234,11 +212,11 @@ test("ensureMdc: {\"mdc\": false} leaves an existing .mdc untouched", () => {
   try {
     mkdirSync(join(cwd, ".ans"), { recursive: true });
     writeFileSync(join(cwd, ".ans", "routing-card.json"), JSON.stringify({ mdc: false }));
-    mkdirSync(join(cwd, ".cursor", "rules"), { recursive: true });
-    writeFileSync(join(cwd, ".cursor", "rules", "anysearch.mdc"), "user-owned content");
-    ensureMdc(cwd, ".cursor");
+    mkdirSync(join(cwd, ".antigravity", "rules"), { recursive: true });
+    writeFileSync(join(cwd, ".antigravity", "rules", "anysearch.mdc"), "user-owned content");
+    ensureMdc(cwd, ".antigravity");
     assert.equal(
-      fsReadFileSync(join(cwd, ".cursor", "rules", "anysearch.mdc"), "utf8"),
+      fsReadFileSync(join(cwd, ".antigravity", "rules", "anysearch.mdc"), "utf8"),
       "user-owned content",
       "existing .mdc must not be overwritten when mdc:false",
     );
@@ -248,8 +226,8 @@ test("ensureMdc: {\"mdc\": false} leaves an existing .mdc untouched", () => {
 test("ensureMdc: no override file writes .mdc as before (default)", () => {
   const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-default-"));
   try {
-    ensureMdc(cwd, ".cursor");
-    const mdcPath = join(cwd, ".cursor", "rules", "anysearch.mdc");
+    ensureMdc(cwd, ".antigravity");
+    const mdcPath = join(cwd, ".antigravity", "rules", "anysearch.mdc");
     assert.ok(existsSync(mdcPath), "default behavior must still write .mdc");
     assert.ok(fsReadFileSync(mdcPath, "utf8").includes("anysearch plugin routing card"), "written .mdc should be the routing card");
   } finally { rmSync(cwd, { recursive: true, force: true }); }
@@ -272,8 +250,8 @@ test("ensureMdc: bad JSON writes .mdc and warns on stderr like the existing over
   try {
     mkdirSync(join(cwd, ".ans"), { recursive: true });
     writeFileSync(join(cwd, ".ans", "routing-card.json"), "{not json");
-    const stderr = withStderrCaptured(() => ensureMdc(cwd, ".cursor"));
-    assert.ok(existsSync(join(cwd, ".cursor", "rules", "anysearch.mdc")), "bad JSON must fail open and write .mdc");
+    const stderr = withStderrCaptured(() => ensureMdc(cwd, ".antigravity"));
+    assert.ok(existsSync(join(cwd, ".antigravity", "rules", "anysearch.mdc")), "bad JSON must fail open and write .mdc");
     assert.ok(stderr.includes("routing-card.json parse error"), "stderr warning should match the existing override semantics, got: " + stderr);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

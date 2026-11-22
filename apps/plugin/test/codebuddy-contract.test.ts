@@ -190,17 +190,6 @@ testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", as
   assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext, "codex adapter must emit the envelope on hook_event_name");
 });
 
-testAsync("cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake_case)", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "cursor.cjs");
-  if (!existsSync(p)) { console.log("    SKIP: cursor.cjs not built"); return; }
-  const { stdout } = await runHook(p, JSON.stringify({
-    hook_event_name: "postToolUse", tool_name: "search_web",
-    tool_input: { query: "cb" }, tool_output: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
-    cwd: "/tmp/cb",
-  }));
-  assert.ok(JSON.parse(stdout).updated_mcp_tool_output, "cursor adapter must act on hook_event_name");
-});
-
 testAsync("session-start: hook_event_name SessionStart honored", async () => {
   const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
@@ -211,10 +200,9 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
 });
 
 // === rework F-A5: array-of-blocks tolerance on the other adapters ===
-// Same class: codex(tool_response)/cursor(tool_output) now route through
-// unwrapToolResponse — array shapes must distill, not zero out. The agy leg of
-// this class lives in antigravity-contract.test.ts (audit nit: keep host
-// cases in their own file).
+// Same class: codex(tool_response) now routes through unwrapToolResponse —
+// array shapes must distill, not zero out. The agy leg of this class lives in
+// antigravity-contract.test.ts (audit nit: keep host cases in their own file).
 const BLOCKS = [{ type: "text", text: TOOL_RESP }];
 
 testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () => {
@@ -228,23 +216,12 @@ testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () 
   assert.equal(d.resultCount, 2);
 });
 
-testAsync("cursor PostToolUse: array-of-blocks tool_output distills", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "cursor.cjs");
-  if (!existsSync(p)) { console.log("    SKIP: cursor.cjs not built"); return; }
-  const { stdout } = await runHook(p, JSON.stringify({
-    hook_event_name: "postToolUse", tool_name: "search_web",
-    tool_input: { query: "cb" }, tool_output: BLOCKS, cwd: "/tmp/cb",
-  }));
-  const d = JSON.parse(JSON.parse(stdout).updated_mcp_tool_output);
-  assert.equal(d.resultCount, 2);
-});
-
 // === rework F-A1: template-target executability ===
 // Blind spot closed: earlier tests asserted templates merely HAVE preToolUse
 // keys; nobody checked the target file is a real stdin-reading entrypoint —
-// that's how configs/cursor/hooks.json kept pointing at library files
-// (preheat.cjs/distill.cjs export functions, never read stdin) while three
-// docs claimed "all four platforms fixed".
+// that's how one shipped template kept pointing at library files
+// (preheat.cjs/distill.cjs export functions, never read stdin) while the docs
+// said that host was wired.
 testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints", async () => {
   const { readdirSync, readFileSync } = await import("node:fs");
   const configsDir = join(process.cwd(), "configs");

@@ -1,27 +1,13 @@
 // Copy resources and build hooks into the complete product, independent of
 // apps/mcp/dist and apps/plugin/dist (which may be absent or from an older build).
-import { build } from "esbuild";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildHookBundles } from "../../plugin/scripts/hook-build.mjs";
 
 const cli = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const plugin = resolve(cli, "../plugin");
-const manifest = JSON.parse(readFileSync(join(plugin, "package.json"), "utf8"));
-const hookEntries = Object.entries(manifest.exports)
-  .filter(([name]) => name.startsWith("./hooks/"))
-  .map(([, entry]) => resolve(plugin, entry.types));
-await build({
-  entryPoints: hookEntries,
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  outdir: join(cli, "plugin/dist/hooks"),
-  outbase: join(plugin, "src/hooks"),
-  outExtension: { ".js": ".cjs" },
-  banner: { js: "#!/usr/bin/env node" },
-  external: ["better-sqlite3", "@anysearch-cli/embedding"],
-});
+await buildHookBundles({ pluginRoot: plugin, outdir: join(cli, "plugin/dist/hooks") });
 
 for (const name of ["configs", "hooks", ".claude-plugin", ".mcp.json", "skills", "AGENTS.md"]) {
   const dst = join(cli, "plugin", name);

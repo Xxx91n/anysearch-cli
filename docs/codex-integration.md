@@ -127,8 +127,7 @@ What each hook does:
 
 - **SessionStart** injects the routing card through
   `hookSpecificOutput.additionalContext`. The wrapper is required; the bare
-  form is dropped. It also writes `.cursor/rules/anysearch.mdc` as the
-  Cursor/Antigravity fallback.
+  form is dropped.
 - **PreToolUse** runs the URL policy check (`permissionDecision` deny/ask
   inside the wrapper; blocking is verified) and adds recall preheat context.
 - **PostToolUse** distills the tool response and POSTs `/index` into the

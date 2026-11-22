@@ -19,7 +19,7 @@ If the anysearch server cannot be reached, every tool still works, just with few
 - query_knowledge passes straight through to the domain retrieval adapter (RagAdapterPort).
 - ans_chat runs without memory injection.
 
-A broken hook exits 0. The shared hook code is the same on every host, but URL policy enforcement is not. When a call carries a URL and the URL policy cannot be read, the shared hook returns `ask`. Claude Code, Codex, CodeBuddy and the dsh plugin give that decision to the host: the call waits for approval, and the call is denied when there is no approval channel. Cursor does not give that decision to the host, and Antigravity always allows, so on those two hosts the call can go ahead without approval (0055).
+A broken hook exits 0. The shared hook code is the same on every host, but URL policy enforcement is not. When a call carries a URL and the URL policy cannot be read, the shared hook returns `ask`. Claude Code, Codex, CodeBuddy and the dsh plugin give that decision to the host: the call waits for approval, and the call is denied when there is no approval channel. Antigravity always allows, so on that host the call can go ahead without approval (0055).
 
 ## Namespace conventions
 

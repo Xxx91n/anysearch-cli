@@ -1,7 +1,6 @@
 # Per-platform verification checklist
 
-How to check each real client, plus how to debug the Cursor `sessionStart`
-race.
+How to check each real client.
 
 ## Claude (supports SessionStart)
 
@@ -18,24 +17,6 @@ race.
 - [ ] PreToolUse fires, and preheat injects `recall_memory` results
 - [ ] PostToolUse fires, and distill writes its output plus the FTS5 index
 - [ ] With the server down, the hooks keep going (nothing is blocked)
-
-## Cursor (SessionStart has a race)
-
-- [ ] `hooks.json` is registered with Cursor
-- [ ] sessionStart fires (it may race), and `additional_context` is emitted
-- [ ] The fallback file is generated at `.cursor/rules/anysearch.mdc`
-- [ ] PreToolUse fires, and preheat runs
-- [ ] PostToolUse fires, and distill runs with `updated_mcp_tool_output`
-- [ ] With the server down, the hooks keep going (nothing is blocked)
-
-### Debugging the race
-
-Cursor sessionStart has a known race (2026-04~2026-08, no ETA). If the
-routing card is not injected at session start:
-
-1. Check that `.cursor/rules/anysearch.mdc` exists (this is the fallback).
-2. If it is missing, run any hook by hand to trigger `ensureMdc()`.
-3. Check that the `hooks.json` sessionStart timeout is >= 5s.
 
 ## Antigravity (no SessionStart)
 

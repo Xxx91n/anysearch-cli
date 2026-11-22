@@ -141,7 +141,7 @@ async function main(): Promise<void> {
 
   // generate .mdc on any hook invocation as fallback
   // (SessionStart does not exist on this host). Antigravity rules live under
-  // .antigravity/rules/ (parallel to Cursor's .cursor/rules/).
+  // .antigravity/rules/.
   ensureMdc(cwd, ".antigravity");
 
   try {
