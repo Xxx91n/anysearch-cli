@@ -35,16 +35,6 @@ registerHooks({
 const { AnySearchProvider, ANYSEARCH_ENDPOINT } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
 
-// The --default-endpoint arm claims "this run used the baked-in public endpoint",
-// so the import is checked rather than trusted: a renamed or dropped export is
-// `undefined`, the provider then silently falls back to env, and envClass still
-// prints default(forced) — a probe reporting the wrong arm is worse than one
-// that refuses to run.
-if (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0) {
-  console.error("anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted");
-  process.exit(2);
-}
-
 // Probe overrides (P1 env/key/endpoint separation):
 // --default-endpoint force the baked-in public endpoint (env ignored)
 // --nokey anonymous call (env key suppressed)
@@ -54,6 +44,17 @@ const ARGS = process.argv.slice(2);
 const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
+
+// A dropped or renamed export is undefined, and --default-endpoint would then fall back
+// to env while envClass still prints default(forced) — refuse instead of lying.
+if (FORCE_DEFAULT && (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0)) {
+  console.log(JSON.stringify({
+    schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
+    errorName: "MissingExport",
+    errorMessage: "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted",
+  }));
+  process.exit(2);
+}
 
 function scrub(s: string): string {
   let t = s;
