@@ -8,7 +8,8 @@
 // Red lines: ANYSEARCH_ENDPOINT / ANYSEARCH_API_KEY values are NEVER printed —
 // only presence classes (endpointSource/keyPresent); occurrences of the
 // configured values inside an error message are masked <endpoint>/<key>.
-// Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted).
+// Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted), or the
+// probe self-check failed (errorName + stage, no arm ran).
 
 // Plain `node` cannot load the adapter from source: `anysearch.ts` imports
 // "../contract" without an extension, which tsc (Bundler resolution) and tsx
@@ -49,11 +50,12 @@ const NO_KEY = ARGS.includes("--nokey");
 // to env while envClass still prints default(forced) — refuse instead of lying.
 if (FORCE_DEFAULT && (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0)) {
   const message = "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted";
+  // No arm ran, so no lane can be claimed: endpointSource is unknown, and there is
+  // deliberately no errorClass — classifyProviderError would only ever say unknown.
   console.log(JSON.stringify({
     schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
     errorName: "MissingExport", errorMessage: message,
-    errorClass: classifyProviderError("MissingExport: " + message),
-    endpointSource: "default(forced)", keyPresent: NO_KEY ? false : !!process.env.ANYSEARCH_API_KEY,
+    endpointSource: "unknown", keyPresent: NO_KEY ? false : !!process.env.ANYSEARCH_API_KEY,
   }));
   process.exit(2);
 }
