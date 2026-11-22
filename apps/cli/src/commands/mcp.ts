@@ -1,6 +1,6 @@
 // ans mcp subcommand: forward to the packaged MCP entry.
 // CLI adds ans mcp subcommand that forwards to the packaged MCP entry.
-// Passes through --transport and --port flags.
+// Passes every argument through unchanged; the entry's own flags are --transport and --port.
 
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";

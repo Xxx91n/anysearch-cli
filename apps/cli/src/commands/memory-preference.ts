@@ -1,5 +1,5 @@
 // ans pref: T0 durable preference management.
-// Subcommands: list | remember <key> <value> [--scope project|global] | forget <key> [--scope project|global]
+// Subcommands: list | remember <key> <value> [--scope project|global] | forget <key> [--scope project|global] | review [--keep|--drop|--promote <id>]
 //
 // T0 promote rule: explicit (remember) OR correction-count>=2 (implicit).
 // demote: d-i conflict / d-iii /forget / d-ii eviction at cap overflow (all land in quarantine, never drop).

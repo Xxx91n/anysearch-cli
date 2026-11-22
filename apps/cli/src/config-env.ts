@@ -35,7 +35,7 @@ export function readConfig(): Record<string, string> {
 // is never opened for truncation.
 export function writeConfig(key: string, value: string): void {
   // The target's own directory, not a second guess at the home dir: the path
-  // comes from configEnvPath() (USERPROFILE || HOME || "."), and homedir()
+  // comes from configEnvPath() (USERPROFILE || HOME || homedir()), and homedir()
   // reads the passwd entry instead. When they disagree the file was written
   // into a directory nobody created.
   const target = configPath();

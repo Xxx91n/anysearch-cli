@@ -268,7 +268,7 @@ export function computePlan(
         }
         continue;
       }
-      // connect / repair：差异语义一致（repair 修的是「缺/老/冲突」三种）。
+      // connect / repair：差异语义一致（repair 修的是「缺/老」两种；冲突只报不修）。
       if (presence.extra) {
         filePlan.units.push({ unit, action: "conflict", note: presence.extra });
         continue;
