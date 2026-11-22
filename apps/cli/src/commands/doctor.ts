@@ -35,6 +35,7 @@ import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/ho
 import { computePlan } from "../host-wiring/plan";
 import { findInterrupted, wiringRoot } from "../host-wiring/journal";
 import { readSwitchHistory } from "../upgrade-record";
+import { inspectInstalledSkills } from "../skill-store";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 

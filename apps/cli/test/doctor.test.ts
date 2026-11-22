@@ -341,3 +341,60 @@ test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () =
   assert.ok((configRow!.detail ?? "").includes(stored), "要说清 key 绑在哪：" + configRow!.detail);
   assert.ok((configRow!.detail ?? "").includes(effective), "要说清当前生效的是哪个：" + configRow!.detail);
 });
+
+test("ans doctor：领域 skills.active 同时解释「装了但没在任何域里启用」和「域里写了但没装」", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN"];
+  const saved: Record<string, string | undefined> = {};
+  for (const key of keys) saved[key] = process.env[key];
+  const lines: string[] = [];
+  try {
+    const synced = join(home, ".ans", "skills", "synced");
+    mkdirSync(join(synced, "ans"), { recursive: true });
+    writeFileSync(
+      join(synced, "ans", "SKILL.md"),
+      "---\nname: ans\ndescription: bundled ans skill\n---\n\nBody.\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(synced, "installed.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          ans: {
+            name: "ans",
+            source: join(home, "src", "ans"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+        },
+      }) + "\n",
+      "utf8",
+    );
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    process.env.ANS_DOMAIN = "default";
+
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    assert.equal(code, 0);
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const row = payload.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+
+    assert.ok(row, "能力层要有「领域 skills.active」");
+    assert.equal(row!.state, "ready");
+    const detail = row!.detail ?? "";
+    assert.match(detail, /域里写了但没装到 skills\/synced\/：search,doctor/, "要指出当前域里写了但没装的名字：" + detail);
+    assert.match(detail, /装了但没在任何域里启用：ans/, "要指出已装但没在任何域里列出的 skill：" + detail);
+    assert.match(detail, /toolRequires/, "要讲清和 toolRequires 的关系：" + detail);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+

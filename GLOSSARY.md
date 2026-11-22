@@ -246,8 +246,11 @@
 - **路由卡**:会话开始时塞给 agent 的一小段说明，讲插件能干什么、有哪几个工具、什么时候用（代码里叫 routing-card）。
   _Avoid_: Routing Card
 
-- **技能启用名单**:当前领域激活哪些 skill，只有激活的才进模型（代码里叫 skills.active）。
+- **技能启用名单**:当前领域在 `[skills].active` 里声明的技能键名，只在领域同时配了 `toolRequires` 时拿来筛进模型的运行时工具，不是 `skills/synced/` 的自动加载开关（代码里叫 skills.active）。
   _Avoid_: Skill Active List
+
+- **技能所需工具映射**:领域配置里保留的可选「技能名 → 所需工具名列表」，配了才按 `hooks.toolWhitelist ∩ (∪ toolRequires[active] ∪ {search})` 筛工具；没配时只看 `hooks.toolWhitelist`（代码里叫 skills.toolRequires）。
+  _Avoid_: Tool Requires、技能工具绑定
 
 - **项目身份**:本次明确项目的真实根路径及识别来源，不能确定就记为未知，不借其他项目的状态（代码里叫 ProjectContext）。
 

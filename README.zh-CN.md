@@ -156,8 +156,10 @@ ans skill uninstall ans --project
 并记下来源和 commit。它不是包管理器，也不会执行 skill 里的代码。锁、清单、
 残留清理这些细节看 `apps/cli/src/skill-store.ts`。
 
-**装了不等于打开。** 这些命令不会改 domain TOML。哪些 skill 能用，还是由当前领域的
-`[skills].active` 决定，打开的方式没变，还是改域配置。
+**装了不等于打开。** 这些命令不会改 domain TOML：
+- **`[skills].active` 里的名字是什么**：域 TOML 里声明的技能键名（出厂域写的是 `search`、`doctor`、`research` 这类运行时能力名），不是去 `skills/synced/` 自动加载目录的开关。
+- **`[skills.toolRequires]` 现在干什么**：保留的可选「技能 → 所需工具」过滤表（`filterAgentTools` 按 `hooks.toolWhitelist ∩ (∪ toolRequires[active] ∪ {search})` 筛工具）。出厂域一个都没写它；没写 `toolRequires` 时，只靠 `hooks.toolWhitelist` 筛工具，`[skills].active` 写什么都不影响运行时。
+- **装好的 skill 靠什么被用上**：`ans skill install` 只是把 `SKILL.md` 放到 `skills/synced/` 供宿主 agent（或人）按文件读取（`PiAgentRuntime` 固定 `noSkills: true`，自己不读 `skills/synced/`）；要是想让某个名字在运行时参与筛工具，得在当前域的 TOML 里同时写上 `[skills].active` 和 `[skills.toolRequires]`。
 
 ## 信息源怎么连、能干什么
 
