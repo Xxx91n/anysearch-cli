@@ -1,12 +1,12 @@
 // The release gate's one verdict: hand it the check-runs on a fixed sha, get
 // green / red / keep waiting back.
 //
-// Design: only a check that actually ran is evidence that its lane passed —
-// a skipped check-run used to sit in the same allowed set as a passing one, so
-// a check that never ran still produced GREEN. The accident it buys (#389 D4):
-// the job that works out which checks to run fails, its name misses
-// the family regex below, the checks it gates register as skipped, and the
-// release goes out with no evidence behind it.
+// Design: only a check that actually ran counts as evidence — a skipped
+// check-run used to sit in the same allowed set as a passing one, so a check
+// that never ran still produced GREEN. The accident this closes (#389 D4): the
+// job that works out which checks to run fails, its name misses the family
+// regex below, the checks it gates register as skipped, and the release goes
+// out with no evidence behind it.
 //
 // Design: the whole decision is one function with three answers, and
 // scripts/assert-checks-green.mjs only fetches the runs and prints the answer —
@@ -21,22 +21,27 @@
 // terminal and passing, bounded by the caller's absolute deadline.
 //
 // Skipped is red for every check in these families, not only for the blocking
-// legs: a lane skips with step-level conditions (#408), and such a job still
-// ends as success, so a skipped conclusion means the check never started — and
-// that is never evidence.
+// legs: a check that never started is never evidence. A job that decides there
+// is nothing to run still reports success — #408 keeps those skips at step
+// level, where the job ends green — so a successful check-run means "this job
+// handled the change", and this gate cannot tell a real pass from a by-design
+// skip. That is the contract the change-detection work is built on.
 //
 // Native-smoke and the non-blocking macos-spillover probe stay outside the gate
 // by name: neither matches a family below, and a red probe is a crash-signature
-// report on the CLI path, not a gate. macOS is a blocking leg again since #183
-// (promotion evidence in docs/limitations.md), so REQUIRED_LEGS names all three
-// ship-gate legs. Keep that list in step with ship-gate.yml's matrix by hand:
-// the test that compared the two files with regexes is gone (#406).
-
-const FAMILY = /^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b/;
+// report on the CLI path, not a gate. The non-blocking anysearch probe does
+// match the test:online family; continue-on-error keeps a failed probe from
+// blocking, but a probe that registered as skipped still refuses, because a
+// check that never started is not a check that passed. macOS is a blocking leg
+// again since #183 (promotion evidence in docs/limitations.md), so REQUIRED_LEGS
+// names all three ship-gate legs. Keep that list in step with ship-gate.yml's
+// matrix by hand: the test that compared the two files with regexes is gone
+// (#406).
 
 export const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
 export const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"];
 
+const FAMILY = new RegExp("^(" + FAMILIES.join("|") + ")\\b");
 const FAILED_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 // neutral is allowed next to success because release.yml's wait step (layer 1)
 // allows it too: the two layers must not disagree about a conclusion that did
@@ -164,12 +169,10 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   ];
 
   if (missing.length > 0) {
-    const present = FAMILIES.filter((family) => familyState(family) !== "missing").join(",") || "none";
-    if (discoveryExpired) {
-      return answer("red", 2, "discovery window closed with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
-    }
-    if (completionExpired) {
-      return answer("red", 2, "absolute deadline reached with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
+    const closed = discoveryExpired ? "discovery window closed" : completionExpired ? "absolute deadline reached" : null;
+    if (closed !== null) {
+      const present = FAMILIES.filter((family) => familyState(family) !== "missing").join(",") || "none";
+      return answer("red", 2, closed + " with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
     }
     return answer("wait", null, "not registered yet: " + missing.join(", "));
   }

@@ -77,8 +77,9 @@ let poll = 0;
 
 for (; ;) {
   poll++;
-  // --once is a probe: it reports a snapshot and takes no verdict, so no
-  // deadline can turn it into a red (the old script behaved the same way).
+  // --once is a probe: no deadline can turn a snapshot into a red, so it keeps
+  // reporting (exit 10) while the gate would still be waiting. A converged red
+  // still prints its reason and exits with it, below.
   const verdict = judgeCheckRuns(checkRuns(), {
     discoveryExpired: !once && Date.now() >= discoveryDeadline,
     completionExpired: !once && Date.now() >= deadline,
@@ -97,19 +98,16 @@ for (; ;) {
     console.log("[assert-checks] GREEN: " + verdict.reason);
     process.exit(0);
   }
-  // A failing conclusion is an answer, not a snapshot: report it in either mode.
-  if (verdict.verdict === "red" && verdict.exitCode === 1) {
-    console.error("[assert-checks] RED: " + verdict.reason);
-    process.exit(1);
+  // A decided red is an answer, not a snapshot: print the reason and exit with
+  // it in either mode, so a probe says what the gate would do.
+  if (verdict.verdict === "red") {
+    const tag = verdict.exitCode === 1 ? "RED" : "FAIL-CLOSED (phase=" + verdict.phase + ")";
+    console.error("[assert-checks] " + tag + ": " + verdict.reason);
+    process.exit(verdict.exitCode);
   }
   if (once) {
     console.log("[assert-checks] --once snapshot: " + verdict.checks.map((check) => check.name + ":" + check.status + "/" + (check.conclusion ?? "-")).join(" | "));
     process.exit(10);
-  }
-  // What is left that is decided is a fail-closed red: no usable signal.
-  if (verdict.verdict === "red") {
-    console.error("[assert-checks] FAIL-CLOSED (phase=" + verdict.phase + "): " + verdict.reason);
-    process.exit(2);
   }
 
   await new Promise((r) => setTimeout(r, intervalSec * 1000));
