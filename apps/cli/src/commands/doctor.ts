@@ -484,25 +484,22 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
       const isSubset = activeNotInstalled.length < schema.skills.active.length;
-      const mismatchNotes: string[] = [...manifestErrors];
-      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && hasToolRequires) {
-        mismatchNotes.push(
-          isSubset
-            ? `${activeNotInstalled.join(",")} 不在 skills/synced/——当前域按 toolRequires 筛工具`
-            : "不在 skills/synced/——当前域按 toolRequires 筛工具",
+      const syncedLabel = "skills/synced/";
+      const skillNotes: string[] = [...manifestErrors];
+      if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+        const subject = isSubset ? activeNotInstalled.join(",") : "技能键名";
+        const effect = hasToolRequires
+          ? "当前域按 toolRequires 筛工具（筛工具只看域 TOML，不读该目录）"
+          : "当前域没配 toolRequires，不影响运行时";
+        skillNotes.push(
+          isSubset || hasToolRequires
+            ? `${subject} 不在 ${syncedLabel}——${effect}`
+            : `${subject}——${effect}`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {
-        mismatchNotes.push(
-          `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}——skills/synced/ 供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
-        );
-      }
-      const skillNotes: string[] = [...mismatchNotes];
-      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && !hasToolRequires) {
-        skillNotes.unshift(
-          isSubset
-            ? `${activeNotInstalled.join(",")} 不在 skills/synced/——不影响运行时，当前域没配 toolRequires 就不按技能筛工具`
-            : "技能键名——当前域没配 toolRequires，不影响运行时",
+        skillNotes.push(
+          `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}——${syncedLabel} 供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
         );
       }
       const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";

@@ -505,13 +505,108 @@ test("ans doctor：skills.active 部分已装、部分未装时，只点名未�
 
     assert.ok(row, "能力层要有「领域 skills.active」");
     const detail = row!.detail ?? "";
-    assert.match(detail, /^search,doctor（search 不在 skills\/synced\/——不影响运行时/, "只点名未装的 search：" + detail);
+    assert.match(detail, /^search,doctor（search 不在 skills\/synced\/——当前域没配 toolRequires，不影响运行时/, "只点名未装的 search：" + detail);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，输出「当前域按 toolRequires 筛工具」（覆盖全部未装与部分未装）", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-tr-"));
+  const domainsDir = mkdtempSync(join(tmpdir(), "ans-doctor-domains-tr-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN", "ANS_DOMAINS_DIR"];
+  const saved: Record<string, string | undefined> = {};
+  for (const key of keys) saved[key] = process.env[key];
+  try {
+    writeFileSync(
+      join(domainsDir, "strict.toml"),
+      [
+        'name = "strict"',
+        'description = "domain with toolRequires"',
+        "",
+        "[skills]",
+        'active = ["search", "doctor"]',
+        "",
+        "[skills.toolRequires]",
+        'search = ["search"]',
+        'doctor = ["ctx_execute"]',
+        "",
+        "[sources]",
+        'enabled = ["tavily"]',
+        "",
+        "[rag]",
+        'adapter = "none"',
+        "",
+        "[hooks]",
+        'toolWhitelist = ["search", "ctx_execute"]',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    process.env.ANS_DOMAINS_DIR = domainsDir;
+    process.env.ANS_DOMAIN = "strict";
+
+    // 1. 一个都没装
+    const linesAll: string[] = [];
+    const codeAll = await runDoctor(["--json"], { stdout: (line) => linesAll.push(line) });
+    assert.equal(codeAll, 0);
+    const payloadAll = JSON.parse(linesAll.join("\n")) as DiagJson;
+    const rowAll = payloadAll.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+    assert.ok(rowAll);
+    const detailAll = rowAll!.detail ?? "";
+    assert.match(detailAll, /^search,doctor（技能键名 不在 skills\/synced\/——当前域按 toolRequires 筛工具/, "全部未装且配了 toolRequires：" + detailAll);
+    assert.equal(detailAll.includes("不影响运行时"), false, "配了 toolRequires 时不能说不影响运行时：" + detailAll);
+
+    // 2. 只装了一部分（装了 doctor，没装 search）
+    const synced = join(home, ".ans", "skills", "synced");
+    mkdirSync(join(synced, "doctor"), { recursive: true });
+    writeFileSync(
+      join(synced, "doctor", "SKILL.md"),
+      "---\nname: doctor\ndescription: doctor skill\n---\n\nBody.\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(synced, "installed.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          doctor: {
+            name: "doctor",
+            source: join(home, "src", "doctor"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+        },
+      }) + "\n",
+      "utf8",
+    );
+    const linesSub: string[] = [];
+    const codeSub = await runDoctor(["--json"], { stdout: (line) => linesSub.push(line) });
+    assert.equal(codeSub, 0);
+    const payloadSub = JSON.parse(linesSub.join("\n")) as DiagJson;
+    const rowSub = payloadSub.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+    assert.ok(rowSub);
+    const detailSub = rowSub!.detail ?? "";
+    assert.match(detailSub, /^search,doctor（search 不在 skills\/synced\/——当前域按 toolRequires 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
+    assert.equal(detailSub.includes("不影响运行时"), false, "配了 toolRequires 时不能说不影响运行时：" + detailSub);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+    rmSync(domainsDir, { recursive: true, force: true });
   }
 });
 
