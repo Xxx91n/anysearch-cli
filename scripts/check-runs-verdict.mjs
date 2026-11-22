@@ -12,14 +12,15 @@
 // finish, bounded by the caller's absolute deadline.
 //
 // Family membership is by name, so the non-blocking anysearch probe counts as
-// test:online too: a skipped conclusion there refuses the gate as well. A
-// successful check-run means "this job handled the change" — a job that decides
-// there is nothing to run still reports success — so the gate cannot tell a real
-// pass from a by-design skip, and the rule only catches check-run-level skips.
+// test:online too: a skipped conclusion there refuses the gate as well. A failed
+// probe is not special-cased either — continue-on-error is what keeps it from
+// blocking, not this module. A successful check-run means "this job handled the
+// change" (a job that decides there is nothing to run still reports success), so
+// the gate cannot tell a real pass from a by-design skip.
 //
 // Native-smoke and the macos spillover probe match no family, so they stay
 // outside the gate. REQUIRED_LEGS mirrors ship-gate.yml's matrix by hand, and
-// macOS is a blocking leg again since #183 (docs/limitations.md).
+// macOS is a blocking leg again (docs/limitations.md).
 
 export const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
 export const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"];

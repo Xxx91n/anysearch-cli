@@ -150,9 +150,9 @@ test("the newest run per name wins, so a re-run replaces its first attempt", () 
 });
 
 test("checks outside the five families never move the verdict", () => {
-  // spaced-path is advisory (AGENTS.md), the macos spillover probe reports crash
-  // signatures, and CodeRabbit is a bot that skips itself: none gates a release,
-  // and a skipped one must not be mistaken for a skipped lane either.
+  // None of these gates a release: spaced-path is advisory (AGENTS.md), the
+  // macos spillover probe only reports crash signatures, and CodeRabbit skips
+  // itself. CodeRabbit's skip must not read as a skipped lane either.
   const runs = [
     ...healthy(),
     run("spaced-path", "failure"),
