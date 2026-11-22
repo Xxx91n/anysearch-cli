@@ -54,15 +54,15 @@ is live; this adapter is MCP-only」那条（L275-283），由 #206 改写（现
 的其实是「只走 MCP、旧地址自动改写」，不是 REST 路由死了）：
 
 ```md
-- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
-  probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
-  200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
-  `POST /mcp` only, so an `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending
-  in `/v1/search` is auto-rewritten to `base+/mcp` with a once-per-process
-  stderr warning — a compatibility shim, not a sign that REST is retired.
-  Upstream `request_id` in the reply envelope is a server-generated diagnostic
-  UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
-  and it is not an idempotency key.
+- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** —
+  live probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search`
+  returns 200 with a `code:0` response. The provider speaks MCP Streamable
+  HTTP at `POST /mcp` only. So an `ANYSEARCH_ENDPOINT` (or explicit endpoint
+  arg) ending in `/v1/search` is auto-rewritten to `base+/mcp` with a
+  once-per-process stderr warning. That is a compatibility shim, not a sign
+  that REST is retired. Upstream `request_id` in the reply is a
+  server-generated diagnostic UUID (also returned as `X-Request-ID`). A
+  caller-supplied value is ignored, and it is not an idempotency key.
 ```
 
 ## #24 建 ip 第五域的语料（触发条件=上游给 ip 子域补了结构化的参数表）

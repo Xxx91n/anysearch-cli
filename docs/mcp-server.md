@@ -549,13 +549,13 @@ summaries) still finishes, which is what an upgrade is waiting for.
 
 ## Environment and auth
 
-Provider and LLM keys come from the process environment first, then from the
-user credential file `~/.ans/credentials.json` — the plaintext, owner-only file
-`ans auth set <provider>` writes and the CLI reads (#301). The server never
-writes that file. Hosts that inherit their environment (the usual `mcp.json` /
-`config.toml` registration) need no `env` block, and a GUI host started without
-a shell environment still authenticates from the file. `ans auth` reports which
-source supplies each key; `ans auth list` adds the stored entries and the path.
+Search keys and the `ans_chat` LLM key resolve the same way: environment first,
+then the user credential file — the plaintext, owner-only
+`~/.ans/credentials.json` that `ans auth set <provider>` writes. This server
+reads that file and never writes it (#301), so hosts that inherit their
+environment (the usual `mcp.json` / `config.toml` registration) need no `env`
+block. `ans auth` reports which source supplies each key; `GLOSSARY.md` carries
+the file's definition and protection, `docs/ans-layout.md` its position.
 
 | Variable | Used by | Effect |
 |----------|---------|--------|
@@ -568,7 +568,7 @@ source supplies each key; `ans auth list` adds the stored entries and the path.
 | `ANS_SERVER_URL` / `ANS_SERVER_TOKEN` | `recall_memory` fallback | Address and bearer token of the local plugin server. When unset, MCP reads the address published in `~/.ans/server.json` and the token in `~/.ans/server-token` (`%USERPROFILE%` on Windows), then falls back to `http://127.0.0.1:33333`. No token means no server has run for this installation; the fallback then reports itself unavailable. |
 | `ANS_URL_ALLOWLIST` + `ANS_ALLOW_ENV_OVERRIDE` | engine URL gate | Dev-only append-only allowlist override: a comma-separated host list, applied only when `ANS_ALLOW_ENV_OVERRIDE` is `1`/`true` (`0`/`false`/empty keeps it off; any other value makes the policy deny by default when it resolves). Domain TOML `urlAllowlist`/`urlDenylist` remain authoritative, and deny has no env override. |
 | `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` | `ans_chat` | Required. Missing either makes the call an error result. |
-| `ANS_LLM_API_KEY` | `ans_chat` with `ANS_LLM_BASE_URL` | Credential for the custom upstream; a rotation rebuilds the cached client. Catalog providers (no base URL) authenticate through pi-ai's provider env: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`. |
+| `ANS_LLM_API_KEY` | `ans_chat` | Credential for the upstream; a rotation rebuilds the cached client. When it is unset the key comes from the `[llm].env_key` variable, then the provider's own env (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`), then a key stored with `ans auth` in the user credential file — an exported key is never shadowed by the file. |
 | `ANS_LLM_BASE_URL` + `ANS_LLM_API` | `ans_chat` | Custom upstream. `ANS_LLM_API` must be `chat`, `messages`, or `responses` whenever `ANS_LLM_BASE_URL` is set. |
 | `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | The real model window. It drives request budgeting, the L0 low-water mark, PI's compaction trigger, and the window reported back in `structuredContent.context`. It overrides a catalog model's own window; a malformed value fails the call rather than silently defaulting to 128K. |
 | `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` under `~/.ans`, beside the durable DB only when `ANS_DB_PATH` names one. Threading the same `sessionId` back resumes the conversation, including after a restart. |
