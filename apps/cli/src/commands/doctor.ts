@@ -486,10 +486,12 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const mismatchNotes: string[] = [...manifestErrors];
       if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
         const subset = activeNotInstalled.length < schema.skills.active.length
-          ? `${activeNotInstalled.join(",")} `
+          ? `${activeNotInstalled.join(",")}：`
           : "";
         mismatchNotes.push(
-          `${subset}不在 skills/synced/：${hasToolRequires ? "当前域按 toolRequires 筛工具" : "当前域没配 toolRequires，只做标记、不筛工具"}`,
+          hasToolRequires
+            ? `${subset}不在 skills/synced/——当前域按 toolRequires 筛工具`
+            : `${subset}技能键名——当前域没配 toolRequires，不影响运行时`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {
