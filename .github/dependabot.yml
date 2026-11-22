@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Only manage GitHub Actions here — npm/pnpm dependencies follow the repo's
+  # own lockfile and minimumReleaseAge discipline.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
