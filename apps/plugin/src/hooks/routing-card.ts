@@ -1,5 +1,8 @@
-// Routing card shared constants — one source, many outputs.
-// Extracted from session-start.ts, cursor.ts, antigravity.ts (debt ledger trigger met: 4 platforms).
+// Routing card shared constants — one text, four readers.
+// session-start.ts and codebuddy.ts emit it as hook context; antigravity.ts emits
+// it as an ephemeral message and writes it to .antigravity/rules/ as the fallback
+// for a host with no SessionStart; apps/dsh-plugin registers it as a systemPrompt
+// section and injects it when an agent starts from the startup source.
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -42,9 +45,9 @@ export const MDC_CONTENT = [
   "---",
 ].join("\n");
 
-// audit (ensureMdc×3): single implementation shared by session-start,
-// cursor, and antigravity — the only difference was the rules root
-// (".cursor" vs ".antigravity"). Fail-open by contract.
+// The one writer for the .mdc rules file. The caller supplies the rules root
+// (Antigravity is the only host that writes one today); a write failure must
+// never break the hook, so everything below is fail-open.
 export function ensureMdc(cwd: string, rulesRoot: string): void {
   if (mdcOptOut(cwd)) return;
   const rulesDir = join(cwd, rulesRoot, "rules");

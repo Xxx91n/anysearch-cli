@@ -6,8 +6,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseJsonc, readJsoncPath, writeJsoncPath, removeJsoncPath,
-  appendJsoncItem, removeJsoncItem, findOurItems,
+  appendJsoncItem, removeJsoncItem, findOurItems, hookEntryIsOurs,
 } from "../../src/host-wiring/jsonc-edit.js";
+
+test("归属判定只看 command：手写条目 args 里带 anysearch 也不算我们的", () => {
+  // 以前还有一条「脚本路径在 args 里」的宽判定，留给 Cursor 那种写法；副作用是
+  // 用户自己的钩子只要 args 里出现 anysearch 字样，ans host remove 就会当成本工
+  // 具的条目删掉。现在只认 command 里的 bin。
+  assert.equal(hookEntryIsOurs({ command: "node", args: ["./my-anysearch-helper.js"] }), false);
+  assert.equal(hookEntryIsOurs({ command: "node", args: ["-y", "anysearch"] }), false);
+  assert.equal(hookEntryIsOurs({ command: "ans-hook-claude" }), true);
+  assert.equal(hookEntryIsOurs({ command: "ans-hook-antigravity PreToolUse" }), true);
+});
 
 test("带注释和其他工具的 mcp.json：接入后注释与 context7 条目原样保留", () => {
   // Context7 材料风格：JSONC（行注释）+ 已有 context7 条目。

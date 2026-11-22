@@ -1,3 +1,31 @@
+## Unreleased — #424: Cursor 那一套全删掉
+
+一句话说清：**Cursor 一直只有一个钩子适配器和一份配置模板：没进接线清单，`ans doctor` 不查，文档只有一页手点清单。那份模板还缺 Cursor 要求的 `version: 1`、条目写成 `{name, command, args}`；适配器在 `preToolUse` 上回的 `additional_context` 不在 Cursor 的权限钩子输出字段里，而 Cursor 的规矩是这一步回的话看不懂就不让这次调用——真装上可能把 `ans_*` 调用挡掉。Cursor 本身要改名、后面还有大调整，所以不补文档、不进 doctor，整条删掉。**
+
+### Removed
+
+- **`apps/plugin/src/hooks/adapters/cursor.ts`**：Cursor 的钩子适配器。`postToolUse` 的 `updated_mcp_tool_output` 本身是对的，但没进宿主清单、没文档、没人跑过。
+- **`apps/plugin/configs/cursor/hooks.json`**：配置模板。缺 `version: 1`，条目用 `{name, command, args}` 和 `${CURSOR_PLUGIN_DIR}`，都和 Cursor 文档对不上。
+- **两条 Cursor 契约测试**：`cursor postToolUse` 的 `updated_mcp_tool_output` 和数组形状两条；`plugin.test.ts` 里的适配器源码断言、模板断言一起删。
+- **`docs/per-platform-verification.md` 的 Cursor 一节**和「调试 sessionStart 竞态」那段；`docs/codex-integration.md` 里「顺手写 `.cursor/rules/anysearch.mdc`」那句。
+- **包导出与构建里的 cursor 条目**：`package.json` 的 `./hooks/adapters/cursor` 导出和 `build:hooks` 的源文件列表。
+
+### Fixed
+
+- **宿主条目的归属判定不再看 `args` 的内容**：`hookEntryIsOurs` 原来还有一条「command 是 node、脚本路径在 args 里」的宽判定，那是给 Cursor 那种写法留的，全仓没有宿主在用。副作用是用户手写的钩子只要 args 里出现 `anysearch` 字样，`ans host remove` 就把它当成我们的条目删掉。这条判定连同 `ANS_ARG_RE` 一起删了，现在只认 `command` 里的本工具 bin。
+
+### Changed
+
+- **`session-start.ts` 不再写 `.cursor/rules/anysearch.mdc`**：那份兜底文件原本只给 Cursor 用。Antigravity 的 `.mdc` 由它自己的适配器写，不受影响；`hooks.test.ts` 里那条 E2E 跟着删，`ensureMdc` 的行为改由 `plugin.test.ts` 对着 `.antigravity` 测。
+- **注释不再指向 Cursor**：`routing-card.ts`、`antigravity.ts`、`gen-claude-configs.mjs`、`host-wiring/ownership.ts` 里拿 Cursor 举例的几处改成中性说法；`apps/plugin/AGENTS.md` 的 URL 策略那条，现在只剩 Antigravity 一个不把决定转交宿主的。
+- **钩子构建收成一个共享函数**：`apps/plugin` 的 `build:hooks` 以前把 12 个源文件手写进命令字符串，`build-product.mjs` 又照着抄了一份 esbuild 配置——删一个适配器、加一个外部依赖都得改两处，漏了也没测试盯着。现在两个脚本都调 `apps/plugin/scripts/hook-build.mjs`，入口从 `package.json` 的 `exports` 派生，外部依赖和输出选项只有一份；它还会先清空输出目录，因为 esbuild 不删旧文件（平常 `pnpm build` 那条链本来就干净，是 tsup 的 `clean` 干的）。验证过两个包 `npm pack --dry-run` 里 `cursor` 零命中。
+
+### Known limits
+
+- **少了一个导出路径**：`@anysearch-cli/plugin/hooks/adapters/cursor` 不再存在。它是 `build:hooks` 和 `build-product.mjs`（都从 `manifest.exports` 里读）能找到 `cursor.cjs` 的唯一来源，所以删导出等于同时停掉这两个构建入口。
+- **以前自己接过 Cursor 钩子的人得手删两个文件**：`.cursor/hooks.json`（接线清单里从来没有 Cursor，`ans host remove cursor` 不存在）和 `.cursor/rules/anysearch.mdc`（那份文件里还写着「auto-generated，下次钩子运行会覆盖」，但现在已经没有钩子会去覆盖它，留着会一直误导）。
+- **`CHANGELOG.md` 里的旧条目照旧提 Cursor**：那是当时发布记录，不回改。
+
 ## Unreleased — #379: `.ship-gate/` 里两份「预注册」文档删掉，配套的两个脚本一起删
 
 一句话说清：**`.ship-gate/` 本来是机器本地的产出目录（`report.json`、跳过账本、评测输出都往这儿写），9 月却把两份手写的「预注册」文档提交了进去，靠 `.gitignore` 里两条 `!` 例外才进得去；10 月那轮拆除治理层把 ADR 折进源码注释，两份文档的出处也一起没了，`calibration-l2` 那份从此零读者。现在两份都删，两个离了它们就起不来的脚本跟着删，`.ship-gate/` 回归纯本地产出。**

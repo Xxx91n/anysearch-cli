@@ -28,9 +28,9 @@ const pkg = JSON.parse(readFileSync(join(PLUGIN_ROOT, "package.json"), "utf8"));
 const HOOKS_SPEC = [
   { event: "PreToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 5 },
   { event: "PostToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 10 },
-  // --envelope selects the hookSpecificOutput output shape in session-start.cjs
-  // (Claude + Codex both require the envelope; bare stays default for
-  // cursor/antigravity).
+  // --envelope selects the hookSpecificOutput output shape in session-start.cjs;
+  // why the hosts need it is documented there. Without the flag the bin prints
+  // bare additionalContext, which is what a host wired by hand gets.
   { event: "SessionStart", matcher: "startup", target: "dist/hooks/session-start.cjs", bin: "ans-hook-session-start", args: "--envelope", timeout: 5 },
 ];
 

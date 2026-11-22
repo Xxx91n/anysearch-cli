@@ -2,7 +2,7 @@
 // Covers core/distill/preheat/session-start cross-component interactions.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { isAnsTool, distillOutput, makePostToolUseDecision } from "../src/index.js";
@@ -126,9 +126,9 @@ testAsync("E2E: session-start.cjs outputs valid JSON for SessionStart event", as
     proc.stdin.end();
   });
 
-  // audit: host contract split — bare top-level additionalContext is
-  // the codex/cursor/antigravity shape; Claude Code drops it and needs the
-  // hookSpecificOutput envelope (opt-in via --envelope in generated configs).
+  // audit: host contract split — bare top-level additionalContext is the bin's
+  // default; both shipped configs pass --envelope, and Claude Code drops the
+  // bare key entirely.
   const bare = JSON.parse(await run());
   assert.ok(bare.additionalContext, "default shape: top-level additionalContext");
   assert.ok(!("hookSpecificOutput" in bare), "default shape must not carry the envelope");
@@ -163,35 +163,6 @@ testAsync("E2E: session-start.cjs exits silently for non-SessionStart events", a
   });
 
   assert.equal(result, "", "non-SessionStart events should produce no stdout");
-});
-
-// === .mdc generation logic (session-start.cjs E2E) ===
-testAsync("E2E: session-start.cjs generates .mdc file in cwd", async () => {
-  const cjsPath = join(process.cwd(), "dist", "hooks", "session-start.cjs");
-  if (!existsSync(cjsPath)) {
-    console.log("    SKIP: dist/hooks/session-start.cjs not built yet");
-    return;
-  }
-
-  const testCwd = mkdtempSync(join(tmpDir, "mdc-test-"));
-  const stdinPayload = JSON.stringify({ event: "SessionStart", cwd: testCwd });
-
-  await new Promise<void>((resolve, reject) => {
-    const proc = spawn("node", [cjsPath], { stdio: ["pipe", "pipe", "pipe"] });
-    proc.on("close", (code) => {
-      if (code !== 0) reject(new Error("exit " + code));
-      else resolve();
-    });
-    proc.stdin.write(stdinPayload);
-    proc.stdin.end();
-  });
-
-  const mdcPath = join(testCwd, ".cursor", "rules", "anysearch.mdc");
-  assert.ok(existsSync(mdcPath), ".cursor/rules/anysearch.mdc should be generated");
-  const mdcContent = readFileSync(mdcPath, "utf8");
-  assert.ok(mdcContent.includes("anysearch plugin active"), ".mdc should contain routing card");
-  assert.ok(mdcContent.includes("alwaysApply: true"), ".mdc should have alwaysApply frontmatter");
-  rmSync(testCwd, { recursive: true, force: true });
 });
 
 // Cleanup

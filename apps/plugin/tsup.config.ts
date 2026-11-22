@@ -1,4 +1,5 @@
 import { defineConfig, type Options } from "tsup";
+import { NATIVE_EXTERNALS } from "./scripts/externals.mjs";
 
 export const pluginBuildOptions: Options = {
   // ponytail: two entries — src/index.ts (side-effect-free barrel re-export,
@@ -27,13 +28,7 @@ export const pluginBuildOptions: Options = {
     "@earendil-works/pi-ai",
     "@sinclair/typebox",
   ],
-  // ponytail: also drop stale v1 sdk/zod/express externals (already removed from
-  // dependencies in ; leaving them here misleads future maintainers
-  // and would silently externalize if someone re-imported them later).
-  external: [
-    "better-sqlite3",
-    "@anysearch-cli/embedding",
-  ],
+  external: NATIVE_EXTERNALS,
 };
 
 export default defineConfig(pluginBuildOptions);

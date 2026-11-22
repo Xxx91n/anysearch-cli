@@ -5,7 +5,7 @@
 // 做文本级最小改动——定位目标键/数组元素的准确字符范围，只插入/替换/删除
 // 这一段，每步编辑后再校验一次，写坏文件在落盘前就会被拦下。
 
-import { ANS_COMMAND_RE, ANS_ARG_RE } from "./ownership.js";
+import { ANS_COMMAND_RE } from "./ownership.js";
 
 export interface JsoncEditError {
   /** parse=语法解析失败；shape=结构不符合预期。两者都拒绝动手。 */
@@ -521,9 +521,10 @@ export function removeJsoncPath(text: string, path: JsoncPath): JsoncEditResult 
 
 /**
  * 一个 hooks 条目是否归属本工具。判据（与本仓宿主模板一致）：条目（或其
- * hooks[] 子项）的 command 里认得出我们的 bin；Antigravity 的 args 形式按
- * 内容含 anysearch/ans 判定。键名（mcpServers.anysearch / 顶层 anysearch）
- * 归属由宿主定义直接给出，不走这里。
+ * hooks[] 子项）的 command 里认得出我们的 bin。只看 command 是有意的：另一
+ * 种形态（command 是 node、脚本路径在 args 里）我们没有宿主在写，按 args 的
+ * 内容认条目会把手写条目里提到 anysearch 的别人的钩子也当成自己的删掉。
+ * 键名（mcpServers.anysearch / 顶层 anysearch）归属由宿主定义直接给出，不走这里。
  */
 export function hookEntryIsOurs(entry: unknown): boolean {
   if (entry === null || typeof entry !== "object") return false;
@@ -535,12 +536,6 @@ export function hookEntryIsOurs(entry: unknown): boolean {
       if (h === null || typeof h !== "object") continue;
       const c = (h as Record<string, unknown>).command;
       if (typeof c === "string" && ANS_COMMAND_RE.test(c)) return true;
-    }
-  }
-  const args = record.args;
-  if (Array.isArray(args)) {
-    for (const a of args) {
-      if (typeof a === "string" && ANS_ARG_RE.test(a)) return true;
     }
   }
   return false;
