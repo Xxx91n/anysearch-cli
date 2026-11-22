@@ -61,7 +61,7 @@ test("a fresh clone says the hook is missing until one command installs it", () 
   });
 });
 
-test("the commands work from a subdirectory, not only the repo root", () => {
+test("the commands find the repo from a subdirectory, not only the root", () => {
   withTemp((base) => {
     const clone = freshClone(base);
     const nested = join(clone, "apps", "cli");
@@ -108,15 +108,39 @@ test("a hook left behind by an older script is reported, and install refreshes i
     const clone = freshClone(base);
     assert.equal(run(clone, ["install"]).status, 0);
     const hook = join(clone, ".git", "hooks", "pre-push");
-    writeFileSync(hook, readFileSync(hook, "utf8").replace("--pushed", "--pushed --old"));
+    writeFileSync(hook, readFileSync(hook, "utf8").replace(/^exec .*$/m, (line) => `${line} --old`));
 
     const stale = run(clone, ["status"]);
     assert.equal(stale.status, 1);
-    assert.match(stale.stderr, /not the current script/);
+    assert.match(stale.stderr, /older script line/);
 
     assert.equal(run(clone, ["install"]).status, 0);
     assert.equal(readFileSync(hook, "utf8"), source);
     assert.equal(run(clone, ["status"]).status, 0);
+  });
+});
+
+test("a hook whose comments moved on is still current, and install leaves the bytes alone", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    assert.equal(run(clone, ["install"]).status, 0);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    // A sibling worktree installed from a different commit: same exec line,
+    // different comments. That cannot change what the hook runs.
+    const edited = `${readFileSync(hook, "utf8")}
+# installed by another checkout
+`;
+    writeFileSync(hook, edited);
+    const stamp = statSync(hook).mtimeMs;
+
+    const status = run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+
+    const install = run(clone, ["install"]);
+    assert.equal(install.status, 0, install.stderr);
+    assert.match(install.stdout, /already installed and current/);
+    assert.equal(readFileSync(hook, "utf8"), edited, "install rewrote a hook that already runs the right script");
+    assert.equal(statSync(hook).mtimeMs, stamp);
   });
 });
 

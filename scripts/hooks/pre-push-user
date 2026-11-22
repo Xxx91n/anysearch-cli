@@ -3,8 +3,9 @@
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.
 # A change outside apps/ and packages/ falls back to the full workspace suite.
-# Install: pnpm hooks:install (from anywhere in the repo). pnpm hooks:status
-# says whether it is in place, executable, and the same file as this one.
+# Install: pnpm hooks:install at the repo root (pnpm -w hooks:install from a
+# subdirectory). pnpm hooks:status says whether it is in place, executable,
+# and still runs this exec line.
 # Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default
 # (see `but push --help`: "--no-hooks, --no-verify  Bypass pre-push hooks").
 # The pre-push hook is NOT GitButler-managed (GitButler only manages
