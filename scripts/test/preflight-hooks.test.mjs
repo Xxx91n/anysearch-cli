@@ -15,6 +15,16 @@ const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")
 const hookPath = (cwd) => join(cwd, ".git", "hooks", "pre-push");
 
 /** A temp dir whose git sees no config of the operator's, plus a fresh clone in it. */
+/** Drop what would move the repository or inject config; i matters on Windows. */
+function withoutRepoVariables(inherited) {
+  const env = { ...inherited };
+  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/i;
+  for (const key of Object.keys(env)) {
+    if (locating.test(key)) delete env[key];
+  }
+  return env;
+}
+
 function withSandbox(fn) {
   const base = mkdtempSync(join(tmpdir(), "ans-hooks-"));
   const home = join(base, "home");
@@ -24,15 +34,7 @@ function withSandbox(fn) {
   // A global core.hooksPath, or a repository exported by the caller, would send
   // installs outside the sandbox — and --force could then overwrite a real hook
   // on the operator's machine.
-  const env = { ...process.env };
-  // GIT_DIR and friends move the repository; GIT_CONFIG_COUNT plus KEY/VALUE
-  // pairs injects config without a file, core.hooksPath included.
-  // The i flag matters on Windows: env names there are case-insensitive, so a
-  // parent exporting lowercase git_dir reaches git just the same.
-  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/i;
-  for (const key of Object.keys(env)) {
-    if (locating.test(key)) delete env[key];
-  }
+  const env = withoutRepoVariables(process.env);
   Object.assign(env, {
     HOME: home,
     USERPROFILE: home,
@@ -320,18 +322,22 @@ test("a hook with no exec line still has its command named", () => {
   });
 });
 
-test("a lowercase git_dir from the caller cannot move the install", { skip: process.platform !== "win32" }, () => {
-  // Windows reads environment names case-insensitively, so a parent exporting
-  // git_dir reaches git as GIT_DIR. It has to be stripped like the uppercase one.
-  process.env.git_dir = join(tmpdir(), "ans-hooks-elsewhere");
-  try {
-    withSandbox((box) => {
-      const clone = box.clone();
-      installOk(box, clone);
-      assert.equal(readFileSync(hookPath(clone), "utf8"), source);
-    });
-  } finally {
-    delete process.env.git_dir;
+test("the sandbox drops repository variables, lowercase ones too", () => {
+  const env = withoutRepoVariables({
+    PATH: "/bin",
+    HOME: "/home/x",
+    GIT_DIR: "/elsewhere",
+    git_dir: "/elsewhere",
+    Git_Work_Tree: "/elsewhere",
+    git_config_count: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    USERPROFILE: "/home/x",
+  });
+
+  assert.equal(Object.hasOwn(env, "PATH"), true, "an ordinary variable was dropped");
+  assert.equal(Object.hasOwn(env, "USERPROFILE"), true, "an ordinary variable was dropped");
+  for (const key of ["GIT_DIR", "git_dir", "Git_Work_Tree", "git_config_count", "GIT_CONFIG_KEY_0"]) {
+    assert.equal(Object.hasOwn(env, key), false, `${key} survived the filter`);
   }
 });
 
