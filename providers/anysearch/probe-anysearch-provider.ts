@@ -50,8 +50,7 @@ const NO_KEY = ARGS.includes("--nokey");
 // to env while envClass still prints default(forced) — refuse instead of lying.
 if (FORCE_DEFAULT && (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0)) {
   const message = "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted";
-  // No arm ran, so no lane can be claimed: endpointSource is unknown, and there is
-  // deliberately no errorClass — classifyProviderError would only ever say unknown.
+  // Nothing was called, so there is no class to report and the endpoint source is unknown.
   console.log(JSON.stringify({
     schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
     errorName: "MissingExport", errorMessage: message,

@@ -55,7 +55,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 | 脚本 | 什么时候跑 | 回答什么 | 期望输出 | 退出码 |
 |---|---|---|---|---|
 | `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`ok:true`、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带原文开头） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败 |
-| `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON：成功给 `results` / 失败给 `errorName`+`errorClass` | 0 通 / 2 失败并给出类别 |
+| `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON：成功给 `results` / 调用失败给 `errorName`+`errorClass` / 探针自检失败给 `errorName`+`stage`（没跑调用，所以没有类别） | 0 通 / 2 失败并给出类别或自检原因 |
 
 和另外两个面的分工：`packages/retriever/test/online/anysearch-mcp.online.ts` 是 CI 的活体冒烟
 （`continue-on-error`），只断言正常路径，失败就抛栈、不分类，所以它**说不出是哪一层坏的**；raw 探针
