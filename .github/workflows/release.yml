@@ -38,9 +38,10 @@ jobs:
       issues: write    # red gate auto-opens an issue
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       - uses: ./.github/actions/setup
+        with:
+          detect-changes: false
 
       - name: pre-tag — decision-grade peek (spends one OF look)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
@@ -211,9 +212,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       - uses: ./.github/actions/setup
+        with:
+          detect-changes: false
 
       - name: npm CLI >= 11.5.1 (required for trusted publishing)
         run: npm i -g npm@11.6.1

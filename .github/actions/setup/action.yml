@@ -7,8 +7,31 @@
 # defaults to "false" (fail-closed) so release jobs stay strict unless a job
 # explicitly opts into the temporary CI bypass.
 
+# Design: one place works out the change set — when detection is on, the
+# template unshallows, takes the base from the event (pull_request: base.sha,
+# push: event.before, workflow_dispatch: the default branch), and reports
+# docs-only plus the changed files. Anything it cannot read reports
+# docs-only=false, so every lane runs. Release and conformance turn detection
+# off because they never read docs-only, so their checkout stays shallow. The
+# doc boundary lives in scripts/ci-changes.mjs.
+#
+# Design: docs-only skips the bootstrap and the caller's expensive steps, while
+# the job still reports success — a skipped check-run is not evidence, and the
+# release gate still needs every required family registered.
+
 name: Setup Node, pnpm, and dependencies
 description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
+
+outputs:
+  docs-only:
+    description: "'true' only when every changed file is documentation"
+    value: ${{ steps.changes.outputs.docs-only }}
+  changed-files:
+    description: "Newline-delimited changed paths; empty when the change set cannot be read"
+    value: ${{ steps.changes.outputs.changed-files }}
+  changes-readable:
+    description: "'true' when the changed-file list was read; 'false' means every lane must run"
+    value: ${{ steps.changes.outputs.changes-readable }}
 
 inputs:
   node-version:
@@ -23,15 +46,93 @@ inputs:
     description: "Whether to run scripts/ci-dep-age-override.mjs before install ('true' or 'false')"
     required: false
     default: "false"
+  detect-changes:
+    description: "Whether to compute docs-only / changed-files from the event ('true' or 'false'). Set false only where no caller reads them (release, conformance): the outputs stay empty and the checkout is not unshallowed."
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
+    # The runner's preinstalled Node runs this stdlib script; setup-node below
+    # only matters for the workspace build and tests.
+    - name: work out what changed
+      id: changes
+      if: ${{ inputs.detect-changes == 'true' }}
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        set -uo pipefail
+        git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+        history_complete=true
+        if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
+          # Design: blobless history keeps the name-only diff cheap — only
+          # commits and trees are needed. This makes origin a promisor remote;
+          # current CI git commands read only commits, trees and the working
+          # tree. A plain unshallow is the fallback if git rejects the filter.
+          git fetch --no-tags --filter=blob:none --unshallow origin \
+            || git fetch --no-tags --unshallow origin \
+            || true
+        fi
+        if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
+          history_complete=false
+          echo "::warning::could not unshallow; docs-only stays false and every lane runs"
+        fi
+
+        base=""
+        if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_BASE_SHA" ]; then
+          base="$PR_BASE_SHA"
+        elif [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+          base="$PUSH_BEFORE"
+        elif [ -n "$DEFAULT_BRANCH" ]; then
+          base="origin/$DEFAULT_BRANCH"
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" || true
+        fi
+
+        docs_only=false
+        changed_files=""
+        changes_readable=false
+        diff_file="$(mktemp)"
+        err_file="$(mktemp)"
+        if [ -n "$base" ]; then
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$base" || true
+          fi
+          merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
+          if [ "$history_complete" = "true" ] && [ -n "$merge_base" ] && git diff --name-only --no-renames -z "$merge_base" HEAD > "$diff_file" 2>/dev/null; then
+            changed_files="$(tr '\0' '\n' < "$diff_file")"
+            changes_readable=true
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>"$err_file")"; then
+                if [ "$verdict" = "true" ]; then docs_only=true; fi
+              else
+                echo "::warning::ci-changes failed, treating the change set as unknown: $(tr '\n' ' ' < "$err_file")"
+              fi
+            fi
+          fi
+        fi
+        rm -f "$diff_file" "$err_file"
+
+        delim="ANS_CHANGED_FILES_${GITHUB_RUN_ID}_$RANDOM"
+        {
+          echo "docs-only=$docs_only"
+          echo "changes-readable=$changes_readable"
+          echo "changed-files<<$delim"
+          if [ -n "$changed_files" ]; then printf '%s\n' "$changed_files"; fi
+          echo "$delim"
+        } >> "$GITHUB_OUTPUT"
+
     - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       with:
         install: false
 
     - uses: actions/setup-node@v5
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       with:
         node-version: ${{ inputs.node-version }}
         cache: pnpm
@@ -49,6 +150,7 @@ runs:
     # replaces this default rather than appending, so `--frozen-lockfile` lets
     # `allowBuilds: true` packages run their scripts again.
     - name: Install dependencies
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       shell: bash
       env:
         INSTALL_ARGS: ${{ inputs.install-args }}
