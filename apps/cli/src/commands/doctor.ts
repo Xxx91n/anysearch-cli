@@ -491,7 +491,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const skillNotes: string[] = [...manifestErrors];
       if (hasToolRequires && manifestErrors.length === 0 && activeNotInstalled.length > 0) {
         skillNotes.push(
-          `${MANAGED_SKILLS_REL_PATH} 下无同名目录：${activeNotInstalled.join("、")}，筛工具只看域 TOML，不读该目录`,
+          `清单里没这几个名字：${activeNotInstalled.join("、")}，筛工具只看域 TOML，不读 ${MANAGED_SKILLS_REL_PATH}`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {

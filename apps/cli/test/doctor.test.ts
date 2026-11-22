@@ -477,7 +477,7 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     const detail = row!.detail ?? "";
     assert.match(detail, /项目级清单读不出/, "损坏的那一边要报出清单读不出：" + detail);
     assert.match(detail, /装了但没在任何域里启用：ans，只供宿主直接读/, "完好的用户级已装 skill 仍要被报出：" + detail);
-    assert.equal(detail.includes("skills/synced/ 下无同名目录"), false, "有一边清单读不出时不能断言另一侧无同名目录：" + detail);
+    assert.equal(detail.includes("清单里没这几个名字"), false, "有一边清单读不出时不能断言另一侧没记：" + detail);
   } finally {
     process.chdir(prevCwd);
     for (const [key, value] of Object.entries(saved)) {
@@ -540,7 +540,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
     const detailAll = rowAll!.detail ?? "";
     assert.equal(
       detailAll,
-      "search、doctor（skills/synced/ 下无同名目录：search、doctor，筛工具只看域 TOML，不读该目录）",
+      "search、doctor（清单里没这几个名字：search、doctor，筛工具只看域 TOML，不读 skills/synced/）",
     );
 
     // 2. 只装了一部分（装了 doctor，没装 search）
@@ -577,7 +577,7 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
     const detailSub = rowSub!.detail ?? "";
     assert.equal(
       detailSub,
-      "search、doctor（skills/synced/ 下无同名目录：search，筛工具只看域 TOML，不读该目录）",
+      "search、doctor（清单里没这几个名字：search，筛工具只看域 TOML，不读 skills/synced/）",
     );
 
     // 3. 全部装齐时不挂多余说明
