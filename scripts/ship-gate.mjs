@@ -29,7 +29,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
-import { discoverCompositeActions } from "./check-workflows.mjs";
+import { discoverAllLocalActions, classifyLocalUsesRef } from "./check-workflows.mjs";
 import { ansDbPath } from "./ans-home.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -805,17 +805,15 @@ function stepStaticAssertions() {
     // A bare `PNPM_CONFIG_MINIMUM_RELEASE_AGE` in a workflow or composite action
     // would be a permanent bypass that outlives its reason, so it is refused here.
     {
-      // Design: scan .github/actions/**/action.ya?ml alongside workflows using
-      // the shared discoverCompositeActions helper so both gates stay in sync.
+      // Design: scan workflows plus all local composite actions from check-workflows.mjs so both gates guard the same set.
       const ciYamlFiles = [];
       const wfDir = path.join(ROOT, ".github/workflows");
       for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/i.test(n))) {
         ciYamlFiles.push({ label: f, full: path.join(wfDir, f) });
       }
-      const actionsDir = path.join(ROOT, ".github/actions");
-      const actionFiles = discoverCompositeActions(actionsDir);
-      for (const rel of actionFiles) {
-        ciYamlFiles.push({ label: "actions/" + rel, full: path.join(actionsDir, rel) });
+      const localActions = discoverAllLocalActions(ROOT);
+      for (const entry of localActions) {
+        ciYamlFiles.push(entry);
       }
       const offenders = [];
       for (const { label, full } of ciYamlFiles) {
@@ -836,10 +834,7 @@ function stepStaticAssertions() {
         fail("E6: a workflow/action sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
       }
 
-      // Design: enforce via parsed YAML (never regex) that any local composite
-      // action invoking ci-dep-age-override.mjs gates it on a fail-closed
-      // `dep-age-override` input (default false), and release.yml never enables
-      // it or invokes ci-dep-age-override.mjs directly.
+      // Design: E6 parses YAML to keep dep-age-override fail-closed in every local action and disabled in release.yml.
       const YAML = resolveWorkflowYaml();
       if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
       const isExplicitFalse = (v) => v === false || (typeof v === "string" && v.trim().toLowerCase() === "false");
@@ -848,22 +843,21 @@ function stepStaticAssertions() {
         const inner = cond.trim().replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "").trim();
         return /^inputs\.dep-age-override\s*==\s*['"]true['"]$/.test(inner);
       };
-      for (const rel of actionFiles) {
-        const full = path.join(actionsDir, rel);
+      for (const { label, full } of localActions) {
         let actionDoc = null;
         try { actionDoc = YAML.parse(fs.readFileSync(full, "utf8")); }
-        catch (e) { fail("E6: actions/" + rel + " does not parse: " + String(e.message).split("\n")[0]); }
+        catch (e) { fail("E6: " + label + " does not parse: " + String(e.message).split("\n")[0]); }
         const inputDef = actionDoc?.inputs?.["dep-age-override"];
         if (inputDef !== undefined && !isExplicitFalse(inputDef?.default)) {
-          fail("E6: actions/" + rel + " input `dep-age-override` must default to false (got " + JSON.stringify(inputDef?.default) + ")");
+          fail("E6: " + label + " input `dep-age-override` must default to false (got " + JSON.stringify(inputDef?.default) + ")");
         }
         for (const step of Array.isArray(actionDoc?.runs?.steps) ? actionDoc.runs.steps : []) {
           if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
             if (inputDef === undefined || !isExplicitFalse(inputDef?.default)) {
-              fail("E6: actions/" + rel + " invokes ci-dep-age-override.mjs without a fail-closed `dep-age-override` input");
+              fail("E6: " + label + " invokes ci-dep-age-override.mjs without a fail-closed `dep-age-override` input");
             }
             if (!isGatedOnDepAgeInput(step.if)) {
-              fail("E6: actions/" + rel + " step invoking ci-dep-age-override.mjs must be gated with `if: ${{ inputs.dep-age-override == 'true' }}` (got " + JSON.stringify(step.if) + ")");
+              fail("E6: " + label + " step invoking ci-dep-age-override.mjs must be gated with `if: ${{ inputs.dep-age-override == 'true' }}` (got " + JSON.stringify(step.if) + ")");
             }
           }
         }
@@ -879,10 +873,17 @@ function stepStaticAssertions() {
           if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
             fail("E6: release.yml job `" + jobName + "` invokes scripts/ci-dep-age-override.mjs directly");
           }
-          if (typeof step?.uses === "string" && step.uses.trim().startsWith("./.github/actions/")) {
-            const val = step?.with?.["dep-age-override"];
-            if (!(val === undefined || isExplicitFalse(val))) {
-              fail("E6: release.yml job `" + jobName + "` enables dep-age-override on " + step.uses.trim() + " (got " + JSON.stringify(val) + ")");
+          if (typeof step?.uses === "string" && step.uses.trim().startsWith("./")) {
+            const ref = step.uses.trim();
+            const classified = classifyLocalUsesRef(ref, ROOT);
+            if (!classified.ok) {
+              fail("E6: release.yml job `" + jobName + "` has invalid local uses `" + ref + "`: " + classified.error);
+            }
+            if (classified.ok && classified.kind === "action") {
+              const val = step?.with?.["dep-age-override"];
+              if (!(val === undefined || isExplicitFalse(val))) {
+                fail("E6: release.yml job `" + jobName + "` enables dep-age-override on " + ref + " (got " + JSON.stringify(val) + ")");
+              }
             }
           }
         }

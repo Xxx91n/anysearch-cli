@@ -44,9 +44,10 @@ runs:
       shell: bash
       run: node scripts/ci-dep-age-override.mjs
 
-    # Design: pass `install-args` via env and split into a bash array rather
-    # than interpolating `${{ inputs.install-args }}` into `run:` — prevents
-    # script injection and stays safe on macOS bash 3.2 and Git Bash.
+    # Design: default `--ignore-scripts` matches pnpm-workspace allowBuilds=false
+    # (better-sqlite3 ships prebuilds); passing `install-args` replaces this
+    # default rather than appending. Pass via env + bash array to avoid shell
+    # injection and stay safe on macOS bash 3.2 and Git Bash.
     - name: Install dependencies
       shell: bash
       env:
