@@ -67,26 +67,34 @@ function hookCommand(text) {
   return line ? line.trim() : null;
 }
 
-/** Everything the hook actually does, comments and blank lines dropped. */
+/** Everything the hook actually does: the shebang plus every non-comment line. */
 function hookCode(text) {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"))
-    .join("\n");
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const code = lines.filter((line) => line !== "" && !line.startsWith("#"));
+  // The shebang picks the interpreter, so it counts even though it looks like a comment.
+  if (lines[0]?.startsWith("#!")) code.unshift(lines[0]);
+  return code.join("\n");
 }
 
 /** What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed. */
 function hookTarget(text) {
-  const match = hookCommand(text)?.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
-  if (!match) return null;
+  const command = hookCommand(text);
+  if (!command) return null;
+  const match = command.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
+  // A command that is not ours is printed as written: naming it is the point.
+  if (!match) return command;
   const script = match[1].replace(/\\/g, "/");
   const flags = (match[2] ?? "").trim();
   return flags ? `${script} ${flags}` : script;
 }
 
 function isOurs(text) {
-  return OWN_BANNERS.some((banner) => text.includes(banner));
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  // Design: our banner is the first line after the shebang — a mention further
+  // down is a note about our hook, not our hook. The shebang itself is not
+  // checked here: it is part of the code, so a changed one reads as out of date.
+  const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
+  return OWN_BANNERS.some((prefix) => banner?.startsWith(prefix));
 }
 
 /**
@@ -147,19 +155,19 @@ function locate() {
  * unknown means the question cannot be answered (no repo, unreadable file).
  */
 function prePushStatus() {
-  const found = locate();
-  if (found.reason) return { state: "unknown", reason: found.reason };
+  const place = locate();
+  if (place.reason) return { state: "unknown", reason: place.reason };
 
-  const hookPath = path.join(found.dir, HOOK);
+  const hookPath = path.join(place.dir, HOOK);
   const installed = readText(hookPath);
-  if (installed.error?.code === "ENOENT") return { state: "missing", dir: found.dir, hookPath };
+  if (installed.error?.code === "ENOENT") return { state: "missing", dir: place.dir, hookPath };
   if (installed.error) {
-    return { state: "unknown", dir: found.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
+    return { state: "unknown", dir: place.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
 
-  const hook = { dir: found.dir, hookPath, target: hookTarget(installed.text) };
+  const hook = { dir: place.dir, hookPath, target: hookTarget(installed.text) };
   if (!isOurs(installed.text)) return { state: "foreign", ...hook };
-  if (!runsCurrentScript(installed.text, found.source)) return { state: "stale", ...hook };
+  if (!runsCurrentScript(installed.text, place.source)) return { state: "stale", ...hook };
   if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", ...hook };
   return { state: "ok", ...hook };
 }
@@ -171,13 +179,13 @@ function prePushStatus() {
  * refused means someone else's pre-push is in the way; only --force replaces it.
  */
 function installHook({ force = false } = {}) {
-  const found = locate();
-  if (found.reason) return { state: "unknown", reason: found.reason };
+  const place = locate();
+  if (place.reason) return { state: "unknown", reason: place.reason };
 
-  const hookPath = path.join(found.dir, HOOK);
+  const hookPath = path.join(place.dir, HOOK);
   const installed = readText(hookPath);
   if (installed.error && installed.error.code !== "ENOENT") {
-    return { state: "unknown", dir: found.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
+    return { state: "unknown", dir: place.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
   const exists = !installed.error;
 
@@ -185,31 +193,31 @@ function installHook({ force = false } = {}) {
   // such a hook (husky, a hand-written one) may do real work, and this command
   // is only asked to put our hook in place, not to delete someone else's.
   if (exists && !isOurs(installed.text) && !force) {
-    return { state: "refused", dir: found.dir, hookPath, target: hookTarget(installed.text) };
+    return { state: "refused", dir: place.dir, hookPath, target: hookTarget(installed.text) };
   }
 
   // Design: the old pre-commit-user is deleted, GitButler's pre-commit never is
   // — pre-commit belongs to GitButler, and a clone that still holds our old
   // commit hook would run tests on every commit.
-  const removed = removeOldCommitHook(found.dir);
-  fs.mkdirSync(found.dir, { recursive: true });
+  const removed = removeOldCommitHook(place.dir);
+  fs.mkdirSync(place.dir, { recursive: true });
 
   // Same code, possibly older comments: leave the bytes as they are, so two
   // checkouts sharing one hooks directory do not rewrite each other.
-  const current = exists && runsCurrentScript(installed.text, found.source);
-  if (!current) fs.writeFileSync(hookPath, found.source, { mode: 0o755 });
+  const current = exists && runsCurrentScript(installed.text, place.source);
+  if (!current) fs.writeFileSync(hookPath, place.source, { mode: 0o755 });
 
   // Windows has no execute bit for git to read, so there is nothing to set.
   const chmodError = process.platform !== "win32" && !isExecutable(hookPath) ? makeExecutable(hookPath) : null;
 
   return {
     state: !exists ? "installed" : current ? "current" : "replaced",
-    dir: found.dir,
+    dir: place.dir,
     hookPath,
-    target: hookTarget(found.source),
+    target: hookTarget(place.source),
     removed,
     chmodError,
-    preCommit: fs.existsSync(path.join(found.dir, "pre-commit")),
+    preCommit: fs.existsSync(path.join(place.dir, "pre-commit")),
   };
 }
 

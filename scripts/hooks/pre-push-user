@@ -6,7 +6,7 @@
 # A change outside apps/ and packages/ falls back to the full workspace suite.
 # Install: pnpm hooks:install at the repo root (pnpm -w hooks:install from a
 # subdirectory). pnpm hooks:status says whether it is in place, executable,
-# and still runs this exec line.
+# and still runs the same commands as this file.
 # Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default
 # (see `but push --help`: "--no-hooks, --no-verify  Bypass pre-push hooks").
 # The pre-push hook is NOT GitButler-managed (GitButler only manages

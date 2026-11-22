@@ -186,6 +186,64 @@ test("a copy that gained a command is out of date, and install brings it back", 
   });
 });
 
+test("a changed shebang counts as a different hook", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    assert.equal(run(clone, ["install"]).status, 0);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    writeFileSync(hook, readFileSync(hook, "utf8").replace("#!/bin/sh", "#!/bin/bash"));
+
+    const stale = run(clone, ["status"]);
+    assert.equal(stale.status, 1, stale.stdout);
+    assert.match(stale.stderr, /runs older commands/);
+
+    assert.equal(run(clone, ["install"]).status, 0);
+    assert.equal(readFileSync(hook, "utf8"), source);
+  });
+});
+
+test("status names what a hook runs even when it is not our command", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    writeFileSync(hook, "#!/bin/sh\nexec ./scripts/gate.sh\n");
+
+    const foreign = run(clone, ["status"]);
+    assert.equal(foreign.status, 1);
+    assert.match(foreign.stderr, /another script, not ours/);
+    assert.match(foreign.stderr, /runs: exec \.\/scripts\/gate\.sh/);
+
+    assert.equal(run(clone, ["install", "--force"]).status, 0);
+    writeFileSync(hook, readFileSync(hook, "utf8").replace(/^exec .*$/m, "exec ./scripts/gate.sh"));
+    const stale = run(clone, ["status"]);
+    assert.equal(stale.status, 1);
+    assert.match(stale.stderr, /runs older commands/);
+    assert.match(stale.stderr, /runs: exec \.\/scripts\/gate\.sh/);
+  });
+});
+
+test("a banner outside the header is a note, not ownership", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    const theirs = [
+      "#!/bin/sh",
+      "# mine",
+      "# notes: this used to be",
+      "# anysearch push gate",
+      "echo theirs",
+      "",
+    ].join("\n");
+    writeFileSync(hook, theirs);
+
+    const status = run(clone, ["status"]);
+    assert.equal(status.status, 1);
+    assert.match(status.stderr, /another script, not ours/);
+    assert.equal(run(clone, ["install"]).status, 2);
+    assert.equal(readFileSync(hook, "utf8"), theirs);
+  });
+});
+
 test("a clone that holds the script runs both commands itself", () => {
   withTemp((base) => {
     const clone = freshClone(base);
