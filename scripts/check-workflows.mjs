@@ -5,7 +5,8 @@
 // jobs ("likely failed because of a workflow file issue"), invisible in a normal green/red read.
 // The old checker lived in .scratch/ (never shipped) and FAILED OPEN when no YAML parser was
 // present. This version is fail-closed by construction:
-// - auto-discovers .github/workflows/*.yml|*.yaml and .github/actions/**/action.yml|*.yaml;
+// - auto-discovers .github/workflows/*.yml|*.yaml, .github/actions/**/action.yml|*.yaml,
+// and any local directory action referenced by workflows or actions;
 // - ALWAYS runs dependency-free structural checks (tabs, top-level key syntax, duplicates,
 // required keys, quote/bracket balance outside block scalars) plus local action path checks;
 // - ADDITIONALLY runs a full YAML parse when a parser is resolvable, so the strict check is
@@ -21,6 +22,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WF_DIR = path.join(ROOT, ".github", "workflows");
 const ACTIONS_DIR = path.join(ROOT, ".github", "actions");
 
+function isRegularFile(p) {
+  return Boolean(fs.statSync(p, { throwIfNoEntry: false })?.isFile());
+}
+
+function canonicalKey(p) {
+  try { return fs.realpathSync.native(p); } catch { return path.resolve(p); }
+}
+
 export function discoverWorkflows(dir = WF_DIR) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => /\.(ya?ml)$/i.test(f)).sort();
@@ -34,7 +43,7 @@ export function discoverCompositeActions(dir = ACTIONS_DIR) {
     for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
       const full = path.join(cur, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (/^action\.ya?ml$/i.test(entry.name)) {
+      else if (entry.name === "action.yml" || entry.name === "action.yaml") {
         found.push(path.relative(dir, full).replace(/\\/g, "/"));
       }
     }
@@ -60,9 +69,11 @@ function forEachYamlLine(text, onLine) {
       onLine({ line, raw, indent, inBlock: false, active: "" });
       return;
     }
-    if (/^(?:-\s+)?[A-Za-z_][\w-]*:\s*[|>][+-]?\s*$/.test(active)) {
-      blockIndent = indent;
-      onLine({ line, raw, indent, inBlock: false, active: "" });
+    const blockMatch = active.match(/^(-\s+)?[A-Za-z_][\w-]*:\s*[|>][+-]?\d*[+-]?\s*$/);
+    if (blockMatch) {
+      // Key column for `- run: |` is after `- `, so sibling fields at key indent are not swallowed.
+      blockIndent = indent + (blockMatch[1] ? blockMatch[1].length : 0);
+      onLine({ line, raw, indent, inBlock: false, active });
       return;
     }
     onLine({ line, raw, indent, inBlock: false, active });
@@ -75,34 +86,59 @@ export function findLocalActionRefs(text) {
   const refs = [];
   forEachYamlLine(text, ({ line, active }) => {
     if (!active) return;
-    const m = active.match(/^(?:-\s+)?uses:\s*(['"]?)(\.\/[^'"\s]+)\1\s*$/);
-    if (m) refs.push({ line, ref: m[2] });
+    const m = active.match(/^(?:-\s+)?uses:\s*(?:'(\.\/[^']+)'|"(\.\/[^"]+)"|(\.\/[^\s]+))\s*$/);
+    const ref = m && (m[1] || m[2] || m[3]);
+    if (ref) refs.push({ line, ref });
   });
   return refs;
 }
 
+function extractUsesRefsFromAst(doc) {
+  const refs = [];
+  const pushUses = (val) => {
+    if (typeof val === "string" && val.trim().startsWith("./")) {
+      refs.push({ line: 0, ref: val.trim() });
+    }
+  };
+  if (doc?.jobs && typeof doc.jobs === "object") {
+    for (const job of Object.values(doc.jobs)) {
+      pushUses(job?.uses);
+      for (const step of Array.isArray(job?.steps) ? job.steps : []) pushUses(step?.uses);
+    }
+  }
+  for (const step of Array.isArray(doc?.runs?.steps) ? doc.runs.steps : []) pushUses(step?.uses);
+  return refs;
+}
+
 export function classifyLocalUsesRef(ref, rootDir = ROOT) {
+  if (typeof ref !== "string" || !ref.startsWith("./")) {
+    return { ok: false, error: "local uses ref `" + ref + "` must start with `./`" };
+  }
+  if (ref.includes("\\")) {
+    return { ok: false, error: "local uses ref `" + ref + "` must use forward slashes (`/`)" };
+  }
   const repoRoot = path.resolve(rootDir);
   const wfRoot = path.resolve(repoRoot, ".github", "workflows");
   const target = path.resolve(repoRoot, ref);
   const rel = path.relative(repoRoot, target);
-  if (!rel || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
+  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
     return { ok: false, error: "local uses ref `" + ref + "` escapes repo root" };
   }
   const wfRel = path.relative(wfRoot, target);
-  const underWorkflows = wfRel && wfRel !== ".." && !wfRel.startsWith(".." + path.sep) && !path.isAbsolute(wfRel);
+  const directUnderWorkflows = Boolean(wfRel) && wfRel !== ".." && !wfRel.startsWith(".." + path.sep)
+    && !path.isAbsolute(wfRel) && !wfRel.includes(path.sep);
   if (/\.ya?ml$/i.test(target)) {
-    if (!underWorkflows) {
-      return { ok: false, error: "local action ref `" + ref + "` must point to a directory, not a YAML file" };
+    if (!directUnderWorkflows) {
+      return { ok: false, error: "local action ref `" + ref + "` must point to an action directory or a direct file under .github/workflows/" };
     }
-    if (!fs.existsSync(target)) {
+    if (!isRegularFile(target)) {
       return { ok: false, error: "local workflow `" + ref + "` does not exist" };
     }
     return { ok: true, kind: "workflow", full: target, label: rel.replace(/\\/g, "/") };
   }
   for (const name of ["action.yml", "action.yaml"]) {
     const actionFile = path.join(target, name);
-    if (fs.existsSync(actionFile)) {
+    if (isRegularFile(actionFile)) {
       const actionRel = path.relative(repoRoot, actionFile).replace(/\\/g, "/");
       const label = actionRel.startsWith(".github/") ? actionRel.slice(".github/".length) : actionRel;
       return { ok: true, kind: "action", full: actionFile, label };
@@ -111,28 +147,34 @@ export function classifyLocalUsesRef(ref, rootDir = ROOT) {
   return { ok: false, error: "local action `" + ref + "` missing action.yml or action.yaml" };
 }
 
-export function checkLocalActionRefs(text, rootDir = ROOT) {
+export function checkLocalActionRefs(text, rootDir = ROOT, doc = null) {
   const problems = [];
-  for (const { line, ref } of findLocalActionRefs(text)) {
+  const seen = new Set();
+  const refs = [...findLocalActionRefs(text), ...(doc ? extractUsesRefsFromAst(doc) : [])];
+  for (const { line, ref } of refs) {
+    const key = line + ":" + ref;
+    if (line === 0 && seen.has("any:" + ref)) continue;
+    seen.add(key);
+    seen.add("any:" + ref);
     const res = classifyLocalUsesRef(ref, rootDir);
-    if (!res.ok) problems.push("line " + line + ": " + res.error);
+    if (!res.ok) problems.push((line > 0 ? "line " + line + ": " : "") + res.error);
   }
   return problems;
 }
 
 // Design: collect both .github/actions/**/action.ya?ml and any local directory
 // action referenced by workflows or actions so check-workflows and E6 scan the same set.
-export function discoverAllLocalActions(rootDir = ROOT) {
+export function discoverAllLocalActions(rootDir = ROOT, YAML = null) {
   const repoRoot = path.resolve(rootDir);
   const wfDir = path.join(repoRoot, ".github", "workflows");
   const actionsDir = path.join(repoRoot, ".github", "actions");
-  const byFull = new Map();
+  const byKey = new Map();
   const queue = [];
 
   for (const rel of discoverCompositeActions(actionsDir)) {
     const full = path.join(actionsDir, rel);
-    const label = "actions/" + rel;
-    byFull.set(full, label);
+    const key = canonicalKey(full);
+    if (!byKey.has(key)) byKey.set(key, { label: "actions/" + rel, full });
     queue.push(full);
   }
   for (const f of discoverWorkflows(wfDir)) {
@@ -141,20 +183,29 @@ export function discoverAllLocalActions(rootDir = ROOT) {
   const visited = new Set();
   while (queue.length > 0) {
     const file = queue.shift();
-    if (visited.has(file) || !fs.existsSync(file)) continue;
-    visited.add(file);
+    const fileKey = canonicalKey(file);
+    if (visited.has(fileKey) || !isRegularFile(file)) continue;
+    visited.add(fileKey);
     const text = fs.readFileSync(file, "utf8");
-    for (const { ref } of findLocalActionRefs(text)) {
+    let refs = findLocalActionRefs(text);
+    if (YAML) {
+      try {
+        const doc = YAML.parse(text);
+        refs = [...refs, ...extractUsesRefsFromAst(doc)];
+      } catch { /* broken YAML is reported by callers */ }
+    }
+    for (const { ref } of refs) {
       const res = classifyLocalUsesRef(ref, repoRoot);
-      if (res.ok && res.kind === "action" && !byFull.has(res.full)) {
-        byFull.set(res.full, res.label);
-        queue.push(res.full);
+      if (res.ok && res.kind === "action") {
+        const key = canonicalKey(res.full);
+        if (!byKey.has(key)) {
+          byKey.set(key, { label: res.label, full: res.full });
+          queue.push(res.full);
+        }
       }
     }
   }
-  return [...byFull.entries()]
-    .map(([full, label]) => ({ label, full }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // Dependency-free structural validation of the YAML subset GitHub Actions uses. Block scalars
@@ -206,25 +257,27 @@ function main() {
     process.stderr.write("check-workflows: no .github/workflows/*.yml|*.yaml found - refusing to pass vacuously\n");
     process.exit(1);
   }
-  const actions = discoverAllLocalActions(ROOT);
+  const YAML = resolveYaml();
+  const actions = discoverAllLocalActions(ROOT, YAML);
   const targets = [
     ...files.map((f) => ({ label: f, full: path.join(WF_DIR, f), requiredKeys: ["name", "on", "jobs"] })),
     ...actions.map(({ label, full }) => ({ label, full, requiredKeys: ["name", "description", "runs"] })),
   ];
-  const YAML = resolveYaml();
   let bad = 0;
   for (const { label, full, requiredKeys } of targets) {
     const text = fs.readFileSync(full, "utf8");
     const { problems, topKeys } = structuralCheck(text);
-    const msgs = [...problems, ...checkLocalActionRefs(text)];
-    for (const k of requiredKeys) if (!topKeys.includes(k)) msgs.push("missing top-level key `" + k + "`");
+    const msgs = [...problems];
+    let parsedDoc = null;
     if (YAML) {
       try {
-        YAML.parse(text);
+        parsedDoc = YAML.parse(text);
       } catch (e) {
         msgs.push("full YAML parse: " + String(e.message).split("\n")[0]);
       }
     }
+    msgs.push(...checkLocalActionRefs(text, ROOT, parsedDoc));
+    for (const k of requiredKeys) if (!topKeys.includes(k)) msgs.push("missing top-level key `" + k + "`");
     if (msgs.length) {
       bad++;
       process.stdout.write("FAIL " + label + "\n" + msgs.map((m) => "       - " + m).join("\n") + "\n");

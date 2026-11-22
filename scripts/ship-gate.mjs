@@ -806,12 +806,14 @@ function stepStaticAssertions() {
     // would be a permanent bypass that outlives its reason, so it is refused here.
     {
       // Design: scan workflows plus all local composite actions from check-workflows.mjs so both gates guard the same set.
+      const YAML = resolveWorkflowYaml();
+      if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
       const ciYamlFiles = [];
       const wfDir = path.join(ROOT, ".github/workflows");
       for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/i.test(n))) {
         ciYamlFiles.push({ label: f, full: path.join(wfDir, f) });
       }
-      const localActions = discoverAllLocalActions(ROOT);
+      const localActions = discoverAllLocalActions(ROOT, YAML);
       for (const entry of localActions) {
         ciYamlFiles.push(entry);
       }
@@ -834,30 +836,45 @@ function stepStaticAssertions() {
         fail("E6: a workflow/action sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
       }
 
-      // Design: E6 parses YAML to keep dep-age-override fail-closed in every local action and disabled in release.yml.
-      const YAML = resolveWorkflowYaml();
-      if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
+      // Design: E6 parses YAML to keep dep-age-override fail-closed in every local action (including nested calls) and disabled in release.yml.
       const isExplicitFalse = (v) => v === false || (typeof v === "string" && v.trim().toLowerCase() === "false");
       const isGatedOnDepAgeInput = (cond) => {
         if (typeof cond !== "string") return false;
         const inner = cond.trim().replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "").trim();
         return /^inputs\.dep-age-override\s*==\s*['"]true['"]$/.test(inner);
       };
+      const isDepAgeForward = (v) => typeof v === "string"
+        && /^\$\{\{\s*inputs\.dep-age-override\s*\}\}$/.test(v.trim());
       for (const { label, full } of localActions) {
         let actionDoc = null;
         try { actionDoc = YAML.parse(fs.readFileSync(full, "utf8")); }
         catch (e) { fail("E6: " + label + " does not parse: " + String(e.message).split("\n")[0]); }
         const inputDef = actionDoc?.inputs?.["dep-age-override"];
-        if (inputDef !== undefined && !isExplicitFalse(inputDef?.default)) {
+        const hasFailClosedInput = inputDef !== undefined && isExplicitFalse(inputDef?.default);
+        if (inputDef !== undefined && !hasFailClosedInput) {
           fail("E6: " + label + " input `dep-age-override` must default to false (got " + JSON.stringify(inputDef?.default) + ")");
         }
         for (const step of Array.isArray(actionDoc?.runs?.steps) ? actionDoc.runs.steps : []) {
           if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
-            if (inputDef === undefined || !isExplicitFalse(inputDef?.default)) {
+            if (!hasFailClosedInput) {
               fail("E6: " + label + " invokes ci-dep-age-override.mjs without a fail-closed `dep-age-override` input");
             }
             if (!isGatedOnDepAgeInput(step.if)) {
               fail("E6: " + label + " step invoking ci-dep-age-override.mjs must be gated with `if: ${{ inputs.dep-age-override == 'true' }}` (got " + JSON.stringify(step.if) + ")");
+            }
+          }
+          if (typeof step?.uses === "string" && step.uses.trim().startsWith("./")) {
+            const ref = step.uses.trim();
+            const classified = classifyLocalUsesRef(ref, ROOT);
+            if (!classified.ok) {
+              fail("E6: " + label + " has invalid local uses `" + ref + "`: " + classified.error);
+            }
+            if (classified.ok && classified.kind === "action") {
+              const val = step?.with?.["dep-age-override"];
+              const ok = val === undefined || isExplicitFalse(val) || (hasFailClosedInput && isDepAgeForward(val));
+              if (!ok) {
+                fail("E6: " + label + " enables dep-age-override on nested local action `" + ref + "` (got " + JSON.stringify(val) + ")");
+              }
             }
           }
         }
@@ -869,6 +886,9 @@ function stepStaticAssertions() {
       const releaseJobs = releaseDoc?.jobs && typeof releaseDoc.jobs === "object" ? Object.entries(releaseDoc.jobs) : [];
       if (releaseJobs.length === 0) fail("E6: .github/workflows/release.yml has no jobs");
       for (const [jobName, job] of releaseJobs) {
+        if (typeof job?.uses === "string" && job.uses.trim().startsWith("./")) {
+          fail("E6: release.yml job `" + jobName + "` delegates to reusable workflow `" + job.uses.trim() + "` (outside E6 release step audit)");
+        }
         for (const step of Array.isArray(job?.steps) ? job.steps : []) {
           if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
             fail("E6: release.yml job `" + jobName + "` invokes scripts/ci-dep-age-override.mjs directly");
