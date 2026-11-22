@@ -66,7 +66,9 @@ export interface ToolPort {
 }
 
 // DomainConfigPort: provides the active domain tool whitelist.
-// decision 4C: full 5-layer interface matching DomainSchema.
+// decision 4C: mirrors the domain sections the kernel consumes — the five
+// whole-section replacements (prompts/skills/sources/rag/hooks) plus budget and
+// compaction; settings, base and entityAliases stay store-side.
 // Consumers read only what they need; current consumers use sources + hooks.
 export interface DomainConfigPort {
   // optional per-provider weight Record (user preference overlay).

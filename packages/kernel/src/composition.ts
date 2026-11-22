@@ -33,7 +33,9 @@ import {
 } from "./domain-constraint";
 
 // Map provider ids to constructors.
-// ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
+// ponytail: wrap in try/catch — a provider whose constructor throws is skipped, not crashed
+// (today only exa throws on a missing key; tavily falls back to a keyless client and
+// anysearch to an anonymous call, so both build fine).
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
@@ -420,8 +422,9 @@ export function createEngine(
   // request-time domain URL policy resolver — wired only when
   // the domain schema loads. The lazy-mtime reloader refreshes the schema when
   // the TOML changes; resolvePolicyFromSchema runs on every search() call so
-  // TOML edits and ANS_URL_ALLOWLIST/DENYLIST env overrides take effect without
-  // restart. No cached policy snapshot lives inside the retriever.
+  // TOML edits take effect without restart, and ANS_URL_ALLOWLIST appends hosts
+  // when ANS_ALLOW_ENV_OVERRIDE=1 (otherwise it is ignored with a warning); deny
+  // comes from the TOML only. No cached policy snapshot lives inside the retriever.
   let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
   // repo-level vertical default — lazy resolver over the
   // same liveSchema the urlPolicy reloader maintains (TOML edits take effect

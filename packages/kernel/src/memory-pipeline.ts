@@ -1481,7 +1481,7 @@ export class MemoryPipeline {
         if (modelsObj && actualModel) {
           // judgment-input assertion boundary 3/5 — consolidation pre-call.
           // Fire-and-forget: an invalid judgment input skips compression instead of
-          // throwing into the agent loop (AGENTS.md fail-open for background paths).
+          // throwing into the agent loop (background work stays fail-open).
           try {
             if (gap && gap.text) assertJudgmentInput(gap, "consolidation");
           } catch {

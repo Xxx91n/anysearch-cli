@@ -37,8 +37,8 @@ export interface EngineConfig {
   // per-call reserve/settle (decision 2C) here, token/USD settle in
   // PiAgentRuntime (#103, kernel level). Production composition entry point
   // injection is #177 and PiAgentRuntime production wiring is #178.
-  // Token reserve design is settled in #186 (T9), with implementation
-  // tickets #187 merged (budget foundation) / #188 still open; USD stays
+  // Token reserve design is settled in #186 (T9), implemented in #187 (budget
+  // foundation) and #188 (token reserve), both merged; USD stays
   // settle-only per #186 decision 6.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
