@@ -5,7 +5,7 @@
 // Values never logged: endpoint is recorded as source-class only; API key
 // existence only.
 //
-// node --import tsx scripts/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey]
+// node providers/anysearch/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey]
 //
 // Exit 0 = results-shaped reply; 2 = transport/tool failure; 3 = non-results
 // text shape (the discriminating case this probe exists for).
@@ -17,7 +17,7 @@ const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
 // the probe speaks as the CLI client; a hand-maintained literal would drift on
 // every release. Single read at module load; failure is fatal by design (the
 // probe must never misreport which build it ran).
-const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
+const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 const ENDPOINT = ARGS.includes("--default-endpoint") ? DEFAULT_ENDPOINT
   : (process.env.ANYSEARCH_ENDPOINT || DEFAULT_ENDPOINT); // POSIX: empty env ≡ unset

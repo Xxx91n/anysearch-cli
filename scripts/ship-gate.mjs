@@ -544,7 +544,7 @@ function stepStaticAssertions() {
       fail("c4: no cold-domain abstain golden entry");
     // Design: drop the probe-file presence assertion — the probe needs a live
     // TAVILY_API_KEY, so file existence is not evidence; refresh it by hand:
-    // TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
+    // TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
       fail("ship-gate missing stepOverrideGovernance");
     }

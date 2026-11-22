@@ -1108,7 +1108,7 @@
 ### Added
 
 - `ProviderErrorClass` 约定层的错误分类（transient / permanent-auth / permanent-protocol / session-expired / unknown）+ `classifyProviderError`；engine 的 `metadata.providerErrorClasses`（id→类别）贯通到 `ans search --json` 和 delta 证据行（providerErrorClasses{On,Off,IsoOn,IsoOff}）——失败从此记类别，不记裸旗标。
-- `scripts/probe-anysearch-provider.ts` + `scripts/probe-anysearch-mcp-raw.ts`——provider 直调取证探针和 raw MCP 原文探针（长期保留的夹具；env 值只记「有没有」的那一类）。
+- `providers/anysearch/probe-anysearch-provider.ts` + `providers/anysearch/probe-anysearch-mcp-raw.ts`——provider 直调取证探针和 raw MCP 原文探针（长期保留的夹具；2026-11-22 从 `scripts/` 搬进 `providers/anysearch/`，各夹子的 README 是它们的说明书；env 值只记「有没有」的那一类）。
 - `apps/cli/scripts/stamp-dist.mjs` 构建戳（anysearch/build-stamp@1：commit+dirty）+ eval runner 的 dist 新鲜度断言（过期→FAIL，缺 dist→SKIP，保证 CI 在没有构建检查项时也能跑）。
 
 ### Fixed

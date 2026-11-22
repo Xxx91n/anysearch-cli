@@ -162,7 +162,7 @@
   counted in `ConsolidateReport.embeddingAbsent`).
 - **Tavily domain-filter probe: verified live** — `include_domains` held in
   default + filter modes, and subdomain direction works both ways
-  (`scripts/probe-tavily-domains.mjs`; the `/research` endpoint call is
+  (`providers/tavily/probe-tavily-domains.mjs`; the `/research` endpoint call is
   INCONCLUSIVE — async handle, no URL fields).
 - **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
   `ans llm`). Retrieval itself only needs provider keys.

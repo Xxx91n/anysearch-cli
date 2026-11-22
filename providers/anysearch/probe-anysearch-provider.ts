@@ -3,15 +3,36 @@
 // evidence line — on failure it records the error NAME + truncated message +
 // classified lane (the long-term fixture repairing "flag without error text"
 // at the forensic layer). Run:
-// node --import tsx scripts/probe-anysearch-provider.ts
-// ANS_PROBE_QUERY="..." node --import tsx scripts/probe-anysearch-provider.ts
+// node providers/anysearch/probe-anysearch-provider.ts
+// ANS_PROBE_QUERY="..." node providers/anysearch/probe-anysearch-provider.ts
 // Red lines: ANYSEARCH_ENDPOINT / ANYSEARCH_API_KEY values are NEVER printed —
 // only presence classes (endpointSource/keyPresent); occurrences of the
 // configured values inside an error message are masked <endpoint>/<key>.
 // Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted).
 
-import { AnySearchProvider } from "../packages/retriever/src/providers/anysearch";
-import { classifyProviderError } from "../packages/retriever/src/contract";
+// Plain `node` cannot load the adapter from source: `anysearch.ts` imports
+// "../contract" without an extension, which tsc (Bundler resolution) and tsx
+// both accept and Node's ESM resolver does not. ".ts" is appended only when
+// that file really exists, so a genuinely bad specifier still fails loudly.
+// The alternative — writing ".ts" into the adapter — needs
+// allowImportingTsExtensions in retriever, kernel, store and apps/cli, which is
+// too wide a change for a manual-probe fixture (decision #413: plain `node <file>`).
+import { registerHooks } from "node:module";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith(".") && !/\.[cm]?[jt]s$/.test(specifier) && context.parentURL) {
+      const candidate = new URL(specifier + ".ts", context.parentURL);
+      if (existsSync(fileURLToPath(candidate))) return nextResolve(specifier + ".ts", context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
+const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
 
 // Probe overrides (P1 env/key/endpoint separation):
 // --default-endpoint force the baked-in public endpoint (env ignored)
