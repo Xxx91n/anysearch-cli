@@ -29,7 +29,8 @@ const FAMILY = new RegExp("^(" + FAMILIES.join("|") + ")\\b");
 const FAILED_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 // neutral is allowed next to success because release.yml's wait step (layer 1)
 // allows it too: the two layers must not disagree about a conclusion that did
-// run. The one conclusion that moved is skipped.
+// run. Skipped used to sit here as well; it does not any more, so a gated lane
+// that registers as skipped is red.
 const PASSING_CONCLUSIONS = new Set(["success", "neutral"]);
 
 function familyOf(name) {
@@ -130,7 +131,7 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
 
   // Design: a skipped check-run is answered at once, not at a deadline — it is
   // terminal, so no wait changes it, and the discovery phase is the one that asks
-  // whether every required check ran.
+  // whether every required check is registered.
   if (skipped.length > 0) {
     return answer(
       "red",
