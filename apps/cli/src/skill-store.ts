@@ -985,6 +985,15 @@ function missingDirectoryWarnings(managed: string, entries: InstalledSkill[]): s
   });
 }
 
+/** Read the manifest-backed skill list from a managed root without taking locks or deleting residue. */
+function readInstalledFromManaged(managed: string): InstalledSkill[] {
+  if (!statIfPresent(manifestIn(managed))) {
+    requireScopeAnchors(managed);
+    if (isEmptyManagedRoot(managed)) return [];
+  }
+  return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Reconcile residue when safe, then read the manifest-backed listing. */
 function readInstallationListing(opts: SkillOptions): SkillListing {
   const managed = managedSkillsRoot(opts);
@@ -992,8 +1001,7 @@ function readInstallationListing(opts: SkillOptions): SkillListing {
   // Design: read commands clean only while holding the lock — a live writer keeps
   // the read path lock-free, since the manifest replace is an atomic rename.
   maintainScope(managed);
-  if (!statIfPresent(manifestIn(managed)) && isEmptyManagedRoot(managed)) return { skills: [], warnings: [] };
-  const skills = Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+  const skills = readInstalledFromManaged(managed);
   return { skills, warnings: missingDirectoryWarnings(managed, skills) };
 }
 
@@ -1009,11 +1017,7 @@ export function inspectInstalledSkills(opts: SkillOptions = {}): SkillListing {
 export function readInstalledSkillsReadOnly(opts: SkillOptions = {}): InstalledSkill[] {
   const managed = managedSkillsRoot(opts);
   if (!statIfPresent(managed)) return [];
-  if (!statIfPresent(manifestIn(managed))) {
-    requireScopeAnchors(managed);
-    if (isEmptyManagedRoot(managed)) return [];
-  }
-  return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+  return readInstalledFromManaged(managed);
 }
 
 /** Resolve an installed directory and verify it stays inside the managed root. */

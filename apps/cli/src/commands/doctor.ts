@@ -483,20 +483,16 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
       const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
-      const mismatchNotes: string[] = [];
-      if (manifestErrors.length > 0) {
-        mismatchNotes.push(...manifestErrors);
-      } else {
-        if (activeNotInstalled.length > 0) {
-          mismatchNotes.push(
-            `域里写了但没装到 skills/synced/：${activeNotInstalled.join(",")}（这里是给 toolRequires 筛工具用的键名，不需要在 skills/synced/ 安装同名目录；${hasToolRequires ? "当前域按 toolRequires 筛工具" : "当前域没配 toolRequires，不筛工具"}）`,
-          );
-        }
-        if (installedNotInAnyDomain.length > 0) {
-          mismatchNotes.push(
-            `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}（skills/synced/ 供宿主直接读；要按域筛工具才写进 [skills].active 与 toolRequires）`,
-          );
-        }
+      const mismatchNotes: string[] = [...manifestErrors];
+      if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+        mismatchNotes.push(
+          `域里写了但不在 skills/synced/：${activeNotInstalled.join(",")}——这是 toolRequires 的技能键名，${hasToolRequires ? "当前域按它筛工具" : "当前域没配 toolRequires，不筛工具"}`,
+        );
+      }
+      if (installedNotInAnyDomain.length > 0) {
+        mismatchNotes.push(
+          `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}——skills/synced/ 供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
+        );
       }
       const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";
       report.add({

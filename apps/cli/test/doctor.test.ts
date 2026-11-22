@@ -386,7 +386,7 @@ test("ans doctor：领域 skills.active 同时解释「装了但没在任何域�
     assert.ok(row, "能力层要有「领域 skills.active」");
     assert.equal(row!.state, "ready");
     const detail = row!.detail ?? "";
-    assert.match(detail, /域里写了但没装到 skills\/synced\/：search,doctor/, "要指出当前域里写了但没装的名字：" + detail);
+    assert.match(detail, /域里写了但不在 skills\/synced\/：search,doctor/, "要指出当前域里写了但不在 skills/synced/ 的名字：" + detail);
     assert.match(detail, /装了但没在任何域里启用：ans/, "要指出已装但没在任何域里列出的 skill：" + detail);
     assert.match(detail, /toolRequires/, "要讲清和 toolRequires 的关系：" + detail);
   } finally {
@@ -397,4 +397,69 @@ test("ans doctor：领域 skills.active 同时解释「装了但没在任何域�
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞掉另一边已装 skill 的提示", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-err-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "ans-doctor-proj-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN"];
+  const saved: Record<string, string | undefined> = {};
+  for (const key of keys) saved[key] = process.env[key];
+  const prevCwd = process.cwd();
+  const lines: string[] = [];
+  try {
+    const userSynced = join(home, ".ans", "skills", "synced");
+    mkdirSync(join(userSynced, "ans"), { recursive: true });
+    writeFileSync(
+      join(userSynced, "ans", "SKILL.md"),
+      "---\nname: ans\ndescription: bundled ans skill\n---\n\nBody.\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(userSynced, "installed.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          ans: {
+            name: "ans",
+            source: join(home, "src", "ans"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+        },
+      }) + "\n",
+      "utf8",
+    );
+    const projSynced = join(projectDir, ".ans", "skills", "synced");
+    mkdirSync(projSynced, { recursive: true });
+    writeFileSync(join(projSynced, "installed.json"), "{broken json\n", "utf8");
+
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    process.env.ANS_DOMAIN = "default";
+    process.chdir(projectDir);
+
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    assert.equal(code, 0);
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const row = payload.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+
+    assert.ok(row, "能力层要有「领域 skills.active」");
+    const detail = row!.detail ?? "";
+    assert.match(detail, /项目级清单读不出/, "损坏的那一边要报出清单读不出：" + detail);
+    assert.match(detail, /装了但没在任何域里启用：ans/, "完好的用户级已装 skill 仍要被报出：" + detail);
+    assert.equal(detail.includes("域里写了但不在 skills/synced/"), false, "有一边清单读不出时不能断言没装：" + detail);
+  } finally {
+    process.chdir(prevCwd);
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+    rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 
