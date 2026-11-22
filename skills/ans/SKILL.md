@@ -1,4 +1,9 @@
-# Anysearch skill
+---
+name: ans
+description: Search the web across several sources, run deep research, recall earlier results from local memory, query an organization knowledge base, and turn selected materials into long-term knowledge, through the anysearch ans_* tools. Use when the user asks to look something up, research a topic, check current events, or find something an earlier search already turned up.
+---
+
+# ans skill
 
 ## Tools
 

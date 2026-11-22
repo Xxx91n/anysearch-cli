@@ -135,7 +135,7 @@ test("SessionStart: routing card has required content", () => {
     "- Skip a repeat search when recall_memory results already answer the question; search again when they are incomplete, out of date, or you need the latest",
     "",
     "Fail-open: if anysearch server is down, tools degrade gracefully (no block).",
-    "For detailed guidance: see SKILL.md (anysearch skill).",
+    "For detailed guidance: see SKILL.md (ans skill).",
   ].join("\n");
   assert.ok(ROUTING_CARD.includes("anysearch plugin active"));
   assert.ok(ROUTING_CARD.includes("search_web"));
@@ -148,7 +148,7 @@ test("SessionStart: routing card has required content", () => {
 });
 
 test("SKILL.md: exists and has trigger words", () => {
-  const skillPath = join(process.cwd(), "skills", "anysearch", "SKILL.md");
+  const skillPath = join(process.cwd(), "skills", "ans", "SKILL.md");
   assert.ok(fs.existsSync(skillPath), "SKILL.md should exist at " + skillPath);
   const skillContent = fs.readFileSync(skillPath, "utf8");
   assert.ok(skillContent.includes("search_web"), "SKILL.md should mention search_web");
