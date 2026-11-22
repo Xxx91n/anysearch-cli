@@ -63,12 +63,39 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
 test("the throwaway home gets turbo's config dir on Windows only", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
     const result = runCliIn(root, bin, []);
-    assert.equal(result.status, 0, result.stderr);
-    const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
-    // Off Windows the home keeps exactly what it had (#381).
-    assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
+    // A red run keeps its home on purpose; this fixture is not an operator's
+    // run, so the test takes it with it either way.
+    try {
+      assert.equal(result.status, 0, result.stderr);
+      const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
+      // Off Windows the home keeps exactly what it had (#381).
+      assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
+    } finally {
+      const home = keptHome(result.stderr);
+      if (home) rmSync(home, { recursive: true, force: true });
+    }
   });
 });
+
+// The probe above pins the layer the fix adds; this one makes the repo's real
+// turbo find it, so a turbo that looks somewhere else fails here instead of on
+// an operator's push. Windows only: the failure cannot happen off Windows.
+test(
+  "the real turbo starts under the throwaway home",
+  { skip: process.platform !== "win32" ? "Windows only" : turboEntry() === null && "turbo is not installed" },
+  async () => {
+    await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeRealTurboPnpm }, ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      try {
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stdout, /Packages in scope/);
+      } finally {
+        const home = keptHome(result.stderr);
+        if (home) rmSync(home, { recursive: true, force: true });
+      }
+    });
+  },
+);
 
 test("a red run keeps the test home and prints where it is", async () => {
   await withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
@@ -410,6 +437,27 @@ function writeTurboConfigProbePnpm(bin) {
     "exit /b 0",
   ].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm that runs the repo's own turbo instead: `test --dry` resolves
+// every package and prints the plan without running a task, so the gate stays
+// fast while turbo still has to locate its global config dir in the home the
+// gate handed it.
+function writeRealTurboPnpm(bin) {
+  const entry = turboEntry();
+  const sh = ["#!/bin/sh", `cd "${repoRoot}"`, `exec "${process.execPath}" "${entry}" run test --dry`].join("\n");
+  const cmd = [
+    "@echo off",
+    `cd /d "${repoRoot}"`,
+    `"${process.execPath}" "${entry}" run test --dry`,
+    "exit /b %ERRORLEVEL%",
+  ].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
+
+function turboEntry() {
+  const entry = join(repoRoot, "node_modules", "turbo", "bin", "turbo");
+  return existsSync(entry) ? entry : null;
 }
 
 function writePnpmShim(bin, { sh, cmd }) {

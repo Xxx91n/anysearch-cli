@@ -203,19 +203,16 @@ function listFirst(files) {
 // because no test in the suite reads those keys from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
-  // turbo on Windows works out its global config dir from the user profile and
-  // exits 1 with "Global config path not found." before running any task when
-  // %USERPROFILE%\AppData\Roaming is missing (#381). Every real profile has
-  // that layer; a fresh temp dir does not.
+  // turbo on Windows resolves its global config dir under
+  // %USERPROFILE%\AppData\Roaming and exits 1 with "Global config path not
+  // found." before running any task when that layer is missing (#381).
   //
-  // Design: recreate only that one layer, and only on Windows — the child gets
-  // a home that is real enough for turbo while Linux/macOS keep the home they
-  // had (#381). Creating it on every platform was rejected: the failure cannot
-  // happen off Windows, and the Windows lane in ci runs these tests, so the fix
-  // is still guarded. Pointing turbo at a config dir of its own
-  // (TURBO_CONFIG_DIR_PATH) was rejected too: that hides one program's lookups
-  // instead of giving the child the home a real profile has, and the next
-  // program to read the profile fails the same way.
+  // Design: put that one layer back, on Windows only — every real profile has
+  // it, a fresh temp dir does not, and Linux/macOS keep the home they had.
+  // Creating it on every platform was rejected because the failure cannot
+  // happen off Windows; a config dir of turbo's own (TURBO_CONFIG_DIR_PATH) was
+  // rejected because it hides one program's lookups instead of giving the child
+  // a home a real profile has.
   if (process.platform === "win32") fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
   const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
   // Windows env names are case-insensitive, so the filter is too: a lowercase
