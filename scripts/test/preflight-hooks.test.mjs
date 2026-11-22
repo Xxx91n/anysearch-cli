@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { gitEnv } from "../preflight-git.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -13,16 +14,6 @@ const source = readFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"),
 const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 
 const hookPath = (cwd) => join(cwd, ".git", "hooks", "pre-push");
-
-/** Drop what would move the repository or inject config; the i flag is for Windows. */
-function withoutRepoVariables(inherited) {
-  const env = { ...inherited };
-  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/i;
-  for (const key of Object.keys(env)) {
-    if (locating.test(key)) delete env[key];
-  }
-  return env;
-}
 
 /** A temp dir whose git sees no config of the operator's, plus a fresh clone in it. */
 function withSandbox(fn) {
@@ -34,7 +25,7 @@ function withSandbox(fn) {
   // A global core.hooksPath, or a repository exported by the caller, would send
   // installs outside the sandbox — and --force could then overwrite a real hook
   // on the operator's machine.
-  const env = withoutRepoVariables(process.env);
+  const env = gitEnv(process.env);
   Object.assign(env, {
     HOME: home,
     USERPROFILE: home,
@@ -320,25 +311,6 @@ test("a hook with no exec line still has its command named", () => {
     assert.match(status.stderr, /another script, not ours/);
     assert.match(status.stderr, /runs: \. _\/husky\.sh/);
   });
-});
-
-test("the sandbox drops repository variables, lowercase ones too", () => {
-  const env = withoutRepoVariables({
-    PATH: "/bin",
-    HOME: "/home/x",
-    GIT_DIR: "/elsewhere",
-    git_dir: "/elsewhere",
-    Git_Work_Tree: "/elsewhere",
-    git_config_count: "1",
-    GIT_CONFIG_KEY_0: "core.hooksPath",
-    USERPROFILE: "/home/x",
-  });
-
-  assert.equal(Object.hasOwn(env, "PATH"), true, "an ordinary variable was dropped");
-  assert.equal(Object.hasOwn(env, "USERPROFILE"), true, "an ordinary variable was dropped");
-  for (const key of ["GIT_DIR", "git_dir", "Git_Work_Tree", "git_config_count", "GIT_CONFIG_KEY_0"]) {
-    assert.equal(Object.hasOwn(env, key), false, `${key} survived the filter`);
-  }
 });
 
 test("install goes where git reads hooks, including a core.hooksPath directory", () => {
