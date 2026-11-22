@@ -66,7 +66,7 @@ test("the throwaway home gets turbo's config dir on Windows only", async () => {
     try {
       assert.equal(result.status, 0, result.stderr);
       const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
-      // Off Windows the home keeps exactly what it had (#381).
+      // Off Windows the home keeps exactly what it had.
       assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
     } finally {
       dropLeftoverHome(result);
@@ -454,11 +454,11 @@ function writeRealTurboPnpm(bin) {
 }
 
 // A gate run can leave its home behind two ways: a red run says it kept it for
-// inspection, and a green run that could not delete it says where it left it. A
-// fixture is not an operator's run, so the test clears whatever it finds — with
-// retries, and without failing the test: a Windows file lock keeping the dir is
-// not news this test should report, and throwing here would hide the assertion
-// that ran before it.
+// inspection, and a green run that could not delete it says where it left it.
+//
+// Design: retry, then swallow a cleanup failure — a Windows file lock keeping the
+// dir is not news this test reports, and throwing in the finally hides the
+// assertion that ran before it.
 function dropLeftoverHome(result) {
   const output = `${result.stdout}\n${result.stderr}`;
   const home =
@@ -527,10 +527,12 @@ function keptHome(output) {
 }
 
 // A red run keeps its test home on purpose; a fixture is not an operator's
-// failed run, so the test deletes what the gate printed.
+// failed run, so the test deletes what the gate printed. The home is dropped
+// before the assertion, so a failing assertion does not leave the dir behind.
 function clearKeptHome(result) {
-  assert.ok(keptHome(result.stderr), `no kept test home in: ${result.stderr}`);
+  const home = keptHome(result.stderr);
   dropLeftoverHome(result);
+  assert.ok(home, `no kept test home in: ${result.stderr}`);
 }
 
 function git(root, args) {

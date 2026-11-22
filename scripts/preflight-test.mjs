@@ -205,11 +205,10 @@ function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
   // turbo on Windows looks for its global config dir under
   // %USERPROFILE%\AppData\Roaming; a fresh temp home has no such layer and turbo
-  // exits 1 ("Global config path not found.") before any task runs (#381).
+  // exits 1 ("Global config path not found.") before any task runs.
   //
   // Design: build that one layer, on Windows only — off Windows turbo does not
-  // look there, and a config dir of its own (TURBO_CONFIG_DIR_PATH) would hide
-  // this one lookup instead of making the home real.
+  // look there, and a real profile always has it.
   if (process.platform === "win32") fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
   const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
   // Windows env names are case-insensitive, so the filter is too: a lowercase
