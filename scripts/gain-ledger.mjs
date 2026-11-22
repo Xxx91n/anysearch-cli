@@ -1,6 +1,6 @@
 // scripts/gain-ledger.mjs
 // gain-ledger for the three-tier gain gate — tracks the consecutive-WARN streak.
-// Pure functions over plain objects + a tiny file IO wrapper; unit-tested by test/gain-ledger.test.mjs.
+// Pure functions over plain objects + a tiny file IO wrapper; unit-tested by packages/store/test/gain-ledger.test.mjs.
 import fs from "node:fs";
 import path from "node:path";
 

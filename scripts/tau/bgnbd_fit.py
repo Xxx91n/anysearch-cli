@@ -6,7 +6,8 @@
 #    "conditional_expected": [...], "validation": {"chi2":..., "df":..., "p":...}}
 #   {"ok": true,  "converged": false, "error": ...}   <- data outcome, still exit 0
 #   {"ok": false, "error": ...}                        <- infra/contract failure, exit 0
-# Exit code 0 always; converged is independent of exit code (D7: TS side maps all to skip).
+# Exit code 0 on every envelope path (contract and infra failures included); an exception after a
+# successful fit (palive / validation / emit) escapes main() and exits 1.
 import contextlib
 import json
 import sys
