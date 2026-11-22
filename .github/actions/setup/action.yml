@@ -7,19 +7,16 @@
 # defaults to "false" (fail-closed) so release jobs stay strict unless a job
 # explicitly opts into the temporary CI bypass.
 
-# Design: one place decides what changed (#408) — every lane used to fetch its
-# own base, and a shallow fetch hides the merge base; this template unshallows
-# once and takes the base from the event (pull_request: base.sha, push:
-# event.before, workflow_dispatch: the default branch). A change set that cannot
-# be read reports docs-only=false and runs everything. Only pull_request can be
-# docs-only, so tag/dispatch releases never skip their bootstrap. The doc
-# boundary itself lives in scripts/ci-changes.mjs (`docs/` plus the four root
-# markdown files).
+# Design: one place works out the change set — the template unshallows, takes
+# the base from the event (pull_request: base.sha, push: event.before,
+# workflow_dispatch: the default branch), and reports docs-only plus the changed
+# files. Anything it cannot read reports docs-only=false, so every lane runs.
+# The doc boundary (docs/ plus the four root markdown files) lives in
+# scripts/ci-changes.mjs.
 #
-# Design: docs-only skips the bootstrap and every expensive step in the calling
-# job — the job still registers and reports success, because the release gate
-# refuses a skipped check-run and still needs every required family present
-# (#406, #389 D3).
+# Design: docs-only skips the bootstrap and the caller's expensive steps, while
+# the job still reports success — a skipped check-run is not evidence, and the
+# release gate still needs every required family registered.
 
 name: Setup Node, pnpm, and dependencies
 description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
@@ -60,7 +57,6 @@ runs:
       env:
         EVENT_NAME: ${{ github.event_name }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         PUSH_BEFORE: ${{ github.event.before }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
@@ -68,7 +64,12 @@ runs:
         git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
         history_complete=true
         if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
-          git fetch --no-tags --unshallow origin || true
+          # Design: blobless history is enough for a name-only diff — the full
+          # blob fetch was this template's most expensive step; a plain
+          # unshallow is the fallback when the server ignores the filter.
+          git fetch --no-tags --filter=blob:none --unshallow origin \
+            || git fetch --no-tags --unshallow origin \
+            || true
         fi
         if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
           history_complete=false
@@ -78,9 +79,6 @@ runs:
         base=""
         if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_BASE_SHA" ]; then
           base="$PR_BASE_SHA"
-          if [ -n "$PR_BASE_REF" ]; then
-            git fetch --no-tags origin "+refs/heads/$PR_BASE_REF:refs/remotes/origin/$PR_BASE_REF" || true
-          fi
         elif [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
           base="$PUSH_BEFORE"
         elif [ -n "$DEFAULT_BRANCH" ]; then
@@ -100,8 +98,12 @@ runs:
           if [ "$history_complete" = "true" ] && [ -n "$merge_base" ] && git diff --name-only --no-renames -z "$merge_base" HEAD > "$diff_file" 2>/dev/null; then
             changed_files="$(tr '\0' '\n' < "$diff_file")"
             changes_readable=true
-            if [ "$EVENT_NAME" = "pull_request" ] && node scripts/ci-changes.mjs < "$diff_file" 2>/dev/null | grep -qx true; then
-              docs_only=true
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>&1)"; then
+                if [ "$verdict" = "true" ]; then docs_only=true; fi
+              else
+                echo "::warning::ci-changes failed, treating the change set as unknown: $verdict"
+              fi
             fi
           fi
         fi

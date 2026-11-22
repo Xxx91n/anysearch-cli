@@ -28,10 +28,9 @@ jobs:
         id: setup
         with:
           dep-age-override: true
-      # Design: a docs-only PR skips every expensive step — the job still
-      # registers and reports success, because a skipped check-run is not
-      # evidence and the release gate still needs every family present
-      # (#408, scripts/check-runs-verdict.mjs).
+      # Design: docs-only skips the expensive steps — the job still reports
+      # success, because a skipped check-run is not evidence and the release
+      # gate still needs its family registered.
       - name: Validate calibration labels
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/eval-labels.mjs validate

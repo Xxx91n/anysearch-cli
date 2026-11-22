@@ -65,9 +65,6 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      # Design: the setup action below unshallows this checkout — full history
-      # is fetched once in the template (#408), so the index/supersession legs
-      # still see it.
       - uses: actions/checkout@v4
 
       # Design: pass Node 22 explicitly — eval-release-layering.test.ts reads this pin directly.
@@ -77,9 +74,8 @@ jobs:
           node-version: 22
           dep-age-override: true
 
-      # Design: skip the gate step, not the job — the three OS legs must keep
-      # registering their check-runs, or the release gate's discovery phase
-      # fails closed (#389 D3).
+      # Design: skip the step, not the job — the three OS legs must keep
+      # reporting, or the release gate's discovery phase fails closed.
       - name: ship-gate (9 steps; matrix install runs per-OS in CI)
         if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/ship-gate.mjs
@@ -106,9 +102,8 @@ jobs:
     name: memory-eval (golden, path-filtered)
     runs-on: ubuntu-latest
     steps:
-      # Design: full history and the changed-file list come from the setup
-      # action — this job used to recompute the merge-base, and one source keeps
-      # the shallow-fetch bug from coming back (#408/#397).
+      # Design: the changed-file list comes from setup — this job reads it
+      # instead of recomputing a merge-base.
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
@@ -125,8 +120,8 @@ jobs:
           CHANGED_FILES: ${{ steps.setup.outputs.changed-files }}
           CHANGES_READABLE: ${{ steps.setup.outputs.changes-readable }}
         run: |
-          # Design: an unreadable change set runs the eval — reporting green
-          # without it is the no-evidence failure #406 closed.
+          # Design: an unreadable change set runs the eval — green with no
+          # evidence is exactly what the release gate forbids.
           if [ "$CHANGES_READABLE" != "true" ] || grep -Eq '^(packages/store/|scripts/eval-(judge|calibrate)\.mjs$)' <<< "$CHANGED_FILES"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: memory eval (golden gate, /0028)

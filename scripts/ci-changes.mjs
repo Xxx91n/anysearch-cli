@@ -3,7 +3,7 @@
 //
 // Design: the boundary is a fixed list, not a glob — a glob like `**/*.md` would
 // swallow product assets (`apps/plugin/*.md`, `domains/docs.toml`) whose
-// contents tests read (#408).
+// contents tests read.
 //
 // Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.
