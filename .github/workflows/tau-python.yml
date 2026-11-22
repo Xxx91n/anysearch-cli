@@ -43,7 +43,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # Design: pin 3.11 rather than 3.12 — pandas 2.0.3 predates cp312 wheels,
           # so 3.12 falls back to a source build that fails on pkg_resources; the
