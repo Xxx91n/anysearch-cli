@@ -118,10 +118,10 @@ jobs:
           check-regexp: '^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b'
           wait-interval: 30
           checks-discovery-timeout: 120
-          # audit F-S2: keep layer-1's allowed set identical to layer-2's
-          # (assert-checks-green.mjs TERMINAL_OK = success/skipped/neutral) —
-          # an asymmetric default would let a "neutral" check pass post-tag
-          # while blocking pre-tag on the same conclusion.
+          # audit F-S2 + #406: layer 2 (scripts/check-runs-verdict.mjs) counts
+          # success/neutral as "ran" and never accepts skipped. This layer keeps
+          # skipped allowed because its regexp cannot require named legs — the
+          # assert step right below is what rejects a skipped leg.
           allowed-conclusions: 'success,skipped,neutral'
           wait-for-duplicates: false
           running-workflow-name: release
