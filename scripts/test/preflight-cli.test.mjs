@@ -60,6 +60,18 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   }
 });
 
+test("the throwaway home carries the config dir turbo looks for", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /^TURBO_CONFIG_DIR=yes$/m,
+      "turbo 2.10.11 exits 1 with \"Global config path not found.\" when %USERPROFILE%\\AppData\\Roaming is missing",
+    );
+  });
+});
+
 test("a red run keeps the test home and prints where it is", async () => {
   await withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"]);
@@ -380,6 +392,24 @@ function writeLeakyPnpm(bin, code) {
     'echo leak > "%USERPROFILE%\\.ans\\leak"',
     "if defined ANS_DB_PATH echo leak > \"%ANS_DB_PATH%\"",
     `exit /b ${code}`,
+  ].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm that reports whether the home it was handed carries the
+// config dir turbo resolves from %USERPROFILE%. turbo 2.10.11 exits 1 with
+// "Global config path not found." before running any task when that dir is
+// missing, so a gated run is only green if it is there.
+function writeTurboConfigProbePnpm(bin) {
+  const sh = [
+    "#!/bin/sh",
+    'if [ -d "$USERPROFILE/AppData/Roaming" ]; then echo TURBO_CONFIG_DIR=yes; else echo TURBO_CONFIG_DIR=no; fi',
+    "exit 0",
+  ].join("\n");
+  const cmd = [
+    "@echo off",
+    'if exist "%USERPROFILE%\\AppData\\Roaming\\" (echo TURBO_CONFIG_DIR=yes) else (echo TURBO_CONFIG_DIR=no)',
+    "exit /b 0",
   ].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
 }
