@@ -107,6 +107,10 @@ jobs:
     name: memory-eval (golden, path-filtered)
     runs-on: ubuntu-latest
     steps:
+      # Design: full history (fetch-depth: 0). The path filter must not fetch the
+      # base itself — a shallow fetch hides the merge base its three-dot diff needs
+      # — and it needs none: checkout already fetched every head, so origin/<base>
+      # is here (#397).
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
@@ -115,7 +119,6 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}" --depth=1 || true
             files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           else
             # on workflow_dispatch github.event.before is empty, so
@@ -127,7 +130,6 @@ jobs:
             else
               # workflow_dispatch: the branch-vs-default-branch diff is the correct scope (the job
               # asks "does THIS branch touch packages/store?", not "what did the last commit do").
-              git fetch origin "${{ github.event.repository.default_branch }}" --depth=1 || true
               files=$(git diff --name-only "origin/${{ github.event.repository.default_branch }}...HEAD" || git show --pretty=format: --name-only HEAD)
             fi
           fi
