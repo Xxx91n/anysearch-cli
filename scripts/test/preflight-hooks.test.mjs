@@ -27,7 +27,9 @@ function withSandbox(fn) {
   const env = { ...process.env };
   // GIT_DIR and friends move the repository; GIT_CONFIG_COUNT plus KEY/VALUE
   // pairs injects config without a file, core.hooksPath included.
-  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/;
+  // The i flag matters on Windows: env names there are case-insensitive, so a
+  // parent exporting lowercase git_dir reaches git just the same.
+  const locating = /^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_)/i;
   for (const key of Object.keys(env)) {
     if (locating.test(key)) delete env[key];
   }
@@ -316,6 +318,21 @@ test("a hook with no exec line still has its command named", () => {
     assert.match(status.stderr, /another script, not ours/);
     assert.match(status.stderr, /runs: \. _\/husky\.sh/);
   });
+});
+
+test("a lowercase git_dir from the caller cannot move the install", { skip: process.platform !== "win32" }, () => {
+  // Windows reads environment names case-insensitively, so a parent exporting
+  // git_dir reaches git as GIT_DIR. It has to be stripped like the uppercase one.
+  process.env.git_dir = join(tmpdir(), "ans-hooks-elsewhere");
+  try {
+    withSandbox((box) => {
+      const clone = box.clone();
+      installOk(box, clone);
+      assert.equal(readFileSync(hookPath(clone), "utf8"), source);
+    });
+  } finally {
+    delete process.env.git_dir;
+  }
 });
 
 test("install goes where git reads hooks, including a core.hooksPath directory", () => {
