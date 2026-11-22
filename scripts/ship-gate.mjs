@@ -801,24 +801,44 @@ function stepStaticAssertions() {
     report("pass", "E6 gate invariants: trustLockfile default(false), strict on, missing-time strict, zero age-excludes — upstream verify leg enforced");
 
     // #260: CI may bypass the age gate only through the self-expiring script.
-    // A bare `PNPM_CONFIG_MINIMUM_RELEASE_AGE` in a workflow would be a permanent
-    // bypass that outlives its reason, so it is refused here.
+    // A bare `PNPM_CONFIG_MINIMUM_RELEASE_AGE` in a workflow or composite action
+    // would be a permanent bypass that outlives its reason, so it is refused here.
     {
+      // Design: #407 — scan .github/actions/**/action.ya?ml alongside
+      // .github/workflows/*.ya?ml so moving the shared setup into a composite
+      // action cannot create an E6 blind spot.
+      const ciYamlFiles = [];
       const wfDir = path.join(ROOT, ".github/workflows");
-      const offenders = [];
       for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/i.test(n))) {
-        const body = fs.readFileSync(path.join(wfDir, f), "utf8");
+        ciYamlFiles.push({ label: f, full: path.join(wfDir, f) });
+      }
+      const actionsDir = path.join(ROOT, ".github/actions");
+      if (fs.existsSync(actionsDir)) {
+        const walkActions = (dir) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) walkActions(full);
+            else if (/^action\.ya?ml$/i.test(entry.name)) {
+              ciYamlFiles.push({ label: path.relative(path.join(ROOT, ".github"), full).replace(/\\/g, "/"), full });
+            }
+          }
+        };
+        walkActions(actionsDir);
+      }
+      const offenders = [];
+      for (const { label, full } of ciYamlFiles) {
+        const body = fs.readFileSync(full, "utf8");
         // The script name itself is fine; a literal assignment anywhere else is not.
         for (const line of body.split("\n")) {
           if (/(^|\s)#/.test(line)) continue; // comment lines explain, they do not set
           if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*"?0"?/.test(line)
             && !/ci-dep-age-override\.mjs/.test(line)) {
-            offenders.push(f + ": " + line.trim());
+            offenders.push(label + ": " + line.trim());
           }
         }
       }
       if (offenders.length > 0) {
-        fail("E6: a workflow sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
+        fail("E6: a workflow/action sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
       }
       const override = path.join(ROOT, "scripts/ci-dep-age-override.mjs");
       if (!fs.existsSync(override)) fail("E6: scripts/ci-dep-age-override.mjs missing but workflows reference it");

@@ -67,9 +67,10 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      # Design: #407 — pass node-version: 22 explicitly instead of relying on the
-      # template default so eval-release-layering.test.ts keeps asserting every
-      # ship-gate.yml job pins Node 22 (and proves the template is input-driven).
+      # Design: #407 — pass Node 22 via `node-version` explicitly instead of
+      # relying on the template default so eval-release-layering.test.ts keeps
+      # asserting every ship-gate.yml job pins Node 22 (and proves the template
+      # is input-driven).
       - uses: ./.github/actions/setup
         with:
           node-version: 22

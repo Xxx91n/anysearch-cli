@@ -47,7 +47,9 @@ runs:
 
     # Design: keep the #260 bypass wired through the self-expiring script rather
     # than setting PNPM_CONFIG_MINIMUM_RELEASE_AGE directly (enforced by
-    # ship-gate E6); retiring the override later is a single edit here.
+    # ship-gate E6 across workflows and composite actions); retiring the
+    # override across standard jobs is a single edit here (aside from
+    # knowledge-ranking.yml).
     - name: dependency-age override (temporary)
       if: ${{ inputs.dep-age-override == 'true' }}
       shell: bash

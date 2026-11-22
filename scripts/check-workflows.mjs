@@ -19,10 +19,29 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WF_DIR = path.join(ROOT, ".github", "workflows");
+const ACTIONS_DIR = path.join(ROOT, ".github", "actions");
 
 export function discoverWorkflows(dir = WF_DIR) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((f) => /\.(ya?ml)$/i.test(f)).sort();
+}
+
+// Design: #407 — validate local composite actions alongside workflows so a
+// broken .github/actions/*/action.yml cannot slip past the YAML gate.
+export function discoverCompositeActions(dir = ACTIONS_DIR) {
+  if (!fs.existsSync(dir)) return [];
+  const found = [];
+  const walk = (cur) => {
+    for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
+      const full = path.join(cur, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/^action\.ya?ml$/i.test(entry.name)) {
+        found.push(path.relative(dir, full).replace(/\\/g, "/"));
+      }
+    }
+  };
+  walk(dir);
+  return found.sort();
 }
 
 // Dependency-free structural validation of the YAML subset GitHub Actions uses. Block scalars
@@ -84,13 +103,18 @@ function main() {
     process.stderr.write("check-workflows: no .github/workflows/*.yml|*.yaml found - refusing to pass vacuously\n");
     process.exit(1);
   }
+  const actions = discoverCompositeActions();
+  const targets = [
+    ...files.map((f) => ({ label: f, full: path.join(WF_DIR, f), requiredKeys: ["name", "on", "jobs"] })),
+    ...actions.map((a) => ({ label: "actions/" + a, full: path.join(ACTIONS_DIR, a), requiredKeys: ["name", "description", "runs"] })),
+  ];
   const YAML = resolveYaml();
   let bad = 0;
-  for (const f of files) {
-    const text = fs.readFileSync(path.join(WF_DIR, f), "utf8");
+  for (const { label, full, requiredKeys } of targets) {
+    const text = fs.readFileSync(full, "utf8");
     const { problems, topKeys } = structuralCheck(text);
     const msgs = [...problems];
-    for (const k of ["name", "on", "jobs"]) if (!topKeys.includes(k)) msgs.push("missing top-level key `" + k + "`");
+    for (const k of requiredKeys) if (!topKeys.includes(k)) msgs.push("missing top-level key `" + k + "`");
     if (YAML) {
       try {
         YAML.parse(text);
@@ -100,12 +124,12 @@ function main() {
     }
     if (msgs.length) {
       bad++;
-      process.stdout.write("FAIL " + f + "\n" + msgs.map((m) => "       - " + m).join("\n") + "\n");
+      process.stdout.write("FAIL " + label + "\n" + msgs.map((m) => "       - " + m).join("\n") + "\n");
     } else {
-      process.stdout.write("ok   " + f + (YAML ? " (structural + full parse)" : " (structural; no YAML parser present)") + "\n");
+      process.stdout.write("ok   " + label + (YAML ? " (structural + full parse)" : " (structural; no YAML parser present)") + "\n");
     }
   }
-  process.stdout.write(bad === 0 ? "check-workflows: OK (" + files.length + " files)\n" : "check-workflows: BROKEN (" + bad + "/" + files.length + ")\n");
+  process.stdout.write(bad === 0 ? "check-workflows: OK (" + targets.length + " files)\n" : "check-workflows: BROKEN (" + bad + "/" + targets.length + ")\n");
   process.exit(bad === 0 ? 0 : 1);
 }
 
