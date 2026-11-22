@@ -11,10 +11,10 @@
 // to a non-security whitelist so a malicious repo cannot redirect the endpoint
 // or the secret source (Codex project-key precedent).
 // The key itself comes from, in order: ANS_LLM_API_KEY, the env var named by
-// `env_key`, then the user credential file (#301). The credential file is the
-// GUI-friendly path (a GUI host inherits no shell env) and its entries are
-// bound to a provider - and, for model providers, an endpoint - so a key
-// entered for one provider is never sent to another one.
+// `env_key`, the selected provider's own env vars, then the user credential file
+// (#301). The credential file is the GUI-friendly path (a GUI host inherits no
+// shell env) and its entries are bound to a provider - and, for model providers,
+// an endpoint - so a key entered for one provider is never sent to another one.
 // The resolver reads env + files and passes values in; the kernel stays env-free
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.

@@ -191,7 +191,7 @@ export interface MemoryHit {
   role: string;
   content: string;
   rank: number;
-  // arm provenance ("fts" | "entity" | "vector"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
+  // arm provenance ("fts" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
 }
 
@@ -200,7 +200,7 @@ export interface MemoryHit {
 export interface ArmProvenance {
   // common fusion provenance shape fields.
   instance: "memory";
-  labels: string[];      // parallel to lists/weights; five-arm order: fts, entity, vector, relation
+  labels: string[];      // parallel to lists/weights; arm order: fts, entity, vector, relation, semantic
   lists: string[][];     // rowid strings per arm, rank order
   weights: number[];
   fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
@@ -1199,7 +1199,7 @@ export class SqliteSessionStore implements SessionStore {
     for (const h of vecHits) byId.set(h.rowid, h);
     for (const h of relHits) byId.set(h.rowid, h);
     for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
-   // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
+   // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5) + relation (0.5) + semantic (0.5); an absent arm adds no list (conditional activation).
    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory
    // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
    const lists = [rawHits.map((h) => String(h.rowid))];
@@ -1360,7 +1360,7 @@ export class SqliteSessionStore implements SessionStore {
         continue;
       }
       const evidence = typeof km.evidence === "number" && km.evidence >= 0.6;
-      // Evidence check: direct user input / high-trust sources bypass (MemTX authority >= 0.9 channel).
+      // Evidence check: evidence >= 0.6, or a direct user write (source "user"), bypasses the gate.
       if (evidence || km.source === "user") {
         const entityKey = km.entity ?? km.url;
         // Temporal supersede: new write for same entity wins; close old record with valid_until = now (pattern).
