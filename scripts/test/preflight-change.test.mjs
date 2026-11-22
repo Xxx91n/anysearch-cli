@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "../preflight-change.mjs";
+import { gitIn } from "../preflight-git.mjs";
+import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 
 const ZEROS = "0".repeat(40);
 
@@ -52,6 +53,43 @@ test("outside a git repo the reader asks for the full suite", () => {
   }
 });
 
+test("an inherited GIT_DIR does not redirect the fixture or the reader", () => {
+  withRepo((root) => {
+    const decoy = mkdtempSync(join(tmpdir(), "ans-preflight-decoy-"));
+    const saved = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+    try {
+      git(decoy, ["init", "-q"]);
+      git(decoy, ["config", "user.email", "decoy@example.test"]);
+      git(decoy, ["config", "user.name", "decoy"]);
+      git(decoy, ["config", "commit.gpgsign", "false"]);
+      write(decoy, "decoy.txt", "decoy\n");
+      git(decoy, ["add", "."]);
+      git(decoy, ["commit", "-q", "-m", "decoy"]);
+      const decoyHead = rev(decoy, "HEAD");
+
+      git(root, ["update-ref", "refs/remotes/origin/main", rev(root, "HEAD")]);
+      git(root, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+
+      // What a pre-push hook in a linked worktree hands its child.
+      process.env.GIT_DIR = join(decoy, ".git");
+      process.env.GIT_WORK_TREE = root;
+
+      write(root, "packages/kernel/src/index.ts", "two\n");
+      git(root, ["add", "."]);
+      git(root, ["commit", "-q", "-m", "second"]);
+
+      assert.equal(rev(decoy, "HEAD"), decoyHead, "the fixture's commit landed in the decoy repo");
+      assert.deepEqual(localFiles(root), ["packages/kernel/src/index.ts"]);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(decoy, { recursive: true, force: true });
+    }
+  });
+});
+
 test("two refs carrying the same file report it once", () => {
   withRepo((root) => {
     write(root, "packages/kernel/src/index.ts", "two\n");
@@ -82,6 +120,7 @@ function withRepo(run) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-git-"));
   try {
     git(root, ["init", "-q"]);
+    assertOwnRepo(root, rev(root, "--absolute-git-dir"));
     git(root, ["config", "user.email", "preflight@example.test"]);
     git(root, ["config", "user.name", "preflight"]);
     git(root, ["config", "commit.gpgsign", "false"]);
@@ -96,7 +135,7 @@ function withRepo(run) {
 }
 
 function git(root, args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = gitIn(root, args);
   assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
   return result.stdout.trim();
 }

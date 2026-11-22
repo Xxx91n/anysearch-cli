@@ -31,6 +31,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
+import { gitEnv } from "./preflight-git.mjs";
 import { planPreflight } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
@@ -201,6 +202,9 @@ function listFirst(files) {
 // or ANS_PI_SESSION_DIR cannot point a path back at the real user root;
 // redirecting only ~/.ans or keeping ANS_LLM_* for live lanes was rejected
 // because no test in the suite reads those keys from the runner.
+//
+// The repository pointers go too, so a test that makes its own repo cannot
+// commit into the operator's checkout.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
   // turbo on Windows looks for its global config dir under
@@ -211,12 +215,17 @@ function makeTestHome() {
   // look there, and a real profile always has it.
   if (process.platform === "win32") fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
   const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
+  const env = gitEnv(process.env);
   // Windows env names are case-insensitive, so the filter is too: a lowercase
   // ans_db_path still resolves as ANS_DB_PATH in the child.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^ans_/i.test(key)));
+  for (const key of Object.keys(env)) {
+    if (/^ans_/i.test(key)) delete env[key];
+  }
   const corepack = corepackHome(env, realHome);
   if (corepack) env.COREPACK_HOME = corepack;
-  return { home, env: { ...env, HOME: home, USERPROFILE: home } };
+  env.HOME = home;
+  env.USERPROFILE = home;
+  return { home, env };
 }
 
 // Corepack, which the README names as a way to get the pinned pnpm, keeps its

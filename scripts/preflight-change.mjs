@@ -3,7 +3,7 @@
 // a push with no refs on stdin looks at the working tree instead. PUSH_UNKNOWN
 // marks a ref that cannot be read.
 
-import { spawnSync } from "node:child_process";
+import { gitIn } from "./preflight-git.mjs";
 
 /** A pre-push line that cannot be read; the caller must run everything. */
 export const PUSH_UNKNOWN = Symbol("unreadable push");
@@ -67,6 +67,6 @@ function gitLine(root, args) {
 }
 
 function git(root, args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = gitIn(root, args);
   return result.status === 0 ? result.stdout : null;
 }

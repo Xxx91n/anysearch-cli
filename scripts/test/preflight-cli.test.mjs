@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
+import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -95,6 +105,24 @@ test(
   },
 );
 
+// The pointers a hook can hand the gate, with the values it would hand them.
+const REPOSITORY_POINTERS = {
+  GIT_DIR: "/elsewhere",
+  GIT_WORK_TREE: "/elsewhere",
+  GIT_INDEX_FILE: "/elsewhere",
+  GIT_CONFIG_COUNT: "1",
+};
+
+test("a run does not hand the suite the caller's repository pointers", async () => {
+  const names = Object.keys(REPOSITORY_POINTERS);
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: (bin) => writeRepoProbePnpm(bin, names) }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { overrides: REPOSITORY_POINTERS });
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of names) {
+      assert.match(result.stdout, new RegExp(`^${name}=\\[\\]$`, "m"), `${name} reached the suite`);
+    }
+  });
+});
 test("a red run keeps the test home and prints where it is", async () => {
   await withWorkspace({ pnpm: (bin) => writeLeakyPnpm(bin, 1) }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"]);
@@ -338,6 +366,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
   for (const name of [
     "preflight-test.mjs",
     "preflight-change.mjs",
+    "preflight-git.mjs",
     "preflight-plan.mjs",
     "preflight-command.mjs",
     "preflight-stderr.mjs",
@@ -347,6 +376,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);
+  assertOwnRepo(root, rev(root, "--absolute-git-dir"));
   git(root, ["config", "user.email", "preflight@example.test"]);
   git(root, ["config", "user.name", "preflight"]);
   git(root, ["config", "commit.gpgsign", "false"]);
@@ -373,7 +403,7 @@ function dropWorkspace({ root, bin }) {
 }
 
 function rev(root, ref) {
-  const result = spawnSync("git", ["rev-parse", ref], { cwd: root, encoding: "utf8" });
+  const result = gitIn(root, ["rev-parse", ref]);
   assert.equal(result.status, 0, `git rev-parse ${ref}: ${result.stderr}`);
   return result.stdout.trim();
 }
@@ -475,6 +505,17 @@ function turboEntry() {
   return existsSync(entry) ? entry : null;
 }
 
+// A stand-in pnpm that reports which repository pointers it inherited, so the
+// test can prove the gate dropped them.
+function writeRepoProbePnpm(bin, names) {
+  const sh = [
+    "#!/bin/sh",
+    ...names.map((name) => `echo "${name}=[\${${name}:-}]"`),
+    "exit 0",
+  ].join("\n");
+  const cmd = ["@echo off", ...names.map((name) => `echo ${name}=[%${name}%]`), "exit /b 0"].join("\r\n");
+  writePnpmShim(bin, { sh, cmd });
+}
 function writePnpmShim(bin, { sh, cmd }) {
   write(join(bin, "pnpm"), `${sh}\n`);
   write(join(bin, "pnpm.cmd"), `${cmd}\r\n`);
@@ -536,7 +577,7 @@ function clearKeptHome(result) {
 }
 
 function git(root, args) {
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = gitIn(root, args);
   assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
 }
 
