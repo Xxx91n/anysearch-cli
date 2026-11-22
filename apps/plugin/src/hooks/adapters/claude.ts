@@ -62,8 +62,8 @@ async function main(): Promise<void> {
         projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
-      // The host reads PreToolUse decision keys only inside hookSpecificOutput;
-      // claudePreToolUseOutput() is where their names live.
+      // permissionDecision / additionalContext / updatedInput only count inside
+      // hookSpecificOutput; the same keys at the top level are dropped.
       const output = claudePreToolUseOutput(decision);
       if (output) process.stdout.write(JSON.stringify(output));
       process.exit(0);

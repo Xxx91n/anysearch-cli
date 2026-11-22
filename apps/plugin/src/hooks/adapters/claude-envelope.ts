@@ -1,9 +1,8 @@
 // Claude Code PreToolUse return value: the host's key names in one place.
 //
-// Design: a pure function with its own test rather than three lines inside the
-// adapter's main flow — the host drops a key it does not know without an error,
-// so a wrong name fails silently. The return type spells the keys out; the test
-// pins the JSON we send.
+// Design: the host drops a key it does not know without an error, so the names
+// live in one typed shape with a test on the JSON we send — a mistake there
+// fails at typecheck or in the test, not silently in the host.
 
 import type { HookDecision } from "../core.js";
 
