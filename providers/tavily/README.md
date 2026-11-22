@@ -7,7 +7,8 @@ Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
 
 - `https://api.tavily.com`，写死在 `@tavily/core` 的 `BASE_URL` 里；适配器构造 `tavily({})` 不传
   baseURL，**没有**环境变量开关（#421 查实，三家只有 anysearch 有）。
-- 用到的路由：`POST /search`、`POST /research`、`GET /usage`（探针和 doctor 用得到前两个）。
+- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。探针用前两个；`/usage` 是 doctor 的联网
+  检查（`--live`）打算用的——那个决定在 #416，代码还没建，所以现在只有探针真的在用这个 host。
 
 ## 认证
 
