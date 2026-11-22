@@ -10,12 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Design: #407 — unified from pnpm/action-setup@v4 + setup-node@v4 onto the
-      # shared setup template; verified identical runtime versions (pnpm 11.24.0,
-      # Node 22.x) and cache key while keeping --frozen-lockfile unchanged.
+      # Design: use the shared setup template while keeping --frozen-lockfile.
       - uses: ./.github/actions/setup
         with:
           install-args: --frozen-lockfile
+          dep-age-override: true
       - name: Run tests with coverage
         run: pnpm test
 

@@ -29,6 +29,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
+import { discoverCompositeActions } from "./check-workflows.mjs";
 import { ansDbPath } from "./ans-home.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -804,42 +805,74 @@ function stepStaticAssertions() {
     // A bare `PNPM_CONFIG_MINIMUM_RELEASE_AGE` in a workflow or composite action
     // would be a permanent bypass that outlives its reason, so it is refused here.
     {
-      // Design: #407 — scan .github/actions/**/action.ya?ml alongside
-      // .github/workflows/*.ya?ml so moving the shared setup into a composite
-      // action cannot create an E6 blind spot.
+      // Design: scan .github/actions/**/action.ya?ml alongside workflows using
+      // the shared discoverCompositeActions helper so both gates stay in sync.
       const ciYamlFiles = [];
       const wfDir = path.join(ROOT, ".github/workflows");
       for (const f of fs.readdirSync(wfDir).filter((n) => /\.ya?ml$/i.test(n))) {
         ciYamlFiles.push({ label: f, full: path.join(wfDir, f) });
       }
       const actionsDir = path.join(ROOT, ".github/actions");
-      if (fs.existsSync(actionsDir)) {
-        const walkActions = (dir) => {
-          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) walkActions(full);
-            else if (/^action\.ya?ml$/i.test(entry.name)) {
-              ciYamlFiles.push({ label: path.relative(path.join(ROOT, ".github"), full).replace(/\\/g, "/"), full });
-            }
-          }
-        };
-        walkActions(actionsDir);
+      for (const rel of discoverCompositeActions(actionsDir)) {
+        ciYamlFiles.push({ label: "actions/" + rel, full: path.join(actionsDir, rel) });
       }
       const offenders = [];
       for (const { label, full } of ciYamlFiles) {
         const body = fs.readFileSync(full, "utf8");
         // The script name itself is fine; a literal assignment anywhere else is not.
-        for (const line of body.split("\n")) {
-          if (/(^|\s)#/.test(line)) continue; // comment lines explain, they do not set
-          if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*"?0"?/.test(line)
-            && !/ci-dep-age-override\.mjs/.test(line)) {
-            offenders.push(label + ": " + line.trim());
+        // Strip inline comments rather than skipping the whole line so
+        // `PNPM_CONFIG_MINIMUM_RELEASE_AGE=0 pnpm install # note` cannot slip past.
+        for (const line of body.split(/\r?\n/)) {
+          const active = line.replace(/(^|\s)#.*$/, "");
+          if (!active.trim()) continue;
+          if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*"?0"?/.test(active)
+            && !/ci-dep-age-override\.mjs/.test(active)) {
+            offenders.push(label + ": " + active.trim());
           }
         }
       }
       if (offenders.length > 0) {
         fail("E6: a workflow/action sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
       }
+
+      // Design: enforce via parsed YAML (never regex) that the shared setup
+      // action defaults `dep-age-override` to false and release.yml never turns
+      // it on or calls ci-dep-age-override.mjs directly.
+      const YAML = resolveWorkflowYaml();
+      if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
+      const isExplicitFalse = (v) => v === false || (typeof v === "string" && v.trim().toLowerCase() === "false");
+      for (const rel of discoverCompositeActions(actionsDir)) {
+        const full = path.join(actionsDir, rel);
+        let actionDoc = null;
+        try { actionDoc = YAML.parse(fs.readFileSync(full, "utf8")); }
+        catch (e) { fail("E6: actions/" + rel + " does not parse: " + String(e.message).split("\n")[0]); }
+        const inputDef = actionDoc?.inputs?.["dep-age-override"];
+        if (inputDef !== undefined && !isExplicitFalse(inputDef?.default)) {
+          fail("E6: actions/" + rel + " input `dep-age-override` must default to false (got " + JSON.stringify(inputDef?.default) + ")");
+        }
+      }
+      const releasePath = path.join(ROOT, ".github/workflows/release.yml");
+      let releaseDoc = null;
+      try { releaseDoc = YAML.parse(fs.readFileSync(releasePath, "utf8")); }
+      catch (e) { fail("E6: .github/workflows/release.yml does not parse: " + String(e.message).split("\n")[0]); }
+      const releaseJobs = releaseDoc?.jobs && typeof releaseDoc.jobs === "object" ? Object.entries(releaseDoc.jobs) : [];
+      if (releaseJobs.length === 0) fail("E6: .github/workflows/release.yml has no jobs");
+      for (const [jobName, job] of releaseJobs) {
+        for (const step of Array.isArray(job?.steps) ? job.steps : []) {
+          if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
+            fail("E6: release.yml job `" + jobName + "` invokes scripts/ci-dep-age-override.mjs directly");
+          }
+          if (typeof step?.uses === "string" && step.uses.trim().startsWith("./.github/actions/")) {
+            const val = step?.with?.["dep-age-override"];
+            const ok = val === undefined || val === false
+              || (typeof val === "string" && val.trim().toLowerCase() === "false");
+            if (!ok) {
+              fail("E6: release.yml job `" + jobName + "` enables dep-age-override on " + step.uses.trim() + " (got " + JSON.stringify(val) + ")");
+            }
+          }
+        }
+      }
+
       const override = path.join(ROOT, "scripts/ci-dep-age-override.mjs");
       if (!fs.existsSync(override)) fail("E6: scripts/ci-dep-age-override.mjs missing but workflows reference it");
       else {
@@ -849,7 +882,7 @@ function stepStaticAssertions() {
         const m = src.match(/ANS_DEP_AGE_OVERRIDE_UNTIL\s*\?\?\s*"([^"]+)"/);
         if (!m || !Number.isFinite(Date.parse(m[1]))) fail("E6: ci-dep-age-override.mjs default deadline is not a parseable timestamp");
       }
-      report("pass", "E6 age-override discipline: no workflow sets the variable directly; the CI bypass self-expires");
+      report("pass", "E6 age-override discipline: no workflow/action sets the variable directly; release keeps dep-age-override off; the CI bypass self-expires");
     }
   }
 

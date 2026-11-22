@@ -25,7 +25,6 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: 24
-          dep-age-override: false
 
       - name: build
         run: pnpm turbo run build

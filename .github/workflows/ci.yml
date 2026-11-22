@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          dep-age-override: true
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
       - name: Preflight selection tests
@@ -73,6 +75,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          dep-age-override: true
 
       # Design: copy instead of reinstall — pnpm links are relative, so the copy
       # resolves into its own store. `.git` stays behind; no test reads it. This
@@ -115,6 +119,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: 22.19.0
+          dep-age-override: true
       - run: pnpm -w turbo build
       - name: install-smoke lane
         run: node scripts/install-smoke.mjs
@@ -166,6 +171,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          dep-age-override: true
       - name: vector-arm golden cases (store test:online)
         run: pnpm -C packages/store test:online
         env:
@@ -187,6 +194,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          dep-age-override: true
       - name: anysearch MCP live probe (retriever test:online)
         run: pnpm -C packages/retriever test:online
         env:

@@ -5,9 +5,9 @@
 // jobs ("likely failed because of a workflow file issue"), invisible in a normal green/red read.
 // The old checker lived in .scratch/ (never shipped) and FAILED OPEN when no YAML parser was
 // present. This version is fail-closed by construction:
-// - auto-discovers .github/workflows/*.yml and *.yaml;
+// - auto-discovers .github/workflows/*.yml|*.yaml and .github/actions/**/action.yml|*.yaml;
 // - ALWAYS runs dependency-free structural checks (tabs, top-level key syntax, duplicates,
-// required keys, quote/bracket balance outside block scalars);
+// required keys, quote/bracket balance outside block scalars) plus local action path checks;
 // - ADDITIONALLY runs a full YAML parse when a parser is resolvable, so the strict check is
 // available without adding a runtime dependency to the product.
 // Node stdlib only.
@@ -26,8 +26,8 @@ export function discoverWorkflows(dir = WF_DIR) {
   return fs.readdirSync(dir).filter((f) => /\.(ya?ml)$/i.test(f)).sort();
 }
 
-// Design: #407 — validate local composite actions alongside workflows so a
-// broken .github/actions/*/action.yml cannot slip past the YAML gate.
+// Design: validate local composite actions alongside workflows so a broken
+// .github/actions/*/action.yml cannot slip past the YAML gate.
 export function discoverCompositeActions(dir = ACTIONS_DIR) {
   if (!fs.existsSync(dir)) return [];
   const found = [];
@@ -42,6 +42,47 @@ export function discoverCompositeActions(dir = ACTIONS_DIR) {
   };
   walk(dir);
   return found.sort();
+}
+
+// Design: check every `uses: ./.github/actions/...` reference points to an
+// actual action.yml|action.yaml on disk — catches typos like `set-up` locally
+// before GitHub Actions rejects the workflow at startup.
+export function findLocalActionRefs(text) {
+  const refs = [];
+  let blockIndent = -1;
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const n = i + 1;
+    const indent = raw.length - raw.trimStart().length;
+    if (blockIndent >= 0) {
+      if (indent > blockIndent) return;
+      blockIndent = -1;
+    }
+    const active = raw.replace(/(^|\s)#.*$/, "").trim();
+    if (!active) return;
+    if (/^[A-Za-z_][\w-]*:\s*[|>][+-]?\s*$/.test(active)) { blockIndent = indent; return; }
+    const m = active.match(/^(?:-\s+)?uses:\s*(['"]?)(\.\/\.github\/actions\/[^'"\s]+)\1\s*$/);
+    if (m) refs.push({ line: n, ref: m[2] });
+  });
+  return refs;
+}
+
+export function checkLocalActionRefs(text, rootDir = ROOT) {
+  const actionsRoot = path.resolve(rootDir, ".github", "actions");
+  const problems = [];
+  for (const { line, ref } of findLocalActionRefs(text)) {
+    const targetDir = path.resolve(rootDir, ref);
+    const rel = path.relative(actionsRoot, targetDir);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+      problems.push("line " + line + ": local action ref `" + ref + "` escapes .github/actions/");
+      continue;
+    }
+    const hasYml = fs.existsSync(path.join(targetDir, "action.yml"));
+    const hasYaml = fs.existsSync(path.join(targetDir, "action.yaml"));
+    if (!hasYml && !hasYaml) {
+      problems.push("line " + line + ": local action `" + ref + "` missing action.yml or action.yaml");
+    }
+  }
+  return problems;
 }
 
 // Dependency-free structural validation of the YAML subset GitHub Actions uses. Block scalars
@@ -113,7 +154,7 @@ function main() {
   for (const { label, full, requiredKeys } of targets) {
     const text = fs.readFileSync(full, "utf8");
     const { problems, topKeys } = structuralCheck(text);
-    const msgs = [...problems];
+    const msgs = [...problems, ...checkLocalActionRefs(text)];
     for (const k of requiredKeys) if (!topKeys.includes(k)) msgs.push("missing top-level key `" + k + "`");
     if (YAML) {
       try {

@@ -67,13 +67,11 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      # Design: #407 — pass Node 22 via `node-version` explicitly instead of
-      # relying on the template default so eval-release-layering.test.ts keeps
-      # asserting every ship-gate.yml job pins Node 22 (and proves the template
-      # is input-driven).
+      # Design: pass Node 22 explicitly — eval-release-layering.test.ts reads this pin directly.
       - uses: ./.github/actions/setup
         with:
           node-version: 22
+          dep-age-override: true
 
       - name: ship-gate (9 steps; matrix install runs per-OS in CI)
         run: node scripts/ship-gate.mjs
@@ -132,6 +130,7 @@ jobs:
         if: ${{ steps.changes.outputs.run == '1' }}
         with:
           node-version: 22
+          dep-age-override: true
 
       - name: memory eval (golden gate, /0028)
         if: ${{ steps.changes.outputs.run == '1' }}
@@ -167,6 +166,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: 22
+          dep-age-override: true
 
       - name: node baseline (env facts before any native load)
         run: node -v

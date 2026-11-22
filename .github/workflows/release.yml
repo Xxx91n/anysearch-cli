@@ -40,11 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      # Design: #407 — release jobs never run the temporary CI dep-age override
-      # (see scripts/ci-dep-age-override.mjs); keep the release path strict.
       - uses: ./.github/actions/setup
-        with:
-          dep-age-override: false
 
       - name: pre-tag — decision-grade peek (spends one OF look)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
@@ -218,8 +214,6 @@ jobs:
         with: { fetch-depth: 0 }
 
       - uses: ./.github/actions/setup
-        with:
-          dep-age-override: false
 
       - name: npm CLI >= 11.5.1 (required for trusted publishing)
         run: npm i -g npm@11.6.1
