@@ -147,7 +147,7 @@ recording its source and commit. It is not a package manager and does not execut
 **Installed does not mean active.** These commands never touch domain TOML files:
 - **What `[skills].active` names**: skill keys declared in the domain TOML (shipped domains list runtime tags like `search`, `doctor`, `research`), not an auto-loader for `skills/synced/` directories.
 - **What `[skills.toolRequires]` is**: a reserved optional skill-to-tool filter (`filterAgentTools` keeps `hooks.toolWhitelist ∩ (∪ toolRequires[active] ∪ {search})`). No shipped domain declares `toolRequires`; when omitted, `hooks.toolWhitelist` alone filters tools and `[skills].active` does not change runtime behavior.
-- **How an installed skill is actually used**: `ans skill install` only places `SKILL.md` in `skills/synced/` for a host agent (or human) to read (`PiAgentRuntime` runs with `noSkills: true` and never reads `skills/synced/`); to let `[skills].active` filter runtime tools for a skill, declare both `[skills].active` and `[skills.toolRequires]` in the domain TOML.
+- **How an installed skill is actually used**: `ans skill install` copies the skill directory (with `SKILL.md`) into `skills/synced/` for a host agent (or human) to read (`PiAgentRuntime` runs with `noSkills: true` and never reads `skills/synced/`); to let `[skills].active` filter runtime tools for a skill, declare both `[skills].active` and `[skills.toolRequires]` in the domain TOML.
 
 ## Provider Connections & Capabilities
 

@@ -1002,6 +1002,20 @@ export function inspectInstalledSkills(opts: SkillOptions = {}): SkillListing {
   return readInstallationListing(opts);
 }
 
+/**
+ * Pure read-only manifest listing for diagnostics (`ans doctor`).
+ * Never acquires locks, reclaims stale locks, or deletes residue files.
+ */
+export function readInstalledSkillsReadOnly(opts: SkillOptions = {}): InstalledSkill[] {
+  const managed = managedSkillsRoot(opts);
+  if (!statIfPresent(managed)) return [];
+  if (!statIfPresent(manifestIn(managed))) {
+    requireScopeAnchors(managed);
+    if (isEmptyManagedRoot(managed)) return [];
+  }
+  return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Resolve an installed directory and verify it stays inside the managed root. */
 function installedDirectory(managed: string, name: string): string {
   requireName(name);
