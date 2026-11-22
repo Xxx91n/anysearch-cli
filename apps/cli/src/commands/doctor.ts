@@ -483,20 +483,26 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
       const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
+      const isSubset = activeNotInstalled.length < schema.skills.active.length;
       const mismatchNotes: string[] = [...manifestErrors];
-      if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
-        const subset = activeNotInstalled.length < schema.skills.active.length
-          ? `${activeNotInstalled.join(",")}：`
-          : "";
+      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && hasToolRequires) {
         mismatchNotes.push(
-          hasToolRequires
-            ? `${subset}不在 skills/synced/——当前域按 toolRequires 筛工具`
-            : `${subset}技能键名——当前域没配 toolRequires，不影响运行时`,
+          isSubset
+            ? `${activeNotInstalled.join(",")} 不在 skills/synced/——当前域按 toolRequires 筛工具`
+            : "不在 skills/synced/——当前域按 toolRequires 筛工具",
         );
       }
       if (installedNotInAnyDomain.length > 0) {
         mismatchNotes.push(
           `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}——skills/synced/ 供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
+        );
+      }
+      const skillNotes: string[] = [...mismatchNotes];
+      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && !hasToolRequires) {
+        skillNotes.unshift(
+          isSubset
+            ? `${activeNotInstalled.join(",")} 不在 skills/synced/——不影响运行时，当前域没配 toolRequires 就不按技能筛工具`
+            : "技能键名——当前域没配 toolRequires，不影响运行时",
         );
       }
       const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";
@@ -505,7 +511,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "领域 skills.active",
         state: schema.skills.active.length > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: mismatchNotes.length > 0 ? `${baseSkillsDetail}（${mismatchNotes.join("；")}）` : baseSkillsDetail,
+        detail: skillNotes.length > 0 ? `${baseSkillsDetail}（${skillNotes.join("；")}）` : baseSkillsDetail,
       });
       report.add({
         layer: "capability",

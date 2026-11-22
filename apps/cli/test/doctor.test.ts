@@ -462,4 +462,57 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
   }
 });
 
+test("ans doctor：skills.active 部分已装、部分未装时，只点名未装的子集", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-subset-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN"];
+  const saved: Record<string, string | undefined> = {};
+  for (const key of keys) saved[key] = process.env[key];
+  const lines: string[] = [];
+  try {
+    const synced = join(home, ".ans", "skills", "synced");
+    mkdirSync(join(synced, "doctor"), { recursive: true });
+    writeFileSync(
+      join(synced, "doctor", "SKILL.md"),
+      "---\nname: doctor\ndescription: doctor skill\n---\n\nBody.\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(synced, "installed.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          doctor: {
+            name: "doctor",
+            source: join(home, "src", "doctor"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+        },
+      }) + "\n",
+      "utf8",
+    );
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = join(home, "anysearch.db");
+    process.env.ANS_DOMAIN = "default";
+
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    assert.equal(code, 0);
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const row = payload.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+
+    assert.ok(row, "能力层要有「领域 skills.active」");
+    const detail = row!.detail ?? "";
+    assert.match(detail, /^search,doctor（search 不在 skills\/synced\/——不影响运行时/, "只点名未装的 search：" + detail);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 
