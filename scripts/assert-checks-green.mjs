@@ -95,13 +95,13 @@ for (; ;) {
   );
 
   const action = gateAction(verdict, { once });
-  if (action.exitCode === 0) {
+  if (action.kind === "green") {
     console.log("[assert-checks] GREEN: " + verdict.reason);
-  } else if (action.exitCode === 1) {
+  } else if (action.kind === "failed") {
     console.error("[assert-checks] RED: " + verdict.reason);
-  } else if (action.exitCode === 2) {
+  } else if (action.kind === "no-signal") {
     console.error("[assert-checks] FAIL-CLOSED (phase=" + verdict.phase + "): " + verdict.reason);
-  } else if (action.exitCode === 10) {
+  } else if (action.kind === "probe") {
     console.log("[assert-checks] --once snapshot: " + verdict.checks.map((check) => check.name + ":" + check.status + "/" + (check.conclusion ?? "-")).join(" | "));
   }
   if (action.action === "exit") process.exit(action.exitCode);

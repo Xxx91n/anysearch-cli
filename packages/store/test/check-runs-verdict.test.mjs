@@ -166,9 +166,9 @@ test("a probe reports a decided verdict, and exits 10 only while the gate is sti
   const skippedLeg = healthy().map((r) => (r.name === "ship-gate (macos-latest)" ? run(r.name, "skipped") : r));
   const pending = healthy().map((r) => (r.name === "check-build (windows-latest)" ? run(r.name, null, "in_progress") : r));
 
-  assert.deepEqual(gateAction(judgeCheckRuns(healthy()), { once: true }), { action: "exit", exitCode: 0 });
-  assert.deepEqual(gateAction(judgeCheckRuns(failing), { once: true }), { action: "exit", exitCode: 1 });
-  assert.deepEqual(gateAction(judgeCheckRuns(skippedLeg), { once: true }), { action: "exit", exitCode: 2 });
-  assert.deepEqual(gateAction(judgeCheckRuns(pending), { once: true }), { action: "exit", exitCode: 10 });
+  assert.deepEqual(gateAction(judgeCheckRuns(healthy()), { once: true }), { action: "exit", kind: "green", exitCode: 0 });
+  assert.deepEqual(gateAction(judgeCheckRuns(failing), { once: true }), { action: "exit", kind: "failed", exitCode: 1 });
+  assert.deepEqual(gateAction(judgeCheckRuns(skippedLeg), { once: true }), { action: "exit", kind: "no-signal", exitCode: 2 });
+  assert.deepEqual(gateAction(judgeCheckRuns(pending), { once: true }), { action: "exit", kind: "probe", exitCode: 10 });
   assert.deepEqual(gateAction(judgeCheckRuns(pending)), { action: "poll" });
 });

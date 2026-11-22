@@ -8,10 +8,11 @@
 // regex below, the checks it gates register as skipped, and the release goes
 // out with no evidence behind it.
 //
-// Design: the whole decision is one function with three answers, and
-// scripts/assert-checks-green.mjs only fetches the runs and prints the answer —
-// the contract used to live inline in that script's polling loop, where the only
-// test could reach it by reading the source with a regex.
+// Design: the whole decision lives here — judgeCheckRuns says green / red / wait,
+// gateAction says exit or keep polling — and scripts/assert-checks-green.mjs only
+// fetches the runs, prints the answer and exits with it. The contract used to
+// live inline in that script's polling loop, where the only test could reach it
+// by reading the source with a regex.
 //
 // Phases: discovery asks whether every required family and every blocking leg
 // has a check-run that ran. A check that registered as skipped is a discovery
@@ -21,7 +22,7 @@
 // terminal and passing, bounded by the caller's absolute deadline.
 //
 // Skipped is red for every check in these families, not only for the blocking
-// legs: a check that never started is never evidence. It catches check-run-level
+// legs: a check that never started is never evidence. This rule catches check-run-level
 // skips only. A job that decides there is nothing to run still reports success —
 // #408 keeps those skips at step level, where the job ends green — so a
 // successful check-run means "this job handled the change", and this gate cannot
@@ -184,19 +185,23 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   return answer("green", 0, "all " + checks.length + " checks ran and passed");
 }
 
+// Design: a decided verdict exits with its own code even in probe mode — a probe
+// that hid a red would print a snapshot that looks like a healthy gate; the 10 is
+// only for "no verdict yet", which is what a probe is for.
 /**
  * What the gate does with a verdict right now.
  *
  * @param {{ verdict: "green" | "red" | "wait", exitCode: 0 | 1 | 2 | null }} verdict
  * @param {{ once?: boolean }} [mode] once: a dry-run probe, which reports a
  *   snapshot instead of waiting for the gate to converge.
- * @returns {{ action: "exit" | "poll", exitCode?: 0 | 1 | 2 | 10 }}
- *   A decided verdict exits with its own code, even in probe mode, so a probe
- *   says what the gate would do. A probe with no verdict yet exits 10.
+ * @returns {{ action: "exit" | "poll", kind?: "green" | "failed" | "no-signal" | "probe", exitCode?: 0 | 1 | 2 | 10 }}
+ *   kind names what to print; exitCode is the process code.
  */
 export function gateAction(verdict, { once = false } = {}) {
-  if (verdict.verdict === "green") return { action: "exit", exitCode: 0 };
-  if (verdict.verdict === "red") return { action: "exit", exitCode: verdict.exitCode };
-  if (once) return { action: "exit", exitCode: 10 };
+  if (verdict.verdict === "green") return { action: "exit", kind: "green", exitCode: 0 };
+  if (verdict.verdict === "red") {
+    return { action: "exit", kind: verdict.exitCode === 1 ? "failed" : "no-signal", exitCode: verdict.exitCode };
+  }
+  if (once) return { action: "exit", kind: "probe", exitCode: 10 };
   return { action: "poll" };
 }
