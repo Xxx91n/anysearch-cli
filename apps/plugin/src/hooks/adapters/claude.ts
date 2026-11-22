@@ -62,9 +62,8 @@ async function main(): Promise<void> {
         projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
-      // ER-2: every PreToolUse decision key goes inside the hookSpecificOutput
-      // envelope. The names are the host's; claude-envelope.ts holds them and
-      // its test pins them.
+      // The host reads PreToolUse decision keys only inside hookSpecificOutput;
+      // claudePreToolUseOutput() is where their names live.
       const output = claudePreToolUseOutput(decision);
       if (output) process.stdout.write(JSON.stringify(output));
       process.exit(0);

@@ -1,12 +1,9 @@
-// Claude Code PreToolUse return value: the host's key names, built in one place.
+// Claude Code PreToolUse return value: the host's key names in one place.
 //
-// Design: a pure function with its own test, not three lines inside the
+// Design: a pure function with its own test rather than three lines inside the
 // adapter's main flow — the host drops a key it does not know without an error,
-// so a typo here is a silent no-op. The return type spells the keys out (a
-// wrong name is a type error) and claude-envelope.test.ts pins the JSON the
-// host actually reads. The keys are the hooks reference's PreToolUse decision
-// control: additionalContext, updatedInput, permissionDecision,
-// permissionDecisionReason, all inside hookSpecificOutput with hookEventName.
+// so a wrong name fails silently. The return type spells the keys out; the test
+// pins the JSON we send.
 
 import type { HookDecision } from "../core.js";
 
