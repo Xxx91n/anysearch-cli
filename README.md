@@ -151,19 +151,7 @@ recording its source and commit. It is not a package manager and does not execut
 
 ## Provider Connections & Capabilities
 
-| Provider | Transport | Wired search features | Answer mode | Pre-filter domains | Vertical routing | Cancellable | Standalone usage endpoint |
-|----------|-----------|-----------------------|-------------|--------------------|------------------|-------------|---------------------------|
-| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; `answer` requests fall back to plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (fetch signal on each POST; shared-handshake details below) | no |
-| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()` with citations, `verified:false`; answer failures fall back to plain search results and print one line to stderr) | yes (`includeDomains`, only applies to `search()`; see below) | no | yes (`signal` as the last option in `search()` / `answer()` requests; #216) | no |
-| tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` has no signal; #32) | no |
-
-Providers are chosen from `sources.enabled` in the domain TOML. Providers with missing keys are skipped without crashing the search. If no providers can connect at all, the search throws an error directly instead of treating it as an abstain.
-
-This table only lists features that our adapters actually wire up, not everything in the upstream catalogs. AnySearch is the only MCP upstream here. Exa and Tavily continue to use their official SDKs; their hosted MCP servers are tools meant for agents directly, not the interface our server-side providers need. **We have no plans to migrate Exa or Tavily to MCP.**
-
-Two details from the table need special mention: AnySearch sends a signal on every POST, but concurrent searches share a single MCP handshake. This handshake only follows the first caller's signal; subsequent callers cannot cancel that wait, and if the first caller cancels, both searches may fail together. Exa's `includeDomains` only applies to `search()`; a separate `answer()` call does not receive the allowlist, and the retrieval engine does not filter URLs in answer text or citations.
-
-The AnySearch adapter only wires `search`. It does not wire `get_sub_domains`, `batch_search`, `extract`, or `score` (which exists on the live service but is omitted from official docs). Upstream tool counts are not hardcoded: official docs list four tools, while the live service has also returned `score`. When a successful `search` response carries a non-empty `_meta.request_id` and the caller provided a run trace (both CLI and MCP tool calls do), we record it as a diagnostic correlation ID (`retrieval.provider.diagnostic`). Failed responses throw before extraction and record nothing. This ID never enters results and cannot be used as an idempotency key (you cannot deduplicate retries with it).
+The per-provider capability table — upstream transport, wired features, answer mode, domain pre-filter, vertical routing, cancellation behaviour and usage endpoints — is in the [upstream provider transport matrix](docs/mcp-server.md#upstream-provider-transport-matrix).
 
 ## AnySearch Vertical Domains
 

@@ -280,8 +280,9 @@ The MCP request signal is the one cancellation path for `search_web`,
 
 Upstream cancellation differs per provider. AnySearch aborts each POST, but
 concurrent searches share one MCP handshake, so it follows the first caller's
-signal. Exa forwards the signal as a trailing request option (#216). Tavily's
-SDK exposes none (#32).
+signal: later callers cannot cancel that wait, and if the first caller cancels,
+both searches may fail together. Exa forwards the signal as a trailing request
+option (#216). Tavily's SDK exposes none (#32).
 
 ## Client identity
 
@@ -586,18 +587,22 @@ Two axes are easy to mix up: the **MCP server transport** (stdio or
 Streamable HTTP, above) and the **upstream transport each provider adapter
 uses** (below).
 
-| Provider | Upstream transport | Wired search surface | Answer mode | Domain pre-filter | Vertical routing | Cancellation |
-|----------|-------------------|----------------------|-------------|-------------------|------------------|--------------|
-| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-written JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes, per POST (shared-handshake caveat) |
-| exa | official `exa-js` SDK | `search` (fast / index / deep) + `answer` | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only) | no | yes (`signal` trailing option on `search()` / `answer()`) |
-| tavily | official `@tavily/core` SDK | `search` (fast / index / deep) + `answer` | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (SDK exposes no signal) |
+| Provider | Upstream transport | Wired search surface | Answer mode | Domain pre-filter | Vertical routing | Cancellation | Usage endpoint (upstream / adapter) |
+|----------|-------------------|----------------------|-------------|-------------------|------------------|--------------|-------------------------------------|
+| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-written JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes, per POST (shared-handshake caveat) | upstream none; adapter not wired |
+| exa | official `exa-js` SDK | `search` (fast / index / deep) + `answer` | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only) | no | yes (`signal` trailing option on `search()` / `answer()`) | upstream none; adapter not wired |
+| tavily | official `@tavily/core` SDK | `search` (fast / index / deep) + `answer` | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (SDK exposes no signal) | upstream `GET /usage`; adapter not wired |
+
+This table only lists what our adapters actually wire, not everything in the
+upstream catalogs. AnySearch is the only MCP upstream here.
 
 Provider selection comes from the current domain's `sources.enabled`. A
 provider that cannot be constructed is skipped and recorded in
 `providerBuildErrors`. If no provider can register, the search is an error,
 not an abstain. Exa and Tavily run on their official SDKs. Their hosted MCP
 servers are agent-facing tool surfaces, not server-side provider APIs, so the
-adapter code does not use them.
+adapter code does not use them. **We have no plans to migrate Exa or Tavily to
+MCP.**
 
 Exa's `includeDomains` applies only to `search()`. Its separate `answer()`
 call does not receive the allowlist, and the kernel does not URL-gate answer
@@ -609,7 +614,8 @@ wired, and this client does not pin the upstream tool count (official docs
 list four tools; the live endpoint has also returned `score`). A successful
 `search` reply's non-empty `_meta.request_id` is recorded as a diagnostic
 correlation id on the observation span when a caller supplies one. It never
-enters results and is never an idempotency key. Upstream REST
+enters results and is never an idempotency key. A failed reply throws before
+extraction and records nothing. Upstream REST
 `POST /v1/search` is live (only `GET` returns 404). This adapter speaks MCP
 only, so the `/v1/search` → `/mcp` rewrite is a compatibility shim, not a
 retirement notice.
