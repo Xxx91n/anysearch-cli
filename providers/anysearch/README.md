@@ -29,8 +29,10 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 ## 协议版本
 
 - 适配器发 `2025-11-25`（`MCP_PROTOCOL_VERSION`），上游按请求协商；往下退就跟着退，不硬扛。
-- raw 探针的 `initialize` 还写着 `2025-03-26`。两处不一致是已知的，收在 #428（探针参数化），这里先
-  记着别当新发现。
+- raw 探针默认也发 `2025-11-25`；要测旧版本用 `--protocol-version <v>` / `--protocol-version=<v>`，或设
+  `ANS_PROBE_PROTOCOL_VERSION=<v>`，例如 `--protocol-version 2025-03-26`。上游「要哪个给哪个」，所以版本做成
+  参数，不是替换掉旧的（#428）。探针那份是手写字面量（不 import 适配器），**改适配器的 `MCP_PROTOCOL_VERSION`
+  要同步改探针的 `DEFAULT_PROTOCOL_VERSION` 和这份 README**。
 - 事实：五种协商下 `tools/call` 的回复形状完全一致，所以对齐版本本身安全（#423）。
 
 ## 回复形状
@@ -54,7 +56,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 | 脚本 | 什么时候跑 | 回答什么 | 期望输出 | 退出码 |
 |---|---|---|---|---|
-| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`ok:true`、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带原文开头） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败 |
+| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`ok:true`、`protocolVersionRequested` / `protocolVersion`（上游不回版本时为 `null`）、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带回复开头，凭据形状已遮成 `<key>`） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败、参数缺失 |
 | `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON：成功给 `results` / 调用失败给 `errorName`+`errorClass` / 探针自检失败给 `errorName`+`stage`（没跑调用，所以没有类别） | 0 通 / 2 失败并给出类别或自检原因 |
 
 和另外两个面的分工：`packages/retriever/test/online/anysearch-mcp.online.ts` 是 CI 的活体冒烟
@@ -65,6 +67,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ```bash
 node providers/anysearch/probe-anysearch-mcp-raw.ts
+node providers/anysearch/probe-anysearch-mcp-raw.ts --protocol-version 2025-03-26 # 退回旧协议版本
 node providers/anysearch/probe-anysearch-provider.ts
 ANS_PROBE_QUERY="rust tokio" node providers/anysearch/probe-anysearch-provider.ts
 node providers/anysearch/probe-anysearch-provider.ts --nokey            # 匿名臂
@@ -73,8 +76,10 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 ```
 
 输出只走 stdout，人读、贴进 issue，**不落盘**：provider 探针一行 JSON，raw 探针一份缩进过的 JSON。key
-和 endpoint 的值不打印，只打 `endpointSource` / `keyPresent`；错误消息里出现的值会遮成 `<endpoint>` /
-`<key>`。SSE 多帧那条路径（同一条流里夹着别的消息）现在没有自动覆盖，手跑成功只证明单帧。
+和 endpoint 的值不打印，只打 `endpointSource` / `keyPresent`；错误消息和上游回显里出现的值会遮成
+`<endpoint>` / `<key>`。参数报错（flag 缺值、拼错、形状不对）只打 `schema` / `ok` / `stage` / `errorMessage`
+四个字段，没有 `protocolVersionRequested` / `protocolVersion` 那些——那一步还没跑任何请求。
+SSE 多帧那条路径（同一条流里夹着别的消息）现在没有自动覆盖，手跑成功只证明单帧。
 
 `probe-anysearch-provider.ts` 头顶那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
 （`../contract`），tsc 的 Bundler 解析和 tsx 都放行，Node 的 ESM 解析不放行。钩子只在 `.ts` 文件真的
@@ -84,6 +89,11 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 探针在 import 阶段就会炸。
 
 ## 最近一次真跑
+
+2026-11-23（协议版本参数化之后，同机同 Node）：raw 探针默认 `protocolVersion:"2025-11-25"`、`ok:true`、
+`httpStatus:200`、`textLen:2622`、9 条；`--protocol-version 2025-03-26`、`--protocol-version=2025-03-26`、
+`ANS_PROBE_PROTOCOL_VERSION=2025-03-26` 三路各 `protocolVersion:"2025-03-26"`、`ok:true`（9 条）；三种坏参数
+（不给值、`=` 后为空、后面紧跟另一个 flag）都退出 2、`stage:"args"`。
 
 2026-11-22（本机 Windows，Node 24.22.1，仓库根，key 在环境变量里）：
 
