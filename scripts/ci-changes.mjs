@@ -3,8 +3,10 @@
 //
 // Design: the boundary is a fixed list, not a glob — `**/*.md` would swallow
 // product assets such as `apps/plugin/AGENTS.md`, whose contents tests read.
-// `docs/eval/` is evaluation evidence, so the whole directory counts as code.
-// Only `ip-corpus-probe-2026-11-07.md` is a live provenance anchor today.
+// `docs/eval/` is evaluation evidence: the whole directory is not documentation,
+// so a change there runs the full lanes. Today only
+// `docs/eval/ip-corpus-probe-2026-11-07.md` is read by tests (a live
+// provenance anchor in eval-looks.json).
 //
 // Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.
