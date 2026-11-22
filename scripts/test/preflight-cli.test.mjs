@@ -63,16 +63,13 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
 test("the throwaway home gets turbo's config dir on Windows only", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
     const result = runCliIn(root, bin, []);
-    // A red run keeps its home on purpose; this fixture is not an operator's
-    // run, so the test takes it with it either way.
     try {
       assert.equal(result.status, 0, result.stderr);
       const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
       // Off Windows the home keeps exactly what it had (#381).
       assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
     } finally {
-      const home = keptHome(result.stderr);
-      if (home) rmSync(home, { recursive: true, force: true });
+      dropLeftoverHome(result);
     }
   });
 });
@@ -87,11 +84,12 @@ test(
     await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeRealTurboPnpm }, ({ root, bin }) => {
       const result = runCliIn(root, bin, []);
       try {
+        // Any turbo failure blocks the gate, the missing config dir included,
+        // so exit 0 is the signal. Pinning turbo's banner wording would turn a
+        // turbo upgrade into a red that looks like a home problem.
         assert.equal(result.status, 0, result.stderr);
-        assert.match(result.stdout, /Packages in scope/);
       } finally {
-        const home = keptHome(result.stderr);
-        if (home) rmSync(home, { recursive: true, force: true });
+        dropLeftoverHome(result);
       }
     });
   },
@@ -453,6 +451,17 @@ function writeRealTurboPnpm(bin) {
     "exit /b %ERRORLEVEL%",
   ].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
+}
+
+// A gate run can leave its home behind two ways: a red run says it kept it for
+// inspection, and a green run that could not delete it says where it left it. A
+// fixture is not an operator's run, so the test clears whatever it finds.
+function dropLeftoverHome(result) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const home =
+    /\[preflight\] test home kept for inspection: (.+)$/m.exec(output)?.[1] ??
+    /\[preflight\] could not delete the test home, left it at (.+?): /m.exec(output)?.[1];
+  if (home) rmSync(home.trim(), { recursive: true, force: true });
 }
 
 function turboEntry() {
