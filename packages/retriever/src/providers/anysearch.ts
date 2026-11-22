@@ -40,7 +40,7 @@ import { canonicalizeVertical } from "../contract";
 // never the fused envelope.
 // Review: CT/expiry watch remains (cert valid to 2027-04-07) — re-confirm on the
 // next rotation.
-const ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp";
+export const ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp";
 
 // Client-supported protocol version, sent on every POST per spec MUST. The
 // endpoint negotiates down: requesting 2026-07-28 returns 2025-11-25

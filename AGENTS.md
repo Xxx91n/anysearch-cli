@@ -33,6 +33,7 @@ CI checks do not block a merge either. `spaced-path` (#358) is advisory: it is n
 
 ## Directory conventions
 - `packages/{kernel,store,retriever,embedding}` are shared libraries. `apps/{cli,mcp,plugin,dsh-plugin}` are the four ways users run the tool. `GLOSSARY.md` is the word list. `docs/agents/` holds notes for agents.
+- `providers/` holds per-provider notes and manual probes, one subfolder per provider id (`exa`/`tavily`/`anysearch`); a probe runs with plain `node <file>` from the repo root and stays out of the build.
 
 ## Gotchas (not visible in the code)
 - better-sqlite3@13 loads a prebuilt `.node` file. `allowBuilds: false` in pnpm-workspace.yaml is on purpose. Turning it on would need MSBuild + ClangCL. Leave it.
