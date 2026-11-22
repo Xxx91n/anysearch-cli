@@ -549,9 +549,13 @@ summaries) still finishes, which is what an upgrade is waiting for.
 
 ## Environment and auth
 
-Provider credentials are read from the process environment. Nothing is
-written to config files. Hosts that inherit their environment (the usual
-`mcp.json` / `config.toml` registration) need no `env` block.
+Provider and LLM keys come from the process environment first, then from the
+user credential file `~/.ans/credentials.json` — the plaintext, owner-only file
+`ans auth set <provider>` writes and the CLI reads (#301). The server never
+writes that file. Hosts that inherit their environment (the usual `mcp.json` /
+`config.toml` registration) need no `env` block, and a GUI host started without
+a shell environment still authenticates from the file. `ans auth` reports which
+source supplies each key; `ans auth list` adds the stored entries and the path.
 
 | Variable | Used by | Effect |
 |----------|---------|--------|
