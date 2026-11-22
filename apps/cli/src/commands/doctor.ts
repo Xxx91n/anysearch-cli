@@ -474,7 +474,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         try {
           for (const skill of readInstalledSkillsReadOnly(scopeOpts)) {
             const roots = installedSkills.get(skill.name) ?? [];
-            if (!roots.includes(root)) roots.push(root);
+            roots.push(root);
             installedSkills.set(skill.name, roots);
           }
         } catch (error) {
@@ -491,21 +491,20 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const installedNotInAnyDomain = [...installedSkills.keys()].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
       const skillNotes: string[] = [...manifestErrors];
-      if (hasToolRequires) {
-        if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
-          skillNotes.push(`未装进 ${MANAGED_SKILLS_REL_PATH}：${activeNotInstalled.join("、")}`);
-        }
-        skillNotes.push(`toolRequires：只按域 TOML 筛工具，装没装进 ${MANAGED_SKILLS_REL_PATH} 都不影响`);
+      if (hasToolRequires && manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+        skillNotes.push(
+          `未装进 ${MANAGED_SKILLS_REL_PATH}：${activeNotInstalled.join("、")}（不影响筛工具，只看域 TOML 的 toolRequires）`,
+        );
       }
       if (installedNotInAnyDomain.length > 0) {
         const formatted = installedNotInAnyDomain
           .map((name) => `${name}（${(installedSkills.get(name) ?? []).join("、")}）`)
           .join("、");
         skillNotes.push(
-          `装了但没在任何域里启用：${formatted}，供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
+          `装了但没在任何域里启用：${formatted}——宿主可以直接读；想让域按技能筛工具，才需要把它写进 [skills].active 和 [skills.toolRequires]`,
         );
       }
-      const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";
+      const baseSkillsDetail = schema.skills.active.join("、") || "这个域没有启用技能";
       report.add({
         layer: "capability",
         name: "领域 skills.active",

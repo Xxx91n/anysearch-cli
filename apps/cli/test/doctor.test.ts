@@ -401,12 +401,38 @@ test("ans doctor：默认域（没配 toolRequires）不报 active 漏装，但�
 test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞掉另一边已装 skill 的提示", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-err-"));
   const projectDir = mkdtempSync(join(tmpdir(), "ans-doctor-proj-"));
-  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN"];
+  const domainsDir = mkdtempSync(join(tmpdir(), "ans-doctor-domains-err-"));
+  const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN", "ANS_DOMAINS_DIR"];
   const saved: Record<string, string | undefined> = {};
   for (const key of keys) saved[key] = process.env[key];
   const prevCwd = process.cwd();
   const lines: string[] = [];
   try {
+    writeFileSync(
+      join(domainsDir, "strict.toml"),
+      [
+        'name = "strict"',
+        'description = "domain with toolRequires"',
+        "",
+        "[skills]",
+        'active = ["search", "doctor"]',
+        "",
+        "[skills.toolRequires]",
+        'search = ["search"]',
+        'doctor = ["ctx_execute"]',
+        "",
+        "[sources]",
+        'enabled = ["tavily"]',
+        "",
+        "[rag]",
+        'adapter = "none"',
+        "",
+        "[hooks]",
+        'toolWhitelist = ["search", "ctx_execute"]',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
     const userSynced = join(home, ".ans", "skills", "synced");
     mkdirSync(join(userSynced, "ans"), { recursive: true });
     writeFileSync(
@@ -436,7 +462,8 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     process.env.HOME = home;
     process.env.USERPROFILE = home;
     process.env.ANS_DB_PATH = join(home, "anysearch.db");
-    process.env.ANS_DOMAIN = "default";
+    process.env.ANS_DOMAINS_DIR = domainsDir;
+    process.env.ANS_DOMAIN = "strict";
     process.chdir(projectDir);
 
     const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
@@ -450,7 +477,7 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     const detail = row!.detail ?? "";
     assert.match(detail, /项目级清单读不出/, "损坏的那一边要报出清单读不出：" + detail);
     assert.match(detail, /装了但没在任何域里启用：ans/, "完好的用户级已装 skill 仍要被报出：" + detail);
-    assert.equal(detail.includes("当前域按 toolRequires 筛工具"), false, "有一边清单读不出时不能断言另一侧未装：" + detail);
+    assert.equal(detail.includes("未装进 skills/synced/"), false, "有一边清单读不出时不能断言另一侧未装：" + detail);
   } finally {
     process.chdir(prevCwd);
     for (const [key, value] of Object.entries(saved)) {
@@ -459,10 +486,11 @@ test("ans doctor：一边 skill 清单损坏时报出清单读不出，且不吞
     }
     rmSync(home, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });
+    rmSync(domainsDir, { recursive: true, force: true });
   }
 });
 
-test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里写了但没装」（覆盖全部未装与部分未装）", async () => {
+test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里写了但没装」（覆盖全部未装、部分未装、全部已装）", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-skills-tr-"));
   const domainsDir = mkdtempSync(join(tmpdir(), "ans-doctor-domains-tr-"));
   const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", "ANS_DOMAIN", "ANS_DOMAINS_DIR"];
@@ -510,7 +538,10 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowAll);
     const detailAll = rowAll!.detail ?? "";
-    assert.match(detailAll, /未装进 skills\/synced\/：search、doctor；toolRequires：只按域 TOML 筛工具/, "全部未装且配了 toolRequires：" + detailAll);
+    assert.equal(
+      detailAll,
+      "search、doctor（未装进 skills/synced/：search、doctor（不影响筛工具，只看域 TOML 的 toolRequires））",
+    );
 
     // 2. 只装了一部分（装了 doctor，没装 search）
     const synced = join(home, ".ans", "skills", "synced");
@@ -544,7 +575,48 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
       .find((entry) => entry.name === "领域 skills.active");
     assert.ok(rowSub);
     const detailSub = rowSub!.detail ?? "";
-    assert.match(detailSub, /未装进 skills\/synced\/：search；toolRequires：只按域 TOML 筛工具/, "部分未装且配了 toolRequires：" + detailSub);
+    assert.equal(
+      detailSub,
+      "search、doctor（未装进 skills/synced/：search（不影响筛工具，只看域 TOML 的 toolRequires））",
+    );
+
+    // 3. 全部装齐时不挂多余说明
+    mkdirSync(join(synced, "search"), { recursive: true });
+    writeFileSync(
+      join(synced, "search", "SKILL.md"),
+      "---\nname: search\ndescription: search skill\n---\n\nBody.\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(synced, "installed.json"),
+      JSON.stringify({
+        version: 1,
+        skills: {
+          doctor: {
+            name: "doctor",
+            source: join(home, "src", "doctor"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+          search: {
+            name: "search",
+            source: join(home, "src", "search"),
+            commit: "0123456789abcdef0123456789abcdef01234567",
+            dirty: false,
+          },
+        },
+      }) + "\n",
+      "utf8",
+    );
+    const linesNone: string[] = [];
+    const codeNone = await runDoctor(["--json"], { stdout: (line) => linesNone.push(line) });
+    assert.equal(codeNone, 0);
+    const payloadNone = JSON.parse(linesNone.join("\n")) as DiagJson;
+    const rowNone = payloadNone.layers
+      .flatMap((layer) => layer.entries)
+      .find((entry) => entry.name === "领域 skills.active");
+    assert.ok(rowNone);
+    assert.equal(rowNone!.detail, "search、doctor");
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
