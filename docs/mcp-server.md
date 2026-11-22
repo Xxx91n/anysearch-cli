@@ -587,11 +587,14 @@ Two axes are easy to mix up: the **MCP server transport** (stdio or
 Streamable HTTP, above) and the **upstream transport each provider adapter
 uses** (below).
 
-| Provider | Upstream transport | Wired search surface | Answer mode | Domain pre-filter | Vertical routing | Cancellation | Standalone usage endpoint |
-|----------|-------------------|----------------------|-------------|-------------------|------------------|--------------|---------------------------|
-| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-written JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes, per POST (shared-handshake caveat) | none |
-| exa | official `exa-js` SDK | `search` (fast / index / deep) + `answer` | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only) | no | yes (`signal` trailing option on `search()` / `answer()`) | none |
+| Provider | Upstream transport | Wired search surface | Answer mode | Domain pre-filter | Vertical routing | Cancellation | Usage endpoint (upstream / adapter) |
+|----------|-------------------|----------------------|-------------|-------------------|------------------|--------------|-------------------------------------|
+| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-written JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes, per POST (shared-handshake caveat) | upstream none; adapter not wired |
+| exa | official `exa-js` SDK | `search` (fast / index / deep) + `answer` | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only) | no | yes (`signal` trailing option on `search()` / `answer()`) | upstream none; adapter not wired |
 | tavily | official `@tavily/core` SDK | `search` (fast / index / deep) + `answer` | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (SDK exposes no signal) | upstream `GET /usage`; adapter not wired |
+
+This table only lists what our adapters actually wire, not everything in the
+upstream catalogs. AnySearch is the only MCP upstream here.
 
 Provider selection comes from the current domain's `sources.enabled`. A
 provider that cannot be constructed is skipped and recorded in
@@ -611,7 +614,8 @@ wired, and this client does not pin the upstream tool count (official docs
 list four tools; the live endpoint has also returned `score`). A successful
 `search` reply's non-empty `_meta.request_id` is recorded as a diagnostic
 correlation id on the observation span when a caller supplies one. It never
-enters results and is never an idempotency key. Upstream REST
+enters results and is never an idempotency key. A failed reply throws before
+extraction and records nothing. Upstream REST
 `POST /v1/search` is live (only `GET` returns 404). This adapter speaks MCP
 only, so the `/v1/search` → `/mcp` rewrite is a compatibility shim, not a
 retirement notice.

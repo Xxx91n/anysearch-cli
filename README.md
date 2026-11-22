@@ -151,7 +151,7 @@ recording its source and commit. It is not a package manager and does not execut
 
 ## Provider Connections & Capabilities
 
-Each provider's upstream endpoint and transport, the capabilities our adapters actually wire, cancellation behaviour and the shared-handshake caveat are documented once, in the [upstream provider transport matrix](docs/mcp-server.md#upstream-provider-transport-matrix).
+The per-provider capability table — upstream transport, wired features, answer mode, domain pre-filter, vertical routing, cancellation behaviour and usage endpoints — is in the [upstream provider transport matrix](docs/mcp-server.md#upstream-provider-transport-matrix).
 
 ## AnySearch Vertical Domains
 

@@ -163,7 +163,7 @@ ans skill uninstall ans --project
 
 ## 信息源怎么连、能干什么
 
-每家信息源连什么、适配器真接上了哪些能力、能不能取消，只在一处写：[上游信息源对照表](docs/mcp-server.md#upstream-provider-transport-matrix)。
+每家信息源连什么、适配器真接上了哪些能力、能不能取消、有没有单独的用量接口，表在这里：[上游信息源对照表](docs/mcp-server.md#upstream-provider-transport-matrix)。
 
 ## AnySearch 垂直领域
 
