@@ -2,7 +2,7 @@
 // Installation never changes the Active Domain or its active skill list.
 
 import {
-  inspectInstalledSkills, installSkill, MANAGED_SKILLS_REL_PATH, MANAGED_SKILLS_SUBDIR,
+  inspectInstalledSkills, installSkill, MANAGED_SKILLS_REL_PATH,
   managedSkillsRoot, skillManifestPath,
   uninstallSkill, validateInstalledSkills, SkillError, type SkillOptions,
 } from "../skill-store";
@@ -27,10 +27,10 @@ Options:
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
 Frontmatter must be a YAML mapping with a safe lowercase name (1–64 characters).
-Machine-managed skills live in ${MANAGED_SKILLS_SUBDIR}/; sibling directories are user-authored.
-Installation copies the skill directory into ${MANAGED_SKILLS_REL_PATH} for a host agent to read; the runtime does not auto-load it.
-[skills].active in a domain TOML only names keys for [skills.toolRequires], not directories in ${MANAGED_SKILLS_REL_PATH}.
-When a domain omits [skills.toolRequires] (as all shipped domains do), [skills].active does not filter runtime tools.
+Managed skills live in ${MANAGED_SKILLS_REL_PATH}; sibling directories under skills/ are user-authored.
+install copies the skill directory into ${MANAGED_SKILLS_REL_PATH} for a host agent to read (not auto-loaded by ans).
+[skills].active is just a list of keys for [skills.toolRequires], unrelated to directories in ${MANAGED_SKILLS_REL_PATH}.
+Without [skills.toolRequires] (all shipped domains omit it), [skills].active does not filter runtime tools.
 Exit codes: 0 success · 1 validation/filesystem/manifest failure · 2 usage error
 `;
 

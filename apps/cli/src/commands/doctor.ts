@@ -35,7 +35,7 @@ import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/ho
 import { computePlan } from "../host-wiring/plan";
 import { findInterrupted, wiringRoot } from "../host-wiring/journal";
 import { readSwitchHistory } from "../upgrade-record";
-import { MANAGED_SKILLS_REL_PATH, readInstalledSkillsReadOnly } from "../skill-store";
+import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly } from "../skill-store";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -463,12 +463,16 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: schema.sources.enabled.join(",") || "(空)",
       });
-      const installedSkills = new Set<string>();
+      const installedSkills = new Map<string, string[]>();
       const manifestErrors: string[] = [];
       for (const project of [false, true]) {
+        const scopeOpts = { home: configHome, cwd, project };
         try {
-          for (const skill of readInstalledSkillsReadOnly({ home: configHome, cwd, project })) {
-            installedSkills.add(skill.name);
+          const root = managedSkillsRoot(scopeOpts);
+          for (const skill of readInstalledSkillsReadOnly(scopeOpts)) {
+            const roots = installedSkills.get(skill.name) ?? [];
+            roots.push(root);
+            installedSkills.set(skill.name, roots);
           }
         } catch (error) {
           manifestErrors.push(`${project ? "项目级" : "用户级"}清单读不出：${errorText(error).slice(0, 80)}`);
@@ -481,29 +485,24 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         }
       }
       const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
-      const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
+      const installedNotInAnyDomain = [...installedSkills.keys()].filter((s) => !allActiveInDomains.has(s)).sort();
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
       const isSubset = activeNotInstalled.length < schema.skills.active.length;
       const skillNotes: string[] = [...manifestErrors];
-      if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+      if (manifestErrors.length === 0 && activeNotInstalled.length > 0 && hasToolRequires) {
         const missingNames = activeNotInstalled.join(",");
-        if (hasToolRequires) {
-          skillNotes.push(
-            isSubset
-              ? `${missingNames} 不在 ${MANAGED_SKILLS_REL_PATH}——不影响筛工具，当前域按域 TOML 的 toolRequires 筛工具`
-              : "当前域按 toolRequires 筛工具——只看域 TOML，装没装进 " + MANAGED_SKILLS_REL_PATH + " 都不影响",
-          );
-        } else {
-          skillNotes.push(
-            isSubset
-              ? `${missingNames} 不在 ${MANAGED_SKILLS_REL_PATH}——当前域没配 toolRequires，不影响运行时`
-              : "技能键名——当前域没配 toolRequires，不影响运行时",
-          );
-        }
+        skillNotes.push(
+          isSubset
+            ? `${missingNames} 不在 ${MANAGED_SKILLS_REL_PATH}——不影响筛工具，当前域按域 TOML 的 toolRequires 筛工具`
+            : `当前域按 toolRequires 筛工具——只看域 TOML，装没装进 ${MANAGED_SKILLS_REL_PATH} 都不影响`,
+        );
       }
       if (installedNotInAnyDomain.length > 0) {
+        const formatted = installedNotInAnyDomain
+          .map((name) => `${name}（${(installedSkills.get(name) ?? []).join("、")}）`)
+          .join(", ");
         skillNotes.push(
-          `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}——${MANAGED_SKILLS_REL_PATH} 供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
+          `装了但没在任何域里启用：${formatted}——供宿主直接读，要按域筛工具才配进 [skills].active 与 toolRequires`,
         );
       }
       const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";
