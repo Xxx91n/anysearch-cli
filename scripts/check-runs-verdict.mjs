@@ -1,25 +1,29 @@
 // The release gate's one verdict: hand it the check-runs on a fixed sha, get
 // green / red / keep waiting back.
 //
-// Design: only a check that actually ran is evidence that its lane passed
-// (#406). A skipped check-run used to sit in the same allowed set as a passing
-// one, so a lane that never ran still produced GREEN. The accident that bought,
-// spelled out in the parent spec (#389 D4): the job that works out which lanes
-// run fails, its name misses the family regex below, the lanes it gates
-// register as skipped, and the release goes out with no evidence behind it.
-// Skipped is counted on its own now and fails the discovery phase.
+// Design: only a check that actually ran is evidence that its lane passed —
+// a skipped check-run used to sit in the same allowed set as a passing one, so
+// a check that never ran still produced GREEN. The accident it buys (#389 D4):
+// the job that works out which checks to run fails, its name misses
+// the family regex below, the checks it gates register as skipped, and the
+// release goes out with no evidence behind it.
 //
-// Design: one function, three answers; scripts/assert-checks-green.mjs only
-// fetches the runs and prints what comes back. The contract used to live inline
-// in that script's polling loop, and its only test read the script's source with
-// a regex. A list in, an answer out, is tested by feeding a list.
+// Design: the whole decision is one function with three answers, and
+// scripts/assert-checks-green.mjs only fetches the runs and prints the answer —
+// the contract used to live inline in that script's polling loop, where the only
+// test could reach it by reading the source with a regex.
 //
 // Phases: discovery asks whether every required family and every blocking leg
-// has a check-run that ran. A lane that registered as skipped is a discovery
-// failure no wait can fix, so it is answered at once. A lane that has not
+// has a check-run that ran. A check that registered as skipped is a discovery
+// failure no wait can fix, so it is answered at once. A check that has not
 // registered yet may still show up, so the caller keeps waiting until its
-// discovery window closes. Completion asks whether the lanes that ran are
+// discovery window closes. Completion asks whether the checks that ran are
 // terminal and passing, bounded by the caller's absolute deadline.
+//
+// Skipped is red for every check in these families, not only for the blocking
+// legs: a lane skips with step-level conditions (#408), and such a job still
+// ends as success, so a skipped conclusion means the check never started — and
+// that is never evidence.
 //
 // Native-smoke and the non-blocking macos-spillover probe stay outside the gate
 // by name: neither matches a family below, and a red probe is a crash-signature
@@ -43,7 +47,7 @@ function familyOf(name) {
   return String(name ?? "").match(FAMILY)?.[1] ?? null;
 }
 
-// Same-name check-runs are one lane: the newest started_at wins, so a re-run
+// Same-name check-runs are one check: the newest started_at wins, so a re-run
 // replaces its first attempt instead of being counted twice.
 function newestPerName(runs) {
   const newest = new Map();
@@ -55,11 +59,11 @@ function newestPerName(runs) {
   return newest;
 }
 
-// "ran" is the only state that counts as evidence. "skipped" is a lane that
+// "ran" is the only state that counts as evidence. "skipped" is a check that
 // never started. "unknown" is a completed check carrying a conclusion this gate
 // does not model (e.g. "stale"): not a pass, not a failure, so it can only
 // settle at the deadline.
-function laneState(run) {
+function checkState(run) {
   if (!run) return "missing";
   if (run.status !== "completed") return "running";
   const conclusion = run.conclusion ?? "";
@@ -74,7 +78,7 @@ function laneState(run) {
  *
  * @param {Array<{ name: string, status: string, conclusion?: string | null, started_at?: string }>} runs
  * @param {{ discoveryExpired?: boolean, completionExpired?: boolean }} [deadlines]
- *   discoveryExpired: the discovery window has closed, so a lane that never
+ *   discoveryExpired: the discovery window has closed, so a check that never
  *   registered is red rather than worth another wait. completionExpired: the
  *   caller's absolute deadline has passed.
  * @returns {{
@@ -83,7 +87,7 @@ function laneState(run) {
  *   phase: "discovery" | "completion",
  *   reason: string,
  *   counts: { matched: number, ran: number, running: number, failed: number, skipped: number, unknown: number },
- *   lanes: Array<{ name: string, state: string, status: string, conclusion: string | null }>,
+ *   checks: Array<{ name: string, state: string, status: string, conclusion: string | null }>,
  *   missingFamilies: string[], missingLegs: string[],
  * }}
  *   exitCode is what the gate exits with once the verdict is final: 0 green,
@@ -92,19 +96,19 @@ function laneState(run) {
  */
 export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpired = false } = {}) {
   const newest = newestPerName(runs);
-  const lanes = [...newest.keys()].sort().map((name) => {
+  const checks = [...newest.keys()].sort().map((name) => {
     const run = newest.get(name);
-    return { name, state: laneState(run), status: run.status, conclusion: run.conclusion ?? null };
+    return { name, state: checkState(run), status: run.status, conclusion: run.conclusion ?? null };
   });
-  const ofState = (state) => lanes.filter((lane) => lane.state === state);
+  const ofState = (state) => checks.filter((check) => check.state === state);
 
-  // A family has run as soon as one of its check-runs ran: a failure is
-  // reported per check, not per family. A family with no check-run at all is
-  // "missing" — the discovery gap.
+  // A family has run as soon as one of its checks ran: a failure is reported
+  // per check, not per family. A family with no check-run at all is "missing" —
+  // the discovery gap.
   const familyState = (family) => {
-    const members = lanes.filter((lane) => familyOf(lane.name) === family);
+    const members = checks.filter((check) => familyOf(check.name) === family);
     if (members.length === 0) return "missing";
-    const states = new Set(members.map((lane) => lane.state));
+    const states = new Set(members.map((check) => check.state));
     return ["ran", "failed", "running", "unknown", "skipped"].find((state) => states.has(state));
   };
 
@@ -114,10 +118,10 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   const skipped = ofState("skipped");
   const ran = ofState("ran");
   const missingFamilies = FAMILIES.filter((family) => familyState(family) === "missing");
-  const missingLegs = REQUIRED_LEGS.filter((leg) => laneState(newest.get(leg)) === "missing");
+  const missingLegs = REQUIRED_LEGS.filter((leg) => checkState(newest.get(leg)) === "missing");
 
   const counts = {
-    matched: lanes.length,
+    matched: checks.length,
     ran: ran.length,
     running: running.length,
     failed: failed.length,
@@ -131,7 +135,7 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
     phase,
     reason,
     counts,
-    lanes,
+    checks,
     missingFamilies,
     missingLegs,
   });
@@ -139,29 +143,33 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   // A check that reported a failing conclusion is the clearest answer there is,
   // and it holds in either phase.
   if (failed.length > 0) {
-    return answer("red", 1, "failed: " + failed.map((lane) => lane.name + "=" + lane.conclusion).join("; "));
+    return answer("red", 1, "failed: " + failed.map((check) => check.name + "=" + check.conclusion).join("; "));
   }
 
-  // Design: a skipped check-run is terminal, so there is nothing to wait for.
-  // It fails the discovery phase — the phase that asks "did every required lane
-  // run at all?" — instead of converging on a deadline.
+  // Design: a skipped check-run is red at once — it is terminal, so waiting
+  // cannot turn it into evidence; the discovery phase is the one that asks
+  // "did every required check run at all?", so that is where it fails.
   if (skipped.length > 0) {
     return answer(
       "red",
       2,
-      "never ran (skipped): " + skipped.map((lane) => lane.name).join(", ") + " — a skipped check is not evidence a lane passed",
+      "never ran (skipped): " + skipped.map((check) => check.name).join(", ") + " — a skipped check is not evidence that anything passed",
     );
   }
 
   const missing = [...missingFamilies.map((family) => family + " family"), ...missingLegs];
   const waiting = [
-    ...running.map((lane) => lane.name + " (running)"),
-    ...unknown.map((lane) => lane.name + "=" + lane.conclusion),
+    ...running.map((check) => check.name + " (running)"),
+    ...unknown.map((check) => check.name + "=" + check.conclusion),
   ];
 
   if (missing.length > 0) {
-    if (discoveryExpired || completionExpired) {
-      return answer("red", 2, "discovery window closed with no check-run for: " + missing.join(", "));
+    const present = FAMILIES.filter((family) => familyState(family) !== "missing").join(",") || "none";
+    if (discoveryExpired) {
+      return answer("red", 2, "discovery window closed with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
+    }
+    if (completionExpired) {
+      return answer("red", 2, "absolute deadline reached with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
     }
     return answer("wait", null, "not registered yet: " + missing.join(", "));
   }
@@ -169,5 +177,5 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
     if (completionExpired) return answer("red", 2, "deadline passed with: " + waiting.join("; "));
     return answer("wait", null, "still to finish: " + waiting.join("; "));
   }
-  return answer("green", 0, "all " + lanes.length + " checks ran and passed");
+  return answer("green", 0, "all " + checks.length + " checks ran and passed");
 }

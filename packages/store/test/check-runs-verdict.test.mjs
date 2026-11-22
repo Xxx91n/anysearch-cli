@@ -1,12 +1,8 @@
 // The release gate's verdict, fed a list of check-runs. No YAML, no source
 // text, no gh: the point of the #406 split is that the contract is a function,
-// so these tests call it.
-//
-// The case that matters most is "a blocking leg that only registered as
-// skipped". It used to read as GREEN. #389 D4 spells out the accident: the job
-// that works out which lanes run fails, its name misses the family regex, the
-// lanes it gates register as skipped, and the release goes out with no evidence
-// behind it.
+// so these tests call it. Why skipped stopped counting is told once, in
+// scripts/check-runs-verdict.mjs; the case that matters most here is "a blocking
+// leg that only registered as skipped", which used to read as GREEN.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { FAMILIES, REQUIRED_LEGS, judgeCheckRuns } from "../../../scripts/check-runs-verdict.mjs";
@@ -95,8 +91,9 @@ test("all five families are required", () => {
 });
 
 test("all three blocking legs are required by name", () => {
-  // The old lockstep test read ship-gate.yml's matrix with a regex. This is the
-  // fact that replaces it: two green legs out of three is not green.
+  // Two green legs out of three is not green. This pins the list; the mirroring
+  // against ship-gate.yml's matrix is manual now, by the ticket's order — the
+  // test that read both files with regexes is gone (#406).
   assert.deepEqual(REQUIRED_LEGS, ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"]);
   const runs = healthy().filter((r) => !/^ship-gate \((macos|windows)-latest\)$/.test(r.name));
   const verdict = judgeCheckRuns(runs);

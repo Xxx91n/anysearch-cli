@@ -20,7 +20,7 @@
 // present and ran, poll the rest to terminal. --timeout-min remains an ABSOLUTE
 // deadline anchored at process start (never re-anchored at the phase
 // transition); on expiry -> fail-closed exit 2, error line tagged
-// phase=completion naming what is still out.
+// phase=completion naming what is still running.
 // - a check-run that registered as skipped is red at once (phase=discovery):
 // it is terminal, so no wait will turn it into evidence (#406).
 // - GREEN requires every matched check completed with success or neutral; a
@@ -33,10 +33,9 @@
 // absent while the registered legs alone produce GREEN. REQUIRED_LEGS mirrors
 // ship-gate.yml's blocking matrix — keep the two in step by hand.
 //
-// Design: exit 1 is "a check reported a failing conclusion" and exit 2 is "no
-// usable signal" (skipped, missing, unmodelled, deadline). Both block the
-// release; the split tells an operator whether to look at a red test or at the
-// registration plumbing.
+// Design: exit 1 means "a check reported a failing conclusion" and exit 2 means
+// "no usable signal" — both block the release, and the split tells an operator
+// whether to look at a red test or at the registration plumbing.
 //
 // Usage: node scripts/assert-checks-green.mjs --sha <sha> [--once]
 // [--timeout-min 10] [--discovery-sec 120] [--interval-sec 20]
@@ -78,9 +77,11 @@ let poll = 0;
 
 for (; ;) {
   poll++;
+  // --once is a probe: it reports a snapshot and takes no verdict, so no
+  // deadline can turn it into a red (the old script behaved the same way).
   const verdict = judgeCheckRuns(checkRuns(), {
-    discoveryExpired: Date.now() >= discoveryDeadline,
-    completionExpired: Date.now() >= deadline,
+    discoveryExpired: !once && Date.now() >= discoveryDeadline,
+    completionExpired: !once && Date.now() >= deadline,
   });
   const counts = verdict.counts;
 
@@ -96,15 +97,19 @@ for (; ;) {
     console.log("[assert-checks] GREEN: " + verdict.reason);
     process.exit(0);
   }
-  if (verdict.verdict === "red") {
-    const tag = verdict.exitCode === 1 ? "RED" : "FAIL-CLOSED (phase=" + verdict.phase + ")";
-    console.error("[assert-checks] " + tag + ": " + verdict.reason);
-    process.exit(verdict.exitCode);
+  // A failing conclusion is an answer, not a snapshot: report it in either mode.
+  if (verdict.verdict === "red" && verdict.exitCode === 1) {
+    console.error("[assert-checks] RED: " + verdict.reason);
+    process.exit(1);
   }
   if (once) {
-    // dry-run probe mode: report the snapshot without taking a verdict
-    console.log("[assert-checks] --once snapshot: " + verdict.lanes.map((lane) => lane.name + ":" + lane.status + "/" + (lane.conclusion ?? "-")).join(" | "));
+    console.log("[assert-checks] --once snapshot: " + verdict.checks.map((check) => check.name + ":" + check.status + "/" + (check.conclusion ?? "-")).join(" | "));
     process.exit(10);
+  }
+  // What is left that is decided is a fail-closed red: no usable signal.
+  if (verdict.verdict === "red") {
+    console.error("[assert-checks] FAIL-CLOSED (phase=" + verdict.phase + "): " + verdict.reason);
+    process.exit(2);
   }
 
   await new Promise((r) => setTimeout(r, intervalSec * 1000));
