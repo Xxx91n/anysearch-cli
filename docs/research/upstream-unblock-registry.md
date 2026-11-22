@@ -49,19 +49,20 @@ CJS），所以没有用户看得见的限制可登记——缺这个分支是�
 补丁，不是 REST 已经退了的证据。这张票按「前提不成立」关掉；REST 分支不在 #203
 范围里（真要做，另开产品票）。
 
-登记状态: registered — `docs/limitations.md` L212-220，由 #206 改写（现在用户能
-碰到的其实是「只走 MCP、旧地址自动改写」，不是 REST 路由死了）：
+登记状态: registered — `docs/limitations.md` 里「AnySearch REST `POST /v1/search`
+is live; this adapter is MCP-only」那条（L275-283），由 #206 改写（现在用户能碰到
+的其实是「只走 MCP、旧地址自动改写」，不是 REST 路由死了）：
 
 ```md
-- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
-  probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
-  200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
-  `POST /mcp` only, so an `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending
-  in `/v1/search` is auto-rewritten to `base+/mcp` with a once-per-process
-  stderr warning — a compatibility shim, not a sign that REST is retired.
-  Upstream `request_id` in the reply envelope is a server-generated diagnostic
-  UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
-  and it is not an idempotency key.
+- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** —
+  live probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search`
+  returns 200 with a `code:0` response. The provider speaks MCP Streamable
+  HTTP at `POST /mcp` only. So an `ANYSEARCH_ENDPOINT` (or explicit endpoint
+  arg) ending in `/v1/search` is auto-rewritten to `base+/mcp` with a
+  once-per-process stderr warning. That is a compatibility shim, not a sign
+  that REST is retired. Upstream `request_id` in the reply is a
+  server-generated diagnostic UUID (also returned as `X-Request-ID`). A
+  caller-supplied value is ignored, and it is not an idempotency key.
 ```
 
 ## #24 建 ip 第五域的语料（触发条件=上游给 ip 子域补了结构化的参数表）
@@ -205,7 +206,7 @@ signal 当成最后的请求选项传给 `search()` 和 `answer()`；
 |-------|----------------------|--------------------------|----------|
 | #18 | `packages/embedding/src/index.ts:31-45` + `package.json` optionalDep | transformers 新版本声明 `onnxruntime-common` | absent — 只留票（内部补丁） |
 | #22 | `packages/embedding/src/index.ts` ESM 路径 | #18 修复做完，或者出现 ESM 消费者 / 采用 `module.registerHooks` | absent — 只留票（没有发出去的 ESM 加载路径） |
-| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` | 没有——前提不成立关票（`POST /v1/search` 还活着，只有 GET 是 404） | registered — `docs/limitations.md` L212-220 |
+| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` | 没有——前提不成立关票（`POST /v1/search` 还活着，只有 GET 是 404） | registered — `docs/limitations.md` L275-283 |
 | #24 | `eval-looks.json`（`vert-i*` 条目） | `get_sub_domains(domain="ip")` 返回结构化参数词表 | absent — 只留票（评测内部，文档已让位给现场工具） |
 | #25 | `anysearch.ts:148-157` 探测器 + `contract.ts:230` | 匿名配额边界不再回自动签凭证的内容 | registered — `docs/limitations.md` L166-170 |
 | #27 | `eval-looks.json` 的 `vert-f1105` 退役标记（L1099-1151） | `{type:"overview",symbol}` 不用 `cn_code` 也能过 | registered — `docs/limitations.md` L171-176 |
