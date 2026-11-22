@@ -60,15 +60,15 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   }
 });
 
-test("the throwaway home carries the config dir turbo looks for", async () => {
+test("the throwaway home carries the config dir turbo looks for on Windows", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
     const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(
-      result.stdout,
-      /^TURBO_CONFIG_DIR=yes$/m,
-      "turbo 2.10.11 exits 1 with \"Global config path not found.\" when %USERPROFILE%\\AppData\\Roaming is missing",
-    );
+    const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
+    // Without %USERPROFILE%\AppData\Roaming turbo 2.10.11 exits 1 with "Global
+    // config path not found." and no test runs (#381). Off Windows the home
+    // keeps exactly what it had.
+    assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
   });
 });
 
@@ -397,18 +397,18 @@ function writeLeakyPnpm(bin, code) {
 }
 
 // A stand-in pnpm that reports whether the home it was handed carries the
-// config dir turbo resolves from %USERPROFILE%. turbo 2.10.11 exits 1 with
+// config dir turbo resolves from the user profile. turbo 2.10.11 exits 1 with
 // "Global config path not found." before running any task when that dir is
 // missing, so a gated run is only green if it is there.
 function writeTurboConfigProbePnpm(bin) {
   const sh = [
     "#!/bin/sh",
-    'if [ -d "$USERPROFILE/AppData/Roaming" ]; then echo TURBO_CONFIG_DIR=yes; else echo TURBO_CONFIG_DIR=no; fi',
+    'if [ -d "$USERPROFILE/AppData/Roaming" ]; then echo TURBO_CONFIG_DIR_PRESENT=yes; else echo TURBO_CONFIG_DIR_PRESENT=no; fi',
     "exit 0",
   ].join("\n");
   const cmd = [
     "@echo off",
-    'if exist "%USERPROFILE%\\AppData\\Roaming\\" (echo TURBO_CONFIG_DIR=yes) else (echo TURBO_CONFIG_DIR=no)',
+    'if exist "%USERPROFILE%\\AppData\\Roaming\\" (echo TURBO_CONFIG_DIR_PRESENT=yes) else (echo TURBO_CONFIG_DIR_PRESENT=no)',
     "exit /b 0",
   ].join("\r\n");
   writePnpmShim(bin, { sh, cmd });

@@ -203,14 +203,17 @@ function listFirst(files) {
 // because no test in the suite reads those keys from the runner.
 function makeTestHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ans-preflight-home-"));
-  // turbo works out its global config dir from %USERPROFILE% on Windows and
+  // turbo on Windows works out its global config dir from the user profile and
   // exits 1 with "Global config path not found." before running any task when
-  // that dir has no AppData\Roaming (#381). Every real Windows profile has that
-  // layer; a fresh temp dir does not, so the gate has to put it back. It is
-  // created on every platform on purpose: the lanes that cannot reproduce the
-  // failure still check for it, and an empty dir costs nothing in a home this
-  // run deletes.
-  fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
+  // %USERPROFILE%\AppData\Roaming is missing (#381). Every real profile has
+  // that layer; a fresh temp dir does not.
+  //
+  // Design: recreate only that one layer, and only on Windows — the child gets
+  // a home that is real enough for turbo while Linux/macOS keep the home they
+  // had (#381). Creating it on every platform was the alternative; rejected
+  // because the failure cannot happen off Windows, and the Windows lane in ci
+  // runs these tests, so the fix is still guarded.
+  if (process.platform === "win32") fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
   const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
   // Windows env names are case-insensitive, so the filter is too: a lowercase
   // ans_db_path still resolves as ANS_DB_PATH in the child.
