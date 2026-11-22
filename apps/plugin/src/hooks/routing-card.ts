@@ -25,7 +25,7 @@ export const DEFAULT_ROUTING_CARD = [
   "- Skip a repeat search when recall_memory results already answer the question; search again when they are incomplete, out of date, or you need the latest",
   "",
   "Fail-open: if anysearch server is down, tools degrade gracefully (no block).",
-  "For detailed guidance: see SKILL.md (anysearch skill).",
+  "For detailed guidance: see SKILL.md (ans skill).",
 ].join("\n");
 
 export const MDC_CONTENT = [
