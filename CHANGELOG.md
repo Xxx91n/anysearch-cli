@@ -1,3 +1,23 @@
+## Unreleased — #379: `.ship-gate/` 里两份「预注册」文档删掉，配套的两个脚本一起删
+
+一句话说清：**`.ship-gate/` 本来是机器本地的产出目录（`report.json`、跳过账本、评测输出都往这儿写），9 月却把两份手写的「预注册」文档提交了进去，靠 `.gitignore` 里两条 `!` 例外才进得去；10 月那轮拆除治理层把 ADR 折进源码注释，两份文档的出处也一起没了，`calibration-l2` 那份从此零读者。现在两份都删，两个离了它们就起不来的脚本跟着删，`.ship-gate/` 回归纯本地产出。**
+
+### Removed
+
+- **`.ship-gate/calibration-l2-preregistration.json`**：全仓库零读者。管它的 ADR-0049/0050 在拆除治理层那轮已经折进源码注释，`docs/adr/` 也不在了，文件里指向 ADR 的两行字段当时就删了，`derivedThresholds` 一直是 `null`。
+- **`.ship-gate/attribution-gold-preregistration.json`**：只有两个内部脚本读它，写回去的 `derivedThresholds` 全库没有读者。
+- **`scripts/attribution-gold-labels.mjs`、`scripts/attribution-calibrate.mjs`**：两个薄壳，自己只是用 tsx 再把自己拉起来跑一遍。标注脚本启动第一件事就是要求那份 prereg 存在（缺了退出码 2），拟合脚本第一件事就是解析它。它们管的三份数据文件（样本、标注、manifest 的 jsonl）本来就不在仓库里，CI 里也没有任何 workflow 跑它们。
+
+### Changed
+
+- **`.gitignore` 去掉两条 `!` 例外**：`.ship-gate/*` 和 `**/.ship-gate/*` 的忽略保留，不再有 tracked-but-ignored 的例外，ship-gate step 1 的 gitignore-drift invariant 照旧通过。
+- **三处注释不再指向已删除的脚本**：校准包模块注明写入路径只剩测试在调，`--line attribution-gold` 注明标注工具不在本仓库，`resolveAttributionRevisionRoot` 注明本仓库不再派生校准包。
+- **运行时那条路一点没动**：引擎仍然从 `~/.ans` 的校准包头部指针读阈值，读不到就是 0.6 兜底（degraded）。评测核心模块和它们的测试也都留着，`ans-paths.ts` 还在用 `attribution-gold.ts`。
+
+### Known limits
+
+- **以后要重跑这条评测线得从 git 历史里捞**：两个脚本和两份 prereg 都在历史里，`git show <sha>:<path>` 能拿回来。删掉拟合脚本也意味着「从标注数据推出正式阈值」这条路彻底断了——这条路今天本来也没跑过。
+
 ## Unreleased — #347: 快照写出收成一份，prune 的文案统一叫「快照」
 
 一句话说清：**快照写出以前有三份（迁移前备份、prune 存档点、布局迁移各一份），现在只剩一份；`ans upgrade prune` 删数据前留的那份东西，用户看到的说法从「恢复存档点」「恢复依据」统一成「快照」。**

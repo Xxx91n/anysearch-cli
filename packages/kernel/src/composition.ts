@@ -306,8 +306,9 @@ export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 // attribution calibration lives on disk as a revision-root head
-// pointer; only the wiring resolves it. Env override mirrors
-// scripts/attribution-calibrate.mjs; default joins the ~/.ans dir convention.
+// pointer; only the wiring resolves it. Nothing in this repo derives a bundle
+// any more, so a shipped install stays on the legacy floor until one is
+// installed by hand; default joins the ~/.ans dir convention.
 export function resolveAttributionRevisionRoot(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT && env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT.trim();
   if (explicit) return path.resolve(explicit);
