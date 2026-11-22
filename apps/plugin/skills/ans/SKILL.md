@@ -134,12 +134,6 @@ their current versions) plus that session's own stored user turns.
   a default; the call is rejected without a scope on purpose.
 - Do NOT run consolidate in the background on a timer. It is an explicit action.
 
-## Mandatory rules
-
-- Always check recall_memory before starting a new search_web on a topic already discussed.
-- If the anysearch server is unreachable, continue without the memory features; do not wait for the server to come back.
-- Tool names: all anysearch tools use the ans_* prefix (a host may add its own prefixes).
-
 ## Namespace conventions
 
 All anysearch tools use the ans_* prefix. Host agents may add their own namespace
@@ -148,5 +142,6 @@ name that contains ans_ followed by a known tool name.
 
 ## When something breaks
 
-If the anysearch server is down, continue without the memory features.
-Errors are written to stderr, and the tool returns an empty result.
+If the anysearch server is unreachable or down, continue without the memory
+features and do not wait for the server to come back. Errors are written to
+stderr, and the tool returns an empty result.
