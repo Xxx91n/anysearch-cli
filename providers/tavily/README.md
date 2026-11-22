@@ -59,8 +59,9 @@ TAVILY_API_KEY=tvly-... PROBE_TAVILY_RESEARCH=1 node providers/tavily/probe-tavi
 ```
 
 期望输出：每个臂一行 `[PASS|LEAK|INCONCLUSIVE|SKIPPED|ERROR] <id> - <摘要>`，再落两份台账
-`.scratch/grill-round-62/tavily-probe-ledger.{json,md}`（相对当前目录；`.scratch/` 是 gitignore 的，
-所以台账不随仓库走，要留证据就贴进 issue）。
+`tavily-probe-ledger-<ranAt>.{json,md}`，默认目录 `.scratch/grill-round-62/`（相对当前目录；`.scratch/`
+是 gitignore 的，所以台账不随仓库走，要留证据就贴进 issue）。文件名带 `ranAt`，重跑不会盖掉上一轮；
+用 `PROBE_TAVILY_OUT_DIR=/some/dir` 改目录。
 
 退出码：`0` 有臂 PASS 且没泄漏；`1` 有臂判 LEAK；`2` 没有一条能下结论（缺 key、额度用满、
 结果为空都算没有证据，不算通过）。

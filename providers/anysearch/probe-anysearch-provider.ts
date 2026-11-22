@@ -32,17 +32,18 @@ registerHooks({
   },
 });
 
-const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
+const { AnySearchProvider, ANYSEARCH_ENDPOINT } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
 
 // Probe overrides (P1 env/key/endpoint separation):
 // --default-endpoint force the baked-in public endpoint (env ignored)
 // --nokey anonymous call (env key suppressed)
 const ARGS = process.argv.slice(2);
-const QUERY = process.env.ANS_PROBE_QUERY ?? "cloudflare workers";
+// `||`, not `??`: POSIX empty ≡ unset, the same rule the raw probe applies —
+// an empty ANS_PROBE_QUERY must not send an empty query upstream.
+const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
-const PUBLIC_ENDPOINT = "https://api.anysearch.com/mcp";
 
 function scrub(s: string): string {
   let t = s;
@@ -60,7 +61,7 @@ function hostOf(u: string): string {
 async function main(): Promise<void> {
   // Explicit constructor arg wins over env inside the provider —
   // this is the P1 separation lever (endpoint/key attribution).
-  const p = new AnySearchProvider(NO_KEY ? "" : undefined, FORCE_DEFAULT ? PUBLIC_ENDPOINT : undefined);
+  const p = new AnySearchProvider(NO_KEY ? "" : undefined, FORCE_DEFAULT ? ANYSEARCH_ENDPOINT : undefined);
   const t0 = Date.now();
   const envClass = {
     endpointSource: FORCE_DEFAULT ? "default(forced)" : process.env.ANYSEARCH_ENDPOINT ? "env" : "default",

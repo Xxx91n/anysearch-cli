@@ -7,7 +7,7 @@
 //
 // node providers/anysearch/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey]
 //
-// Exit 0 = results-shaped reply; 2 = transport/tool failure; 3 = non-results
+// Exit 0 = results-shaped reply; 2 = transport/tool failure (HTTP, JSON-RPC error); 3 = non-results
 // text shape (the discriminating case this probe exists for).
 
 import { readFileSync } from "node:fs";
@@ -53,12 +53,24 @@ async function post(body: unknown, sessionId: string | null, protocolVersion: st
   return { status: resp.status, sessionId: sid, text };
 }
 
-function parseRpc(text: string): any {
-  // Streamable HTTP may answer with plain JSON or an SSE stream.
-  if (text.trimStart().startsWith("{")) return JSON.parse(text);
-  const dataLines = text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
-  for (const d of dataLines) { try { return JSON.parse(d); } catch { /* keep last parseable */ } }
-  throw new Error("unparseable response body: " + text.slice(0, 120));
+function parseRpc(text: string, expectedId: number): any {
+  // Streamable HTTP may answer with plain JSON or an SSE stream, and a stream
+  // can carry other messages ahead of the reply. Pick by JSON-RPC id — the same
+  // discipline the adapter's readSseJsonRpc applies — so a stray notification
+  // is never read as this call's result.
+  const candidates = text.trimStart().startsWith("{")
+    ? [text]
+    : text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
+  let parseable = 0;
+  for (const raw of candidates) {
+    let msg: any;
+    try { msg = JSON.parse(raw); } catch { continue; }
+    parseable += 1;
+    if (msg?.id === expectedId) return msg;
+  }
+  throw new Error(
+    (parseable ? "no JSON-RPC reply for id " + expectedId + " in: " : "unparseable response body: ") + text.slice(0, 120),
+  );
 }
 
 const out: Record<string, unknown> = {
@@ -73,7 +85,7 @@ try {
     params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "anysearch-raw-probe", version: PROBE_VERSION } },
   }, null, null);
   if (init.status !== 200) { out.ok = false; out.stage = "initialize"; out.httpStatus = init.status; console.log(JSON.stringify(out)); process.exit(2); }
-  const initBody = parseRpc(init.text);
+  const initBody = parseRpc(init.text, 1);
   const negotiated = initBody?.result?.protocolVersion ?? "2025-03-26";
   const sessionId = init.sessionId;
 
@@ -85,8 +97,12 @@ try {
   }, sessionId, negotiated);
   out.httpStatus = call.status;
   if (call.status !== 200) { out.ok = false; out.stage = "tools/call"; out.bodyHead = sanitize(call.text.slice(0, 200)); console.log(JSON.stringify(out)); process.exit(2); }
-  const rpc = parseRpc(call.text);
+  const rpc = parseRpc(call.text, 2);
   out.rpcError = rpc.error ? { code: rpc.error.code, messageHead: sanitize(String(rpc.error.message ?? "").slice(0, 200)) } : null;
+  // A JSON-RPC error is a tool failure (exit 2), not a reply-shape anomaly (3):
+  // the adapter throws on the same reply and classifies it, so reporting it as
+  // drift would send the reader looking at the payload instead of the error.
+  if (rpc.error) out.stage = "tools/call";
   const result = rpc.result;
   out.isError = result?.isError ?? null;
   const texts = (result?.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => sanitize(String(c.text ?? "")));
@@ -96,7 +112,7 @@ try {
   out.hasResultsHeader = joined.includes("## Search Results");
   out.ok = out.hasResultsHeader && !out.isError;
   console.log(JSON.stringify(out, null, 2));
-  process.exit(out.ok ? 0 : out.isError ? 2 : 3);
+  process.exit(out.ok ? 0 : out.isError || rpc.error ? 2 : 3);
 } catch (e) {
   out.ok = false; out.stage = "exception";
   out.errorName = (e as Error).name; out.errorMessage = sanitize(String((e as Error).message ?? e).slice(0, 300));

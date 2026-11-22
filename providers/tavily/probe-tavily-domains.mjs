@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // criterion 5: Tavily include_domains leakage probe — INJECT-style
 // deterministic ledger. Re-runnable: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs
-// Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md} (relative to cwd; .scratch/ is gitignored)
+// Output: $PROBE_TAVILY_OUT_DIR (default .scratch/grill-round-62, relative to cwd; .scratch/ is
+// gitignored), one file per run: tavily-probe-ledger-<ranAt>.{json,md} — a rerun never overwrites
+// an earlier run, so the ledger quoted from a past round stays readable.
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
 // Design: exit codes separate "no evidence" from "probe found a leak" —
@@ -11,7 +13,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
-const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-62"); // r61 originals are SKIPPED-tagged — a rerun must not overwrite them
+const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "grill-round-62"); // per-run file names, so a rerun never overwrites an earlier ledger
 const KEY = process.env.TAVILY_API_KEY;
 const HOST = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const inDomain = (u, allow) => { const h = HOST(u); return allow.some((e) => h === e || h.endsWith("." + e)); };
@@ -99,9 +101,11 @@ ledger.evidenceStatus = conclusive ? "live" : "not-verified";
 if (!conclusive) console.error("no conclusive evidence this run — evidenceStatus=not-verified (exit 2, not a pass)");
 else if (leaked) console.error("LEAK detected — evidenceStatus=live (exit 1, probe failed)");
 mkdirSync(OUT_DIR, { recursive: true });
-writeFileSync(join(OUT_DIR, "tavily-probe-ledger.json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
+const STAMP = ledger.ranAt.replace(/[^0-9TZ]/g, ""); // 20261122T120516123Z
+const LEDGER_BASE = "tavily-probe-ledger-" + STAMP;
+writeFileSync(join(OUT_DIR, LEDGER_BASE + ".json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
 const md = ["# Tavily include_domains probe ledger (criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key + " | evidence: " + ledger.evidenceStatus, "", "| arm | status | summary |", "|---|---|---|",...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
-writeFileSync(join(OUT_DIR, "tavily-probe-ledger.md"), md + NL, "utf8");
-console.log("ledger -> " + join(OUT_DIR, "tavily-probe-ledger.{json,md}"));
+writeFileSync(join(OUT_DIR, LEDGER_BASE + ".md"), md + NL, "utf8");
+console.log("ledger -> " + join(OUT_DIR, LEDGER_BASE + ".{json,md}"));
 if (!conclusive) process.exitCode = 2;
 else if (leaked) process.exitCode = 1;

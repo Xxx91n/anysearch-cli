@@ -5,7 +5,9 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 端点
 
-- 默认 `https://api.anysearch.com/mcp`（MCP Streamable HTTP，只有 `POST /mcp`）。
+- 默认 `https://api.anysearch.com/mcp`（MCP Streamable HTTP，只有 `POST /mcp`）。**这个值的第一来源是
+  代码**：`packages/retriever/src/providers/anysearch.ts` 的 `ANYSEARCH_ENDPOINT`（探针 import 的就是
+  它，不另写一份）；改那边要同步这份 README。
 - `ANYSEARCH_ENDPOINT` 可覆盖。值以 `/v1/search` 结尾时自动改写成 `base+/mcp` 并打一次 stderr 警告——
   REST 还活着（`POST /v1/search` 200），改写成兼容垫片，不是 REST 退役。
 - 官方归属 2026-11-04 确认（#15，证据在适配器头注释）；证书 `*.anysearch.com` 有效期到 2027-04-07，
@@ -76,6 +78,8 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 （`../contract`），tsc 的 Bundler 解析和 tsx 都放行，Node 的 ESM 解析不放行。钩子只在 `.ts` 文件真的
 存在时补一次，坏路径照样报错。另一个办法是往适配器里写 `.ts` 后缀，但那要给编译到适配器源码的三份
 `tsconfig`（retriever / kernel / apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值得。
+它要 Node 22.15+（`module.registerHooks`）；仓库要求的 Node 是 22.19+，没问题，但比这更老的机器上这条
+探针在 import 阶段就会炸。
 
 ## 最近一次真跑
 
