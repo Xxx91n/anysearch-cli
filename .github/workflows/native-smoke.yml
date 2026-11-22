@@ -30,10 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        id: setup
         with:
           install-args: --frozen-lockfile
           dep-age-override: true
       - name: Verify probe process-tree cleanup
+        if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node --test scripts/test/probe-process.test.mjs
       - name: Verify native prebuild loads (${{ matrix.label }})
+        if: ${{ steps.setup.outputs.docs-only != 'true' }}
         run: node scripts/verify-native.mjs

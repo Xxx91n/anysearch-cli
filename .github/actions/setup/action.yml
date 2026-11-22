@@ -7,8 +7,27 @@
 # defaults to "false" (fail-closed) so release jobs stay strict unless a job
 # explicitly opts into the temporary CI bypass.
 
+# Design: one place decides what changed (#408). Every caller unshallows here and
+# takes its base from the event — pull_request: base.sha, push: event.before,
+# workflow_dispatch: the default branch — so no lane repeats the fetch/base
+# dance. A change set that cannot be read reports docs-only=false and runs
+# everything. Only pull_request can be docs-only: a tag/dispatch run is not a
+# PR and must never skip its bootstrap. The doc boundary itself lives in
+# scripts/ci-changes.mjs (`docs/` plus the four root markdown files).
+#
+# Design: docs-only skips the bootstrap and every expensive step in the calling
+# job, but never a step the release gate needs to register a check-run for.
+
 name: Setup Node, pnpm, and dependencies
 description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
+
+outputs:
+  docs-only:
+    description: "'true' only when every changed file is documentation"
+    value: ${{ steps.changes.outputs.docs-only }}
+  changed-files:
+    description: "Newline-delimited changed paths; empty when the change set cannot be read"
+    value: ${{ steps.changes.outputs.changed-files }}
 
 inputs:
   node-version:
@@ -27,11 +46,68 @@ inputs:
 runs:
   using: composite
   steps:
+    # The runner's preinstalled Node runs this stdlib script; setup-node below
+    # only matters for the workspace build and tests.
+    - name: work out what changed
+      id: changes
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        set -uo pipefail
+        git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+        if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
+          git fetch --no-tags --unshallow origin || echo "::warning::could not unshallow; changed files may be incomplete"
+        fi
+
+        base=""
+        if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_BASE_SHA" ]; then
+          base="$PR_BASE_SHA"
+          if [ -n "$PR_BASE_REF" ]; then
+            git fetch --no-tags origin "+refs/heads/$PR_BASE_REF:refs/remotes/origin/$PR_BASE_REF" || true
+          fi
+        elif [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+          base="$PUSH_BEFORE"
+        elif [ -n "$DEFAULT_BRANCH" ]; then
+          base="origin/$DEFAULT_BRANCH"
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" || true
+        fi
+
+        docs_only=false
+        changed_files=""
+        diff_file="$(mktemp)"
+        if [ -n "$base" ]; then
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$base" || true
+          fi
+          merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
+          if [ -n "$merge_base" ] && git diff --name-only --no-renames -z "$merge_base" HEAD > "$diff_file" 2>/dev/null; then
+            changed_files="$(tr '\0' '\n' < "$diff_file")"
+            if [ "$EVENT_NAME" = "pull_request" ] && node scripts/ci-changes.mjs < "$diff_file" 2>/dev/null | grep -qx true; then
+              docs_only=true
+            fi
+          fi
+        fi
+        rm -f "$diff_file"
+
+        {
+          echo "docs-only=$docs_only"
+          echo "changed-files<<ANS_CHANGED_FILES_$GITHUB_RUN_ID"
+          if [ -n "$changed_files" ]; then printf '%s\n' "$changed_files"; fi
+          echo "ANS_CHANGED_FILES_$GITHUB_RUN_ID"
+        } >> "$GITHUB_OUTPUT"
+
     - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       with:
         install: false
 
     - uses: actions/setup-node@v5
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       with:
         node-version: ${{ inputs.node-version }}
         cache: pnpm
@@ -49,6 +125,7 @@ runs:
     # replaces this default rather than appending, so `--frozen-lockfile` lets
     # `allowBuilds: true` packages run their scripts again.
     - name: Install dependencies
+      if: ${{ steps.changes.outputs.docs-only != 'true' }}
       shell: bash
       env:
         INSTALL_ARGS: ${{ inputs.install-args }}
