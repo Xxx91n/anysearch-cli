@@ -1,7 +1,8 @@
 // immutable attribution calibration bundles. Content-addressed
 // JSON per bundle; the active calibration is a head pointer, so rollback is a
 // pointer move and never a rewrite. Lives beside the attribution-gold revision
-// root but is managed by scripts/attribution-calibrate.mjs, not rev verbs.
+// root and outside the rev verbs; its write path has no caller outside the
+// tests, so a bundle only appears when something outside this repo installs one.
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";

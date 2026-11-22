@@ -25,8 +25,8 @@ async function run() {
   const seed = await import("../packages/store/src/eval/calibration-cases.ts");
 
   // line is a first-class namespace. --line attribution-gold shares
-  // the rev verbs but stores revisions under an isolated root; label lifecycle
-  // for that line lives in scripts/attribution-gold-labels.mjs.
+  // the rev verbs but stores revisions under an isolated root; the label
+  // tooling for that line is not in this repo.
   const line = argValue("--line") || "calibration";
   if (!/^[a-z][a-z0-9-]*$/.test(line)) fail(2, "--line must be a slug");
   const rootEnv = line === "attribution-gold" ? "ANS_ATTRIBUTION_GOLD_REVISION_ROOT" : "ANS_CALIBRATION_REVISION_ROOT";

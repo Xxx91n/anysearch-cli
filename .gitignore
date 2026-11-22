@@ -27,8 +27,6 @@ Thumbs.db
 # Phase 3 plugin
 .ship-gate/*
 **/.ship-gate/*
-!.ship-gate/calibration-l2-preregistration.json
-!.ship-gate/attribution-gold-preregistration.json
 
 # 运行时目录（用户级 + 项目级）
 .ans/
