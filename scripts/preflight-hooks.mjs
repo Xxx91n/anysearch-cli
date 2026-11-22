@@ -22,7 +22,6 @@ const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const HOOK = "pre-push";
 const HOOK_SOURCE = path.join("scripts", "hooks", "pre-push-user");
 const OLD_COMMIT_HOOK = "pre-commit-user";
-const INSTALL = "pnpm hooks:install";
 
 // Design: a hook is ours when it carries our banner, not when its shape or a
 // file name looks right — a hand-written hook that happens to mention the gate
@@ -67,25 +66,42 @@ function hookCommand(text) {
   return line ? line.trim() : null;
 }
 
-/** Everything the hook actually does: the shebang plus every non-comment line. */
-function hookCode(text) {
+/** The lines that do something, the shebang included: it picks the interpreter. */
+function codeLines(text) {
   const lines = text.split(/\r?\n/).map((line) => line.trim());
   const code = lines.filter((line) => line !== "" && !line.startsWith("#"));
-  // The shebang picks the interpreter, so it counts even though it looks like a comment.
   if (lines[0]?.startsWith("#!")) code.unshift(lines[0]);
-  return code.join("\n");
+  return code;
 }
 
-/** What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed. */
+/** Everything the hook actually does. */
+function hookCode(text) {
+  return codeLines(text).join("\n");
+}
+
+/** What it does beyond picking an interpreter. */
+function commandLines(text) {
+  return codeLines(text).filter((line) => !line.startsWith("#!"));
+}
+
+/**
+ * What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed
+ * for ours. Anyone else's is quoted as written — an exec line, or its first
+ * command — because naming it is the point even when the shape is unfamiliar.
+ */
 function hookTarget(text) {
   const command = hookCommand(text);
-  if (!command) return null;
+  if (!command) return commandLines(text)[0] ?? null;
   const match = command.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
-  // A command that is not ours is printed as written: naming it is the point.
   if (!match) return command;
   const script = match[1].replace(/\\/g, "/");
   const flags = (match[2] ?? "").trim();
   return flags ? `${script} ${flags}` : script;
+}
+
+/** A file that runs nothing (a shebang alone included) is nobody's hook. */
+function isEmptyHook(text) {
+  return commandLines(text).length === 0;
 }
 
 function isOurs(text) {
@@ -166,6 +182,7 @@ function prePushStatus() {
   }
 
   const hook = { dir: place.dir, hookPath, target: hookTarget(installed.text) };
+  if (isEmptyHook(installed.text)) return { state: "empty", ...hook };
   if (!isOurs(installed.text)) return { state: "foreign", ...hook };
   if (!runsCurrentScript(installed.text, place.source)) return { state: "stale", ...hook };
   if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", ...hook };
@@ -192,7 +209,7 @@ function installHook({ force = false } = {}) {
   // Design: a pre-push that is not ours is left alone unless --force is given —
   // such a hook (husky, a hand-written one) may do real work, and this command
   // is only asked to put our hook in place, not to delete someone else's.
-  if (exists && !isOurs(installed.text) && !force) {
+  if (exists && !isEmptyHook(installed.text) && !isOurs(installed.text) && !force) {
     return { state: "refused", dir: place.dir, hookPath, target: hookTarget(installed.text) };
   }
 
@@ -200,12 +217,15 @@ function installHook({ force = false } = {}) {
   // — pre-commit belongs to GitButler, and a clone that still holds our old
   // commit hook would run tests on every commit.
   const removed = removeOldCommitHook(place.dir);
-  fs.mkdirSync(place.dir, { recursive: true });
-
   // Same code, possibly older comments: leave the bytes as they are, so two
   // checkouts sharing one hooks directory do not rewrite each other.
   const current = exists && runsCurrentScript(installed.text, place.source);
-  if (!current) fs.writeFileSync(hookPath, place.source, { mode: 0o755 });
+  try {
+    fs.mkdirSync(place.dir, { recursive: true });
+    if (!current) fs.writeFileSync(hookPath, place.source, { mode: 0o755 });
+  } catch (error) {
+    return { state: "unknown", dir: place.dir, hookPath, reason: `cannot write ${hookPath}: ${error.message}` };
+  }
 
   // Windows has no execute bit for git to read, so there is nothing to set.
   const chmodError = process.platform !== "win32" && !isExecutable(hookPath) ? makeExecutable(hookPath) : null;
@@ -234,6 +254,7 @@ const INSTALLED_LINE = {
 
 const STATUS_PROBLEM = {
   missing: "pre-push is missing",
+  empty: "pre-push is an empty file",
   stale: "pre-push is out of date, it runs older commands",
   "not-executable": "pre-push is not executable",
   foreign: "pre-push is another script, not ours",

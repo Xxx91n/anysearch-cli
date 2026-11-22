@@ -287,6 +287,35 @@ test("a hand-written hook that only mentions the gate is still someone else's", 
   });
 });
 
+test("an empty pre-push is nobody's hook: status says so and install replaces it", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    writeFileSync(hook, "");
+
+    const status = run(clone, ["status"]);
+    assert.equal(status.status, 1);
+    assert.match(status.stderr, /pre-push is an empty file/);
+
+    const install = run(clone, ["install"]);
+    assert.equal(install.status, 0, install.stderr);
+    assert.equal(readFileSync(hook, "utf8"), source);
+  });
+});
+
+test("a hook with no exec line still has its command named", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    writeFileSync(hook, "#!/bin/sh\n. _/husky.sh\nnpm test\n");
+
+    const status = run(clone, ["status"]);
+    assert.equal(status.status, 1);
+    assert.match(status.stderr, /another script, not ours/);
+    assert.match(status.stderr, /runs: \. _\/husky\.sh/);
+  });
+});
+
 test("install goes where git reads hooks, including a core.hooksPath directory", () => {
   withTemp((base) => {
     const clone = freshClone(base);
