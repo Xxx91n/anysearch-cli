@@ -485,8 +485,11 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
       const mismatchNotes: string[] = [...manifestErrors];
       if (manifestErrors.length === 0 && activeNotInstalled.length > 0) {
+        const subset = activeNotInstalled.length < schema.skills.active.length
+          ? `${activeNotInstalled.join(",")} `
+          : "";
         mismatchNotes.push(
-          `域里的技能键名：${activeNotInstalled.join(",")}——未装在 skills/synced/，${hasToolRequires ? "当前域按 toolRequires 筛工具" : "当前域没配 toolRequires，不筛工具"}`,
+          `${subset}不在 skills/synced/：${hasToolRequires ? "当前域按 toolRequires 筛工具" : "当前域没配 toolRequires，只做标记、不筛工具"}`,
         );
       }
       if (installedNotInAnyDomain.length > 0) {
