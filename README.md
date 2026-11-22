@@ -129,13 +129,13 @@ ans recommend "<free text>"
 ### Installing Agent Skills (`ans skill`)
 
 ```bash
-ans skill install /path/to/checkout/skills/ans
+ans skill install /path/to/checkout/apps/plugin/skills/ans
 ans skill validate             # validate all installed skills; optionally pass one name
 ans skill list
 ans skill uninstall ans
 
 # project scope: add --project to each command
-ans skill install /path/to/checkout/skills/ans --project
+ans skill install /path/to/checkout/apps/plugin/skills/ans --project
 ans skill validate --project
 ans skill list --project
 ans skill uninstall ans --project

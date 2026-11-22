@@ -140,13 +140,13 @@ ans recommend "<自由文本>"
 ### 安装使用该 Agent 的 Skills（`ans skill`）
 
 ```bash
-ans skill install /path/to/checkout/skills/ans
+ans skill install /path/to/checkout/apps/plugin/skills/ans
 ans skill validate             # 校验全部已装 skill；也可以只指定一个名字
 ans skill list
 ans skill uninstall ans
 
 # 项目级：每条命令都加 --project
-ans skill install /path/to/checkout/skills/ans --project
+ans skill install /path/to/checkout/apps/plugin/skills/ans --project
 ans skill validate --project
 ans skill list --project
 ans skill uninstall ans --project
