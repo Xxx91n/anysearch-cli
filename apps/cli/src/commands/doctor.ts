@@ -451,12 +451,45 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         mode: "offline",
         detail: schema.sources.enabled.join(",") || "(空)",
       });
+      const installedSkills = new Set<string>();
+      for (const project of [false, true]) {
+        try {
+          for (const skill of inspectInstalledSkills({ home: configHome, cwd, project }).skills) {
+            installedSkills.add(skill.name);
+          }
+        } catch {
+          // 清单坏了不拦 doctor 主流程，这里只收集能读出来的已装 skill。
+        }
+      }
+      const allActiveInDomains = new Set<string>(schema.skills.active);
+      for (const [file, dir] of listDomainTomls(domainSearchDirs())) {
+        try {
+          for (const s of loadDomain(path.join(dir, file)).skills.active) allActiveInDomains.add(s);
+        } catch {
+          // 坏的域文件在下面的「领域文件发现」那段单独报错。
+        }
+      }
+      const activeNotInstalled = schema.skills.active.filter((s) => !installedSkills.has(s));
+      const installedNotInAnyDomain = [...installedSkills].filter((s) => !allActiveInDomains.has(s)).sort();
+      const hasToolRequires = Boolean(schema.skills.toolRequires && Object.keys(schema.skills.toolRequires).length > 0);
+      const mismatchNotes: string[] = [];
+      if (activeNotInstalled.length > 0) {
+        mismatchNotes.push(
+          `域里写了但没装到 skills/synced/：${activeNotInstalled.join(",")}（[skills].active 是给 toolRequires 筛运行时工具用的键名，不是 skills/synced/ 的加载列表；${hasToolRequires ? "当前域声明了 toolRequires，按映射筛工具" : "当前域没写 toolRequires，只按 toolWhitelist 放行"}）`,
+        );
+      }
+      if (installedNotInAnyDomain.length > 0) {
+        mismatchNotes.push(
+          `装了但没在任何域里启用：${installedNotInAnyDomain.join(",")}（装进 skills/synced/ 的 SKILL.md 供宿主直接读取；要在域里参与筛工具，需在域 TOML 写进 [skills].active 并配 [skills.toolRequires]）`,
+        );
+      }
+      const baseSkillsDetail = schema.skills.active.join(",") || "这个域没有启用技能";
       report.add({
         layer: "capability",
         name: "领域 skills.active",
         state: schema.skills.active.length > 0 ? "ready" : "unconfigured",
         mode: "offline",
-        detail: schema.skills.active.join(",") || "这个域没有启用技能",
+        detail: mismatchNotes.length > 0 ? `${baseSkillsDetail}（${mismatchNotes.join("；")}）` : baseSkillsDetail,
       });
       report.add({
         layer: "capability",

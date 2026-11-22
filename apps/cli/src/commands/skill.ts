@@ -27,8 +27,9 @@ Options:
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
 Frontmatter must be a YAML mapping with a safe lowercase name (1–64 characters).
 Machine-managed skills live in synced/; sibling directories are user-authored.
-Installation copies SKILL.md for a host agent to read; the runtime does not auto-load skills/synced/.
-[skills].active in a domain TOML names skill keys for [skills.toolRequires] (reserved optional skill->tool filter, unused in shipped domains), not a loader for skills/synced/.
+Installation copies the skill directory into skills/synced/ for a host agent to read; the runtime does not auto-load it.
+[skills].active in a domain TOML only names keys for [skills.toolRequires], not directories in skills/synced/.
+When a domain omits [skills.toolRequires] (as all shipped domains do), [skills].active does not filter runtime tools.
 Exit codes: 0 success · 1 validation/filesystem/manifest failure · 2 usage error
 `;
 
