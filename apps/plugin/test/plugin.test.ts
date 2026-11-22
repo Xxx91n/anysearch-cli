@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, readFileSync as fsReadFileSync, existsSync, writeF
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } from "../src/index.js";
-import { ensureMdc } from "../src/hooks/routing-card.js";
+import { DEFAULT_ROUTING_CARD, ensureMdc } from "../src/hooks/routing-card.js";
 import { PLUGIN_ROOT, serverSandbox, spawnServer } from "./server-sandbox.js";
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
@@ -117,34 +117,14 @@ test("makePostToolUseDecision: returns distilledOutput + indexEntries", () => {
 
 // === SessionStart hook ===
 test("SessionStart: routing card has required content", () => {
-  const ROUTING_CARD = [
-    "[anysearch plugin active]",
-    "Tools available (ans_* prefix):",
-    "- search_web: real-time multi-source web search",
-    "- research_web: deep research (minute-level, multi-hop)",
-    "- recall_memory: search the local research archive (FTS5; older results slowly lose weight)",
-    "- query_knowledge: query the knowledge base through the domain's retrieval adapter (with fts, it reads the whole store)",
-    "- ans_chat: PiAgentRuntime agent loop for complex queries",
-    "",
-    "Trigger rules:",
-    "- Current events / factual lookup -> search_web",
-    "- Multi-step research / synthesis -> research_web",
-    "- Recall prior results from this session -> recall_memory",
-    "- Enterprise knowledge base -> query_knowledge",
-    "- Complex multi-tool research -> ans_chat",
-    "- Skip a repeat search when recall_memory results already answer the question; search again when they are incomplete, out of date, or you need the latest",
-    "",
-    "Fail-open: if anysearch server is down, tools degrade gracefully (no block).",
-    "For detailed guidance: see SKILL.md (ans skill).",
-  ].join("\n");
-  assert.ok(ROUTING_CARD.includes("anysearch plugin active"));
-  assert.ok(ROUTING_CARD.includes("search_web"));
-  assert.ok(ROUTING_CARD.includes("recall_memory"));
-  assert.ok(ROUTING_CARD.includes("ans_chat"));
-  assert.ok(ROUTING_CARD.includes("Fail-open"));
-  assert.ok(ROUTING_CARD.includes("SKILL.md"));
-  assert.ok(ROUTING_CARD.length > 400, "routing card should be non-trivial");
-  assert.ok(ROUTING_CARD.length < 2000, "routing card should be < 2000 chars");
+  assert.ok(DEFAULT_ROUTING_CARD.includes("anysearch plugin active"));
+  assert.ok(DEFAULT_ROUTING_CARD.includes("search_web"));
+  assert.ok(DEFAULT_ROUTING_CARD.includes("recall_memory"));
+  assert.ok(DEFAULT_ROUTING_CARD.includes("ans_chat"));
+  assert.ok(DEFAULT_ROUTING_CARD.includes("Fail-open"));
+  assert.ok(DEFAULT_ROUTING_CARD.includes("SKILL.md (ans skill)"));
+  assert.ok(DEFAULT_ROUTING_CARD.length > 400, "routing card should be non-trivial");
+  assert.ok(DEFAULT_ROUTING_CARD.length < 2000, "routing card should be < 2000 chars");
 });
 
 test("SKILL.md: exists and has trigger words", () => {
