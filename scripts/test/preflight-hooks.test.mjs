@@ -166,6 +166,28 @@ test("someone else's pre-push is reported, and install refuses to overwrite it w
   });
 });
 
+test("a hand-written hook that only mentions the gate is still someone else's", () => {
+  withTemp((base) => {
+    const clone = freshClone(base);
+    const hook = join(clone, ".git", "hooks", "pre-push");
+    const theirs = [
+      "#!/bin/sh",
+      "# wrapper, see scripts/preflight-test.mjs",
+      "echo theirs",
+      'exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs" --pushed',
+      "",
+    ].join("\n");
+    writeFileSync(hook, theirs);
+
+    const status = run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stdout + status.stderr);
+    assert.match(status.stderr, /another script, not ours/);
+
+    assert.equal(run(clone, ["install"]).status, 2);
+    assert.equal(readFileSync(hook, "utf8"), theirs, "a hand-written hook was overwritten");
+  });
+});
+
 test("install goes where git reads hooks, including a core.hooksPath directory", () => {
   withTemp((base) => {
     const clone = freshClone(base);
