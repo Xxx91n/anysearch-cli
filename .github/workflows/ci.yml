@@ -73,6 +73,51 @@ jobs:
           name: tarballs-${{ matrix.os }}
           path: artifacts/*.tgz
           if-no-files-found: error
+
+  # Design: test apps/plugin from a copy of the workspace placed at a path with a
+  # space and Chinese characters — every other lane checks out into a pure-ASCII
+  # path, so a path-encoding bug stays green there.
+  #
+  # Advisory: this lane does not gate releases (AGENTS.md, Gate rules).
+  spaced-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
+        with: { install: false }
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      # Same install as check-build; the dependency-age override is temporary.
+      - name: dependency-age override (temporary)
+        run: node scripts/ci-dep-age-override.mjs
+      - run: pnpm install --ignore-scripts
+
+      # Design: copy instead of reinstall — pnpm links are relative, so the copy
+      # resolves into its own store. `.git` stays behind; no test reads it. This
+      # lane covers runtime path handling only, not the install step.
+      - name: Copy workspace to a spaced + non-ASCII path
+        shell: bash
+        run: |
+          SPACED="$(dirname "$GITHUB_WORKSPACE")/ans space 空格/repo"
+          case "$SPACED" in
+            *" "*"空格"*) ;;
+            *) echo "SPACED must keep a space and 空格: $SPACED"; exit 1 ;;
+          esac
+          echo "spaced path: $SPACED"
+          mkdir -p "$SPACED"
+          rsync -aH --exclude .git "$GITHUB_WORKSPACE"/ "$SPACED"/
+          echo "SPACED=$SPACED" >> "$GITHUB_ENV"
+
+      # Design: the package's own `test`, not turbo — turbo's cacheable `build`
+      # could hand the copy dist built at the original checkout, skipping a rebuild.
+      - name: Plugin tests inside the spaced path
+        shell: bash
+        run: pnpm -C "$SPACED/apps/plugin" test
+
   # B2/T2: install-to-use lane against the REAL packed artifacts —
   # the historical gap that let 0.0.0 tarballs sit stale. Packs all seven
   # packages, npm-installs them into a clean prefix, and drives the installed
