@@ -60,14 +60,12 @@ test("a run gives the child a throwaway home and leaves the operator's home alon
   }
 });
 
-test("the throwaway home carries the config dir turbo looks for on Windows", async () => {
+test("the throwaway home gets turbo's config dir on Windows only", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: writeTurboConfigProbePnpm }, ({ root, bin }) => {
     const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0, result.stderr);
     const reported = /^TURBO_CONFIG_DIR_PRESENT=(yes|no)\r?$/m.exec(result.stdout)?.[1];
-    // Without %USERPROFILE%\AppData\Roaming turbo 2.10.11 exits 1 with "Global
-    // config path not found." and no test runs (#381). Off Windows the home
-    // keeps exactly what it had.
+    // Off Windows the home keeps exactly what it had (#381).
     assert.equal(reported, process.platform === "win32" ? "yes" : "no", `in: ${result.stdout}`);
   });
 });
@@ -397,9 +395,9 @@ function writeLeakyPnpm(bin, code) {
 }
 
 // A stand-in pnpm that reports whether the home it was handed carries the
-// config dir turbo resolves from the user profile. turbo 2.10.11 exits 1 with
-// "Global config path not found." before running any task when that dir is
-// missing, so a gated run is only green if it is there.
+// config dir turbo resolves from the user profile. turbo exits 1 with "Global
+// config path not found." before running any task when that dir is missing, so
+// a gated run is only green if it is there.
 function writeTurboConfigProbePnpm(bin) {
   const sh = [
     "#!/bin/sh",

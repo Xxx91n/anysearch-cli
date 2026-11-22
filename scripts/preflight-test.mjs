@@ -210,9 +210,12 @@ function makeTestHome() {
   //
   // Design: recreate only that one layer, and only on Windows — the child gets
   // a home that is real enough for turbo while Linux/macOS keep the home they
-  // had (#381). Creating it on every platform was the alternative; rejected
-  // because the failure cannot happen off Windows, and the Windows lane in ci
-  // runs these tests, so the fix is still guarded.
+  // had (#381). Creating it on every platform was rejected: the failure cannot
+  // happen off Windows, and the Windows lane in ci runs these tests, so the fix
+  // is still guarded. Pointing turbo at a config dir of its own
+  // (TURBO_CONFIG_DIR_PATH) was rejected too: that hides one program's lookups
+  // instead of giving the child the home a real profile has, and the next
+  // program to read the profile fails the same way.
   if (process.platform === "win32") fs.mkdirSync(path.join(home, "AppData", "Roaming"), { recursive: true });
   const realHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
   // Windows env names are case-insensitive, so the filter is too: a lowercase
