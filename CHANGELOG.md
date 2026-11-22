@@ -18,6 +18,25 @@
 - **`providers/` 不在 `pnpm -r check` 里**：探针是手跑夹具，不进构建（#425 已记）。这次验的是真跑：默认、flag、env 三路各 `ok:true`，缺值那路退出 2。
 - **`docs/eval/ip-corpus-probe-2026-11-07.md` 里那条 `2025-03-26` 不回改**：那是带日期的历史记录。
 
+## Unreleased — #441: 把每家的凭据状态说出来（`credentialSources` 有了消费者）
+
+一句话说清：**引擎一直算着每家的 key 从哪来（env / 用户凭据文件 / 没有），但产品代码没人读；现在 `ans search --json`、MCP 的 `search_web` / `research_web` 和 `ans doctor` 都说同一件事。doctor 还改掉了两句假话——没 key 的 tavily / anysearch 照样参与检索，provider 那行的恒真判断也不再冒充检查。**
+
+### Changed
+
+- **`ans search --json` 多一个 `credentialSources`**：原样带上引擎的 `CompositionResult.credentialSources`（`{status:"resolved", tavily/exa/anysearch: "env"|"user"|"none"}`，解析抛错时是 `{status:"failed", error}`），字段名与结构都不重造；没有凭据接线时是 `null`。
+- **失败时那句 `Providers failed` 带上来源**：只在某一臂运行时失败时，括号里说清 key 从哪来，例如 `Providers failed: anysearch（无 key，按匿名跑）`；没 key 的 tavily 说「按 keyless 跑」，anysearch 说「按匿名跑」。解析没跑成、或记录里没这个 arm 时不编来源。没有臂失败时纯文本输出不变。
+- **MCP 的 `structuredContent.credentialSources`**：`search_web` / `research_web` 的成功结果（含部分失败）带上同一份引擎记录，没有凭据接线时和 CLI 一样是 `null`；错误结果照旧不带 `structuredContent`。
+- **`ans doctor` 的「信息源 X」按各家的真实行为写**：没 key 时 tavily「按 keyless 跑」、anysearch「按匿名跑」、exa「这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）」。
+- **`ans doctor` 的 `provider X` 行只验构造器能建**：删掉 `instance.id.length > 0 && instance.modes.length >= 3` 这条恒真式；构造器建起来就报可用，key 归「信息源」，联网与 key 是否有效留给 #442 的联网检查。
+
+### Tests
+
+- `apps/cli/test/abstain.test.ts`：失败行的来源标注（env / user / 无 key 三家措辞 / 解析失败不编来源 / 多臂）。
+- `apps/cli/test/doctor.test.ts`：没 key 三家「信息源」措辞、provider 行只按构造器成败报；env key 下三行都报来源。
+- `apps/cli/test/e2e.test.ts`：`--json` 带上 `credentialSources`（endpoint-only 的 anysearch 记 `none`）；运行时失败行带上「key 来自环境变量」。
+- `apps/mcp/test/failure-semantics.test.ts`：`search_web` / `research_web` 部分失败时 `structuredContent.credentialSources` 与引擎一致。
+
 ## Unreleased — #424: Cursor 那一套全删掉
 
 一句话说清：**Cursor 一直只有一个钩子适配器和一份配置模板：没进接线清单，`ans doctor` 不查，文档只有一页手点清单。那份模板还缺 Cursor 要求的 `version: 1`、条目写成 `{name, command, args}`；适配器在 `preToolUse` 上回的 `additional_context` 不在 Cursor 的权限钩子输出字段里，而 Cursor 的规矩是这一步回的话看不懂就不让这次调用——真装上可能把 `ans_*` 调用挡掉。Cursor 本身要改名、后面还有大调整，所以不补文档、不进 doctor，整条删掉。**

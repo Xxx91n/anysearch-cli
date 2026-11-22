@@ -143,7 +143,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             2,
           );
 
-          // structuredContent.abstain, isError absent (false).
+          // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
+          // 结果一定带 structuredContent：credentialSources 恒有值；其余字段
+          // 有值时才加。
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
             // #304 review: a cancelled research call stops after the aborted
@@ -154,10 +156,12 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
             ...(providerFailures ?? {}),
+            // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
+            credentialSources: eng.credentialSources ?? null,
           };
           return {
             content: [{ type: "text" as const, text: summary }],
-            ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
+            structuredContent,
           };
         } catch (e) {
           // A refused reservation never reached a provider. Earlier rounds, if

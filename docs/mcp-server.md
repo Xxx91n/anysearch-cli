@@ -200,9 +200,10 @@ The server follows the MCP rule that an execution failure is an
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
-| Search returned zero hits but at least one provider answered | absent (success) | optional metadata; abstain only if the domain filter emptied the pool |
-| Domain gate emptied the pool (abstain) | absent (success) | `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}` |
-| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors` |
+| Successful search / research with results | absent (success) | `credentialSources`, plus sufficiency / attribution when present |
+| Search returned zero hits but at least one provider answered | absent (success) | `credentialSources`; optional metadata; abstain only if the domain filter emptied the pool |
+| Domain gate emptied the pool (abstain) | absent (success) | `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `credentialSources` |
+| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
@@ -236,6 +237,14 @@ Rules behind the table:
   `quota-exhausted` / `permanent-protocol` / `session-expired` / `unknown`),
   `providerErrorHints` and construction-time `providerBuildErrors` appear in
   both the content JSON and `structuredContent`.
+- **Credential sources travel with every successful result.**
+  `structuredContent.credentialSources` is the engine's own record of where
+  each search arm's key came from — `env`, `user`, or `none` (an arm with an
+  endpoint and no key) — never a key value. It is the same object
+  `ans search --json` emits, so the two surfaces cannot disagree. A
+  construction-failed arm records nothing, and an engine built without a
+  credential seam reports `null` in both surfaces. Error results do not carry
+  it.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in
