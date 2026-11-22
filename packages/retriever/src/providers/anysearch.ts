@@ -381,7 +381,7 @@ export class AnySearchProvider implements SearchProvider {
   }
 
   async usage(): Promise<{ remaining?: number; limit?: number; resetAt?: string } | undefined> {
-    // ponytail: AnySearch usage not exposed via a standalone API.
+    // ponytail: the MCP surface (tools/list) has no usage tool, so there is nothing to map.
     return undefined;
   }
 }

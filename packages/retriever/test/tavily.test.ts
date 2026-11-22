@@ -68,7 +68,7 @@ async function main() {
   assert(emptyEnvelope.results.length === 0, "empty results handled");
   assert(emptyEnvelope.answers!.length === 0, "no answers when empty");
 
-  // 7. usage() returns undefined (Tavily has no standalone usage API)
+  // 7. usage() returns undefined (credits arrive per call; upstream's GET /usage is unimplemented here)
   const usage = await (provider as any).usage?.();
   assert(usage === undefined, "usage returns undefined");
 
