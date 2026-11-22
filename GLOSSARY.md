@@ -250,7 +250,6 @@
   _Avoid_: Skill Active List
 
 - **项目身份**:本次明确项目的真实根路径及识别来源，不能确定就记为未知，不借其他项目的状态（代码里叫 ProjectContext）。
-  _Avoid_: Project Context、项目上下文
 
 - **会话身份**:观测和钩子用来归组记录的 id（代码里叫 session_id）。
   _Avoid_: Session Identity
