@@ -1,6 +1,6 @@
 // ProjectIndexStore: per-project FTS5 index, physically separate from SessionStore.
 // Physical dual-DB. Internal agent reads this only (read-only).
-// Written by hooks layer via IPC to long-running MCP server ( +2).
+// Written by the hooks layer over IPC to the long-running plugin server.
 //
 // Every read states its project scope. One project is the normal case; more
 // than one is a deliberate cross-project read the caller asked for. There is

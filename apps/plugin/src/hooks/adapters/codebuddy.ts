@@ -1,5 +1,5 @@
 // CodeBuddy Code hooks adapter.
-// CodeBuddy hook contract (grill-verified, CodeBuddy Code 2.149.0):
+// CodeBuddy hook contract (live-verified, CodeBuddy Code 2.151.0):
 // stdin: hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
 // stdout: decisions via hookSpecificOutput envelope
 // { permissionDecision | additionalContext | updatedToolOutput }

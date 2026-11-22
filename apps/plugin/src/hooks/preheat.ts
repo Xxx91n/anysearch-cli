@@ -1,6 +1,7 @@
-// PreToolUse: recall_memory preheating inject.
-// Q7=B: before ans_search/ans_research runs, inject relevant memories
-// from project index so the agent has context before making the call.
+// PreToolUse: project-index preheating for the five ans tools (search_web /
+// research_web / recall_memory / query_knowledge / ans_chat) whose input carries
+// a `query` — research_web takes `question`, so it never preheats. Q7=B: the
+// memories go in before the call, so the agent has context first.
 // URL authorization policy comes from the server's single parse point
 // (GET /policy) or the materialized cache — hooks NEVER read ANS_URL_ALLOWLIST directly.
 //
