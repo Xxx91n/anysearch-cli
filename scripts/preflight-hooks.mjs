@@ -23,6 +23,11 @@ const OLD_COMMIT_HOOK = "pre-commit-user";
 // second banner is what hooks installed before this command existed carry.
 const OWN_BANNERS = ["# anysearch push gate", "# anysearch pre-push"];
 
+// The gate script, matched in the two places that care: what a hook runs, and
+// whether a hook is ours. One pattern, so a rename cannot split them.
+const GATE_SCRIPT = /scripts[\\/]preflight-[^\s"']+\.mjs/;
+const GATE_COMMAND = new RegExp(`(${GATE_SCRIPT.source})["']?(?:\\s+(.*))?$`);
+
 function firstLine(text) {
   return text.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "";
 }
@@ -30,7 +35,10 @@ function firstLine(text) {
 function revParse(cwd, args, what) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (result.error) return { error: `cannot run git: ${result.error.message}` };
-  if (result.status !== 0) return { error: `${what}: ${firstLine(result.stderr) || `git exited ${result.status}`}` };
+  if (result.status !== 0) {
+    const why = firstLine(result.stderr) || (result.signal ? `git killed by ${result.signal}` : `git exited ${result.status}`);
+    return { error: `${what}: ${why}` };
+  }
   const out = result.stdout.trim();
   return out ? { out } : { error: `${what}: git printed nothing` };
 }
@@ -86,7 +94,7 @@ function commandLines(text) {
 function hookTarget(text) {
   const command = hookCommand(text);
   if (!command) return commandLines(text)[0] ?? null;
-  const match = command.match(/(scripts[\\/]preflight-[^\s"']+\.mjs)["']?(?:\s+(.*))?$/);
+  const match = command.match(GATE_COMMAND);
   if (!match) return command;
   const script = match[1].replace(/\\/g, "/");
   const flags = (match[2] ?? "").trim();
@@ -106,7 +114,7 @@ function isOurs(text) {
   const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
   if (!OWN_BANNERS.some((prefix) => banner?.startsWith(prefix))) return false;
   // A note that starts like our banner still has to run the gate to be ours.
-  return /scripts[\\/]preflight-test\.mjs/.test(hookCommand(text) ?? "");
+  return GATE_SCRIPT.test(hookCommand(text) ?? "");
 }
 
 /**
@@ -219,10 +227,9 @@ function installHook({ force = false } = {}) {
     return { state: "unknown", dir: place.dir, hookPath, reason: `cannot write ${hookPath}: ${error.message}` };
   }
 
-  // Design: the old pre-commit-user is deleted after the push hook is written,
-  // so a failed write leaves the clone exactly as it was — and GitButler's
-  // pre-commit is never touched: a clone that still holds our old commit hook
-  // keeps firing it, so the stale file goes.
+  // Design: the old pre-commit-user is deleted only after the push hook is
+  // written, so a failed write leaves the clone untouched. GitButler's own
+  // pre-commit is never touched.
   const removed = removeOldCommitHook(place.dir);
 
   // Windows has no execute bit for git to read, so there is nothing to set.
@@ -311,9 +318,11 @@ function isEntryPoint() {
   }
 }
 
+const FLAGS = { install: ["--force"], status: [] };
+
 if (isEntryPoint()) {
   const [command, ...flags] = process.argv.slice(2);
-  const allowed = command === "install" ? ["--force"] : command === "status" ? [] : null;
+  const allowed = FLAGS[command];
   if (!allowed || flags.some((flag) => !allowed.includes(flag))) {
     console.error("[hooks] usage: node scripts/preflight-hooks.mjs install [--force] | status");
     process.exit(2);

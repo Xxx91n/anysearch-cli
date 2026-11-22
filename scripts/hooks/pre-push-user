@@ -1,5 +1,6 @@
 #!/bin/sh
-# anysearch push gate — hooks:status recognizes this file by this line: keep it first, unchanged.
+# anysearch push gate — hooks:status recognizes this file by this line and the exec
+# below: keep both as they are, or the hook reads as someone else's.
 # anysearch pre-push: run the tests this push can break — the changed workspace
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.

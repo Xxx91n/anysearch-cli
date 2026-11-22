@@ -21,16 +21,27 @@ function withSandbox(fn) {
   const empty = join(base, "gitconfig-empty");
   mkdirSync(home, { recursive: true });
   writeFileSync(empty, "");
-  // A global core.hooksPath would send installs outside the sandbox, and --force
-  // could then overwrite a real hook on the operator's machine.
-  const env = {
-    ...process.env,
+  // A global core.hooksPath, or a repository exported by the caller, would send
+  // installs outside the sandbox — and --force could then overwrite a real hook
+  // on the operator's machine.
+  const env = { ...process.env };
+  for (const key of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  ]) {
+    delete env[key];
+  }
+  Object.assign(env, {
     HOME: home,
     USERPROFILE: home,
     GIT_CONFIG_GLOBAL: empty,
     GIT_CONFIG_SYSTEM: empty,
     GIT_CONFIG_NOSYSTEM: "1",
-  };
+  });
   const git = (cwd, args) => {
     const result = spawnSync("git", args, { cwd, env, encoding: "utf8" });
     assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr}`);
@@ -61,7 +72,7 @@ function installOk(box, cwd, ...flags) {
 }
 
 /** A clone that holds the script itself, the way a real checkout does. */
-function withScriptsIn(box, clone) {
+function withScriptsIn(clone) {
   mkdirSync(join(clone, "scripts", "hooks"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(clone, "package.json"));
   copyFileSync(cli, join(clone, "scripts", "preflight-hooks.mjs"));
@@ -98,7 +109,8 @@ test("the commands find the repo from a subdirectory, not only the root", () => 
     const nested = join(clone, "apps", "cli");
     mkdirSync(nested, { recursive: true });
     installOk(box, nested);
-    assert.equal(box.run(nested, ["status"]).status, 0);
+    const status = box.run(nested, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
   });
 });
 
@@ -144,7 +156,8 @@ test("a hook left behind by an older script is reported, and install refreshes i
     const install = installOk(box, clone);
     assert.match(install.stdout, /replaced with the current script/);
     assert.equal(readFileSync(hookPath(clone), "utf8"), source);
-    assert.equal(box.run(clone, ["status"]).status, 0);
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
   });
 });
 
@@ -158,7 +171,8 @@ test("a hook whose comments moved on is still current, and install leaves the by
     writeFileSync(hookPath(clone), edited);
     const stamp = statSync(hookPath(clone)).mtimeMs;
 
-    assert.equal(box.run(clone, ["status"]).status, 0);
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
 
     const install = installOk(box, clone);
     assert.match(install.stdout, /already installed and current/);
@@ -241,7 +255,8 @@ test("a banner outside the header is a note, not ownership", () => {
     const status = box.run(clone, ["status"]);
     assert.equal(status.status, 1);
     assert.match(status.stderr, /another script, not ours/);
-    assert.equal(box.run(clone, ["install"]).status, 2);
+    const refused = box.run(clone, ["install"]);
+    assert.equal(refused.status, 2, refused.stderr);
     assert.equal(readFileSync(hookPath(clone), "utf8"), theirs);
   });
 });
@@ -255,7 +270,8 @@ test("a header banner that does not run the gate is still someone else's", () =>
     const status = box.run(clone, ["status"]);
     assert.equal(status.status, 1);
     assert.match(status.stderr, /another script, not ours/);
-    assert.equal(box.run(clone, ["install"]).status, 2);
+    const refused = box.run(clone, ["install"]);
+    assert.equal(refused.status, 2, refused.stderr);
     assert.equal(readFileSync(hookPath(clone), "utf8"), theirs);
   });
 });
@@ -272,8 +288,10 @@ test("a hand-written hook that only mentions the gate is still someone else's", 
     ].join("\n");
     writeFileSync(hookPath(clone), theirs);
 
-    assert.equal(box.run(clone, ["status"]).status, 1);
-    assert.equal(box.run(clone, ["install"]).status, 2);
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stderr);
+    const refused = box.run(clone, ["install"]);
+    assert.equal(refused.status, 2, refused.stderr);
     assert.equal(readFileSync(hookPath(clone), "utf8"), theirs, "a hand-written hook was overwritten");
   });
 });
@@ -313,7 +331,8 @@ test("install goes where git reads hooks, including a core.hooksPath directory",
     installOk(box, clone);
     assert.equal(readFileSync(join(clone, ".githooks", "pre-push"), "utf8"), source);
     assert.equal(existsSync(hookPath(clone)), false, "the hook landed where git does not read it");
-    assert.equal(box.run(clone, ["status"]).status, 0);
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
   });
 });
 
@@ -325,7 +344,8 @@ test("outside a git repo it says it cannot tell instead of guessing", () => {
     const status = box.run(empty, ["status"]);
     assert.equal(status.status, 2);
     assert.match(status.stderr, /cannot tell/);
-    assert.equal(box.run(empty, ["install"]).status, 2);
+    const refused = box.run(empty, ["install"]);
+    assert.equal(refused.status, 2, refused.stderr);
   });
 });
 
@@ -343,7 +363,7 @@ test("an unknown command is a usage error, not a silent success", () => {
 test("a clone that holds the script runs both commands itself", () => {
   withSandbox((box) => {
     const clone = box.clone();
-    const local = withScriptsIn(box, clone);
+    const local = withScriptsIn(clone);
 
     const before = box.run(clone, ["status"], local);
     assert.equal(before.status, 1, before.stderr);
@@ -357,23 +377,39 @@ test("a clone that holds the script runs both commands itself", () => {
   });
 });
 
-test("the documented pnpm commands reach the script, --force included", { skip: !hasPnpm() }, () => {
+test("the documented pnpm commands reach the script, --force included", (t) => {
   withSandbox((box) => {
     const clone = box.clone();
-    withScriptsIn(box, clone);
+    withScriptsIn(clone);
     const pnpm = (args) =>
       spawnSync("pnpm", args, { cwd: clone, env: box.env, encoding: "utf8", shell: process.platform === "win32" });
 
-    assert.equal(pnpm(["hooks:status"]).status, 1);
-    assert.equal(pnpm(["hooks:install"]).status, 0);
-    assert.equal(pnpm(["hooks:status"]).status, 0);
+    const probe = pnpm(["-v"]);
+    if (probe.error || probe.status !== 0) {
+      // The only check that the command AGENTS.md documents works must run in
+      // CI, so a missing pnpm there is a failure, not a skip.
+      if (process.env.CI) assert.fail(`pnpm is not on PATH in CI: ${probe.error?.message ?? probe.stderr}`);
+      t.skip("pnpm is not on PATH here");
+      return;
+    }
+
+    const before = pnpm(["hooks:status"]);
+    assert.equal(before.status, 1, before.stderr);
+
+    const install = pnpm(["hooks:install"]);
+    assert.equal(install.status, 0, install.stderr);
+
+    const after = pnpm(["hooks:status"]);
+    assert.equal(after.status, 0, after.stderr);
 
     const theirs = "#!/bin/sh\necho mine\n";
     writeFileSync(hookPath(clone), theirs);
-    assert.notEqual(pnpm(["hooks:install"]).status, 0, "pnpm swallowed the refusal");
-    assert.equal(readFileSync(hookPath(clone), "utf8"), theirs);
+    const refused = pnpm(["hooks:install"]);
+    assert.notEqual(refused.status, 0, `pnpm swallowed the refusal: ${refused.stderr}`);
+    assert.equal(readFileSync(hookPath(clone), "utf8"), theirs, refused.stderr);
 
-    assert.equal(pnpm(["hooks:install", "--force"]).status, 0, "pnpm did not pass --force through");
+    const forced = pnpm(["hooks:install", "--force"]);
+    assert.equal(forced.status, 0, `pnpm did not pass --force through: ${forced.stderr}`);
     assert.equal(readFileSync(hookPath(clone), "utf8"), source);
   });
 });
@@ -385,16 +421,12 @@ test("a hook without the execute bit is reported, and install fixes it", { skip:
     chmodSync(hookPath(clone), 0o644);
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 1);
+    assert.equal(status.status, 1, status.stderr);
     assert.match(status.stderr, /not executable/);
 
     installOk(box, clone);
     assert.notEqual(statSync(hookPath(clone)).mode & 0o111, 0, "install left the hook unexecutable");
-    assert.equal(box.run(clone, ["status"]).status, 0);
+    const fixed = box.run(clone, ["status"]);
+    assert.equal(fixed.status, 0, fixed.stderr);
   });
 });
-
-function hasPnpm() {
-  const probe = spawnSync("pnpm", ["-v"], { encoding: "utf8", shell: process.platform === "win32" });
-  return !probe.error && probe.status === 0;
-}
