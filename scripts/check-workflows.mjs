@@ -44,9 +44,9 @@ export function discoverCompositeActions(dir = ACTIONS_DIR) {
   return found.sort();
 }
 
-// Design: check every `uses: ./.github/actions/...` reference points to an
-// actual action.yml|action.yaml on disk — catches typos like `set-up` locally
-// before GitHub Actions rejects the workflow at startup.
+// Design: check every local `uses: ./...` reference points to an existing
+// action.yml|action.yaml (or workflow file for reusable workflows) — catches
+// typos like `set-up` or `.github/action/` before GitHub Actions fails at start.
 export function findLocalActionRefs(text) {
   const refs = [];
   let blockIndent = -1;
@@ -54,30 +54,36 @@ export function findLocalActionRefs(text) {
     const n = i + 1;
     const indent = raw.length - raw.trimStart().length;
     if (blockIndent >= 0) {
-      if (indent > blockIndent) return;
+      if (!raw.trim() || indent > blockIndent) return;
       blockIndent = -1;
     }
     const active = raw.replace(/(^|\s)#.*$/, "").trim();
     if (!active) return;
-    if (/^[A-Za-z_][\w-]*:\s*[|>][+-]?\s*$/.test(active)) { blockIndent = indent; return; }
-    const m = active.match(/^(?:-\s+)?uses:\s*(['"]?)(\.\/\.github\/actions\/[^'"\s]+)\1\s*$/);
+    if (/^(?:-\s+)?[A-Za-z_][\w-]*:\s*[|>][+-]?\s*$/.test(active)) { blockIndent = indent; return; }
+    const m = active.match(/^(?:-\s+)?uses:\s*(['"]?)(\.\/[^'"\s]+)\1\s*$/);
     if (m) refs.push({ line: n, ref: m[2] });
   });
   return refs;
 }
 
 export function checkLocalActionRefs(text, rootDir = ROOT) {
-  const actionsRoot = path.resolve(rootDir, ".github", "actions");
+  const repoRoot = path.resolve(rootDir);
   const problems = [];
   for (const { line, ref } of findLocalActionRefs(text)) {
-    const targetDir = path.resolve(rootDir, ref);
-    const rel = path.relative(actionsRoot, targetDir);
-    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
-      problems.push("line " + line + ": local action ref `" + ref + "` escapes .github/actions/");
+    const target = path.resolve(repoRoot, ref);
+    const rel = path.relative(repoRoot, target);
+    if (!rel || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
+      problems.push("line " + line + ": local uses ref `" + ref + "` escapes repo root");
       continue;
     }
-    const hasYml = fs.existsSync(path.join(targetDir, "action.yml"));
-    const hasYaml = fs.existsSync(path.join(targetDir, "action.yaml"));
+    if (/\.ya?ml$/i.test(target)) {
+      if (!fs.existsSync(target)) {
+        problems.push("line " + line + ": local workflow `" + ref + "` does not exist");
+      }
+      continue;
+    }
+    const hasYml = fs.existsSync(path.join(target, "action.yml"));
+    const hasYaml = fs.existsSync(path.join(target, "action.yaml"));
     if (!hasYml && !hasYaml) {
       problems.push("line " + line + ": local action `" + ref + "` missing action.yml or action.yaml");
     }

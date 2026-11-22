@@ -813,7 +813,8 @@ function stepStaticAssertions() {
         ciYamlFiles.push({ label: f, full: path.join(wfDir, f) });
       }
       const actionsDir = path.join(ROOT, ".github/actions");
-      for (const rel of discoverCompositeActions(actionsDir)) {
+      const actionFiles = discoverCompositeActions(actionsDir);
+      for (const rel of actionFiles) {
         ciYamlFiles.push({ label: "actions/" + rel, full: path.join(actionsDir, rel) });
       }
       const offenders = [];
@@ -825,7 +826,7 @@ function stepStaticAssertions() {
         for (const line of body.split(/\r?\n/)) {
           const active = line.replace(/(^|\s)#.*$/, "");
           if (!active.trim()) continue;
-          if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*"?0"?/.test(active)
+          if (/PNPM_CONFIG_MINIMUM_RELEASE_AGE\s*[:=]\s*['"]?0['"]?/.test(active)
             && !/ci-dep-age-override\.mjs/.test(active)) {
             offenders.push(label + ": " + active.trim());
           }
@@ -835,13 +836,19 @@ function stepStaticAssertions() {
         fail("E6: a workflow/action sets PNPM_CONFIG_MINIMUM_RELEASE_AGE directly — use scripts/ci-dep-age-override.mjs (self-expiring) instead: " + offenders.join("; "));
       }
 
-      // Design: enforce via parsed YAML (never regex) that the shared setup
-      // action defaults `dep-age-override` to false and release.yml never turns
-      // it on or calls ci-dep-age-override.mjs directly.
+      // Design: enforce via parsed YAML (never regex) that any local composite
+      // action invoking ci-dep-age-override.mjs gates it on a fail-closed
+      // `dep-age-override` input (default false), and release.yml never enables
+      // it or invokes ci-dep-age-override.mjs directly.
       const YAML = resolveWorkflowYaml();
       if (!YAML) failUnverifiable("E6: cannot verify release.yml dep-age-override contract: no YAML parser resolvable");
       const isExplicitFalse = (v) => v === false || (typeof v === "string" && v.trim().toLowerCase() === "false");
-      for (const rel of discoverCompositeActions(actionsDir)) {
+      const isGatedOnDepAgeInput = (cond) => {
+        if (typeof cond !== "string") return false;
+        const inner = cond.trim().replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "").trim();
+        return /^inputs\.dep-age-override\s*==\s*['"]true['"]$/.test(inner);
+      };
+      for (const rel of actionFiles) {
         const full = path.join(actionsDir, rel);
         let actionDoc = null;
         try { actionDoc = YAML.parse(fs.readFileSync(full, "utf8")); }
@@ -849,6 +856,16 @@ function stepStaticAssertions() {
         const inputDef = actionDoc?.inputs?.["dep-age-override"];
         if (inputDef !== undefined && !isExplicitFalse(inputDef?.default)) {
           fail("E6: actions/" + rel + " input `dep-age-override` must default to false (got " + JSON.stringify(inputDef?.default) + ")");
+        }
+        for (const step of Array.isArray(actionDoc?.runs?.steps) ? actionDoc.runs.steps : []) {
+          if (typeof step?.run === "string" && /ci-dep-age-override\.mjs/.test(step.run)) {
+            if (inputDef === undefined || !isExplicitFalse(inputDef?.default)) {
+              fail("E6: actions/" + rel + " invokes ci-dep-age-override.mjs without a fail-closed `dep-age-override` input");
+            }
+            if (!isGatedOnDepAgeInput(step.if)) {
+              fail("E6: actions/" + rel + " step invoking ci-dep-age-override.mjs must be gated with `if: ${{ inputs.dep-age-override == 'true' }}` (got " + JSON.stringify(step.if) + ")");
+            }
+          }
         }
       }
       const releasePath = path.join(ROOT, ".github/workflows/release.yml");
@@ -864,9 +881,7 @@ function stepStaticAssertions() {
           }
           if (typeof step?.uses === "string" && step.uses.trim().startsWith("./.github/actions/")) {
             const val = step?.with?.["dep-age-override"];
-            const ok = val === undefined || val === false
-              || (typeof val === "string" && val.trim().toLowerCase() === "false");
-            if (!ok) {
+            if (!(val === undefined || isExplicitFalse(val))) {
               fail("E6: release.yml job `" + jobName + "` enables dep-age-override on " + step.uses.trim() + " (got " + JSON.stringify(val) + ")");
             }
           }
