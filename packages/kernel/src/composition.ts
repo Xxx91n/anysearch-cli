@@ -6,7 +6,7 @@
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import type { SearchProvider, SearchRequest } from "@anysearch-cli/retriever";
+import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
@@ -238,63 +238,6 @@ export type CredentialSources =
 /** Where one search arm's key came from; `"none"` means the arm has no key. */
 export type CredentialSourceLabel = "env" | "user" | "none";
 
-/**
- * Keep a resolver warning's meaning but drop anything that could be a secret.
- *
- * Reworked to stop guessing: an earlier version decided by shape ("this looks
- * like words, so it cannot be a key"), which let a lower-case key body through
- * and ate directory names that contained a digit. The order is now explicit:
- *
- * 1. set every file path aside, because the message exists to say WHICH FILE
- *    could not be read;
- * 2. redact everything key-shaped in what is left, with no shape-based escape;
- * 3. put the paths back.
- *
- * Step 2 redacts two forms: a known key prefix with a body of 8+ key characters
- * (the body may cross `/` and `.`, so a base64 key split by either is removed
- * whole), and any run of 20+ key characters. Both thresholds are deliberately
- * low: over-redacting a warning costs a sentence, under-redacting costs a key.
- */
-export function redactPathFault(warning: string): string {
-  const paths: string[] = [];
-  // Placeholders are letters and digits only: a path contains backslashes, and a
-  // backslash inside a replacement string is an escape, not a character.
-  const token = (i: number) => "ZZPATH" + i + "ZZ";
-  const body = warning.replace(PATH_RE, (match, offset: number) => {
-    // A key can look exactly like a relative path (`sk-proj-ab12/cd34`). When
-    // the match continues a known key prefix, it is a key, not a path - leaving
-    // it unprotected is what lets the prefix rule below remove it whole.
-    if (KEY_PREFIX_AT_END.test(warning.slice(0, offset))) return match;
-    const kept = paths.length;
-    paths.push(match);
-    return token(kept);
-  });
-  const redacted = body
-    .replace(/(?:sk|pk|rk|tvly|exa|key|api|tok)[-_][A-Za-z0-9_\-+=/.!]{8,}/gi, "[redacted]")
-    .replace(/[A-Za-z0-9_\-+=]{20,}/g, "[redacted]");
-  return paths.reduce((text, path, i) => text.split(token(i)).join(path), redacted);
-}
-
-const KEY_PREFIX_AT_END = /(?:sk|pk|rk|tvly|exa|key|api|tok)[-_]$/i;
-
-/**
- * Real paths only. The relative branch needs a dot in the name or a known file
- * extension, because a bare `a/b` is also the shape of a base64 key body - and
- * protecting a key from redaction is the one failure this function cannot make.
- * The match stops at whitespace or punctuation that ends a path in these
- * messages, so `.../credentials.json: EACCES` keeps the errno outside the span.
- */
-const PATH_RE = new RegExp(
-  [
-    // absolute POSIX or drive-letter path, any segments
-    "(?:[A-Za-z]:)?[\\\\/][A-Za-z0-9._~\\-\\\\/]*",
-    // relative path that is clearly a file: it carries an extension
-    "|\\b[A-Za-z0-9._\\-]+(?:[\\\\/][A-Za-z0-9._\\-]+)*[\\\\/][A-Za-z0-9._\\-]+\\.[A-Za-z0-9]{1,10}\\b",
-    // dotted file name with no directory part
-    "|\\b[A-Za-z0-9._\\-]+\\.(?:json|toml|lock|log|txt|ya?ml|db|sqlite|acl|tmp)\\b",
-  ].join(""),
-  "g",
-);
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).
@@ -392,7 +335,7 @@ export function createEngine(
       for (const warning of creds?.warnings ?? []) {
         // Same rule as a thrown fault: the sentence is useful, so it is kept,
         // but only after anything key-shaped has been removed.
-        writeProviderDiagnostic("[anysearch] " + redactPathFault(warning) + "\n");
+        writeProviderDiagnostic("[anysearch] " + redactSecrets(warning) + "\n");
       }
       const resolved: CredentialSources = { status: "resolved" };
       // `"none"` is only meaningful for anysearch: it is the one arm the resolver

@@ -13,8 +13,9 @@
 // Auth: optional API key via Authorization: Bearer; anonymous access works.
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "../contract";
-import { canonicalizeVertical } from "../contract";
+import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
+import { canonicalizeVertical, classifyProviderError, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, stripErrorClassMarkers } from "../contract";
+import { redactSecrets } from "../redact";
 
 // CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
 // endpoint — the deferred legal/ops ownership item is settled. Official evidence:
@@ -139,8 +140,46 @@ function parseSearchMarkdown(md: string): { results: NormalizedResult[]; elapsed
   return { results, elapsedMs: em ? Number(em[1]) : undefined };
 }
 
-// Rate-limit / quota wording seen in AnySearch reply bodies (EN + ZH).
-export const RATE_LIMIT_NOTICE = /rate.?limit|too many requests|quota|try again later|retry after|限流|频繁|额度|稍后再试/i;
+// True throttle signals: upstream is asking us to slow down. Checked first, so
+// "too many requests: daily quota reached" stays a throttle.
+const THROTTLE_NOTICE = /rate.?limit|too many requests|限流|频繁/i;
+
+// Same quota list as contract.ts; the adapter adds nothing, so a sentence does
+// not change class just because it arrived through a different path.
+const QUOTA_EXHAUSTED_NOTICE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
+
+// A polite "retry later" can ride along with a used-up plan; it only becomes a
+// retry signal when no throttle or quota words are present.
+const RETRY_NOTICE = /retry after|try again later|稍后再试|稍后重试/i;
+
+type ReplyFailure = { cls: ProviderErrorClass; prefix: string };
+
+// Provisioning replies name the issued key as `api_key=...`, `"api_key": "..."`
+// or `apiKey: ...`. This pattern redacts the value in any of those forms.
+const KEY_FIELD_SOURCE = "(?:api_key|apikey)\"?\\s*[=:]\\s*(\"[^\"]*\"|'[^']*'|[^\\s\"',;]+)";
+const KEY_FIELD_GLOBAL = new RegExp(KEY_FIELD_SOURCE, "gi");
+
+// A sign-up/issuance reply, not just any message that mentions a key. The
+// automatic-generation wording needs an account or key next to it; "this bill
+// was automatically generated" is not one.
+const PROVISIONING_NOTICE = /(?:account|api key|api_key)[^.]{0,40}automatically generated|automatically generated[^.]{0,40}(?:account|api key|api_key)|(?:api )?key (?:has been |was |is )?issued|issued (?:an? )?(?:api )?key|sign[ -]?up (?:to|for) (?:get|obtain)[^.]*key/i;
+
+// Name a reply failure by its text; providerErrorMarker carries the class.
+function replyFailurePrefix(md: string): ReplyFailure | undefined {
+  if (PROVISIONING_NOTICE.test(md)) {
+    return { cls: "permanent-auth", prefix: "quota/auth nudge: upstream returned a sign-up/issued-key reply instead of results" };
+  }
+  if (THROTTLE_NOTICE.test(md)) {
+    return { cls: "transient", prefix: "rate limited: upstream returned a rate-limit notice instead of results" };
+  }
+  if (QUOTA_EXHAUSTED_NOTICE.test(md)) {
+    return { cls: "quota-exhausted", prefix: "quota exhausted: upstream says the account's quota is used up" };
+  }
+  if (RETRY_NOTICE.test(md)) {
+    return { cls: "transient", prefix: "rate limited: upstream returned a retry-later notice instead of results" };
+  }
+  return undefined;
+}
 
 // #214: result._meta.request_id is a server-generated diagnostic correlation id
 // (live probe 2026-11-07). It is captured for the observation trace only — never
@@ -163,8 +202,17 @@ function requestIdOf(result: Record<string, unknown>): string | undefined {
 function mapToolsCallResult(result: Record<string, unknown>): { results: NormalizedResult[]; elapsedMs?: number } {
   const r = result as McpToolResult;
   if (r.isError === true) {
-    const t = (r.content ?? []).map((c) => c?.text ?? "").join(" ").slice(0, 200);
-    throw new Error("AnySearch MCP tools/call isError: " + (t || "(no text)"));
+    const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
+    const failure = replyFailurePrefix(full);
+    // Fix the class here (reply marker, else the shared classifier); the
+    // marker goes before the displayed copy.
+    const fallback = classifyProviderError(stripErrorClassMarkers(full));
+    const cls = failure?.cls ?? (fallback === "unknown" ? "permanent-protocol" : fallback);
+    const shown = redactSecrets(full, { keepPaths: false })
+      .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
+      .slice(0, 200);
+    const head = (failure ? failure.prefix : "isError") + " " + providerErrorMarker(cls);
+    throw new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]");
   }
   const sc = r.structuredContent;
   if (sc && Array.isArray(sc.results)) {
@@ -176,20 +224,13 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const md = texts.join("\n");
   if (!md.trim()) throw new Error("AnySearch MCP tools/call returned no text content");
   if (!/##\s+Search Results/.test(md)) {
-    // quota/auth boundary nudge — upstream answers anonymous calls at
-    // the quota boundary with an auto-provisioning payload ("account ...
-    // automatically generated ... api_key=...") instead of a results envelope.
-    // That is a credential boundary, not protocol drift — name it so the
-    // error-class channel reads permanent-auth, not permanent-protocol.
-    if (/automatically generated|api_key *=/i.test(md)) {
-      throw new Error("AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)");
-    }
-    // r19 T2 (STOP-20): a rate-limit / quota notice WITHOUT provisioning markers is
-    // a transient throttle on a valid key, not a credential boundary — name it so
-    // the error-class channel reads transient (retry later), not permanent-auth.
-    if (RATE_LIMIT_NOTICE.test(md)) {
-      throw new Error("AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later)");
-    }
+    // Not a results envelope: name it by the reply text (provisioning boundary,
+    // exhausted plan, throttle) before calling it malformed. A provisioning
+    // payload ("account ... automatically generated ... api_key=...") is a
+    // credential boundary, not protocol drift → permanent-auth; a used-up plan
+    // is quota-exhausted even when the wording is Chinese 额度.
+    const failure = replyFailurePrefix(md);
+    if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");
   }
