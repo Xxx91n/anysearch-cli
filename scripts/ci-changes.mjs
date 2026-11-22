@@ -3,9 +3,8 @@
 //
 // Design: the boundary is a fixed list, not a glob — `**/*.md` would swallow
 // product assets such as `apps/plugin/AGENTS.md`, whose contents tests read.
-// Known cost: `docs/eval/*.md` sits inside docs/ but is also a live provenance
-// anchor in eval-looks.json; a PR that only deletes or renames it must run the
-// store tests itself.
+// `docs/eval/` is excluded for the same reason: eval-looks.json uses those
+// files as live provenance anchors, and the store tests assert they exist.
 //
 // Design: an empty list is not a docs-only change — a change set we could not
 // read has to keep every lane running, never skip it by accident.
@@ -22,6 +21,7 @@ const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANG
 
 export function isDocumentation(file) {
   const normalized = normalize(file);
+  if (normalized.startsWith("docs/eval/")) return false;
   return normalized.startsWith("docs/") || ROOT_DOCS.has(normalized);
 }
 

@@ -28,6 +28,8 @@ test("the doc boundary is docs/ plus the four root markdown files", () => {
     "apps/plugin/README.md",
     "domains/docs.toml",
     ".github/workflows/ci.yml",
+    "docs/eval/ip-corpus-probe-2026-11-07.md",
+    "docs/eval/quarantine-audit-2026-09-12.md",
     "docs-tools/check.mjs",
     "docs",
     "README.md.bak",
