@@ -249,36 +249,12 @@
 - **技能启用名单**:当前领域激活哪些 skill，只有激活的才进模型（代码里叫 skills.active）。
   _Avoid_: Skill Active List
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:362bd78db98917d082ffa36aa61b12b9af1f8e709919a5dc965f3be16a47bc61 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:9cdfe4f755e35f3ff7582e11241770ce6f2b09cd07882260355cfd597dda767b -->
-
 - **项目身份**:本次明确项目的真实根路径及识别来源，不能确定就记为未知，不借其他项目的状态（代码里叫 ProjectContext）。
 
 - **会话身份**:观测和钩子用来归组记录的 id（代码里叫 session_id）。
-
-  <!-- /coderabbit-ai-generated:v1 -->
-
-  <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Session Identity
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:2183bc23bb479f93417b49e9c82c76bd1d89c9fe4dbe8ddd5b99b711ccfea59b -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:8467b1ff91d815487f3dbe21e1752631fd84a7e58796cf3c193b7c8cfcdb82bd -->
-
 - **显式会话句柄**:`ans_chat` 和 `ans chat` 返回的会话 id，用来明确选择要继续的对话和记忆（代码里叫 sessionId）。
-
-  <!-- /coderabbit-ai-generated:v1 -->
-
-  <!-- /coderabbit-ai-generated:v1 -->
   _Avoid_: Explicit Session Handle
 
 - **审批通道**:宿主在放行一个拿不准的工具调用前，先把“要不要放行”问给用户，再把用户的选择传回工具那一层的整条路（代码里叫 approval channel；上游 dsh 叫 `approval/request`）。
