@@ -455,13 +455,19 @@ function writeRealTurboPnpm(bin) {
 
 // A gate run can leave its home behind two ways: a red run says it kept it for
 // inspection, and a green run that could not delete it says where it left it. A
-// fixture is not an operator's run, so the test clears whatever it finds.
+// fixture is not an operator's run, so the test clears whatever it finds — with
+// retries, and without failing the test: a Windows file lock keeping the dir is
+// not news this test should report, and throwing here would hide the assertion
+// that ran before it.
 function dropLeftoverHome(result) {
   const output = `${result.stdout}\n${result.stderr}`;
   const home =
-    /\[preflight\] test home kept for inspection: (.+)$/m.exec(output)?.[1] ??
+    keptHome(output) ??
     /\[preflight\] could not delete the test home, left it at (.+?): /m.exec(output)?.[1];
-  if (home) rmSync(home.trim(), { recursive: true, force: true });
+  if (!home) return;
+  try {
+    rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch {}
 }
 
 function turboEntry() {
@@ -523,9 +529,8 @@ function keptHome(output) {
 // A red run keeps its test home on purpose; a fixture is not an operator's
 // failed run, so the test deletes what the gate printed.
 function clearKeptHome(result) {
-  const home = keptHome(result.stderr);
-  assert.ok(home, `no kept test home in: ${result.stderr}`);
-  rmSync(home, { recursive: true, force: true });
+  assert.ok(keptHome(result.stderr), `no kept test home in: ${result.stderr}`);
+  dropLeftoverHome(result);
 }
 
 function git(root, args) {
