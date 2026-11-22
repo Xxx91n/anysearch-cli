@@ -24,8 +24,8 @@ export const PKG_VERSION: string =
     ? __PACKAGE_VERSION__
     : "0.0.0";
 
-// Design: the engine is a per-CONNECTION resource, built once at startup and
-// reused — not a per-request one. Before #112, every HTTP request reached
+// Design: the engine is built once at startup and shared by every request — not
+// one per request. Before #112, every HTTP request reached
 // buildServer() -> createEngine() and opened two fresh better-sqlite3 handles
 // (SessionStore + ObservationStore), so the open-connection count grew with the
 // request count; stdio stays process-wide, unchanged.

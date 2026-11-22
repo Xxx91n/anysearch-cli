@@ -88,7 +88,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
               // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
-              // (key presence no longer conditional; aligns with SEP-1624 stable structured schema).
+              // (key presence is unconditional now: structuredContent always carries the field).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,

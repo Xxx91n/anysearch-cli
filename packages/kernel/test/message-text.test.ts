@@ -1,5 +1,5 @@
 // Message-shape helpers for the inject seam (#104).
-// Contract provenance: pi-agent-core 0.84.2 normalizes `agent.prompt("…")` into
+// Contract provenance: pi-agent-core 1.5.1 normalizes `agent.prompt("…")` into
 // { role: "user", content: [{ type: "text", text: "…" }] } (verified against the
 // published package). String-only inject code therefore never matched the real
 // runtime shape — this file pins both shapes.

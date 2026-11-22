@@ -1,6 +1,6 @@
-// PreToolUse: project-index preheating for the five ans tools (search_web /
-// research_web / recall_memory / query_knowledge / ans_chat) whose input carries
-// a `query` — research_web takes `question`, so it never preheats. Q7=B: the
+// PreToolUse: project-index preheating for the ans tools whose input carries a
+// `query` — search_web, recall_memory and query_knowledge. research_web takes
+// `question` and ans_chat takes `message`, so neither ever preheats. Q7=B: the
 // memories go in before the call, so the agent has context first.
 // URL authorization policy comes from the server's single parse point
 // (GET /policy) or the materialized cache — hooks NEVER read ANS_URL_ALLOWLIST directly.

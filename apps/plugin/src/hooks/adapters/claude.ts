@@ -63,8 +63,8 @@ async function main(): Promise<void> {
       });
       // + ER-2: every PreToolUse decision key goes inside the
       // hookSpecificOutput envelope (official names: additionalContext,
-      // updatedInput, permissionDecision, permissionDecisionReason). The key
-      // written below is updatedToolInput, which Claude Code does not read (#445).
+      // updatedInput, permissionDecision, permissionDecisionReason). The rewrite
+      // key written below is a known mismatch — see #445.
       const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
       if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
       if (decision.updatedInput) hookSpecificOutput.updatedToolInput = decision.updatedInput;
@@ -100,9 +100,10 @@ async function main(): Promise<void> {
       await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
       // Return distilled output to Claude. PostToolUse can rewrite the result
-      // through hookSpecificOutput.updatedToolOutput; this adapter only injects
-      // context, so the distilled summary goes to
-      // hookSpecificOutput.additionalContext (ER-2: the top-level form is dropped).
+      // through hookSpecificOutput.updatedToolOutput (Claude Code hooks
+      // reference, checked 2026-11-23); this adapter only injects context, so the
+      // distilled summary goes to hookSpecificOutput.additionalContext (ER-2: the
+      // top-level form is dropped).
       if (decision.distilledOutput) {
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {

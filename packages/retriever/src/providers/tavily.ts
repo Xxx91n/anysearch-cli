@@ -39,10 +39,10 @@ export class TavilyProvider implements SearchProvider {
       maxResults: req.maxResults ?? 10,
       includeAnswer: req.mode === "answer",
       includeRawContent: false,
-      // pre-filter send-down: domains are filtered upstream (subdomains of a
-      // listed parent are included), so out-of-domain results never reach the
-      // local filter. include_domains_mode rides the SDK kwargs passthrough
-      // (index signature on options); see the note above on its value.
+      // pre-filter send-down: include_domains goes upstream, so subdomains of a
+      // listed parent come along and the local filter has less to drop. The mode
+      // value is the one noted above (not an upstream enum member), so the local
+      // filter still runs as the backstop.
       ...(req.includeDomains?.length
         ? { includeDomains: req.includeDomains, include_domains_mode: "filter" }
         : {}),

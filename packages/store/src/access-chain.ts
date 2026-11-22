@@ -14,7 +14,8 @@
 // first chained row carries prev_hash = genesis_hash; each later row chains on the previous row's hash
 //
 // Type whitelist (D4): INTEGER columns must be integer numbers, TEXT columns strings, NULL only in
-// prev_hash / schema_version / event_type / source_label. REAL / blob / NaN entering the chain input throws.
+// prev_hash / schema_version / event_type / source_label — plus memory_id on a switch row (a non-access
+// event_type, which canonicalEventJson short-circuits). REAL / blob / NaN entering the chain input throws.
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 

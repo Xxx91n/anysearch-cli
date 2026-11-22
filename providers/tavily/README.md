@@ -13,7 +13,9 @@ Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
 
 ## 认证
 
-- `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 就报 `TAVILY_API_KEY unset`。
+- `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 不会抛：它构造一个 keyless 客户端
+  （请求头 `X-Tavily-Access-Mode: keyless`），上游按匿名额度处理。`TAVILY_API_KEY unset` 是**探针
+  自己**缺 key 时的说法，别当成 SDK 的行为。
 - 探针**只读环境变量** `TAVILY_API_KEY`；产品走 composition 的「env 优先、再用户凭据文件」解析
   （`packages/kernel/src/composition.ts`）。所以 key 只在凭据文件里时，`ans` 能跑、探针会退 2 并明说
   `TAVILY_API_KEY unset`——不会静默匿名（这一点比 anysearch 友好，#422）。

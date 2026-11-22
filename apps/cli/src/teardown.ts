@@ -8,6 +8,6 @@
 // and the CLI exit path must close them too.
 //
 // This module stays the CLI's import seam (index.ts + test/teardown.test.ts):
-// one plain re-export, so the CLI and store drain the same registry rather than
-// a CLI-private copy.
+// nothing but that one re-export, and no other import, so it stays trivially
+// loadable wherever the CLI wiring runs.
 export { registerTeardown, runTeardown, unrefPendingHandles } from "@anysearch-cli/store";

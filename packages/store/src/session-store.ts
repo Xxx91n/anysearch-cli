@@ -1146,7 +1146,7 @@ export class SqliteSessionStore implements SessionStore {
   // Design: research archive reads are store-scoped, not session- or domain-scoped —
   // session_id is per-call (MCP search_web mints a fresh session each call) and no
   // row records a domain origin; the store is the isolation unit.
-  // See docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
+  // See docs/rag-adapters.md §作用范围 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
     const safeQuery = this.fts5Escape(query);
     // Spare rows per arm (#273 review). The liveness filter below can drop a

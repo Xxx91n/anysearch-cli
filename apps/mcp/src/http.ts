@@ -1,11 +1,10 @@
 // HTTP transport wiring for the anysearch MCP server.
 //
-// #112: the engine is a per-CONNECTION resource, not a per-request one. The
-// entry builds it once at startup (createDefaultEngine) and hands it here; each
-// request still gets its own McpServer + stateless Streamable HTTP transport
-// (an SDK transport instance serves one connection at a time), but they all share the
-// one engine, so the two better-sqlite3 handles inside a CompositionResult are
-// opened once instead of twice per request.
+// #112: the engine is built once at startup (createDefaultEngine) and shared,
+// not one per request. Each request still gets its own McpServer + stateless
+// Streamable HTTP transport (an SDK transport instance serves one connection at
+// a time), but they all share that one engine, so the two better-sqlite3 handles
+// inside a CompositionResult open once instead of twice per request.
 // #210: the same holds for process-level tool state — the entry creates it once
 // and every per-request buildServer() receives it, so the ans_chat LLM client
 // cache survives across requests instead of rebuilding per request.

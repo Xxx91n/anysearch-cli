@@ -465,7 +465,7 @@ test("no user message at all (assistant-only) is a no-op", async () => {
 
 test("content-block user turn (the real pi-agent-core shape) is injected in place, not replaced", async () => {
   // pi-agent-core normalizes prompt("…") to [{type:"text",text}] (verified against
-  // @earendil-works/pi-agent-core 0.84.2). A string-only seam would either never
+  // @earendil-works/pi-agent-core 1.5.1). A string-only seam would either never
   // fire here or overwrite the user's message with the RAG block.
   const spies = { calls: 0, query: "", limit: 0 };
   const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled fact" }], { spies }));
