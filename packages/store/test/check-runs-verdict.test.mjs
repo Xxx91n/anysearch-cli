@@ -115,6 +115,14 @@ test("pending checks wait, and the absolute deadline turns them red", () => {
   assert.match(late.reason, /absolute deadline reached, still not done/);
 });
 
+test("the absolute deadline also closes a family that never registered", () => {
+  const runs = healthy().filter((r) => !r.name.startsWith("memory-eval"));
+  const late = judgeCheckRuns(runs, { completionExpired: true });
+  assert.equal(late.verdict, "red");
+  assert.equal(late.exitCode, 2);
+  assert.match(late.reason, /absolute deadline reached with no check-run for: memory-eval family/);
+});
+
 test("a completed check with a conclusion the gate does not model is never green", () => {
   const runs = healthy().map((r) => (r.name.startsWith("install-smoke") ? run(r.name, "stale") : r));
   const waiting = judgeCheckRuns(runs);
@@ -171,4 +179,9 @@ test("a probe reports a decided verdict, and exits 10 only while the gate is sti
   assert.deepEqual(gateAction(judgeCheckRuns(skippedLeg), { once: true }), { action: "exit", kind: "no-signal", exitCode: 2 });
   assert.deepEqual(gateAction(judgeCheckRuns(pending), { once: true }), { action: "exit", kind: "probe", exitCode: 10 });
   assert.deepEqual(gateAction(judgeCheckRuns(pending)), { action: "poll" });
+});
+
+test("a red verdict without an exit code still fails closed", () => {
+  // process.exit(null) counts as 0, so a code-less red must never reach it.
+  assert.deepEqual(gateAction({ verdict: "red", exitCode: null }), { action: "exit", kind: "no-signal", exitCode: 2 });
 });

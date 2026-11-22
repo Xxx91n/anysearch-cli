@@ -8,37 +8,22 @@
 // regex below, the checks it gates register as skipped, and the release goes
 // out with no evidence behind it.
 //
-// Design: the whole decision lives here — judgeCheckRuns says green / red / wait,
-// gateAction says exit or keep polling — and scripts/assert-checks-green.mjs only
-// fetches the runs, prints the answer and exits with it. The contract used to
-// live inline in that script's polling loop, where the only test could reach it
-// by reading the source with a regex.
+// Phases: discovery asks whether every required family and blocking leg has a
+// check-run registered at all. One that registered as skipped is red at once;
+// one that has not registered may still show up, so the caller waits for its
+// discovery window. Completion asks whether the registered checks finish,
+// bounded by the caller's absolute deadline.
 //
-// Phases: discovery asks whether every required family and every blocking leg
-// has a check-run that ran. A check that registered as skipped is a discovery
-// failure no wait can fix, so it is answered at once. A check that has not
-// registered yet may still show up, so the caller keeps waiting until its
-// discovery window closes. Completion asks whether the checks that ran are
-// terminal and passing, bounded by the caller's absolute deadline.
+// Skipped is red for every check in these families, not only the blocking legs,
+// and this rule catches check-run-level skips only: a job that decides there is
+// nothing to run still reports success (#408 keeps those skips at step level),
+// so a successful check-run means "this job handled the change" — the gate
+// cannot tell a real pass from a by-design skip.
 //
-// Skipped is red for every check in these families, not only for the blocking
-// legs: a check that never started is never evidence. This rule catches check-run-level
-// skips only. A job that decides there is nothing to run still reports success —
-// #408 keeps those skips at step level, where the job ends green — so a
-// successful check-run means "this job handled the change", and this gate cannot
-// tell a real pass from a by-design skip. That is the contract the
-// change-detection work is built on.
-//
-// Native-smoke and the non-blocking macos-spillover probe stay outside the gate
-// by name: neither matches a family below, and a red probe is a crash-signature
-// report on the CLI path, not a gate. The non-blocking anysearch probe does
-// match the test:online family; continue-on-error keeps a failed probe from
-// blocking, but a probe that registered as skipped still refuses, because a
-// check that never started is not a check that passed. macOS is a blocking leg
-// again since #183 (promotion evidence in docs/limitations.md), so REQUIRED_LEGS
-// names all three ship-gate legs. Keep that list in step with ship-gate.yml's
-// matrix by hand: the test that compared the two files with regexes is gone
-// (#406).
+// Native-smoke and the non-blocking macos-spillover probe match no family, so
+// they stay outside the gate. macOS is a blocking leg again since #183
+// (docs/limitations.md), and REQUIRED_LEGS mirrors ship-gate.yml's matrix by
+// hand — the regex test that compared the two files is gone (#406).
 
 export const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
 export const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"];
@@ -109,22 +94,15 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   });
   const ofState = (state) => checks.filter((check) => check.state === state);
 
-  // A family has run as soon as one of its checks ran: a failure is reported
-  // per check, not per family. A family with no check-run at all is "missing" —
-  // the discovery gap.
-  const familyState = (family) => {
-    const members = checks.filter((check) => familyOf(check.name) === family);
-    if (members.length === 0) return "missing";
-    const states = new Set(members.map((check) => check.state));
-    return ["ran", "failed", "running", "unknown", "skipped"].find((state) => states.has(state));
-  };
-
+  // A family is present as soon as one of its checks registered: a failure is
+  // reported per check, not per family.
+  const familyPresent = (family) => checks.some((check) => familyOf(check.name) === family);
   const failed = ofState("failed");
   const running = ofState("running");
   const unknown = ofState("unknown");
   const skipped = ofState("skipped");
   const ran = ofState("ran");
-  const missingFamilies = FAMILIES.filter((family) => familyState(family) === "missing");
+  const missingFamilies = FAMILIES.filter((family) => !familyPresent(family));
   const missingLegs = REQUIRED_LEGS.filter((leg) => checkState(newest.get(leg)) === "missing");
 
   const counts = {
@@ -171,9 +149,11 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
   ];
 
   if (missing.length > 0) {
-    const closed = discoveryExpired ? "discovery window closed" : completionExpired ? "absolute deadline reached" : null;
+    let closed = null;
+    if (discoveryExpired) closed = "discovery window closed";
+    else if (completionExpired) closed = "absolute deadline reached";
     if (closed !== null) {
-      const present = FAMILIES.filter((family) => familyState(family) !== "missing").join(",") || "none";
+      const present = FAMILIES.filter(familyPresent).join(",") || "none";
       return answer("red", 2, closed + " with no check-run for: " + missing.join(", ") + " (present families: " + present + ")");
     }
     return answer("wait", null, "not registered yet: " + missing.join(", "));
@@ -200,7 +180,10 @@ export function judgeCheckRuns(runs, { discoveryExpired = false, completionExpir
 export function gateAction(verdict, { once = false } = {}) {
   if (verdict.verdict === "green") return { action: "exit", kind: "green", exitCode: 0 };
   if (verdict.verdict === "red") {
-    return { action: "exit", kind: verdict.exitCode === 1 ? "failed" : "no-signal", exitCode: verdict.exitCode };
+    // A red without a code still fails closed: process.exit(null) counts as 0,
+    // which would turn the one answer that must never pass into a green gate.
+    const exitCode = verdict.exitCode ?? 2;
+    return { action: "exit", kind: exitCode === 1 ? "failed" : "no-signal", exitCode };
   }
   if (once) return { action: "exit", kind: "probe", exitCode: 10 };
   return { action: "poll" };
