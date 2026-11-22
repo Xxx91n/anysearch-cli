@@ -1,14 +1,8 @@
 #!/usr/bin/env node
-// The push gate's hook, one command each:
+// The push gate's hook: `pnpm hooks:install` puts it in place, `pnpm hooks:status`
+// says whether it is there, executable, and current. AGENTS.md describes both.
 //
-//   pnpm hooks:install   copy scripts/hooks/pre-push-user into the hooks dir git uses
-//   pnpm hooks:status    say whether that hook is there, executable, and current
-//
-// Run them at the repo root; from a subdirectory, `pnpm -w hooks:install` and
-// `pnpm -w hooks:status` run the root scripts.
-//
-// GitButler owns pre-commit and post-checkout. Nothing here writes either one,
-// so a commit still runs no tests. See AGENTS.md.
+// GitButler owns pre-commit and post-checkout, so nothing here writes either one.
 //
 // The hook content is repo-agnostic: it finds the repo root itself at run time,
 // so the same file works in a clone, a worktree, or a copy.
@@ -16,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOOK = "pre-push";
@@ -36,7 +30,7 @@ function firstLine(text) {
 function revParse(cwd, args, what) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (result.error) return { error: `cannot run git: ${result.error.message}` };
-  if (result.status !== 0) return { error: `${what}: ${firstLine(result.stderr)}` };
+  if (result.status !== 0) return { error: `${what}: ${firstLine(result.stderr) || `git exited ${result.status}`}` };
   const out = result.stdout.trim();
   return out ? { out } : { error: `${what}: git printed nothing` };
 }
@@ -110,7 +104,9 @@ function isOurs(text) {
   // down is a note about our hook, not our hook. The shebang itself is not
   // checked here: it is part of the code, so a changed one reads as out of date.
   const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
-  return OWN_BANNERS.some((prefix) => banner?.startsWith(prefix));
+  if (!OWN_BANNERS.some((prefix) => banner?.startsWith(prefix))) return false;
+  // A note that starts like our banner still has to run the gate to be ours.
+  return /scripts[\\/]preflight-test\.mjs/.test(hookCommand(text) ?? "");
 }
 
 /**
@@ -213,10 +209,6 @@ function installHook({ force = false } = {}) {
     return { state: "refused", dir: place.dir, hookPath, target: hookTarget(installed.text) };
   }
 
-  // Design: the old pre-commit-user is deleted, GitButler's pre-commit never is
-  // — pre-commit belongs to GitButler, and a clone that still holds our old
-  // commit hook would run tests on every commit.
-  const removed = removeOldCommitHook(place.dir);
   // Same code, possibly older comments: leave the bytes as they are, so two
   // checkouts sharing one hooks directory do not rewrite each other.
   const current = exists && runsCurrentScript(installed.text, place.source);
@@ -226,6 +218,12 @@ function installHook({ force = false } = {}) {
   } catch (error) {
     return { state: "unknown", dir: place.dir, hookPath, reason: `cannot write ${hookPath}: ${error.message}` };
   }
+
+  // Design: the old pre-commit-user is deleted after the push hook is written,
+  // so a failed write leaves the clone exactly as it was — and GitButler's
+  // pre-commit is never touched: a clone that still holds our old commit hook
+  // keeps firing it, so the stale file goes.
+  const removed = removeOldCommitHook(place.dir);
 
   // Windows has no execute bit for git to read, so there is nothing to set.
   const chmodError = process.platform !== "win32" && !isExecutable(hookPath) ? makeExecutable(hookPath) : null;
@@ -255,7 +253,7 @@ const INSTALLED_LINE = {
 const STATUS_PROBLEM = {
   missing: "pre-push is missing",
   empty: "pre-push is an empty file",
-  stale: "pre-push is out of date, it runs older commands",
+  stale: "pre-push is out of date, its code differs from the source",
   "not-executable": "pre-push is not executable",
   foreign: "pre-push is another script, not ours",
 };
@@ -302,11 +300,24 @@ function reportStatus(result) {
   return 1;
 }
 
-const isEntry = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
-if (isEntry) {
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    const self = fs.realpathSync.native(fileURLToPath(import.meta.url));
+    const entry = fs.realpathSync.native(path.resolve(process.argv[1]));
+    return process.platform === "win32" ? self.toLowerCase() === entry.toLowerCase() : self === entry;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   const [command, ...flags] = process.argv.slice(2);
+  const allowed = command === "install" ? ["--force"] : command === "status" ? [] : null;
+  if (!allowed || flags.some((flag) => !allowed.includes(flag))) {
+    console.error("[hooks] usage: node scripts/preflight-hooks.mjs install [--force] | status");
+    process.exit(2);
+  }
   if (command === "install") process.exit(reportInstall(installHook({ force: flags.includes("--force") })));
-  if (command === "status") process.exit(reportStatus(prePushStatus()));
-  console.error("[hooks] usage: node scripts/preflight-hooks.mjs install [--force] | status");
-  process.exit(2);
+  process.exit(reportStatus(prePushStatus()));
 }
