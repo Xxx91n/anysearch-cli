@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Repo-wide Agent Skills check (#387).
+// Repo-wide Agent Skills check.
 //
-// Every SKILL.md Git can see is handed to validateSkillDirectory from
-// apps/cli/src/skill-store.ts — the same code `ans skill install` and
-// `ans skill validate` run, so the three cannot drift apart.
+// Every SKILL.md Git can see goes through the same validation the product uses:
+// `ans skill validate` and this script call validateSkillDirectory, and both it
+// and `ans skill install` call validateSkillFile (apps/cli/src/skill-store.ts).
 //
 // Usage:
 //   node scripts/check-skills.mjs                  # every SKILL.md Git can see
@@ -17,6 +17,7 @@
 // script's tests use it.
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { gitEnv } from "./preflight-git.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -68,7 +69,7 @@ function skillFileOf(target) {
  */
 function gitVisibleSkillFiles() {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
-    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000,
+    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000, env: gitEnv(),
   });
   if (listed.error) throw new Error("cannot run git ls-files: " + listed.error.message);
   if (listed.status !== 0) {
@@ -141,7 +142,7 @@ if (process.env[TSX_MARKER] !== "1") {
     }
     const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
     const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
-      env: { ...process.env, [TSX_MARKER]: "1" },
+      env: gitEnv({ ...process.env, [TSX_MARKER]: "1" }),
       stdio: "inherit",
       timeout: 10 * 60_000,
     });

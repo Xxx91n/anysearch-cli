@@ -684,7 +684,7 @@ const SKILL_DESCRIPTION_MAX_CHARS = 1024;
  */
 const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用|使用时|时用|時|とき/i;
 
-/** Require a description that says what the skill does and when to use it (#387). */
+/** Require a description that says what the skill does and when to use it. */
 function requireDescription(value: unknown, path: string): void {
   if (value === undefined || value === null) {
     fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters saying what the skill does and when to use it: ${path}`);
@@ -983,8 +983,8 @@ export async function installSkill(sourceArgument: string, opts: SkillOptions = 
   // Design: a source path is persisted in installed.json, whose validator
   // rejects control characters — reject it here so an install cannot brick the scope.
   if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
-  // Design: install accepts any directory name (#387) — a cloned repo folder has
-  // its own, and the installed copy is always skills/synced/<name>.
+  // Design: install accepts any directory name — a cloned repo folder has its
+  // own, and the installed copy is always skills/synced/<name>.
   const name = validateSkillFile(join(source, "SKILL.md"));
   const metadata = await provenance(source);
   const managed = managedSkillsRoot(opts);

@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { gitEnv } from "../preflight-git.mjs";
 
 const CLI = fileURLToPath(new URL("../check-skills.mjs", import.meta.url));
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -42,13 +43,8 @@ function canStillRead(file) {
 
 /** Run a Git command in a fixture repository and insist it worked. */
 function git(cwd, args) {
-  // The repository pointers redirect `-C`; a hook or a test run can export them.
-  const env = { ...process.env };
-  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) {
-    delete env[key];
-  }
-  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env });
+  // gitEnv drops GIT_DIR, GIT_CONFIG_* and friends, so `-C` alone picks the repo.
+  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv() });
   assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
 }
 
