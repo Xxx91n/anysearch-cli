@@ -23,11 +23,16 @@ const SCHEMA = "anysearch/mcp-raw-probe@2";
 const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 
-// 参数报错发生在解析凭据之前，所以先拿环境变量里那两个值建表（和 #506 之前一样，参数里
-// 夹着 key 也会被遮），解析完再把真正用的那份补上。mask 跳过空值。
+// 参数报错也要遮 key，而参数比凭据先处理：所以 --nokey 先扫出来、凭据先解析，再进参数
+// 校验。这样只存在凭据文件里的 key 被人当参数贴进来，也走同一条 scrub。
+const NO_KEY = ARGS.includes("--nokey");
+const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
+const KEY = credentials.apiKey;
+// mask 跳过空值；环境变量那两个值先放进去，机主要是把 key 贴错位置也能遮住。
 const SECRETS: Array<[string | undefined, string]> = [
   [process.env.ANYSEARCH_ENDPOINT, "<endpoint>"],
   [process.env.ANYSEARCH_API_KEY, "<key>"],
+  [KEY, "<key>"],
 ];
 
 // Protocol version: a hand-maintained literal — the probe must keep answering when the
@@ -60,7 +65,6 @@ function protocolVersionValue(raw: string | undefined, source: string): string |
 }
 
 let FORCE_DEFAULT_ENDPOINT = false;
-let NO_KEY = false;
 let PROTOCOL_ARG_VALUE: string | undefined;
 const seen = new Set<string>();
 for (let i = 0; i < ARGS.length; i += 1) {
@@ -69,7 +73,6 @@ for (let i = 0; i < ARGS.length; i += 1) {
     if (seen.has(token)) refuseArgs(token + " given twice");
     seen.add(token);
     if (token === "--default-endpoint") FORCE_DEFAULT_ENDPOINT = true;
-    else NO_KEY = true;
     continue;
   }
   if (token === PROTOCOL_FLAG || token.startsWith(PROTOCOL_FLAG + "=")) {
@@ -94,18 +97,12 @@ const PROTOCOL_VERSION = PROTOCOL_ARG_VALUE
 
 const ENDPOINT = FORCE_DEFAULT_ENDPOINT ? DEFAULT_ENDPOINT
   : (process.env.ANYSEARCH_ENDPOINT || DEFAULT_ENDPOINT); // POSIX: empty env ≡ unset
-// --nokey 是显式的匿名臂：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析
-// （环境变量优先，再读 ~/.ans/credentials.json），不在这儿另写一份。
-const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
-const KEY = credentials.apiKey;
 // Which endpoint the run used, as a class; the value itself is never printed.
 let ENDPOINT_SOURCE = "default";
 if (process.env.ANYSEARCH_ENDPOINT) ENDPOINT_SOURCE = "env";
 if (FORCE_DEFAULT_ENDPOINT) ENDPOINT_SOURCE = "default(forced)";
 const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers"; // POSIX: empty env ≡ unset
 const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
-// 解析出来的 key 可能只在凭据文件里，环境变量里没有它可遮。
-SECRETS.push([KEY, "<key>"]);
 
 // Anything the probe prints goes through this. An argument or an upstream reply that
 // carries the key or the endpoint must not come back out verbatim — the README says the

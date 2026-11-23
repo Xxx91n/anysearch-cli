@@ -107,8 +107,12 @@ const record = (arm) => {
 // 文件读坏 / 解析坏不是「没配 key」：两个出口都说出来，别让人去查上游额度。
 if (credentials.credentialWarning) console.error("credentialWarning: " + scrubText(credentials.credentialWarning));
 if (!KEY) {
+  // 摘要也得分清「没配」和「文件坏了」——否则坏文件那一跑等于在台账里断言文件里没 key。
+  const why = credentials.credentialWarning
+    ? "no usable tavily key — the credential file is unreadable (see credentialWarning); live arm not run"
+    : "no tavily key in the environment or ~/.ans/credentials.json — live arm not run";
   for (const id of [ARM_A, ARM_B, ARM_C, ARM_D])
-    record({ id, status: "SKIPPED", summary: "no tavily key in the environment or ~/.ans/credentials.json — live arm not run", evidence: null });
+    record({ id, status: "SKIPPED", summary: why, evidence: null });
 } else {
   let aPartial = null;
   try {

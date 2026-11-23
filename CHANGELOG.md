@@ -12,7 +12,7 @@
 ### Changed
 
 - **凭据解析统一**：三条探针都调 `resolveSearchCredentials`，不再各写一份「读 env」。anysearch 的 `ANYSEARCH_API_KEY`、tavily 的 `TAVILY_API_KEY` 仍然是环境变量优先，其次才是凭据文件里的同名 binding。
-- **`keyPresent` / `key: "set" | "unset"` 换成 `keySource`**：`env | user | none`。`user` 就是 `~/.ans/credentials.json`。三份 probe schema 跟着升到 `@2`（`anysearch/mcp-raw-probe@2`、`anysearch/provider-probe@2`、`anysearch/tavily-domain-probe@2`），README 的期望输出同步改。
+- **`keyPresent` / `key: "set" | "unset"` 换成 `keySource`**：`env | user | none`。`user` 就是 `~/.ans/credentials.json`，`none` 说的是这一跑没发 key——两处都没有，或者传了 `--nokey`（所以 env 里有 key 时 `--nokey` 也报 none；`keySource` 说的是这一跑用哪把，不是机器上配了什么）。三份 probe schema 跟着升到 `@2`（`anysearch/mcp-raw-probe@2`、`anysearch/provider-probe@2`、`anysearch/tavily-domain-probe@2`），README 的期望输出同步改。
 - **provider 探针把 key 显式传进适配器**：没有 key 传空串，不再留 `undefined` 让 `AnySearchProvider` 回读 `process.env`——那样探针的解析和适配器的兜底会再次分叉。
 - **脱敏覆盖解析出来的 key**：以前只遮 `process.env.ANYSEARCH_API_KEY`；key 只在凭据文件里时没有任何值可遮。现在遮的是「这一跑真用的那个值」，raw 探针和 provider 探针共用同一个口径。
 - **`--nokey` 仍然是显式匿名臂**：整段跳过解析，不发 `Authorization`，env 和文件里都有 key 也一样。退出码语义没动（anysearch 0/3/2、tavily 0/1/2；tavily 没 key 仍然退 2 表示「这一跑没有结论」）。
@@ -28,6 +28,7 @@
 - **`providers/` 仍然不在 `pnpm -r check` 里**：三条探针的改动靠新测试（子进程跑真脚本）和手跑兜着，类型检查碰不到它们。
 - **新测试全打本地桩**：真上游的回包形状仍由 `provider-probes.test.ts` 的夹具和 `docs/research/real-baseline-2026-11-22.md` 记着，这次不重新实测。
 - **anysearch 的 endpoint 规则没变**：仍然只认 `ANYSEARCH_ENDPOINT`，凭据文件里存了 endpoint 也不起作用（新测试钉了这一点）。
+- **`credentials.ts` 单独改动时，retriever 那条车道选不到新测试**：测试住在 retriever，读的却是 store 的源码；retriever 不依赖 store（反向加依赖会成环），所以按包选车道的 CI 和 pre-push 不会为一次 store 改动跑它。改 `providers/` 属于无主路径，会跑全部车道；凭据解析本身的契约仍由 store 自己的测试盯着。
 
 ## Unreleased — #504: 信息源能力和免费面事实收成一张表（provider-facts）
 

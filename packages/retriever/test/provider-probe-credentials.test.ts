@@ -10,6 +10,10 @@
 //  4. key 的值不出现在 stdout / stderr / 台账里。
 //  5. anysearch 的 endpoint 只认 ANYSEARCH_ENDPOINT：凭据文件里塞的 endpoint 不改变请求地址。
 //  6. probe schema 升到 @2；退出码语义没变（tavily 没 key 仍然退 2）。
+//
+// 住在 retriever、读的却是 store 的源码：retriever 不依赖 store（反向会成环），所以按包选车道
+// 的 CI 和 pre-push 在「只改 credentials.ts」时选不到这条测试。改 providers/ 是无主路径，会跑
+// 全部车道；凭据解析本身的契约仍由 store 自己的测试盯着（CHANGELOG 的 Known limits 记着这条）。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -280,9 +284,13 @@ test("anysearch provider：--nokey 匿名，文件坏了带 credentialWarning", 
 // ── tavily 探针 ──────────────────────────────────────────────────────────
 
 function readLedger(dir: string): Record<string, unknown> {
-  const files = readdirSync(dir).filter((name) => name.endsWith(".json"));
-  assert.equal(files.length, 1, "一跑一份台账");
-  return JSON.parse(readFileSync(join(dir, files[0]!), "utf8")) as Record<string, unknown>;
+  const files = readdirSync(dir);
+  const json = files.filter((name) => name.endsWith(".json"));
+  assert.equal(json.length, 1, "一跑一份台账");
+  for (const name of files) {
+    assert.ok(!readFileSync(join(dir, name), "utf8").includes(KEY), "台账 " + name + " 里出现了 key 的值");
+  }
+  return JSON.parse(readFileSync(join(dir, json[0]!), "utf8")) as Record<string, unknown>;
 }
 
 function ledgerDir(): string {

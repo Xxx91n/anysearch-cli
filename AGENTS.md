@@ -34,7 +34,7 @@ Branch protection exists on `main` now, so GitHub keeps part of this rule: a mer
 
 ## Directory conventions
 - `packages/{kernel,store,retriever,embedding}` are shared libraries. `apps/{cli,mcp,plugin,dsh-plugin}` are the four ways users run the tool. `GLOSSARY.md` is the word list. `docs/agents/` holds notes for agents.
-- `providers/` holds per-provider notes and manual probes, one subfolder per provider id (`exa`/`tavily`/`anysearch`); a probe runs with plain `node <file>` from the repo root and stays out of the build.
+- `providers/` holds per-provider notes and manual probes, one subfolder per provider id (`exa`/`tavily`/`anysearch`); a probe runs with plain `node <file>` from the repo root and stays out of the build. The one file at the root, `providers/probe-credentials.mjs`, is shared by all three probes: the `.ts` loader hook, the one `resolveSearchCredentials` call, and the value mask.
 
 ## Docs
 - When a doc points at another place, write the file plus the section heading or the symbol name (`classifyProviderError`, `## Directory conventions`), never a line number: the line moves as the file grows and nothing turns red when it does (#420).

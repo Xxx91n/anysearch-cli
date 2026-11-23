@@ -18,7 +18,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 认证
 
-- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；没设就是匿名调用。
+- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；环境变量和凭据文件都没有 key 时才走匿名调用。
 - 匿名过了配额，上游回的是「自动签发」提示体：HTTP 200、`isError:null`、没有结果体。适配器把它判成
   `free-quota-exhausted`（免费额度到顶），不是 `malformed`，也不是 `permanent-auth`。
 - **两条探针和产品现在读同一份凭据**（#418 / #506）：都走 `packages/store/src/credentials.ts` 的
