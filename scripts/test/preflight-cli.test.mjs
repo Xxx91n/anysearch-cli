@@ -382,6 +382,30 @@ test("a clean tree reports nothing to run and runs no self-test", async () => {
   });
 });
 
+test("a docs-only change says skipped, runs nothing, and never claims green", async () => {
+  await withWorkspace({ changed: "docs/limitations.md" }, ({ root, bin }) => {
+    // The fake pnpm fails and prints "pnpm ran", so a suite that started would
+    // show up twice: in the exit code and in the output.
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation — no test ran/);
+    assert.match(result.stdout, /not a pass/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("green"), false);
+    assert.equal(result.stdout.includes("gate self-test"), false);
+    assert.ok(result.stdout.includes("skipped"), result.stdout);
+  });
+});
+
+test("a docs file next to a package file still runs that package", async () => {
+  await withWorkspace({ files: { "docs/limitations.md": "# limits\n" }, changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin \(the change plus everything that depends on it\)/);
+    assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+  });
+});
+
 test("the old --staged flag names the hook to delete and runs nothing", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
@@ -479,6 +503,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
     "preflight-change.mjs",
     "preflight-git.mjs",
     "preflight-plan.mjs",
+    "ci-changes.mjs",
     "preflight-command.mjs",
     "preflight-stderr.mjs",
   ]) {

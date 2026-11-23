@@ -127,7 +127,48 @@ test("a package change next to a root change still runs everything", () => {
 });
 
 test("a file outside the packages falls back to the full suite", () => {
-  assert.equal(planPreflight(root, ["docs/limitations.md"]).mode, "full");
+  assert.equal(planPreflight(root, ["providers/exa/probe.mjs"]).mode, "full");
+});
+
+test("a change that is all documentation runs nothing", () => {
+  for (const files of [
+    ["docs/limitations.md"],
+    ["README.md", "CHANGELOG.md", "docs/assets/readme/hero.png"],
+    ["docs/agents/issue-tracker.md", "GLOSSARY.md"],
+    ["docs\\limitations.md"],
+  ]) {
+    const plan = planPreflight(root, files);
+    assert.equal(plan.mode, "docs", files.join(","));
+    assert.deepEqual(plan.packages, []);
+    assert.equal(plan.reason, "documentation only");
+  }
+});
+
+test("docs next to a package change run that package, not the whole suite", () => {
+  const plan = planPreflight(root, ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "README.md"]);
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.packages, ["@anysearch-cli/dsh-plugin"]);
+  assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
+});
+
+test("docs next to a root file still run the whole suite, and the docs are not the reason", () => {
+  const plan = planPreflight(root, ["README.md", "turbo.json"]);
+  assert.equal(plan.mode, "full");
+  assert.deepEqual(plan.outside, ["turbo.json"]);
+});
+
+// The boundary is CI's, so the exclusions matter here too: a product asset and
+// docs/eval are read by tests and must not buy a skipped run.
+test("product assets and docs/eval are not documentation", () => {
+  const asset = planPreflight(root, ["apps/plugin/AGENTS.md"]);
+  assert.equal(asset.mode, "incremental");
+  assert.deepEqual(asset.touched, ["@anysearch-cli/plugin"]);
+  assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "full");
+  assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "full");
+});
+
+test("--full still runs everything on a docs-only change", () => {
+  assert.equal(planPreflight(root, ["docs/limitations.md"], { forceFull: true }).mode, "full");
 });
 
 test("no change runs nothing", () => {

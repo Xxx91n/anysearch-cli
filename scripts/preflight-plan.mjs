@@ -1,5 +1,6 @@
-// Work out which workspace packages a change touches, and which packages have
-// to run because they use one of them.
+// Work out which files a change carries, which of them are documentation,
+// which workspace packages the rest touches, and which packages have to run
+// because they use one of them.
 //
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
@@ -10,9 +11,13 @@
 // A change outside apps/ and packages/ runs the whole suite, because no rule
 // here names which packages read it. Root files change what every package runs
 // (the lockfile, turbo.json) and belong to no package, so they run the whole
-// suite too; docs follow the same rule.
+// suite too.
 //
-// CI removes docs before selecting lanes; the push gate does not.
+// Documentation is the one exception: a docs-only change runs nothing, and docs
+// next to code are dropped before the package lookup — they belong to no
+// package, but they are not the unowned path that would run everything. The
+// boundary is isDocumentation, the same function CI asks before it skips every
+// lane, so the two sides cannot drift (#488).
 //
 // A file belongs to the package whose directory contains it. A workspace that
 // cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
@@ -31,13 +36,16 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "full" | "incremental", reason?: string, files: string[],
+ * @returns {{ mode: "none" | "docs" | "full" | "incremental", reason?: string, files: string[],
  *            packages: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
   if (forceFull) return { mode: "full", reason: "forced", files, packages: [] };
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
+  // Before the workspace is read: a docs-only change needs no package, and a
+  // broken tree should not turn "ran nothing" into "ran everything".
+  if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
   const { packages, nameless } = readWorkspaceReport(root);
   if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
@@ -51,8 +59,9 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
-  const outside = files.filter((file) => !owners.get(file));
+  const code = files.filter((file) => !isDocumentation(file));
+  const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
+  const outside = code.filter((file) => !owners.get(file));
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
@@ -65,8 +74,32 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, outside, packages: [] };
   }
 
-  const touched = [...new Set(files.map((file) => owners.get(file).name))].sort();
+  const touched = [...new Set(code.map((file) => owners.get(file).name))].sort();
   return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
+}
+
+const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
+
+/**
+ * Whether a path counts as documentation. The push gate skips the suite on a
+ * docs-only change and CI skips every lane, so both ask this one function.
+ *
+ * docs/eval/ is evaluation evidence and the host templates under apps/ are
+ * product assets: tests read both, so neither counts. A bare "docs" names no
+ * file a push could have changed, so it does not count either.
+ *
+ * @param {string} file repo-relative path, either separator
+ */
+export function isDocumentation(file) {
+  const normalized = normalizePath(file);
+  if (normalized.startsWith("docs/eval/")) return false;
+  return normalized.startsWith("docs/") || ROOT_DOCS.has(normalized);
+}
+
+/** True when the change set is not empty and every file in it is documentation. */
+export function docsOnly(files) {
+  const list = (files ?? []).map(normalizePath).filter(Boolean);
+  return list.length > 0 && list.every(isDocumentation);
 }
 
 /**

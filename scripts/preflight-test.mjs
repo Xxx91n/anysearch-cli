@@ -2,7 +2,8 @@
 // Preflight gate: before a push, run the tests the change can break.
 // scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
 // it into a package list. A change outside apps/ and packages/ has no clear
-// owner, so it falls back to the full suite.
+// owner, so it falls back to the full suite — except documentation, which runs
+// nothing and says so.
 //
 // Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
@@ -99,6 +100,16 @@ const plan = change.unknown
 
 if (plan.mode === "none") {
   console.log("[preflight] nothing to run: no changed files");
+  process.exit(0);
+}
+
+// Design: a docs-only push runs nothing. The boundary is the same
+// isDocumentation CI asks before it skips every lane, so the local gate cannot
+// be stricter than CI about what counts as docs (#488). Say skipped and name
+// the reason; never print green, because a skipped run is not evidence.
+if (plan.mode === "docs") {
+  console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
+  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
   process.exit(0);
 }
 

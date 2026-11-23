@@ -1,5 +1,4 @@
-// Which changed files count as documentation, and which CI lanes must run for
-// the rest.
+// Which CI lanes must run for a change.
 //
 // Design: lanes are selected by package. Each lane names the workspace packages
 // it can exercise; the change reduces to the preflight closure (changed package
@@ -7,14 +6,25 @@
 //
 // Design: docs-only skips every lane. Everything else uncertain (empty set,
 // unreadable workspace, unowned path, a package no lane names) runs every lane.
+//
+// Design: the documentation boundary is isDocumentation in preflight-plan.mjs,
+// not a copy here — the push gate skips the suite on the same question, and one
+// definition is the only way the two answers cannot drift (#488).
 
 import fs from "node:fs";
 import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath, packageForFile, readWorkspace, withDependents } from "./preflight-plan.mjs";
+import {
+  docsOnly,
+  isDocumentation,
+  normalizePath,
+  packageForFile,
+  readWorkspace,
+  withDependents,
+} from "./preflight-plan.mjs";
 
-const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
+export { docsOnly, isDocumentation };
 
 // Design: one line per lane — the packages it cares about, by manifest name.
 // Keep the names here, not paths: the closure already knows where each package
@@ -44,17 +54,6 @@ export const LANES = {
   "memory-eval": ["@anysearch-cli/store"],
   "macos-spillover-probe": ["@anysearch-cli/cli", "@anysearch-cli/store"],
 };
-
-export function isDocumentation(file) {
-  const normalized = normalizePath(file);
-  if (normalized.startsWith("docs/eval/")) return false;
-  return normalized.startsWith("docs/") || ROOT_DOCS.has(normalized);
-}
-
-export function docsOnly(files) {
-  const list = (files ?? []).map(normalizePath).filter(Boolean);
-  return list.length > 0 && list.every(isDocumentation);
-}
 
 /**
  * Decide which lanes must run, plus why an uncertain change ran everything.
