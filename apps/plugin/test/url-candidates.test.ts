@@ -128,6 +128,9 @@ test("only the fields that leave the machine are scanned", () => {
   assert.deepEqual(hostsOf("mcp__anysearch__search_web", { query: "example.com/a" }), ["example.com"]);
   assert.deepEqual(hostsOf("mcp__anysearch__research_web", { question: "example.com/a 怎么样" }), ["example.com"]);
   assert.deepEqual(hostsOf("mcp__anysearch__ans_chat", { message: "看看 example.com/a" }), ["example.com"]);
+  // Hosts prefix tool names in their own ways; any of these reaches the fields.
+  assert.deepEqual(hostsOf("ans_search_web", { query: "example.com/a" }), ["example.com"]);
+  assert.deepEqual(hostsOf("x_search_web", { query: "example.com/a" }), ["example.com"]);
   assert.deepEqual(
     hostsOf("mcp__anysearch__search_web", { query: "x", verticalParams: { site: "example.com/a", n: 3 } }),
     ["example.com"],
