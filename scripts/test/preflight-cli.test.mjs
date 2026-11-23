@@ -405,6 +405,42 @@ test("a root file with readers runs those packages, says why, and runs no self-t
   );
 });
 
+// The mixed case is the one with two reasons in the same banner: the changed
+// package plus its dependents, and the readers of a root file. It is also where
+// a reader could be wrongly amplified into its own dependents.
+test("a root file plus a package file runs both, and the readers do not bring theirs", async () => {
+  await withWorkspace(
+    {
+      changed: ["domains/docs.toml", "apps/dsh-plugin/src/index.ts"],
+      echoArgs: true,
+      extraPackages: {
+        "apps/cli": { name: "@anysearch-cli/cli" },
+        "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/store": { name: "@anysearch-cli/store" },
+        "apps/consumer": {
+          name: "@anysearch-cli/consumer",
+          dependencies: { "@anysearch-cli/kernel": "workspace:*" },
+        },
+      },
+    },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        /run: @anysearch-cli\/cli, @anysearch-cli\/dsh-plugin, @anysearch-cli\/kernel, @anysearch-cli\/store \(the change plus its dependents, plus the readers of root files\)/,
+      );
+      for (const pkg of ["cli", "dsh-plugin", "kernel", "store"]) {
+        assert.match(result.stdout, new RegExp(`--filter=@anysearch-cli/${pkg}`), pkg);
+      }
+      assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+      // consumer depends on kernel, a reader; it still does not run, because a
+      // reader's dependents cannot see the root file.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/consumer"), false, result.stdout);
+    },
+  );
+});
+
 test("a root file whose reader is missing from the workspace runs the suite and says which", async () => {
   await withWorkspace({ changed: "domains/docs.toml", echoArgs: true }, ({ root, bin }) => {
     // The fixture workspace has only dsh-plugin, so every reader domains names

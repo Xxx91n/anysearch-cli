@@ -34,8 +34,9 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
 /**
  * Decide what a preflight run should do.
  *
- * `readers` is set only when an incremental run mixed a root file in; on a
- * `readers` run the package list is the readers already.
+ * `readers` is set only when an incremental run carried a root file with known
+ * readers. It is absent on a `readers` run (whose `packages` are the readers)
+ * and on any run that carried none of those files.
  *
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
@@ -98,7 +99,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     mode: "incremental",
     files,
     touched,
-    readers: readerPackages,
+    ...(readerPackages.length > 0 ? { readers: readerPackages } : {}),
     packages: [...new Set([...readerPackages, ...withDependents(touched, packages)])].sort(),
   };
 }
@@ -172,19 +173,13 @@ export function codeOwnership(files, packages) {
  * nothing. A dependent that does open the file is named in its own right: cli,
  * on the domains row, is one.
  *
- * Evidence, so the next editor can re-check instead of grepping blind:
- *   domains/*.toml           kernel test/rag-adapter.test.ts, test/eval-looks-stub.test.ts;
- *                            store test/domain-loader.test.ts, test/eval-docs-golden.test.ts;
- *                            cli test/doctor.test.ts — doctor resolves the default domain
- *                            through domainSearchDirs(), whose last stop is this directory,
- *                            and asserts the [skills] active list it finds
- *   AGENTS.md                store test/eval-docs-golden.test.ts — the golden entry's
- *                            provenance ref has to resolve on disk; nothing reads the prose
- *   eval-looks.json          kernel test/eval-looks-stub.test.ts;
- *                            store test/eval-docs-golden.test.ts, test/eval-looks-live-parity.test.ts,
- *                            test/eval-release-layering.test.ts
- *   eval-badcases.json       kernel test/eval-looks-stub.test.ts; store test/eval-docs-golden.test.ts
- *   eval-looks.coverage.json store test/eval-docs-golden.test.ts
+ * Evidence, a pointer for the next editor rather than a second source of truth
+ * (the rows themselves are pinned by the real-workspace test): `domains/*.toml`
+ * by kernel's rag-adapter and eval-looks-stub, store's domain-loader and
+ * eval-docs-golden, and cli's doctor — that one resolves the default domain
+ * through the repo-root fallback; `AGENTS.md` by store's eval-docs-golden, which
+ * only needs the file on disk; the `eval-*.json` records by kernel's
+ * eval-looks-stub and store's eval-docs-golden (coverage by store alone).
  */
 export const ROOT_READERS = [
   {

@@ -121,15 +121,7 @@ test("windows separators name the same package", () => {
   assert.equal(plan.packages.length, 7);
 });
 
-test("a root file outside the reader table falls back to the full suite", () => {
-  for (const file of ["turbo.json", "pnpm-workspace.yaml", "scripts/preflight-test.mjs", ".github/workflows/ci.yml"]) {
-    assert.equal(planPreflight(root, [file]).mode, "full", file);
-  }
-});
-
-// The reader table names a root file's readers instead of the whole suite. It is
-// short on purpose: the lockfile, the build config, CI's own files and
-// .gitignore stay on the fallback above.
+// The reader table names a root file's readers instead of the whole suite.
 test("a root file runs the packages whose tests read it, and stops there", () => {
   // kernel depends on store, and this file is read by store's tests alone: a
   // dependent cannot see it through the reader's tests, so it does not run.
@@ -156,18 +148,21 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
   }
 });
 
-test("a root file outside the table still runs the full suite", () => {
-  // The domains row is scoped to the TOMLs the loader reads: a neighbour that
-  // no test opens keeps the fallback like any other unowned path. .gitignore is
-  // kept out on purpose: it changes what git sees for every package, which is
-  // not a reader list.
+// Everything the table does not name keeps the unowned fallback: the lockfile,
+// the build config, CI's own files, scripts/, .gitignore (it changes what git
+// sees for every package) and a domains file that is not a TOML the loader reads.
+test("a root file outside the reader table still runs the full suite", () => {
   for (const file of [
     "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
     "package.json",
+    "turbo.json",
     "codecov.yml",
     ".npmrc",
     ".gitignore",
     "LICENSE",
+    "scripts/preflight-test.mjs",
+    ".github/workflows/ci.yml",
     "domains/schema.json",
   ]) {
     const plan = planPreflight(root, [file]);
