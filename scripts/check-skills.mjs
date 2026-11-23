@@ -38,9 +38,17 @@ function tsxLoader() {
   return fromCli.resolve("tsx");
 }
 
+/** A requested exit code; thrown so pending stdout/stderr writes can finish. */
+class Exit extends Error {
+  constructor(code) {
+    super("exit " + code);
+    this.code = code;
+  }
+}
+
 function fail(code, detail) {
   process.stderr.write("check-skills: " + detail + "\n");
-  process.exit(code);
+  throw new Exit(code);
 }
 
 /** Map a CLI argument to the SKILL.md it names. */
@@ -93,8 +101,7 @@ async function run() {
   } catch (error) {
     fail(2, error.message);
   }
-  // Design: a green run that checked nothing is not evidence. The repository
-  // ships a skill; if discovery finds none, the check is broken, not the skills.
+  // Design: a green run that checked nothing is not evidence.
   if (files.length === 0) {
     process.stdout.write("[FAIL] no SKILL.md found — refusing to pass with nothing checked\n");
     return 1;
@@ -106,11 +113,9 @@ async function run() {
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
     } catch (error) {
-      // A rule failure reads "field + what was expected"; anything else (a
-      // permission error, an I/O failure) is reported apart and fails the run as
-      // "could not check", never as "this skill is broken". SkillError carries
-      // the exit code the CLI would use, so a usage-class error would stay apart
-      // too — no rule raises one today, but the split does not depend on that.
+      // A rule failure reads "field + what was expected". Anything else (a
+      // permission error, an I/O failure) is "could not check", not "this skill
+      // is broken"; SkillError carries the CLI's own 1-vs-2 split.
       if (error instanceof SkillError && error.exitCode === 1) {
         failed += 1;
         process.stdout.write(`[FAIL] ${shown(file)}: ${withoutTrailingPath(error.message, file)}\n`);
@@ -127,23 +132,35 @@ async function run() {
 }
 
 if (process.env[TSX_MARKER] !== "1") {
-  let loader;
   try {
-    loader = tsxLoader();
+    let loader;
+    try {
+      loader = tsxLoader();
+    } catch (error) {
+      fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
+    }
+    const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
+    const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
+      env: { ...process.env, [TSX_MARKER]: "1" },
+      stdio: "inherit",
+      timeout: 10 * 60_000,
+    });
+    if (child.error) fail(2, "cannot start the TypeScript loader: " + child.error.message);
+    process.exitCode = child.status ?? 2;
   } catch (error) {
-    fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
+    process.exitCode = error instanceof Exit ? error.code : 2;
   }
-  const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
-  const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
-    env: { ...process.env, [TSX_MARKER]: "1" },
-    stdio: "inherit",
-    timeout: 10 * 60_000,
+} else {
+  // Design: the exit code is set, never process.exit()'d — a piped stdout loses
+  // whatever is still buffered, and those lines are the whole point of a red run.
+  run().then((code) => {
+    process.exitCode = code;
+  }, (error) => {
+    if (error instanceof Exit) {
+      process.exitCode = error.code;
+      return;
+    }
+    process.stderr.write("check-skills: internal error: " + String(error && error.stack || error) + "\n");
+    process.exitCode = 2;
   });
-  if (child.error) fail(2, "cannot start the TypeScript loader: " + child.error.message);
-  process.exit(child.status ?? 2);
 }
-
-run().then((code) => process.exit(code), (error) => {
-  process.stderr.write("check-skills: internal error: " + String(error && error.stack || error) + "\n");
-  process.exit(2);
-});

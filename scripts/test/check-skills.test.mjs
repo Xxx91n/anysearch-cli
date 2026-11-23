@@ -1,6 +1,6 @@
-// scripts/check-skills.mjs (#387): what the exit codes mean (0 every skill
-// passes / 1 a rule broke or nothing was found / 2 the check could not run),
-// which files discovery finds, and one case per rule that has to go red.
+// scripts/check-skills.mjs: what the exit codes mean (0 every skill passes /
+// 1 a rule broke or nothing was found / 2 the check could not run), which files
+// discovery finds, and the cases that have to go red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -42,7 +42,13 @@ function canStillRead(file) {
 
 /** Run a Git command in a fixture repository and insist it worked. */
 function git(cwd, args) {
-  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  // The repository pointers redirect `-C`; a hook or a test run can export them.
+  const env = { ...process.env };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) {
+    delete env[key];
+  }
+  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env });
   assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
 }
 
@@ -95,6 +101,22 @@ test("a body past 500 lines goes red and reports the count", (t) => {
   assert.match(result.stdout, /body must stay under 500 lines, got 501/);
 });
 
+test("a description that never says when to use the skill goes red", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "demosc", "name: demosc\ndescription: A skill about demos.");
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /must also say when to use the skill/);
+});
+
+test("a description that says it in another language passes", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "zhsc", "name: zhsc\ndescription: 把一周的提交整理成周报，周会前使用時最合适。");
+  const result = check([dir]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /1 SKILL\.md checked, 0 failed/);
+});
+
 test("a name that differs from its directory goes red", (t) => {
   const root = withRoot(t);
   const dir = skill(root, "foldername", "name: skilename\ndescription: Use when a test needs a mismatch.");
@@ -127,6 +149,7 @@ test("no arguments checks what Git can see: tracked, untracked, not ignored", (t
   git(root, ["init", "--quiet"]);
   git(root, ["config", "user.name", "Check Skills Test"]);
   git(root, ["config", "user.email", "check-skills@example.invalid"]);
+  git(root, ["config", "commit.gpgsign", "false"]);
   skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
   git(root, ["add", "--", "alpha/SKILL.md", "alpha"]);
   git(root, ["commit", "--quiet", "-m", "alpha"]);
@@ -143,11 +166,11 @@ test("no arguments checks what Git can see: tracked, untracked, not ignored", (t
   assert.match(result.stdout, /2 SKILL\.md checked, 0 failed/);
 });
 
-test("no arguments in this checkout finds the shipped skill and passes it", () => {
-  const result = check([], { root: ROOT });
+test("the skill this repository ships passes", () => {
+  const result = check(["apps/plugin/skills/ans"], { root: ROOT });
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /apps\/plugin\/skills\/ans\/SKILL\.md/);
-  assert.match(result.stdout, /([1-9]\d*) SKILL\.md checked, 0 failed/);
+  assert.match(result.stdout, /1 SKILL\.md checked, 0 failed/);
 });
 
 // A file the checker cannot read is "could not check" (exit 2), not "this skill

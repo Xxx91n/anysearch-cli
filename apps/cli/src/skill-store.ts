@@ -678,19 +678,13 @@ const SKILL_BODY_LINE_LIMIT = 500;
 const SKILL_DESCRIPTION_MIN_CHARS = 1;
 const SKILL_DESCRIPTION_MAX_CHARS = 1024;
 /**
- * Markers that carry the "when to use it" half of a description. The spec asks
- * for prose, so the check settles for a word: English `when`/`whenever`, the
- * Chinese forms (both scripts) and the Japanese one. It still misses
- * descriptions that phrase it another way — that is a known limit, not a bug,
- * and the error says what to add.
+ * Markers for the "when to use it" half of a description. The spec asks for
+ * prose, so this is a keyword match and misses other phrasings; the error says
+ * what to add.
  */
 const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用|使用时|时用|時|とき/i;
 
-/**
- * Require a description that says what the skill does and when to use it (#387).
- * The spec asks for both halves; a description with no such clause names the
- * topic but never tells an agent when to reach for it.
- */
+/** Require a description that says what the skill does and when to use it (#387). */
 function requireDescription(value: unknown, path: string): void {
   if (value === undefined || value === null) {
     fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters saying what the skill does and when to use it: ${path}`);
@@ -709,9 +703,8 @@ function requireDescription(value: unknown, path: string): void {
 }
 
 /**
- * Keep the body under the spec's 500-line budget; the frontmatter does not count,
- * and neither do the blank lines around the body — they are separators, not
- * content, and counting them would make the house style lose two lines.
+ * Keep the body under the spec's 500-line budget. The frontmatter and the blank
+ * lines around the body are separators, not content, so they do not count.
  */
 function requireShortBody(body: string, path: string): void {
   const trimmed = body.replace(/\r\n?/g, "\n").replace(/^\n+/, "").replace(/\n+$/, "");
@@ -745,9 +738,8 @@ export function validateSkillFile(path: string): string {
 
 /**
  * Validate one skill directory: everything `validateSkillFile` checks, plus the
- * spec rule that `name` equals the directory it lives in. Install, `ans skill
- * validate` and `scripts/check-skills.mjs` all come through here (#387), so the
- * three cannot disagree about the same file.
+ * rule that `name` equals the directory. `ans skill validate` and
+ * `scripts/check-skills.mjs` come through here, so they agree file for file.
  */
 export function validateSkillDirectory(directory: string): string {
   const file = join(directory, "SKILL.md");
@@ -991,10 +983,8 @@ export async function installSkill(sourceArgument: string, opts: SkillOptions = 
   // Design: a source path is persisted in installed.json, whose validator
   // rejects control characters — reject it here so an install cannot brick the scope.
   if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
-  // Design: install accepts any directory name (#387). The spec's "name equals
-  // its parent directory" rule holds for a skill *source tree* and is checked by
-  // scripts/check-skills.mjs; a cloned repo folder can carry another name, and
-  // the installed copy is always skills/synced/<name>, where the rule holds.
+  // Design: install accepts any directory name (#387) — a cloned repo folder has
+  // its own, and the installed copy is always skills/synced/<name>.
   const name = validateSkillFile(join(source, "SKILL.md"));
   const metadata = await provenance(source);
   const managed = managedSkillsRoot(opts);
@@ -1123,8 +1113,8 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   }
   return entries.map((entry) => {
     try {
-      // The installed directory is <managed>/<name>, so the "name equals its
-      // directory" rule covers the manifest cross-check too (#387).
+      // The installed directory is <managed>/<name>, so this covers the
+      // manifest cross-check too.
       validateSkillDirectory(installedDirectory(managed, entry.name));
       return { name: entry.name, ok: true };
     } catch (error) {
