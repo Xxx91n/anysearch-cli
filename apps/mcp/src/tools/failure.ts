@@ -8,6 +8,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
+import { providerErrorHints } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {
@@ -27,36 +28,6 @@ export interface ProviderFailureMetadata {
 }
 
 /**
- * One plain sentence per error class saying what to do next; `unknown` has
- * none.
- *
- * Design: these sentences live only here — the tests read this table and the
- * MCP docs point here, instead of carrying a copy, so a reword is one edit.
- */
-export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
-  "quota-exhausted": "the key is fine but the plan is used up — top up or upgrade; retrying or swapping the key will not help",
-  "permanent-auth": "no key is set, or the key is wrong or lacks permission — set a valid one",
-  "transient": "the upstream had a temporary problem — retry in a moment",
-  "permanent-protocol": "the upstream reply could not be read — check what it returned",
-  "session-expired": "the session ended — re-initialize the connection",
-  "unknown": undefined,
-};
-
-/** provider id → plain-language remedy, for failed arms whose class has one. */
-function providerErrorHints(
-  providersFailed: readonly string[],
-  providerErrorClasses?: Record<string, ProviderErrorClass>,
-): Record<string, string> {
-  const hints: Record<string, string> = {};
-  for (const id of providersFailed) {
-    const cls = providerErrorClasses?.[id];
-    const hint = cls ? PROVIDER_ERROR_HINTS[cls] : undefined;
-    if (hint) hints[id] = hint;
-  }
-  return hints;
-}
-
-/**
  * Failure metadata for a result that is still a success (at least one arm
  * answered). Runtime failures and construction-time build faults travel
  * together so a host can audit the whole chain. Undefined when every arm is
@@ -66,10 +37,11 @@ export function providerFailureMetadata(
   eng: CompositionResult,
   providersFailed: string[],
   providerErrorClasses?: Record<string, ProviderErrorClass>,
+  providerErrorRetryAfterSeconds?: Record<string, number>,
 ): ProviderFailureMetadata | undefined {
   const buildErrors = eng.providerBuildErrors ?? {};
   if (providersFailed.length === 0 && Object.keys(buildErrors).length === 0) return undefined;
-  const hints = providerErrorHints(providersFailed, providerErrorClasses);
+  const hints = providerErrorHints(providersFailed, providerErrorClasses, providerErrorRetryAfterSeconds);
   return {
     providersFailed: [...providersFailed],
     providerErrorClasses: { ...(providerErrorClasses ?? {}) },
@@ -99,11 +71,12 @@ export function allProvidersFailedText(
   toolName: string,
   providersFailed: readonly string[],
   providerErrorClasses?: Record<string, ProviderErrorClass>,
+  providerErrorRetryAfterSeconds?: Record<string, number>,
 ): string {
   const classes = providersFailed
     .map((id) => id + "=" + (providerErrorClasses?.[id] ?? "unknown"))
     .join(", ");
-  const hints = Object.entries(providerErrorHints(providersFailed, providerErrorClasses))
+  const hints = Object.entries(providerErrorHints(providersFailed, providerErrorClasses, providerErrorRetryAfterSeconds))
     .map(([id, hint]) => id + ": " + hint)
     .join(" | ");
   return (

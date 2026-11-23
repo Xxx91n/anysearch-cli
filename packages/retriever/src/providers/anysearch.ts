@@ -14,7 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
-import { canonicalizeVertical, classifyProviderError, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, stripErrorClassMarkers } from "../contract";
+import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
 import { redactSecrets } from "../redact";
 
 // CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
@@ -153,6 +153,9 @@ const QUOTA_EXHAUSTED_NOTICE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
 const RETRY_NOTICE = /retry after|try again later|稍后再试|稍后重试/i;
 
 type ReplyFailure = { cls: ProviderErrorClass; prefix: string };
+// The reply text, classified once: the shape guess (if any) plus what the shared
+// classifier says about the same text.
+type ReplyReading = { failure?: ReplyFailure; classifier: ProviderErrorClass };
 
 // Provisioning replies name the issued key as `api_key=...`, `"api_key": "..."`
 // or `apiKey: ...`. This pattern redacts the value in any of those forms.
@@ -161,13 +164,14 @@ const KEY_FIELD_GLOBAL = new RegExp(KEY_FIELD_SOURCE, "gi");
 
 // A sign-up/issuance reply, not just any message that mentions a key. The
 // automatic-generation wording needs an account or key next to it; "this bill
-// was automatically generated" is not one.
-const PROVISIONING_NOTICE = /(?:account|api key|api_key)[^.]{0,40}automatically generated|automatically generated[^.]{0,40}(?:account|api key|api_key)|(?:api )?key (?:has been |was |is )?issued|issued (?:an? )?(?:api )?key|sign[ -]?up (?:to|for) (?:get|obtain)[^.]*key/i;
+// was automatically generated" is not one. Shared with contract.ts's
+// classifier, which sees the same text through the error seam.
+const PROVISIONING_NOTICE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 
 // Name a reply failure by its text; providerErrorMarker carries the class.
 function replyFailurePrefix(md: string): ReplyFailure | undefined {
   if (PROVISIONING_NOTICE.test(md)) {
-    return { cls: "permanent-auth", prefix: "quota/auth nudge: upstream returned a sign-up/issued-key reply instead of results" };
+    return { cls: "free-quota-exhausted", prefix: "free quota exhausted: upstream returned a sign-up/issued-key reply instead of results" };
   }
   if (THROTTLE_NOTICE.test(md)) {
     return { cls: "transient", prefix: "rate limited: upstream returned a rate-limit notice instead of results" };
@@ -179,6 +183,20 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
     return { cls: "transient", prefix: "rate limited: upstream returned a retry-later notice instead of results" };
   }
   return undefined;
+}
+
+// The reply scan above with an explicit credential fault taking precedence: a
+// 403 body that happens to say a key was issued is a wrong key, not a quota.
+// `failure` is undefined when no shape matched — the caller decides then (the
+// isError path falls back to `classifier`, a plain reply text is malformed).
+function readReply(md: string): ReplyReading {
+  const classifier = classifyProviderError(stripErrorClassMarkers(md));
+  const guessed = replyFailurePrefix(md);
+  if (!guessed) return { classifier };
+  if (isExplicitAuthFault(classifier)) {
+    return { classifier, failure: { cls: classifier, prefix: "auth fault: upstream rejected the credential" } };
+  }
+  return { classifier, failure: guessed };
 }
 
 // #214: result._meta.request_id is a server-generated diagnostic correlation id
@@ -203,11 +221,10 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const r = result as McpToolResult;
   if (r.isError === true) {
     const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
-    const failure = replyFailurePrefix(full);
+    const { failure, classifier } = readReply(full);
     // Fix the class here (reply marker, else the shared classifier); the
     // marker goes before the displayed copy.
-    const fallback = classifyProviderError(stripErrorClassMarkers(full));
-    const cls = failure?.cls ?? (fallback === "unknown" ? "permanent-protocol" : fallback);
+    const cls = failure?.cls ?? (classifier === "unknown" ? "permanent-protocol" : classifier);
     const shown = redactSecrets(full, { keepPaths: false })
       .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
       .slice(0, 200);
@@ -226,10 +243,10 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   if (!/##\s+Search Results/.test(md)) {
     // Not a results envelope: name it by the reply text (provisioning boundary,
     // exhausted plan, throttle) before calling it malformed. A provisioning
-    // payload ("account ... automatically generated ... api_key=...") is a
-    // credential boundary, not protocol drift → permanent-auth; a used-up plan
-    // is quota-exhausted even when the wording is Chinese 额度.
-    const failure = replyFailurePrefix(md);
+    // payload ("account ... automatically generated ... api_key=...") is the
+    // free quota ending, not protocol drift → free-quota-exhausted; a used-up
+    // plan is quota-exhausted even when the wording is Chinese 额度.
+    const { failure } = readReply(md);
     if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");

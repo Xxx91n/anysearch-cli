@@ -86,29 +86,30 @@ is live; this adapter is MCP-only」那条，由 #206 改写（现在用户能�
 `ctrl-i*` 语料已经随 #24 写进 `eval-looks.json`（14 条 live-scoped）；原来的
 登记状态不变（内部评测缺口，不补进 `docs/limitations.md`）。
 
-## #25 上游匿名配额边界的形态=自动签凭证的文本（200+isError:null+没有结果正文）；provider 已归类为 permanent-auth；改 env/key 是用户那边的事
+## #25 上游匿名配额边界的形态=自动签凭证的文本（200+isError:null+没有结果正文）；provider 已归类为 free-quota-exhausted；改 env/key 是用户那边的事
 
 解除信号: 上游匿名配额边界换形态——也就是在配额边界对一个匿名（没有
 `ANYSEARCH_API_KEY`）的 `tools/call search` 探针，不再回自动签凭证的那段内容
 （HTTP 200，`isError:null` 或 `isError:true`，正文是 "account ... automatically
 generated ... api_key=..."），而是回真正的错误（401/403，或者结构化的配额错误）。
 到那时，`PROVISIONING_NOTICE`（账号/key + automatically generated、key issued
-这类开户措辞）和「quota/auth nudge」抛 permanent-auth 的那段代码
+这类开户措辞）和「free quota exhausted」抛 free-quota-exhausted 的那段代码
 （`packages/retriever/src/providers/anysearch.ts` 的 `mapToolsCallResult()`；分类在
 `packages/retriever/src/contract.ts` 的 `classifyProviderError()`；夹具测试
 `packages/retriever/test/provider-error-class.test.ts` 里 `cases` 那几条）要跟着改映射。
 客户端这边的处理已经完整——这张票关的时候就是再验一遍边界还跟代码写的一样。
 
-登记状态: registered — `docs/limitations.md` 里「Anonymous `anysearch` calls hit a
-quota wall classified `permanent-auth`」那条，在 #171 做完（匿名配额墙
-用户能碰到：调用方撞上 `permanent-auth`，并被提示设 `ANYSEARCH_API_KEY`）：
+登记状态: registered — `docs/limitations.md` 里「A used-up free quota is its own
+error class (`free-quota-exhausted`)」那条，在 #455 做完（#171 时它还归
+`permanent-auth`；现在匿名配额墙读成免费额度到顶，提示句给「等到上游说的点再试」
+和「加个 key」两条路）：
 
 ```md
-- **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
-  upstream answers quota-exhausted anonymous calls with an auto-provisioning
-  payload (HTTP 200, `isError:null`, no result body) instead of an error;
-  the provider names this `quota/auth nudge` → `permanent-auth`. Fix is
-  user-side: set `ANYSEARCH_API_KEY`.
+- **A used-up free quota is its own error class (`free-quota-exhausted`)** —
+  the free quota is the allowance a provider gives a caller with no key; its
+  two shapes (AnySearch's sign-up/issued-key reply, Tavily's keyless
+  `TavilyKeylessLimitError`) both classify `free-quota-exhausted`, never
+  `permanent-auth` and never `transient`.
 ```
 
 ## #27 上游 finance.fundamental 的校验器按 tag 级要 cn_code，跟 sub_domains 文档的「按 type」规则对不上（vert-f1105 格降级的根因）

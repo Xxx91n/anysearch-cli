@@ -57,6 +57,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // least one successful arm" as success, not outage.
         const failedProviders = new Set<string>();
         const providerErrorClasses: Record<string, ProviderErrorClass> = {};
+        const providerErrorRetryAfterSeconds: Record<string, number> = {};
         let anyProviderAnswered = false;
 
         try {
@@ -87,6 +88,14 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
+            // Follows each arm's latest failure: overwrite when it gave a number,
+            // drop when it failed again without one, keep the last otherwise
+            // (providerErrorClasses above accumulates the same way).
+            for (const id of roundFailed) {
+              const wait = envelope.metadata?.providerErrorRetryAfterSeconds?.[id];
+              if (wait !== undefined) providerErrorRetryAfterSeconds[id] = wait;
+              else delete providerErrorRetryAfterSeconds[id];
+            }
             if (queriedProviders.some((id) => !roundFailed.includes(id) && !cancelledProviders.includes(id))) {
               anyProviderAnswered = true;
             }
@@ -103,10 +112,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // empty research result. Name the failed arms; no structuredContent.
           const failedProvidersList = [...failedProviders];
           if (allResults.length === 0 && !anyProviderAnswered && failedProvidersList.length > 0) {
-            return toolFailure(allProvidersFailedText("research_web", failedProvidersList, providerErrorClasses));
+            return toolFailure(allProvidersFailedText("research_web", failedProvidersList, providerErrorClasses, providerErrorRetryAfterSeconds));
           }
           // Partial success: at least one arm answered in some round.
-          const providerFailures = providerFailureMetadata(eng, failedProvidersList, providerErrorClasses);
+          const providerFailures = providerFailureMetadata(eng, failedProvidersList, providerErrorClasses, providerErrorRetryAfterSeconds);
 
           // Re-derive attribution over the MERGED result set so claim
           // evidence sourceKeys point into the same results array this tool returns.

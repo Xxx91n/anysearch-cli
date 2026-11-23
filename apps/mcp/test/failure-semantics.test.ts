@@ -24,7 +24,7 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import { createMcpToolState } from "../src/tool-state.js";
-import { PROVIDER_ERROR_HINTS } from "../src/tools/failure.js";
+import { PROVIDER_ERROR_HINTS } from "@anysearch-cli/kernel";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
@@ -72,6 +72,7 @@ function hintFor(cls: ProviderErrorClass): string {
 const QUOTA_SENTENCE = hintFor("quota-exhausted");
 const TRANSIENT_SENTENCE = hintFor("transient");
 const AUTH_SENTENCE = hintFor("permanent-auth");
+const FREE_QUOTA_SENTENCE = hintFor("free-quota-exhausted");
 
 function captureHandlers(eng: CompositionResult): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
@@ -173,6 +174,28 @@ function quotaAllFailedEnvelope(): FusedEnvelope {
 function quotaPartialEnvelope(): FusedEnvelope {
   const env = partialEnvelope();
   env.metadata.providerErrorClasses = { tavily: "quota-exhausted" };
+  return env;
+}
+
+function freeQuotaAllFailedEnvelope(retryAfterSeconds?: number): FusedEnvelope {
+  return {
+    results: [],
+    answers: [],
+    metadata: {
+      providersQueried: ["tavily"],
+      providersFailed: ["tavily"],
+      providersCancelled: [],
+      providerErrorClasses: { tavily: "free-quota-exhausted" },
+      ...(retryAfterSeconds !== undefined ? { providerErrorRetryAfterSeconds: { tavily: retryAfterSeconds } } : {}),
+      elapsedMs: 1,
+    },
+  } as FusedEnvelope;
+}
+
+function freeQuotaPartialEnvelope(retryAfterSeconds: number): FusedEnvelope {
+  const env = partialEnvelope();
+  env.metadata.providerErrorClasses = { tavily: "free-quota-exhausted" };
+  env.metadata.providerErrorRetryAfterSeconds = { tavily: retryAfterSeconds };
   return env;
 }
 
@@ -462,6 +485,50 @@ async function main() {
       );
       assert(!text.includes("{"), "quota all-failed: text is not a JSON payload");
       assert(res?.structuredContent === undefined, "quota all-failed: no structuredContent");
+    }
+
+    // ---- 13b. The free quota's remedy carries the wait the arm reported (#455) ----
+    // The sentence has one slot, so a reader must never see `{wait}`; a number
+    // the upstream gave replaces it, and a missing one reads as "a moment".
+    {
+      const res = await captureHandlers(makeEngine(async () => freeQuotaAllFailedEnvelope(3600))).search_web({
+        query: "x",
+      });
+      assert(res?.isError === true, "free quota all-failed: isError true");
+      const text = String(res?.content?.[0]?.text);
+      assert(text.includes("tavily=free-quota-exhausted"), "free quota all-failed: names the new class");
+      assert(
+        text.includes("tavily: " + FREE_QUOTA_SENTENCE.replace("{wait}", "3600 seconds")),
+        "free quota all-failed: the sentence carries the retry-after as a number",
+      );
+      assert(!text.includes("{"), "free quota all-failed: no unfilled slot reaches the reader");
+    }
+
+    {
+      const res = await captureHandlers(makeEngine(async () => freeQuotaAllFailedEnvelope())).search_web({
+        query: "x",
+      });
+      const text = String(res?.content?.[0]?.text);
+      assert(
+        text.includes("tavily: " + FREE_QUOTA_SENTENCE.replace("{wait}", "a moment")),
+        "free quota without a wait: the sentence says a moment",
+      );
+    }
+
+    {
+      const res = await captureHandlers(makeEngine(async () => freeQuotaPartialEnvelope(90))).search_web({
+        query: "x",
+      });
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.providerErrorClasses?.tavily === "free-quota-exhausted", "free quota partial: class tag in content JSON");
+      assert(
+        doc.providerErrorHints?.tavily === FREE_QUOTA_SENTENCE.replace("{wait}", "90 seconds"),
+        "free quota partial: content JSON carries the filled sentence",
+      );
+      assert(
+        res?.structuredContent?.providerErrorHints?.tavily === FREE_QUOTA_SENTENCE.replace("{wait}", "90 seconds"),
+        "free quota partial: structuredContent carries the filled sentence",
+      );
     }
 
     // Two failed arms keep their hints apart: each hint reads "id: sentence",

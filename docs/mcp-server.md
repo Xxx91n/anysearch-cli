@@ -234,7 +234,8 @@ Rules behind the table:
   outage. A cancelled provider never counts as an answered one.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
-  `quota-exhausted` / `permanent-protocol` / `session-expired` / `unknown`),
+  `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
+  `session-expired` / `unknown`),
   `providerErrorHints` and construction-time `providerBuildErrors` appear in
   both the content JSON and `structuredContent`.
 - **Credential sources travel with every successful result.**
@@ -248,8 +249,12 @@ Rules behind the table:
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in
-  `apps/mcp/src/tools/failure.ts` is the only place that wording is written
-  down — read it there rather than in a copy.
+  `packages/kernel/src/provider-error-hints.ts` is the only place that wording
+  is written down — read it there rather than in a copy (`ans search` prints
+  the same sentences under its `Providers failed` line). A sentence may carry
+  one `{wait}` slot: `free-quota-exhausted` fills it with the arm's
+  retry-after (`wait 30 seconds`) or with `a moment` when the upstream gave
+  none, so the reader never sees the slot itself.
   `providerErrorHints` maps each failed provider whose class has a sentence to
   that sentence. The all-providers-failed text appends them after the class
   list, one `provider: sentence` per arm separated by ` | `, in

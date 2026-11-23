@@ -20,7 +20,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 - `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；没设就是匿名调用。
 - 匿名过了配额，上游回的是「自动签发」提示体：HTTP 200、`isError:null`、没有结果体。适配器把它判成
-  `permanent-auth`，不是 `malformed`。
+  `free-quota-exhausted`（免费额度到顶），不是 `malformed`，也不是 `permanent-auth`。
 - 两条探针**只读环境变量**（`ANYSEARCH_API_KEY`），不读 `~/.ans/credentials.json`。适配器本身同理，但
   `ans` 装配时会把「环境变量 → 用户凭据文件」解析出来的 key 传进构造函数（`packages/kernel/src/composition.ts`），
   所以探针和产品看到的可能不是同一把。把 key 只存在凭据文件里的人跑探针会静默变成匿名调用——没报错、
@@ -44,7 +44,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 已知异常
 
-- **匿名配额墙**：HTTP 200 + 无结果体 → `permanent-auth`，解法在用户侧设 key。
+- **匿名配额墙**：HTTP 200 + 无结果体 → `free-quota-exhausted`；提示句给两条路（等到上游说的点再试，或加个 key）。
 - **不能预过滤**：MCP 的 `domain` 参数是垂域路由值（academic..travel），不是主机白名单，`includeDomains`
   只能在返回后本地筛。审计事件 `retrieval.domain_filter.pre` 会记下这条限制。
 - **`finance.fundamental` 校验比文档严**：tag 层强制要 `cn_code`，只给 `symbol` 会 `isError`。

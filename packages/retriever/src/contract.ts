@@ -222,14 +222,28 @@ export interface FusionProvenance {
 // category next to the flag, never the flag alone.
 // 5xx/429/rate limits/network errors → transient; 401/403/bad key and the
 // x402 payment challenge → permanent-auth; used-up plan text and a plain 402
-// (key valid, retrying will not help) → quota-exhausted; malformed or drifted
-// replies → permanent-protocol; HTTP 404 on a session-id request →
-// session-expired (the spec-MUST re-initialize retry already fired once).
+// (key valid, retrying will not help) → quota-exhausted; the free quota's
+// allowance used up (no key yet, and a key is one way back) →
+// free-quota-exhausted; malformed or drifted replies → permanent-protocol;
+// HTTP 404 on a session-id request → session-expired (the spec-MUST
+// re-initialize retry already fired once).
 
 // Quota wording shared by every path that reads a provider message, including
 // the adapters that classify a reply body themselves.
 export const QUOTA_EXHAUSTED_TEXT = "exceeds your plan|usage limit|quota exceeded|quota exhausted|quota reached|quota limit exceeded|exceeded your quota|insufficient credits|out of credits|(?:余额|额度|配额|次数)[^，。\\n]{0,10}(?:用完|用尽|耗尽|不足|上限|超限|超出)";
 const QUOTA_EXHAUSTED_RE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
+
+// AnySearch ends the free quota with a sign-up/issued-key reply instead of
+// results. The phrase has to be about getting the key itself — the
+// automatic-generation wording needs an account or key next to it, so "this
+// bill was automatically generated" is no wall. Shared with the adapter that
+// reads the reply text, so the two matchers cannot drift.
+export const PROVISIONING_REPLY_TEXT = "(?:account|api key|api_key)[^.]{0,40}automatically generated|automatically generated[^.]{0,40}(?:account|api key|api_key)|(?:api )?key (?:has been |was |is )?issued|issued (?:an? )?(?:api )?key|sign[ -]?up (?:to|for) (?:get|obtain)[^.]*key";
+const PROVISIONING_REPLY_RE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
+
+// Tavily's keyless cap: @tavily/core raises TavilyKeylessLimitError and keeps
+// the cap kind on the error object (capType), never in the message body.
+const KEYLESS_CAP_RE = /TavilyKeylessLimitError|daily_cap_reached/i;
 
 // Class all providers share. The type and the marker parser read the same list,
 // so adding a class cannot silently fall back to word matching.
@@ -237,6 +251,7 @@ export const ERROR_CLASSES = [
   "transient",
   "permanent-auth",
   "quota-exhausted",
+  "free-quota-exhausted",
   "permanent-protocol",
   "session-expired",
   "unknown",
@@ -260,6 +275,13 @@ export function stripErrorClassMarkers(text: string): string {
   return text.replace(MARKER_TEXT, "");
 }
 
+// Classes that name a credential fault outright. An adapter that guessed a
+// class from reply wording has to let one of these win: "your API key was
+// issued for a different project" is a 403, not a used-up free allowance.
+export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
+  return cls === "permanent-auth" || cls === "session-expired";
+}
+
 export function providerErrorMarker(cls: ProviderErrorClass): string {
   return "[" + ERROR_CLASS_MARKER + cls + "]";
 }
@@ -269,24 +291,71 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const explicit = t.match(EXPLICIT_CLASS);
   if (explicit) return explicit[1] as ProviderErrorClass;
   const http = (code: string) => t.includes("HTTP " + code);
-  // exa-js rethrows only the envelope text and keeps the status on
-  // ExaError.statusCode, so a 402 can arrive without the words "HTTP 402".
-  const is402 = http("402") || /status(?:Code)?\s*[:=]?\s*402|payment required/i.test(t);
+  // An SDK keeps the status on the error object, so providerErrorText writes it
+  // into the text as `status=<n>`; read that form too, not just "HTTP 403".
+  const statusOf = (code: string) => http(code) || new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + code + "\\b", "i").test(t);
+  // The structured status for a whole family (`status=500` is a 5xx).
+  const statusFamily = (lead: string) => new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + lead + "\\d\\d\\b", "i").test(t);
+  const is402 = statusOf("402") || /payment required/i.test(t);
   // A 402 is one of two things: the x402 payment challenge means no key was
   // sent, while the standard envelope means the key is valid but out of
   // credits. Only the structured challenge marks say which.
   const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  if (http("401") || http("403") || x402Challenge || t.includes("quota/auth nudge") || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
-  if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
+  if (statusOf("401") || statusOf("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  // Design: an explicit auth fault outranks the free-quota wall, which in turn
+  // outranks the retry shapes.
+  if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
+  if (/HTTP 5[0-9][0-9]/.test(t) || statusFamily("5") || statusOf("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
   // does nothing, the owner must top up. Checked after the retryable shapes so
   // a 429/5xx that also says "usage limit" stays transient; a 402 without the
   // x402 marks is the keyed request's quota wall.
   if (is402 || QUOTA_EXHAUSTED_RE.test(t)) return "quota-exhausted";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
-  if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
+  if (/HTTP 4[0-9][0-9]/.test(t) || statusFamily("4")) return "permanent-protocol";
   return "unknown";
+}
+
+// A numeric HTTP status an SDK kept on the error object, if it kept one.
+function errorStatus(err: unknown): number | undefined {
+  const structured = err as { statusCode?: unknown; status?: unknown } | null;
+  if (typeof structured?.statusCode === "number") return structured.statusCode;
+  return typeof structured?.status === "number" ? structured.status : undefined;
+}
+
+// The text form the classifier sees: an SDK keeps structured bits on the Error
+// object and String(err) drops them, so the capture seam writes them back in.
+export function providerErrorText(err: unknown): string {
+  const text = String(err);
+  const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
+  const bits: string[] = [];
+  const status = errorStatus(err);
+  if (status !== undefined) bits.push("status=" + status);
+  if (typeof structured?.capType === "string" && structured.capType) bits.push("capType=" + structured.capType);
+  if (typeof structured?.retryAfter === "number" && Number.isFinite(structured.retryAfter)) {
+    bits.push("retry-after=" + structured.retryAfter);
+  }
+  return bits.length > 0 ? text + " (" + bits.join(", ") + ")" : text;
+}
+
+// Seconds per unit; the unit-less form (the header's own) is seconds. "ms"
+// is checked before "m" so milliseconds never read as minutes.
+function unitSeconds(unit: string): number {
+  if (unit.startsWith("ms") || unit.startsWith("milli")) return 0.001;
+  if (unit.startsWith("h")) return 3600;
+  if (unit.startsWith("m")) return 60;
+  return 1;
+}
+
+// Seconds until the arm expects another call. The last match wins: the SDK's
+// own value is appended by providerErrorText, after anything the body said.
+export function retryAfterSeconds(errText: string): number | null {
+  const matches = [...String(errText).matchAll(/retry[ -]?after\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)?/gi)];
+  const last = matches.pop();
+  if (!last) return null;
+  const seconds = Math.round(Number(last[1]) * unitSeconds((last[2] ?? "s").toLowerCase()));
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
 // Fused envelope: the output of RRF consensus fusion across N providers.
@@ -300,6 +369,10 @@ export interface FusedEnvelope {
     // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
+    // per-arm wait seconds, recorded whenever a failing arm gave one; the
+    // hint table decides which remedy sentences quote it, so the sentence
+    // carries the number the upstream gave instead of "a moment".
+    providerErrorRetryAfterSeconds?: Record<string, number>;
     elapsedMs: number;
     // sufficiency signal from computeSufficiency.
     sufficiency?: SufficiencySignal;
