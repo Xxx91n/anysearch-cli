@@ -99,8 +99,10 @@ jobs:
           dep-age-override: true
 
       # Design: copy instead of reinstall — pnpm links are relative, so the copy
-      # resolves into its own store. `.git` stays behind; no test reads it. This
-      # lane covers runtime path handling only, not the install step.
+      # resolves into its own store. `.git` stays behind; the one test that looks
+      # for it (the config drift check) prints a SKIP with its reason instead of
+      # passing quietly. This lane covers runtime path handling only, not the
+      # install step.
       - name: Copy workspace to a spaced + non-ASCII path
         if: ${{ steps.setup.outputs.run-spaced-path != 'false' }}
         shell: bash

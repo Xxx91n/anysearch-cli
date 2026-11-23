@@ -28,6 +28,19 @@ const FREE_QUOTA_SENTENCE = PROVIDER_ERROR_HINTS["free-quota-exhausted"] ?? "";
 }
 
 {
+  // #502: a wrong key is not the only way out. All three providers have a free
+  // quota, so the sentence also offers deleting the key. The every-sentence
+  // loop below proves it renders with no slot; this pins the sentence itself,
+  // the same way the free-quota assertions above do.
+  const AUTH_SENTENCE = PROVIDER_ERROR_HINTS["permanent-auth"] ?? "";
+  assert(
+    AUTH_SENTENCE ===
+      "no key is set, or the key is wrong or lacks permission — set a valid one, or delete the key (unset the env var, or ans auth remove <provider>) to run on the free quota",
+    "the auth sentence keeps the valid-key remedy and adds the free-quota one",
+  );
+}
+
+{
   // Every sentence renders without leaving a slot behind, and `{` appears only
   // in the sentences that carry one — a stray brace in prose is a bug the
   // reader would see.

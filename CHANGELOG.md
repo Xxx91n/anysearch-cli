@@ -19,6 +19,39 @@
 - **raw 探针和 tavily 那条手工域过滤探针各自留字面量**：`probe-anysearch-mcp-raw.ts` 的 endpoint 与协议版本故意不 import 被它检查的代码；`providers/tavily/probe-tavily-domains.mjs` 也写死了 `https://api.tavily.com`。
 - **`providers/` 不在 `pnpm -r check` 里**：provider 探针的改动只做了模块加载冒烟（plain `node` 下事实表和适配器的取值对得上），没跑真调用。
 
+## Unreleased — #505: 宿主模板检查：坏形状、非整数 timeout、指错适配器都会红
+
+一句话说清：**四份 `configs/*/hooks.json` 以前各测各的，没人横向比对；codebuddy 模板的命令和 `ans host connect` 写出来的已经不是同一条。现在一条测试读四份模板：timeout 必须是正整数、命令必须是本宿主自己的 bin、每条 hook 必须和 `hosts.ts` 的 `HOSTS` 候选逐字对上。生成物漂移改成和 `HEAD` 比，根目录 `pnpm test` 先跑 `gen:configs` 也洗不绿了。**
+
+### Added
+
+- **`apps/plugin/test/host-templates.test.ts`**：四份模板一起查。timeout 是正整数；命令是本宿主的适配器/bin（claude → `ans-hook-claude`，codebuddy → `ans-hook-codebuddy`，codex → `ans-hook-codex`，antigravity → `ans-hook-antigravity <Event>`，claude 和 codex 的 SessionStart 走 `ans-hook-session-start --envelope`）；每条 hook 和 `HOSTS` 候选一致。比较前把 JSON 设置模板、Codex 的 TOML 候选、Antigravity 的命名钩子表归一成 `{event: [{matcher?, hooks}]}`，只比 hook 单元，MCP 注册不管。模板和 `HOSTS` 的宿主名单也必须一样多。
+- **codebuddy 补一条和 claude / codex / antigravity 同款的形状检查**：顶层 `hooks`、事件、matcher、`hooks[]`、`type: "command"`、命令是字符串、不带 `name` / `args`。
+
+### Changed
+
+- **codebuddy 模板统一走 `ans-hook-codebuddy`**：以前模板写 `node "$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs"`，`ans host connect codebuddy` 写的却是 `ans-hook-codebuddy`，两条接入路径装出来的不是同一条命令。插件包 `bin` 补上 `ans-hook-codebuddy`，单独装插件包也能解析到真实入口。
+- **`apps/cli/scripts/build-product.mjs` 删掉 codebuddy 的命令改写**：源模板已经是 `ans-hook-codebuddy`，产品构建不用再改一遍，也少了「构建后和源模板不一样」的第二份事实。
+- **生成物漂移测试改成和 `HEAD` 逐字节比**（`apps/plugin/test/config-drift.test.ts`）：用 `git show HEAD:<path>` 拿提交里的版本，再跑生成器到临时目录逐字节比；文件清单从生成器实际写出的东西取。以前比的是工作区，而根目录 `pnpm test` 会先跑 `gen:configs`，手改会被覆盖，测试照样绿。没有 git / HEAD 时明确打印 SKIP 并说明原因。
+- **`scripts/verify-installed-product.mjs` 补 codebuddy 和 antigravity 两份模板**：发布前能看出这两份有没有装进产品。
+
+### Known limits
+
+- **codebuddy 的 bin 形态还没在真宿主上重跑**：2.151.0 那轮验证跑的是 `node "$(npm root -g)/..."` 长写法，这次模板改成 `ans-hook-codebuddy`（和 `ans host connect` 同一条命令），命令形态本身没再验；验的是它背后的适配器。文档两处都写明了，没拿旧记录冒充新形态。
+
+### Docs
+
+- **`docs/per-platform-verification.md` 补 CodeBuddy 一节**，每节都写验过的宿主版本和日期；查不到的写 `not recorded`，不编。
+- **四篇 `docs/*-integration.md` 不再指向 gitignored 的 `.scratch`**：原件在 3f85fee8 跟着工作记录一起移出了仓库，里面有本机路径和宿主登录信息，公开仓库不再重新发布；文档写明来龙去脉，结论按该宿主版本当时的已知行为保留。codebuddy 的钩子示例改成 `ans-hook-codebuddy` 并删掉「模板保留长写法」的说明。
+
+## Unreleased — #502: 配错 key 的人也能看到免费额度这条路
+
+一句话说清：**`permanent-auth` 的提示句多给一条路：把这把 key 删掉，就走这一家的免费额度。句子在 kernel 的表里，`ans search` 和 MCP 两个出口同时生效。**
+
+### Changed
+
+- **`permanent-auth` 那句补上「删掉 key 走免费额度」**：以前只说「配一把有效 key」，配错的人以为只剩换 key 一条路。现在这句是：没配 key，或者 key 不对 / 权限不够 —— 配一把有效的，或者把这把 key 删掉（环境变量里 unset，或用 `ans auth remove <provider>` 删掉存的那把），走免费额度。仍然是一句，仍然不带 `{wait}`；三家共用，不按家分叉。
+
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
 
 一句话说清：**#442 的报错文案表和 #455 新加的错误类各自绿，合到一起 `tsc` 红。补上 `free-quota-exhausted` 的文案，把免费额度墙从「未检查」改成「失败」；合并闸门从「跑全量测试」改成「先接到最新 main，再跑 `pnpm gate`（类型检查 + 全量测试）」。**
@@ -36,6 +69,27 @@
 
 - **每条 push 的成本没变**：类型检查只进合并闸门，不进 pre-push；一次合并多约 1 分钟 `tsc`。
 - **网页上直接合仍然绕过本地闸门**：规矩要求 rebase 后的那次 push 是合并前最后一个动作；中间又有别的合并进来，就得重新 rebase、重新跑。
+
+## Unreleased — #475: 被掐掉的信息源，三个出口都露名字
+
+一句话说清：**宽限窗口掐掉的臂以前只有引擎自己知道，`ans search --json`、MCP 的 content 和 `structuredContent` 都不说；现在三处都写 `providersCancelled`，并把 `providersQueried` 一起补齐——「问过谁、掐了谁」放一起读，「全被掐」就不再伪装成「没搜到」。**
+
+### Added
+
+- **`ans search --json` 多了两个键**：`providersQueried`（这次真问了谁）和 `providersCancelled`（结果够了、没再等的那些）。之前 `--json` 里连「问过谁」都没有，被域配置关掉的源在 JSON 里完全看不见。
+- **`ans search` 纯文本多一行 `Providers cancelled: ...`**（`formatProvidersCancelledLine`，空表不打印）。措辞是「结果够了，没等它回来」，不是错误。只打结果分支：宽限窗口要攒够结果才武装，拒答那一刻结果池是空的，那条分支写死为空表。
+- **MCP 两个搜索工具都报这两栏**：`search_web` 的 content JSON 和 `structuredContent` 各一对；`research_web` 只报**最后一个正常完成的轮**，不把多轮求并集——第一轮被掐、第二轮答了的臂不是「被掐」。
+
+### Fixed
+
+- **宽限窗口掐人之后归哪一栏，不再看微任务的先后。** 以前 `catch` 只查「调用方取消」那个集合，宽限窗口掐的臂靠适配器是 `async` 多一层 hop 才碰巧算成取消；换成一个非 async、abort 时 reject 的 provider 就变成 `providersFailed` + `unknown`。现在掐之前先记名字，两个来源共用一个集合。
+
+### Known limits
+
+- **`research_web` 的「最后一轮」指最后一个正常完成的轮**，跟 `abstain` / `sufficiency` 同一轮；被调用方掐断的那一轮由 `interrupted` 交代，那两栏不替它说话。
+- **`allProvidersFailed` 没动**：被掐不算失败，所以「全被掐 + 0 条」还是成功，现在由 `providersCancelled === providersQueried` 表达，不加新错误类。
+- **CLI 走不到「全被掐」**：它不传调用方信号，宽限窗口只在够结果后才掐，所以纯文本那行只表示「有臂被提前掐掉」。
+- **`research_web` 里两个尺度并存**：`providersFailed` / `providerErrorClasses` 是多轮并集（任何一轮失败都算这次跑降解了），`providersQueried` / `providersCancelled` 只报最后一个正常完成的轮。同一个臂因此可能既在失败里、又在被掐里——它先失败、后来被掐，两条各答各的问题。
 
 ## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
 
