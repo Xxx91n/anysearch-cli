@@ -38,14 +38,16 @@ import { writeStderr } from "./preflight-stderr.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
-// The gate's own tests, in groups: the gate is the only mechanical stop before
-// a push, so the judgments it shares with CI run here too. CI's change policy
-// decides which lanes a push needs and the workflow checker decides whether
-// those lanes can start at all; a broken one used to stay green locally and
-// surface only in the CI run this gate exists to spare. Each group runs on its
-// own so a red one is named by construction instead of read back out of a
-// reporter's prose. PREFLIGHT_GATE_TESTS replaces the whole list for the tests
-// that drive this script with a fake pnpm.
+// Design: the gate's own tests run in groups, one `node --test` each — a red
+// group is then named by construction instead of read back out of a reporter's
+// prose. The gate is the only mechanical stop before a push, so the judgments it
+// shares with CI run here too: CI's change policy decides which lanes a push
+// needs, and the workflow checker decides whether those lanes can start at all.
+// A broken one used to stay green locally and surface only in the CI run this
+// gate exists to spare.
+//
+// PREFLIGHT_GATE_TESTS replaces the whole list for the tests that drive this
+// script with a fake pnpm.
 function gateGroups() {
   const override = process.env.PREFLIGHT_GATE_TESTS;
   if (override) {
@@ -68,6 +70,10 @@ function describeGateGroups() {
   const shared = GATE_GROUPS.filter((group) => group.shared);
   if (shared.length === 0) return names(GATE_GROUPS);
   return `${names(GATE_GROUPS.filter((group) => !group.shared))}, plus the shared judgments (${names(shared)})`;
+}
+
+function gateFileList() {
+  return GATE_GROUPS.flatMap((group) => group.files).join(", ");
 }
 
 // Design: the old commit hook gets a notice, not a test run — a clone that
@@ -105,7 +111,10 @@ const selfTest = plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0"
 
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
-  if (selfTest) console.log(`[preflight] dry run, would also run the gate's own tests: ${describeGateGroups()}`);
+  if (selfTest) {
+    console.log(`[preflight] dry run, would also run the gate's own tests: ${describeGateGroups()}`);
+    console.log(`[preflight] dry run, gate self-test files: ${gateFileList()}`);
+  }
   process.exit(0);
 }
 
@@ -269,16 +278,17 @@ function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
 }
 
-// Run each group and report which ones failed plus how many tests ran. The
-// reporter is pinned to spec so the summary line the count comes from has one
-// shape, on a terminal and down a pipe alike.
+// Design: pin the reporter to spec — the total is read from the summary line it
+// ends with, so a terminal and a pipe must print the same shape.
 async function runGateTests() {
   console.log(`[preflight] running the gate's own tests: ${describeGateGroups()}`);
+  console.log(`[preflight] gate self-test files: ${gateFileList()}`);
   const gateEnv = { ...testHome.env };
   delete gateEnv.NODE_TEST_CONTEXT;
   const failed = [];
   const counts = [];
   for (const group of GATE_GROUPS) {
+    if (interrupted) break;
     child = spawn(process.execPath, ["--test", "--test-reporter=spec", ...group.files], {
       cwd: root,
       env: gateEnv,
@@ -297,7 +307,6 @@ async function runGateTests() {
     }
     counts.push(testCount(tail()));
     if (status !== 0) failed.push(group);
-    if (interrupted) break;
   }
   // An unreadable count is left out of the total rather than guessed at.
   const tests = counts.every((count) => count !== null) ? counts.reduce((sum, count) => sum + count, 0) : null;
@@ -320,10 +329,11 @@ function drain(source, limit) {
   return () => tail;
 }
 
-// node's spec reporter ends with "ℹ tests N"; TAP, which a non-terminal may
-// still get, says "# tests N". Both are last, so the tail holds them.
+// node's spec reporter prints "ℹ tests N" once per run, after the per-test
+// lines. The tail holds it; a run that printed so much the summary fell out gets
+// no number rather than a wrong one.
 function testCount(output) {
-  const match = /^(?:ℹ|#) tests (\d+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
+  const match = /^ℹ tests (\d+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
   return match ? Number(match[1]) : null;
 }
 

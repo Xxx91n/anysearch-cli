@@ -35,6 +35,12 @@ const PASSING_GATE_TEST = [
 
 const FAILING_GATE_TEST = PASSING_GATE_TEST.replace("assert.equal(1, 1);", "assert.equal(1, 2);");
 
+// What the gate must say it runs. One copy, so a change to the wording lands in
+// one place instead of leaving two assertions to drift apart.
+const GATE_GROUP_NAMES = "push gate, plus the shared judgments (CI change policy, workflow checks)";
+const GATE_GROUP_FILES =
+  "scripts/test/preflight-*.test.mjs, scripts/test/ci-changes.test.mjs, scripts/test/check-workflows.test.mjs";
+
 test("a red run exits non-zero and names the failed task", () => {
   withFakePnpm({ code: 1, lines: [" Tasks:    1 successful, 1 failed", "\u001b[31mFailed:\u001b[0m @anysearch-cli/kernel#test"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
@@ -215,26 +221,32 @@ test("a full run runs the gate's own tests first", () => {
 // change policy or workflow checker used to pass every local push and show up
 // only in the CI run the gate exists to spare.
 test("a full run also runs the shared judgments and reports how many tests ran", async () => {
-  await withWorkspace({ pnpm: passingPnpm, files: gateTestFiles() }, ({ root, bin }) => {
+  const files = gateTestFiles();
+  const count = Object.keys(files).length;
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(
-      result.stdout,
-      /running the gate's own tests: push gate, plus the shared judgments \(CI change policy, workflow checks\)/,
-    );
-    // One test per stand-in file: the three groups' counts add up.
-    assert.match(result.stdout, /gate self-test green: 3 tests in 3 groups/);
+    assert.ok(result.stdout.includes(`running the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
+    assert.ok(result.stdout.includes(`gate self-test files: ${GATE_GROUP_FILES}`), result.stdout);
+    // One stand-in test per group: the counts add up to the total.
+    assert.ok(result.stdout.includes(`gate self-test green: ${count} tests in ${count} groups`), result.stdout);
     // The suite still runs after the self-test.
     assert.match(result.stdout, /pnpm ran/);
   });
 });
 
-test("a red shared judgment names the group it belongs to", async () => {
-  const files = gateTestFiles({ "scripts/test/ci-changes.test.mjs": FAILING_GATE_TEST });
+// Both shared groups go red at once: the gate names each of them and keeps
+// going after the first failure, and the real `ci-changes` / `check-workflows`
+// paths have to run for either stand-in to be seen at all.
+test("a red shared judgment names every group it belongs to", async () => {
+  const files = gateTestFiles({
+    "scripts/test/ci-changes.test.mjs": FAILING_GATE_TEST,
+    "scripts/test/check-workflows.test.mjs": FAILING_GATE_TEST,
+  });
   await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /gate self-test failed: CI change policy/);
+    assert.ok(result.stderr.includes("gate self-test failed: CI change policy, workflow checks"), result.stderr);
     assert.match(result.stderr, /blocked: the gate's own tests failed/);
     // A red self-test blocks before the suite: the fake pnpm never got a word.
     assert.equal(result.stdout.includes("pnpm ran"), false);
@@ -291,10 +303,8 @@ test("a full dry run also announces the gate's own tests", () => {
     const result = runCliIn(repoRoot, bin, ["--full", "--dry-run"], { selfTest: true });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /would run: pnpm test/);
-    assert.match(
-      result.stdout,
-      /would also run the gate's own tests: push gate, plus the shared judgments \(CI change policy, workflow checks\)/,
-    );
+    assert.ok(result.stdout.includes(`would also run the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
+    assert.ok(result.stdout.includes(`dry run, gate self-test files: ${GATE_GROUP_FILES}`), result.stdout);
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
