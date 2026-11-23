@@ -4,6 +4,9 @@
 // memories go in before the call, so the agent has context first.
 // URL authorization policy comes from the server's single parse point
 // (GET /policy) or the materialized cache — hooks NEVER read ANS_URL_ALLOWLIST directly.
+// It judges hosts written in the fields that leave the machine (see
+// url-candidates.ts): search_web.query, research_web.question, ans_chat.message
+// and verticalParams, bare domains included.
 //
 // Both the policy and the recall belong to the explicit project this hook runs
 // in. When that project cannot be identified, the hook says the project-scoped
@@ -12,6 +15,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
+import { toolInputCandidates } from "./url-candidates.js";
 import { resolveHookProject } from "./project-identity.js";
 // the server never runs open; resolve the installation token and published address.
 import { resolveActiveDomain, resolveServerEndpoint } from "../server/token.js";
@@ -184,8 +188,8 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
       ? { ...decision, additionalContext: [cachedPolicyNote, decision.additionalContext].filter(Boolean).join("\n\n") }
       : decision;
   {
-    const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
-    if (urls.length > 0) {
+    const candidates = toolInputCandidates(input.toolName, input.toolInput ?? {});
+    if (candidates.length > 0) {
       if (!projectRoot) {
         return {
           permission: "ask",
@@ -206,24 +210,22 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
         cachedPolicyNote = "[anysearch] 这次判断网址规则用的是旧缓存（" +
           (policy.materialized_at ?? "更早") + " 写下的，服务没连上），不是当前项目的实时规则。";
       }
-      for (const url of urls) {
-        let host = "";
-        try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
+      for (const { host, raw } of candidates) {
         if (policy === null) {
           return {
             permission: "ask",
-            permissionReason: "URL policy unavailable (server unreachable, no cache) — asking for: " + url,
+            permissionReason: "URL policy unavailable (server unreachable, no cache) — asking for: " + raw,
           };
         }
         const denied = policy.deny.some((h) => host === h || host.endsWith("." + h));
         if (denied) {
-          return { permission: "deny", permissionReason: "URL host on denylist: " + url + cacheNote };
+          return { permission: "deny", permissionReason: "URL host on denylist: " + raw + cacheNote };
         }
         const allowed = policy.allow.some((h) => host === h || host.endsWith("." + h));
         if (!allowed) {
           return {
             permission: "ask",
-            permissionReason: "URL not on allowlist: " + url +
+            permissionReason: "URL not on allowlist: " + raw +
               " (persistent allow: ans hitl review --allow-url " + host + ")" + cacheNote,
           };
         }
