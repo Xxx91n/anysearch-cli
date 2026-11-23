@@ -397,6 +397,15 @@ test("a docs-only change says skipped, runs nothing, and never claims green", as
   });
 });
 
+test("a pushed docs-only ref says skipped and runs nothing", async () => {
+  await withWorkspace({ pushed: "docs/limitations.md" }, ({ root, bin, refs }) => {
+    const result = runCliIn(root, bin, ["--pushed"], { input: refs, selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation — no test ran/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
 test("a docs file next to a package file still runs that package", async () => {
   await withWorkspace({ files: { "docs/limitations.md": "# limits\n" }, changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
     const result = runCliIn(root, bin, [], { selfTest: true });
@@ -503,7 +512,6 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
     "preflight-change.mjs",
     "preflight-git.mjs",
     "preflight-plan.mjs",
-    "ci-changes.mjs",
     "preflight-command.mjs",
     "preflight-stderr.mjs",
   ]) {

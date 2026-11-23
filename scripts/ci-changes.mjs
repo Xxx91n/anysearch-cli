@@ -24,8 +24,6 @@ import {
   withDependents,
 } from "./preflight-plan.mjs";
 
-export { docsOnly, isDocumentation };
-
 // Design: one line per lane — the packages it cares about, by manifest name.
 // Keep the names here, not paths: the closure already knows where each package
 // lives. The three full-suite lanes share one list; copy it to narrow a lane.

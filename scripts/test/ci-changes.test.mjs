@@ -4,9 +4,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { LANES, docsOnly, isDocumentation, lanesForChange, planLanes } from "../ci-changes.mjs";
+import { LANES, lanesForChange, planLanes } from "../ci-changes.mjs";
 import { resolveYaml } from "../check-workflows.mjs";
-import { readWorkspace } from "../preflight-plan.mjs";
+import { docsOnly, isDocumentation, readWorkspace } from "../preflight-plan.mjs";
 
 const CLI = fileURLToPath(new URL("../ci-changes.mjs", import.meta.url));
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));

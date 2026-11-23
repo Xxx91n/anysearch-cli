@@ -160,9 +160,16 @@ test("docs next to a root file still run the whole suite, and the docs are not t
 // The boundary is CI's, so the exclusions matter here too: a product asset and
 // docs/eval are read by tests and must not buy a skipped run.
 test("product assets and docs/eval are not documentation", () => {
+  // The readers run, not just the owner: plugin's own tests plus every app
+  // that depends on it.
   const asset = planPreflight(root, ["apps/plugin/AGENTS.md"]);
   assert.equal(asset.mode, "incremental");
-  assert.deepEqual(asset.touched, ["@anysearch-cli/plugin"]);
+  assert.deepEqual(asset.packages, [
+    "@anysearch-cli/cli",
+    "@anysearch-cli/dsh-plugin",
+    "@anysearch-cli/mcp",
+    "@anysearch-cli/plugin",
+  ]);
   assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "full");
   assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "full");
 });

@@ -103,10 +103,12 @@ if (plan.mode === "none") {
   process.exit(0);
 }
 
-// Design: a docs-only push runs nothing. The boundary is the same
+// Design: a docs-only push runs nothing — the boundary is the same
 // isDocumentation CI asks before it skips every lane, so the local gate cannot
-// be stricter than CI about what counts as docs (#488). Say skipped and name
-// the reason; never print green, because a skipped run is not evidence.
+// be stricter than CI about what counts as docs (#488).
+//
+// Design: the line says skipped, never green — a skipped lane is not evidence
+// (#389's gate contract), and "green" would read as evidence.
 if (plan.mode === "docs") {
   console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
   console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");

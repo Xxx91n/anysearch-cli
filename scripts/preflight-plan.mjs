@@ -13,11 +13,11 @@
 // (the lockfile, turbo.json) and belong to no package, so they run the whole
 // suite too.
 //
-// Documentation is the one exception: a docs-only change runs nothing, and docs
-// next to code are dropped before the package lookup — they belong to no
-// package, but they are not the unowned path that would run everything. The
-// boundary is isDocumentation, the same function CI asks before it skips every
-// lane, so the two sides cannot drift (#488).
+// Design: documentation gets its own mode, not the unowned fallback — a
+// docs-only change runs nothing, and docs next to code are dropped before the
+// package lookup, so they belong to no package but are not the unowned path
+// that would run everything. The boundary is isDocumentation, the same function
+// CI asks before it skips every lane, so the two sides cannot drift (#488).
 //
 // A file belongs to the package whose directory contains it. A workspace that
 // cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
