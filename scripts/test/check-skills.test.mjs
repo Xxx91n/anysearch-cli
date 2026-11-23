@@ -1,6 +1,6 @@
 // scripts/check-skills.mjs: what the exit codes mean (0 every skill passes /
-// 1 a rule broke or nothing was found / 2 the check could not run), which files
-// discovery finds, and the cases that have to go red.
+// 1 a rule broke, nothing was found, or nothing was checked / 2 the check could
+// not run), which files discovery finds, and the cases that have to go red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -48,7 +48,9 @@ function git(cwd, args) {
   // gitEnv drops GIT_DIR, GIT_CONFIG_* and friends, so `-C` alone picks the repo.
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv(), timeout: 30_000 });
   // A timed-out or signalled child has no stderr to show, so name what happened.
-  const why = result.error ? result.error.message : result.signal ?? result.stderr;
+  const why = result.error
+    ? result.error.message
+    : result.signal ?? (String(result.stderr).trim() || `exit ${result.status}`);
   assert.equal(result.status, 0, `git ${args.join(" ")}: ${why}`);
 }
 
@@ -154,7 +156,7 @@ test("no arguments checks what Git can see: tracked, untracked, not ignored", (t
   git(root, ["config", "user.email", "check-skills@example.invalid"]);
   git(root, ["config", "commit.gpgsign", "false"]);
   skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
-  git(root, ["add", "--", "alpha/SKILL.md", "alpha"]);
+  git(root, ["add", "--", "alpha"]);
   git(root, ["commit", "--quiet", "-m", "alpha"]);
   // Written but not staged: a new skill has to be caught before it is committed.
   skill(root, "beta", "name: beta\ndescription: Use when a test needs beta.");
@@ -205,13 +207,13 @@ test("an inherited GIT_DIR does not decide which repository is checked", (t) => 
   const root = withRoot(t);
   git(root, ["init", "--quiet"]);
   skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
-  git(root, ["add", "--", "alpha", "alpha/SKILL.md"]);
+  git(root, ["add", "--", "alpha"]);
   // The decoy is a full repo with the bad skill staged, and the environment
   // points git at it the way a push hook does: GIT_DIR plus GIT_WORK_TREE.
   const decoy = withRoot(t);
   git(decoy, ["init", "--quiet"]);
   skill(decoy, "bad", 'name: bad\ndescription: ""');
-  git(decoy, ["add", "--", "bad", "bad/SKILL.md"]);
+  git(decoy, ["add", "--", "bad"]);
   const result = check([], {
     cwd: root,
     root,
@@ -247,7 +249,7 @@ test("a git-listed skill deleted from the tree is skipped, not failed", (t) => {
   git(root, ["init", "--quiet"]);
   skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
   skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
-  git(root, ["add", "--", "alpha", "alpha/SKILL.md", "gone", "gone/SKILL.md"]);
+  git(root, ["add", "--", "alpha", "gone"]);
   rmSync(path.join(root, "gone", "SKILL.md"));
   const result = check([], { cwd: root, root });
   assert.equal(result.code, 0, result.stdout + result.stderr);
@@ -260,7 +262,7 @@ test("a checkout where every skill was skipped is refused", (t) => {
   const root = withRoot(t);
   git(root, ["init", "--quiet"]);
   skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
-  git(root, ["add", "--", "gone", "gone/SKILL.md"]);
+  git(root, ["add", "--", "gone"]);
   rmSync(path.join(root, "gone", "SKILL.md"));
   const result = check([], { cwd: root, root });
   assert.equal(result.code, 1, result.stdout + result.stderr);
@@ -277,7 +279,7 @@ test("a skill directory that cannot be read is not skipped", (t) => {
   const root = withRoot(t);
   git(root, ["init", "--quiet"]);
   const dir = skill(root, "locked", "name: locked\ndescription: Use when a test locks a dir.");
-  git(root, ["add", "--", "locked", "locked/SKILL.md"]);
+  git(root, ["add", "--", "locked"]);
   chmodSync(dir, 0o000);
   // Restore inline, not via t.after: hooks run after the cleanup hook that
   // deletes the tree, so a hook here would throw ENOENT on POSIX.
@@ -300,7 +302,7 @@ test("a dangling symlinked SKILL.md goes red as a symlink", (t) => {
   const dir = skill(root, "linked", "name: linked\ndescription: Use when a test needs a link.");
   rmSync(path.join(dir, "SKILL.md"));
   symlinkSync(path.join(dir, "nowhere.md"), path.join(dir, "SKILL.md"));
-  git(root, ["add", "--", "linked", "linked/SKILL.md"]);
+  git(root, ["add", "--", "linked"]);
   const result = check([], { cwd: root, root });
   assert.equal(result.code, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /must be a regular, non-symlink file/);

@@ -82,8 +82,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
     switch (command) {
       case "install": {
         const entry = await installSkill(positional[0], scopeOpts);
-        // The note reads what was installed, like validate does — the source may
-        // already have moved on. Installing is never blocked by it either way.
+        // The note reads what was installed, like validate does: the source may have moved on.
         const notes = skillNotes(join(managedSkillsRoot(scopeOpts), entry.name, "SKILL.md"));
         out(`Installed ${entry.name} to ${managedSkillsRoot(scopeOpts)}\n`
           + `Source: ${entry.source}\nCommit: ${entry.commit}${entry.tag ? ` (tag ${entry.tag})` : ""}${entry.dirty ? " [dirty source]" : ""}\n`

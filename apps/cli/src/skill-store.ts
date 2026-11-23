@@ -679,19 +679,14 @@ const SKILL_BODY_LINE_LIMIT = 500;
 /** The Agent Skills spec's character bounds for `description`. */
 const SKILL_DESCRIPTION_MIN_CHARS = 1;
 const SKILL_DESCRIPTION_MAX_CHARS = 1024;
-/**
- * Words that suggest a description says when to use the skill. A keyword match
- * cannot decide this (「同时使用」 is not a usage clause, 「平时用它」 is a false
- * friend), so the answer is only ever advice: install, `ans skill validate` and
- * scripts/check-skills.mjs all report it, and none of them refuses the file.
- */
+/** Words that suggest a description says when to use the skill; missing them is a note, never a refusal. */
 const WHEN_TO_USE =
   /\bwhen|的时候|时候用|的時候|時候用|何时|何時|时使用|時使用|使用时|使用時|时用|時用|とき/i;
 
-/** Require a description that says what the skill does and when to use it. */
+/** Require a non-empty description within the spec's length bounds. */
 function requireDescription(value: unknown, path: string): void {
   if (value === undefined || value === null) {
-    fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters saying what the skill does and when to use it: ${path}`);
+    fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters: ${path}`);
   }
   if (typeof value !== "string") {
     fail(`SKILL.md description must be a string, not ${Array.isArray(value) ? "a list" : typeof value}: ${path}`);

@@ -11,9 +11,13 @@
 //   node scripts/check-skills.mjs                  # every SKILL.md Git can see
 //   node scripts/check-skills.mjs <dir|SKILL.md>   # only these
 //
-// Exit codes: 0 every skill passes · 1 a skill broke a rule, or discovery found
-// no SKILL.md at all · 2 the check could not run (no Git, no tsx, a path
-// argument that does not exist, a file that cannot be read).
+// Exit codes: 0 every skill passes · 1 a skill broke a rule, discovery found no
+// SKILL.md at all, or every file was skipped · 2 the check could not run (no Git,
+// no tsx, a path argument that does not exist, a file that cannot be read).
+//
+// Output lines: `[OK]` passed · `[FAIL]` broke a rule · `[ERROR]` could not be
+// read · `[skip]` git lists it but the worktree no longer has it (skipped, not
+// counted) · `[note]` passed, with advice.
 //
 // `ANS_CHECK_SKILLS_ROOT` retargets discovery at another checkout; only the
 // script's tests use it.
@@ -75,7 +79,7 @@ function skillFileOf(target) {
  */
 function gitVisibleSkillFiles() {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
-    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000,
+    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000, env: gitEnv(),
   });
   if (listed.error) throw new Error("cannot run git ls-files: " + listed.error.message);
   if (listed.status !== 0) {
@@ -170,7 +174,8 @@ async function run() {
     process.stdout.write("[FAIL] nothing was checked — refusing to pass\n");
     return 1;
   }
-  return unreadable > 0 ? 2 : failed === 0 ? 0 : 1;
+  if (unreadable > 0) return 2;
+  return failed === 0 ? 0 : 1;
 }
 
 if (process.env[TSX_MARKER] !== "1") {
