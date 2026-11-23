@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
@@ -743,17 +743,27 @@ test("a stream that never answers gives up at the cap", async () => {
   assert.ok(waited >= 10 && waited < 700, `waited ${waited}ms`);
 });
 
-// A flush that finished must not leave the cap pending: deleting the clearTimeout
-// keeps the in-process cases green, so this measures the thing the fix buys — a
-// process that did its flush exits instead of sitting out the cap.
+// Design: measure it by the child's own exit time — deleting the cap's
+// clearTimeout leaves the in-process cases green, so only a process that had to
+// sit out the cap shows the difference.
 test("a finished flush does not keep the process alive", () => {
-  const module = pathToFileURL(join(scripts, "preflight-flush.mjs")).href;
-  const script = `import { flushStreams } from ${JSON.stringify(module)}; await flushStreams([{ write: (_chunk, done) => done() }], 1000);`;
+  const module = new URL("../preflight-flush.mjs", import.meta.url).href;
+  const script = [
+    `import { flushStreams } from ${JSON.stringify(module)};`,
+    "await flushStreams([{ write: (_chunk, done) => done() }], 1000);",
+  ].join("\n");
   const started = Date.now();
-  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
-  const waited = Date.now() - started;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(result.signal, null, "the child had to be killed");
+  assert.equal(result.error, undefined, String(result.error));
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(waited < 800, `the pending cap held the process for ${waited}ms`);
+  // Magnitude only: a fresh Node start stays well under this, a lingering cap
+  // cannot.
+  const waited = Date.now() - started;
+  assert.ok(waited < 900, `the cap held the process for ${waited}ms`);
 });
 
 // These cases pin the retry loop without a real stalled pipe.
