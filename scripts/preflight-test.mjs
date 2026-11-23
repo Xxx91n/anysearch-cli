@@ -31,6 +31,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveYaml } from "./check-workflows.mjs";
+import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
@@ -345,23 +346,10 @@ function forwardKeepingTail(source, limit) {
   return () => tail;
 }
 
-// Design: a write to a pipe is queued, and process.exit drops what has not left
-// yet — on a red self-test that is the failing group's own output. An empty
-// write's callback runs behind everything already queued, which flushes without
-// depending on 'drain' (that only fires after a write returned false). The timer
-// keeps a pipe nobody reads from hanging the gate.
+// Design: the flush lives in preflight-flush.mjs so a test can give it a fake
+// stream — preflight-stderr.mjs is there for the same reason.
 async function exitAfterFlush(code) {
-  const flushed = [process.stdout, process.stderr].map(
-    (stream) =>
-      new Promise((resolve) => {
-        try {
-          stream.write("", () => resolve());
-        } catch {
-          resolve();
-        }
-      }),
-  );
-  await Promise.race([Promise.all(flushed), new Promise((resolve) => setTimeout(resolve, 1000))]);
+  await flushStreams([process.stdout, process.stderr]);
   process.exit(code);
 }
 

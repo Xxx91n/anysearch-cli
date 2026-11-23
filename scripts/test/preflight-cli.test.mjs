@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
@@ -474,6 +475,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   for (const name of [
     "preflight-test.mjs",
     "check-workflows.mjs",
+    "preflight-flush.mjs",
     "preflight-change.mjs",
     "preflight-git.mjs",
     "preflight-plan.mjs",
@@ -718,6 +720,22 @@ function write(file, content) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content);
 }
+
+// The flush before a red exit: a stream whose reader went away must not turn the
+// exit into a throw, and a stream that never answers must not hang the gate.
+test("a stream that throws on the flush counts as flushed", async () => {
+  await flushStreams([
+    {
+      write() {
+        throw Object.assign(new Error("gone"), { code: "EPIPE" });
+      },
+    },
+  ]);
+});
+
+test("a stream that never answers gives up at the cap", async () => {
+  await flushStreams([{ write() {} }], 20);
+});
 
 // These cases pin the retry loop without a real stalled pipe.
 test("a full stderr pipe is retried until the whole line is written", () => {
