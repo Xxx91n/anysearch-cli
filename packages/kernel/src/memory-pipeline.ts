@@ -526,7 +526,7 @@ export async function adjudicateReuseCompress(
 // Design: the threshold fields are picked from CompactionConfig rather than
 // restated (#493), so a retyped or renamed threshold breaks this compile;
 // contextWindow is not domain config — it is the real model window the shell
-// carries.
+// carries. lowWatermark is an absolute token count or {fraction} of that window.
 export interface ConsolidateOpts extends Pick<CompactionConfig, "lowWatermark" | "reuseCap"> {
   /** Model context window (LlmSession.contextWindow, REAL value) used to resolve {fraction}. */
   contextWindow?: number;

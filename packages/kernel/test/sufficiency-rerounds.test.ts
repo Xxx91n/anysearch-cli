@@ -52,10 +52,12 @@ async function run(value: unknown) {
     modelCalls++;
     yield { type: "text_delta", delta: "a reround gap query" };
   };
-  const compaction = value === undefined ? {} : { sufficiencyMaxRerounds: value };
+  // The absent-key case passes no compaction section at all, not an empty one:
+  // "section absent" and "field absent" are different reads of the config.
+  const domain = value === undefined ? domainWith() : domainWith({ sufficiencyMaxRerounds: value } as any);
   const gate = new SufficiencyEvaluator({
     retriever: retriever as any,
-    domain: domainWith(compaction as any),
+    domain,
     streamFn: streamFn as any,
     model: { id: "test-model" } as any,
   });

@@ -10,7 +10,7 @@
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
 import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
-import { MAX_SUFFICIENCY_REROUNDS } from "@anysearch-cli/store";
+import { MAX_SUFFICIENCY_REROUNDS, isValidSufficiencyRerounds } from "@anysearch-cli/store";
 
 export interface SufficiencyEvaluatorDeps {
   retriever: RetrieverPort;
@@ -91,13 +91,12 @@ export class SufficiencyEvaluator {
 
     const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1, gapRequests: [] };
 
-    // D6: sufficiencyMaxRerounds from domain config. Loading validates the field
-    // as an integer in 0..MAX, so a "3" string or a NaN never reaches here through
-    // TOML. The guards below are this module's own backstop for a hand-built
-    // domain: without them a NaN pays for the gap model call and then reports a
+    // D6: sufficiencyMaxRerounds from domain config. Design: loading validates it
+    // as an integer in 0..MAX, so the guards below exist only for a hand-built
+    // domain — without them a NaN pays for the gap model call and then reports a
     // reround while running zero rounds (#493).
     const maxRerounds = domain.compaction?.sufficiencyMaxRerounds ?? 1;
-    if (!Number.isInteger(maxRerounds) || maxRerounds < 0 || maxRerounds > MAX_SUFFICIENCY_REROUNDS) {
+    if (!isValidSufficiencyRerounds(maxRerounds)) {
       process.stderr.write("[anysearch] compaction.sufficiencyMaxRerounds 不是 0.." + MAX_SUFFICIENCY_REROUNDS + " 的整数，本次跳过补搜。\n");
       return empty;
     }

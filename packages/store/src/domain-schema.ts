@@ -74,6 +74,12 @@ export interface PromptEntry {
 // searches. One constant shared by validate() and the evaluator's backstop.
 export const MAX_SUFFICIENCY_REROUNDS = 3;
 
+// #493: one predicate for "this value may drive the reround loop". validate()
+// uses it to fail a domain load; the evaluator uses it as its own backstop.
+export function isValidSufficiencyRerounds(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_SUFFICIENCY_REROUNDS;
+}
+
 // compaction config for independent summary model.
 // threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
 // lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
@@ -351,8 +357,7 @@ export function validate(schema: DomainSchema): void {
     // #493: a string "3" used to be coerced by the loop bound, while NaN ran
     // zero rounds after paying for the gap model call. Both are config faults,
     // so they fail here where the operator can see the field name.
-    if (c.sufficiencyMaxRerounds !== undefined
-      && (!Number.isInteger(c.sufficiencyMaxRerounds) || c.sufficiencyMaxRerounds < 0 || c.sufficiencyMaxRerounds > MAX_SUFFICIENCY_REROUNDS))
+    if (c.sufficiencyMaxRerounds !== undefined && !isValidSufficiencyRerounds(c.sufficiencyMaxRerounds))
       throw new Error("Domain schema: compaction.sufficiencyMaxRerounds must be an integer in 0.." + MAX_SUFFICIENCY_REROUNDS + " (0 turns the reround off)");
   }
   // #187: [budget] shape. Unknown keys are fail-fast for the same reason as

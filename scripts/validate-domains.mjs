@@ -12,7 +12,7 @@
 // - compaction.lowWatermark as {fraction} must land in (0,1);
 // - compaction.reuseCap must be a finite number >= 1;
 // - compaction.sufficiencyMaxRerounds must be an integer in 0..3 (#493; 0 turns
-// the re-search off);
+// the reround off);
 // - compaction unknown keys (a typo used to read as "not set", #493);
 // - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
 // each a finite number > 0 (config errors fail fast).
@@ -127,8 +127,8 @@ for (const file of files) {
     }
     // #493: a misspelled key used to be indistinguishable from "not set".
     // Mirrors packages/store/src/domain-schema.ts validate(); this script has no
-    // TS dependency, so the key list and the bound are duplicated there (keep in
-    // sync — the field name and the "must be" sentence are word-for-word).
+    // TS dependency, so the key list, the bound and the rule text live twice
+    // (keep both sides in sync).
     const MAX_SUFFICIENCY_REROUNDS = 3;
     const COMPACTION_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
     for (const k of Object.keys(c)) {
@@ -158,18 +158,21 @@ for (const file of files) {
     if (c.reuseCap !== undefined) {
       const ln = lineOf(src, "reuseCap");
       if (typeof c.reuseCap !== "number" || !Number.isFinite(c.reuseCap) || c.reuseCap < 1) {
-        fail(`${file}:${ln} compaction.reuseCap=${String(c.reuseCap)} must be >= 1`);
+        fail(`${file}:${ln} compaction.reuseCap=${String(c.reuseCap)} must be a finite number >= 1`);
       }
     }
     if (c.model !== undefined && typeof c.model !== "string") {
       fail(`${file}:${lineOf(src, "model")} compaction.model must be a string`);
     }
     // #493: "3" used to be coerced by the loop bound, and NaN ran zero rounds
-    // after paying for the gap model call. Design: default 1, at most 3.
+    // after paying for the gap model call. Design: default 1, at most 3 — every
+    // round is a real internal search, so the count stays small.
     if (c.sufficiencyMaxRerounds !== undefined) {
       const v = c.sufficiencyMaxRerounds;
       if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_SUFFICIENCY_REROUNDS) {
-        fail(`${file}:${lineOf(src, "sufficiencyMaxRerounds")} compaction.sufficiencyMaxRerounds=${String(v)} must be an integer in 0..${MAX_SUFFICIENCY_REROUNDS} (0 turns the reround off)`);
+        // Echo strings quoted: a bare 3 reads as the valid number being rejected.
+        const shown = typeof v === "string" ? JSON.stringify(v) : String(v);
+        fail(`${file}:${lineOf(src, "sufficiencyMaxRerounds")} compaction.sufficiencyMaxRerounds=${shown} must be an integer in 0..${MAX_SUFFICIENCY_REROUNDS} (0 turns the reround off)`);
       }
     }
   }
