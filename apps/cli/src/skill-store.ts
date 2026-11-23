@@ -682,7 +682,7 @@ const SKILL_DESCRIPTION_MAX_CHARS = 1024;
  * prose, so this is a keyword match and misses other phrasings; the error says
  * what to add.
  */
-const WHEN_TO_USE = /\bwhen|的时候|时候用|的時候|時候用|何时|时使用|使用时|时用|時用|使用時|とき/i;
+const WHEN_TO_USE = /\bwhen|的时候|时候用|的時候|時候用|何时|何時|时使用|時使用|使用时|使用時|とき/i;
 
 /** Require a description that says what the skill does and when to use it. */
 function requireDescription(value: unknown, path: string): void {
@@ -698,7 +698,7 @@ function requireDescription(value: unknown, path: string): void {
     fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
   }
   if (!WHEN_TO_USE.test(description)) {
-    fail(`SKILL.md description must also say when to use the skill — e.g. "Use when the user …", 什么时候用 / 的时候用 / 何时 / 使用时; got "${description.slice(0, 120)}": ${path}`);
+    fail(`SKILL.md description must also say when to use the skill — e.g. "Use when the user …", 什么时候用 / 的时候用 / 何时 / 使用时（繁体：使用時 / 何時；日本語：とき）; got "${description.slice(0, 120)}": ${path}`);
   }
 }
 

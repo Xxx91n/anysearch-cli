@@ -544,6 +544,8 @@ test("description and body rules are enforced by install and validate alike", as
     // 「有时候」带「时候」，但不是使用场景；词表不能用这两个字当通行证。
     ["---\nname: demo\ndescription: 整理有时候会乱的下载目录。\n---\n", "must also say when to use the skill"],
     ["---\nname: demo\ndescription: 整理有時候會亂的下載目錄。\n---\n", "must also say when to use the skill"],
+    // 「同时」里也藏着「时用」；词表只认完整的「时使用 / 的时候」这类写法。
+    ["---\nname: demo\ndescription: 同时用户也可以改配置。\n---\n", "must also say when to use the skill"],
     [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
     ["---\ndescription: Use when the name is gone.\n---\n", "has no name field"],
     // Same YAML-null trap as `description:` above, on the other required field.
@@ -579,6 +581,7 @@ test("description and body rules are enforced by install and validate alike", as
     "搜索网页并整理结果，用户要求查资料时使用。",
     "把一周的提交整理成周报，周会前使用时最合适。",
     "搜索网页并整理结果，用户想查资料的时候用它。",
+    "需要時使用本技能查資料，何時該用一目了然。",
   ]) {
     writeFileSync(installed, `---\nname: demo\ndescription: ${description}\n---\nbody\n`);
     const ok = await f.run(["validate", "demo"]);
