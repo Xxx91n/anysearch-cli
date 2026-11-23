@@ -23,8 +23,9 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
   `?exaApiKey=`。它同样不读环境变量，只认工厂给的「没有 key」。
 - 只有直接 `new ExaProvider("")` 才走另一条路：空 key 交给 `exa-js`，由 SDK 自己去读环境变量，读不到
   就当场抛。产品不会走到这里——工厂把空 key 拦下来换成免费额度臂了。
-- 坏 key 不退免费额度（#448）：key 格式坏了（比如带换行）构造函数当场抛，记进 `providerBuildErrors`；key
-  格式没问题、服务端不认（401）的，搜索时报 `permanent-auth`。两种都不会悄悄降级成免费额度。
+- 坏 key 不退免费额度（#448）：key 里带内部换行（工厂只 trim 两头，去不掉中间的）构造函数当场抛，记进
+  `providerBuildErrors`；key 格式没问题、服务端不认（401）的，搜索时报 `permanent-auth`。两种都不会悄悄降级
+  成免费额度。
 - 这个夹子没有手工探针，所以「环境变量优先、再读 `~/.ans/credentials.json`」这套解析在 exa 上**没有在探针
   这一面实测过**——#506 把三条手工探针都接到了 `resolveSearchCredentials` 上，但 exa 没有探针；
   `ans doctor --live` 会验 Exa 的 key（没配 key 时它跳过这一家），那是免费面检查，不等于原文/适配器归因面，

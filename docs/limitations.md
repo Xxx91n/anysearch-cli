@@ -375,4 +375,4 @@
   arrive, not at the upstream), and speed (the free quota is throttled). It
   keeps `fast` / `index` / `deep`, but all three send the same request —
   there is no depth parameter to turn up. Shape and limits:
-  `providers/exa/README.md`, sections 回复形状 and 已知异常.
+  `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.
