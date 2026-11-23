@@ -16,6 +16,10 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Design: step if-conditions cannot read the secrets context (it resolves
+    # empty there, so the upload would skip forever); expose a boolean via env.
+    env:
+      CODECOV_HAS_TOKEN: ${{ secrets.CODECOV_TOKEN != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       # Design: use the shared setup template while keeping --frozen-lockfile.
@@ -45,7 +49,7 @@ jobs:
       # network) now fails the check instead of exiting 0. Skipped when the
       # token is absent (fork PRs): "no token" must not read as "coverage broke".
       - name: Upload coverage to Codecov
-        if: ${{ steps.setup.outputs.run-coverage != 'false' && secrets.CODECOV_TOKEN != '' }}
+        if: ${{ steps.setup.outputs.run-coverage != 'false' && env.CODECOV_HAS_TOKEN == 'true' }}
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           files: "coverage/lcov.info"
