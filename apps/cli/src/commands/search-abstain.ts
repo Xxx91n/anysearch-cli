@@ -1,6 +1,6 @@
-// Search presentation helpers — pure, no imports, so the
-// contract is unit-testable without pulling the kernel module graph (apps/cli
-// has no "type":"module"; CJS resolution cannot reach ESM-only pi-agent-core).
+// Search presentation helpers — pure, no imports, so the contract is
+// unit-testable without pulling the kernel module graph (and its ESM-only
+// pi-agent-core dependency) into the test.
 // Abstain line + provider build-failure absence line share this module: both
 // are presentation contracts of `ans search` — stdout in the result/abstain
 // render; the absence line additionally rides stderr on the error path.

@@ -1,10 +1,10 @@
 // Process-wide MCP tool state (#210).
 //
-// The stateless HTTP transport builds a fresh McpServer per request (the
-// protocol requires it), so state living in a tool registration closure is
-// rebuilt on every request. This module is the transport entry's ONE process
-// scope: the entry creates it once and injects it into every buildServer() call,
-// which hands it to the tools that need process-level laziness.
+// The stateless HTTP transport builds a fresh McpServer per request (see the
+// one-connection note in http.ts), so state living in a tool registration
+// closure is rebuilt on every request. This module is the transport entry's ONE
+// process scope: the entry creates it once and injects it into every
+// buildServer() call, which hands it to the tools that need process-level laziness.
 //
 // It holds process-shared dependencies only — currently the ans_chat LLM client
 // cache. Conversation, session handles, anchors and budget state stay per

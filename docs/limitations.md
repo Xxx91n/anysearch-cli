@@ -305,8 +305,9 @@
   the doc implies `symbol` suffices (eval cell `vert-f1105` is disabled and
   marked `tombstoned` on this; see `eval-looks.json`).
 - **Tavily's result package always has `usage` set to `undefined`** — `@tavily/core` returns
-  credits only per-call (`response.usage.credits`) and offers no standalone
-  usage API, so `usage()` is unimplemented (the contract field is optional).
+  credits only per-call (`response.usage.credits`), so `usage()` is
+  unimplemented (the contract field is optional). Endpoints:
+  `providers/tavily/README.md`.
 - **An exhausted provider plan is its own error class (`quota-exhausted`)** —
   some upstreams answer a used-up plan with a plain 4xx body instead of a
   typed error (Tavily: HTTP 432,

@@ -268,7 +268,8 @@ export function computePlan(
         }
         continue;
       }
-      // connect / repair：差异语义一致（repair 修的是「缺/老/冲突」三种）。
+      // connect / repair：差异语义一致（这条分支上 repair 只补「缺」和更新「老」；冲突只报不修。
+      // 中断的 remove 会让 run.ts 传 remove 进来，于是走上面 mode === "remove" 那条分支）。
       if (presence.extra) {
         filePlan.units.push({ unit, action: "conflict", note: presence.extra });
         continue;

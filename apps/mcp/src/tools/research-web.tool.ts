@@ -2,7 +2,8 @@
 // thin wrapper, engine result directly to MCP JSON.
 // no console.* in MCP source — write to stderr explicitly.
 // provider answers marked as provider-generated (verified:false at contract).
-// attribution included in both content JSON and structuredContent (SEP-1624).
+// attribution is always in the content JSON (null when it could not be computed) and
+// only present in structuredContent when it was.
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";

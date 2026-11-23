@@ -23,8 +23,9 @@ async function main() {
   assert(exa.domainFilterSupported === true, "exa declares domainFilterSupported");
   assert(anysearch.domainFilterSupported === false, "anysearch explicitly declares domainFilterSupported=false");
 
-  // 2. Tavily forwards includeDomains as include_domains and requests the hard
-  // "filter" mode (Tavily changelog 2026-08: boost is a soft mode that leaks).
+  // 2. Tavily forwards includeDomains as include_domains and sends
+  // include_domains_mode: "filter" — pinned here as "what we send today", NOT as an
+  // upstream value: Tavily documents only restrict (default, hard) and prefer. #444.
   let tavilyOpts: any = null;
   (tavily as any).client = {
     search: async (_q: string, opts: any) => { tavilyOpts = opts; return { results: [], responseTime: 1, images: [] }; },

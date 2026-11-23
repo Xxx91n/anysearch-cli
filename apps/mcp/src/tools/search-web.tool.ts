@@ -2,7 +2,8 @@
 // thin wrapper, engine result directly to MCP JSON.
 // no console.* in MCP source — write to stderr explicitly.
 // provider answers marked as provider-generated (verified:false at contract).
-// attribution included in both content JSON and structuredContent (SEP-1624).
+// attribution is always in the content JSON (null when it could not be computed) and
+// only present in structuredContent when it was.
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
@@ -87,8 +88,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
-              // (key presence no longer conditional; aligns with SEP-1624 stable structured schema).
+              // stable output shape — always emit answers / answersAvailable / providerAnswers
+              // (these three keys are unconditional in the content JSON; structuredContent is a
+              // different shape — credentialSources always, and sufficiency / attribution /
+              // abstain / interrupted / failure metadata when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,

@@ -35,8 +35,10 @@
 // its window, otherwise a slow first open would leave the second with no
 // tolerance at all.
 //
-// Only SQLITE_BUSY / SQLITE_LOCKED and their sub-codes are retried, matching the
-// ticket contract. Retrying is safe here because every attempt restarts from
+// Only SQLITE_BUSY / SQLITE_LOCKED / SQLITE_IOERR and their sub-codes are retried
+// (IOERR is the Windows startup-race shape — see CONTENTION_WITH_OTHER_CODE); an
+// error with no code at all falls back to a "database is locked" message test.
+// Retrying is safe here because every attempt restarts from
 // scratch (each init step is idempotent: IF NOT EXISTS, or a duplicate-column
 // check), so unlike the batch-write path a stale-snapshot retry is meaningful.
 // Every other initialization error is surfaced unchanged and immediately — a

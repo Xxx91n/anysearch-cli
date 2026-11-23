@@ -229,7 +229,8 @@ function stepStaticAssertions() {
   ).exports ?? {};
   if (!kernelExports["."]) fail("packages/kernel missing top-level export");
 
-  // 1c. tool registry barrel must register 5 ans_* tools
+  // 1c. tool registry barrel must register all five tools (search_web / research_web /
+  // recall_memory / query_knowledge / ans_chat)
   const toolsIndex = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/index.ts"),
     "utf8"
   );
@@ -501,8 +502,9 @@ function stepStaticAssertions() {
 
   // 1n.: domain filter + abstain marker must exist
   // as source-level contracts, and the eval-looks golden ledger must carry
-  // the four criterion anchors (must-abstain / paired must-hit / stub-
-  // provider degradation / cold-domain zero-result).
+  // the three anchors this block asserts (c1 must-abstain / c2 paired must-
+  // hit / c4 cold-domain zero-result); c3 stub-provider degradation lives in
+  // packages/store/test/eval-docs-golden.test.ts.
   {
     const contractSrc = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
     for (const tok of ["includeDomains", "domainFilterSupported", "domain_filter_empty"])
@@ -993,7 +995,7 @@ async function stepPack(tmpDir) {
   const outDir = path.join(tmpDir, "pack");
   fs.mkdirSync(outDir, { recursive: true });
 
-  // ponytail: pack all seven so file: tarballs resolve workspace:* deps in
+  // ponytail: pack all eight so file: tarballs resolve workspace:* deps in
   // clean-prefix install (step 4). kernel/store/retriever aren't published
   // end-user packages, but they're still吃香 during tgz install resolution.
   for (const rel of PKG_DIRS) {
@@ -1068,14 +1070,14 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     // expected to ship one. The four source-only workspace packages
     // (kernel / retriever / store / embedding) declare `exports: "./src/*.ts"`
     // with no build script, so their tarball legitimately has no dist/.
-    // Asserting dist/ unconditionally made this gate unsatisfiable (4 of 7
+    // Asserting dist/ unconditionally made this gate unsatisfiable (4 of 8
     // packages). Mirrors the existing "no bin" branch below.
     const manifestForDist = JSON.stringify([pkg.files, pkg.main, pkg.module, pkg.bin, pkg.exports]);
     const declaresDist = manifestForDist.includes("dist");
     if (declaresDist && !fs.existsSync(path.join(pkgDir, "dist"))) {
       fail(`${file}: dist/ declared in manifest but missing in tarball`);
     }
-    // bundled-CLI publish shape. The three apps + embedding are the publish
+    // bundled-CLI publish shape. The four apps + embedding are the publish
     // set; kernel/store/retriever are build-time only (bundled) and must NOT appear in the
     // packed manifest's install-time fields. @anysearch-cli/embedding rides as an optional peer
     // (peerDependenciesMeta.optional), never optionalDependencies (the 404/auto-install bomb).

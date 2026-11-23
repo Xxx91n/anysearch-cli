@@ -10,7 +10,9 @@ These facts were checked on a real host. Do not guess them:
 - **stdin field is `hook_event_name`.** Adapters also accept the old `event` field.
 - **stdout must be wrapped in `hookSpecificOutput`.** A bare top-level
   `additionalContext`, `updatedToolOutput`, or `permissionDecision` is dropped
-  without notice. We proved this with deny sentinels.
+  without notice. Nested, `hookSpecificOutput.updatedToolOutput` does replace a
+  PostToolUse tool result (hooks reference, §Decision control, checked
+  2026-11-23); the ER-2 finding above was about the bare top-level form. We proved this with deny sentinels.
   `hookSpecificOutput.permissionDecision: "deny"` and the old
   `{decision:"block"}` both block the tool call. The same fields at top level
   do not block: the call runs anyway (`permission_denials: []`).

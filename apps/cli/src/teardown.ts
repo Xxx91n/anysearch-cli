@@ -7,7 +7,7 @@
 // opened through the tracked opener (packages/store/src/db.ts) register there,
 // and the CLI exit path must close them too.
 //
-// This module stays the CLI's import seam (index.ts + test/teardown.test.ts),
-// and stays import-free apart from that one re-export so it is CJS-reachable in
-// the tsup bundle.
+// This module is the CLI's import seam: src/db.ts (every command's way into the
+// store) and src/index.ts both take it, and the tests import it directly. One
+// re-export, nothing else — anything added here is a dependency of all of them.
 export { registerTeardown, runTeardown, unrefPendingHandles } from "@anysearch-cli/store";
