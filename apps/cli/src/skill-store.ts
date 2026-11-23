@@ -749,9 +749,14 @@ function splitSkillSource(raw: string): { yaml: string; body: string } | undefin
   return match === null ? undefined : { yaml: match[1], body: text.slice(match[0].length) };
 }
 
-/** Parse frontmatter text into a value; throws on malformed YAML. */
+/**
+ * Parse frontmatter text into a value. YAML syntax errors land in
+ * `document.errors` rather than being thrown, so both callers get them here.
+ */
 function parseFrontmatter(yaml: string): unknown {
-  return parseDocument(yaml, { version: "1.2", uniqueKeys: true }).toJS({ maxAliasCount: 100 });
+  const document = parseDocument(yaml, { version: "1.2", uniqueKeys: true });
+  if (document.errors.length > 0) throw new Error(document.errors[0].message);
+  return document.toJS({ maxAliasCount: 100 });
 }
 
 /** Validate YAML frontmatter, the name used as the install directory, description and body length. */
@@ -761,9 +766,7 @@ export function validateSkillFile(path: string): string {
   if (source === undefined) fail(`SKILL.md must start with YAML frontmatter delimited by ---: ${path}`);
   let frontmatter: unknown;
   try {
-    const document = parseDocument(source.yaml, { version: "1.2", uniqueKeys: true });
-    if (document.errors.length > 0) throw new Error(document.errors[0].message);
-    frontmatter = document.toJS({ maxAliasCount: 100 });
+    frontmatter = parseFrontmatter(source.yaml);
   } catch (error) {
     fail(`invalid YAML frontmatter in ${path}: ${(error as Error).message}`);
   }

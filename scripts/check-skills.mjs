@@ -20,7 +20,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { gitEnv } from "./preflight-git.mjs";
-import fs from "node:fs";
+import fs, { lstatSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -87,6 +87,16 @@ function gitVisibleSkillFiles() {
     .sort();
 }
 
+/** Does the path exist itself, without following a symlink? */
+function existsNoFollow(file) {
+  try {
+    lstatSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Rule messages end with ": <file>", and the [FAIL] line already names the file. */
 function withoutTrailingPath(message, file) {
   const suffix = ": " + file;
@@ -117,18 +127,17 @@ async function run() {
   let failed = 0;
   let unreadable = 0;
   for (const file of files) {
-    if (discovered && !fs.existsSync(file)) {
-      unreadable += 1;
-      process.stdout.write(`[ERROR] ${shown(file)}: listed by git but missing from this checkout\n`);
+    // Deleted but not staged yet: normal while editing, so say so and move on.
+    // lstat, not existsSync — a dangling symlink still belongs to the rules.
+    if (discovered && !existsNoFollow(file)) {
+      process.stdout.write(`[skip] ${shown(file)}: listed by git but missing from this checkout\n`);
       continue;
     }
     try {
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
       // Advice only: a skill that passes is not failed for a thinner description.
-      for (const note of skillNotes(path.join(path.dirname(file), "SKILL.md"))) {
-        process.stdout.write(`[note] ${shown(file)}: ${note}\n`);
-      }
+      for (const note of skillNotes(file)) process.stdout.write(`[note] ${shown(file)}: ${note}\n`);
     } catch (error) {
       // A rule failure reads "field + what was expected". Anything else (a
       // permission error, an I/O failure) is "could not check", not "this skill

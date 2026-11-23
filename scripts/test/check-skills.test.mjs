@@ -3,7 +3,7 @@
 // discovery finds, and the cases that have to go red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -240,18 +240,35 @@ test("a file that is not named SKILL.md is a usage error", (t) => {
   assert.match(result.stderr, /not a SKILL\.md/);
 });
 
-// A tracked SKILL.md deleted from the worktree is a checkout problem, not a skill
-// that broke a rule; the two exit differently on purpose.
-test("a git-listed skill missing from the checkout is \"could not check\"", (t) => {
+// Deleting a skill before staging it is normal while editing; it is reported and
+// skipped, not counted as a broken skill or as an unreadable one.
+test("a git-listed skill deleted from the tree is skipped, not failed", (t) => {
   const root = withRoot(t);
   git(root, ["init", "--quiet"]);
   skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
   git(root, ["add", "--", "gone", "gone/SKILL.md"]);
   rmSync(path.join(root, "gone", "SKILL.md"));
   const result = check([], { cwd: root, root });
-  assert.equal(result.code, 2, result.stdout + result.stderr);
-  assert.match(result.stdout, /\[ERROR\] .*gone[/\\]SKILL\.md: listed by git but missing/);
-  assert.match(result.stdout, /1 could not be read/);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[skip\] .*gone[/\\]SKILL\.md: listed by git but missing/);
+});
+
+// A symlinked SKILL.md is a rule failure ("must be a regular, non-symlink file"),
+// not a missing file — existsSync alone would get that wrong.
+test("a dangling symlinked SKILL.md goes red as a symlink", (t) => {
+  if (process.platform === "win32") {
+    t.skip("creating symlinks needs privileges on Windows");
+    return;
+  }
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  const dir = skill(root, "linked", "name: linked\ndescription: Use when a test needs a link.");
+  rmSync(path.join(dir, "SKILL.md"));
+  symlinkSync(path.join(dir, "nowhere.md"), path.join(dir, "SKILL.md"));
+  git(root, ["add", "--", "linked", "linked/SKILL.md"]);
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /must be a regular, non-symlink file/);
 });
 
 test("a path that does not exist is a usage error, not a failing skill", (t) => {
