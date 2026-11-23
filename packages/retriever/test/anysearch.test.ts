@@ -602,6 +602,22 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 16j. An isError reply whose text is an explicit auth fault must not be
+  // read as the sign-up/free-quota shape, even though "key ... issued" matches
+  // that pattern: the status/credential signal wins.
+  {
+    const text = "HTTP 403 Forbidden: this API key was issued for a different project";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("provider-error-class:permanent-auth"), "403-shaped isError reply classifies permanent-auth (got " + msg.slice(0, 120) + ")");
+      assert(!msg.includes("free-quota-exhausted"), "403-shaped isError reply is not a free-quota wall");
+    } finally { f.restore(); }
+  }
+
   // 17. r19 T2 (STOP-20 regression): a rate-limit notice in the body —
   // no provisioning or quota words — is a transient rate limit.
   for (const text of [

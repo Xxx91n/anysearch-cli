@@ -14,7 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
-import { canonicalizeVertical, classifyProviderError, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
+import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
 import { redactSecrets } from "../redact";
 
 // CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
@@ -182,6 +182,19 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
   return undefined;
 }
 
+// The reply scan above, with an explicit credential fault taking precedence:
+// a 403 body that happens to say a key was issued is a wrong key, not a quota.
+// With no shape guess at all the classifier keeps the decision, so a plain
+// invalid_api_key reply still reads as the generic isError it always was.
+function replyFailure(md: string): ReplyFailure | undefined {
+  const guessed = replyFailurePrefix(md);
+  if (!guessed) return undefined;
+  const explicit = classifyProviderError(stripErrorClassMarkers(md));
+  return isExplicitAuthFault(explicit)
+    ? { cls: explicit, prefix: "auth fault: upstream rejected the credential" }
+    : guessed;
+}
+
 // #214: result._meta.request_id is a server-generated diagnostic correlation id
 // (live probe 2026-11-07). It is captured for the observation trace only — never
 // merged into results and never treated as an idempotency key. The 128-char cap
@@ -204,7 +217,7 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const r = result as McpToolResult;
   if (r.isError === true) {
     const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
-    const failure = replyFailurePrefix(full);
+    const failure = replyFailure(full);
     // Fix the class here (reply marker, else the shared classifier); the
     // marker goes before the displayed copy.
     const fallback = classifyProviderError(stripErrorClassMarkers(full));
@@ -230,7 +243,7 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // payload ("account ... automatically generated ... api_key=...") is the
     // free quota ending, not protocol drift → free-quota-exhausted; a used-up
     // plan is quota-exhausted even when the wording is Chinese 额度.
-    const failure = replyFailurePrefix(md);
+    const failure = replyFailure(md);
     if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");

@@ -275,6 +275,13 @@ export function stripErrorClassMarkers(text: string): string {
   return text.replace(MARKER_TEXT, "");
 }
 
+// Classes that name a credential fault outright. An adapter that guessed a
+// class from reply wording has to let one of these win: "your API key was
+// issued for a different project" is a 403, not a used-up free allowance.
+export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
+  return cls === "permanent-auth" || cls === "session-expired";
+}
+
 export function providerErrorMarker(cls: ProviderErrorClass): string {
   return "[" + ERROR_CLASS_MARKER + cls + "]";
 }
@@ -284,22 +291,25 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const explicit = t.match(EXPLICIT_CLASS);
   if (explicit) return explicit[1] as ProviderErrorClass;
   const http = (code: string) => t.includes("HTTP " + code);
-  // exa-js rethrows only the envelope text and keeps the status on
-  // ExaError.statusCode, so a 402 can arrive without the words "HTTP 402".
-  const is402 = http("402") || /status(?:Code)?\s*[:=]?\s*402|payment required/i.test(t);
+  // An SDK keeps the status on the error object (exa-js: ExaError.statusCode),
+  // so providerErrorText writes it into the text as `status=<n>`. Read that
+  // form too: a 403 that never says "HTTP 403" must not be guessed from the
+  // body words.
+  const statusOf = (code: string) => http(code) || new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + code + "\\b", "i").test(t);
+  const is402 = statusOf("402") || /payment required/i.test(t);
   // A 402 is one of two things: the x402 payment challenge means no key was
   // sent, while the standard envelope means the key is valid but out of
   // credits. Only the structured challenge marks say which.
   const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  if (http("401") || http("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  if (statusOf("401") || statusOf("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   // Design: the free quota's wall sits between the auth shapes and the retry
   // shapes — an explicit auth fault outranks wording a cap reply may share with
   // it ("this API key was issued for a different project" is a 403, not a
   // quota), while a cap reply that also carries a 429/5xx must not be read as
   // an ordinary throttle.
   if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
-  if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
+  if (/HTTP 5[0-9][0-9]/.test(t) || statusOf("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
   // does nothing, the owner must top up. Checked after the retryable shapes so
   // a 429/5xx that also says "usage limit" stays transient; a 402 without the
@@ -316,8 +326,16 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
 // capture seam, not in the classifier — that stays a pure function of its text.
 export function providerErrorText(err: unknown): string {
   const text = String(err);
-  const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
+  const structured = err as { capType?: unknown; retryAfter?: unknown; statusCode?: unknown; status?: unknown } | null;
   const bits: string[] = [];
+  // exa-js and friends keep the status on the error object and rethrow only
+  // the envelope text, so without this a 403 is guessed from its body words.
+  const status = typeof structured?.statusCode === "number"
+    ? structured.statusCode
+    : typeof structured?.status === "number"
+      ? structured.status
+      : undefined;
+  if (status !== undefined) bits.push("status=" + status);
   if (typeof structured?.capType === "string" && structured.capType) bits.push("capType=" + structured.capType);
   if (typeof structured?.retryAfter === "number" && Number.isFinite(structured.retryAfter)) {
     bits.push("retry-after=" + structured.retryAfter);

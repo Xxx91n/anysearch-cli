@@ -52,6 +52,10 @@ const cases: Array<[string, string]> = [
   // An explicit auth fault outranks cap wording that happens to share its
   // words: this 403 is a wrong or badly scoped key, not a used-up allowance.
   ["Error: AnySearch MCP tools/call HTTP 403 Forbidden: this API key was issued for a different project", "permanent-auth"],
+  // The same fault when the SDK kept the status on the error object: the
+  // body never says "HTTP 403", only the capture seam's status field does.
+  ["ExaError: your API key was issued for a different project (status=403)", "permanent-auth"],
+  ["Error: upstream refused the call (statusCode: 429)", "transient"],
   // Exa's short-window 429 stays transient (#449): a throttle, not a used-up
   // allowance, and #455 deliberately left that classification alone.
   ["Error: Exa MCP tools/call JSON-RPC error -32000: rate limit exceeded (retry-after=1)", "transient"],
@@ -104,6 +108,13 @@ function expectValue<T>(got: T, want: T, label: string) {
   const noWaitText = providerErrorText(noWait);
   expectValue(classifyProviderError(noWaitText), "free-quota-exhausted", "cap without a wait still classifies free-quota-exhausted");
   expectValue(retryAfterSeconds(noWaitText), null, "cap without a wait has no retry-after");
+
+  // The SDK's status is a structured field too: a 403 whose body only says
+  // "your API key was issued for a different project" must still read auth.
+  const badKey = Object.assign(new Error("your API key was issued for a different project"), { statusCode: 403 });
+  const badKeyText = providerErrorText(badKey);
+  expectValue(badKeyText.includes("status=403"), true, "capture seam keeps statusCode");
+  expectValue(classifyProviderError(badKeyText), "permanent-auth", "a status-only 403 reads permanent-auth");
 
   // An ordinary Error carries nothing extra, and an ordinary throttle has no
   // wait to hand a free-quota hint.
