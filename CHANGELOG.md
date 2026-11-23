@@ -1,3 +1,26 @@
+## Unreleased — #387: skill 规范检查进 CI，规则和 `ans skill` 共用一份
+
+一句话说清：**agentskills.io 那套规范以前靠人肉对表，现在 `node scripts/check-skills.mjs` 一条命令查全仓的 `SKILL.md`，`check-build` 里也跑它；规则没有第二份，`ans skill install` / `ans skill validate` 走的就是它导入的那段代码。**
+
+### Added
+
+- **`scripts/check-skills.mjs`**：默认用 `git ls-files` 找出 Git 看得见的所有 `SKILL.md` 逐个查（已跟踪的，加上还没被忽略的新文件；构建产物和 `node_modules` 里的副本不算），也可以直接指定目录或文件。每条结果都带文件、字段和期望，比如 `[FAIL] …/SKILL.md: SKILL.md description must be 1–1024 characters, got 0`，不是只说「不合法」。有红的退出码 1；文件读不了算「没查成」，退出码 2，不混进「这个 skill 不合格」。
+- **一个 `SKILL.md` 都找不到也报红**：宁可退出码 1 也不假装查过了——仓库本来就该带着这份 skill。
+- **`check-build` 多了两步**：跑这个检查，再跑它自己的测试（大写名字、清空 `description`、正文到 500 行，三种改坏都会红）。
+
+### Changed
+
+- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字、正文少于 500 行。规范里标 Must 的那几条照旧，另外两条是本仓库自己加的：正文 500 行、名字不能是 Windows 保留设备名；`license` / `compatibility` / `metadata` 这些可选字段不查。
+- **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
+- **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了——缺 `description`、正文到 500 行、名字不合规都会被挡下来。已经装好但不合规的，`ans skill validate` 会报红。
+- **报错和通过的话都跟着改了**：`ans skill validate` 通过时打 `[OK] … SKILL.md name, description and body follow the spec`；`SKILL.md` 不存在时说「is missing」，不再说成「must be a regular file」；缺字段时说「has no name field / has no description」，不再把 YAML 空值（`name:`、`description:`）念成 `undefined` / `null` / `object`。
+
+### Known limits
+
+- **「说了什么时候用」只是提醒，不拦**：`description` 里认一批词（`when`、`的时候` / `什么时候用`、`何时`、`使用时` 和繁体的对应写法、日文 `とき`），没认到就在 install / `ans skill validate` / 仓库检查里打一句 `note`，退出码不变。这个词表必然挡漏不挡错：换个说法、用别的语言写，或者只是碰巧带这些词（「同时使用」），都可能被判成有或没有。之前把它当硬门试过，正常描述被误拒，所以改成提醒。
+- **规则清单**：frontmatter 必须是 mapping；`name` 1–64 位、等于目录名、不是 Windows 保留设备名；`description` 1–1024 字；正文少于 500 行。规范里的 `license`、`compatibility`、`metadata`、`allowed-tools` 和引用文件不查。
+- **正文行数不算前后空行**：frontmatter 后面那行空行、正文末尾的空行都不计入 500 行，数的是实际内容行。
+
 ## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
 
 一句话说清：**anysearch 的两条探针和 tavily 那条以前各读各的环境变量，key 只存在 `~/.ans/credentials.json` 的人跑探针会静默变成不带 key 的调用（#422）。现在三条都走 store 的 `resolveSearchCredentials`：环境变量优先、再读凭据文件，输出用 `keySource: env | user | none` 说来源，key 只在文件里时也带 `Authorization`，key 和 endpoint 的值一个都不打印。**

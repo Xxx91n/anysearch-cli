@@ -14,7 +14,7 @@ import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
-import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store";
+import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store/paths";
 import { atomicRename as renameWithRetry, renameSeam, setRenameSeam, sleepSync } from "./fs-atomic";
 
 export interface SkillOptions {
@@ -42,6 +42,8 @@ export interface SkillValidation {
   name: string;
   ok: boolean;
   error?: string;
+  /** Advice for a file that passed; absent when there is nothing to improve. */
+  notes?: string[];
 }
 
 export class SkillError extends Error {
@@ -76,9 +78,8 @@ function requireDirectory(path: string, label: string): void {
 /** Require a regular file, rejecting directories and symlinks. */
 function requireFile(path: string, label: string): void {
   const stat = statIfPresent(path);
-  if (!stat || !stat.isFile() || stat.isSymbolicLink()) {
-    fail(`${label} must be a regular, non-symlink file: ${path}`);
-  }
+  if (!stat) fail(`${label} is missing: ${path}`);
+  if (!stat.isFile() || stat.isSymbolicLink()) fail(`${label} must be a regular, non-symlink file: ${path}`);
 }
 
 /** Resolve the selected scope's skills root (user or project). */
@@ -161,10 +162,14 @@ export const skillRenameIO = renameSeam;
 // Design: names are single path segments on every supported OS — the Agent Skills
 // naming rule also excludes traversal, absolute paths, Windows device names and separators.
 /** Assert a safe Agent Skill name usable as a single directory segment. */
-function requireName(value: unknown): asserts value is string {
+function requireName(value: unknown, file?: string): asserts value is string {
   if (typeof value !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
     || value.includes("--") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(value)) {
-    fail("skill name must be 1–64 lowercase letters/digits, with single hyphens, and not a reserved device name");
+    const rule = "1–64 lowercase letters/digits, with single hyphens, and not a reserved device name";
+    if (file === undefined) fail(`skill name must be ${rule}`);
+    fail(value === undefined || value === null
+      ? `SKILL.md has no name field; it must be ${rule}: ${file}`
+      : `SKILL.md name ${JSON.stringify(value)} must be ${rule}: ${file}`);
   }
 }
 
@@ -669,23 +674,117 @@ function writeManifest(managed: string, manifest: SkillManifest): void {
   }
 }
 
-/** Validate YAML syntax and the name used as the install directory; not a full skill linter. */
-export function validateSkillFile(path: string): string {
-  requireFile(path, "SKILL.md");
-  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
-  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
-  if (!match) fail(`SKILL.md must start with YAML frontmatter delimited by ---: ${path}`);
+/** The Agent Skills spec's limit on the Markdown body that follows the frontmatter. */
+const SKILL_BODY_LINE_LIMIT = 500;
+/** The Agent Skills spec's character bounds for `description`. */
+const SKILL_DESCRIPTION_MIN_CHARS = 1;
+const SKILL_DESCRIPTION_MAX_CHARS = 1024;
+/** Words that suggest a description says when to use the skill; missing them is a note, never a refusal. */
+const WHEN_TO_USE =
+  /\bwhen|的时候|时候用|的時候|時候用|何时|何時|时使用|時使用|使用时|使用時|时用|時用|とき/i;
+
+/** Require a non-empty description within the spec's length bounds. */
+function requireDescription(value: unknown, path: string): void {
+  if (value === undefined || value === null) {
+    fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters: ${path}`);
+  }
+  if (typeof value !== "string") {
+    fail(`SKILL.md description must be a string, not ${Array.isArray(value) ? "a list" : typeof value}: ${path}`);
+  }
+  const description = value.trim();
+  const length = [...description].length;
+  if (length < SKILL_DESCRIPTION_MIN_CHARS || length > SKILL_DESCRIPTION_MAX_CHARS) {
+    fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
+  }
+}
+
+const SKILL_WHEN_TO_USE_NOTE =
+  'SKILL.md description does not say when to use the skill — a clause like "Use when the user …" / 什么时候用 / 使用时 helps an agent pick it';
+
+/** What a passing file could still say better; only a note, never a rejection. */
+export function skillNotes(path: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  const source = splitSkillSource(text);
+  if (source === undefined) return [];
   let frontmatter: unknown;
   try {
-    const document = parseDocument(match[1], { version: "1.2", uniqueKeys: true });
-    if (document.errors.length > 0) fail(document.errors[0].message);
-    frontmatter = document.toJS({ maxAliasCount: 100 });
+    frontmatter = parseFrontmatter(source.yaml);
+  } catch {
+    return [];
+  }
+  if (!isRecord(frontmatter) || typeof frontmatter.description !== "string") return [];
+  return WHEN_TO_USE.test(frontmatter.description.trim()) ? [] : [SKILL_WHEN_TO_USE_NOTE];
+}
+
+/**
+ * Keep the body under the spec's 500-line budget. The frontmatter and the blank
+ * lines around the body are separators, not content, so they do not count.
+ */
+function requireShortBody(body: string, path: string): void {
+  const trimmed = body.replace(/\r\n?/g, "\n").replace(/^\n+/, "").replace(/\n+$/, "");
+  const lines = trimmed === "" ? 0 : trimmed.split("\n").length;
+  if (lines >= SKILL_BODY_LINE_LIMIT) {
+    fail(`SKILL.md body must stay under ${SKILL_BODY_LINE_LIMIT} lines, got ${lines} (move detail into files the skill references): ${path}`);
+  }
+}
+
+/**
+ * Split a SKILL.md into the YAML text between the `---` lines and the body after
+ * it. One splitter, so the validator and the advice can never disagree about
+ * where the frontmatter ends.
+ */
+function splitSkillSource(raw: string): { yaml: string; body: string } | undefined {
+  const text = raw.replace(/^\uFEFF/, "");
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  return match === null ? undefined : { yaml: match[1], body: text.slice(match[0].length) };
+}
+
+/**
+ * Parse frontmatter text into a value. YAML syntax errors land in
+ * `document.errors` rather than being thrown, so both callers get them here.
+ */
+function parseFrontmatter(yaml: string): unknown {
+  const document = parseDocument(yaml, { version: "1.2", uniqueKeys: true });
+  if (document.errors.length > 0) throw new Error(document.errors[0].message);
+  return document.toJS({ maxAliasCount: 100 });
+}
+
+/** Validate YAML frontmatter, the name used as the install directory, description and body length. */
+export function validateSkillFile(path: string): string {
+  requireFile(path, "SKILL.md");
+  const source = splitSkillSource(readFileSync(path, "utf8"));
+  if (source === undefined) fail(`SKILL.md must start with YAML frontmatter delimited by ---: ${path}`);
+  let frontmatter: unknown;
+  try {
+    frontmatter = parseFrontmatter(source.yaml);
   } catch (error) {
     fail(`invalid YAML frontmatter in ${path}: ${(error as Error).message}`);
   }
   if (!isRecord(frontmatter)) fail(`SKILL.md frontmatter must be a YAML mapping: ${path}`);
   const name: unknown = frontmatter.name;
-  requireName(name);
+  requireName(name, path);
+  requireDescription(frontmatter.description, path);
+  requireShortBody(source.body, path);
+  return name;
+}
+
+/**
+ * Validate one skill directory: everything `validateSkillFile` checks, plus the
+ * rule that `name` equals the directory. `ans skill validate` and
+ * `scripts/check-skills.mjs` come through here, so they agree file for file.
+ */
+export function validateSkillDirectory(directory: string): string {
+  const file = join(directory, "SKILL.md");
+  const name = validateSkillFile(file);
+  const folder = basename(resolve(directory));
+  if (name !== folder) {
+    fail(`SKILL.md name must equal the directory it lives in: name is "${name}", directory is "${folder}": ${file}`);
+  }
   return name;
 }
 
@@ -921,6 +1020,8 @@ export async function installSkill(sourceArgument: string, opts: SkillOptions = 
   // Design: a source path is persisted in installed.json, whose validator
   // rejects control characters — reject it here so an install cannot brick the scope.
   if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
+  // Design: install accepts any directory name — a cloned repo folder has its
+  // own, and the installed copy is always skills/synced/<name>.
   const name = validateSkillFile(join(source, "SKILL.md"));
   const metadata = await provenance(source);
   const managed = managedSkillsRoot(opts);
@@ -1034,7 +1135,7 @@ function installedDirectory(managed: string, name: string): string {
   return target;
 }
 
-/** Validate installed SKILL.md frontmatter for one or all manifest entries. */
+/** Validate each installed skill directory against the Agent Skills spec. */
 export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: string): SkillValidation[] {
   const managed = managedSkillsRoot(opts);
   let entries: InstalledSkill[];
@@ -1049,9 +1150,12 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   }
   return entries.map((entry) => {
     try {
-      const nameInFile = validateSkillFile(join(installedDirectory(managed, entry.name), "SKILL.md"));
-      if (nameInFile !== entry.name) fail(`frontmatter name ${nameInFile} does not match manifest name ${entry.name}`);
-      return { name: entry.name, ok: true };
+      // The installed directory is <managed>/<name>, so this covers the
+      // manifest cross-check too.
+      const directory = installedDirectory(managed, entry.name);
+      validateSkillDirectory(directory);
+      const notes = skillNotes(join(directory, "SKILL.md"));
+      return { name: entry.name, ok: true, ...(notes.length > 0 ? { notes } : {}) };
     } catch (error) {
       return { name: entry.name, ok: false, error: (error as Error).message };
     }
