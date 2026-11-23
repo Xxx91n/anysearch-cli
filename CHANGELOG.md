@@ -1,3 +1,23 @@
+## Unreleased — #428: 协议版本收尾：raw 探针参数化，dsh-plugin 的死常量删掉
+
+一句话说清：**raw 探针以前把 `initialize` 的协议版本写死成 `2025-03-26`，比产品（`2025-11-25`）落后两个版本；现在它默认发产品的版本，旧版本靠 `--protocol-version` / `ANS_PROBE_PROTOCOL_VERSION` 还能测。`dsh-plugin` 里那个同名的 `MCP_DEFAULT_VERSION` 一直没人读，直接删掉——它不影响任何一次握手。**
+
+### Changed
+
+- **raw 探针的协议版本变成参数**：`providers/anysearch/probe-anysearch-mcp-raw.ts` 的 `initialize` 和缺省回落都改用 `PROTOCOL_VERSION`，默认 `2025-11-25`，和适配器的 `MCP_PROTOCOL_VERSION` 对齐。要测旧版本传 `--protocol-version <v>`（或 `--protocol-version=<v>`）或设 `ANS_PROBE_PROTOCOL_VERSION=<v>`；上游「要哪个给哪个」，所以是参数化而不是替换（#423）。flag 写了却没给值（`=` 后为空、后面紧跟另一个 flag 也算）会退出 2 并打 `stage:"args"`，不会静默退回默认值、让人以为测了旧版本。
+- **探针输出多两个字段**：`protocolVersionRequested`（发出去的）和 `protocolVersion`（上游回的）。以前这两个值不进输出，版本对不对只能翻代码。上游不回版本时 `protocolVersion` 是 `null`，不拿发出去的值顶替——探针不能替上游说话。
+- **`providers/anysearch/README.md` 的「协议版本」一节**改成描述参数化；「探针」表的期望输出和跑法跟着改；「最近一次真跑」补 2026-11-23 两条路的实测。
+- **探针的参数解析和遮值一起收紧了**：未知或重复的 flag、不是 `YYYY-MM-DD` 形状的版本一律退出 2，不再静默退回默认值；上游回的版本只认非空字符串，形状不对就不进 `MCP-Protocol-Version` 头（带换行的头会让 `fetch` 抛，看起来像传输坏了）；输出里 env 的 key / endpoint、以及上游回显的 `api_key=` / `password=` / `Bearer ...`（含 JSON 引号写法）一律遮成 `<key>` / `<endpoint>`，并且先遮再截。出口统一走同步写，管道跑法不会丢输出。
+
+### Removed
+
+- **`apps/dsh-plugin/src/index.ts` 的 `MCP_DEFAULT_VERSION`**：零读者。真正握手用的是 `mcpHandshake` 里的字面量 `2025-11-25`，再加上游协商回来的版本回写。删掉不改变任何一次握手。
+
+### Known limits
+
+- **`providers/` 不在 `pnpm -r check` 里**：探针是手跑夹具，不进构建（#425 已记）。这次验的是真跑：默认、flag、env 三路各 `ok:true`，缺值那路退出 2。
+- **`docs/eval/ip-corpus-probe-2026-11-07.md` 里那条 `2025-03-26` 不回改**：那是带日期的历史记录。
+
 ## Unreleased — #424: Cursor 那一套全删掉
 
 一句话说清：**Cursor 一直只有一个钩子适配器和一份配置模板：没进接线清单，`ans doctor` 不查，文档只有一页手点清单。那份模板还缺 Cursor 要求的 `version: 1`、条目写成 `{name, command, args}`；适配器在 `preToolUse` 上回的 `additional_context` 不在 Cursor 的权限钩子输出字段里，而 Cursor 的规矩是这一步回的话看不懂就不让这次调用——真装上可能把 `ans_*` 调用挡掉。Cursor 本身要改名、后面还有大调整，所以不补文档、不进 doctor，整条删掉。**
