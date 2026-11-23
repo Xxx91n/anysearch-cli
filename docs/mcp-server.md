@@ -203,7 +203,7 @@ The server follows the MCP rule that an execution failure is an
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
 | Successful search / research with results | absent (success) | `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
 | Search returned zero hits but at least one provider answered | absent (success) | `providersQueried`, `providersCancelled`, `credentialSources`; optional metadata; abstain only if the domain filter emptied the pool |
-| Some arms were cut off by the grace window | absent (success) | `providersCancelled` names them; with `providersQueried` beside it, "every arm cancelled" is readable as `providersCancelled === providersQueried` — never an outage |
+| Some arms were cut off by the grace window | absent (success) | `providersCancelled` names them; with `providersQueried` beside it, a cut-off arm is readable as asked-but-not-waited-for, never as an arm that failed |
 | Domain gate emptied the pool (abstain) | absent (success) | `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled` and `credentialSources` |
 | Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
@@ -236,12 +236,14 @@ Rules behind the table:
   `providersCancelled` beside `providersQueried`, so an arm that was asked and
   then cut off cannot be read as an arm that never ran. Zero queried providers
   is not an outage, and a cancelled provider never counts as an answered one.
-  Both tools report the pair for every round that completed. For
-  `research_web`, a round the caller's cancellation cut short contributes
-  nothing to it — that round's results are dropped too (#209: cancellation is
-  not a completed search), and `interrupted` is what says the call stopped
-  early. The pair therefore never mixes rounds and never describes a round
-  whose results are missing.
+  `search_web` reports the pair for the one fanout it ran;
+  `research_web` reports it for its last completed round and never unions
+  rounds. A round the caller's cancellation cut short contributes nothing to
+  either — that round's results are dropped too (#209: cancellation is not a
+  completed search), and `interrupted` is what says the call stopped early.
+  On `search_web` a caller cancellation can cut every arm off, and there
+  `providersCancelled === providersQueried` is the signal; the result is still
+  a success, never an outage.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
