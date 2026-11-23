@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
-import { planPreflight, readWorkspace } from "../preflight-plan.mjs";
+import { codeOwnership, docsOnly, isDocumentation, planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
@@ -127,7 +127,105 @@ test("a package change next to a root change still runs everything", () => {
 });
 
 test("a file outside the packages falls back to the full suite", () => {
-  assert.equal(planPreflight(root, ["docs/limitations.md"]).mode, "full");
+  assert.equal(planPreflight(root, ["providers/exa/probe.mjs"]).mode, "full");
+});
+
+test("the doc boundary is docs/ except docs/eval/, plus the four root markdown files", () => {
+  for (const file of [
+    "docs/limitations.md",
+    "docs/assets/readme/hero.png",
+    "README.md",
+    "README.zh-CN.md",
+    "GLOSSARY.md",
+    "CHANGELOG.md",
+  ]) {
+    assert.equal(isDocumentation(file), true, file);
+  }
+
+  for (const file of [
+    "apps/plugin/AGENTS.md",
+    "apps/plugin/README.md",
+    "domains/docs.toml",
+    ".github/workflows/ci.yml",
+    "docs/eval/ip-corpus-probe-2026-11-07.md",
+    "docs/eval/quarantine-audit-2026-09-12.md",
+    "docs-tools/check.mjs",
+    "docs",
+    "README.md.bak",
+  ]) {
+    assert.equal(isDocumentation(file), false, file);
+  }
+});
+
+test("docsOnly needs at least one file and every file inside the boundary", () => {
+  assert.equal(docsOnly(["README.md"]), true);
+  assert.equal(docsOnly(["docs/a.md", "CHANGELOG.md"]), true);
+  assert.equal(docsOnly(["docs/a.md", "apps/plugin/AGENTS.md"]), false);
+  assert.equal(docsOnly([]), false);
+});
+
+test("separators and ./- prefixes do not escape the boundary", () => {
+  assert.equal(docsOnly([".\\docs\\a.md"]), true);
+  assert.equal(docsOnly(["./apps/plugin/AGENTS.md"]), false);
+});
+
+test("codeOwnership keeps docs out of the unowned list", () => {
+  // If a docs file counted as unowned, a doc next to a package change would
+  // run the whole suite.
+  const { touched, unowned } = codeOwnership(
+    ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "turbo.json"],
+    readWorkspace(root),
+  );
+  assert.deepEqual(touched, ["@anysearch-cli/dsh-plugin"]);
+  assert.deepEqual(unowned, ["turbo.json"]);
+});
+
+test("a change that is all documentation runs nothing", () => {
+  for (const files of [
+    ["docs/limitations.md"],
+    ["README.md", "CHANGELOG.md", "docs/assets/readme/hero.png"],
+    ["docs/agents/issue-tracker.md", "GLOSSARY.md"],
+    ["docs\\limitations.md"],
+  ]) {
+    const plan = planPreflight(root, files);
+    assert.equal(plan.mode, "docs", files.join(","));
+    assert.deepEqual(plan.packages, []);
+    assert.equal(plan.reason, "documentation only");
+  }
+});
+
+test("docs next to a package change run that package, not the whole suite", () => {
+  const plan = planPreflight(root, ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "README.md"]);
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.packages, ["@anysearch-cli/dsh-plugin"]);
+  assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
+});
+
+test("docs next to a root file still run the whole suite, and the docs are not the reason", () => {
+  const plan = planPreflight(root, ["README.md", "turbo.json"]);
+  assert.equal(plan.mode, "full");
+  assert.deepEqual(plan.outside, ["turbo.json"]);
+});
+
+// The boundary is CI's, so the exclusions matter here too: a product asset and
+// docs/eval are read by tests and must not buy a skipped run.
+test("a product asset runs its readers, and docs/eval/ still runs the suite", () => {
+  // The readers run, not just the owner: plugin's own tests plus every app
+  // that depends on it.
+  const asset = planPreflight(root, ["apps/plugin/AGENTS.md"]);
+  assert.equal(asset.mode, "incremental");
+  assert.deepEqual(asset.packages, [
+    "@anysearch-cli/cli",
+    "@anysearch-cli/dsh-plugin",
+    "@anysearch-cli/mcp",
+    "@anysearch-cli/plugin",
+  ]);
+  assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "full");
+  assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "full");
+});
+
+test("--full still runs everything on a docs-only change", () => {
+  assert.equal(planPreflight(root, ["docs/limitations.md"], { forceFull: true }).mode, "full");
 });
 
 test("no change runs nothing", () => {

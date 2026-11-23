@@ -1,5 +1,6 @@
-// Work out which workspace packages a change touches, and which packages have
-// to run because they use one of them.
+// Work out which files a change carries, which of them are documentation,
+// which workspace packages the rest touches, and which packages have to run
+// because they use one of them.
 //
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
@@ -7,12 +8,15 @@
 // another package's files can sit upstream of the change that breaks it:
 // kernel's tests read apps/mcp/domains, which only an unfiltered full run
 // covers — the push gate's --full, CI's check-build lane, and the merge gate.
-// A change outside apps/ and packages/ runs the whole suite, because no rule
-// here names which packages read it. Root files change what every package runs
-// (the lockfile, turbo.json) and belong to no package, so they run the whole
-// suite too; docs follow the same rule.
+// A change outside apps/ and packages/ that is not documentation runs the whole
+// suite, because no rule here names which packages read it. Root files change
+// what every package runs (the lockfile, turbo.json) and belong to no package,
+// so they run the whole suite too.
 //
-// CI removes docs before selecting lanes; the push gate does not.
+// Design: documentation gets its own mode, not the unowned fallback — a
+// docs-only change runs nothing, and docs next to code are dropped before the
+// package lookup, so they belong to no package but are not the unowned path
+// that would run everything. The boundary is isDocumentation (#488).
 //
 // A file belongs to the package whose directory contains it. A workspace that
 // cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
@@ -31,13 +35,17 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "full" | "incremental", reason?: string, files: string[],
+ * @returns {{ mode: "none" | "docs" | "full" | "incremental", reason?: string, files: string[],
  *            packages: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
   if (forceFull) return { mode: "full", reason: "forced", files, packages: [] };
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
+  // Design: the docs check runs before the workspace read — a docs-only change
+  // needs no package, and a broken tree must not turn "ran nothing" into "ran
+  // everything".
+  if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
   const { packages, nameless } = readWorkspaceReport(root);
   if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
@@ -51,8 +59,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
-  const outside = files.filter((file) => !owners.get(file));
+  const { touched, unowned: outside } = codeOwnership(files, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
@@ -65,8 +72,52 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, outside, packages: [] };
   }
 
-  const touched = [...new Set(files.map((file) => owners.get(file).name))].sort();
   return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
+}
+
+const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
+
+/**
+ * Whether a path counts as documentation. The push gate skips the suite on a
+ * docs-only change and CI skips every lane, so both ask this one function.
+ *
+ * docs/eval/ is evaluation evidence and `apps/plugin`'s markdown (its AGENTS.md
+ * and SKILL.md) is a product asset: tests read both, so neither counts. A bare
+ * "docs" names no file a push could have changed, so it does not count either.
+ *
+ * @param {string} file repo-relative path, either separator
+ */
+export function isDocumentation(file) {
+  const normalized = normalizePath(file);
+  if (normalized.startsWith("docs/eval/")) return false;
+  return normalized.startsWith("docs/") || ROOT_DOCS.has(normalized);
+}
+
+/** True when the change set is not empty and every file in it is documentation. */
+export function docsOnly(files) {
+  const list = (files ?? []).map(normalizePath).filter(Boolean);
+  return list.length > 0 && list.every(isDocumentation);
+}
+
+/**
+ * How the code half of a change is owned: the packages its files belong to, and
+ * the files no package owns. Docs are skipped here, so they never count as
+ * unowned.
+ *
+ * @param {string[]} files normalized paths, docs not removed yet
+ * @param {{ name: string, dir: string, deps: string[] }[]} packages
+ * @returns {{ touched: string[], unowned: string[] }}
+ */
+export function codeOwnership(files, packages) {
+  const touched = [];
+  const unowned = [];
+  for (const file of files) {
+    if (isDocumentation(file)) continue;
+    const owner = packageForFile(file, packages);
+    if (owner) touched.push(owner.name);
+    else unowned.push(file);
+  }
+  return { unowned, touched: [...new Set(touched)].sort() };
 }
 
 /**

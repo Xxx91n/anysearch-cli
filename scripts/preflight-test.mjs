@@ -2,7 +2,8 @@
 // Preflight gate: before a push, run the tests the change can break.
 // scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
 // it into a package list. A change outside apps/ and packages/ has no clear
-// owner, so it falls back to the full suite.
+// owner, so it falls back to the full suite — except documentation, which runs
+// nothing and says so.
 //
 // Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
@@ -102,11 +103,20 @@ if (plan.mode === "none") {
   process.exit(0);
 }
 
+// Design: a docs-only push exits here with no test child, and says skipped —
+// never green, because a green line would read as evidence (#389's gate
+// contract).
+if (plan.mode === "docs") {
+  console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
+  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
+  process.exit(0);
+}
+
 if (plan.mode === "full") {
   console.log(`[preflight] full suite: ${plan.reason}`);
   if (plan.outside?.length) console.log(`[preflight] outside the packages: ${listFirst(plan.outside)}`);
 } else {
-  console.log(`[preflight] changed ${plan.files.length} file(s) in ${plan.touched.length} package(s)`);
+  console.log(`[preflight] changed ${plan.files.length} file(s), running ${plan.packages.length} package(s)`);
   console.log(`[preflight] run: ${plan.packages.join(", ")} (the change plus everything that depends on it)`);
   console.log("[preflight] turbo runs tests in these packages only, not in the packages they depend on");
 }

@@ -1,5 +1,4 @@
-// Which changed files count as documentation, and which CI lanes must run for
-// the rest.
+// Which CI lanes must run for a change.
 //
 // Design: lanes are selected by package. Each lane names the workspace packages
 // it can exercise; the change reduces to the preflight closure (changed package
@@ -7,14 +6,21 @@
 //
 // Design: docs-only skips every lane. Everything else uncertain (empty set,
 // unreadable workspace, unowned path, a package no lane names) runs every lane.
+//
+// Design: the documentation boundary lives in preflight-plan.mjs, and this
+// module imports it instead of keeping a copy.
 
 import fs from "node:fs";
 import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath, packageForFile, readWorkspace, withDependents } from "./preflight-plan.mjs";
-
-const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
+import {
+  codeOwnership,
+  docsOnly,
+  normalizePath,
+  readWorkspace,
+  withDependents,
+} from "./preflight-plan.mjs";
 
 // Design: one line per lane — the packages it cares about, by manifest name.
 // Keep the names here, not paths: the closure already knows where each package
@@ -45,17 +51,6 @@ export const LANES = {
   "macos-spillover-probe": ["@anysearch-cli/cli", "@anysearch-cli/store"],
 };
 
-export function isDocumentation(file) {
-  const normalized = normalizePath(file);
-  if (normalized.startsWith("docs/eval/")) return false;
-  return normalized.startsWith("docs/") || ROOT_DOCS.has(normalized);
-}
-
-export function docsOnly(files) {
-  const list = (files ?? []).map(normalizePath).filter(Boolean);
-  return list.length > 0 && list.every(isDocumentation);
-}
-
 /**
  * Decide which lanes must run, plus why an uncertain change ran everything.
  *
@@ -74,17 +69,13 @@ export function planLanes(files, packages) {
     return { lanes: all, reason: "workspace unreadable" };
   }
 
-  // Docs belong to no package, but they are not root files: a code+docs PR
-  // selects on the code only. docs/eval/ is not documentation, so it still
-  // reaches the unowned fallback.
-  const code = list.filter((file) => !isDocumentation(file));
-  const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
-  const unowned = code.filter((file) => !owners.get(file));
+  // A code+docs change selects on the code only. docs/eval/ is not
+  // documentation, so it still reaches the unowned fallback.
+  const { touched, unowned } = codeOwnership(list, packages);
   if (unowned.length > 0) {
     return { lanes: all, reason: `unowned path: ${safeList(unowned)}` };
   }
 
-  const touched = [...new Set([...owners.values()].map((owner) => owner.name))].sort();
   const closure = new Set(withDependents(touched, packages));
   // A package in the closure that no lane names is new (or the declarations are
   // stale). Run everything: otherwise a PR that also touches a known app runs

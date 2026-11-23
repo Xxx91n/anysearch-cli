@@ -382,6 +382,71 @@ test("a clean tree reports nothing to run and runs no self-test", async () => {
   });
 });
 
+test("a docs-only change says skipped, runs nothing, and never claims green", async () => {
+  await withWorkspace({ changed: "docs/limitations.md" }, ({ root, bin }) => {
+    // The fake pnpm fails and prints "pnpm ran", so a suite that started would
+    // show up twice: in the exit code and in the output.
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation — no test ran/);
+    assert.match(result.stdout, /not a pass/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("green"), false);
+    assert.equal(result.stdout.includes("gate self-test"), false);
+  });
+});
+
+test("a docs-only dry run also says skipped, not would run", async () => {
+  await withWorkspace({ changed: "docs/limitations.md" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--dry-run"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation/);
+    assert.equal(result.stdout.includes("would run"), false);
+  });
+});
+
+test("a pushed docs-only ref says skipped and runs nothing", async () => {
+  await withWorkspace({ pushed: "docs/limitations.md" }, ({ root, bin, refs }) => {
+    const result = runCliIn(root, bin, ["--pushed"], { input: refs, selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation — no test ran/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("green"), false);
+  });
+});
+
+test("docs next to a package file still run that package, not the suite", async () => {
+  // Two changed files, one of them documentation: only the package lane runs,
+  // and the banner must not claim the docs live inside that package.
+  await withWorkspace(
+    { changed: ["apps/dsh-plugin/src/index.ts", "docs/limitations.md"], echoArgs: true },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /changed 2 file\(s\), running 1 package\(s\)/);
+      assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin \(the change plus everything that depends on it\)/);
+      assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+    },
+  );
+});
+
+test("the banner counts the packages that run, not just the changed one", async () => {
+  // A downstream app makes touched and packages differ: a banner that counts
+  // touched would say 1 here while the next line lists 2.
+  const extraPackages = {
+    "apps/consumer": {
+      name: "@anysearch-cli/consumer",
+      devDependencies: { "@anysearch-cli/dsh-plugin": "workspace:*" },
+    },
+  };
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", extraPackages, echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /changed 1 file\(s\), running 2 package\(s\)/);
+    assert.match(result.stdout, /run: @anysearch-cli\/consumer, @anysearch-cli\/dsh-plugin/);
+  });
+});
+
 test("the old --staged flag names the hook to delete and runs nothing", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
@@ -468,7 +533,7 @@ async function withWorkspace(options = {}, run) {
 // a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPackages } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
@@ -492,6 +557,9 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   write(join(yaml, "index.js"), "module.exports = {};\n");
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
+  for (const [dir, manifest] of Object.entries(extraPackages ?? {})) {
+    write(join(root, dir, "package.json"), JSON.stringify(manifest));
+  }
   git(root, ["init", "-q"]);
   assertOwnRepo(root, rev(root, "--absolute-git-dir"));
   git(root, ["config", "user.email", "preflight@example.test"]);
@@ -501,8 +569,8 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   git(root, ["commit", "-q", "-m", "base"]);
   const base = rev(root, "HEAD");
   git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
-  const changedFile = changed ?? pushed;
-  if (changedFile) write(join(root, changedFile), "export const two = 2;\n");
+  const changedFiles = [changed ?? pushed].flat().filter(Boolean);
+  for (const file of changedFiles) write(join(root, file), file.endsWith(".md") ? "# limits\n" : "export const two = 2;\n");
   let refs;
   if (pushed) {
     git(root, ["add", "."]);
