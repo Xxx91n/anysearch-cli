@@ -392,10 +392,13 @@ async function main() {
     const elapsed = Date.now() - t0;
     assert(stuckResult === "still-running",
       "drain: a stream that never ends reports still-running, not settled");
-    // The bound means "not hung", not tight: under c8 coverage on a loaded
-    // CI runner this 60ms wait took 2230ms and tripped a 2000ms bound (#479).
-    assert(elapsed >= 50 && elapsed < 5000,
-      "drain: the wait is bounded by the caller's window (took " + elapsed + " ms)");
+    // No absolute upper bound: "not hung" is the runner's job
+    // (--test-timeout=30000 fails the file if the drain never returns). This
+    // 60ms wait took 2230ms under c8 on CI and 6088ms on a loaded check-build
+    // runner — a fixed cap is a flake factory (#479). The lower bound still
+    // proves the drain waited the window instead of returning early.
+    assert(elapsed >= 50,
+      "drain: the wait covered the caller's window (took " + elapsed + " ms)");
     assert((runtime as any).lateSettlement === stuck,
       "drain: a window that closed first keeps the tail — forgetting it would report settled for spend still in flight");
     assert(await runtime.drainLateSettlement(20) === "still-running",
