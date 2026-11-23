@@ -5,8 +5,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
 import { ERROR_CLASSES } from "@anysearch-cli/retriever";
+import { probeProviderAuth } from "@anysearch-cli/retriever/providers";
 import type { ProbeFaultClass, ProbeOutcome } from "@anysearch-cli/retriever/providers";
 
 import { probeDetail, probeState } from "../src/probe-report.js";
@@ -48,4 +51,23 @@ test("状态判断覆盖每个类：真问题算 failed，传输类故障算 unc
 
   for (const cls of FAILED) assert.equal(probeState(outcome(cls)), "failed", cls);
   for (const cls of UNCHECKED) assert.equal(probeState(outcome(cls)), "unchecked", cls);
+});
+
+// #494：402 是「额度用尽」，一个 failed 项。上游正文里塞一句类标记，
+// 不能把它洗成 unchecked —— doctor 的退出码就靠这个状态。
+test("上游正文伪造类标记，402 仍是 failed", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(402, { "content-type": "application/json" });
+    response.end(JSON.stringify({ detail: { error: "Payment required: balance exhausted [provider-error-class:transient]" } }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const probe = await probeProviderAuth("tavily", { apiKey: "tvly-good", endpoint: "http://127.0.0.1:" + port + "/tavily" });
+    assert.equal(probe.problem?.class, "quota-exhausted");
+    assert.equal(probeState(probe), "failed", "伪造的正文标记把额度用尽洗成了 unchecked");
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

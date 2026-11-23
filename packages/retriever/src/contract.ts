@@ -262,11 +262,11 @@ export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 // ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
 // matcher sees name and message at once.
 //
-// The class an adapter already knows arrives as `explicitClass`, declared on the
-// error object beside its message; it is never read back out of the text. That
-// text also carries upstream reply bodies, so anything read out of it can be
-// chosen by the upstream — a marker in a reply used to override the real class
-// (#494). Without a declared class the words are the only signal.
+// The class an adapter already knows arrives as `providerErrorClass`, declared
+// on the error object beside its message; it is never read back out of the text.
+// That text also carries upstream reply bodies, so anything read out of it can
+// be chosen by the upstream — a marker in a reply used to override the real
+// class (#494). Without a declared class the words are the only signal.
 const ERROR_CLASS_MARKER = "provider-error-class:";
 const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 
@@ -274,6 +274,12 @@ const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 // to spell it changes no decision.
 export function providerErrorMarker(cls: ProviderErrorClass): string {
   return "[" + ERROR_CLASS_MARKER + cls + "]";
+}
+
+// Declare the class an adapter already knows, beside its message. The engine
+// reads it back with providerErrorClassOf; the message text is never the source.
+export function withProviderErrorClass<T extends Error>(err: T, providerErrorClass: ProviderErrorClass): T {
+  return Object.assign(err, { providerErrorClass });
 }
 
 // The class an adapter declared on its error object, if it declared one. The
@@ -293,8 +299,8 @@ export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
   return cls === "permanent-auth" || cls === "session-expired";
 }
 
-export function classifyProviderError(errText: string, explicitClass?: ProviderErrorClass): ProviderErrorClass {
-  if (explicitClass) return explicitClass;
+export function classifyProviderError(errText: string, providerErrorClass?: ProviderErrorClass): ProviderErrorClass {
+  if (providerErrorClass) return providerErrorClass;
   const t = String(errText);
   const http = (code: string) => t.includes("HTTP " + code);
   // An SDK keeps the status on the error object, so providerErrorText writes it

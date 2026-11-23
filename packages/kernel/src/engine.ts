@@ -402,9 +402,10 @@ export class RetroaererdEngine {
     // failure is a completed fanout answer.
     type ProviderOutcome =
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
-      // errorClass: the class the adapter declared on its error object (#494).
-      // Absent for adapters that declare none — those fall back to the text.
-      | { provider: string; status: "rejected"; error: string; errorClass?: ProviderErrorClass };
+      // providerErrorClass: the class the adapter declared on its error object
+      // (#494). Absent for adapters that declare none — those fall back to the
+      // text.
+      | { provider: string; status: "rejected"; error: string; providerErrorClass?: ProviderErrorClass };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     // #209: the caller's request signal (MCP tools/call cancellation) is combined
     // with the engine's per-provider controllers. Aborting it stops in-flight
@@ -488,7 +489,7 @@ export class RetroaererdEngine {
           (err) => {
             // An abort we issued is cancellation, not failure: leave the slot null.
             if (abortedArms.has(i)) return;
-            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err), errorClass: providerErrorClassOf(err) };
+            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err), providerErrorClass: providerErrorClassOf(err) };
           },
         ),
       );
@@ -611,7 +612,7 @@ export class RetroaererdEngine {
           // (enum only; forensic name+message stays with the probe channel).
           // The adapter's declared class wins; the text is only a fallback for
           // adapters that declare none, because a reply body rides in it.
-          providerErrorClasses[providerIds[i]] = inner.errorClass ?? classifyProviderError(inner.error);
+          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error, inner.providerErrorClass);
           // Recorded whenever the arm said one: whether any sentence uses it is
           // the hint table's business, not this engine's.
           const wait = retryAfterSeconds(inner.error);
