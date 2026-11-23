@@ -32,6 +32,8 @@
 
 每条还标来源：`离线`（构造对象、看文件、解析 TOML）或 `实测`（真联网、真起宿主）。需要真实调用的检查只能是 `[未检查]`，doctor 不启动宿主、不联网。
 
+> **事后注记（2026-11-24，#507）**：这一节说的「doctor 不联网」是默认模式。后来 #442 加了 `ans doctor --live`，doctor 里只有它这条路径会联网；打什么、验到什么程度，以 `ans doctor --help` 和 `packages/retriever/src/providers/provider-facts.ts` 的 `PROVIDER_FACTS` 为准。「不启动宿主」不分模式，有没有 `--live` 都不起宿主。当时跑出来的结论没改，这里只补范围。
+
 退出码：有 `[FAIL]` → 1；`--strict` 且有 `[未检查]` → 5；否则 0。`[未配置]` 不抬退出码。
 
 `--json` 输出同一份结构，逐条带 `layer` / `state` / `mode` / `detail`，外加四态计数。
