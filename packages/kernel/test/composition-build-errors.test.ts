@@ -10,15 +10,23 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createEngine } from "../src/composition";
+import { resolveSearchCredentials } from "@anysearch-cli/store";
 
 function closeResult(r: { store: unknown; observation: { close?: () => void } }) {
   (r.store as { close?: () => void }).close?.();
   r.observation.close?.();
 }
 
-const savedExaKey = process.env.EXA_API_KEY;
+// These fixtures drive the unusable key through the environment, so the seam
+// resolves the env only: the user credential file is not an input here and must
+// not leak a developer's key into the record. #500 made the exa factory a pure
+// function of its argument, so an engine built without this seam would take the
+// free-quota arm and prove nothing.
+const envCredentials = (e?: NodeJS.ProcessEnv) =>
+  resolveSearchCredentials(e, { credentialsFile: { bindings: [] } });
+
 // 用不了的 key：值里带换行，exa-js 构造时往请求头里塞就当场抛。它是这个文件里
-// 「构造会抛」的真实样本（#499：没配 key 不再算样本——下一票起那条路改成免费额度）。
+// 「构造会抛」的真实样本（#500 起没配 key 走免费额度，不再算样本）。
 // 值本身不许出现在记录或 stderr 里，下面有专门一条断言盯着。
 const UNUSABLE_EXA_KEY = "sk-secret-do-not-log\nheader-fault";
 const origStderrWrite = process.stderr.write;
@@ -28,7 +36,7 @@ try {
 
   // 配了一把用不了的 key -> exa arm fails construction, named on stderr + record.
   process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
-  const r = createEngine(undefined, { dbPath: ":memory:" });
+  const r = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.ok(r.providerBuildErrors.exa, "exa construction failure recorded");
   assert.equal(r.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
     "credential-shaped fault records the safe category message");
@@ -52,7 +60,7 @@ try {
       'adapter = "none"',
       "",
     ].join("\n"), "utf8");
-    const d = createEngine("exaonly", { domainsDirs: [dir], dbPath: ":memory:" });
+    const d = createEngine("exaonly", { domainsDirs: [dir], dbPath: ":memory:", searchCredentials: envCredentials });
     assert.ok(d.providerBuildErrors.exa, "domain-scoped exa failure recorded");
     assert.match(captured, /\[anysearch\] provider exa construction failed:/, "domain path stderr line");
     closeResult(d);
@@ -67,7 +75,7 @@ try {
       'adapter = "none"',
       "",
     ].join("\n"), "utf8");
-    const h = createEngine("healthy", { domainsDirs: [dir], dbPath: ":memory:" });
+    const h = createEngine("healthy", { domainsDirs: [dir], dbPath: ":memory:", searchCredentials: envCredentials });
     assert.deepEqual(h.providerBuildErrors, {}, "healthy path has an empty build-error record");
     assert.equal(captured, "", "no construction stderr on the healthy path");
     closeResult(h);
@@ -79,7 +87,7 @@ try {
   // presence, not reachability).
   process.env.EXA_API_KEY = "test-dummy-key";
   captured = "";
-  const ok = createEngine(undefined, { dbPath: ":memory:" });
+  const ok = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.deepEqual(ok.providerBuildErrors, {}, "dummy key clears the exa build error");
   closeResult(ok);
 
@@ -89,7 +97,7 @@ try {
   // worded as the credential category (permanent config fault per ruling 2).
   process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
   captured = "";
-  const leak = createEngine(undefined, { dbPath: ":memory:" });
+  const leak = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.ok(leak.providerBuildErrors.exa, "malformed-key fault recorded");
   assert.equal(leak.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
     "invalid-header-value fault worded as credential category");
@@ -102,7 +110,7 @@ try {
   // #500 验收：没配 key 不再是一次构造失败——exa 臂换成免费额度，建得起来，记录里不点名。
   delete process.env.EXA_API_KEY;
   captured = "";
-  const keyless = createEngine(undefined, { dbPath: ":memory:" });
+  const keyless = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.deepEqual(keyless.providerBuildErrors, {}, "a missing key builds the free-quota arm, nothing to report");
   assert.equal(captured, "", "the keyless path writes no construction failure");
   closeResult(keyless);
@@ -112,7 +120,7 @@ try {
   // unusable key comes back for these two arms.
   process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
   process.stderr.write = (() => { throw new Error("EPIPE: broken pipe"); }) as typeof process.stderr.write;
-  const syncBroken = createEngine(undefined, { dbPath: ":memory:" });
+  const syncBroken = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.ok(syncBroken.providerBuildErrors.exa, "record populated despite a throwing stderr");
   closeResult(syncBroken);
 
@@ -126,7 +134,7 @@ try {
       return true;
     };
   }) as unknown) as typeof process.stderr.write;
-  const asyncBroken = createEngine(undefined, { dbPath: ":memory:" });
+  const asyncBroken = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.ok(asyncBroken.retriever, "fail-open engine returned despite a broken stderr");
   assert.ok(asyncBroken.providerBuildErrors.exa, "record populated despite a broken stderr");
   closeResult(asyncBroken);

@@ -11,10 +11,10 @@
 import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
-import { createPersistentEngine, domainSearchDirs } from "../db";
+import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
 import { createEngine } from "../composition";
 import { resolveLlmConfig, userConfigPath } from "../config-llm";
-import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, resolveSearchCredentials, type BudgetBalance } from "@anysearch-cli/store";
+import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
 import { wireChatTaskBudget } from "./chat-task-budget";
@@ -99,9 +99,7 @@ export async function runChat(argv: string[]): Promise<number> {
       // Design: 这条兜底也把解析好的 key 递给引擎 — exa 的工厂只按传进来的值分岔
       // （#500），不带 seam 的引擎会让有 key 的机器拿到免费额度臂。凭据文件还是上面
       // 那一份解析结果，不再读第二次。
-      engine = createEngine(undefined, {
-        searchCredentials: (env) => resolveSearchCredentials(env, { credentialsFile }),
-      });
+      engine = createEngine(undefined, { searchCredentials: searchCredentialSeam(credentialFile) });
     }
     durableStore = persistentOk;
     sessionDomain = "default";

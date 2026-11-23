@@ -35,12 +35,17 @@ interface McpToolResult {
 }
 
 // 上游给的等待秒数挂在错误对象上，providerErrorText 会把它写回错误串，引擎据此记进
-// providerErrorRetryAfterSeconds。只认整数秒；认不出来的写法就当没有，不猜。
+// providerErrorRetryAfterSeconds。头里要么是秒数，要么是 HTTP 日期（RFC 9110）；两种都认，
+// 其余写法当没有，不猜。
 function waitSeconds(resp: Response): number | undefined {
   const raw = resp.headers.get("retry-after")?.trim();
   if (!raw) return undefined;
   const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+  if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return undefined;
+  const delta = Math.ceil((at - Date.now()) / 1000);
+  return delta > 0 ? delta : undefined;
 }
 
 // 非 2xx：状态码写进错误串（分类器认得「HTTP 429」），正文截一段带上，绝不静默变成 0 条。
@@ -55,7 +60,12 @@ function httpFailure(resp: Response, body: string): Error {
   return error;
 }
 
-// SSE 是这条传输的常规回包（单条请求就一帧）；按请求 id 取那一条，别拿第一帧充数。
+// 这条传输的两种回包都可能一次带好几帧（批量请求），按请求 id 取那一条，别拿第一帧充数。
+// id 按文本比：服务端回数字还是字符串都认。
+function isReplyFor(message: JsonRpcMessage, id: number): boolean {
+  return message.id !== undefined && message.id !== null && String(message.id) === String(id);
+}
+
 async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessage> {
   const events: EventSourceMessage[] = [];
   const parser = createParser({ onEvent: (e) => events.push(e) });
@@ -64,7 +74,7 @@ async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessag
   for (const ev of events) {
     if (!ev.data) continue;
     const message = JSON.parse(ev.data) as JsonRpcMessage;
-    if (message.id === id) match = message;
+    if (isReplyFor(message, id)) match = message;
   }
   if (!match) throw new Error("Exa MCP tools/call SSE stream carried no reply for id " + id);
   return match;
@@ -72,7 +82,7 @@ async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessag
 
 function readJsonReply(body: string, id: number): JsonRpcMessage {
   const message = JSON.parse(body) as JsonRpcMessage;
-  if (message.id === undefined || message.id === null || String(message.id) !== String(id)) {
+  if (!isReplyFor(message, id)) {
     throw new Error("Exa MCP tools/call reply id mismatch (expected " + id + ", got " + String(message.id) + ")");
   }
   return message;

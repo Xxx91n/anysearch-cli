@@ -104,7 +104,7 @@ test("no key: the exa arm builds, queries the free endpoint, and its reply lands
       const envelope = await engine.retriever.search({ query: "cloudflare workers", mode: "fast" });
 
       assert.equal(calls.length, 1, "one arm, one request (" + calls.length + ")");
-      assert.equal(calls[0]?.url, "https://mcp.exa.ai/mcp", "the keyless arm talks to the MCP free endpoint");
+      assert.equal(calls[0]?.url, "https://mcp.exa.ai/mcp", "the arm without a key talks to the MCP free endpoint");
       assert.equal(calls[0]?.body?.params?.name, "web_search_exa", "it calls the free search tool");
       assert.equal(calls[0]?.authorization, undefined, "no credential rides the free request");
       assert.equal(

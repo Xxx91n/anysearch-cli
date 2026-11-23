@@ -315,8 +315,9 @@ export function createEngine(
     /**
      * #301: where the search arms' keys come from. Pass the shared resolution
      * (env first, then the user credential file) so a host without a shell env
-     * still authenticates; omit it and each SDK falls back to its own env var,
-     * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
+     * still authenticates; omit it and tavily/anysearch keep their own env
+     * fallback (the pre-#301 behaviour) while exa takes the free-quota arm
+     * (#500) — an embedder that wants a configured key must pass the seam.
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
     /**
@@ -372,9 +373,9 @@ export function createEngine(
       };
       credentialSources = resolved;
     } catch (e) {
-      // #301: resolution failed (an unreadable or unparsable credential file), so
+      // Design: resolution failed (an unreadable or unparsable credential file), so
       // the arms fall back to the environment. Resolve the env explicitly instead
-      // of leaving `creds` undefined: exa's factory is a pure function of its
+      // of leaving `creds` undefined — exa's factory is a pure function of its
       // argument (#500), and an undefined one there means the free-quota arm even
       // on a machine that has EXA_API_KEY set. The file itself is not read again.
       creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));

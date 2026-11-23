@@ -176,8 +176,8 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
   const domains = mkdtempSync(join(home, "domains-"));
   try {
     writeUserCredential({ provider: "anysearch", apiKey: STORED_ANYS_KEY }, { home });
-    // The domain narrows the fanout to the arm under test: #500 lets a keyless
-    // exa build too, and this test must not send its search to the free-quota
+    // The domain narrows the fanout to the arm under test: #500 lets an exa arm
+    // without a key build too, and this test must not send its search to the free-quota
     // endpoint (the offline suite does not reach the network).
     writeFileSync(join(domains, "wire.toml"), [
       'name = "wire"',
@@ -293,10 +293,10 @@ test("a search arm with no stored key and no env is labelled none, never left ou
       assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
-      // #500: a keyless exa is not a construction failure any more — the arm
-      // builds on the free-quota endpoint, it just has no key to report.
+      // #500: an exa arm without a key is not a construction failure any more —
+      // it builds on the free-quota endpoint, it just has no key to report.
       assert.equal(engine.providerBuildErrors.exa, undefined,
-        "a keyless exa arm builds; 'no key' is not a build error");
+        "an exa arm without a key builds; 'no key' is not a build error");
       // The key set itself is the contract: an arm added later cannot be
       // skipped silently, because this assertion counts what the record carries.
       assert.deepEqual(

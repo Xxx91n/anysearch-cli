@@ -3,7 +3,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents } from "@anysearch-cli/store";
+import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents, type ResolvedSearchCredentials } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
 // B1: the domains-dir resolution chain for this CLI.
@@ -37,6 +37,18 @@ export function createEngineForActiveDomain(): CompositionResult {
   return createPersistentEngine(active.name, { domainDeclared: active.declared });
 }
 
+/**
+ * The search-credential seam for an engine built from the caller's one parse of
+ * the user credential file: env first, then that parse, and the file is never
+ * read a second time (#301). Both product assembly points use it, so "which
+ * keys does this engine see" is answered in one place.
+ */
+export function searchCredentialSeam(
+  credentialsFile?: CredentialFileContents,
+): (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials {
+  return (env) => resolveSearchCredentials(env, { credentialsFile });
+}
+
 export function createPersistentEngine(
   domain?: string,
   // #306: `domainDeclared: false` says the name is the caller's convention
@@ -66,7 +78,7 @@ export function createPersistentEngine(
   const result = createEngine(domain, {
     dbPath,
     domainsDirs: domainSearchDirs(),
-    searchCredentials: (env) => resolveSearchCredentials(env, { credentialsFile }),
+    searchCredentials: searchCredentialSeam(credentialsFile),
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
   });
   registerTeardown(() => {

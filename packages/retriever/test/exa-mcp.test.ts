@@ -257,6 +257,17 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 6b. retry-after 用 HTTP 日期写法也认（RFC 9110 允许两种）。
+  {
+    const at = new Date(Date.now() + 120_000).toUTCString();
+    const f = installFetch(() => ({ status: 429, ct: "application/json", headers: { "retry-after": at }, body: "{}" }));
+    try {
+      const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
+      const wait = retryAfterSeconds(providerErrorText(error));
+      assert(typeof wait === "number" && wait >= 110 && wait <= 130, "an HTTP-date retry-after lands as seconds, got " + wait);
+    } finally { f.restore(); }
+  }
+
   // 7. 其它非 2xx：状态码和正文都进错误串，分类器按状态码判。
   {
     const f = installFetch(() => ({ status: 500, ct: "application/json", body: "upstream boom" }));
