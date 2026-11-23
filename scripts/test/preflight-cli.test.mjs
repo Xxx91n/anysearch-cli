@@ -20,9 +20,10 @@ import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
 
-// A stand-in for the files the gate's three groups look for: one trivial test,
-// so the total a test asserts stays predictable. The failing one differs by
-// that one assertion only, which is the point: one broken judgment, one red.
+// A stand-in for the files the gate's groups look for: one trivial test each,
+// except the first, which holds two — so "N tests in M groups" cannot pass when
+// the gate prints the group count in both slots. The failing one differs by that
+// one assertion only, which is the point: one broken judgment, one red.
 const PASSING_GATE_TEST = [
   'import assert from "node:assert/strict";',
   'import test from "node:test";',
@@ -33,13 +34,19 @@ const PASSING_GATE_TEST = [
   "",
 ].join("\n");
 
+const TWO_TEST_GATE_TEST = [
+  PASSING_GATE_TEST,
+  'test("a second stand-in judgment", () => {',
+  "  assert.equal(2, 2);",
+  "});",
+  "",
+].join("\n");
+
 const FAILING_GATE_TEST = PASSING_GATE_TEST.replace("assert.equal(1, 1);", "assert.equal(1, 2);");
 
-// What the gate must say it runs. One copy, so a change to the wording lands in
+// The group names the gate must print. One copy, so a wording change lands in
 // one place instead of leaving two assertions to drift apart.
 const GATE_GROUP_NAMES = "push gate, plus the shared judgments (CI change policy, workflow checks)";
-const GATE_GROUP_FILES =
-  "scripts/test/preflight-*.test.mjs, scripts/test/ci-changes.test.mjs, scripts/test/check-workflows.test.mjs";
 
 test("a red run exits non-zero and names the failed task", () => {
   withFakePnpm({ code: 1, lines: [" Tasks:    1 successful, 1 failed", "\u001b[31mFailed:\u001b[0m @anysearch-cli/kernel#test"] }, (bin) => {
@@ -211,7 +218,10 @@ test("a full run runs the gate's own tests first", () => {
   withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: "scripts/test/preflight-plan.test.mjs" });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /\[preflight\] running the gate's own tests: scripts\/test\/preflight-plan\.test\.mjs/);
+    // The override replaces the group list, and the files line says which files
+    // it actually runs.
+    assert.ok(result.stdout.includes("running the gate's own tests: PREFLIGHT_GATE_TESTS override"), result.stdout);
+    assert.match(result.stdout, /\[preflight\] gate self-test files: scripts\/test\/preflight-plan\.test\.mjs/);
     // The child's reporter output must reach this pipe, not vanish.
     assert.match(result.stdout, /# pass \d+|✔/);
   });
@@ -222,14 +232,15 @@ test("a full run runs the gate's own tests first", () => {
 // only in the CI run the gate exists to spare.
 test("a full run also runs the shared judgments and reports how many tests ran", async () => {
   const files = gateTestFiles();
-  const count = Object.keys(files).length;
   await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
     assert.equal(result.status, 0, result.stderr);
     assert.ok(result.stdout.includes(`running the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
-    assert.ok(result.stdout.includes(`gate self-test files: ${GATE_GROUP_FILES}`), result.stdout);
-    // One stand-in test per group: the counts add up to the total.
-    assert.ok(result.stdout.includes(`gate self-test green: ${count} tests in ${count} groups`), result.stdout);
+    // The files line names the shared judgment, whatever else it lists.
+    assert.match(result.stdout, /\[preflight\] gate self-test files: .*scripts\/test\/ci-changes\.test\.mjs/);
+    // Four stand-in tests across three groups, so the group count cannot stand
+    // in for the total and still pass.
+    assert.ok(result.stdout.includes("gate self-test green: 4 tests in 3 groups"), result.stdout);
     // The suite still runs after the self-test.
     assert.match(result.stdout, /pnpm ran/);
   });
@@ -304,7 +315,7 @@ test("a full dry run also announces the gate's own tests", () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /would run: pnpm test/);
     assert.ok(result.stdout.includes(`would also run the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
-    assert.ok(result.stdout.includes(`dry run, gate self-test files: ${GATE_GROUP_FILES}`), result.stdout);
+    assert.match(result.stdout, /\[preflight\] dry run, gate self-test files: .*scripts\/test\/check-workflows\.test\.mjs/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
@@ -500,11 +511,12 @@ function passingPnpm(bin) {
   writeFakePnpm(bin, { code: 0, lines: ["pnpm ran"] });
 }
 
-// The gate's three group files, one passing stand-in each; an override swaps in
-// a failing body for the group under test.
+// The gate's group files, one passing stand-in each; an override swaps in a
+// failing body for the group under test. The first holds two tests, so a test
+// can tell the test total apart from the group count.
 function gateTestFiles(overrides = {}) {
   return {
-    "scripts/test/preflight-plan.test.mjs": PASSING_GATE_TEST,
+    "scripts/test/preflight-plan.test.mjs": TWO_TEST_GATE_TEST,
     "scripts/test/ci-changes.test.mjs": PASSING_GATE_TEST,
     "scripts/test/check-workflows.test.mjs": PASSING_GATE_TEST,
     ...overrides,

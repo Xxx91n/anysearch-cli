@@ -40,20 +40,18 @@ const args = process.argv.slice(2);
 
 // Design: the gate's own tests run in groups, one `node --test` each — a red
 // group is then named by construction instead of read back out of a reporter's
-// prose. The gate is the only mechanical stop before a push, so the judgments it
-// shares with CI run here too: CI's change policy decides which lanes a push
-// needs, and the workflow checker decides whether those lanes can start at all.
-// A broken one used to stay green locally and surface only in the CI run this
-// gate exists to spare.
+// prose.
+//
+// Design: the shared judgments run in the gate too — the gate is the only
+// mechanical stop before a push, so CI's change policy (which lanes a push
+// needs) and the workflow checker (whether those lanes can start at all) are
+// verified here rather than only in the CI run this gate exists to spare.
 //
 // PREFLIGHT_GATE_TESTS replaces the whole list for the tests that drive this
-// script with a fake pnpm.
+// script with a fake pnpm; the name says so, and the files line still lists it.
 function gateGroups() {
   const override = process.env.PREFLIGHT_GATE_TESTS;
-  if (override) {
-    const files = override.split(",");
-    return [{ name: files.join(", "), files }];
-  }
+  if (override) return [{ name: "PREFLIGHT_GATE_TESTS override", files: override.split(",") }];
   return [
     { name: "push gate", files: ["scripts/test/preflight-*.test.mjs"] },
     { name: "CI change policy", files: ["scripts/test/ci-changes.test.mjs"], shared: true },
@@ -154,7 +152,7 @@ if (selfTest) {
     writeStderr("[preflight] blocked: the gate's own tests failed");
     process.exit(1);
   }
-  console.log(`[preflight] gate self-test green: ${describeCount(result.tests)}`);
+  console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
 
 child = spawn("pnpm", runArgs, {
@@ -165,7 +163,7 @@ child = spawn("pnpm", runArgs, {
   detached: process.platform !== "win32",
 });
 
-const tail = drain(child, 64 * 1024);
+const readTail = forwardKeepingTail(child, 64 * 1024);
 
 let status;
 try {
@@ -183,7 +181,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
-  const failed = failedTask(tail());
+  const failed = failedTask(readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome, console.error);
   process.exitCode = status ?? 1;
@@ -295,7 +293,7 @@ async function runGateTests() {
       stdio: ["inherit", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
-    const tail = drain(child, 8 * 1024);
+    const groupTail = forwardKeepingTail(child, 8 * 1024);
     let status;
     try {
       status = await new Promise((resolve, reject) => {
@@ -305,7 +303,7 @@ async function runGateTests() {
     } finally {
       child = null;
     }
-    counts.push(testCount(tail()));
+    counts.push(testCount(groupTail()));
     if (status !== 0) failed.push(group);
   }
   // An unreadable count is left out of the total rather than guessed at.
@@ -315,7 +313,7 @@ async function runGateTests() {
 
 // Forward both streams and keep the last bytes, so a caller can read a line out
 // of output the operator has already seen.
-function drain(source, limit) {
+function forwardKeepingTail(source, limit) {
   let tail = "";
   for (const [stream, out] of [
     [source.stdout, process.stdout],
@@ -337,8 +335,8 @@ function testCount(output) {
   return match ? Number(match[1]) : null;
 }
 
-function describeCount(tests) {
-  const groups = `${GATE_GROUPS.length} group${GATE_GROUPS.length === 1 ? "" : "s"}`;
+function describeCount(tests, count) {
+  const groups = `${count} group${count === 1 ? "" : "s"}`;
   return tests === null ? groups : `${tests} tests in ${groups}`;
 }
 
