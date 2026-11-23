@@ -1,5 +1,5 @@
-// #493: the sufficiency gate's reround bound must come from a validated domain
-// config, and a bad value must never pay for a gap model call.
+// #493: the reround bound the sufficiency check reads must come from a validated
+// domain config, and a bad value must never pay for a gap model call.
 // Runs under the package's normal `node --import tsx --test` command.
 import { SufficiencyEvaluator } from "../src/sufficiency-gate";
 import type { DomainConfigPort } from "../src/ports";

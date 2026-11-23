@@ -343,8 +343,12 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   }
 
   const typo = err(head + "sufficiencyMaxReround = 3\n");
+  // The supported-keys tail names the real field, so a loose `includes` would
+  // pass even if the typo itself were never named. Match the quoted key.
   assert("unknown compaction key rejected naming the key",
-    typo.includes("unknown key") && typo.includes("sufficiencyMaxReround"));
+    typo.includes('unknown key(s) "sufficiencyMaxReround"'));
+  assert("unknown compaction key lists the supported keys",
+    typo.includes("supported keys: model, lowWatermark, reuseCap, sufficiencyMaxRerounds"));
   assert("compaction.model must be a string", err(head + "model = 3\n").includes("compaction.model"));
   assert("compaction.reuseCap NaN rejected", err(head + "reuseCap = nan\n").includes("compaction.reuseCap"));
   let arrayRejected = false;
