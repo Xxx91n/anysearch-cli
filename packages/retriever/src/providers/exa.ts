@@ -93,8 +93,8 @@ export class ExaProvider implements SearchProvider {
 }
 
 /**
- * Design: 装配 exa 只走这个工厂 — 以前两张装配表各自递一个可选 key，构造器里再用三元
- * 决定怎么建，判和建散在三处；现在归一化收进构造器，装配方只调这一个入口。
+ * Design: 装配 exa 只走这个工厂 — 以前构造器里用三元决定怎么建，两张装配表各自递 key；
+ * 现在归一化收进构造器，装配方只调这一个入口。
  * 空串、纯空格、没传都算没配 key：exa-js 自己去找环境变量，找不到就抛。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
