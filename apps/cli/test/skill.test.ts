@@ -541,6 +541,8 @@ test("description and body rules are enforced by install and validate alike", as
     ["---\nname: demo\ndescription:\n---\n", "has no description"],
     ["---\nname: demo\ndescription: \"\"\n---\n", "description must be 1–1024 characters, got 0"],
     ["---\nname: demo\ndescription: A skill about demos.\n---\n", "must also say when to use the skill"],
+    // 「有时候」带「时候」，但不是使用场景；词表不能用这两个字当通行证。
+    ["---\nname: demo\ndescription: 整理有时候会乱的下载目录。\n---\n", "must also say when to use the skill"],
     [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
     ["---\ndescription: Use when the name is gone.\n---\n", "has no name field"],
     // Same YAML-null trap as `description:` above, on the other required field.
