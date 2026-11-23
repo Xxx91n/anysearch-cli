@@ -1,3 +1,30 @@
+## Unreleased — #478: 引擎收工改成请求级总上限，第二参数删掉
+
+一句话说清：**一次搜索从臂发出去起最多等 4000ms，到点还没回来的臂一律 abort 并记进 `providersCancelled`；全部臂提前回来就立刻收工，不再等满。`search()` 只剩一个参数，`EngineConfig` 整个删掉——`gate` 挪进构造函数 opts，`budget` / `graceWindowMs` / `deepMode` 一起没了。**
+
+### Changed
+
+- **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从扇出那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
+- **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先在取消集合里排队标记、再 abort。已经落地的臂其结算 handler 排在前面，结果保留；只在 abort 里才 resolve/reject 的臂排在后面，留在 cancelled；同一 tick 的调用方 abort 也不会吞掉已经拿到的结果。非 async、abort 时 reject 的 adapter 同样归 `providersCancelled`。
+- **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
+- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 共用一段 `SEARCH_MODE_DESCRIPTION`；`deep` 从 `more sources` 改成「Exa/Tavily 向上游搜得更深、更慢更贵，不增加源数，其他源忽略」，`answer` 也点名 Exa/Tavily、标明 unverified。
+- **非 async adapter 同步抛错不再逃出扇出**：调用各家 `search()` 的地方包了一层，同步抛转成 rejection；扇出构造本身抛错时先 abort 已启动的臂，再按「构造失败整单不计费」释放预扣，`finally` 照样清计时器和调用方监听。
+- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：先剔注释行再断言 4000ms、总上限参与 `Promise.race`、abort 循环、两个结算 handler 的取消判断，以及 `docs/limitations.md` 的「4s 从扇出起算」。
+- **`docs/limitations.md`** 的 Tavily 段按新语义重写：总上限能让引擎不再等，但停不掉一个不认 `AbortSignal` 的上游调用。
+
+### Removed
+
+- **`EngineConfig`**，以及它的 `budget`（`search()` 从没读过）、`graceWindowMs`、`deepMode`（产品里没人传）。`Query` 上那个同样没人读、没人传的 `budget` 字段和 `Budget` 类型也一起删了。「等齐所有源」这条路不再保留，也没有用户开关。
+
+### Tests
+
+- `packages/kernel/test/engine.test.ts` 的旧宽限块换成九条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、abort 后才 resolve 的臂不算「答过」、同一 tick 的 abort 不吞掉已落地的结果、扇出构造抛错时已起的臂被 abort 且预扣释放、构造函数里的 `gate` 真的生效。
+
+### 边界
+
+- 不动 provider 适配器；Tavily 不转发 `AbortSignal`（#32）仍是上游限制。
+- `providersCancelled` 的 CLI / MCP 出口由 #475 单独落地；本票只保证引擎分类正确。
+
 ## Unreleased — #504: 信息源能力和免费面事实收成一张表（provider-facts）
 
 一句话说清：**三个适配器各写一份的 `modes`、`domainFilterSupported`、`verticalDomainSupported`，加上免费面探针里的默认 endpoint、`undetectable`、AnySearch 的 MCP 协议版本，现在都从 `packages/retriever/src/providers/provider-facts.ts` 的一张表读。行为一点没变；以后改一家信息源的代码只改一格——少填一家、少填一个必填字段、把某一行的 id 写成别家的，类型检查都直接红。文档仍然手写，见下面的边界。**

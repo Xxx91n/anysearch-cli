@@ -62,6 +62,7 @@ interface JsonOut {
   results?: Array<{ url: string; extra?: { vertical?: { domain?: string } } }>;
   fusion?: { labels: string[]; lists: string[][] } | null;
   providersFailed?: string[];
+  providersCancelled?: string[];
   providerErrorClasses?: Record<string, string>;
   abstain?: unknown;
 }
@@ -198,7 +199,8 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     const paths: string[] = vexp.hitPaths ?? [];
 
     // Four runs per spec-carrying entry: the isolated anysearch arm pair is
-    // the PRIMARY measurement (no grace-window cancellation from faster arms);
+    // the PRIMARY measurement (the anysearch arm is cut only by the request
+    // deadline, not by faster arms filling the quota);
     // the full-fanout pair feeds the fused-level secondary column.
     // No-spec controls run the OFF pair only (a self-pair measures nothing).
     const isoEnv = { ...baseEnv, ANS_PROVIDERS: "anysearch" };
@@ -209,13 +211,15 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     for (const [tag, j] of [["isoOn", isoOn], ["isoOff", isoOff], ["fullOn", fullOn], ["fullOff", fullOff]] as const) {
       if (j !== null && j.__error) console.log("DEGRADED " + e.id + " " + tag + " run error: " + j.__error);
     }
-    // a provider-failed iso leg is UNMEASURED — the arm never
-    // produced a list; its empty fused output must not masquerade as a
+    // A provider-failed or deadline-cancelled iso leg is UNMEASURED — the arm
+    // never produced a list; its empty fused output must not masquerade as a
     // measured zero-result arm (the r85 fake-tied scoreboard defect).
-    const isoOnFailed = isoOn !== null && !isoOn.__error && (isoOn.providersFailed ?? []).includes("anysearch");
-    const isoOffFailed = !isoOff.__error && (isoOff.providersFailed ?? []).includes("anysearch");
-    const aOn = isoOn === null || isoOn.__error || isoOnFailed ? null : fusedUrls(isoOn);
-    const aOff = isoOff.__error || isoOffFailed ? null : fusedUrls(isoOff);
+    const isoOnUnmeasured = isoOn !== null && !isoOn.__error &&
+      ((isoOn.providersFailed ?? []).includes("anysearch") || (isoOn.providersCancelled ?? []).includes("anysearch"));
+    const isoOffUnmeasured = !isoOff.__error &&
+      ((isoOff.providersFailed ?? []).includes("anysearch") || (isoOff.providersCancelled ?? []).includes("anysearch"));
+    const aOn = isoOn === null || isoOn.__error || isoOnUnmeasured ? null : fusedUrls(isoOn);
+    const aOff = isoOff.__error || isoOffUnmeasured ? null : fusedUrls(isoOff);
     const on = fullOn, off = fullOff;
     const fOn = on === null || on.__error ? [] : fusedUrls(on);
     const fOff = off.__error ? [] : fusedUrls(off);
@@ -242,18 +246,20 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       },
       fusedOn: { n: fOn.length, hostHit: hosts.length ? anyHostHit(fOn, hosts) : null, rankOf: hosts.length ? rankOf(fOn, hosts) : null, marked: on === null || on.__error ? null : marked(on) },
       fusedOff: { n: fOff.length, hostHit: hosts.length ? anyHostHit(fOff, hosts) : null, rankOf: hosts.length ? rankOf(fOff, hosts) : null },
-      // Whether the anysearch arm survived the fanout grace window (its raw
+      // Whether the anysearch arm landed before the request deadline (its raw
       // list inside fusion.lists) — survival is upstream-timing evidence, not
       // a gate.
       armInFanoutOn: on === null || on.__error ? null : armList(on) !== null,
       armInFanoutOff: off.__error ? null : armList(off) !== null,
       providersFailedOn: on?.providersFailed ?? null,
       providersFailedOff: off.providersFailed ?? null,
-      // Isolated-arm failure surface — an empty arm list without this context
-      // is indistinguishable from "arm returned zero results", so quota/arm
-      // failures on the primary measurement leg must be named.
+      // Isolated-arm failure/cancel surface — an empty arm list without this
+      // context is indistinguishable from "arm returned zero results", so
+      // quota/arm failures and deadline cancellations on the primary leg must be named.
       providersFailedIsoOn: isoOn?.providersFailed ?? null,
       providersFailedIsoOff: isoOff.providersFailed ?? null,
+      providersCancelledIsoOn: isoOn?.providersCancelled ?? null,
+      providersCancelledIsoOff: isoOff.providersCancelled ?? null,
       // error classes ride next to every failed-providers
       // flag — delta evidence records a category, never only a flag.
       providerErrorClassesOn: on?.providerErrorClasses ?? null,
