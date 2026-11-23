@@ -913,11 +913,11 @@ function stepStaticAssertions() {
 // flips from "debt note survives" to"implementation present + docs not over-claiming".
 // The anti-pattern stays identical: silently re-claiming or silently de-wiring recurs.
 function stepDocClaims() {
-  report("info", "step 1c/9: engine grace-window wiring assertion");
+  report("info", "step 1c/9: engine request-deadline assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
-  if (!/graceWindowMs/.test(eng)) fail("engine.ts no longer declares graceWindowMs - update this assertion");
-  if (!/graceExpired/.test(eng) || !/controllers\[j\]\.abort\(\)/.test(eng)) fail("engine.ts lost the wired grace-window collect");
-  report("pass", "engine grace window wired");
+  if (!/requestTimeoutMs/.test(eng)) fail("engine.ts no longer declares the request deadline - update this assertion");
+  if (!/deadlineResolve\(\)/.test(eng) || !/controllers\[[\w]+\]\.abort\(/.test(eng)) fail("engine.ts lost the deadline abort loop");
+  report("pass", "engine request deadline wired");
 }
 
 // three permanent invariants run FIRST, including under --quick, so a release

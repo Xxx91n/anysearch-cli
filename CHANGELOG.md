@@ -1,3 +1,29 @@
+## Unreleased — #478: 引擎收工改成请求级总上限，第二参数删掉
+
+一句话说清：**一次搜索从臂发出去起最多等 4000ms，到点还没回来的臂一律 abort 并记进 `providersCancelled`；全部臂提前回来就立刻收工，不再等满。`search()` 只剩一个参数，`EngineConfig` 整个删掉——`gate` 挪进构造函数 opts，`budget` / `graceWindowMs` / `deepMode` 一起没了。**
+
+### Changed
+
+- **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从调用各家 `search` 那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
+- **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先把臂号记进同一个集合，`catch` 查集合再决定算「取消」还是「失败」。非 async、abort 时 reject 的 adapter 也归 `providersCancelled`。
+- **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
+- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 里的 `deep` 从 `more sources` 改成「每家搜得更深、更慢更贵，不增加源数」。
+- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：不再断言 `graceWindowMs` 字面量，改成断言总上限和 abort 循环还在。
+- **`docs/limitations.md`** 的 Tavily 段按新语义重写：总上限能让引擎不再等，但停不掉一个不认 `AbortSignal` 的上游调用。
+
+### Removed
+
+- **`EngineConfig`**，以及它的 `budget`（`search()` 从没读过）、`graceWindowMs`、`deepMode`（产品里没人传）。「等齐所有源」这条路不再保留，也没有用户开关。
+
+### Tests
+
+- `packages/kernel/test/engine.test.ts` 的旧宽限块换成五条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、构造函数里的 `gate` 真的生效。
+
+### 边界
+
+- 不动 provider 适配器；Tavily 不转发 `AbortSignal`（#32）仍是上游限制。
+- `providersCancelled` 的出口（CLI / MCP / research）不在这张票里（#475）。
+
 ## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
 
 一句话说清：**`--live` 是 doctor 唯一的联网开关，只打三家的免费面（Tavily `/usage`、Exa 空体 `/search`、AnySearch `initialize` + `tools/list` + 空参数 `tools/call`），一次真搜索都不跑；`ans auth set <信息源>` 写入前调同一段代码，401/403 拒存，其余只警告。**
