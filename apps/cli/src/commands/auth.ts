@@ -311,8 +311,8 @@ export async function runAuth(args: string[]): Promise<number> {
     }
     if (info.kind === "search" && !skipVerify) {
       if (!isProbeProviderId(info.id)) {
-        // No probe for this provider: report only that the key went unchecked;
-        // the write below is what reports storage.
+        // No probe for this provider: report the missed check only; the write
+        // below reports storage.
         stderr("[warn] no free-surface probe for " + info.id + " yet; this key is not checked.\n");
       } else {
         const accepted = await verifySearchKey(info.id, apiKey, env);

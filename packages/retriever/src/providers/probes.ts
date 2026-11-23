@@ -8,7 +8,7 @@
 //
 // 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
 // 探针是各自独立的最小实现，不 import 适配器 —— 那样就分不清「适配器坏」还是「上游坏」。
-// 三家回包的确切形状（含坏 key 那几种）钉在 test/provider-probes.test.ts 的夹具里。
+// 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 

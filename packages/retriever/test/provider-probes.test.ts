@@ -1,13 +1,12 @@
-// 免费面探针（#442 / #416 / #417）：只打不花钱的接口，结论要对得上真上游实测到的回包。
+// 免费面探针：只打不花钱的接口，结论要对得上真上游实测到的回包。
 //
 // 三条钉子：
 //  1. 好 key / 坏 key / 额度满 / 抽风 / 路由没了 / 连不上，各一条；
 //  2. 一次真搜索都不跑 —— 服务器记下每个请求，任何一条带 query 就红；
 //  3. 结论只落在产品那套错误类里（classifyProviderError），不新造词。
 //
-// 回包形状照 2026-11-23 的实测抄：Tavily 的 /usage 在
-// docs/research/real-baseline-2026-11-22.md，Exa 的 400 INVALID_REQUEST_BODY 和
-// AnySearch 的 isError「query is required」/「invalid_api_key」在 #442 的票面上。
+// 回包形状照 2026-11-23 的实测抄：Tavily 的 /usage 见
+// docs/research/real-baseline-2026-11-22.md，Exa 和 AnySearch 那几种就在下面这些夹具里。
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
