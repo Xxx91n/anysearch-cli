@@ -245,12 +245,45 @@ test("a file that is not named SKILL.md is a usage error", (t) => {
 test("a git-listed skill deleted from the tree is skipped, not failed", (t) => {
   const root = withRoot(t);
   git(root, ["init", "--quiet"]);
+  skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
   skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
-  git(root, ["add", "--", "gone", "gone/SKILL.md"]);
+  git(root, ["add", "--", "alpha", "alpha/SKILL.md", "gone", "gone/SKILL.md"]);
   rmSync(path.join(root, "gone", "SKILL.md"));
   const result = check([], { cwd: root, root });
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /\[skip\] .*gone[/\\]SKILL\.md: listed by git but missing/);
+  assert.match(result.stdout, /1 SKILL\.md checked, 1 skipped, 0 failed/);
+});
+
+// Skipping must not turn into a green run that proved nothing.
+test("a checkout where every skill was skipped is refused", (t) => {
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
+  git(root, ["add", "--", "gone", "gone/SKILL.md"]);
+  rmSync(path.join(root, "gone", "SKILL.md"));
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /0 SKILL\.md checked, 1 skipped, 0 failed/);
+  assert.match(result.stdout, /nothing was checked/);
+});
+
+// Only "gone" means skipped: an unreadable directory is "could not check".
+test("a skill directory that cannot be read is not skipped", (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows permissions do not deny a directory listing this way");
+    return;
+  }
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  const dir = skill(root, "locked", "name: locked\ndescription: Use when a test locks a dir.");
+  git(root, ["add", "--", "locked", "locked/SKILL.md"]);
+  chmodSync(dir, 0o000);
+  t.after(() => chmodSync(dir, 0o755));
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 2, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[ERROR\] .*locked[/\\]SKILL\.md/);
+  assert.doesNotMatch(result.stdout, /\[skip\]/);
 });
 
 // A symlinked SKILL.md is a rule failure ("must be a regular, non-symlink file"),

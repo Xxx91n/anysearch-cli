@@ -87,13 +87,18 @@ function gitVisibleSkillFiles() {
     .sort();
 }
 
-/** Does the path exist itself, without following a symlink? */
+/**
+ * Does the path exist itself, without following a symlink? Only "gone" answers
+ * false — a permission or I/O error belongs to the caller's error path.
+ */
 function existsNoFollow(file) {
   try {
     lstatSync(file);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = error?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") return false;
+    throw error;
   }
 }
 
@@ -126,14 +131,17 @@ async function run() {
   }
   let failed = 0;
   let unreadable = 0;
+  let skipped = 0;
   for (const file of files) {
-    // Deleted but not staged yet: normal while editing, so say so and move on.
-    // lstat, not existsSync — a dangling symlink still belongs to the rules.
-    if (discovered && !existsNoFollow(file)) {
-      process.stdout.write(`[skip] ${shown(file)}: listed by git but missing from this checkout\n`);
-      continue;
-    }
     try {
+      // Deleted but not staged yet: normal while editing, so say so and move on.
+      // lstat, not existsSync — a dangling symlink still belongs to the rules.
+      if (discovered && !existsNoFollow(file)) {
+        skipped += 1;
+        process.stdout.write(`[skip] ${shown(file)}: listed by git but missing from this checkout\n`);
+        continue;
+      }
+
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
       // Advice only: a skill that passes is not failed for a thinner description.
@@ -151,9 +159,17 @@ async function run() {
       }
     }
   }
-  const counted = [`${files.length} SKILL.md checked`, `${failed} failed`];
+  const checked = files.length - skipped;
+  const counted = [`${checked} SKILL.md checked`];
+  if (skipped > 0) counted.push(`${skipped} skipped`);
+  counted.push(`${failed} failed`);
   if (unreadable > 0) counted.push(`${unreadable} could not be read`);
   process.stdout.write(counted.join(", ") + "\n");
+  if (checked === 0) {
+    // Every listed file was skipped: nothing was checked, so nothing is proven.
+    process.stdout.write("[FAIL] nothing was checked — refusing to pass\n");
+    return 1;
+  }
   return unreadable > 0 ? 2 : failed === 0 ? 0 : 1;
 }
 
