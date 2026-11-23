@@ -29,9 +29,13 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 - 成功：`results[]`，每条 `title` / `url` / `content` / `publishedDate` / `score`；`answer` 模式下多
   一个 `answer` 字段。
-- `include_domains` 两档：`restrict`（上游默认，硬过滤）和 `prefer`（也搜全网）。适配器和探针发的
-  是 `include_domains_mode:"filter"`——上游文档里没有这个值，所以那两处「硬过滤」实际发的是未定义取值，
-  待修（#444）。
+- `include_domains` 两档：`restrict`（硬过滤，也是上游默认）和 `prefer`（也搜全网），就这两个值。
+  适配器只要有 `includeDomains` 就显式发 `include_domains_mode:"restrict"`，不靠默认值；探针的 restrict
+  臂也这么发，A 臂故意不发，专门用来抽默认值。这个值不能单独发——不带 `include_domains` 上游回 400，
+  所以两处都是成对的（#444）。改之前发的是文档里没有的 `"filter"`：上游不报错，但也分不出它跟默认值有
+  什么两样，所以那段时间探针 B 臂等于没测（实测见下面「最近一次真跑」）。另外这个 snake_case key 能到
+  线上，靠的是 `@tavily/core` 把不认识的选项原样展开进请求体（`...kwargs`）；依赖是 `^0.7.7`，升大版本
+  时要确认这条还在，不在了探针会退 2（`prefer` 不再放宽），不会假装绿。
 - SDK 包装后的 `usage` **永远是 `undefined`**：`@tavily/core` 只在单次回包里给
   `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事，
   见上面「端点」一节——现在没人打。
@@ -46,14 +50,14 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 ## 探针
 
-一条：`probe-tavily-domains.mjs`，测的是 `include_domains` 泄漏（criterion 5），四个臂：
+一条：`probe-tavily-domains.mjs`，测的是 `include_domains` 泄漏，四个臂：
 
 | 臂 | 测什么 | 备注 |
 |---|---|---|
-| A default-mode | 默认模式下 `include_domains` 会不会放进域外结果 | 需要活着且有额度的 key |
-| B filter-mode | `include_domains_mode:"filter"` 硬过滤能不能真挡住 | 同上 |
-| C subdomain-direction | 父域与子域互相覆盖的方向性 | 需要 A、B 都回 200 |
-| D research-endpoint | `/research` 的 `include_domains` 是不是只算软偏好 | `PROBE_TAVILY_RESEARCH=1` 才跑 |
+| A default-mode | 不发 mode，默认值下 `include_domains` 会不会放进域外结果 | 需要活着且有额度的 key |
+| B restrict-vs-prefer | 同一查询分别发 `restrict` 和 `prefer`，比域外条数 | `prefer` 那次必须漏出来，才算证明这个字段被上游读了；两次都在域内就 INCONCLUSIVE，不给假绿 |
+| C subdomain-direction | 父域和子域互相覆盖的方向 | 有域外结果 → LEAK（按各查询自己的 include_domains 算，跟 A/B 一个标准）；父域带出了子域、子域那次没漏 → PASS（两个方向都看到才算）；方向没看到就 INCONCLUSIVE，不给假绿 |
+| D research-endpoint | `/research` 的 `include_domains` 是不是只算软偏好 | `PROBE_TAVILY_RESEARCH=1` 才跑；漏出来是预期，只进台账，不影响退出码 |
 
 什么时候跑：改了域过滤、或者怀疑上游放宽了 `include_domains` 的时候。它不进 CI——要活 key，而且
 额度用满时会退 2。
@@ -68,14 +72,32 @@ TAVILY_API_KEY=tvly-... PROBE_TAVILY_RESEARCH=1 node providers/tavily/probe-tavi
 是 gitignore 的，所以台账不随仓库走，要留证据就贴进 issue）。文件名带 `ranAt`，重跑不会盖掉上一轮；
 用 `PROBE_TAVILY_OUT_DIR=/some/dir` 改目录。
 
-退出码：`0` 有臂 PASS 且没泄漏；`1` 有臂判 LEAK；`2` 没有一条能下结论（缺 key、额度用满、
-结果为空都算没有证据，不算通过）。
+退出码：`0` B 对照证成了（`restrict` 不漏、`prefer` 漏了）且没泄漏；`1` A / B / C 有臂判 LEAK；
+`2` 没有能证明上游读了这个字段的证据（缺 key、额度用满、结果为空、`prefer` 没放宽都算没有证据，
+不算通过）。D 臂判 LEAK 不算失败——`/research` 把 `include_domains` 当软偏好是上游写明的事，
+那条只进台账。
 
 ## 最近一次真跑
 
-2026-11-22 晚（本机 Windows，Node 24.22.1，仓库根）：环境变量里那把 key 的套餐额度用满了——
-A、B、C 三臂都是 HTTP 432，探针打出 `no conclusive evidence this run — evidenceStatus=not-verified`，
-退 2，没有崩。这就是「额度用满时的正确表现」：明确说没证据，不假装绿。
+2026-11-23 凌晨（本机 Windows，Node 24.22.1，仓库根，`#444` 改完之后）：A、B、C 三臂都 PASS。
+A（不发 mode）10/10 条都在 `pnpm.io`；B 是同一查询的对照——`restrict` 0/10 条在域外、`prefer` 6/10 条
+在域外，说明上游真的在读这个字段；C 的父域查询（`cloudflare.com`）回来了 `developers` / `blog` / `www` /
+`community` 四个子域，子域查询（`developers.cloudflare.com`）只回它自己——这一对里父域盖得住子域，
+反过来子域不会把兄弟或父域带进来。D 臂没跑（要 `PROBE_TAVILY_RESEARCH=1`）。探针这一轮 5 次搜索调用。
 
-同一天早些时候用另一把新 key 跑过真调用：3 条结果、`elapsedMs:1573`，记录在
+同一轮另外单独验了三件事。前两件是 curl 直接打 `POST /search`，第三件走产品链路的 SDK。这些是临时
+对照，没进台账，数字照抄回包：
+
+- 老取值 `"filter"`（改之前的代码发的）：2 次调用都是 HTTP 200，各回 10 条、全在 `pnpm.io`，跟不带
+  mode 的对照完全一样。所以上游既没拒它，也没法把它跟默认值分出差别——那段时间 B 臂 PASS 说明不了任何事。
+- 只发 `include_domains_mode`、不带 `include_domains`：HTTP 400，正文是
+  `include_domains_mode/filter_by_include_domains requires include_domains to be specified.`
+- 走一遍产品链路（`TavilyProvider.search` 带 `includeDomains`）：10 条结果全在 `pnpm.io`。
+
+上一轮，2026-11-22 晚：环境变量里那把 key 的套餐额度用满了——A、B、C 三臂都是 HTTP 432，探针打出
+`no conclusive evidence this run — evidenceStatus=not-verified`，退 2，没有崩。这就是「额度用满时的
+正确表现」：明确说没证据，不假装绿。那一轮的台账没留（`.scratch/` 不进仓库），只剩这段记录。
+
+更早一次，2026-11-22 早些时候用另一把新 key 跑过真调用：3 条结果、`elapsedMs:1573`。那次没带
+`includeDomains`，跟域过滤无关，记的是 provider 能通；记录在
 [`docs/research/real-baseline-2026-11-22.md`](../../docs/research/real-baseline-2026-11-22.md)。

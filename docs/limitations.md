@@ -160,10 +160,21 @@
   Jaccard similarity floor (θ=0.80). Near-verbatim duplicates are still
   skipped (noop), but paraphrase-level duplicates are not caught (degraded,
   counted in `ConsolidateReport.embeddingAbsent`).
-- **Tavily domain-filter probe: verified live** — `include_domains` held in
-  default + filter modes, and subdomain direction works both ways
-  (`providers/tavily/probe-tavily-domains.mjs`; the `/research` endpoint call is
-  INCONCLUSIVE — async handle, no URL fields).
+- **Tavily domain filter: `restrict` holds, and the mode field really changes
+  behaviour** — live run on 2026-11-23: 10/10 results inside `include_domains`
+  for both the default arm and the explicit `include_domains_mode: "restrict"`
+  arm, and the same through `TavilyProvider.search`. Swapping the mode to
+  `prefer` put 6 of the 7 hosts outside the allowlist, so upstream reads the
+  field rather than tolerating it. Subdomain coverage was observed on one pair
+  only: a query scoped to `cloudflare.com` came back with four of its
+  subdomains, while one scoped to `developers.cloudflare.com` returned only
+  itself. Sending the mode without `include_domains` answers 400, so the adapter
+  sends the pair together or not at all (#444; before that it sent `"filter"`,
+  a value upstream does not document — 200 and inside the allowlist, exactly
+  like sending nothing, so that arm proved nothing). The `/research` endpoint
+  stays unmeasured: its arm needs `PROBE_TAVILY_RESEARCH=1`, and earlier runs
+  that did call it recorded INCONCLUSIVE — async handle, no URL fields
+  (`providers/tavily/probe-tavily-domains.mjs`).
 - **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
   `ans llm`). Retrieval itself only needs provider keys.
 - **`query_knowledge` only retrieves when the current domain (code:
