@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function runMcp(args: string[]): Promise<number> {
-  // Forward all args to the packaged MCP entry (the ESM build).
+  // Forward all args to the packaged MCP entry (the bin shim, bin/ans-mcp.cjs).
   // ponytail: spawn the MCP server process, inherit stdio for stdio transport.
   const selfFile = fileURLToPath(import.meta.url);
   const self = dirname(selfFile);

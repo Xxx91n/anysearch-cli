@@ -1,6 +1,6 @@
 // Hook core handler: platform-agnostic. Does 3 things only:
 // 1. Read-only project感知 (project path from cwd/env)
-// 2. IPC to long-running MCP server (HTTP 127.0.0.1 + Bearer token)
+// 2. IPC to the long-running plugin server (HTTP 127.0.0.1 + Bearer token)
 // 3. Decision output JSON to host
 // No SQLite, no file write, no network (except server IPC), no spawn.
 //
@@ -64,7 +64,7 @@ export async function callServer(
     signal?: AbortSignal;
   },
 ): Promise<Record<string, unknown> | null> {
-  // single narrow IPC channel to long-running MCP server.
+  // single narrow IPC channel to the long-running plugin server.
   // Fail-open: server unreachable = return null, caller放行 raw output.
   try {
     const headers = buildPropagationHeaders(opts ?? {});

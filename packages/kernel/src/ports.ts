@@ -68,9 +68,10 @@ export interface ToolPort {
 // DomainConfigPort: provides the active domain tool whitelist.
 // decision 4C: mirrors the domain sections the kernel consumes — the five
 // whole-section replacements (prompts/skills/sources/rag/hooks) plus budget and
-// compaction; settings, base and entityAliases stay store-side. sources declares
-// only enabled/weights: urlAllowlist and urlDenylist are read through a cast in
-// pi-runtime, while vertical is read off DomainSchema, which declares it.
+// compaction; settings and base stay store-side, and entityAliases is read by
+// `ans consolidate`, not here. sources declares only enabled/weights:
+// urlAllowlist and urlDenylist are read through a cast in pi-runtime, while
+// vertical is read off DomainSchema, which declares it.
 export interface DomainConfigPort {
   // optional per-provider weight Record (user preference overlay).
   sources: { enabled: string[]; weights?: Record<string, number> };
@@ -86,8 +87,9 @@ export interface DomainConfigPort {
   // and the output reserve from here; an absent section means unmetered.
   budget?: BudgetConfig;
   // compaction config for independent summary model.
-  // mirror store CompactionConfig shape — single type defined in
-  // packages/store/src/domain-schema.ts; referenced here to avoid drift.
+  // Same shape as store's CompactionConfig (single type defined in
+  // packages/store/src/domain-schema.ts) plus sufficiencyMaxRerounds, which only
+  // this port declares; referenced here to avoid drift.
   compaction?: {
     model?: string;
     sufficiencyMaxRerounds?: number;

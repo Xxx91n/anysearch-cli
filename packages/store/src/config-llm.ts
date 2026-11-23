@@ -200,9 +200,10 @@ function loadFile(
 
 /**
  * Resolve effective LLM config: CLI flag > env > project > user per key.
- * apiKey comes from ANS_LLM_API_KEY env, else from the env var named by the
- * winning layer's env_key (file stores the var NAME, never the secret), else the
- * provider's own env vars, else the user credential file.
+ * apiKey comes from ANS_LLM_API_KEY env, else from the env var named by the user
+ * file's env_key (project files may only set provider/model, and a file stores the
+ * var NAME, never the secret), else the provider's own env vars, else the user
+ * credential file.
  */
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;

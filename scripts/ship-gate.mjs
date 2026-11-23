@@ -1070,7 +1070,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     // expected to ship one. The four source-only workspace packages
     // (kernel / retriever / store / embedding) declare `exports: "./src/*.ts"`
     // with no build script, so their tarball legitimately has no dist/.
-    // Asserting dist/ unconditionally made this gate unsatisfiable (4 of 7
+    // Asserting dist/ unconditionally made this gate unsatisfiable (4 of 8
     // packages). Mirrors the existing "no bin" branch below.
     const manifestForDist = JSON.stringify([pkg.files, pkg.main, pkg.module, pkg.bin, pkg.exports]);
     const declaresDist = manifestForDist.includes("dist");

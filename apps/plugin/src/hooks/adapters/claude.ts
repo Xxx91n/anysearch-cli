@@ -90,11 +90,11 @@ async function main(): Promise<void> {
       // Send to server for indexing (fail-open). A project-less hook does not index.
       await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
-      // Return distilled output to Claude. PostToolUse can rewrite the result
-      // through hookSpecificOutput.updatedToolOutput (Claude Code hooks
-      // reference, checked 2026-11-23); this adapter only injects context, so the
-      // distilled summary goes to hookSpecificOutput.additionalContext (ER-2: the
-      // top-level form is dropped).
+      // Return distilled output to Claude. PostToolUse can rewrite the result through
+      // hookSpecificOutput.updatedToolOutput (Claude Code hooks reference, §Decision
+      // control, checked 2026-11-23 — the 2.1.251 ER-2 finding was about the TOP-LEVEL
+      // key, which is still dropped). This adapter only injects context, so the
+      // distilled summary goes to hookSpecificOutput.additionalContext.
       if (decision.distilledOutput) {
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {

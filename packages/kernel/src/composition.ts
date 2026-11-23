@@ -426,8 +426,9 @@ export function createEngine(
   // TOML edits take effect without restart, and ANS_URL_ALLOWLIST appends hosts
   // only when ANS_ALLOW_ENV_OVERRIDE is 1/true — 0/false/empty drops the list here
   // with no warning (the warning prints in pi-runtime and the plugin server), and
-  // any other value makes the policy resolver throw. Deny comes from the TOML only.
-  // No cached policy snapshot lives inside the retriever.
+  // any other value makes the policy resolver throw. The list itself is parsed
+  // either way, so a malformed ANS_URL_ALLOWLIST throws even with the switch off.
+  // Deny comes from the TOML only. No cached policy snapshot lives inside the retriever.
   let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
   // repo-level vertical default — lazy resolver over the
   // same liveSchema the urlPolicy reloader maintains (TOML edits take effect

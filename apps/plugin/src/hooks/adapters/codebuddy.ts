@@ -6,7 +6,7 @@
 // SessionStart: raw stdout text is injected into context verbatim (no envelope).
 // settings schema: { matcher, hooks: [{ type: "command", command: <bash string> }] }
 // Windows: hook commands are forced through Git Bash.
-// Q5: only intercept ans_* tools.: fail-open — exit 0 on any error.
+// Q5: only intercept the ans tools; fail-open — exit 0 on any error.
 // `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
 import { isAnsTool, unwrapToolResponse } from "../core.js";
