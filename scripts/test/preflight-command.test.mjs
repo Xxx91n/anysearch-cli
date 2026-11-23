@@ -21,6 +21,20 @@ test("an incremental run lists one filter per package, in order", () => {
   ]);
 });
 
+test("a readers run lists one filter per reader package, in order", () => {
+  // A root file's readers are the whole run: no dependents are added, and the
+  // command is the same turbo task the incremental run uses.
+  assert.deepEqual(commandArgs({ mode: "readers", packages: ["@anysearch-cli/kernel", "@anysearch-cli/store"] }), [
+    "exec",
+    "turbo",
+    "run",
+    "test",
+    "--concurrency=2",
+    "--filter=@anysearch-cli/kernel",
+    "--filter=@anysearch-cli/store",
+  ]);
+});
+
 test("the incremental command runs the same turbo task and flags as the root test script", () => {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const script = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).scripts.test;

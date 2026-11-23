@@ -9,9 +9,11 @@
 // kernel's tests read apps/mcp/domains, which only an unfiltered full run
 // covers — the push gate's --full, CI's check-build lane, and the merge gate.
 // A change outside apps/ and packages/ that is not documentation runs the whole
-// suite, because no rule here names which packages read it. Root files change
-// what every package runs (the lockfile, turbo.json) and belong to no package,
-// so they run the whole suite too.
+// suite, because no rule here names which packages read it. A root file the
+// reader table below names is the exception: it runs those packages and nothing
+// else (#489). The rest of the root still runs everything — the lockfile,
+// turbo.json, pnpm-workspace.yaml, .github/, and the root AGENTS.md, which no
+// test reads.
 //
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
@@ -35,8 +37,8 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "docs" | "full" | "incremental", reason?: string, files: string[],
- *            packages: string[], touched?: string[], outside?: string[] }}
+ * @returns {{ mode: "none" | "docs" | "readers" | "full" | "incremental", reason?: string, files: string[],
+ *            packages: string[], readers?: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
@@ -59,7 +61,24 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  const { touched, unowned: outside } = codeOwnership(files, packages);
+  // Design: a root file the reader table names runs those packages alone; every
+  // other file goes through the package lookup. A reader the workspace no longer
+  // has would filter turbo down to nothing while the gate printed green, so a
+  // miss reads as the full suite instead.
+  const readers = new Set();
+  const rest = [];
+  for (const file of files) {
+    const named = rootReaders(file);
+    if (named) for (const name of named) readers.add(name);
+    else rest.push(file);
+  }
+  const known = new Set(packages.map((pkg) => pkg.name));
+  const missing = [...readers].filter((name) => !known.has(name));
+  if (missing.length > 0) {
+    return { mode: "full", reason: `no workspace package named: ${missing.sort().join(", ")}`, files, packages: [] };
+  }
+
+  const { touched, unowned: outside } = codeOwnership(rest, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
@@ -72,7 +91,17 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, outside, packages: [] };
   }
 
-  return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
+  const readerPackages = [...readers].sort();
+  if (touched.length === 0) {
+    return { mode: "readers", files, packages: readerPackages, readers: readerPackages };
+  }
+  return {
+    mode: "incremental",
+    files,
+    touched,
+    readers: readerPackages,
+    packages: [...new Set([...readerPackages, ...withDependents(touched, packages)])].sort(),
+  };
 }
 
 const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
@@ -104,6 +133,11 @@ export function docsOnly(files) {
  * the files no package owns. Docs are skipped here, so they never count as
  * unowned.
  *
+ * Root files with a known reader (#489) do not reach this from the push gate —
+ * the plan resolves them first. CI still calls this with them, and still counts
+ * them as unowned: a lane covers many packages, so "these read the file" buys no
+ * lane back, and `check-build` runs the full suite for a root file either way.
+ *
  * @param {string[]} files normalized paths, docs not removed yet
  * @param {{ name: string, dir: string, deps: string[] }[]} packages
  * @returns {{ touched: string[], unowned: string[] }}
@@ -118,6 +152,42 @@ export function codeOwnership(files, packages) {
     else unowned.push(file);
   }
   return { unowned, touched: [...new Set(touched)].sort() };
+}
+
+/**
+ * Root files with known readers: for each, the workspace packages whose tests
+ * open the file, so a change to it can only break those. Hand-written and
+ * deliberately short (#489) — a root file that is not here keeps the full-suite
+ * fallback, which is the safe direction to be wrong in.
+ *
+ * Readers do not bring their dependents: an app that depends on store never
+ * opens the file through store's tests, so running it would cost time and prove
+ * nothing. `domains` covers the whole directory, so a new TOML in it lands on
+ * the same two readers.
+ *
+ * Evidence, so the next editor can re-check instead of grepping blind:
+ *   domains/                 kernel test/rag-adapter.test.ts, test/eval-looks-stub.test.ts;
+ *                            store test/domain-loader.test.ts, test/eval-docs-golden.test.ts
+ *   eval-looks.json          kernel test/eval-looks-stub.test.ts;
+ *                            store test/eval-docs-golden.test.ts, test/eval-looks-live-parity.test.ts,
+ *                            test/eval-release-layering.test.ts
+ *   eval-badcases.json       kernel test/eval-looks-stub.test.ts; store test/eval-docs-golden.test.ts
+ *   eval-looks.coverage.json store test/eval-docs-golden.test.ts
+ */
+export const ROOT_READERS = [
+  { path: "domains", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "eval-looks.coverage.json", readers: ["@anysearch-cli/store"] },
+  { path: "eval-looks.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+];
+
+/** The readers the table names for a root file, or null when it names none. */
+function rootReaders(file) {
+  const normalized = normalizePath(file);
+  for (const entry of ROOT_READERS) {
+    if (normalized === entry.path || normalized.startsWith(`${entry.path}/`)) return entry.readers;
+  }
+  return null;
 }
 
 /**

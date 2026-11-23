@@ -372,6 +372,37 @@ test("an incremental run hands pnpm one filter per selected package", async () =
   });
 });
 
+// A root file with known readers is its own mode: the banner has to say why
+// these packages and no others, and it must not claim a dependency closure that
+// did not happen.
+test("a root file with readers runs those packages, says why, and runs no self-test", async () => {
+  await withWorkspace(
+    {
+      changed: "domains/docs.toml",
+      echoArgs: true,
+      extraPackages: {
+        "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/store": { name: "@anysearch-cli/store" },
+      },
+    },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, [], { selfTest: true });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        /run: @anysearch-cli\/kernel, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
+      );
+      assert.match(result.stdout, /--filter=@anysearch-cli\/kernel/);
+      assert.match(result.stdout, /--filter=@anysearch-cli\/store/);
+      assert.match(result.stdout, /green in \d+\.\ds \(readers\)/);
+      // The package the workspace also has does not join in: it does not read
+      // the file, and no closure is applied here.
+      assert.equal(result.stdout.includes("dsh-plugin"), false, result.stdout);
+      assert.equal(result.stdout.includes("running the gate's own tests"), false, result.stdout);
+    },
+  );
+});
+
 test("a clean tree reports nothing to run and runs no self-test", async () => {
   await withWorkspace({}, ({ root, bin }) => {
     const result = runCliIn(root, bin, [], { selfTest: true });
