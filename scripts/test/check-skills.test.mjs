@@ -279,8 +279,10 @@ test("a skill directory that cannot be read is not skipped", (t) => {
   const dir = skill(root, "locked", "name: locked\ndescription: Use when a test locks a dir.");
   git(root, ["add", "--", "locked", "locked/SKILL.md"]);
   chmodSync(dir, 0o000);
-  t.after(() => chmodSync(dir, 0o755));
+  // Restore inline, not via t.after: hooks run after the cleanup hook that
+  // deletes the tree, so a hook here would throw ENOENT on POSIX.
   const result = check([], { cwd: root, root });
+  chmodSync(dir, 0o755);
   assert.equal(result.code, 2, result.stdout + result.stderr);
   assert.match(result.stdout, /\[ERROR\] .*locked[/\\]SKILL\.md/);
   assert.doesNotMatch(result.stdout, /\[skip\]/);
