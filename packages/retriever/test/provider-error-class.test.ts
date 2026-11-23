@@ -1,7 +1,8 @@
 // provider-error-class taxonomy — eval artifacts record an
 // error CATEGORY beside the failed flag, never the flag alone. Table-driven
 // over the String(err) seam form ("Name: message").
-import { classifyProviderError } from "../src/contract";
+import { classifyProviderError, providerErrorText, retryAfterSeconds } from "../src/contract";
+import { keylessLimitErrorFromEnvelope } from "@tavily/core";
 
 let passed = 0, failed = 0;
 function expect(got: string, want: string, input: string) {
@@ -18,10 +19,20 @@ const cases: Array<[string, string]> = [
   ["Error: AnySearch MCP initialize HTTP 401 Unauthorized", "permanent-auth"],
   ["Error: AnySearch MCP tools/call HTTP 403 Forbidden", "permanent-auth"],
   ["Error: AnySearch MCP tools/call isError: invalid_api_key", "permanent-auth"],
-  ["Error: AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)", "permanent-auth"],
-  // #440: the AnySearch isError bit is transport, not class — provisioning and
-  // used-up-plan payloads keep their marker next to the upstream text.
-  ["Error: AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY) [provider-error-class:permanent-auth] [upstream text: Your account and API key have been automatically generated. api_key=as_sk_test]", "permanent-auth"],
+  // #455: the free quota ending is its own class, not an auth fault. Two shapes:
+  // the reply text AnySearch sends, and Tavily's keyless cap whose kind lives on
+  // the error object (the bare text still names the SDK's error class).
+  ["Error: AnySearch MCP tools/call isError: Your account and API key have been automatically generated. api_key=[redacted]", "free-quota-exhausted"],
+  ["Error: AnySearch MCP tools/call free quota exhausted: upstream returned a sign-up/issued-key reply instead of results [provider-error-class:free-quota-exhausted] [upstream text: sign up to get a key]", "free-quota-exhausted"],
+  ["TavilyKeylessLimitError: Daily cap reached", "free-quota-exhausted"],
+  ["TavilyKeylessLimitError: Daily cap reached (capType=daily_cap_reached, retry-after=3600)", "free-quota-exhausted"],
+  // The free quota wins over a 429 that carries it: waiting for the window is
+  // part of the remedy, so this is not the ordinary throttle shape.
+  ["Error: HTTP 429 Too Many Requests: TavilyKeylessLimitError: daily_cap_reached", "free-quota-exhausted"],
+  // ... and the shapes that must NOT become it: an ordinary throttle, a paid
+  // plan running out, and a reply that merely mentions a key.
+  ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit notice instead of results [provider-error-class:transient] [upstream text: too many requests]", "transient"],
+  ["Error: set ANYSEARCH_API_KEY to continue", "unknown"],
   ["Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [provider-error-class:quota-exhausted] [upstream text: 今日额度已用完，请明天再试]", "quota-exhausted"],
   // The marker wins over the words echoed after it: a quota wall that also says
   // "rate limit", and a throttle whose text mentions a bad key, keep their real
@@ -64,5 +75,35 @@ const cases: Array<[string, string]> = [
   ["Error: something exotic happened", "unknown"],
 ];
 for (const [input, want] of cases) expect(classifyProviderError(input), want, input);
+
+// #455: the capture seam. @tavily/core keeps the cap kind and the wait on the
+// error object, so String(err) alone loses both; providerErrorText is the form
+// the engine stores, and the classifier plus the wait hint read only that text.
+function expectValue<T>(got: T, want: T, label: string) {
+  if (got !== want) { failed++; console.error("FAIL " + label + ": got " + JSON.stringify(got) + ", want " + JSON.stringify(want)); }
+  else passed++;
+}
+{
+  const capped = keylessLimitErrorFromEnvelope({
+    error: { code: "daily_cap_reached", message: "Daily cap reached", retry_after_seconds: 3600 },
+  });
+  const text = providerErrorText(capped);
+  expectValue(classifyProviderError(text), "free-quota-exhausted", "real SDK keyless cap classifies free-quota-exhausted");
+  expectValue(retryAfterSeconds(text), 3600, "real SDK keyless cap keeps its retry-after");
+  expectValue(providerErrorText(capped).includes("capType=daily_cap_reached"), true, "capture seam keeps capType");
+
+  // No wait in the payload: the class still reads right and the hint says
+  // "a moment" instead of inventing a number.
+  const noWait = keylessLimitErrorFromEnvelope({ error: { code: "daily_cap_reached" } });
+  const noWaitText = providerErrorText(noWait);
+  expectValue(classifyProviderError(noWaitText), "free-quota-exhausted", "cap without a wait still classifies free-quota-exhausted");
+  expectValue(retryAfterSeconds(noWaitText), null, "cap without a wait has no retry-after");
+
+  // An ordinary Error carries nothing extra, and an ordinary throttle has no
+  // wait to hand a free-quota hint.
+  expectValue(providerErrorText(new Error("boom")), "Error: boom", "plain Error text stays untouched");
+  expectValue(retryAfterSeconds("Error: HTTP 429 Too Many Requests: usage limit exceeded, retry after 30s"), 30, "retry-after parsed from plain text");
+}
+
 console.log("--- provider-error-class: " + passed + " passed, " + failed + " failed ---");
 if (failed > 0) process.exit(1);

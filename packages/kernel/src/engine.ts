@@ -5,7 +5,7 @@
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
@@ -475,7 +475,10 @@ export class RetroaererdEngine {
           // classify it as providersCancelled. Genuine failures (and arms whose
           // controllers we did not abort) keep the rejected status.
           if (callerCancelledArms.has(i)) return;
-          out[i] = { provider: p.id, status: "rejected", error: String(err) };
+          // The capture seam: structured bits an SDK keeps on the Error
+          // object (capType, retryAfter) go back into the text here, or the
+          // classifier and the wait hint only ever see half the shape.
+          out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
         }),
     );
 
@@ -501,6 +504,8 @@ export class RetroaererdEngine {
     const providersQueried: string[] = [];
     const providersFailed: string[] = [];
     const providerErrorClasses: Record<string, ProviderErrorClass> = {};
+    // seconds the arm asked us to wait; only the free-quota class carries one.
+    const providerErrorRetryAfterSeconds: Record<string, number> = {};
     const providersCancelled: string[] = [];
     const answers: string[] = [];
     // per-provider attribution in metadata, not in answers[].
@@ -588,7 +593,12 @@ export class RetroaererdEngine {
           // keep the captured error's CLASS beside the flag —
           // the "flag without error text" generic-wrapping defect ends here
           // (enum only; forensic name+message stays with the probe channel).
-          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error);
+          const errorClass = classifyProviderError(inner.error);
+          providerErrorClasses[providerIds[i]] = errorClass;
+          if (errorClass === "free-quota-exhausted") {
+            const wait = retryAfterSeconds(inner.error);
+            if (wait !== null) providerErrorRetryAfterSeconds[providerIds[i]] = wait;
+          }
         }
       }
     }
@@ -696,6 +706,7 @@ export class RetroaererdEngine {
         providersFailed,
         providersCancelled,
         ...(providersFailed.length > 0 ? { providerErrorClasses } : {}),
+        ...(Object.keys(providerErrorRetryAfterSeconds).length > 0 ? { providerErrorRetryAfterSeconds } : {}),
         elapsedMs: Date.now() - start,
         // MVSS four-segment sufficiency signal.
         sufficiency: suff.mvs,

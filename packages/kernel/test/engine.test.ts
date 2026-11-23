@@ -314,12 +314,21 @@ function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:b
     mockProvider("okx", ["https://okx.com/a"]),
     { id: "boom-transient", modes: ["fast"], async search(): Promise<ProviderEnvelope> { throw new Error("AnySearch MCP tools/call HTTP 503 Service Unavailable"); } },
     { id: "boom-auth", modes: ["fast"], async search(): Promise<ProviderEnvelope> { throw new Error("AnySearch MCP initialize HTTP 401 Unauthorized"); } },
+    // #455: the real Tavily keyless cap shape — the SDK keeps the cap kind and
+    // the wait on the error object and String(err) drops both.
+    { id: "boom-free-quota", modes: ["fast"], async search(): Promise<ProviderEnvelope> {
+      throw Object.assign(new Error("Daily cap reached"), { name: "TavilyKeylessLimitError", capType: "daily_cap_reached", retryAfter: 3600 });
+    } },
   ]);
   const r12 = await engine12.search({ query: "t", mode: "fast" });
-  assert(r12.metadata.providersFailed.length === 2, "12: two providers failed");
+  assert(r12.metadata.providersFailed.length === 3, "12: three providers failed");
   assert(r12.metadata.providerErrorClasses?.["boom-transient"] === "transient", "12: HTTP 503 classified transient");
   assert(r12.metadata.providerErrorClasses?.["boom-auth"] === "permanent-auth", "12: HTTP 401 classified permanent-auth");
+  assert(r12.metadata.providerErrorClasses?.["boom-free-quota"] === "free-quota-exhausted", "12: keyless cap classified free-quota-exhausted");
+  assert(r12.metadata.providerErrorRetryAfterSeconds?.["boom-free-quota"] === 3600, "12: the cap's retry-after rides the envelope");
+  assert(Object.keys(r12.metadata.providerErrorRetryAfterSeconds ?? {}).length === 1, "12: only the arm with a wait carries one");
   assert(result1.metadata.providerErrorClasses === undefined, "12: field absent when nothing failed");
+  assert(result1.metadata.providerErrorRetryAfterSeconds === undefined, "12: wait field absent when nothing failed");
 
 console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);

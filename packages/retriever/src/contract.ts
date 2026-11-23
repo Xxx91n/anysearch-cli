@@ -222,14 +222,28 @@ export interface FusionProvenance {
 // category next to the flag, never the flag alone.
 // 5xx/429/rate limits/network errors → transient; 401/403/bad key and the
 // x402 payment challenge → permanent-auth; used-up plan text and a plain 402
-// (key valid, retrying will not help) → quota-exhausted; malformed or drifted
-// replies → permanent-protocol; HTTP 404 on a session-id request →
-// session-expired (the spec-MUST re-initialize retry already fired once).
+// (key valid, retrying will not help) → quota-exhausted; the free quota's
+// allowance used up (no key yet, and a key is one way back) →
+// free-quota-exhausted; malformed or drifted replies → permanent-protocol;
+// HTTP 404 on a session-id request → session-expired (the spec-MUST
+// re-initialize retry already fired once).
 
 // Quota wording shared by every path that reads a provider message, including
 // the adapters that classify a reply body themselves.
 export const QUOTA_EXHAUSTED_TEXT = "exceeds your plan|usage limit|quota exceeded|quota exhausted|quota reached|quota limit exceeded|exceeded your quota|insufficient credits|out of credits|(?:余额|额度|配额|次数)[^，。\\n]{0,10}(?:用完|用尽|耗尽|不足|上限|超限|超出)";
 const QUOTA_EXHAUSTED_RE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
+
+// AnySearch ends the free quota with a sign-up/issued-key reply instead of
+// results. The phrase has to be about getting the key itself — the
+// automatic-generation wording needs an account or key next to it, so "this
+// bill was automatically generated" is no wall. Shared with the adapter that
+// reads the reply text, so the two matchers cannot drift.
+export const PROVISIONING_REPLY_TEXT = "(?:account|api key|api_key)[^.]{0,40}automatically generated|automatically generated[^.]{0,40}(?:account|api key|api_key)|(?:api )?key (?:has been |was |is )?issued|issued (?:an? )?(?:api )?key|sign[ -]?up (?:to|for) (?:get|obtain)[^.]*key";
+const PROVISIONING_REPLY_RE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
+
+// Tavily's keyless cap: @tavily/core raises TavilyKeylessLimitError and keeps
+// the cap kind on the error object (capType), never in the message body.
+const KEYLESS_CAP_RE = /TavilyKeylessLimitError|daily_cap_reached/i;
 
 // Class all providers share. The type and the marker parser read the same list,
 // so adding a class cannot silently fall back to word matching.
@@ -237,6 +251,7 @@ export const ERROR_CLASSES = [
   "transient",
   "permanent-auth",
   "quota-exhausted",
+  "free-quota-exhausted",
   "permanent-protocol",
   "session-expired",
   "unknown",
@@ -277,7 +292,12 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   // credits. Only the structured challenge marks say which.
   const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  if (http("401") || http("403") || x402Challenge || t.includes("quota/auth nudge") || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  // The free quota ran out: no paid plan is involved and no key is wrong, so
+  // neither permanent-auth nor an ordinary throttle describes it. Waiting and
+  // adding a key are both real ways back. Checked before both of them, because
+  // a cap reply can arrive behind a 429 or quote auth words in its body.
+  if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
+  if (http("401") || http("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
   // does nothing, the owner must top up. Checked after the retryable shapes so
@@ -287,6 +307,31 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
   return "unknown";
+}
+
+// The text form the classifier sees. An SDK keeps structured bits on the Error
+// object (Tavily: capType, retryAfter) and String(err) drops them, so the
+// classifier would read half the shape. Appending them belongs here, at the
+// capture seam, not in the classifier — that stays a pure function of its text.
+export function providerErrorText(err: unknown): string {
+  const text = String(err);
+  const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
+  const bits: string[] = [];
+  if (typeof structured?.capType === "string" && structured.capType) bits.push("capType=" + structured.capType);
+  if (typeof structured?.retryAfter === "number" && Number.isFinite(structured.retryAfter)) {
+    bits.push("retry-after=" + structured.retryAfter);
+  }
+  return bits.length > 0 ? text + " (" + bits.join(", ") + ")" : text;
+}
+
+// Seconds until the arm expects to allow another call, as the capture seam's
+// text carries it. null when the upstream did not say: a hint then says "wait a
+// moment" rather than inventing a number.
+export function retryAfterSeconds(errText: string): number | null {
+  const m = String(errText).match(/retry[ -]?after[=:\s]+(\d+(?:\.\d+)?)/i);
+  if (!m) return null;
+  const seconds = Math.round(Number(m[1]));
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
 // Fused envelope: the output of RRF consensus fusion across N providers.
@@ -300,6 +345,10 @@ export interface FusedEnvelope {
     // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
+    // per-arm wait seconds, recorded only for the class whose remedy names a
+    // wait (free-quota-exhausted), so the sentence carries the number the
+    // upstream gave instead of "a moment".
+    providerErrorRetryAfterSeconds?: Record<string, number>;
     elapsedMs: number;
     // sufficiency signal from computeSufficiency.
     sufficiency?: SufficiencySignal;

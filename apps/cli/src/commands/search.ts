@@ -3,7 +3,7 @@
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -280,6 +280,14 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     if (envelope.metadata.providersFailed.length > 0) {
       console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
+      // The class is a machine tag; the reader needs the action. One indented
+      // `id: sentence` per failed arm whose class has a remedy (#455).
+      const hints = providerErrorHints(
+        envelope.metadata.providersFailed,
+        envelope.metadata.providerErrorClasses,
+        envelope.metadata.providerErrorRetryAfterSeconds,
+      );
+      for (const [id, sentence] of Object.entries(hints)) console.log("  " + id + ": " + sentence);
     }
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);

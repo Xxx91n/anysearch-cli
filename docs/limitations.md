@@ -293,12 +293,19 @@
   (`retrieval.provider.diagnostic`) when the caller supplies one — CLI and MCP
   tool calls do. Failed replies throw before extraction, so no id is recorded
   for them. The id never enters query results and is never an idempotency key.
-- **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`**
-  — upstream answers anonymous calls past their allowance with an
-  auto-provisioning payload (HTTP 200, no result body) instead of an error; the
-  same payload can also arrive with `isError:true`. The provider names this
-  `quota/auth nudge` → `permanent-auth`. The fix is on the user side: set
-  `ANYSEARCH_API_KEY`.
+- **A used-up free quota is its own error class (`free-quota-exhausted`)** —
+  the free quota is the allowance a provider gives a caller with no key. Two
+  shapes: AnySearch answers calls past it with a sign-up/issued-key payload
+  (HTTP 200, no result body; the same payload can arrive with `isError:true`),
+  and Tavily's keyless channel raises `TavilyKeylessLimitError`
+  (`capType: "daily_cap_reached"`, plus a `retryAfter` when the envelope has
+  one). Both classify `free-quota-exhausted` — never `permanent-auth` (no key
+  is wrong) and never `transient` (a throttle is not a used-up allowance). The
+  remedy sentence names both ways back: wait the retry-after the upstream gave
+  (else `a moment`) and retry, or add a key for this provider. Tavily's
+  `retry-after` slides forward with the wall, so waiting it out can land on the
+  wall again; adding a key is the certain way back. Pinned by
+  `packages/retriever/test/provider-error-class.test.ts`.
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.

@@ -412,7 +412,8 @@ async function main() {
   }
 
   // 16.: anonymous quota-boundary provisioning reply -> named
-  // quota/auth nudge (classifies permanent-auth), not malformed-text.
+  // free-quota-exhausted (the free allowance is out; a key is one way back),
+  // not malformed-text and not an auth fault.
   {
     const nudge = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Your account and API key have been automatically generated. Use the API key below to continue.\napi_key=as_sk_test" }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: nudge(c.body.id) } : stdHandler(c));
@@ -420,13 +421,13 @@ async function main() {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
       let msg = "";
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("quota/auth nudge"), "provisioning reply -> quota/auth nudge (got " + msg.slice(0, 80) + ")");
-      assert(classifyProviderError(msg) === "permanent-auth", "nudge classifies permanent-auth");
+      assert(msg.includes("free quota exhausted"), "provisioning reply -> free quota exhausted (got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "provisioning reply classifies free-quota-exhausted");
     } finally { f.restore(); }
   }
 
   // 16b. (#440) provisioning text delivered through isError:true — the isError
-  // bit is transport, the payload marker wins: permanent-auth. The freshly
+  // bit is transport, the payload marker wins: free-quota-exhausted. The freshly
   // issued key is redacted, the marker and the rest of the text stay.
   {
     const key = "as_sk_live_abcdefghijklmnopqrstuvwxyz";
@@ -436,10 +437,10 @@ async function main() {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
       let msg = "";
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("quota/auth nudge"), "isError provisioning -> quota/auth nudge (got " + msg.slice(0, 80) + ")");
+      assert(msg.includes("free quota exhausted"), "isError provisioning -> free quota exhausted (got " + msg.slice(0, 80) + ")");
       assert(msg.includes("[redacted]") && !msg.includes(key), "isError provisioning redacts the issued key");
       assert(msg.includes("automatically generated"), "isError provisioning keeps the upstream text");
-      assert(classifyProviderError(msg) === "permanent-auth", "isError provisioning classifies permanent-auth");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "isError provisioning classifies free-quota-exhausted");
     } finally { f.restore(); }
   }
 
@@ -453,8 +454,8 @@ async function main() {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
       let msg = "";
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("quota/auth nudge"), "marker past 200 chars still sets the prefix (got " + msg.slice(0, 80) + ")");
-      assert(classifyProviderError(msg) === "permanent-auth", "marker past 200 chars still classifies permanent-auth");
+      assert(msg.includes("free quota exhausted"), "marker past 200 chars still sets the prefix (got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "marker past 200 chars still classifies free-quota-exhausted");
     } finally { f.restore(); }
   }
 
@@ -515,9 +516,9 @@ async function main() {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
       let msg = "";
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("quota/auth nudge"), "key field in any form -> quota/auth nudge (" + text + ")");
+      assert(msg.includes("free quota exhausted"), "key field in any form -> free quota exhausted (" + text + ")");
       assert(msg.includes("[redacted]") && !msg.includes(key), "key field value is redacted (" + text + ")");
-      assert(classifyProviderError(msg) === "permanent-auth", "key field classifies permanent-auth (" + text + ")");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "key field classifies free-quota-exhausted (" + text + ")");
     } finally { f.restore(); }
   }
 
@@ -555,7 +556,8 @@ async function main() {
   }
 
   // 16i. A sign-up/issuance reply can arrive on a keyed request; the message
-  // must not tell the user to set a key they already set.
+  // names the free quota, not a missing key, so it never tells the user to set
+  // a key they already set.
   {
     const text = "Your account and API key have been automatically generated. api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
@@ -564,9 +566,9 @@ async function main() {
       const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
       let msg = "";
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("quota/auth nudge"), "keyed sign-up reply still names the auth boundary");
+      assert(msg.includes("free quota exhausted"), "keyed sign-up reply names the free quota, not the auth boundary");
       assert(!msg.includes("ANYSEARCH_API_KEY") && !msg.includes("anonymous"), "keyed sign-up reply does not claim no key was set");
-      assert(classifyProviderError(msg) === "permanent-auth", "keyed sign-up reply classifies permanent-auth");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "keyed sign-up reply classifies free-quota-exhausted");
     } finally { f.restore(); }
   }
 

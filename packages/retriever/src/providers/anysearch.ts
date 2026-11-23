@@ -14,7 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
-import { canonicalizeVertical, classifyProviderError, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, stripErrorClassMarkers } from "../contract";
+import { canonicalizeVertical, classifyProviderError, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
 import { redactSecrets } from "../redact";
 
 // CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
@@ -161,13 +161,14 @@ const KEY_FIELD_GLOBAL = new RegExp(KEY_FIELD_SOURCE, "gi");
 
 // A sign-up/issuance reply, not just any message that mentions a key. The
 // automatic-generation wording needs an account or key next to it; "this bill
-// was automatically generated" is not one.
-const PROVISIONING_NOTICE = /(?:account|api key|api_key)[^.]{0,40}automatically generated|automatically generated[^.]{0,40}(?:account|api key|api_key)|(?:api )?key (?:has been |was |is )?issued|issued (?:an? )?(?:api )?key|sign[ -]?up (?:to|for) (?:get|obtain)[^.]*key/i;
+// was automatically generated" is not one. Shared with contract.ts's
+// classifier, which sees the same text through the error seam.
+const PROVISIONING_NOTICE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 
 // Name a reply failure by its text; providerErrorMarker carries the class.
 function replyFailurePrefix(md: string): ReplyFailure | undefined {
   if (PROVISIONING_NOTICE.test(md)) {
-    return { cls: "permanent-auth", prefix: "quota/auth nudge: upstream returned a sign-up/issued-key reply instead of results" };
+    return { cls: "free-quota-exhausted", prefix: "free quota exhausted: upstream returned a sign-up/issued-key reply instead of results" };
   }
   if (THROTTLE_NOTICE.test(md)) {
     return { cls: "transient", prefix: "rate limited: upstream returned a rate-limit notice instead of results" };
@@ -226,9 +227,9 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   if (!/##\s+Search Results/.test(md)) {
     // Not a results envelope: name it by the reply text (provisioning boundary,
     // exhausted plan, throttle) before calling it malformed. A provisioning
-    // payload ("account ... automatically generated ... api_key=...") is a
-    // credential boundary, not protocol drift → permanent-auth; a used-up plan
-    // is quota-exhausted even when the wording is Chinese 额度.
+    // payload ("account ... automatically generated ... api_key=...") is the
+    // free quota ending, not protocol drift → free-quota-exhausted; a used-up
+    // plan is quota-exhausted even when the wording is Chinese 额度.
     const failure = replyFailurePrefix(md);
     if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.

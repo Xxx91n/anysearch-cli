@@ -71,12 +71,13 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
+          const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
           if (envelope.results.length === 0 && allProvidersFailed(queriedProviders, failedProviders)) {
-            return toolFailure(allProvidersFailedText("search_web", failedProviders, providerErrorClasses));
+            return toolFailure(allProvidersFailedText("search_web", failedProviders, providerErrorClasses, providerErrorRetryAfter));
           }
           // Partial success: at least one arm answered, so isError stays false
           // while these fields name the degraded arms.
-          const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses);
+          const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses, providerErrorRetryAfter);
           const topResults = envelope.results.slice(0, 10);
 
           // provider answers pass through as first-class fields.
