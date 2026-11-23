@@ -23,9 +23,11 @@ async function main() {
   assert(exa.domainFilterSupported === true, "exa declares domainFilterSupported");
   assert(anysearch.domainFilterSupported === false, "anysearch explicitly declares domainFilterSupported=false");
 
-  // 2. Tavily forwards includeDomains as include_domains and sends
-  // include_domains_mode: "filter" — pinned here as "what we send today", NOT as an
-  // upstream value: Tavily documents only restrict (default, hard) and prefer. #444.
+  // 2. Tavily forwards includeDomains as include_domains and asks for the hard
+  // filter with a value upstream documents: include_domains_mode accepts only
+  // "restrict" (hard, the default) and "prefer" (also searches the rest of the
+  // web). The value this adapter used to send was not rejected — it just could
+  // not be told apart from the default — so pin the literal here (#444).
   let tavilyOpts: any = null;
   (tavily as any).client = {
     search: async (_q: string, opts: any) => { tavilyOpts = opts; return { results: [], responseTime: 1, images: [] }; },
@@ -33,12 +35,14 @@ async function main() {
   await tavily.search({ query: "q", mode: "fast", includeDomains: ["pnpm.io", "typescriptlang.org"] }, new AbortController().signal);
   assert(Array.isArray(tavilyOpts?.includeDomains), "tavily search opts carry includeDomains");
   assert(tavilyOpts.includeDomains.join(",") === "pnpm.io,typescriptlang.org", "tavily includeDomains forwarded verbatim");
-  assert(tavilyOpts.include_domains_mode === "filter", "tavily requests hard include_domains_mode=filter (not soft boost)");
+  assert(tavilyOpts.include_domains_mode === "restrict", "tavily asks for the documented hard filter include_domains_mode=restrict");
 
-  // No includeDomains on the request -> adapter must not invent one.
+  // No includeDomains on the request -> adapter must not invent one, and must not
+  // send include_domains_mode alone: upstream answers 400 for that.
   tavilyOpts = null;
   await tavily.search({ query: "q", mode: "fast" }, new AbortController().signal);
   assert(tavilyOpts != null && tavilyOpts.includeDomains === undefined, "tavily omits includeDomains when request has none");
+  assert(tavilyOpts.include_domains_mode === undefined, "tavily omits include_domains_mode when there are no includeDomains");
 
   // 3. Exa forwards includeDomains (native camelCase API field).
   let exaOpts: any = null;

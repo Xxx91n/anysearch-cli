@@ -16,10 +16,7 @@ const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
 export class TavilyProvider implements SearchProvider {
   readonly id = "tavily";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
-  // forwards includeDomains as include_domains. The 0.7.7 SDK
-  // passes unknown kwargs through verbatim, so include_domains_mode reaches the
-  // wire; upstream documents "restrict" (the default, hard filter) and "prefer"
-  // (also searches the rest of the web), so "filter" below is neither one (#444).
+  // true: includeDomains goes upstream as include_domains, so upstream filters by it.
   readonly domainFilterSupported = true;
   private client: ReturnType<typeof tavily>;
 
@@ -39,12 +36,11 @@ export class TavilyProvider implements SearchProvider {
       maxResults: req.maxResults ?? 10,
       includeAnswer: req.mode === "answer",
       includeRawContent: false,
-      // pre-filter send-down: include_domains goes upstream, so subdomains of a
-      // listed parent come along and the local filter has less to drop. The mode
-      // value is the one noted above (not an upstream enum member), so the local
-      // filter still runs as the backstop.
+      // The mode must travel with include_domains (alone it answers 400); the local filter
+      // is the backstop. Design: send "restrict" rather than omit it — the request states
+      // the filter it relies on instead of trusting an upstream default.
       ...(req.includeDomains?.length
-        ? { includeDomains: req.includeDomains, include_domains_mode: "filter" }
+        ? { includeDomains: req.includeDomains, include_domains_mode: "restrict" }
         : {}),
       timeout: 60,
     });
