@@ -82,8 +82,9 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
     switch (command) {
       case "install": {
         const entry = await installSkill(positional[0], scopeOpts);
-        // Installing is never blocked by a description that could say more.
-        const notes = skillNotes(join(entry.source, "SKILL.md"));
+        // The note reads what was installed, like validate does — the source may
+        // already have moved on. Installing is never blocked by it either way.
+        const notes = skillNotes(join(managedSkillsRoot(scopeOpts), entry.name, "SKILL.md"));
         out(`Installed ${entry.name} to ${managedSkillsRoot(scopeOpts)}\n`
           + `Source: ${entry.source}\nCommit: ${entry.commit}${entry.tag ? ` (tag ${entry.tag})` : ""}${entry.dirty ? " [dirty source]" : ""}\n`
           + "Installed only; activation remains in Active Domain TOML ([skills].active).\n");
@@ -103,7 +104,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
             continue;
           }
           out(`[OK] ${result.name}: SKILL.md name, description and body follow the spec\n`);
-          for (const note of result.notes ?? []) out(`  note: ${note}\n`);
+          for (const note of result.notes ?? []) out(`note: ${note}\n`);
         }
         return results.every((result) => result.ok) ? 0 : 1;
       }

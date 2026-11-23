@@ -59,7 +59,11 @@ function skillFileOf(target) {
   const resolved = path.resolve(target);
   const stat = fs.statSync(resolved, { throwIfNoEntry: false });
   if (!stat) throw new Error("no such file or directory: " + resolved);
-  return stat.isDirectory() ? path.join(resolved, "SKILL.md") : resolved;
+  if (stat.isDirectory()) return path.join(resolved, "SKILL.md");
+  if (path.basename(resolved) !== "SKILL.md") {
+    throw new Error(`not a SKILL.md: ${resolved} — pass a skill directory or the file itself`);
+  }
+  return resolved;
 }
 
 /**
@@ -99,8 +103,9 @@ async function run() {
   const { validateSkillDirectory, skillNotes, SkillError } = await import("../apps/cli/src/skill-store.ts");
   const args = process.argv.slice(2);
   let files;
+  const discovered = args.length === 0;
   try {
-    files = args.length > 0 ? args.map(skillFileOf) : gitVisibleSkillFiles();
+    files = discovered ? gitVisibleSkillFiles() : args.map(skillFileOf);
   } catch (error) {
     fail(2, error.message);
   }
@@ -112,11 +117,18 @@ async function run() {
   let failed = 0;
   let unreadable = 0;
   for (const file of files) {
+    if (discovered && !fs.existsSync(file)) {
+      unreadable += 1;
+      process.stdout.write(`[ERROR] ${shown(file)}: listed by git but missing from this checkout\n`);
+      continue;
+    }
     try {
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
       // Advice only: a skill that passes is not failed for a thinner description.
-      for (const note of skillNotes(file)) process.stdout.write(`[note] ${shown(file)}: ${note}\n`);
+      for (const note of skillNotes(path.join(path.dirname(file), "SKILL.md"))) {
+        process.stdout.write(`[note] ${shown(file)}: ${note}\n`);
+      }
     } catch (error) {
       // A rule failure reads "field + what was expected". Anything else (a
       // permission error, an I/O failure) is "could not check", not "this skill

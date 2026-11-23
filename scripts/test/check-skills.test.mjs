@@ -230,6 +230,30 @@ test("a checkout with no skill is refused instead of passing vacuously", (t) => 
   assert.match(result.stdout, /no SKILL\.md found/);
 });
 
+test("a file that is not named SKILL.md is a usage error", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "other", "name: other\ndescription: Use when a test needs a file.");
+  const notes = path.join(dir, "notes.md");
+  writeFileSync(notes, "scratch\n");
+  const result = check([notes]);
+  assert.equal(result.code, 2, result.stdout + result.stderr);
+  assert.match(result.stderr, /not a SKILL\.md/);
+});
+
+// A tracked SKILL.md deleted from the worktree is a checkout problem, not a skill
+// that broke a rule; the two exit differently on purpose.
+test("a git-listed skill missing from the checkout is \"could not check\"", (t) => {
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  skill(root, "gone", "name: gone\ndescription: Use when a test deletes a skill.");
+  git(root, ["add", "--", "gone", "gone/SKILL.md"]);
+  rmSync(path.join(root, "gone", "SKILL.md"));
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 2, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[ERROR\] .*gone[/\\]SKILL\.md: listed by git but missing/);
+  assert.match(result.stdout, /1 could not be read/);
+});
+
 test("a path that does not exist is a usage error, not a failing skill", (t) => {
   const root = withRoot(t);
   const result = check([path.join(root, "nowhere")]);

@@ -42,7 +42,7 @@ export interface SkillValidation {
   name: string;
   ok: boolean;
   error?: string;
-  /** Advice for a file that passed; empty when there is nothing to improve. */
+  /** Advice for a file that passed; absent when there is nothing to improve. */
   notes?: string[];
 }
 
@@ -703,27 +703,22 @@ function requireDescription(value: unknown, path: string): void {
   }
 }
 
-/** What a passing file could still say better; today that is one thing. */
-export const SKILL_WHEN_TO_USE_NOTE =
+const SKILL_WHEN_TO_USE_NOTE =
   'SKILL.md description does not say when to use the skill — a clause like "Use when the user …" / 什么时候用 / 使用时 helps an agent pick it';
 
-/**
- * Advice for a file that passed validation. Not an error, and never blocks:
- * a description that says what the skill does but not when to use it is the
- * spec's "poor example", not an invalid skill.
- */
+/** What a passing file could still say better; only a note, never a rejection. */
 export function skillNotes(path: string): string[] {
   let text: string;
   try {
-    text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+    text = readFileSync(path, "utf8");
   } catch {
     return [];
   }
-  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
-  if (!match) return [];
+  const source = splitSkillSource(text);
+  if (source === undefined) return [];
   let frontmatter: unknown;
   try {
-    frontmatter = parseDocument(match[1], { version: "1.2", uniqueKeys: true }).toJS({ maxAliasCount: 100 });
+    frontmatter = parseFrontmatter(source.yaml);
   } catch {
     return [];
   }
@@ -743,16 +738,31 @@ function requireShortBody(body: string, path: string): void {
   }
 }
 
+/**
+ * Split a SKILL.md into the YAML text between the `---` lines and the body after
+ * it. One splitter, so the validator and the advice can never disagree about
+ * where the frontmatter ends.
+ */
+function splitSkillSource(raw: string): { yaml: string; body: string } | undefined {
+  const text = raw.replace(/^\uFEFF/, "");
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  return match === null ? undefined : { yaml: match[1], body: text.slice(match[0].length) };
+}
+
+/** Parse frontmatter text into a value; throws on malformed YAML. */
+function parseFrontmatter(yaml: string): unknown {
+  return parseDocument(yaml, { version: "1.2", uniqueKeys: true }).toJS({ maxAliasCount: 100 });
+}
+
 /** Validate YAML frontmatter, the name used as the install directory, description and body length. */
 export function validateSkillFile(path: string): string {
   requireFile(path, "SKILL.md");
-  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
-  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
-  if (!match) fail(`SKILL.md must start with YAML frontmatter delimited by ---: ${path}`);
+  const source = splitSkillSource(readFileSync(path, "utf8"));
+  if (source === undefined) fail(`SKILL.md must start with YAML frontmatter delimited by ---: ${path}`);
   let frontmatter: unknown;
   try {
-    const document = parseDocument(match[1], { version: "1.2", uniqueKeys: true });
-    if (document.errors.length > 0) fail(document.errors[0].message);
+    const document = parseDocument(source.yaml, { version: "1.2", uniqueKeys: true });
+    if (document.errors.length > 0) throw new Error(document.errors[0].message);
     frontmatter = document.toJS({ maxAliasCount: 100 });
   } catch (error) {
     fail(`invalid YAML frontmatter in ${path}: ${(error as Error).message}`);
@@ -761,7 +771,7 @@ export function validateSkillFile(path: string): string {
   const name: unknown = frontmatter.name;
   requireName(name, path);
   requireDescription(frontmatter.description, path);
-  requireShortBody(text.slice(match[0].length), path);
+  requireShortBody(source.body, path);
   return name;
 }
 
