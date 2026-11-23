@@ -5,12 +5,11 @@
 // 每条还标 offline 或 live：离线检查只证明本机文件/解析/构造器没问题，不证明
 // 联网、模型、宿主真的能用。真实能力要在 live 里单独跑，doctor 不替它打包票。
 //
-// --live 是唯一联网的开关（#416 定的）。它只打三家信息源的免费面（Tavily /usage、
-// Exa 空体 /search、AnySearch initialize + tools/list + 空参数 tools/call），一次
-// 真搜索都不跑；模型那几家不验 —— 要么真调一次花钱，要么 /models 类接口没实测。
+// --live 是唯一联网的开关：只打三家信息源的免费面，不跑真搜索、不花额度；模型不验。
 
-import { TavilyProvider, ExaProvider, AnySearchProvider, probeProviderAuth } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, ExaProvider, AnySearchProvider, isProbeProviderId, probeProviderAuth } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider } from "@anysearch-cli/retriever";
+import type { ProbeOutcome } from "@anysearch-cli/retriever/providers";
 import {
   MANUAL_RECOVERY_NOTE,
   SEARCH_PROVIDER_IDS,
@@ -74,6 +73,23 @@ export interface DoctorOptions {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 跑一条探针，并保证它不把异常带出去：探针自己承诺不抛，这里再兜一层，一条探针出
+ * 意外不能把整轮报告带走。没登记的 provider 返回 null（还没接探针）。
+ */
+async function probeQuietly(
+  provider: SearchProviderId,
+  apiKey: string,
+  endpoint: string | undefined,
+): Promise<ProbeOutcome | null> {
+  if (!isProbeProviderId(provider)) return null;
+  try {
+    return await probeProviderAuth(provider, { apiKey, endpoint });
+  } catch {
+    return { auth: "unverified", undetectable: [], problem: { class: "unknown" } };
+  }
 }
 
 function readNodeFloor(packageRoot: string): string | null {
@@ -361,6 +377,19 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           : `${credentialsPath} (not created yet)`,
       });
     }
+    // 三家互不依赖：一起打，最坏只等一条超时的时间；报告顺序仍按 SEARCH_PROVIDER_IDS。
+    const probes = new Map<SearchProviderId, ProbeOutcome | null>();
+    if (live) {
+      await Promise.all(
+        SEARCH_PROVIDER_IDS.map(async (provider) => {
+          const entry = credentials[provider];
+          if (!entry?.apiKey) return;
+          const endpoint = opts.endpoints?.[provider]
+            ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined);
+          probes.set(provider, await probeQuietly(provider, entry.apiKey, endpoint));
+        }),
+      );
+    }
     for (const provider of SEARCH_PROVIDER_IDS) {
       const entry = credentials[provider];
       if (!entry) {
@@ -385,8 +414,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         });
         continue;
       }
-      // 有 key 只说明「key 在这」。key 好不好（auth）离线看不出来，默认那句必须
-      // 把这半句写在脸上，不然一个「OK」会被读成「key 验过了」。
+      // 有 key 只说明「key 在这」；好不好要联网才知道，所以默认那句写明「auth 没验」。
       const source = describeCredentialSource(entry.source, provider);
       if (!live) {
         report.add({
@@ -398,11 +426,17 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         });
         continue;
       }
-      // --live：打这家的免费面，只问 auth 和入口契约，一次真搜索都不跑。
-      const outcome = await probeProviderAuth(provider, {
-        apiKey: entry.apiKey,
-        endpoint: opts.endpoints?.[provider] ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined),
-      });
+      const outcome = probes.get(provider);
+      if (!outcome) {
+        report.add({
+          layer: "capability",
+          name: `信息源 ${provider}`,
+          state: "unchecked",
+          mode: "live",
+          detail: `${source}；这家还没有免费面探针（packages/retriever/src/providers/probes.ts），没验`,
+        });
+        continue;
+      }
       report.add({
         layer: "capability",
         name: `信息源 ${provider}`,
@@ -454,7 +488,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       name: "真实模型调用",
       state: "unchecked",
       mode: "live",
-      // 模型不验是决定，不是漏做：真调一次要花钱，/models 类接口也没实测（#442）。
+      // 模型不验：真调一次要花钱，/models 类接口也没实测。
       detail: live
         ? "没验：真调一次要花钱，/models 类接口也没实测；要验就用 ans chat"
         : "doctor 不联网；要验真调用就用 ans chat",

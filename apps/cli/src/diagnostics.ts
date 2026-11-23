@@ -4,6 +4,8 @@
 // mode 只说这条是离线检查（offline）还是真实调用（live），离线通过不等于真实通过。
 // 退出码：有 failed 是 1；--strict 下还有 unchecked 是 5；否则 0。unconfigured 不抬退出码。
 
+import type { UndetectableClass } from "@anysearch-cli/retriever/providers";
+
 export type DiagLayer = "install" | "capability" | "host" | "data";
 export type DiagState = "ready" | "unconfigured" | "unchecked" | "failed";
 export type DiagMode = "offline" | "live";
@@ -14,11 +16,8 @@ export interface DiagEntry {
   state: DiagState;
   mode: DiagMode;
   detail?: string;
-  /**
-   * 这一条验不到什么。只挂在实测的搜索源那几行上：不写的话，一个绿勾会被读成
-   * 「连 key 和额度都验过了」，而免费面本来就验不全（#416）。
-   */
-  undetectable?: string[];
+  /** 这一项验不到什么（免费面天生验不全），只写在 --live 的「信息源」行上。 */
+  undetectable?: UndetectableClass[];
 }
 
 export interface DiagSummary {

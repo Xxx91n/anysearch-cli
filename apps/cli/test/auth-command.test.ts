@@ -518,7 +518,9 @@ test("ans auth set：上游抽风只警告，key 照存 (#442)", async () => {
 
       assert.equal(code, 0, out);
       assert.match(out, /\[warn\] could not check the key \(transient: HTTP 503\)/);
-      assert.match(out, /stored anyway/);
+      // 警告只说「没验成」；「存了」由后面那行 Stored 说 —— 写盘失败时不能自相矛盾。
+      assert.equal(/stored anyway/.test(out), false, out);
+      assert.match(out, /Stored the anysearch key/);
       assert.equal(readUserCredentials().bindings[0]?.apiKey, "ans-maybe-good", "抽风不是拒存的理由");
     });
   });

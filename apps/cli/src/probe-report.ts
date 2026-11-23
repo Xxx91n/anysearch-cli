@@ -1,5 +1,7 @@
-// 探针结论怎么说话：doctor 的一行、ans auth set 的一句警告，都从这里出。
-// 两处共用同一份措辞，免得同一个结论在两条命令里说成两件事（#442）。
+// doctor 那一行的措辞：把探针的结论翻成四种状态加一句话。
+//
+// 只有 doctor 走这里。`ans auth set` 自己说一句英文（那个文件本来就是英文），
+// 但它和这里吃的是同一个 ProbeOutcome、同一套错误类，不各造一套判断。
 
 import type {
   ProbeFaultClass,
@@ -24,9 +26,8 @@ const UNDETECTABLE_TEXT: Record<UndetectableClass, string> = {
 };
 
 /**
- * 四种状态里挑一个。只有 401/403 那种「key 确实被拒」才判失败；额度用尽和入口变了
- * 也是要修的真问题，同样算失败；抽风、连不上、认不出来只能算未检查 —— 把上游抽风
- * 说成 key 坏了，正是这张票要修的毛病。
+ * 四种状态里挑一个。只有「key 确实被拒」判失败；额度用尽和入口变了也是要修的真问题，
+ * 同样算失败；抽风、连不上、认不出来只能算未检查 —— 上游抽风不等于 key 坏了。
  */
 export function probeState(outcome: ProbeOutcome): DiagState {
   if (outcome.auth === "rejected") return "failed";
@@ -60,9 +61,10 @@ export function probeDetail(outcome: ProbeOutcome): string {
   }
   const tools = outcome.tools;
   if (tools) {
-    const entry = tools.searchTool
-      ? tools.queryArg ? "search 入参还对" : "search 入参变了"
-      : "没有 search 这个工具";
+    let entry: string;
+    if (!tools.searchTool) entry = "没有 search 这个工具";
+    else if (tools.queryArg) entry = "search 入参还对";
+    else entry = "search 入参变了";
     parts.push(`tools/list 回了 ${tools.count} 个：${entry}`);
   }
   if (outcome.undetectable.length > 0) {

@@ -26,6 +26,7 @@ import {
   writeUserCredential,
 } from "@anysearch-cli/store";
 import {
+  isProbeProviderId,
   probeProviderAuth,
   type ProbeOutcome,
   type ProbeProviderId,
@@ -38,7 +39,7 @@ import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } fro
  * (`printf '%s' "$KEY" | ans auth set openai`), an output sink for the prompt,
  * and sinks for the two output channels — without patching process.stdin,
  * process.stdout or process.stderr. Patching those globals inside a node --test
- * file desyncs the reporter and silently drops later test results (#442).
+ * file desyncs the reporter and silently drops later test results.
  * Production leaves it unset and gets the terminal.
  */
 export const AUTH_IO: {
@@ -168,13 +169,17 @@ function faultLine(outcome: ProbeOutcome): string {
 }
 
 /**
- * Check a search key against its provider's free surface before storing it
- * (#442). Only the free surface: no search runs and no quota is spent.
+ * Check a search key against its provider's free surface before storing it.
+ * Only the free surface: no search runs and no quota is spent.
  *
  * A rejected key is not stored — the point of the check is that a typo never
  * becomes a stored key. Anything else (429, 5xx, no network, an exhausted plan)
- * is a warning: the key may well be fine, and an offline machine must still be
+ * only warns: the key may well be fine, and an offline machine must still be
  * able to store one. Returns false only when the upstream refused the key.
+ *
+ * Nothing here claims the key was stored: the write happens after this returns,
+ * and a warning that said "stored anyway" would contradict the error that
+ * follows when the file turns out to be unwritable.
  */
 async function verifySearchKey(
   provider: ProbeProviderId,
@@ -183,20 +188,28 @@ async function verifySearchKey(
 ): Promise<boolean> {
   const endpoint = provider === "anysearch" ? env.ANYSEARCH_ENDPOINT?.trim() || undefined : undefined;
   stderr("Checking " + provider + " against its free surface (no search, no quota)...\n");
-  const outcome = await probeProviderAuth(provider, { apiKey, endpoint });
+  let outcome: ProbeOutcome;
+  try {
+    outcome = await probeProviderAuth(provider, { apiKey, endpoint });
+  } catch {
+    // The probes promise not to throw; if one still does, that is not a reason
+    // to keep a key out of the file.
+    stderr("[warn] could not check the key (probe failed); run `ans doctor --live` later.\n");
+    return true;
+  }
   if (outcome.auth === "rejected") {
     stderr("upstream rejected this key (" + faultLine(outcome) + "); nothing was written.\n" +
       "Copy the key from " + provider + "'s own console, or add --no-verify to store it without checking.\n");
     return false;
   }
   if (outcome.auth !== "ok") {
-    stderr("[warn] could not check the key (" + faultLine(outcome) + "); it was stored anyway. " +
+    stderr("[warn] could not check the key (" + faultLine(outcome) + "). " +
       "Run `ans doctor --live` when the network is back.\n");
   } else if (outcome.problem) {
     // The key is good, the account is not usable right now (exhausted plan,
     // drifted entry). Worth saying; not a reason to refuse the key.
     stderr("[warn] the key is good, but " + provider + " cannot answer right now (" +
-      faultLine(outcome) + "); the key was stored anyway.\n");
+      faultLine(outcome) + ").\n");
   } else {
     stderr("Checked: " + provider + "'s free surface accepted this key.\n");
   }
@@ -297,8 +310,13 @@ export async function runAuth(args: string[]): Promise<number> {
       return 2;
     }
     if (info.kind === "search" && !skipVerify) {
-      const accepted = await verifySearchKey(info.id as ProbeProviderId, apiKey, env);
-      if (!accepted) return 1;
+      if (!isProbeProviderId(info.id)) {
+        // No free-surface probe for this provider yet: say so, and store the key.
+        stderr("[warn] " + info.id + " has no free-surface probe yet; the key is stored unchecked.\n");
+      } else {
+        const accepted = await verifySearchKey(info.id, apiKey, env);
+        if (!accepted) return 1;
+      }
     }
     try {
       const path = writeUserCredential({ provider: info.id, endpoint, apiKey }, { home });
