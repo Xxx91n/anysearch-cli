@@ -8,6 +8,7 @@
 
 import Exa from "exa-js";
 import type { ProviderAnswer, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
+import { PROVIDER_FACTS } from "./provider-facts";
 
 // Mode mapping: our modes -> Exa search type.
 const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
@@ -18,11 +19,12 @@ const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
 };
 
 export class ExaProvider implements SearchProvider {
-  readonly id = "exa";
-  readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
+  readonly id = PROVIDER_FACTS.exa.id;
+  readonly modes: readonly Mode[] = PROVIDER_FACTS.exa.modes;
   // exa-js BaseSearchOptions.includeDomains is a first-class
   // typed field (walled-garden RAG positioning per Exa docs).
-  readonly domainFilterSupported = true;
+  readonly domainFilterSupported = PROVIDER_FACTS.exa.domainFilterSupported;
+  readonly verticalDomainSupported = PROVIDER_FACTS.exa.verticalDomainSupported;
   private client: Exa;
 
   constructor(apiKey?: string) {
@@ -47,7 +49,7 @@ export class ExaProvider implements SearchProvider {
       url: r.url,
       title: r.title ?? r.url, // title can be null in Exa
       snippet: ((r as any).text ?? "").slice(0, 500), // text from contents
-      source: "exa",
+      source: this.id,
       publishedAt: r.publishedDate,
       extra: r.score ? { score: r.score } : undefined,
     }));
@@ -77,7 +79,7 @@ export class ExaProvider implements SearchProvider {
     }
 
     return {
-      provider: "exa",
+      provider: this.id,
       results,
       answers,
       ...(answersMeta ? { answersMeta } : {}),

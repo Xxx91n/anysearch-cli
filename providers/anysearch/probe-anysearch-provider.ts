@@ -33,7 +33,8 @@ registerHooks({
   },
 });
 
-const { AnySearchProvider, ANYSEARCH_ENDPOINT } = await import("../../packages/retriever/src/providers/anysearch.ts");
+const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
+const { PROVIDER_FACTS } = await import("../../packages/retriever/src/providers/provider-facts.ts");
 const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
 
 // Probe overrides (P1 env/key/endpoint separation):
@@ -46,10 +47,15 @@ const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
 
+// --default-endpoint 要的是事实表里那个公开地址。常量被改名或搬走时 import 拿到的是
+// undefined（plain node 没有类型检查），静默退回 env 会让 endpointSource 说谎——
+// 所以先校验再放行，和过去校验 adapter 的那个导出是同一个理由。
+const DEFAULT_ENDPOINT: string | undefined = PROVIDER_FACTS?.anysearch?.freeProbe?.endpoint;
+
 // A dropped or renamed export is undefined, and --default-endpoint would then fall back
 // to env while envClass still prints default(forced) — refuse instead of lying.
-if (FORCE_DEFAULT && (typeof ANYSEARCH_ENDPOINT !== "string" || ANYSEARCH_ENDPOINT.length === 0)) {
-  const message = "anysearch adapter does not export ANYSEARCH_ENDPOINT — --default-endpoint cannot be trusted";
+if (FORCE_DEFAULT && (typeof DEFAULT_ENDPOINT !== "string" || DEFAULT_ENDPOINT.length === 0)) {
+  const message = "provider-facts has no anysearch.freeProbe.endpoint — --default-endpoint has nothing to send";
   // Nothing was called, so there is no class to report and the endpoint source is unknown.
   console.log(JSON.stringify({
     schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
@@ -75,7 +81,7 @@ function hostOf(u: string): string {
 async function main(): Promise<void> {
   // Explicit constructor arg wins over env inside the provider —
   // this is the P1 separation lever (endpoint/key attribution).
-  const p = new AnySearchProvider(NO_KEY ? "" : undefined, FORCE_DEFAULT ? ANYSEARCH_ENDPOINT : undefined);
+  const p = new AnySearchProvider(NO_KEY ? "" : undefined, FORCE_DEFAULT ? DEFAULT_ENDPOINT : undefined);
   const t0 = Date.now();
   const envClass = {
     endpointSource: FORCE_DEFAULT ? "default(forced)" : process.env.ANYSEARCH_ENDPOINT ? "env" : "default",

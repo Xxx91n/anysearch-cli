@@ -7,21 +7,23 @@
 //                                    好 key isError「query is required」；坏 key invalid_api_key
 //
 // 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
-// 探针是各自独立的最小实现，不 import 适配器 —— 那样就分不清「适配器坏」还是「上游坏」。
+// Design: 探针读 provider-facts，不 import 适配器 —— 地址和 undetectable 是数据，不是
+// 适配器的请求路径。取舍：表里的地址写错时探针和适配器会一起错，这是为了不把探针绑到
+// 适配器的请求实现上（#415）。
 // 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
+import { PROVIDER_FACTS, type UndetectableClass } from "./provider-facts";
 
 /** 一次探针请求多久算超时。服务器回了响应头再卡住，也在这一条时限里。 */
 const PROBE_TIMEOUT_MS = 10_000;
 
-export type ProbeProviderId = "tavily" | "exa" | "anysearch";
-
 /**
- * 免费面天生验不到的错误类。三家的免费面现在都认得出坏 key，所以今天的取值只有
- * quota；auth 留着是给以后那些只看连通、分不出 key 好坏的新源用。
+ * 免费面探针覆盖的 provider：就是事实表的键，不另立一份清单。
+ * 表里每一家都必须有探针 —— `PROBES` 的类型是 `Record<ProbeProviderId, …>`，
+ * 少一个函数就编译失败，所以两个集合永远是同一个。
  */
-export type UndetectableClass = "auth" | "quota";
+export type ProbeProviderId = keyof typeof PROVIDER_FACTS;
 
 /** key 的三种结论。unverified 必须说出来，不然绿勾会被读成「验过了」。 */
 export type ProbeAuth = "ok" | "rejected" | "unverified";
@@ -112,11 +114,10 @@ function networkCode(error: unknown): string | undefined {
 
 // ── Tavily：GET /usage ────────────────────────────────────────────────
 // 坏 key 401（认证在用量之前判）；套餐用满的时候这个接口照样 200，用量说话。
-const TAVILY_ENDPOINT = "https://api.tavily.com";
-const TAVILY_UNDETECTABLE: readonly UndetectableClass[] = [];
-
 export async function probeTavily(input: ProbeInput): Promise<ProbeOutcome> {
-  const base = (input.endpoint ?? TAVILY_ENDPOINT).replace(/\/+$/, "");
+  const facts = PROVIDER_FACTS.tavily;
+  const undetectable = facts.freeProbe.undetectable;
+  const base = (input.endpoint ?? facts.freeProbe.endpoint).replace(/\/+$/, "");
   let resp: Response;
   let body: string;
   try {
@@ -127,26 +128,26 @@ export async function probeTavily(input: ProbeInput): Promise<ProbeOutcome> {
     // 读正文也在 try 里：超时管的是整条请求，服务器回了头再卡住就是在这里断的。
     body = await resp.text();
   } catch (error) {
-    return networkOutcome(error, TAVILY_UNDETECTABLE);
+    return networkOutcome(error, undetectable);
   }
   if (resp.status === 432) {
     // 套餐用尽的回包是纯文本 HTTP 432。状态落在 4xx 里，但意思不是「请求写错了」，
     // 是「额度没了」—— key 本身是好的。
-    return { auth: "ok", undetectable: TAVILY_UNDETECTABLE, problem: { class: "quota-exhausted", status: 432 } };
+    return { auth: "ok", undetectable, problem: { class: "quota-exhausted", status: 432 } };
   }
-  if (!resp.ok) return httpOutcome(resp.status, body, TAVILY_UNDETECTABLE);
+  if (!resp.ok) return httpOutcome(resp.status, body, undetectable);
   const usage = parseTavilyUsage(body);
   if (!usage) {
     return {
       auth: "unverified",
-      undetectable: TAVILY_UNDETECTABLE,
+      undetectable,
       problem: { class: "permanent-protocol", status: resp.status },
     };
   }
   const full = typeof usage.used === "number" && typeof usage.limit === "number" && usage.used >= usage.limit;
   return {
     auth: "ok",
-    undetectable: TAVILY_UNDETECTABLE,
+    undetectable,
     usage,
     ...(full ? { problem: { class: "quota-exhausted" as const, status: resp.status } } : {}),
   };
@@ -172,11 +173,10 @@ function parseTavilyUsage(body: string): ProbeOutcome["usage"] | null {
 // ── Exa：POST /search 空体 ────────────────────────────────────────────
 // 空体在认证之后被拒（缺 query），所以 400 是正面回答。坏 key 到不了这里：
 // 带坏 key 是 401 INVALID_API_KEY，完全不带 key 是 402。
-const EXA_ENDPOINT = "https://api.exa.ai";
-const EXA_UNDETECTABLE: readonly UndetectableClass[] = ["quota"];
-
 export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
-  const base = (input.endpoint ?? EXA_ENDPOINT).replace(/\/+$/, "");
+  const facts = PROVIDER_FACTS.exa;
+  const undetectable = facts.freeProbe.undetectable;
+  const base = (input.endpoint ?? facts.freeProbe.endpoint).replace(/\/+$/, "");
   let resp: Response;
   let body: string;
   try {
@@ -187,21 +187,17 @@ export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
     });
     body = await resp.text();
   } catch (error) {
-    return networkOutcome(error, EXA_UNDETECTABLE);
+    return networkOutcome(error, undetectable);
   }
   if (resp.status === 400 && !AUTH_REJECTED_TEXT.test(body)) {
-    return { auth: "ok", undetectable: EXA_UNDETECTABLE };
+    return { auth: "ok", undetectable };
   }
-  return httpOutcome(resp.status, body, EXA_UNDETECTABLE);
+  return httpOutcome(resp.status, body, undetectable);
 }
 
 // ── AnySearch：initialize + tools/list + 空参数 tools/call ────────────
 // 空参数 tools/call 才分得开 key：好 key 回 isError「query is required」，坏 key 回
 // isError「invalid_api_key」。顺手补一次 tools/list：这只工具改名或改入参是真出过的事。
-const ANYSEARCH_DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
-// 与适配器发的版本一致；客户端支持的那个版本由我们决定，不跟服务端协商。
-const ANYSEARCH_PROTOCOL_VERSION = "2025-11-25";
-const ANYSEARCH_UNDETECTABLE: readonly UndetectableClass[] = ["quota"];
 const LEGACY_REST_SUFFIX = "/v1/search";
 
 /**
@@ -232,13 +228,14 @@ interface JsonRpcMessage {
 }
 
 export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
-  const undetectable = ANYSEARCH_UNDETECTABLE;
-  const endpoint = normalizeAnySearchEndpoint(input.endpoint ?? ANYSEARCH_DEFAULT_ENDPOINT);
+  const facts = PROVIDER_FACTS.anysearch;
+  const undetectable = facts.freeProbe.undetectable;
+  const endpoint = normalizeAnySearchEndpoint(input.endpoint ?? facts.freeProbe.endpoint);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     // spec MUST：两种媒体类型都要在 Accept 里。
     Accept: "application/json, text/event-stream",
-    "MCP-Protocol-Version": ANYSEARCH_PROTOCOL_VERSION,
+    "MCP-Protocol-Version": facts.mcpProtocolVersion,
   };
   if (input.apiKey) headers.Authorization = "Bearer " + input.apiKey;
 
@@ -251,7 +248,7 @@ export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
       id: 1,
       method: "initialize",
       params: {
-        protocolVersion: ANYSEARCH_PROTOCOL_VERSION,
+        protocolVersion: facts.mcpProtocolVersion,
         capabilities: {},
         // 跟适配器发的 clientInfo 一致（那边也是写死的 0.2.0）：探针要量的就是产品那条路。
         clientInfo: { name: "anysearch-cli-doctor", version: "0.2.0" },
@@ -371,15 +368,16 @@ function textOfToolsCall(result: Record<string, unknown>): string {
   return content.map((part) => (typeof part?.text === "string" ? part.text : "")).join(" ");
 }
 
+/** 免费面探针按 provider id 分派，一家一个函数；表里加一家，这里必须跟着加。 */
 const PROBES: Record<ProbeProviderId, (input: ProbeInput) => Promise<ProbeOutcome>> = {
   tavily: probeTavily,
   exa: probeExa,
   anysearch: probeAnySearch,
 };
 
-/** 这家有没有免费面探针。没登记的 provider 不猜，让调用方说清楚「还没接」。 */
+/** 这家有没有免费面探针：以事实表的键为准。没登记的 provider 不猜，让调用方说清楚「还没接」。 */
 export function isProbeProviderId(id: string): id is ProbeProviderId {
-  return Object.prototype.hasOwnProperty.call(PROBES, id);
+  return Object.prototype.hasOwnProperty.call(PROVIDER_FACTS, id);
 }
 
 /** 按 provider id 取那一条免费面探针。id 必须先过 isProbeProviderId。 */

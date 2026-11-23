@@ -4,6 +4,7 @@
 
 import { tavily } from "@tavily/core";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
+import { PROVIDER_FACTS } from "./provider-facts";
 
 // Mode mapping: our modes -> Tavily searchDepth.
 const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
@@ -14,10 +15,10 @@ const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
 };
 
 export class TavilyProvider implements SearchProvider {
-  readonly id = "tavily";
-  readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
-  // true: includeDomains goes upstream as include_domains, so upstream filters by it.
-  readonly domainFilterSupported = true;
+  readonly id = PROVIDER_FACTS.tavily.id;
+  readonly modes: readonly Mode[] = PROVIDER_FACTS.tavily.modes;
+  readonly domainFilterSupported = PROVIDER_FACTS.tavily.domainFilterSupported;
+  readonly verticalDomainSupported = PROVIDER_FACTS.tavily.verticalDomainSupported;
   private client: ReturnType<typeof tavily>;
 
   constructor(apiKey?: string) {
@@ -50,7 +51,7 @@ export class TavilyProvider implements SearchProvider {
       url: r.url,
       title: r.title,
       snippet: r.content.slice(0, 500), // ponytail: truncate to snippet size
-      source: "tavily",
+      source: this.id,
       publishedAt: r.publishedDate,
       extra: { score: r.score },
     }));
@@ -59,7 +60,7 @@ export class TavilyProvider implements SearchProvider {
     if (res.answer) answers.push(res.answer);
 
     return {
-      provider: "tavily",
+      provider: this.id,
       results,
       answers,
       elapsedMs: res.responseTime ?? (Date.now() - start),
