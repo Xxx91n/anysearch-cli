@@ -1,16 +1,12 @@
 // One plain sentence per error class saying what to do next; `unknown` has
-// none. The table lives here rather than in one host, because both hosts print
-// it: the MCP tools append it to the all-failed text, and `ans search` prints
-// it under the "Providers failed" line.
+// none. A sentence may carry `{wait}`: the classes whose remedy names a wait
+// fill it with the arm's retry-after ("3600 seconds") or with "a moment" when
+// the upstream did not say. The wait value is per arm, so it cannot be baked
+// into the table.
 //
-// A sentence may carry `{wait}`: the classes whose remedy names a wait fill it
-// with the arm's retry-after ("3600 seconds") or with "a moment" when the
-// upstream did not say. The wait value is per arm, so it cannot be baked into
-// the table.
-//
-// Design: the table lives in the kernel rather than in one host — both print
-// it (MCP appends it to the all-failed text, `ans search` prints it under
-// "Providers failed"), and a copy per host is how the two drift apart.
+// Design: the table lives in the kernel, not in one host — both print it (the
+// MCP tools append it to the all-failed text, `ans search` prints it under its
+// "Providers failed" line), and a copy per host is how the two drift apart.
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
 
 export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {

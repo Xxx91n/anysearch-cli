@@ -1,7 +1,7 @@
 // ans search: run a retrieval query through the retrieval engine.
 // decision 3A: uses createEngine factory, not inline wiring.
 
-import type { Mode } from "@anysearch-cli/retriever";
+import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
@@ -13,7 +13,23 @@ import {
   formatAbstainLine,
   formatProviderAbsentLine,
   formatProvidersFailedLine,
+  formatProviderHintLines,
 } from "./search-abstain";
+
+// Both render paths print "Providers failed"; both must print the remedy
+// beside it, or an abstain hides why the arm died.
+function printProviderFailureHints(metadata: {
+  providersFailed: string[];
+  providerErrorClasses?: Record<string, ProviderErrorClass>;
+  providerErrorRetryAfterSeconds?: Record<string, number>;
+}): void {
+  const hints = providerErrorHints(
+    metadata.providersFailed,
+    metadata.providerErrorClasses,
+    metadata.providerErrorRetryAfterSeconds,
+  );
+  for (const line of formatProviderHintLines(hints)) console.log(line);
+}
 
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
@@ -237,6 +253,7 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
       if (envelope.metadata.providersFailed.length > 0) {
         console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
+        printProviderFailureHints(envelope.metadata);
       }
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
@@ -280,14 +297,7 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     if (envelope.metadata.providersFailed.length > 0) {
       console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
-      // The class is a machine tag; the reader needs the action. One indented
-      // `id: sentence` per failed arm whose class has a remedy (#455).
-      const hints = providerErrorHints(
-        envelope.metadata.providersFailed,
-        envelope.metadata.providerErrorClasses,
-        envelope.metadata.providerErrorRetryAfterSeconds,
-      );
-      for (const [id, sentence] of Object.entries(hints)) console.log("  " + id + ": " + sentence);
+      printProviderFailureHints(envelope.metadata);
     }
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);

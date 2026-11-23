@@ -12,11 +12,13 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { providerErrorHints } from "@anysearch-cli/kernel";
 import {
   searchExitCode,
   formatAbstainLine,
   formatProviderAbsentLine,
   formatProvidersFailedLine,
+  formatProviderHintLines,
   describeKeylessBehavior,
   describeCredentialSource,
 } from "../src/commands/search-abstain";
@@ -57,6 +59,25 @@ async function main() {
   assert(multi !== undefined && multi!.includes("; "), "multiple absences render on one line");
   assert(multi!.includes("tavily — unexpected construction fault"), "each arm carries its own category");
   assert(multi!.includes("exa — permanent: missing/invalid credential"), "second arm keeps the credential category");
+
+  // 3b. Remedy lines under the failed line: the class tag is machine language,
+  //     the sentence is the action. The wait comes from the arm's retry-after,
+  //     and a class without a sentence adds nothing, so the quiet path stays quiet.
+  {
+    const hints = providerErrorHints(
+      ["tavily", "exa"],
+      { tavily: "free-quota-exhausted", exa: "unknown" },
+      { tavily: 3600 },
+    );
+    const lines = formatProviderHintLines(hints);
+    assert(lines.length === 1, "only the arm whose class has a sentence gets a line");
+    assert(
+      lines[0] === "  tavily: the free quota is used up — wait 3600 seconds and retry, or add a key for this provider",
+      "the hint line carries the retry-after as a number; got: " + lines[0],
+    );
+    assert(!lines[0].includes("{"), "the {wait} slot never reaches the reader");
+    assert(formatProviderHintLines({}).length === 0, "no hints, no lines");
+  }
 
   // 4. Failed-provider line carries the arm's key source (#441). Same
   //    resolution the engine hands us; no source when resolution never ran.
