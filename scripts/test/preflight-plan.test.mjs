@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -339,9 +339,10 @@ test("the real workspace: an mcp change runs cli, which bundles mcp source", () 
 });
 
 // The table is hand-written, so this is what keeps it honest: every reader it
-// names is a package the workspace still has, and every path is a file that
-// still exists. The exact list pins today's answer, so widening the table means
-// touching this test on purpose.
+// names is a package the workspace still has, every path is a file that still
+// exists, and the one non-obvious claim (store reads AGENTS.md) still has its
+// anchor in the data it reads. The exact lists pin today's answers, so widening
+// the table means touching this test on purpose.
 test("the real workspace: every reader in the table exists, and domains runs only them", () => {
   const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const names = new Set(readWorkspace(repo).map((pkg) => pkg.name));
@@ -355,6 +356,13 @@ test("the real workspace: every reader in the table exists, and domains runs onl
   assert.equal(plan.mode, "readers");
   assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
   assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, ["@anysearch-cli/store"]);
+  // That row rests on a golden entry anchoring on the file: without the anchor,
+  // store would have no reason to run and the row should go with it.
+  const looks = JSON.parse(readFileSync(join(repo, "eval-looks.json"), "utf8"));
+  assert.ok(
+    looks.golden.entries.some((entry) => entry.provenance?.ref === "AGENTS.md"),
+    "no golden entry anchors on AGENTS.md any more; drop that row from ROOT_READERS",
+  );
 });
 
 test("the workspace reader picks up both directions of the dependency graph", () => {
