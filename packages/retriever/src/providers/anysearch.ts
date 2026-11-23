@@ -103,7 +103,7 @@ async function readSseJsonRpc(resp: Response, id: number, method: string): Promi
 }
 
 function toResult(url: string, title: string, snippet: string): NormalizedResult {
-  return { url, title: title || url, snippet: snippet.slice(0, 500), source: "anysearch" };
+  return { url, title: title || url, snippet: snippet.slice(0, 500), source: PROVIDER_FACTS.anysearch.id };
 }
 
 function mapStructuredResults(list: Array<{ title?: string; url?: string; snippet?: string; content?: string }>): NormalizedResult[] {
@@ -318,7 +318,7 @@ export class AnySearchProvider implements SearchProvider {
       }
     }
     return {
-      provider: "anysearch",
+      provider: this.id,
       results: mapped.results,
       answers: [],
       elapsedMs: mapped.elapsedMs ?? (Date.now() - start),

@@ -1,12 +1,9 @@
-// provider-facts：一家信息源在代码里会被读到的事实，只放这一处。
+// provider-facts：一家信息源在代码里会被读到的事实，只放这一处。三个适配器和免费面探针
+// 都从这里读，改一家信息源改一行。
 //
-// 三个适配器（exa / tavily / anysearch）和免费面探针都从这里读 id、modes、两个能力位、
-// 免费面的 endpoint 与 undetectable、AnySearch 的 MCP 协议版本。改一家信息源改一行。
-//
-// Design: 行为值归这张表，说明文字归文档 —— 改一家信息源只改这里一行，编译器盯着；
-// transport 描述、cancellable、用量、解释文字、中英双语 prose 留在 providers/<id>/README.md
-// 和 docs/mcp-server.md 的「## Upstream provider transport matrix」手写（#419 定的分工）。
-// 表不当文档的源：往这里塞 prose 只会多一份要维护的拷贝，所以 #415 按 code-only 收窄。
+// Design: 行为值归这张表，说明文字归文档（providers/<id>/README.md、
+// docs/mcp-server.md 的「## Upstream provider transport matrix」）——表不当文档的源，
+// 往这里塞 prose 只会多一份要维护的拷贝（#419、#415 的 code-only 收窄）。
 import type { Mode } from "../contract";
 
 /** 免费面天生验不到的错误类：这一跑过了，也不代表这类问题是好的。
@@ -14,7 +11,12 @@ import type { Mode } from "../contract";
  *  那些只看连通、分不出 key 好坏的新源用。 */
 export type UndetectableClass = "auth" | "quota";
 
-/** 代码里有适配器、也有免费面探针的这几家。新增一家要同时填表、加适配器、加探针。 */
+/**
+ * 代码里有适配器、也有免费面探针的这几家。这组 id 现在各写一份、没有类型把它们绑在一起：
+ * 这里、packages/store/src/credentials.ts 的 `SEARCH_PROVIDER_IDS`（凭据那侧）、
+ * packages/kernel/src/composition.ts 的 `PROVIDER_CONSTRUCTORS`（装配）、probes 的 `PROBES`。
+ * 新增一家要四处一起改。
+ */
 type ProviderKey = "exa" | "tavily" | "anysearch";
 
 export interface ProviderFacts {
@@ -26,7 +28,7 @@ export interface ProviderFacts {
   verticalDomainSupported: boolean;
   /** 免费面：不花钱的那一次调用打哪个入口，以及它天生验不到什么。 */
   freeProbe: {
-    /** 没给 endpoint 参数时打这个地址。 */
+    /** 探针入口：没给 endpoint 参数时打这个地址。也是该源适配器的默认地址（目前只有 anysearch 两边共用）。 */
     endpoint: string;
     undetectable: readonly UndetectableClass[];
   };

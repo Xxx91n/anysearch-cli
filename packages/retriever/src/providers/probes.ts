@@ -7,9 +7,9 @@
 //                                    好 key isError「query is required」；坏 key invalid_api_key
 //
 // 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
-// Design: 探针不 import 适配器，但读 provider-facts —— 地址和 undetectable 是数据，
-// 不是适配器的请求路径，归因没被绑到一起。代价认了：表里的地址写错时，探针会和适配器
-// 一起错（#415 的取舍；拒绝合并两条 anysearch 探针也是同一个理由）。
+// Design: 探针读 provider-facts，不 import 适配器 —— 地址和 undetectable 是数据，不是
+// 适配器的请求路径。取舍：表里的地址写错时探针和适配器会一起错，这是为了不把探针绑到
+// 适配器的请求实现上（#415）。
 // 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";

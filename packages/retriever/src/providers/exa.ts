@@ -49,7 +49,7 @@ export class ExaProvider implements SearchProvider {
       url: r.url,
       title: r.title ?? r.url, // title can be null in Exa
       snippet: ((r as any).text ?? "").slice(0, 500), // text from contents
-      source: "exa",
+      source: this.id,
       publishedAt: r.publishedDate,
       extra: r.score ? { score: r.score } : undefined,
     }));
@@ -79,7 +79,7 @@ export class ExaProvider implements SearchProvider {
     }
 
     return {
-      provider: "exa",
+      provider: this.id,
       results,
       answers,
       ...(answersMeta ? { answersMeta } : {}),
