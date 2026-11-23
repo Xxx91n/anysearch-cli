@@ -265,9 +265,11 @@ Rules behind the table:
   was found, and `none` is not a claim that the arm sits idle — all three
   search on the provider's free quota without a key (Exa switches to its own
   MCP endpoint). Whether an arm was *built* is a different question, answered
-  by `providerBuildErrors`: `none` plus a build failure means a key was
-  configured and could not be used, never that a key is missing. It is the
-  same object `ans search --json` emits, so the two surfaces cannot disagree.
+  by `providerBuildErrors`: a key that cannot be used fails construction there,
+  and the record calls it a credential fault without quoting the key. A
+  missing key never shows up as a build failure — that arm runs on the free
+  quota. It is the same object `ans search --json` emits, so the two surfaces
+  cannot disagree.
   An engine built without a credential seam reports `null` in both surfaces.
   Error results do not carry it.
 - **An error class carries its remedy.** The class is a machine tag; a reader

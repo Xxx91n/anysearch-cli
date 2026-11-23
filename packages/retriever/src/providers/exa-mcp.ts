@@ -4,7 +4,8 @@
 // 不跟 anysearch.ts 合成一个客户端：两家在握手、错误通道、回包三处都对不上（#449 实测）。
 // 等出现第三家走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽公共层。
 // 端点和能力读 PROVIDER_FACTS.exa.freeArm；形状、限速和失败分类写在
-// providers/exa/README.md。这个端点不给用户换地址，也没有环境变量开关（#448）。
+// providers/exa/README.md 的「## 回复形状」「## 已知异常」。这个端点不给用户换地址，
+// 也没有环境变量开关（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { Mode, NormalizedResult, ProviderEnvelope, SearchProvider, SearchRequest } from "../contract";

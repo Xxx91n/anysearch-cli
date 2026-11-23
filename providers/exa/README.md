@@ -23,8 +23,8 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
   `?exaApiKey=`。它同样不读环境变量，只认工厂给的「没有 key」。
 - 只有直接 `new ExaProvider("")` 才走另一条路：空 key 交给 `exa-js`，由 SDK 自己去读环境变量，读不到
   就当场抛。产品不会走到这里——工厂把空 key 拦下来换成免费额度臂了。
-- 坏 key 不退免费额度（#448）：key 格式坏了（比如带换行，构造函数当场抛 `invalid header value`）或服务端
-  不认（401）都照旧报 `permanent-auth`，不会悄悄降级成免费额度。
+- 坏 key 不退免费额度（#448）：key 格式坏了（比如带换行）构造函数当场抛，记进 `providerBuildErrors`；key
+  格式没问题、服务端不认（401）的，搜索时报 `permanent-auth`。两种都不会悄悄降级成免费额度。
 - 这个夹子没有手工探针，所以「环境变量优先、再读 `~/.ans/credentials.json`」这套解析在 exa 上**没有在探针
   这一面实测过**——#506 把三条手工探针都接到了 `resolveSearchCredentials` 上，但 exa 没有探针；
   `ans doctor --live` 会验 Exa 的 key（没配 key 时它跳过这一家），那是免费面检查，不等于原文/适配器归因面，
@@ -78,23 +78,30 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 
 ## 已知异常
 
-**有 key**：目前**没有**记到 exa 专属的错误形状：`docs/limitations.md` 里 exa 只占「`usage` 恒
-`undefined`」这一条，`quota-exhausted` 那套正文匹配是为 tavily 的 432 写的。真遇到 exa 的异常
-（401 / 429 / 套餐），先把原始回包和 `classifyProviderError` 的判定记进 `docs/limitations.md`，再回来补
-这一节——别在 README 里写没查到的东西。
+**有 key**：REST 臂没有专属的错误形状，`classifyProviderError` 对它的判定全走通用规则（401 / 403 是
+`permanent-auth`，429 / 5xx 是 `transient`）。两件值得记住的：
+
+- key 格式坏了（比如带换行）在**构造时**就抛，走的是「构造失败被点名」那条路：`providerBuildErrors` 里记
+  `permanent: missing/invalid credential`，不进 `providerErrorClasses`。key 格式没问题、服务端不认
+  （401）才在搜索时报 `permanent-auth`。
+- 套餐用满：`exa-js` 没有独立用量接口，免费面探针也验不到，只能从搜索回包看出来。
+
+真遇到新的形状，先把原始回包和 `classifyProviderError` 的判定记进 `docs/limitations.md`，再回来补这一节
+——别在 README 里写没查到的东西。
 
 **没 key（免费额度）**，限速也算在这一栏里，不单开一节：
 
 - **429 的形状**：HTTP 429 + `application/json` + JSON-RPC 错误码 `-32000`。分类是 `transient`——这是短窗口
   限速，等一秒真能通，不归 `free-quota-exhausted`。适配器不重试；响应头里有 `retry-after`（秒数或 HTTP
   日期都认）就挂到错误对象上，引擎记进 `providerErrorRetryAfterSeconds`。`X-RateLimit-Reset` 不读。
-- **限速数字**：开源服务的默认是 2 QPS / 每天 50 次每 IP（2026-11-23 实测：4 个并发里 1 个被拒，2 QPS 的
-  滑动窗口）。只有 `tools/call` 计数，`initialize` / `tools/list` 不算。
+- **限速数字**：开源服务的默认是 2 QPS / 每天 50 次每 IP（#447 记的开源服务默认值）。2026-11-23 实测过的是
+  2 QPS 这一半：4 个并发里 1 个被拒，滑动窗口。同一次实测还确认只有 `tools/call` 计数，`initialize` /
+  `tools/list` 不算。
 - **`x-ratelimit-limit` / `x-ratelimit-remaining` 被上游故意置 0**：别把这两个头读成「额度用完了」，
   要看得看 `retry-after`。
-- **IPv6 或代理出口回 403**：没配 key 时走这两个出口，上游回 403，落到 `permanent-auth`。那句提示的前半
-  「配一把有效 key」正好是有效动作，后半「key 不对」对没配 key 的人不准——为什么不为它新开一个错误类，
-  记在 `docs/limitations.md`。
+- **IPv6 或代理出口回 403**：没配 key 时走这两个出口，Exa 的文档说会回 403（#447 记的，本机是 IPv4，
+  没撞到），分类落到 `permanent-auth`。那句三家共用的提示里「配一把有效 key」正好是有效动作，「删掉 key
+  走免费额度」这半句对没配 key 的人没用——为什么不为它新开一个错误类，记在 `docs/limitations.md`。
 - **`result.isError: true` 也算失败**：正文读出来当错误串，绝不静默变成 0 条。
 - **回包的 `Content-Type` 两种都认**（`application/json` 和 `text/event-stream`）：都不是就报错，并说出
   实际拿到的是什么。
@@ -127,17 +134,27 @@ ANS_PROVIDERS=exa ans search "cloudflare workers" --json
 [`docs/research/real-baseline-2026-11-22.md`](../../docs/research/real-baseline-2026-11-22.md)。
 
 **没 key（免费额度臂）**：2026-11-24 01:41（Asia/Singapore，UTC `2026-11-23T17:41:30Z`），本机 Windows，
-Node 24.22.1，三把 key 都从环境里拿掉，`EXA_API_KEY` 也没有，用 `createExaProvider("")`（显式空串就是
-「没有 key」，不会去读环境变量）跑 `cloudflare workers`、`fast`、`maxResults: 3`：通，3 条结果，
-`elapsedMs: 1737`，第一条是 `https://developers.cloudflare.com/workers/`。同一次现场直接 `POST`
-`https://mcp.exa.ai/mcp` 拿原始回包，HTTP 200、`content-type: text/event-stream`，第一帧开头是：
+Node 24.22.1。三把 key 都从环境里拿掉（`env -u EXA_API_KEY -u TAVILY_API_KEY -u ANYSEARCH_API_KEY`），
+`HOME` / `USERPROFILE` 指到一个空目录，所以 `~/.ans/credentials.json` 根本不存在——凭据文件那条路也断了。
+用 `createExaProvider("")`（显式空串就是「没配 key」，不会去读环境变量）跑 `cloudflare workers`、
+`fast`、`maxResults: 3`：通，3 条结果，`elapsedMs: 1737`，第一条是
+`https://developers.cloudflare.com/workers/`。
+
+同一次现场直接 `POST` `https://mcp.exa.ai/mcp` 拿原始回包，HTTP 200、`content-type: text/event-stream`，
+第一帧开头是：
 
 ```text
 event: message
 data: {"result":{"content":[{"type":"text","text":"Title: Overview · Cloudflare Workers docs\nURL: https://developers.cloudflare.com/workers/\nPublished: N/A\nAuthor: N/A\nHighlights:\nOverview · Cloudflare Workers docs\n\n# Cloudflare Workers\n\nA serverless platform for building, deploying, and scaling apps...
 ```
 
-同一次现场还跑了产品的三个出口（源码直跑，没打包）：`ans search "cloudflare workers" --json` 退出码 0，
-`providersQueried` 三家都在、`credentialSources` 三家都是 `none`、`providerBuildErrors` 是空的、结果里有
-exa；MCP `search_web` 的 `structuredContent` 同一个形状；`ans doctor` 三行「信息源」都说「没配 key，用免费
-额度跑（有次数和速度上限）」。
+产品的三个出口也在同一次现场跑了（源码直跑，没打包；`pnpm -C apps/cli dev <子命令>`、MCP 走
+`pnpm -C apps/mcp dev`，前面那串 `env -u` 和临时 `HOME` 一样带着）：
+
+- `ans search "cloudflare workers" --json`：退出码 0，`providersQueried` 是
+  `["tavily","exa","anysearch"]`，`credentialSources` 是
+  `{"status":"resolved","tavily":"none","exa":"none","anysearch":"none"}`，`providerBuildErrors` 是 `{}`，
+  10 条结果里有 exa 的。
+- MCP `search_web`：`isError` 为 false，`structuredContent` 里同样是那三家和三个 `none`，正文里有
+  `"source": "exa"` 的条目。
+- `ans doctor`：三行「信息源」都是「没配 key，用免费额度跑（有次数和速度上限）」，退出码 0。
