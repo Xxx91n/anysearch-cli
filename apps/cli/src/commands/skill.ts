@@ -26,11 +26,12 @@ Options:
   --help, -h         Show this help
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
-A SKILL.md passes (agentskills.io/specification) when its frontmatter is a YAML mapping,
-name is 1–64 lowercase letters/digits with single hyphens, description is 1–1024
-characters and says when to use the skill, and the body stays under 500 lines.
-validate also wants name to equal the directory it lives in; install accepts any
-source folder name (a cloned repo usually has one) and installs under frontmatter name.
+Checked rules (agentskills.io/specification plus two house rules): frontmatter is a YAML
+mapping; name is 1–64 lowercase letters/digits with single hyphens and is not a Windows
+device name; description is 1–1024 characters and says when to use the skill; the body
+stays under 500 lines. validate also requires name to equal the installed directory name;
+install accepts any source folder name (a cloned repo usually has its own) and installs
+under the name the frontmatter declares.
 Managed skills live in ${MANAGED_SKILLS_REL_PATH}; sibling directories under skills/ are user-authored.
 install copies the whole skill directory into ${MANAGED_SKILLS_REL_PATH}; the runtime never loads it (a host agent reads the files directly).
 [skills].active is just a list of keys for [skills.toolRequires], unrelated to directories in ${MANAGED_SKILLS_REL_PATH}.

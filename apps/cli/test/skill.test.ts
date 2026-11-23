@@ -543,6 +543,8 @@ test("description and body rules are enforced by install and validate alike", as
     ["---\nname: demo\ndescription: A skill about demos.\n---\n", "must also say when to use the skill"],
     [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
     ["---\ndescription: Use when the name is gone.\n---\n", "has no name field"],
+    // Same YAML-null trap as `description:` above, on the other required field.
+    ["---\nname:\ndescription: Use when the name is blank.\n---\n", "has no name field"],
   ];
   for (const [text, expected] of cases) {
     writeFileSync(file, text);
@@ -567,6 +569,17 @@ test("description and body rules are enforced by install and validate alike", as
   assert.equal((await f.run(["validate", "demo"])).code, 0);
   writeFileSync(installed, body(500));
   assert.equal((await f.run(["validate", "demo"])).code, 1);
+  // The "when to use it" half accepts an English marker or a Chinese one; the
+  // descriptions an agent actually ships are written both ways.
+  for (const description of [
+    "Reviews pull requests. Use whenever the user asks for a review.",
+    "搜索网页并整理结果，用户要求查资料时使用。",
+  ]) {
+    writeFileSync(installed, `---\nname: demo\ndescription: ${description}\n---\nbody\n`);
+    const ok = await f.run(["validate", "demo"]);
+    assert.equal(ok.code, 0, `${description} should pass: ${ok.stdout}`);
+    assert.match(ok.stdout, /SKILL\.md name, description and body follow the spec/);
+  }
   // validate also holds the installed copy to its directory name, which is what
   // keeps it agreeing with the repo check about the same file.
   writeFileSync(installed, "---\nname: other\ndescription: Use when the name drifted.\n---\nbody\n");

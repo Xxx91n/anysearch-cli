@@ -11,9 +11,12 @@
 //   node scripts/check-skills.mjs                  # every SKILL.md Git can see
 //   node scripts/check-skills.mjs <dir|SKILL.md>   # only these
 //
-// Exit codes: 0 every skill passes · 1 a skill broke a rule, or no SKILL.md was
-// found at all · 2 the check could not run (no Git, no tsx, a path that does not
-// exist, a file that cannot be read).
+// Exit codes: 0 every skill passes · 1 a skill broke a rule, or discovery found
+// no SKILL.md at all · 2 the check could not run (no Git, no tsx, a path
+// argument that does not exist, a file that cannot be read).
+//
+// `ANS_CHECK_SKILLS_ROOT` retargets discovery at another checkout; only the
+// script's tests use it.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -97,10 +100,11 @@ async function run() {
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
     } catch (error) {
-      // A rule failure reads "field + what was expected"; anything else (an
-      // unreadable file, a missing parent) is reported apart and fails the run
-      // as "could not check", never as "this skill is broken".
-      if (error instanceof SkillError) {
+      // A rule failure reads "field + what was expected"; anything else (a
+      // permission error, an I/O failure) is reported apart and fails the run as
+      // "could not check", never as "this skill is broken". SkillError carries
+      // the exit code the CLI would use, so a usage-class error stays apart too.
+      if (error instanceof SkillError && error.exitCode === 1) {
         failed += 1;
         process.stdout.write(`[FAIL] ${shown(file)}: ${withoutTrailingPath(error.message, file)}\n`);
       } else {

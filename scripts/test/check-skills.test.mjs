@@ -5,7 +5,7 @@
 // mode that CI runs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -122,6 +122,24 @@ test("no arguments in this checkout finds the shipped skill and passes it", () =
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /apps\/plugin\/skills\/ans\/SKILL\.md/);
   assert.match(result.stdout, /([1-9]\d*) SKILL\.md checked, 0 failed/);
+});
+
+// A file the checker cannot read is "could not check" (exit 2), not "this skill
+// is broken" (exit 1); the two are read differently by whoever sees the red run.
+test("an unreadable SKILL.md is reported apart and exits 2", (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows permissions do not deny a read this way");
+    return;
+  }
+  const root = withRoot(t);
+  const dir = skill(root, "locked", "name: locked\ndescription: Use when the file cannot be read.");
+  const file = path.join(dir, "SKILL.md");
+  chmodSync(file, 0o000);
+  t.after(() => chmodSync(file, 0o600));
+  const result = check([dir]);
+  assert.equal(result.code, 2, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[ERROR\]/);
+  assert.match(result.stdout, /could not be read/);
 });
 
 test("a checkout with no skill is refused instead of passing vacuously", (t) => {

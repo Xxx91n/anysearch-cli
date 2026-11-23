@@ -165,7 +165,7 @@ function requireName(value: unknown, file?: string): asserts value is string {
     || value.includes("--") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(value)) {
     const rule = "1–64 lowercase letters/digits, with single hyphens, and not a reserved device name";
     if (file === undefined) fail(`skill name must be ${rule}`);
-    fail(value === undefined
+    fail(value === undefined || value === null
       ? `SKILL.md has no name field; it must be ${rule}: ${file}`
       : `SKILL.md name ${JSON.stringify(value)} must be ${rule}: ${file}`);
   }
@@ -713,8 +713,8 @@ function requireDescription(value: unknown, path: string): void {
  * content, and counting them would make the house style lose two lines.
  */
 function requireShortBody(body: string, path: string): void {
-  const trimmed = body.replace(/^(?:\r?\n)+/, "").replace(/(?:\r?\n)+$/, "");
-  const lines = trimmed === "" ? 0 : trimmed.split(/\r?\n/).length;
+  const trimmed = body.replace(/\r\n?/g, "\n").replace(/^\n+/, "").replace(/\n+$/, "");
+  const lines = trimmed === "" ? 0 : trimmed.split("\n").length;
   if (lines >= SKILL_BODY_LINE_LIMIT) {
     fail(`SKILL.md body must stay under ${SKILL_BODY_LINE_LIMIT} lines, got ${lines} (move detail into files the skill references): ${path}`);
   }
