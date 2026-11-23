@@ -5,6 +5,13 @@
 // are presentation contracts of `ans search` — stdout in the result/abstain
 // render; the absence line additionally rides stderr on the error path.
 
+// 只做类型导入，运行时擦除。标签类型在 kernel/composition；本模块还管
+// `Providers failed` 行的来源标注和 doctor 共用的 keyless/凭据措辞。
+import type { CredentialSourceLabel, CredentialSources } from "@anysearch-cli/kernel";
+// 同样只做类型导入；provider 联合由 store 拥有，这里不复制一份。新增
+// provider 时下面的 Record 会编译失败，直到补上它的无 key 措辞。
+import type { SearchProviderId } from "@anysearch-cli/store";
+
 // Exit codes: 0 = ok (including abstain), 1 = generic failure / zero results
 // outside any domain policy, 2 = usage error, 3 = abstain with --fail-on-abstain
 // (dedicated nonzero so automation can discriminate without scraping text).
@@ -33,4 +40,65 @@ export function formatProviderAbsentLine(buildErrors: Record<string, string>): s
   const entries = Object.entries(buildErrors);
   if (entries.length === 0) return undefined;
   return "Providers absent (build failure): " + entries.map(([id, category]) => id + " — " + category).join("; ");
+}
+
+/**
+ * What one arm does when it has no key, in the same words doctor uses for its
+ * 「信息源」 row. These are adapter facts, not service facts: all three services
+ * have a free route, but only tavily and anysearch are wired to reach it from
+ * this product; exa's adapter speaks REST only.
+ */
+const KEYLESS_BEHAVIOR: Record<SearchProviderId, string> = {
+  tavily: "按 keyless 跑",
+  anysearch: "按匿名跑",
+  exa: "这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
+};
+
+export function describeKeylessBehavior(provider: SearchProviderId): string {
+  return KEYLESS_BEHAVIOR[provider];
+}
+
+/**
+ * 一处 key 来源措辞，`ans search` 和 `ans doctor` 共用，避免两边说两套。
+ */
+export function describeCredentialSource(label: CredentialSourceLabel, provider: SearchProviderId): string {
+  if (label === "env") return "key 来自环境变量";
+  if (label === "user") return "key 来自用户凭据文件";
+  return "无 key，" + describeKeylessBehavior(provider);
+}
+
+/**
+ * Providers failed 那一行：括号里写各臂的 key 来源；解析没跑成、或记录里
+ * 没这个臂，就什么都不写（不编来源）。
+ */
+function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
+  switch (id) {
+    case "tavily":
+      return describeCredentialSource(sources.tavily ?? "none", "tavily");
+    case "anysearch":
+      return describeCredentialSource(sources.anysearch ?? "none", "anysearch");
+    case "exa":
+      // A runtime-failed exa arm was built, so it had a key. If the record
+      // says none, name only the key state: "does not participate" would
+      // contradict the "Providers failed" line it rides.
+      return sources.exa === "env" || sources.exa === "user"
+        ? describeCredentialSource(sources.exa, "exa")
+        : "无 key";
+    // Unknown ids get no note: the kernel record only names the three search
+    // arms, and inventing a key state for anything else would be a lie.
+    default:
+      return undefined;
+  }
+}
+
+export function formatProvidersFailedLine(
+  providersFailed: readonly string[],
+  sources?: CredentialSources,
+): string {
+  return "Providers failed: " + providersFailed
+    .map((id) => {
+      const note = sources?.status === "resolved" ? sourceNote(id, sources) : undefined;
+      return note === undefined ? id : id + "（" + note + "）";
+    })
+    .join(", ");
 }
