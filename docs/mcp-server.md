@@ -238,7 +238,11 @@ Rules behind the table:
   is not an outage, and a cancelled provider never counts as an answered one.
   `search_web` reports the pair for the one fanout it ran;
   `research_web` reports it for its last completed round and never unions
-  rounds. A round the caller's cancellation cut short contributes nothing to
+  rounds. Its failure fields keep the other scale on purpose:
+  `providersFailed` and `providerErrorClasses` are a union across rounds,
+  because an arm that failed in any round degraded the run. The two lists
+  answer different questions, so one arm can appear in both — failed in one
+  round, cut off in another — and that is not a contradiction. A round the caller's cancellation cut short contributes nothing to
   either — that round's results are dropped too (#209: cancellation is not a
   completed search), and `interrupted` is what says the call stopped early.
   On `search_web` a caller cancellation can cut every arm off, and there

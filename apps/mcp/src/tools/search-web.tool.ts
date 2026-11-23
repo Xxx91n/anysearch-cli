@@ -90,10 +90,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // stable output shape — always emit answers / answersAvailable / providerAnswers
-              // (these three keys are unconditional in the content JSON; structuredContent is a
-              // different shape — credentialSources always, and sufficiency / attribution /
-              // abstain / interrupted / failure metadata when present).
+              // stable output shape — answers / answersAvailable / providerAnswers /
+              // providersQueried / providersCancelled are unconditional here; structuredContent
+              // is a different shape (credentialSources and the two arm lists always,
+              // sufficiency / attribution / abstain / interrupted / failures when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,

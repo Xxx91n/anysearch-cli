@@ -58,8 +58,11 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         let lastEnvelope: any = null;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
-        // the merged result. anyProviderAnswered pins "zero results with at
-        // least one successful arm" as success, not outage.
+        // the merged result — an arm that failed in any round counts, so this
+        // set is a union while the arm lists below are last-round only. The two
+        // answer different questions, and an arm can therefore appear in both:
+        // it failed early and was cut off later. anyProviderAnswered pins "zero
+        // results with at least one successful arm" as success, not outage.
         const failedProviders = new Set<string>();
         const providerErrorClasses: Record<string, ProviderErrorClass> = {};
         const providerErrorRetryAfterSeconds: Record<string, number> = {};
