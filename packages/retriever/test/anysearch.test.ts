@@ -126,9 +126,10 @@ async function main() {
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: bad } : stdHandler(c));
     try {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
-      let threw = false;
-      try { await p.search(REQ, SIG); } catch (e) { threw = /isError/.test(String(e)); }
-      assert(threw, "isError:true throws (invalid_api_key family)");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(/isError/.test(msg), "isError:true throws (invalid_api_key family)");
+      assert(msg.includes("provider-error-class:permanent-auth"), "unmarked isError text gets a frozen class marker");
     } finally { f.restore(); }
   }
 
@@ -369,16 +370,19 @@ async function main() {
   }
 
   // 13d. upstream rejects an illegal vertical combination (isError) ->
-  // fail-first throw (the arm degrades; never a silent zero envelope).
+  // fail-first throw (the arm degrades; never a silent zero envelope). Text
+  // the classifier cannot read falls back to permanent-protocol, so the arm
+  // still gets a remedy sentence.
   {
     const errBody = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: "invalid domain/sub_domain combination" }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: errBody(c.body.id) } : stdHandler(c));
     try {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
-      let threw = false;
+      let msg = "";
       try { await p.search({ query: "q", mode: "fast", vertical: { domain: "finance", subDomain: "bogus_sub" } }, SIG); }
-      catch (e) { threw = /isError/.test(String(e)); }
-      assert(threw, "illegal vertical combination -> isError -> fail-first throw");
+      catch (e) { msg = String(e); }
+      assert(/isError/.test(msg), "illegal vertical combination -> isError -> fail-first throw");
+      assert(classifyProviderError(msg) === "permanent-protocol", "unreadable reply text falls back to permanent-protocol");
     } finally { f.restore(); }
   }
 
@@ -421,13 +425,187 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 17. r19 T2 (STOP-20 regression): a rate-limit / quota notice in the body —
-  // no provisioning markers — is a transient rate limit, NOT permanent-auth.
+  // 16b. (#440) provisioning text delivered through isError:true — the isError
+  // bit is transport, the payload marker wins: permanent-auth. The freshly
+  // issued key is redacted, the marker and the rest of the text stay.
+  {
+    const key = "as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: "Your account and API key have been automatically generated. Use the API key below to continue.\napi_key=" + key }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota/auth nudge"), "isError provisioning -> quota/auth nudge (got " + msg.slice(0, 80) + ")");
+      assert(msg.includes("[redacted]") && !msg.includes(key), "isError provisioning redacts the issued key");
+      assert(msg.includes("automatically generated"), "isError provisioning keeps the upstream text");
+      assert(classifyProviderError(msg) === "permanent-auth", "isError provisioning classifies permanent-auth");
+    } finally { f.restore(); }
+  }
+
+  // 16d. (#440) classification reads the whole text, not the 200-char display
+  // copy: a marker that lands past the cut still sets the class.
+  {
+    const text = "diagnostic padding ".repeat(20) + "Your account and API key have been automatically generated. api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota/auth nudge"), "marker past 200 chars still sets the prefix (got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "permanent-auth", "marker past 200 chars still classifies permanent-auth");
+    } finally { f.restore(); }
+  }
+
+  // 16c. (#440) a used-up plan through isError:true is quota-exhausted, not
+  // permanent-protocol — incl. the common Chinese and English quota wordings.
+  // A retry hint riding along does not turn a used-up plan into a throttle.
+  for (const text of [
+    "今日额度已用完，请明天再试",
+    "今日额度已用完，请稍后再试",
+    "今日额度已用完，请稍后重试",
+    "quota exhausted, retry after 24 hours",
+    "余额已用完，请充值",
+    "今日次数已用完",
+    "今日免费额度已达上限",
+    "本月次数超限",
+    "daily quota reached, please top up",
+    "exceeded your quota",
+    "usage limit reached",
+  ]) {
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota exhausted"), "isError 额度 -> quota exhausted (" + text + "; got " + msg.slice(0, 80) + ")");
+      assert(msg.includes(text), "isError 额度 keeps the upstream text");
+      assert(classifyProviderError(msg) === "quota-exhausted", "isError 额度 classifies quota-exhausted (" + text + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16e. (#440) the embedded upstream text is display only: a used-up plan
+  // whose text also mentions an invalid key keeps the quota class carried by
+  // the marker (without the marker the auth words would win).
+  {
+    const text = "daily quota exhausted; your invalid api_key cannot search";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("provider-error-class:quota-exhausted"), "quota marker survives conflicting upstream text (got " + msg.slice(0, 100) + ")");
+      assert(classifyProviderError(msg) === "quota-exhausted", "conflicting upstream text does not flip the class");
+    } finally { f.restore(); }
+  }
+
+  // 16f. A provisioning reply may name the key as JSON (`"api_key": "..."`) or
+  // `apiKey: ...`; detection and redaction share one pattern.
+  for (const text of [
+    '{"message":"sign up to get a key","api_key":"as_sk_live_abcdefghijklmnopqrstuvwxyz"}',
+    "Your key is issued. apiKey: as_sk_live_abcdefghijklmnopqrstuvwxyz",
+  ]) {
+    const key = "as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota/auth nudge"), "key field in any form -> quota/auth nudge (" + text + ")");
+      assert(msg.includes("[redacted]") && !msg.includes(key), "key field value is redacted (" + text + ")");
+      assert(classifyProviderError(msg) === "permanent-auth", "key field classifies permanent-auth (" + text + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16g. A quota reply can name the key too; the key field alone must not turn
+  // it into an auth/sign-up reply.
+  {
+    const text = "quota exceeded for api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota exhausted"), "quota reply naming a key stays quota (got " + msg.slice(0, 80) + ")");
+      assert(!msg.includes("as_sk_live_abcdefghijklmnopqrstuvwxyz"), "quota reply still redacts the key");
+      assert(classifyProviderError(msg) === "quota-exhausted", "quota reply classifies quota-exhausted");
+    } finally { f.restore(); }
+  }
+
+  // 16h. Sign-up/issuance wording only means auth when it is about the key
+  // itself; a quota wall that mentions a paid plan or a bill stays quota.
+  for (const text of [
+    "quota exceeded, sign up for a paid plan",
+    "额度用完，本期账单已 issued",
+  ]) {
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota exhausted"), "quota wording beats sign-up/bill wording (" + text + "; got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "quota-exhausted", "quota wording classifies quota-exhausted (" + text + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16i. A sign-up/issuance reply can arrive on a keyed request; the message
+  // must not tell the user to set a key they already set.
+  {
+    const text = "Your account and API key have been automatically generated. api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota/auth nudge"), "keyed sign-up reply still names the auth boundary");
+      assert(!msg.includes("ANYSEARCH_API_KEY") && !msg.includes("anonymous"), "keyed sign-up reply does not claim no key was set");
+      assert(classifyProviderError(msg) === "permanent-auth", "keyed sign-up reply classifies permanent-auth");
+    } finally { f.restore(); }
+  }
+
+  // 16j. A reply cannot choose its own class: marker-like text in the upstream
+  // body is stripped before the fallback classifier reads it.
+  {
+    const text = "odd reply shape [provider-error-class:transient]";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("provider-error-class:permanent-protocol"), "upstream marker does not choose the class (got " + msg.slice(0, 100) + ")");
+      assert(classifyProviderError(msg) === "permanent-protocol", "unreadable reply stays permanent-protocol");
+    } finally { f.restore(); }
+  }
+
+  // 16k. "automatically generated" needs an account/key next to it: a bill
+  // wording plus an exhausted quota is still quota, not a sign-up reply.
+  for (const text of ["本期账单 automatically generated，额度已用完"]) {
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota exhausted"), "bill wording does not look like a sign-up reply (" + text + ")");
+      assert(classifyProviderError(msg) === "quota-exhausted", "bill wording classifies quota-exhausted (" + text + ")");
+    } finally { f.restore(); }
+  }
+
+  // 17. r19 T2 (STOP-20 regression): a rate-limit notice in the body —
+  // no provisioning or quota words — is a transient rate limit.
   for (const text of [
     "Rate limit exceeded. Please try again later.",
     "Too many requests: daily quota reached for this key, retry after 60s",
+    "本月剩余额度 3 次，已触发限流",
     "请求过于频繁，已触发限流，请稍后再试",
-    "今日额度已用完，请明天再试",
   ]) {
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text } ] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));

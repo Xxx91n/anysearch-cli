@@ -217,38 +217,73 @@ export interface FusionProvenance {
   scoreKind: "rank_fusion";
 }
 
-// provider-failure error classes — the permanence taxonomy
-// carried by FusedEnvelope.metadata.providerErrorClasses so eval artifacts
-// record an error CATEGORY next to the flag, never the flag alone.
-// 5xx/429/rate-limit notice/network-level → transient; 401/403/invalid_api_key → permanent-auth;
-// exhausted plan text (the key is valid, retrying does not help) → quota-exhausted;
-// malformed/drifted reply shape → permanent-protocol; HTTP 404 on a
-// session-id'd request → session-expired (semi-permanent — the spec-MUST
-// re-initialize retry already fired once).
-export type ProviderErrorClass =
-  | "transient"
-  | "permanent-auth"
-  | "quota-exhausted"
-  | "permanent-protocol"
-  | "session-expired"
-  | "unknown";
+// provider-failure error classes — carried by
+// FusedEnvelope.metadata.providerErrorClasses so eval artifacts record a
+// category next to the flag, never the flag alone.
+// 5xx/429/rate limits/network errors → transient; 401/403/bad key and the
+// x402 payment challenge → permanent-auth; used-up plan text and a plain 402
+// (key valid, retrying will not help) → quota-exhausted; malformed or drifted
+// replies → permanent-protocol; HTTP 404 on a session-id request →
+// session-expired (the spec-MUST re-initialize retry already fired once).
+
+// Quota wording shared by every path that reads a provider message, including
+// the adapters that classify a reply body themselves.
+export const QUOTA_EXHAUSTED_TEXT = "exceeds your plan|usage limit|quota exceeded|quota exhausted|quota reached|quota limit exceeded|exceeded your quota|insufficient credits|out of credits|(?:余额|额度|配额|次数)[^，。\\n]{0,10}(?:用完|用尽|耗尽|不足|上限|超限|超出)";
+const QUOTA_EXHAUSTED_RE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
+
+// Class all providers share. The type and the marker parser read the same list,
+// so adding a class cannot silently fall back to word matching.
+export const ERROR_CLASSES = [
+  "transient",
+  "permanent-auth",
+  "quota-exhausted",
+  "permanent-protocol",
+  "session-expired",
+  "unknown",
+] as const;
+export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 
 // Classifies the String(err) seam form — Error names ride inside the string
 // ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
 // matcher sees name and message at once.
+//
+// An adapter that already knows the class marks it with providerErrorMarker();
+// the marker wins, so the upstream text echoed after it can never flip the
+// class. Without a marker the words of the message are the only signal.
+const ERROR_CLASS_MARKER = "provider-error-class:";
+const EXPLICIT_CLASS = new RegExp(ERROR_CLASS_MARKER + "(" + ERROR_CLASSES.join("|") + ")");
+const MARKER_TEXT = new RegExp(ERROR_CLASS_MARKER + "(" + ERROR_CLASSES.join("|") + ")", "gi");
+
+// Drop class markers from upstream text, so a reply cannot choose its own
+// class before the adapter writes the real one.
+export function stripErrorClassMarkers(text: string): string {
+  return text.replace(MARKER_TEXT, "");
+}
+
+export function providerErrorMarker(cls: ProviderErrorClass): string {
+  return "[" + ERROR_CLASS_MARKER + cls + "]";
+}
+
 export function classifyProviderError(errText: string): ProviderErrorClass {
   const t = String(errText);
+  const explicit = t.match(EXPLICIT_CLASS);
+  if (explicit) return explicit[1] as ProviderErrorClass;
   const http = (code: string) => t.includes("HTTP " + code);
+  // exa-js rethrows only the envelope text and keeps the status on
+  // ExaError.statusCode, so a 402 can arrive without the words "HTTP 402".
+  const is402 = http("402") || /status(?:Code)?\s*[:=]?\s*402|payment required/i.test(t);
+  // A 402 is one of two things: the x402 payment challenge means no key was
+  // sent, while the standard envelope means the key is valid but out of
+  // credits. Only the structured challenge marks say which.
+  const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  if (http("401") || http("403") || t.includes("quota/auth nudge") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  if (http("401") || http("403") || x402Challenge || t.includes("quota/auth nudge") || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
-  // Design: an exhausted plan gets its own class, not permanent-auth — the key
-  // is valid, so rotating it or retrying does nothing; the account owner must
-  // top up. Checked after the retryable shapes so a 429/5xx that also says
-  // "usage limit" stays transient (r19 T2); "rate limit" alone never matches
-  // this list. Tavily's shape is a plain-text HTTP 432 body rethrown by
-  // @tavily/core with no status attached (#294).
-  if (/exceeds your plan|usage limit|quota exceeded|insufficient credits|out of credits/i.test(t)) return "quota-exhausted";
+  // The key is valid but the plan is used up: rotating the key or retrying
+  // does nothing, the owner must top up. Checked after the retryable shapes so
+  // a 429/5xx that also says "usage limit" stays transient; a 402 without the
+  // x402 marks is the keyed request's quota wall.
+  if (is402 || QUOTA_EXHAUSTED_RE.test(t)) return "quota-exhausted";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
   return "unknown";

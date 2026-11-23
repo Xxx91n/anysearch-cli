@@ -19,6 +19,25 @@ const cases: Array<[string, string]> = [
   ["Error: AnySearch MCP tools/call HTTP 403 Forbidden", "permanent-auth"],
   ["Error: AnySearch MCP tools/call isError: invalid_api_key", "permanent-auth"],
   ["Error: AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)", "permanent-auth"],
+  // #440: the AnySearch isError bit is transport, not class — provisioning and
+  // used-up-plan payloads keep their marker next to the upstream text.
+  ["Error: AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY) [provider-error-class:permanent-auth] [upstream text: Your account and API key have been automatically generated. api_key=as_sk_test]", "permanent-auth"],
+  ["Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [provider-error-class:quota-exhausted] [upstream text: 今日额度已用完，请明天再试]", "quota-exhausted"],
+  // The marker wins over the words echoed after it: a quota wall that also says
+  // "rate limit", and a throttle whose text mentions a bad key, keep their real
+  // class.
+  ["Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [provider-error-class:quota-exhausted] [upstream text: daily quota reached, rate limit exceeded]", "quota-exhausted"],
+  ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later) [provider-error-class:transient] [upstream text: invalid_api_key]", "transient"],
+  // #440 Exa: exa-js keeps the status on ExaError.statusCode and rethrows only
+  // the envelope text, so a bad key arrives as the spaced sentence.
+  ["ExaError: Invalid API key. Provide a valid key using 'Authorization: Bearer <key>' or 'x-api-key: <key>' (https://dashboard.exa.ai/api-keys)", "permanent-auth"],
+  // 402 has two meanings. Only the structured x402 marks say "no key was sent";
+  // the plain quota text is a keyed request out of credits/budget.
+  ["ExaError: {\"error\":\"Payment required to access this resource\",\"tag\":\"X402_PAYMENT_REQUIRED\",\"accepts\":[{\"maxTimeoutSeconds\":300}]}", "permanent-auth"],
+  ["ExaError: {\"x402Version\":1,\"accepts\":[{\"scheme\":\"exact\"}]}", "permanent-auth"],
+  ["ExaError: Payment required to access this resource.", "quota-exhausted"],
+  ["Error: Exa API HTTP 402 Payment Required", "quota-exhausted"],
+  ["ExaError: Request failed with status 402.", "quota-exhausted"],
   // r19 T2 (STOP-20 regression): a rate-limit/quota notice in the reply body is
   // transient — the key is valid; retry later. Only the provisioning reply is auth.
   ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later)", "transient"],

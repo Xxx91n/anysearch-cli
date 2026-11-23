@@ -295,9 +295,10 @@
   for them. The id never enters query results and is never an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`**
   — upstream answers anonymous calls past their allowance with an
-  auto-provisioning payload (HTTP 200, `isError:null`, no result body) instead
-  of an error. The provider names this `quota/auth nudge` → `permanent-auth`.
-  The fix is on the user side: set `ANYSEARCH_API_KEY`.
+  auto-provisioning payload (HTTP 200, no result body) instead of an error; the
+  same payload can also arrive with `isError:true`. The provider names this
+  `quota/auth nudge` → `permanent-auth`. The fix is on the user side: set
+  `ANYSEARCH_API_KEY`.
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.
