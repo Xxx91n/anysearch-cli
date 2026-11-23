@@ -27,17 +27,8 @@ const RAW = "providers/anysearch/probe-anysearch-mcp-raw.ts";
 const PROVIDER = "providers/anysearch/probe-anysearch-provider.ts";
 const TAVILY = "providers/tavily/probe-tavily-domains.mjs";
 
-/** 子进程不许继承宿主机的真 key / 真地址；每条用例自己放。 */
-const SCRUBBED_ENV = [
-  "ANYSEARCH_API_KEY",
-  "TAVILY_API_KEY",
-  "ANYSEARCH_ENDPOINT",
-  "PROBE_TAVILY_ENDPOINT",
-  "PROBE_TAVILY_OUT_DIR",
-  "ANS_PROBE_QUERY",
-  "ANS_PROBE_PROTOCOL_VERSION",
-  "PROBE_TAVILY_RESEARCH",
-];
+/** 子进程不许继承宿主机的真 key / 真地址：这几家的开关一出现就删掉，新增开关不用回来补名单。 */
+const SCRUBBED_ENV_PREFIX = /^(?:ANYSEARCH_|TAVILY_|EXA_|PROBE_|ANS_PROBE_)/;
 
 interface Recorded {
   path: string;
@@ -124,7 +115,7 @@ function bindingsFile(provider: string, extra: Record<string, unknown> = {}): st
 
 function probeEnv(home: string, extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
-  for (const name of SCRUBBED_ENV) delete env[name];
+  for (const name of Object.keys(env)) if (SCRUBBED_ENV_PREFIX.test(name)) delete env[name];
   return { ...env, ...extra };
 }
 
@@ -317,6 +308,7 @@ test("tavily：三档 keySource，凭据文件里的 key 也会上请求头", as
     }
     assertNoKey(fromEnv, "tavily/env");
 
+    requests.length = 0;
     const fromFileDir = ledgerDir();
     const fromFile = await runProbe(TAVILY, [], probeEnv(makeHome("tvly-user", bindingsFile("tavily")), {
       PROBE_TAVILY_ENDPOINT: base,
@@ -325,6 +317,10 @@ test("tavily：三档 keySource，凭据文件里的 key 也会上请求头", as
     const userLedger = readLedger(fromFileDir);
     assert.equal(userLedger["keySource"], "user");
     assert.equal(fromFile.code, 0, "key 只存在凭据文件里时以前会整轮 SKIPPED 退 2：" + fromFile.stdout + fromFile.stderr);
+    assert.ok(requests.length >= 5, "凭据文件那一跑也要真的调用");
+    for (const request of requests) {
+      assert.equal(request.authorization, "Bearer " + KEY, "凭据文件里的 key 也要上每一次调用（#422 要钉的就是这个）");
+    }
     assertNoKey(fromFile, "tavily/user");
   });
 });

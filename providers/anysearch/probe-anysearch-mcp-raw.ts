@@ -23,8 +23,12 @@ const SCHEMA = "anysearch/mcp-raw-probe@2";
 const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 
-// 参数报错发生在解析凭据之前，所以先建表、解析完再填。mask 跳过空值。
-const SECRETS: Array<[string | undefined, string]> = [];
+// 参数报错发生在解析凭据之前，所以先拿环境变量里那两个值建表（和 #506 之前一样，参数里
+// 夹着 key 也会被遮），解析完再把真正用的那份补上。mask 跳过空值。
+const SECRETS: Array<[string | undefined, string]> = [
+  [process.env.ANYSEARCH_ENDPOINT, "<endpoint>"],
+  [process.env.ANYSEARCH_API_KEY, "<key>"],
+];
 
 // Protocol version: a hand-maintained literal — the probe must keep answering when the
 // adapter is broken, so it never loads it (DEFAULT_ENDPOINT is a literal for that reason).
@@ -92,9 +96,7 @@ const ENDPOINT = FORCE_DEFAULT_ENDPOINT ? DEFAULT_ENDPOINT
   : (process.env.ANYSEARCH_ENDPOINT || DEFAULT_ENDPOINT); // POSIX: empty env ≡ unset
 // --nokey 是显式的匿名臂：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析
 // （环境变量优先，再读 ~/.ans/credentials.json），不在这儿另写一份。
-const credentials = NO_KEY
-  ? { apiKey: "", keySource: "none", credentialWarning: undefined }
-  : resolveProbeCredentials("anysearch");
+const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;
 // Which endpoint the run used, as a class; the value itself is never printed.
 let ENDPOINT_SOURCE = "default";
@@ -102,7 +104,8 @@ if (process.env.ANYSEARCH_ENDPOINT) ENDPOINT_SOURCE = "env";
 if (FORCE_DEFAULT_ENDPOINT) ENDPOINT_SOURCE = "default(forced)";
 const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers"; // POSIX: empty env ≡ unset
 const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
-SECRETS.push([ENDPOINT, "<endpoint>"], [KEY, "<key>"]);
+// 解析出来的 key 可能只在凭据文件里，环境变量里没有它可遮。
+SECRETS.push([KEY, "<key>"]);
 
 // Anything the probe prints goes through this. An argument or an upstream reply that
 // carries the key or the endpoint must not come back out verbatim — the README says the

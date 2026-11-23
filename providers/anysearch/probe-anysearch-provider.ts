@@ -38,9 +38,7 @@ const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
 
 // --nokey 是显式的匿名臂：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析。
-const credentials = NO_KEY
-  ? { apiKey: "", keySource: "none", credentialWarning: undefined }
-  : resolveProbeCredentials("anysearch");
+const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;
 // 遮的是「这一跑真用的那两个值」：key 只在凭据文件里时，环境变量里根本没有它可遮。
 const SECRETS: Array<[string | undefined, string]> = [
@@ -62,6 +60,7 @@ if (FORCE_DEFAULT && (typeof DEFAULT_ENDPOINT !== "string" || DEFAULT_ENDPOINT.l
     schema: "anysearch/provider-probe@2", provider: "anysearch", ok: false, stage: "import",
     errorName: "MissingExport", errorMessage: message,
     endpointSource: "unknown", keySource: credentials.keySource,
+    ...(credentials.credentialWarning ? { credentialWarning: scrub(credentials.credentialWarning) } : {}),
   }));
   process.exit(2);
 }

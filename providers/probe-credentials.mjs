@@ -1,10 +1,14 @@
-// 三条手工探针共用的凭据解析：一份 loader 钩子，一个 store 调用，谁也不许再抄一遍解析逻辑。
+// 三条手工探针共用的凭据解析：一份 loader 钩子，一个 store 调用，外加一个 `mask`，
+// 谁也不许再抄一遍 —— 解析逻辑在 store，遮 key 的写法也只该有一份。
+//
+// Design: 三条探针共享这一份 loader 钩子 + store import，而不是各复制一份，也不往源码里写
+// 扩展名 —— 复制会漂；写扩展名要给三份 tsconfig（retriever / kernel / apps/cli）打开
+// allowImportingTsExtensions，为一个手跑夹具不值得（decision #413：plain `node <文件>`）。
 //
 // 为什么要钩子：store 的源码用 `.js` 写相对 import（Node16 风格，指到同目录的 `.ts`），
 // retriever 的源码干脆不写扩展名（Bundler 风格）。tsc 和 tsx 都放行，plain node 不放行。
-// 三条探针的硬指标是 `node <文件>` 直接跑（decision #413），所以在这里补一次：`.js` 换成
-// 同名 `.ts`、没扩展名的补 `.ts`，只在目标文件真的存在时替换，坏路径照样报错。
-// 钩子是进程级的：先加载这个文件，后面 import 谁都能用，探针只 import 它一次。
+// 所以在这里补一次：`.js` 换成同名 `.ts`、没扩展名的补 `.ts`，只在目标文件真的存在时替换，
+// 坏路径照样报错。钩子是进程级的：先加载这个文件，后面 import 谁都能用，探针只 import 它一次。
 //
 // Node 22.15+ 才有 module.registerHooks；仓库下限是 22.19，够。
 
@@ -36,10 +40,14 @@ const { resolveSearchCredentials } = await import("../packages/store/src/credent
  * `keySource` 只有三档，和 probe schema、README 说的一致：
  *   env   这一家的环境变量（ANYSEARCH_API_KEY / TAVILY_API_KEY）
  *   user  用户凭据文件 `~/.ans/credentials.json`
- *   none  两处都没有，探针照旧跑（anysearch 匿名能查，tavily 会退 2 说没结论）
+ *   none  这一跑没发 key：两处都没有，或者传了 anonymous（`--nokey`）
+ *
+ * `keySource` 说的是「这一跑用的是哪把」，不是「这台机器配了什么」：`--nokey` 跳过解析，
+ * 所以即使环境变量和凭据文件里都有 key，这一跑也报 none。
  */
-export function resolveProbeCredentials(provider, env = process.env) {
-  const resolved = resolveSearchCredentials(env);
+export function resolveProbeCredentials(provider, { anonymous = false } = {}) {
+  if (anonymous) return { apiKey: "", keySource: "none", credentialWarning: undefined };
+  const resolved = resolveSearchCredentials();
   const arm = resolved[provider];
   // anysearch 那一格在「只给了 endpoint、没 key」时也存在（source 记 env，apiKey 是空的）。
   // 没 key 就必须报 none：报 env/user 会让输出说「带着 key」，可请求其实一个 Authorization 都没发。

@@ -19,7 +19,8 @@ const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratc
 const credentials = resolveProbeCredentials("tavily");
 const KEY = credentials.apiKey;
 // Probe-only endpoint override: 凭据接线只能用本地桩验，不能让测试打真上游。
-// 默认仍是公开地址；这个值不打印。
+// Design: 探针自己的 endpoint 用 PROBE_TAVILY_ENDPOINT 覆盖，默认仍是公开地址 —— anysearch
+// 的 ANYSEARCH_ENDPOINT 是同一个先例，适配器那边不开这个口子（#497 记的决定）。值不打印。
 const BASE = (process.env.PROBE_TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/+$/, "");
 const scrubText = (s) => mask(String(s), [[KEY, "<key>"], [BASE, "<endpoint>"]]);
 // A, B and D share this query and allowlist: A sends no mode, B sends restrict and
