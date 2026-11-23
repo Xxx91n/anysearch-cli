@@ -1,6 +1,6 @@
 // 免费面探针：一次不花钱的调用，只回答「这把 key 好不好」和路上看到的事实。
 //
-// 一家的免费面只有一条，回包形状是实测出来的（2026-11-23，真上游）：
+// 一家的免费面只有一条：
 //  tavily     GET /usage             好 key 200 + 用量；坏 key 401；套餐满 432
 //  exa        POST /search 空体 {}    好 key 400 INVALID_REQUEST_BODY；坏 key 401
 //  anysearch  initialize + tools/list + 空参数 tools/call
@@ -8,7 +8,7 @@
 //
 // 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
 // 探针是各自独立的最小实现，不 import 适配器 —— 那样就分不清「适配器坏」还是「上游坏」。
-// 一家一条免费面，所以 quota 只有 Tavily 验得了（它家真有单独的用量接口）。
+// 回包形状的实测记录在 docs/research/real-baseline-2026-11-22.md。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 
@@ -17,7 +17,10 @@ const PROBE_TIMEOUT_MS = 10_000;
 
 export type ProbeProviderId = "tavily" | "exa" | "anysearch";
 
-/** 免费面天生验不到的错误类：三家都认得出坏 key，只有 Tavily 看得出额度。 */
+/**
+ * 免费面天生验不到的错误类。三家的免费面现在都认得出坏 key，所以今天的取值只有
+ * quota；auth 留着是给以后那些只看连通、分不出 key 好坏的新源用。
+ */
 export type UndetectableClass = "auth" | "quota";
 
 /** key 的三种结论。unverified 必须说出来，不然绿勾会被读成「验过了」。 */
@@ -61,15 +64,16 @@ async function probeFetch(url: string, init: RequestInit): Promise<Response> {
 /**
  * 只有 401 / 403，或者 4xx 正文里明说 key 不认，才敢说 key 被拒。
  *
- * 5xx 一律交给 classifyProviderError 归 transient：网关和 CDN 的错误页里带一句
- * unauthorized 很常见，那时候 key 是好的 —— 判成 rejected 会让 ans auth set 拒存一把好 key。
+ * 5xx 一律归 transient：网关和 CDN 的错误页里带一句 unauthorized 很常见，那时候
+ * key 是好的 —— 判成 rejected 会让 ans auth set 拒存一把好 key。2xx 也不看正文：
+ * 那个状态本身就是「这条免费面不该成功」，属于入口变了。
  */
 function httpOutcome(
   status: number,
   bodyText: string,
   undetectable: readonly UndetectableClass[],
 ): ProbeOutcome {
-  const authSaid = status < 500 && AUTH_REJECTED_TEXT.test(bodyText);
+  const authSaid = status >= 400 && status < 500 && AUTH_REJECTED_TEXT.test(bodyText);
   if (status === 401 || status === 403 || authSaid) {
     return { auth: "rejected", undetectable, problem: { class: "permanent-auth", status } };
   }

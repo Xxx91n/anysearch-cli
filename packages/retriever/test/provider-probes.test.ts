@@ -362,3 +362,15 @@ test("isProbeProviderId：没登记的 provider 不猜", async () => {
   assert.equal(isProbeProviderId("anysearch"), true);
   assert.equal(isProbeProviderId("google"), false);
 });
+
+test("exa：200 正文里带 unauthorized 也不判 key 被拒", async () => {
+  // 免费面上这条请求本来就不该成功；2xx 说明入口变了，正文里出现什么词都不改变这一点。
+  await serve(
+    (_request, res) => json(res, 200, { error: "unauthorized" }),
+    async (base) => {
+      const outcome = await probeExa({ apiKey: "exa-good", endpoint: base + "/exa" });
+      assert.equal(outcome.auth, "unverified");
+      assert.equal(outcome.problem?.class, "permanent-protocol");
+    },
+  );
+});

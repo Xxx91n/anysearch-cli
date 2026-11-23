@@ -433,7 +433,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           name: `信息源 ${provider}`,
           state: "unchecked",
           mode: "live",
-          detail: `${source}；这家还没有免费面探针（packages/retriever/src/providers/probes.ts），没验`,
+          detail: `${source}；这家还没有免费面探针，没验`,
         });
         continue;
       }
