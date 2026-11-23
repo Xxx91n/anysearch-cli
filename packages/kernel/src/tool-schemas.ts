@@ -28,7 +28,7 @@ const verticalSpecProps = {
 
 // One model-facing wording for both search tool schemas (this file and
 // pi-runtime). deep is slower per provider that supports it; it never adds sources.
-export const SEARCH_MODE_DESCRIPTION = "Search mode: fast (default), index, deep (Exa/Tavily search deeper upstream; slower and costlier, no extra sources; other providers ignore it), answer (provider-generated answer, available only when provider supports it; not synthesized locally)";
+export const SEARCH_MODE_DESCRIPTION = "Search mode: fast (default), index, deep (Exa/Tavily search deeper upstream; slower and costlier, no extra sources; other providers ignore it), answer (provider-generated answer from Exa/Tavily only, unverified; not synthesized locally)";
 
 export const SearchWebInput = Type.Object({
   query: Type.String({ minLength: 1, description: "The search query" }),

@@ -918,11 +918,11 @@ function stepDocClaims() {
   // Strip comment lines before matching, so prose can never satisfy a guard.
   const code = eng.replace(/^\s*\/\/[^\n]*$/gm, "");
   if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(code)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
-  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*callerAborted[^\]]*\]\)/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
+  if (!/Promise\.race\([\s\S]{0,200}?\bdeadline\b[\s\S]{0,80}?\bcallerAborted\b/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
   if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(code)) fail("engine.ts lost the deadline abort loop");
   if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
   const limits = fs.readFileSync(path.join(ROOT, "docs", "limitations.md"), "utf8");
-  if (!/request-level deadline \(4s/.test(limits)) fail("docs/limitations.md no longer states the 4s request deadline");
+  if (!/request-level deadline \(4s counted\s+from the moment the request fans out\)/.test(limits)) fail("docs/limitations.md no longer states the 4s deadline and its start point");
   report("pass", "engine request deadline wired");
 }
 

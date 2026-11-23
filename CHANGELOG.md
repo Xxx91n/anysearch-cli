@@ -7,9 +7,9 @@
 - **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从扇出那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
 - **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先在取消集合里排队标记、再 abort。已经落地的臂其结算 handler 排在前面，结果保留；只在 abort 里才 resolve/reject 的臂排在后面，留在 cancelled；同一 tick 的调用方 abort 也不会吞掉已经拿到的结果。非 async、abort 时 reject 的 adapter 同样归 `providersCancelled`。
 - **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
-- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 共用一段 `SEARCH_MODE_DESCRIPTION`；`deep` 从 `more sources` 改成「Exa/Tavily 向上游搜得更深、更慢更贵，不增加源数，其他源忽略」。
-- **非 async adapter 同步抛错不再逃出扇出**：调用各家 `search()` 的地方包了一层，同步抛转成 rejection，`finally` 照样清掉总上限计时器，账也照常结算。
-- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：不再断言 `graceWindowMs` 字面量，改成钉住 4000ms、总上限参与 `Promise.race`、abort 循环还在。
+- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 共用一段 `SEARCH_MODE_DESCRIPTION`；`deep` 从 `more sources` 改成「Exa/Tavily 向上游搜得更深、更慢更贵，不增加源数，其他源忽略」，`answer` 也点名 Exa/Tavily、标明 unverified。
+- **非 async adapter 同步抛错不再逃出扇出**：调用各家 `search()` 的地方包了一层，同步抛转成 rejection；扇出构造本身抛错时先 abort 已启动的臂，再按「构造失败整单不计费」释放预扣，`finally` 照样清计时器和调用方监听。
+- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：先剔注释行再断言 4000ms、总上限参与 `Promise.race`、abort 循环、两个结算 handler 的取消判断，以及 `docs/limitations.md` 的「4s 从扇出起算」。
 - **`docs/limitations.md`** 的 Tavily 段按新语义重写：总上限能让引擎不再等，但停不掉一个不认 `AbortSignal` 的上游调用。
 
 ### Removed

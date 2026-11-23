@@ -30,10 +30,8 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one request-level 4s deadline instead of "enough results + 1.5s grace".
-// The old clock started only after the result pool filled, so the slowest arm
-// routinely lost, and a short pool never armed it. `requestTimeoutMs` exists so
-// tests can shrink the deadline.
+// Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
+// exists only so tests can shrink it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 
 // Normalize URL for dedup: strip scheme + leading www + tracking params.
@@ -476,8 +474,7 @@ export class RetroaererdEngine {
         // rejection handler by a microtask and let an abort mark overtake it.
         startArm(p, i).then(
           (env) => {
-            // Design: an arm that settles only after our own abort stays
-            // cancelled; counting it as answered would re-bucket by microtask order.
+            // An arm that settles only after our abort counts as cancelled, not answered.
             if (abortedArms.has(i)) return;
             out[i] = { provider: p.id, status: "fulfilled", envelope: env };
           },
@@ -492,7 +489,9 @@ export class RetroaererdEngine {
       await Promise.race([Promise.all(promises).then(() => undefined), deadline, callerAborted]);
     } catch (err) {
       // Never reached by a provider outcome (both handlers return normally); a
-      // throw here is fan-out construction. Release the reserve before rethrowing.
+      // throw here is fan-out construction. Stop the arms already started, and
+      // release the reserve: a failed construction bills nothing.
+      for (let i = 0; i < controllers.length; i++) abortArm(i);
       if (hasLedger) budgetLedger!.settleCalls(budgetScope!, perCallEstimate, 0);
       throw err;
     } finally {
