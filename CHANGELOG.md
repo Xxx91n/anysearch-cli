@@ -1,3 +1,11 @@
+## Unreleased — #502: 配错 key 的人也能看到免费额度这条路
+
+一句话说清：**`permanent-auth` 的提示句多给一条路：把这把 key 删掉，就走这一家的免费额度。句子在 kernel 的表里，`ans search` 和 MCP 两个出口同时生效。**
+
+### Changed
+
+- **`permanent-auth` 那句补上「删掉 key 走免费额度」**：以前只说「配一把有效 key」，配错的人以为只剩换 key 一条路。现在这句是：没配 key，或者 key 不对 / 权限不够 —— 配一把有效的，或者把这把 key 删掉（环境变量里 unset，或用 `ans auth remove <provider>` 删掉存的那把），走免费额度。仍然是一句，仍然不带 `{wait}`；三家共用，不按家分叉。
+
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
 
 一句话说清：**#442 的报错文案表和 #455 新加的错误类各自绿，合到一起 `tsc` 红。补上 `free-quota-exhausted` 的文案，把免费额度墙从「未检查」改成「失败」；合并闸门从「跑全量测试」改成「先接到最新 main，再跑 `pnpm gate`（类型检查 + 全量测试）」。**
