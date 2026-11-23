@@ -919,8 +919,8 @@ function stepDocClaims() {
   const code = eng.replace(/^\s*\/\/[^\n]*$/gm, "");
   if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(code)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
   if (!/Promise\.race\([\s\S]{0,200}?\bdeadline\b[\s\S]{0,80}?\bcallerAborted\b/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
-  if (!/const abortAllUnsettled = \([\s\S]{0,40}=> \{[\s\S]{0,160}abortArm\(i/.test(code)) fail("engine.ts lost the abort-all-unsettled helper");
-  if (!/setTimeout\(\(\) => \{[\s\S]{0,80}abortAllUnsettled\([^)]*\)[\s\S]{0,40}deadlineResolve\(\)[\s\S]{0,40}\}, this\.requestTimeoutMs\)/.test(code)) fail("engine deadline no longer aborts unsettled arms with this.requestTimeoutMs");
+  if (!/const abortAllUnsettled = \([\s\S]{0,40}=> \{[\s\S]{0,160}abortArm\(i, reason\)/.test(code)) fail("engine.ts helper must pass the abort reason to abortArm");
+  if (!/setTimeout\(\(\) => \{[\s\S]{0,80}abortAllUnsettled\([\s\S]{0,40}?\)[\s\S]{0,40}deadlineResolve\(\)[\s\S]{0,40}\}, this\.requestTimeoutMs\)/.test(code)) fail("engine deadline no longer aborts unsettled arms with this.requestTimeoutMs");
   if (!/this\.requestTimeoutMs = opts\?\.requestTimeoutMs \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
   if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
   const limits = fs.readFileSync(path.join(ROOT, "docs", "limitations.md"), "utf8");
