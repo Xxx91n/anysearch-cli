@@ -27,10 +27,10 @@ export function formatAbstainLine(abstain: { domain?: string; preFiltered: numbe
     " (pre-filtered " + abstain.preFiltered + ", post-filtered " + abstain.postFiltered + ", gate " + abstain.gate + ")";
 }
 
-// Remedy lines printed under "Providers failed": the class tag is machine
-// language, the sentence is the action. Empty when no failed arm's class has
-// one, so the healthy path stays zero-noise. Kept free of imports for the same
-// reason as the rest of this module — the hint table is the caller's.
+// Remedy lines printed under "Providers failed": one line per entry, exactly
+// what the caller passes in — the filtering (which arms have a sentence) is
+// providerErrorHints' job, not this function's. Kept free of imports for the
+// same reason as the rest of this module — the hint table is the caller's.
 export function formatProviderHintLines(hints: Record<string, string>): string[] {
   return Object.entries(hints).map(([id, sentence]) => "  " + id + ": " + sentence);
 }

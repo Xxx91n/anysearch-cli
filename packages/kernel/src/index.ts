@@ -2,7 +2,7 @@
 export * from "./ports";
 export * from "./runtime";
 export * from "./engine";
-// #455: one remedy sentence per provider error class, printed by both hosts.
+// One remedy sentence per provider error class, printed by both hosts.
 export * from "./provider-error-hints";
 // #304: the typed budget refusal the retrieval path throws, so the CLI and the
 // MCP search tools can name it instead of matching the message text.

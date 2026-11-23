@@ -344,12 +344,22 @@ export function providerErrorText(err: unknown): string {
 }
 
 // Seconds until the arm expects to allow another call, as the capture seam's
-// text carries it. null when the upstream did not say: a hint then says "wait a
-// moment" rather than inventing a number.
+// text carries it: `retry-after=3600` from providerErrorText, or whatever the
+// upstream wrote in its body ("retry after 5 minutes", "retry-after: 30ms").
+// Units are honoured, and the LAST match wins — providerErrorText appends the
+// SDK's own value, so it outranks a number the message happened to mention.
+// null when there is no usable wait: a hint then says "a moment" rather than
+// inventing one.
 export function retryAfterSeconds(errText: string): number | null {
-  const m = String(errText).match(/retry[ -]?after[=:\s]+(\d+(?:\.\d+)?)/i);
-  if (!m) return null;
-  const seconds = Math.round(Number(m[1]));
+  const matches = [...String(errText).matchAll(/retry[ -]?after\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)?/gi)];
+  const last = matches.pop();
+  if (!last) return null;
+  const unit = (last[2] ?? "s").toLowerCase();
+  const scale = unit.startsWith("ms") || unit.startsWith("milli") ? 0.001
+    : unit.startsWith("m") ? 60
+      : unit.startsWith("h") ? 3600
+        : 1;
+  const seconds = Math.round(Number(last[1]) * scale);
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 

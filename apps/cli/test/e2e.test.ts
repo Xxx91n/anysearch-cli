@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { providerErrorHint } from "@anysearch-cli/kernel";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -489,6 +490,61 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.ok(
         r.out.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
         "absence line on the abstain branch; got: " + r.out.slice(-400),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Both render paths print the failed arm's remedy: the results branch and the
+  // abstain branch share one helper, and this fixture is what stops a future
+  // "one branch forgot to print it" from passing. The dead-port anysearch arm
+  // fails as `transient`, so the sentence is the shared table's, not a fixture's.
+  await t("both render paths print the failed arm's remedy", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-hints-"));
+    const writeDomain = (name: string, allow: boolean) => {
+      fs.writeFileSync(path.join(dir, name + ".toml"), [
+        'name = "' + name + '"',
+        "[sources]",
+        'enabled = ["anysearch"]',
+        ...(allow ? ['urlAllowlist = ["nonexistent.invalid"]'] : []),
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+    };
+    const runOne = (name: string) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        ANS_DOMAINS_DIR: dir,
+        ANS_DOMAIN: name,
+        ANS_DB_PATH: path.join(dir, "anysearch.db"),
+      };
+      env.ANYSEARCH_API_KEY = "";
+      env.ANS_PROVIDERS = "";
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      // Dead-port fault injection: the arm constructs, is queried, fails fast.
+      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
+      return run(["search", "q"], env);
+    };
+    const hintLine = "  anysearch: " + (providerErrorHint("transient") ?? "");
+    try {
+      writeDomain("hintsres", false);
+      writeDomain("hintsabs", true);
+      const results = await runOne("hintsres");
+      assert.equal(results.code, 1, results.out);
+      assert.ok(
+        results.out.split("\n").includes(hintLine),
+        "results branch prints the arm's remedy; got " + results.out.slice(-400),
+      );
+      const abstain = await runOne("hintsabs");
+      assert.equal(abstain.code, 0, abstain.out);
+      assert.match(abstain.out, /abstain: no results within allowed hintsabs domain/);
+      assert.ok(
+        abstain.out.split("\n").includes(hintLine),
+        "abstain branch prints the arm's remedy; got " + abstain.out.slice(-400),
       );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

@@ -120,6 +120,11 @@ function expectValue<T>(got: T, want: T, label: string) {
   // wait to hand a free-quota hint.
   expectValue(providerErrorText(new Error("boom")), "Error: boom", "plain Error text stays untouched");
   expectValue(retryAfterSeconds("Error: HTTP 429 Too Many Requests: usage limit exceeded, retry after 30s"), 30, "retry-after parsed from plain text");
+  expectValue(retryAfterSeconds("Error: busy, retry after 5 minutes"), 300, "minutes become seconds");
+  expectValue(retryAfterSeconds("Error: retry-after: 30ms"), null, "a sub-second wait reads as unknown");
+  // The seam appends the SDK's own value; a number the body mentioned first
+  // must not win over it.
+  expectValue(retryAfterSeconds("Error: body said retry after 2 seconds (retry-after=3600)"), 3600, "the appended SDK wait outranks the body text");
 }
 
 console.log("--- provider-error-class: " + passed + " passed, " + failed + " failed ---");
