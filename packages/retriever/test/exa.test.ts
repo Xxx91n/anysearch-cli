@@ -4,7 +4,7 @@
 // tavily.test.ts) to assert #216 request-option forwarding without a network call.
 // ponytail: no test framework, assert-based demo.
 
-import { ExaProvider } from "../src/providers/exa";
+import { ExaProvider, createExaProvider } from "../src/providers/exa";
 
 // The mapping function extracted for testability: same logic as ExaProvider.search().
 function mapExaResult(r: { title: string | null; url: string; text?: string; publishedDate?: string; score?: number }) {
@@ -135,6 +135,43 @@ async function main() {
     assert(calls[1].method === "answer", "second SDK call is answer()");
     assert(calls[1].args[2]?.signal === ac.signal, "answer() receives the aborted signal");
     assert(calls[1].args[2]?.signal.aborted === true, "answer() signal is already aborted");
+  }
+
+  // 9. #499: 装配只有一个入口 createExaProvider，别处不再自己判断「传不传 key」。
+  // 今天两支都还是 REST 适配器：没 key 时 exa-js 再读一次环境变量、读不到就抛，
+  // 装配照旧把它记成「构造失败」并点名，用户看到的东西不变。#500 会把「没配」
+  // 那一支换成免费额度臂，到时候这几条断言要跟着改。
+  {
+    const saved = process.env.EXA_API_KEY;
+    delete process.env.EXA_API_KEY;
+    try {
+      const keyed = createExaProvider("sk-test");
+      assert(keyed.id === "exa", "factory keeps the provider id exa");
+      assert(keyed instanceof ExaProvider, "a real key still gets the REST adapter");
+      // 有 key 时能力一字不变：answer 模式还在，上游域名预筛还认。
+      assert(keyed.modes.join(",") === "fast,index,deep,answer", "answer mode is still on the REST arm");
+      assert(keyed.domainFilterSupported === true, "includeDomains prefilter is still supported");
+      for (const missing of [undefined, "", "   "]) {
+        let threw = false;
+        try {
+          createExaProvider(missing);
+        } catch {
+          threw = true;
+        }
+        assert(threw, "no key and no env key: construction still throws (" + JSON.stringify(missing) + ")");
+      }
+      // 归一化在构造器里：类是导出的，直接 new 一个纯空格的 key 也不能当成钥匙。
+      let whitespaceThrew = false;
+      try {
+        new ExaProvider("   ");
+      } catch {
+        whitespaceThrew = true;
+      }
+      assert(whitespaceThrew, "a whitespace-only key is not a key on direct construction either");
+    } finally {
+      if (saved === undefined) delete process.env.EXA_API_KEY;
+      else process.env.EXA_API_KEY = saved;
+    }
   }
 
   console.log("--- ExaProvider mapping tests: " + passed + " passed, " + failed + " failed ---");

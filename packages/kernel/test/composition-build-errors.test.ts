@@ -1,7 +1,7 @@
 // T7 ruling (#105): provider factory construction failure is fail-open named
 // degradation — never silent. Each failed arm writes a named stderr line and
 // lands in CompositionResult.providerBuildErrors (id -> message); the healthy
-// path reports an empty record. Missing-key faults word the message as a
+// path reports an empty record. A key we cannot use words the message as a
 // credential hint; unexpected faults word it as a construction bug.
 // ponytail: no test framework, assert-based demo.
 
@@ -17,13 +17,17 @@ function closeResult(r: { store: unknown; observation: { close?: () => void } })
 }
 
 const savedExaKey = process.env.EXA_API_KEY;
+// 用不了的 key：值里带换行，exa-js 构造时往请求头里塞就当场抛。它是这个文件里
+// 「构造会抛」的真实样本（#499：没配 key 不再算样本——下一票起那条路改成免费额度）。
+// 值本身不许出现在记录或 stderr 里，下面有专门一条断言盯着。
+const UNUSABLE_EXA_KEY = "sk-secret-do-not-log\nheader-fault";
 const origStderrWrite = process.stderr.write;
 let captured = "";
 try {
   process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
 
-  // Missing EXA_API_KEY -> exa arm fails construction, named on stderr + record.
-  delete process.env.EXA_API_KEY;
+  // 配了一把用不了的 key -> exa arm fails construction, named on stderr + record.
+  process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
   const r = createEngine(undefined, { dbPath: ":memory:" });
   assert.ok(r.providerBuildErrors.exa, "exa construction failure recorded");
   assert.equal(r.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
@@ -83,7 +87,7 @@ try {
   // constructor (Node embeds the value in the Headers error message) — the
   // secret value must reach neither the record nor stderr, and the fault is
   // worded as the credential category (permanent config fault per ruling 2).
-  process.env.EXA_API_KEY = "sk-secret-do-not-log\nheader-fault";
+  process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
   captured = "";
   const leak = createEngine(undefined, { dbPath: ":memory:" });
   assert.ok(leak.providerBuildErrors.exa, "malformed-key fault recorded");
@@ -94,6 +98,16 @@ try {
   assert.ok(!captured.includes("sk-secret-do-not-log"),
     "stderr carries no raw error text");
   closeResult(leak);
+
+  // #499 验收：没配 key 那条路的输出逐字不变——分类仍走 credential 那一句。
+  // 这是本文件里唯一还拿「没配 key」当前提的地方，而且它断言的正是这句话本身；
+  // 下一票（#500）让没配 key 走免费额度时，这条要跟着换成「建得起来、不报错」。
+  delete process.env.EXA_API_KEY;
+  captured = "";
+  const keyless = createEngine(undefined, { dbPath: ":memory:" });
+  assert.equal(keyless.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
+    "a missing key still yields the same named line");
+  closeResult(keyless);
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws.
