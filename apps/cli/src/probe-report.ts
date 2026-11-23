@@ -10,9 +10,14 @@ import type {
 } from "@anysearch-cli/retriever/providers";
 import type { DiagState } from "./diagnostics";
 
+// Design: FAULT_TEXT is a total Record over the fault class set on purpose — a new
+// error class must break `tsc` here, not reach `ans doctor --live` as a raw class
+// tag (#480). If a class ever needs no sentence, widen the value to
+// `string | undefined` (the kernel's PROVIDER_ERROR_HINTS shape), never `Partial`.
 const FAULT_TEXT: Record<ProbeFaultClass, string> = {
   "permanent-auth": "上游不认这把 key",
   "quota-exhausted": "额度用尽",
+  "free-quota-exhausted": "免费额度用尽（等等再试，或给这家配个 key）",
   "permanent-protocol": "入口回的东西跟预期对不上",
   "session-expired": "会话过期",
   transient: "上游抽风（429 / 5xx 一类）",
@@ -28,12 +33,27 @@ const UNDETECTABLE_TEXT: Record<UndetectableClass, string> = {
 /**
  * 四种状态里挑一个。只有「key 确实被拒」判失败；额度用尽和入口变了也是要修的真问题，
  * 同样算失败；抽风、连不上、认不出来只能算未检查 —— 上游抽风不等于 key 坏了。
+ *
+ * Design: the mapping is a total Record, not an if-chain with a catch-all, so a
+ * new fault class has to state its diagnosis instead of silently becoming
+ * unchecked (#480). `free-quota-exhausted` is a real wall to clear (wait or add a
+ * key), so it sits with `quota-exhausted`, not with the transport failures.
  */
+const FAULT_STATE: Record<ProbeFaultClass, DiagState> = {
+  "permanent-auth": "failed",
+  "quota-exhausted": "failed",
+  "free-quota-exhausted": "failed",
+  "permanent-protocol": "failed",
+  "session-expired": "unchecked",
+  transient: "unchecked",
+  unreachable: "unchecked",
+  unknown: "unchecked",
+};
+
 export function probeState(outcome: ProbeOutcome): DiagState {
   if (outcome.auth === "rejected") return "failed";
   const fault = outcome.problem?.class;
-  if (fault === "permanent-auth" || fault === "quota-exhausted" || fault === "permanent-protocol") return "failed";
-  if (fault) return "unchecked";
+  if (fault) return FAULT_STATE[fault];
   return outcome.auth === "ok" ? "ready" : "unchecked";
 }
 
