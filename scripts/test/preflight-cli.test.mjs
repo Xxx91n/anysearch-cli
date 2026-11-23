@@ -734,7 +734,12 @@ test("a stream that throws on the flush counts as flushed", async () => {
 });
 
 test("a stream that never answers gives up at the cap", async () => {
+  const started = Date.now();
   await flushStreams([{ write() {} }], 20);
+  // The cap is the thing under test: ignoring the argument and waiting the
+  // default second instead would land far above this bound.
+  const waited = Date.now() - started;
+  assert.ok(waited >= 10 && waited < 400, `waited ${waited}ms`);
 });
 
 // These cases pin the retry loop without a real stalled pipe.

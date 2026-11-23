@@ -22,5 +22,18 @@ export async function flushStreams(streams, timeoutMs = 1000) {
         }
       }),
   );
-  await Promise.race([Promise.all(flushed), new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
+  // Design: the cap is cleared once the race is decided — left pending it would
+  // hold the event loop open for its whole length after the flush is done, which
+  // a caller without a follow-up process.exit would sit through. It is not
+  // unref'd: a flush that never answers has to keep the loop alive long enough to
+  // report the code the gate meant to exit with.
+  let cap;
+  const timedOut = new Promise((resolve) => {
+    cap = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([Promise.all(flushed), timedOut]);
+  } finally {
+    clearTimeout(cap);
+  }
 }
