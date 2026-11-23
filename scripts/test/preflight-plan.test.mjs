@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
-import { planPreflight, readWorkspace } from "../preflight-plan.mjs";
+import { docsOnly, isDocumentation, planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
@@ -128,6 +128,45 @@ test("a package change next to a root change still runs everything", () => {
 
 test("a file outside the packages falls back to the full suite", () => {
   assert.equal(planPreflight(root, ["providers/exa/probe.mjs"]).mode, "full");
+});
+
+test("the doc boundary is docs/ except docs/eval/, plus the four root markdown files", () => {
+  for (const file of [
+    "docs/limitations.md",
+    "docs/assets/readme/hero.png",
+    "README.md",
+    "README.zh-CN.md",
+    "GLOSSARY.md",
+    "CHANGELOG.md",
+  ]) {
+    assert.equal(isDocumentation(file), true, file);
+  }
+
+  for (const file of [
+    "apps/plugin/AGENTS.md",
+    "apps/plugin/README.md",
+    "domains/docs.toml",
+    ".github/workflows/ci.yml",
+    "docs/eval/ip-corpus-probe-2026-11-07.md",
+    "docs/eval/quarantine-audit-2026-09-12.md",
+    "docs-tools/check.mjs",
+    "docs",
+    "README.md.bak",
+  ]) {
+    assert.equal(isDocumentation(file), false, file);
+  }
+});
+
+test("docsOnly needs at least one file and every file inside the boundary", () => {
+  assert.equal(docsOnly(["README.md"]), true);
+  assert.equal(docsOnly(["docs/a.md", "CHANGELOG.md"]), true);
+  assert.equal(docsOnly(["docs/a.md", "apps/plugin/AGENTS.md"]), false);
+  assert.equal(docsOnly([]), false);
+});
+
+test("separators and ./- prefixes do not escape the boundary", () => {
+  assert.equal(docsOnly([".\\docs\\a.md"]), true);
+  assert.equal(docsOnly(["./apps/plugin/AGENTS.md"]), false);
 });
 
 test("a change that is all documentation runs nothing", () => {

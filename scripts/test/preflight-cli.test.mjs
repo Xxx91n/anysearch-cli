@@ -421,6 +421,23 @@ test("docs next to a package file still run that package, not the suite", async 
   );
 });
 
+test("the banner counts the packages that run, not just the changed one", async () => {
+  // A downstream app makes touched and packages differ: a banner that counts
+  // touched would say 1 here while the next line lists 2.
+  const extraPackages = {
+    "apps/consumer": {
+      name: "@anysearch-cli/consumer",
+      devDependencies: { "@anysearch-cli/dsh-plugin": "workspace:*" },
+    },
+  };
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", extraPackages, echoArgs: true }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /changed 1 file\(s\), running 2 package\(s\)/);
+    assert.match(result.stdout, /run: @anysearch-cli\/consumer, @anysearch-cli\/dsh-plugin/);
+  });
+});
+
 test("the old --staged flag names the hook to delete and runs nothing", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--staged"]);
@@ -507,7 +524,7 @@ async function withWorkspace(options = {}, run) {
 // a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPackages } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
@@ -531,6 +548,9 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   write(join(yaml, "index.js"), "module.exports = {};\n");
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
+  for (const [dir, manifest] of Object.entries(extraPackages ?? {})) {
+    write(join(root, dir, "package.json"), JSON.stringify(manifest));
+  }
   git(root, ["init", "-q"]);
   assertOwnRepo(root, rev(root, "--absolute-git-dir"));
   git(root, ["config", "user.email", "preflight@example.test"]);

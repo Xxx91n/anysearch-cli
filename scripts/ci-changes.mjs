@@ -7,19 +7,17 @@
 // Design: docs-only skips every lane. Everything else uncertain (empty set,
 // unreadable workspace, unowned path, a package no lane names) runs every lane.
 //
-// Design: the documentation boundary is isDocumentation in preflight-plan.mjs,
-// not a copy here — the push gate skips the suite on the same question, and one
-// definition is the only way the two answers cannot drift (#488).
+// Design: the documentation boundary lives in preflight-plan.mjs, and this
+// module imports it instead of keeping a copy.
 
 import fs from "node:fs";
 import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  codeOwnership,
   docsOnly,
-  isDocumentation,
   normalizePath,
-  ownershipOf,
   readWorkspace,
   withDependents,
 } from "./preflight-plan.mjs";
@@ -73,8 +71,7 @@ export function planLanes(files, packages) {
 
   // A code+docs change selects on the code only. docs/eval/ is not
   // documentation, so it still reaches the unowned fallback.
-  const code = list.filter((file) => !isDocumentation(file));
-  const { owners, unowned } = ownershipOf(code, packages);
+  const { owners, unowned } = codeOwnership(list, packages);
   if (unowned.length > 0) {
     return { lanes: all, reason: `unowned path: ${safeList(unowned)}` };
   }

@@ -103,12 +103,9 @@ if (plan.mode === "none") {
   process.exit(0);
 }
 
-// Design: a docs-only push runs nothing — the boundary is the same
-// isDocumentation CI asks before it skips every lane, so the local gate cannot
-// be stricter than CI about what counts as docs (#488).
-//
-// Design: the line says skipped, never green — a skipped lane is not evidence
-// (#389's gate contract), and "green" would read as evidence.
+// Design: a docs-only push exits here with no test child, and says skipped —
+// never green, because a green line would read as evidence (#389's gate
+// contract).
 if (plan.mode === "docs") {
   console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
   console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
@@ -119,7 +116,7 @@ if (plan.mode === "full") {
   console.log(`[preflight] full suite: ${plan.reason}`);
   if (plan.outside?.length) console.log(`[preflight] outside the packages: ${listFirst(plan.outside)}`);
 } else {
-  console.log(`[preflight] changed ${plan.files.length} file(s), running ${plan.touched.length} package(s)`);
+  console.log(`[preflight] changed ${plan.files.length} file(s), running ${plan.packages.length} package(s)`);
   console.log(`[preflight] run: ${plan.packages.join(", ")} (the change plus everything that depends on it)`);
   console.log("[preflight] turbo runs tests in these packages only, not in the packages they depend on");
 }

@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { LANES, lanesForChange, planLanes } from "../ci-changes.mjs";
 import { resolveYaml } from "../check-workflows.mjs";
-import { docsOnly, isDocumentation, readWorkspace } from "../preflight-plan.mjs";
+import { readWorkspace } from "../preflight-plan.mjs";
 
 const CLI = fileURLToPath(new URL("../ci-changes.mjs", import.meta.url));
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -45,45 +45,6 @@ function githubOutput(files, args = [], { separator = "\0", cwd = ROOT } = {}) {
   });
   return Object.fromEntries(pairs);
 }
-
-test("the doc boundary is docs/ except docs/eval/, plus the four root markdown files", () => {
-  for (const file of [
-    "docs/limitations.md",
-    "docs/assets/readme/hero.png",
-    "README.md",
-    "README.zh-CN.md",
-    "GLOSSARY.md",
-    "CHANGELOG.md",
-  ]) {
-    assert.equal(isDocumentation(file), true, file);
-  }
-
-  for (const file of [
-    "apps/plugin/AGENTS.md",
-    "apps/plugin/README.md",
-    "domains/docs.toml",
-    ".github/workflows/ci.yml",
-    "docs/eval/ip-corpus-probe-2026-11-07.md",
-    "docs/eval/quarantine-audit-2026-09-12.md",
-    "docs-tools/check.mjs",
-    "docs",
-    "README.md.bak",
-  ]) {
-    assert.equal(isDocumentation(file), false, file);
-  }
-});
-
-test("docsOnly needs at least one file and every file inside the boundary", () => {
-  assert.equal(docsOnly(["README.md"]), true);
-  assert.equal(docsOnly(["docs/a.md", "CHANGELOG.md"]), true);
-  assert.equal(docsOnly(["docs/a.md", "apps/plugin/AGENTS.md"]), false);
-  assert.equal(docsOnly([]), false);
-});
-
-test("separators and ./- prefixes do not escape the boundary", () => {
-  assert.equal(docsOnly([".\\docs\\a.md"]), true);
-  assert.equal(docsOnly(["./apps/plugin/AGENTS.md"]), false);
-});
 
 test("lane declarations are manifest names, one list per lane, not paths", () => {
   const names = new Set(WORKSPACE.map((pkg) => pkg.name));
