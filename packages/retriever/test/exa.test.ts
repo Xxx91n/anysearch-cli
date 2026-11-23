@@ -160,6 +160,14 @@ async function main() {
         }
         assert(threw, "no key and no env key: construction still throws (" + JSON.stringify(missing) + ")");
       }
+      // 归一化在构造器里：类是导出的，直接 new 一个纯空格的 key 也不能当成钥匙。
+      let whitespaceThrew = false;
+      try {
+        new ExaProvider("   ");
+      } catch {
+        whitespaceThrew = true;
+      }
+      assert(whitespaceThrew, "a whitespace-only key is not a key on direct construction either");
     } finally {
       if (saved === undefined) delete process.env.EXA_API_KEY;
       else process.env.EXA_API_KEY = saved;
