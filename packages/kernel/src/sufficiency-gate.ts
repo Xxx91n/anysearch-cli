@@ -137,7 +137,7 @@ export class SufficiencyEvaluator {
         {
           text: gapPrompt[1]!.content,
           source: "retrieved",
-          traceId: envelope.results?.[0]?.label?.traceId ?? "sufficiency-gap",
+          traceId: envelope.results?.[0]?.extra?.trustLabel?.traceId ?? "sufficiency-gap",
         },
         "sufficiency-judge",
       );

@@ -2,7 +2,8 @@
 // scripts/validate-domains.mjs
 //
 // — Domain Schema Validation Acceptance step 1.5 (blocking).
-// Scans domains/*.toml, parses with smol-toml (already a store dep, resolved
+// Scans domains/*.toml (or the directory passed as argv[2]), parses with
+// smol-toml (already a store dep, resolved
 // via createRequire so no new dependency is introduced), applies compaction
 // guards from, exits 1 with file:line on any violation.
 //
@@ -27,7 +28,10 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DOMAINS_DIR = path.join(ROOT, "domains");
+// The directory is overridable so a test can point these rules at a fixture
+// tree and prove they still match the loader; the release gate calls it with no
+// argument and gets the repo's domains/.
+const DOMAINS_DIR = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, "domains");
 
 // smol-toml declared in root devDependencies (atomcode review #3: avoid phantom
 // dependency via createRequire traversal into packages/store).
