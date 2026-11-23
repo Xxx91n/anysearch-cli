@@ -8,7 +8,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
-import { PROVIDER_ERROR_HINTS, providerErrorHints } from "@anysearch-cli/kernel";
+import { providerErrorHints } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {
@@ -26,14 +26,6 @@ export interface ProviderFailureMetadata {
   providerErrorHints?: Record<string, string>;
   providerBuildErrors: Record<string, string>;
 }
-
-/**
- * The remedy table lives in the kernel because `ans search` prints the same
- * sentences under its "Providers failed" line; re-exported here so the MCP
- * side and its tests keep one import path. A sentence may carry `{wait}`,
- * filled per arm from the retry-after (see `providerErrorHint`).
- */
-export { PROVIDER_ERROR_HINTS };
 
 /**
  * Failure metadata for a result that is still a success (at least one arm

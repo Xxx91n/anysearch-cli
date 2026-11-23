@@ -555,9 +555,10 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 16i. A sign-up/issuance reply can arrive on a keyed request; the message
-  // names the free quota, not a missing key, so it never tells the user to set
-  // a key they already set.
+  // 16i. A sign-up/issuance reply can arrive on a keyed request. The message
+  // names the free quota instead of claiming no key is set; the shared remedy
+  // sentence still offers both ways back (adding a key is redundant for this
+  // caller, waiting is not) — the class cannot tell who set a key.
   {
     const text = "Your account and API key have been automatically generated. api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });

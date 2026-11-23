@@ -49,8 +49,14 @@ const cases: Array<[string, string]> = [
   ["ExaError: Payment required to access this resource.", "quota-exhausted"],
   ["Error: Exa API HTTP 402 Payment Required", "quota-exhausted"],
   ["ExaError: Request failed with status 402.", "quota-exhausted"],
+  // An explicit auth fault outranks cap wording that happens to share its
+  // words: this 403 is a wrong or badly scoped key, not a used-up allowance.
+  ["Error: AnySearch MCP tools/call HTTP 403 Forbidden: this API key was issued for a different project", "permanent-auth"],
+  // Exa's short-window 429 stays transient (#449): a throttle, not a used-up
+  // allowance, and #455 deliberately left that classification alone.
+  ["Error: Exa MCP tools/call JSON-RPC error -32000: rate limit exceeded (retry-after=1)", "transient"],
   // r19 T2 (STOP-20 regression): a rate-limit/quota notice in the reply body is
-  // transient — the key is valid; retry later. Only the provisioning reply is auth.
+  // transient — the key is valid; retry later.
   ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later)", "transient"],
   ["Error: AnySearch MCP tools/call isError: rate limit exceeded, please slow down", "transient"],
   // #294: Tavily answers an exhausted plan with HTTP 432 and a plain-text

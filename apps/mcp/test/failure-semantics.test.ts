@@ -24,7 +24,7 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import { createMcpToolState } from "../src/tool-state.js";
-import { PROVIDER_ERROR_HINTS } from "../src/tools/failure.js";
+import { PROVIDER_ERROR_HINTS } from "@anysearch-cli/kernel";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";

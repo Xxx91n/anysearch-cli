@@ -7,6 +7,10 @@
 // with the arm's retry-after ("3600 seconds") or with "a moment" when the
 // upstream did not say. The wait value is per arm, so it cannot be baked into
 // the table.
+//
+// Design: the table lives in the kernel rather than in one host — both print
+// it (MCP appends it to the all-failed text, `ans search` prints it under
+// "Providers failed"), and a copy per host is how the two drift apart.
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
 
 export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
@@ -27,6 +31,8 @@ export function providerErrorHint(cls: ProviderErrorClass, retryAfterSeconds?: n
   const sentence = PROVIDER_ERROR_HINTS[cls];
   if (!sentence) return undefined;
   if (!sentence.includes("{wait}")) return sentence;
+  // Design: a missing number says "a moment" — the reader still gets an
+  // action, and the template's braces never reach the output.
   const known = retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0;
   return sentence.replace("{wait}", known ? retryAfterSeconds + " seconds" : "a moment");
 }

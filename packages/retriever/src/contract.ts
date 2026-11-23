@@ -292,12 +292,13 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   // credits. Only the structured challenge marks say which.
   const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  // The free quota ran out: no paid plan is involved and no key is wrong, so
-  // neither permanent-auth nor an ordinary throttle describes it. Waiting and
-  // adding a key are both real ways back. Checked before both of them, because
-  // a cap reply can arrive behind a 429 or quote auth words in its body.
-  if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
   if (http("401") || http("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  // Design: the free quota's wall sits between the auth shapes and the retry
+  // shapes — an explicit auth fault outranks wording a cap reply may share with
+  // it ("this API key was issued for a different project" is a 403, not a
+  // quota), while a cap reply that also carries a 429/5xx must not be read as
+  // an ordinary throttle.
+  if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
   // does nothing, the owner must top up. Checked after the retryable shapes so
