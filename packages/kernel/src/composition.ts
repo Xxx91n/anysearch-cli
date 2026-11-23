@@ -382,8 +382,10 @@ export function createEngine(
       // The second call walks part of the same failure surface (home resolution,
       // env reads), so it is guarded too: fail-open means "no keys", never a
       // process that refuses to start.
+      let fromEnvironment = false;
       try {
         creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));
+        fromEnvironment = true;
       } catch {
         creds = undefined;
       }
@@ -394,7 +396,9 @@ export function createEngine(
       credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
-        " — falling back to environment variables only\n",
+        (fromEnvironment
+          ? " — falling back to environment variables only\n"
+          : " — the environment could not be read either; every arm runs as if unconfigured\n"),
       );
     }
   }

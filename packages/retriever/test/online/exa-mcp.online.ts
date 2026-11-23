@@ -4,6 +4,7 @@
 // EXA_API_KEY（在线车道可能给别的探针配了 key）。
 
 import { createExaProvider } from "../../src/providers/exa";
+import { classifyProviderError, providerErrorText } from "../../src/contract";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -14,17 +15,18 @@ function assert(cond: boolean, msg: string) {
 async function main() {
   const provider = createExaProvider("");
   assert(provider.modes.join(",") === "fast,index,deep", "the probe drives the free-quota arm, not the REST one");
-  // 免费额度是大家共用的：别的机器打满时这里回 429。那不是代码坏了，报一行就收工，
-  // 免得这条车道变红把人往错方向带。其余错误（形状不对、协议错）照旧算红。
+  // 额度墙和对端限流不算代码坏：仓库的分类器已经认得这些回法（402 / 额度文案 /
+  // 429），别再拿错误串字面对。其余（协议错、5xx、连不上）照旧算红。
   const env = await provider
     .search({ query: "cloudflare workers", mode: "fast", maxResults: 3 }, AbortSignal.timeout(30000))
     .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("HTTP 429")) return null;
+      const text = providerErrorText(error);
+      const cls = classifyProviderError(text);
+      if (cls === "free-quota-exhausted" || cls === "quota-exhausted" || (cls === "transient" && /HTTP 429/.test(text))) return null;
       throw error;
     });
   if (env === null) {
-    console.log("--- exa free-quota live probe: free quota exhausted (HTTP 429), skipped ---");
+    console.log("--- exa free-quota live probe: free quota exhausted (HTTP 429 / quota wall), skipped ---");
     return;
   }
   assert(env.provider === "exa", "provider id");

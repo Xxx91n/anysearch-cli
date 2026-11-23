@@ -121,8 +121,8 @@ async function main() {
   );
   assert(
     formatProvidersFailedLine(["exa"], { status: "resolved", tavily: "none", exa: "none", anysearch: "none" }) ===
-      "Providers failed: exa（没配 key）",
-    "a failed arm names only its key state; 'does not participate' belongs to doctor",
+      "Providers failed: exa（没配 key，用免费额度跑）",
+    "exa's failed line promises the free quota, same as tavily",
   );
   assert(
     describeCredentialSource("none", "exa") === "没配 key，用免费额度跑",

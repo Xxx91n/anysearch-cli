@@ -6,7 +6,8 @@
 // 走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽。
 //
 // 事实来源：#447 的实测（工具名、两种回包、429 的形状）；端点和能力读
-// PROVIDER_FACTS.exa.freeArm；文档在 providers/exa/README.md（#503）。
+// PROVIDER_FACTS.exa.freeArm。免费臂的文档随 #503 补进 providers/exa/README.md
+// （那一页现在还没有这一节）。
 // 这个端点不开放环境变量开关：免费额度这条路不给用户换地址（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
