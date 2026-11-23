@@ -33,23 +33,14 @@ function check(args = [], { cwd = ROOT, root, env: extra } = {}) {
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-/** True when the permission bits just set did not deny a directory listing (root). */
-function canListDirectory(dir) {
+/** True only when the probe was refused by permissions; anything else is real. */
+function denies(probe) {
   try {
-    readdirSync(dir);
-    return true;
-  } catch {
+    probe();
     return false;
-  }
-}
-
-/** True when the permission bits just set did not actually deny a read (root). */
-function canStillRead(file) {
-  try {
-    readFileSync(file);
-    return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error.code === "EACCES" || error.code === "EPERM") return true;
+    throw error;
   }
 }
 
@@ -209,7 +200,7 @@ test("an unreadable SKILL.md is reported apart and exits 2", (t) => {
   // No restore hook: deleting a 000-mode file only needs write permission on its
   // directory, and a hook registered here would run after the cleanup hook.
   chmodSync(file, 0o000);
-  if (canStillRead(file)) {
+  if (!denies(() => readFileSync(file))) {
     t.skip("this user can read a 000-mode file (root); the branch needs a denied read");
     return;
   }
@@ -303,7 +294,7 @@ test("a skill directory that cannot be read is not skipped", (t) => {
   // hook that deletes the tree, so a hook here would throw ENOENT on POSIX.
   let result;
   try {
-    if (canListDirectory(dir)) {
+    if (!denies(() => readdirSync(dir))) {
       t.skip("this user can list a 000-mode directory (root); the branch needs a denied read");
       return;
     }
