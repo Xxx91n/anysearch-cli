@@ -18,7 +18,7 @@
 
 ### Tests
 
-- `packages/kernel/test/engine.test.ts` 的旧宽限块换成九条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、abort 后才 resolve 的臂不算「答过」、同一 tick 的 abort 不吞掉已落地的结果、扇出构造抛错释放预扣、构造函数里的 `gate` 真的生效。
+- `packages/kernel/test/engine.test.ts` 的旧宽限块换成九条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、abort 后才 resolve 的臂不算「答过」、同一 tick 的 abort 不吞掉已落地的结果、扇出构造抛错时已起的臂被 abort 且预扣释放、构造函数里的 `gate` 真的生效。
 
 ### 边界
 

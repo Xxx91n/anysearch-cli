@@ -427,6 +427,11 @@ export class RetroaererdEngine {
       queueMicrotask(() => abortedArms.add(i));
       controllers[i].abort(reason);
     };
+    // One implementation for "stop every arm that has not landed" — the deadline
+    // and a fan-out construction failure both need it.
+    const abortAllUnsettled = () => {
+      for (let i = 0; i < controllers.length; i++) abortArm(i);
+    };
     const cancelProviders = () => {
       for (let i = 0; i < controllers.length; i++) abortArm(i, callerSignal?.reason);
       callerAbortResolve();
@@ -452,7 +457,7 @@ export class RetroaererdEngine {
     const deadline = new Promise<void>((r) => { deadlineResolve = r; });
     // The timer stays ref'd: the request itself waits on it.
     const deadlineTimer = setTimeout(() => {
-      for (let i = 0; i < controllers.length; i++) abortArm(i);
+      abortAllUnsettled();
       deadlineResolve();
     }, this.requestTimeoutMs);
     // A non-async adapter may throw before returning a promise; turn that into
@@ -491,7 +496,7 @@ export class RetroaererdEngine {
       // Never reached by a provider outcome (both handlers return normally); a
       // throw here is fan-out construction. Stop the arms already started, and
       // release the reserve: a failed construction bills nothing.
-      for (let i = 0; i < controllers.length; i++) abortArm(i);
+      abortAllUnsettled();
       if (hasLedger) budgetLedger!.settleCalls(budgetScope!, perCallEstimate, 0);
       throw err;
     } finally {

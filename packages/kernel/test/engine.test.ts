@@ -462,8 +462,8 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     assert(r9.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm still cancelled");
   }
 
-  // (i) A fan-out construction throw releases the per-call reservation instead
-  // of pinning the session's call cap.
+  // (i) A fan-out construction throw stops the arms already started and
+  // releases the per-call reservation instead of pinning the call cap.
   {
     let settled: [number, number] | null = null;
     const ledger = {
@@ -487,7 +487,8 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
         throw new Error("provider must not be called");
       },
     };
-    const eng9 = new RetroaererdEngine([throwingArm], {
+    const startedAbort = { v: false };
+    const eng9 = new RetroaererdEngine([hangingProvider("started", startedAbort), throwingArm], {
       ledger,
       sessionId: "construction-throw",
       urlPolicy: () => ({ allow: ["example.com"], deny: [], policyVersion: "v1" }),
@@ -500,7 +501,8 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
       thrown = String(e instanceof Error ? e.message : e);
     }
     assert(thrown.includes("boom in providerRequest"), "construction throw: surfaces as a search error");
-    assert(settled !== null && settled![0] === 1 && settled![1] === 0, "construction throw: reservation released");
+    assert(startedAbort.v, "construction throw: arm started before the throw is aborted");
+    assert(settled !== null && settled![0] === 2 && settled![1] === 0, "construction throw: reservation released");
   }
 
   // (j) The sufficiency gate moved to constructor opts and is live again.
