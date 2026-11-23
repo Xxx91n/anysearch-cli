@@ -383,6 +383,7 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       extraPackages: {
         "apps/cli": { name: "@anysearch-cli/cli" },
         "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/mcp": { name: "@anysearch-cli/mcp" },
         "apps/store": { name: "@anysearch-cli/store" },
       },
     },
@@ -391,10 +392,11 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       assert.equal(result.status, 0, result.stderr);
       assert.match(
         result.stdout,
-        /run: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
+        /run: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
       );
       assert.match(result.stdout, /--filter=@anysearch-cli\/cli/);
       assert.match(result.stdout, /--filter=@anysearch-cli\/kernel/);
+      assert.match(result.stdout, /--filter=@anysearch-cli\/mcp/);
       assert.match(result.stdout, /--filter=@anysearch-cli\/store/);
       assert.match(result.stdout, /green in \d+\.\ds \(readers\)/);
       // The package the workspace also has does not join in: it does not read
@@ -416,6 +418,7 @@ test("a root file plus a package file runs both, and the readers do not bring th
       extraPackages: {
         "apps/cli": { name: "@anysearch-cli/cli" },
         "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/mcp": { name: "@anysearch-cli/mcp" },
         "apps/store": { name: "@anysearch-cli/store" },
         "apps/consumer": {
           name: "@anysearch-cli/consumer",
@@ -428,9 +431,9 @@ test("a root file plus a package file runs both, and the readers do not bring th
       assert.equal(result.status, 0, result.stderr);
       assert.match(
         result.stdout,
-        /run: @anysearch-cli\/cli, @anysearch-cli\/dsh-plugin, @anysearch-cli\/kernel, @anysearch-cli\/store \(the change plus its dependents, plus the readers of root files\)/,
+        /run: @anysearch-cli\/cli, @anysearch-cli\/dsh-plugin, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store \(the change plus its dependents, plus the readers of root files\)/,
       );
-      for (const pkg of ["cli", "dsh-plugin", "kernel", "store"]) {
+      for (const pkg of ["cli", "dsh-plugin", "kernel", "mcp", "store"]) {
         assert.match(result.stdout, new RegExp(`--filter=@anysearch-cli/${pkg}`), pkg);
       }
       assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
@@ -450,7 +453,7 @@ test("a root file whose reader is missing from the workspace runs the suite and 
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
-      /full suite: no workspace package named: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/store/,
+      /full suite: no workspace package named: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store/,
     );
     assert.match(result.stdout, /^test$/m, result.stdout);
     assert.equal(result.stdout.includes("--filter="), false, result.stdout);

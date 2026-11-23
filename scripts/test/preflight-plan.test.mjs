@@ -130,10 +130,10 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
   assert.deepEqual(coverage.packages, ["@anysearch-cli/store"]);
 
   for (const [files, readers] of [
-    [["domains/docs.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["domains/docs.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"]],
     [
       ["domains/research.toml", "domains/default.toml"],
-      ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
+      ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"],
     ],
     [["eval-looks.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
     [["eval-badcases.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
@@ -163,6 +163,8 @@ test("a root file outside the reader table still runs the full suite", () => {
     "LICENSE",
     "scripts/preflight-test.mjs",
     ".github/workflows/ci.yml",
+    // hypothetical: domains/ holds only TOML today, so a non-TOML file dropped
+    // there is outside the row's ext and keeps the fallback.
     "domains/schema.json",
   ]) {
     const plan = planPreflight(root, [file]);
@@ -174,12 +176,18 @@ test("a root file outside the reader table still runs the full suite", () => {
 test("a root file change next to a package change runs both", () => {
   const plan = planPreflight(root, ["domains/docs.toml", "apps/dsh-plugin/src/index.ts"]);
   assert.equal(plan.mode, "incremental");
-  assert.deepEqual(plan.readers, ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  assert.deepEqual(plan.readers, [
+    "@anysearch-cli/cli",
+    "@anysearch-cli/kernel",
+    "@anysearch-cli/mcp",
+    "@anysearch-cli/store",
+  ]);
   assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
   assert.deepEqual(plan.packages, [
     "@anysearch-cli/cli",
     "@anysearch-cli/dsh-plugin",
     "@anysearch-cli/kernel",
+    "@anysearch-cli/mcp",
     "@anysearch-cli/store",
   ]);
 });
@@ -359,7 +367,12 @@ test("the real workspace: every reader in the table exists, and domains runs onl
   assert.equal(plan.mode, "readers");
   // cli's doctor test resolves the default domain through the repo-root
   // fallback and asserts the [skills] active list it finds there.
-  assert.deepEqual(plan.packages, ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  assert.deepEqual(plan.packages, [
+    "@anysearch-cli/cli",
+    "@anysearch-cli/kernel",
+    "@anysearch-cli/mcp",
+    "@anysearch-cli/store",
+  ]);
   assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, ["@anysearch-cli/store"]);
   // That row rests on a golden entry anchoring on the file: without the anchor,
   // store would have no reason to run and the row should go with it.

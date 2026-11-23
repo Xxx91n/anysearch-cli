@@ -155,37 +155,26 @@ export function codeOwnership(files, packages) {
 }
 
 /**
- * Root files with known readers: for each, the workspace packages whose tests
- * open the file, so a change to it can only break those.
+ * Root files with known readers: for each, the workspace packages a change to
+ * the file can break. A reader's tests read the file, or its build copies it —
+ * mcp's build syncs the root domains into its committed `apps/mcp/domains`.
  *
  * Design: the table is hand-written and deliberately short (#489) — a root file
- * that is not here keeps the full-suite fallback, which is the safe direction to
- * be wrong in, over guessing a reader from a directory name.
+ * that is not here keeps the full-suite fallback, the safe direction to be wrong
+ * in, over guessing a reader from a directory name. `ext` narrows a row to the
+ * files a loader reads (`domains/*.toml`), so a file dropped beside them keeps
+ * the fallback. Readers do not bring their dependents: an app that depends on
+ * store never opens the file through store's tests, so a dependent that does
+ * read it is named in its own right, as cli is on the domains row.
  *
- * That fallback covers the lockfile, `package.json`, `turbo.json`,
- * `pnpm-workspace.yaml`, `.github/`, and `.gitignore`, which changes what git
- * sees for every package. `ext` is the ticket's own scope for the domains tree
- * (`domains/*.toml`): a file dropped next to them keeps the fallback until a test
- * reads it.
- *
- * Readers do not bring their dependents: an app that depends on store never
- * opens the file through store's tests, so running it would cost time and prove
- * nothing. A dependent that does open the file is named in its own right: cli,
- * on the domains row, is one.
- *
- * Evidence, a pointer for the next editor rather than a second source of truth
- * (the rows themselves are pinned by the real-workspace test): `domains/*.toml`
- * by kernel's rag-adapter and eval-looks-stub, store's domain-loader and
- * eval-docs-golden, and cli's doctor — that one resolves the default domain
- * through the repo-root fallback; `AGENTS.md` by store's eval-docs-golden, which
- * only needs the file on disk; the `eval-*.json` records by kernel's
- * eval-looks-stub and store's eval-docs-golden (coverage by store alone).
+ * `scripts/test/preflight-plan.test.mjs` pins every row against the real
+ * workspace, so the rows carry no evidence list of their own.
  */
 export const ROOT_READERS = [
   {
     path: "domains",
     ext: ".toml",
-    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
+    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"],
   },
   { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
   { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },

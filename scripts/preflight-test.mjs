@@ -4,7 +4,8 @@
 // it into a package list. A change outside apps/ and packages/ has no clear
 // owner, so it falls back to the full suite — except documentation, which runs
 // nothing and says so, and the root files whose readers the plan's table names,
-// which run those readers alone.
+// which run those readers — alone when the change is only root files, joined to
+// the incremental set when it also touches packages.
 //
 // Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
