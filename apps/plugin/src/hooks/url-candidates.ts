@@ -15,19 +15,17 @@ export interface UrlCandidate {
   raw: string;
 }
 
-// Real TLDs that are also common source or build artifacts. Adding one here costs
-// detection of a bare domain under that TLD; leaving it out costs an ask prompt on
-// every mention of the file. `main.tf`, `model.ml` and `bundle.js.map` are the
-// kind of text this list keeps out of the gate.
-//
-// `.org` and `.app` are deliberately absent. Both are common real TLDs — org-mode
-// notes stay rare, and `cash.app` / `foo.vercel.app` are everyday search terms —
-// so blacklisting them would hide hosts the gate exists to see. `Safari.app`
-// therefore asks; that is the cheaper mistake.
+// Real TLDs that are also common source or build artifacts. The question for each
+// entry is which use dominates the text this gate sees: `.so`, `.cc`, `.sh` and
+// `.md` are overwhelmingly files, so they stay. A country or brand TLD used by real
+// sites — `.in`, `.pl`, `.la`, `.org`, `.app` — does not: blacklisting it would let
+// `amazon.in` or `cash.app` written without a path, port or `www.` slip past unseen.
+// Those therefore ask. `Makefile.in`, `libfoo.la` and `script.pl` asking too is the
+// price, and an explicit scheme or any path still catches the site form.
 const FILE_EXT_TLDS: Record<string, true> = {
-  ac: true, am: true, as: true, cc: true, cr: true, in: true, inc: true, java: true, la: true,
-  map: true, md: true, mk: true, ml: true, mm: true, mov: true, mo: true, ninja: true, pl: true,
-  pm: true, ps: true, py: true, rs: true, sh: true, so: true, sv: true, tf: true, zip: true,
+  ac: true, am: true, as: true, cc: true, cr: true, inc: true, java: true, map: true, md: true,
+  mk: true, ml: true, mm: true, mov: true, mo: true, ninja: true, pm: true, ps: true, py: true,
+  rs: true, sh: true, so: true, sv: true, tf: true, zip: true,
 };
 const PLACEHOLDER_TLDS: Record<string, true> = { bar: true, foo: true };
 const BRACKET_OPEN: Record<string, string> = { ")": "(", "]": "[", "}": "{" };

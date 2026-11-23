@@ -92,7 +92,7 @@ test("file names, versions, IPs, emails, localhost and placeholders are not host
   for (const text of [
     "main.py", "README.md", "config.toml", "src/main.py",
     "main.tf", "model.ml", "app.pm", "deploy.ps", "Makefile.mk", "schema.tf",
-    "Makefile.in", "configure.ac", "Makefile.am", "foo.mo", "libfoo.la", "main.mm", "app.as",
+    "configure.ac", "Makefile.am", "foo.mo", "main.mm", "app.as",
     "Hello.java", "crystal.cr", "top.sv", "config.inc", "header.inc",
     "bundle.js.map", "build.ninja",
     "v1.2", "1.2.3", "1.2.3.4", "1.2.3.4:8080",
@@ -159,10 +159,12 @@ test("non-text fields and opaque handles are not scanned", () => {
   assert.deepEqual(toolInputCandidates("mcp__anysearch__ans_chat", { sessionId: "example.com/a" }), []);
 });
 
-test("a macOS app bundle is read as a host on purpose", () => {
-  // `.app` is a real, common TLD (cash.app, foo.vercel.app). Blacklisting it would
-  // hide those hosts, so `Safari.app` asks instead — the cheaper mistake.
+test("a country or brand TLD used as a file suffix is read as a host on purpose", () => {
+  // `.app`, `.in` and `.la` are real, common TLDs. Blacklisting them would hide
+  // `cash.app`, `amazon.in` and real `.la` sites, so the file form asks instead.
   assert.deepEqual(hosts("open Safari.app"), ["safari.app"]);
+  assert.deepEqual(hosts("Makefile.in"), ["makefile.in"]);
+  assert.deepEqual(hosts("libfoo.la"), ["libfoo.la"]);
 });
 
 test("the committed TLD snapshot is well formed", () => {
