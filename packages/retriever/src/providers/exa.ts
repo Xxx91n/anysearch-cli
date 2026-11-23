@@ -9,6 +9,7 @@
 import Exa from "exa-js";
 import type { ProviderAnswer, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
 import { PROVIDER_FACTS } from "./provider-facts";
+import { ExaMcpProvider } from "./exa-mcp";
 
 // Mode mapping: our modes -> Exa search type.
 const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
@@ -29,8 +30,8 @@ export class ExaProvider implements SearchProvider {
 
   constructor(apiKey?: string) {
     // atomcode research: new Exa(apiKey), key falls back to EXA_API_KEY env.
-    // 没拿到 key（没传、空串、纯空格）时 exa-js 自己会去读环境变量，读不到就当场抛。
-    // 归一化放在这里，直接 new 这个类和走工厂拿到的东西才一致（类是导出的）。
+    // 直接 new 这个类是付费 REST 臂：没拿到 key 时 exa-js 自己会去读环境变量，读不到就当场抛。
+    // 「没 key 走免费额度」是工厂 createExaProvider 的分岔，不在这个类里。
     this.client = new Exa(apiKey?.trim() || undefined);
   }
 
@@ -95,9 +96,13 @@ export class ExaProvider implements SearchProvider {
 }
 
 /**
- * Design: 装配方调这个工厂 — 换构造方式时只改这里，两张装配表不用跟着动。
- * 归一化在构造器：空串、纯空格、没传都算没配 key，exa-js 自己去找环境变量，找不到就抛。
+ * 装配方调这个工厂 — 换构造方式、换走哪条路时只改这里，两张装配表不用跟着动。
+ *
+ * 分岔只看传进来的这一个值：trim 后非空走 REST，空串、纯空格、没传都走免费额度臂。
+ * 这里不读 EXA_API_KEY —— 读了的话「没传」算不算有 key 就要看现场，诊断和装配会各说各话。
+ * 坏 key 不退，照旧在构造时抛。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
-  return new ExaProvider(apiKey);
+  const key = apiKey?.trim();
+  return key ? new ExaProvider(key) : new ExaMcpProvider();
 }

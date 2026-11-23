@@ -1,5 +1,5 @@
-// provider-facts：一家信息源在代码里会被读到的事实，只放这一处。三个适配器和免费面探针
-// 都从这里读，改一家信息源改一行。
+// provider-facts：一家信息源在代码里会被读到的事实，只放这一处。每个适配器（exa 的付费臂和
+// 免费额度臂算两个）和免费面探针都从这里读，改一家信息源改一行。
 //
 // Design: 行为值归这张表，说明文字归文档（providers/<id>/README.md、
 // docs/mcp-server.md 的「## Upstream provider transport matrix」）。每行的短注只回答
@@ -19,6 +19,19 @@ export type UndetectableClass = "auth" | "quota";
  */
 type ProviderKey = "exa" | "tavily" | "anysearch";
 
+/**
+ * 没配 key 时顶上来那一臂的事实。它和付费臂共用 `id`，但能力和入口都不一样：
+ * 入口换成一家自己的免费额度端点，能力只按那个端点真给的来。
+ */
+export interface FreeArmFacts {
+  /** 免费额度臂的入口。这个端点不吃凭据，也不跟环境变量走。 */
+  endpoint: string;
+  /** 免费额度臂接得住的模式——付费臂有的能力，免费端点不一定给。 */
+  modes: readonly Mode[];
+  domainFilterSupported: boolean;
+  verticalDomainSupported: boolean;
+}
+
 export interface ProviderFacts {
   /** 接得住的查询模式。适配器不再自己写一份。 */
   modes: readonly Mode[];
@@ -32,6 +45,8 @@ export interface ProviderFacts {
     endpoint: string;
     undetectable: readonly UndetectableClass[];
   };
+  /** 有免费额度另一条路的那家填这一格；没有就空着。 */
+  freeArm?: FreeArmFacts;
   /** MCP 客户端支持的协议版本。只有说 MCP 的那家有；适配器和探针发的是同一格。 */
   mcpProtocolVersion?: string;
 }
@@ -39,7 +54,8 @@ export interface ProviderFacts {
 /**
  * 表的形状：一家一行，每行都要填全 `ProviderFacts`，`id` 必须和键一致——写错在类型检查就红。
  * 少填一家 = 少了键，少填一个必填字段 = 那一行不满足 `ProviderFacts`。
- * 唯一的可选字段是 `mcpProtocolVersion`：删掉它不会让表本身红，读它的适配器和探针会红。
+ * 两个可选字段：`freeArm`（只有 exa 今天有）和 `mcpProtocolVersion`——删掉它们不会让表本身红，
+ * 读它们的地方会红。
  */
 type ProviderFactsTable = { [K in ProviderKey]: ProviderFacts & { readonly id: K } };
 
@@ -55,6 +71,16 @@ export const PROVIDER_FACTS = {
       endpoint: "https://api.exa.ai",
       // 没有单独的用量接口，套餐用满只能从搜索回包看出来——免费面验不到。
       undetectable: ["quota"],
+    },
+    // 没配 key 时换成 Exa 自己的 MCP 端点，只借它的 web_search_exa：没有 answer，
+    // 免费工具只有 query / numResults，也没有垂域路由。适配器见 exa-mcp.ts。
+    // 三档都声明：端点没有深度参数，fast / index / deep 打出去是同一条请求（mode 只
+    // 改 REST 臂的 type）；引擎也不按 modes 过滤 provider，少写档位只会让诊断少报能力。
+    freeArm: {
+      endpoint: "https://mcp.exa.ai/mcp",
+      modes: ["fast", "index", "deep"],
+      domainFilterSupported: false,
+      verticalDomainSupported: false,
     },
   },
   tavily: {

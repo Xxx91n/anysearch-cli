@@ -173,8 +173,20 @@ test("a stored key bound to another endpoint is never sent", async () => {
 test("stored SEARCH keys reach the real provider arms built by createEngine", async () => {
   const { home, cleanup } = tempHome();
   const scrub = scrubEnv();
+  const domains = mkdtempSync(join(home, "domains-"));
   try {
     writeUserCredential({ provider: "anysearch", apiKey: STORED_ANYS_KEY }, { home });
+    // The domain narrows the fanout to the arm under test: #500 lets an exa arm
+    // without a key build too, and this test must not send its search to the free-quota
+    // endpoint (the offline suite does not reach the network).
+    writeFileSync(join(domains, "wire.toml"), [
+      'name = "wire"',
+      '[sources]',
+      'enabled = ["anysearch"]',
+      '[rag]',
+      'adapter = "none"',
+      "",
+    ].join("\n"), "utf8");
 
     // A real local MCP endpoint. The anysearch arm is the one search client
     // whose endpoint can be pointed at a test server (ANYSEARCH_ENDPOINT), so it
@@ -218,9 +230,9 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
     assert.equal(resolved.anysearch?.source, "user");
     assert.equal(resolved.exa, undefined, "no exa key anywhere - that arm stays keyless");
 
-    const engine = createEngine(undefined, {
+    const engine = createEngine("wire", {
       dbPath: ":memory:",
-      domainsDirs: [],
+      domainsDirs: [domains],
       env,
       searchCredentials: (e) => resolveSearchCredentials(e),
     });
@@ -251,6 +263,7 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
     }
   } finally {
     scrub.restore();
+    rmSync(domains, { recursive: true, force: true });
     cleanup();
   }
 });
@@ -280,6 +293,10 @@ test("a search arm with no stored key and no env is labelled none, never left ou
       assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
+      // #500: an exa arm without a key is not a construction failure any more —
+      // it builds on the free-quota endpoint, it just has no key to report.
+      assert.equal(engine.providerBuildErrors.exa, undefined,
+        "an exa arm without a key builds; 'no key' is not a build error");
       // The key set itself is the contract: an arm added later cannot be
       // skipped silently, because this assertion counts what the record carries.
       assert.deepEqual(
@@ -334,9 +351,11 @@ test("a search arm holding a key it cannot use degrades by name, never pretendin
 
 test("a blank key from a hand-built seam is labelled none, not env", () => {
   // The seam is public (tests and embedders pass their own resolver), so the
-  // record cannot assume its caller trimmed. A whitespace-only key is not a key.
-  // The env is scrubbed too: the SDKs fall back to their own env var, which would
-  // make "the blank key built nothing" pass for the wrong reason.
+  // record cannot assume its caller trimmed. A whitespace-only key is not a key:
+  // it is labelled `none` and the arm builds on the free quota instead.
+  // The env is scrubbed too: an explicit blank value must not borrow an ambient
+  // EXA_API_KEY, or "the blank key built the free arm" would pass for the wrong
+  // reason on a developer machine.
   const scrub = scrubEnv();
   const engine = createEngine(undefined, {
     dbPath: ":memory:",
@@ -355,9 +374,10 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
     assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
     assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
     assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
-    // The constructors see the same normalised value: a blank key must not build
-    // the exa arm, which refuses without one.
-    assert.ok(engine.providerBuildErrors.exa, "a blank key does not build the exa arm");
+    // The constructors see the same normalised value: a blank key is not a key.
+    // #500: exa takes its free-quota arm from here instead of failing to build.
+    assert.equal(engine.providerBuildErrors.exa, undefined,
+      "a blank key builds the free-quota arm, not a build error");
   } finally {
     (engine.store as { close?: () => void }).close?.();
     engine.observation.close();
@@ -368,7 +388,7 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {
   // Review (second round), high: the MCP entry exits the process on a throw from
   // this seam, so an unreadable credential file would kill the server at startup
-  // instead of falling back to each SDK's own env var like every other arm.
+  // instead of falling back to the environment like every other arm.
   const engine = createEngine(undefined, {
     dbPath: ":memory:",
     domainsDirs: [],
@@ -389,6 +409,59 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
     assert.doesNotMatch(failed, /EACCES: credentials\.json/, "a path-and-message fragment is not forwarded");
     // The point is only that the throw did not propagate: the arms are built as
     // if no credentials were supplied, which is the pre-#301 path.
+    assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",
+      "the retriever is usable, not a half-built object");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a throwing credential resolver still honours the environment keys", () => {
+  // #500: the degradation path re-resolves the injected env explicitly. Without
+  // that, `creds` stayed undefined, exa's factory took the free-quota arm, and a
+  // machine with EXA_API_KEY set would silently lose the paid REST arm just
+  // because the credential file was unreadable.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: { EXA_API_KEY: "sk-unusable" + String.fromCharCode(10) + "header-fault" },
+    searchCredentials: () => { throw new Error("EACCES: credentials.json is unreadable"); },
+  });
+  try {
+    assert.equal(engine.credentialSources?.status, "failed", "the resolution fault is still reported");
+    assert.equal(
+      engine.providerBuildErrors.exa,
+      "permanent: missing/invalid credential — set the provider's API key env",
+      "the env key reached the REST arm instead of the free-quota arm",
+    );
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("a throwing resolver whose env read also throws still builds the engine", () => {
+  // #500: the degradation path re-reads the env. When that read fails too, fail-open
+  // means "no keys", not "no engine": exa lands on the free-quota arm and the engine
+  // still assembles. The proxy throws only on the search-key names, so nothing else in
+  // the composition root (paths, domain dirs) sees a fault.
+  const keyNames = new Set(["TAVILY_API_KEY", "EXA_API_KEY", "ANYSEARCH_API_KEY", "ANYSEARCH_ENDPOINT"]);
+  const env = new Proxy({} as NodeJS.ProcessEnv, {
+    get(_target, key) {
+      if (typeof key === "string" && keyNames.has(key)) throw new Error("EACCES: environment unreadable");
+      return undefined;
+    },
+  });
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env,
+    searchCredentials: () => { throw new Error("EACCES: credentials.json is unreadable"); },
+  });
+  try {
+    assert.equal(engine.credentialSources?.status, "failed", "the resolution fault is still reported");
+    assert.equal(engine.providerBuildErrors.exa, undefined, "exa fell back to the free-quota arm");
     assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",
       "the retriever is usable, not a half-built object");
   } finally {
