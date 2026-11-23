@@ -44,7 +44,8 @@ export async function verifyInstalledProduct(prefix, check) {
   }
   check("runtime floor matches PI 1.5.1", manifest.engines?.node === ">=22.19.0");
   for (const path of ["domains/docs.toml", "mcp/domains/docs.toml", "plugin/configs/claude/hooks.json",
-    "plugin/configs/codex/hooks.json", "plugin/hooks/hooks.json", "plugin/.mcp.json",
+    "plugin/configs/codebuddy/hooks.json", "plugin/configs/codex/hooks.json",
+    "plugin/configs/antigravity/hooks.json", "plugin/hooks/hooks.json", "plugin/.mcp.json",
     "plugin/.claude-plugin/plugin.json", "plugin/skills"]) {
     check("product ships " + path, existsSync(join(product, path)));
   }
