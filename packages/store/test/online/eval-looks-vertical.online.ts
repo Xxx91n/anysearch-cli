@@ -253,11 +253,13 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       armInFanoutOff: off.__error ? null : armList(off) !== null,
       providersFailedOn: on?.providersFailed ?? null,
       providersFailedOff: off.providersFailed ?? null,
-      // Isolated-arm failure surface — an empty arm list without this context
-      // is indistinguishable from "arm returned zero results", so quota/arm
-      // failures on the primary measurement leg must be named.
+      // Isolated-arm failure/cancel surface — an empty arm list without this
+      // context is indistinguishable from "arm returned zero results", so
+      // quota/arm failures and deadline cancellations on the primary leg must be named.
       providersFailedIsoOn: isoOn?.providersFailed ?? null,
       providersFailedIsoOff: isoOff.providersFailed ?? null,
+      providersCancelledIsoOn: isoOn?.providersCancelled ?? null,
+      providersCancelledIsoOff: isoOff.providersCancelled ?? null,
       // error classes ride next to every failed-providers
       // flag — delta evidence records a category, never only a flag.
       providerErrorClassesOn: on?.providerErrorClasses ?? null,
