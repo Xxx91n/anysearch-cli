@@ -25,6 +25,7 @@
 //   node scripts/preflight-test.mjs --dry-run  # print the plan, run nothing
 
 import { spawn, spawnSync } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -38,18 +39,15 @@ import { writeStderr } from "./preflight-stderr.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
-// Design: the gate's own tests run in groups, one `node --test` each — a red
-// group is then named by construction instead of read back out of a reporter's
-// prose.
+// Design: one `node --test` per group — a red group is named by the run that
+// failed, instead of parsed out of a reporter.
 //
-// Design: on a full run the shared judgments run in the gate too — the gate is
-// the only mechanical stop before a push, so CI's change policy (which lanes a
-// push needs) and the workflow checker (whether those lanes can start at all)
-// are verified here rather than only in the CI run this gate exists to spare.
-// An incremental push keeps its old cost and skips all of it.
+// Design: a full run covers the shared judgments too — the gate is the only
+// mechanical stop before a push, so a broken change policy or workflow checker
+// should not wait for CI to notice. Incremental pushes skip all of it.
 //
-// PREFLIGHT_GATE_TESTS replaces the whole list for the tests that drive this
-// script with a fake pnpm; the name says so, and the files line still lists it.
+// PREFLIGHT_GATE_TESTS replaces the group list for the tests that drive this
+// script with a fake pnpm.
 function gateGroups() {
   const override = process.env.PREFLIGHT_GATE_TESTS;
   if (override) return [{ name: "PREFLIGHT_GATE_TESTS override", files: override.split(",") }];
@@ -139,19 +137,28 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 // fake pnpm; PREFLIGHT_GATE_TESTS replaces the group list so that test does not
 // re-enter the whole suite.
 if (selfTest) {
+  // Design: a shared judgment reads a parser from node_modules, so a tree without
+  // it would report a broken judgment that is only an uninstalled one. Say which
+  // command fixes it, before anything runs. PREFLIGHT_GATE_TESTS means a test
+  // supplied its own files.
+  if (!process.env.PREFLIGHT_GATE_TESTS && !fs.existsSync(path.join(root, "node_modules"))) {
+    removeTestHome(testHome);
+    writeStderr("[preflight] blocked: no node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need it");
+    process.exit(1);
+  }
   let result;
   try {
     result = await runGateTests();
   } catch (error) {
     result = { failed: [], tests: null, failure: `could not start the gate's own tests: ${error.message}` };
   }
-  if (interrupted) process.exit(interrupted);
+  if (interrupted) await exitAfterFlush(interrupted);
   if (result.failure || result.failed.length > 0) {
     const reason = result.failure ?? `gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`;
     writeStderr(`[preflight] ${reason}`);
     reportKeptTestHome(testHome);
     writeStderr("[preflight] blocked: the gate's own tests failed");
-    process.exit(1);
+    await exitAfterFlush(1);
   }
   console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
@@ -307,30 +314,46 @@ async function runGateTests() {
     counts.push(testCount(groupTail()));
     if (status !== 0) failed.push(group);
   }
-  // An unreadable count is left out of the total rather than guessed at.
+  // One unreadable count makes the total unknown: the rest do not add up to it,
+  // and a partial sum would be reported as the whole.
   const tests = counts.every((count) => count !== null) ? counts.reduce((sum, count) => sum + count, 0) : null;
   return { failed, tests, failure: null };
 }
 
 // Forward both streams and keep the last bytes, so a caller can read a line out
-// of output the operator has already seen.
+// of output the operator has already seen. Design: decode through StringDecoder —
+// a `ℹ` split across two chunks would otherwise fail the count's regex.
 function forwardKeepingTail(source, limit) {
   let tail = "";
   for (const [stream, out] of [
     [source.stdout, process.stdout],
     [source.stderr, process.stderr],
   ]) {
+    const decoder = new StringDecoder("utf8");
     stream.on("data", (chunk) => {
       out.write(chunk);
-      tail = (tail + chunk).slice(-limit);
+      tail = (tail + decoder.write(chunk)).slice(-limit);
     });
   }
   return () => tail;
 }
 
-// node's spec reporter prints "ℹ tests N" once per run, after the per-test
-// lines. The tail holds it; a run that printed so much the summary fell out gets
-// no number rather than a wrong one.
+// Design: a write to a pipe is queued, and process.exit drops what has not left
+// yet — on a red self-test that is the failing group's own output. Give it a
+// moment, but not forever: a pipe nobody reads must not hang the gate.
+async function exitAfterFlush(code) {
+  const pending = [process.stdout, process.stderr].filter((stream) => stream.writableLength > 0);
+  if (pending.length > 0) {
+    await Promise.race([
+      Promise.all(pending.map((stream) => new Promise((resolve) => stream.once("drain", resolve)))),
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }
+  process.exit(code);
+}
+
+// node's spec reporter prints "ℹ tests N" once per run. A run that printed so
+// much the summary fell out of the tail reports no count rather than a wrong one.
 function testCount(output) {
   const match = /^ℹ tests (\d+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
   return match ? Number(match[1]) : null;
@@ -338,8 +361,7 @@ function testCount(output) {
 
 function describeCount(tests, count) {
   const groups = `${count} group${count === 1 ? "" : "s"}`;
-  // Say the number is missing rather than quietly reporting the group count as
-  // if it were the whole story.
+  // Say the count is unknown instead of passing the group count off as it.
   return tests === null ? `${groups} (test count unreadable)` : `${tests} tests in ${groups}`;
 }
 

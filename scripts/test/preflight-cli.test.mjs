@@ -264,6 +264,32 @@ test("a red shared judgment names only the group it belongs to", async () => {
   });
 });
 
+// The gate's own group can go red too, and it must not borrow the shared
+// judgments' names.
+test("a red push gate names its own group", async () => {
+  const files = gateTestFiles({ "scripts/test/preflight-plan.test.mjs": FAILING_GATE_TEST });
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /\[preflight\] gate self-test failed: push gate$/m);
+    assert.equal(result.stderr.includes("CI change policy"), false, result.stderr);
+    clearKeptHome(result);
+  });
+});
+
+// A tree without installed dependencies cannot answer for a shared judgment, and
+// reporting it as a broken judgment sends the operator to the wrong place.
+test("a full run without installed dependencies says which command to run", async () => {
+  await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
+    rmSync(join(root, "node_modules"), { recursive: true, force: true });
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no node_modules — run `pnpm install --ignore-scripts` first/);
+    assert.equal(result.stderr.includes("gate self-test failed"), false, result.stderr);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
 test("an incremental push does not pay for the gate's own tests", async () => {
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: passingPnpm }, ({ root, bin }) => {
     const result = runCliIn(root, bin, [], { selfTest: true });
@@ -453,6 +479,9 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
   for (const [name, content] of Object.entries(files ?? {})) write(join(root, name), content);
+  // The gate refuses a full run without installed dependencies, and a workspace
+  // with none would never reach the suite either.
+  mkdirSync(join(root, "node_modules"), { recursive: true });
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);
