@@ -246,18 +246,17 @@ test("a full run also runs the shared judgments and reports how many tests ran",
   });
 });
 
-// Both shared groups go red at once: the gate names each of them and keeps
-// going after the first failure, and the real `ci-changes` / `check-workflows`
-// paths have to run for either stand-in to be seen at all.
-test("a red shared judgment names every group it belongs to", async () => {
-  const files = gateTestFiles({
-    "scripts/test/ci-changes.test.mjs": FAILING_GATE_TEST,
-    "scripts/test/check-workflows.test.mjs": FAILING_GATE_TEST,
-  });
+// One shared group goes red: the gate names that group, and only that one. The
+// stand-in has to sit at the real `check-workflows` path for it to be seen at
+// all, so this also pins the path.
+test("a red shared judgment names only the group it belongs to", async () => {
+  const files = gateTestFiles({ "scripts/test/check-workflows.test.mjs": FAILING_GATE_TEST });
   await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
     assert.equal(result.status, 1);
-    assert.ok(result.stderr.includes("gate self-test failed: CI change policy, workflow checks"), result.stderr);
+    assert.match(result.stderr, /\[preflight\] gate self-test failed: workflow checks$/m);
+    // The other shared group passed, so naming it would be a lie.
+    assert.equal(result.stderr.includes("CI change policy"), false, result.stderr);
     assert.match(result.stderr, /blocked: the gate's own tests failed/);
     // A red self-test blocks before the suite: the fake pnpm never got a word.
     assert.equal(result.stdout.includes("pnpm ran"), false);

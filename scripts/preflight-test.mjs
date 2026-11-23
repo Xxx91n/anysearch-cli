@@ -42,10 +42,11 @@ const args = process.argv.slice(2);
 // group is then named by construction instead of read back out of a reporter's
 // prose.
 //
-// Design: the shared judgments run in the gate too — the gate is the only
-// mechanical stop before a push, so CI's change policy (which lanes a push
-// needs) and the workflow checker (whether those lanes can start at all) are
-// verified here rather than only in the CI run this gate exists to spare.
+// Design: on a full run the shared judgments run in the gate too — the gate is
+// the only mechanical stop before a push, so CI's change policy (which lanes a
+// push needs) and the workflow checker (whether those lanes can start at all)
+// are verified here rather than only in the CI run this gate exists to spare.
+// An incremental push keeps its old cost and skips all of it.
 //
 // PREFLIGHT_GATE_TESTS replaces the whole list for the tests that drive this
 // script with a fake pnpm; the name says so, and the files line still lists it.
@@ -337,7 +338,9 @@ function testCount(output) {
 
 function describeCount(tests, count) {
   const groups = `${count} group${count === 1 ? "" : "s"}`;
-  return tests === null ? groups : `${tests} tests in ${groups}`;
+  // Say the number is missing rather than quietly reporting the group count as
+  // if it were the whole story.
+  return tests === null ? `${groups} (test count unreadable)` : `${tests} tests in ${groups}`;
 }
 
 // Stop the whole tree: pnpm's turbo and the tests it starts are grandchildren,
