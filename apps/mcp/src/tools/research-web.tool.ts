@@ -90,9 +90,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
 
             const queriedProviders = envelope.metadata?.providersQueried ?? [];
             const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
-            // #475: overwritten every round, so the payload describes the last
-            // completed round — the same round abstain and sufficiency describe,
-            // never a union across rounds.
+            // #475: overwritten every round — the last completed round wins,
+            // the same round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
