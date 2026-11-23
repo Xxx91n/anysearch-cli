@@ -85,7 +85,7 @@ jobs:
       # — Layer-2 artifact upload, runs even when ship-gate fails.
       - name: upload ship-gate report
         if: ${{ always() && steps.setup.outputs.run-ship-gate != 'false' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ship-gate-${{ matrix.os }}
           path: .ship-gate/
