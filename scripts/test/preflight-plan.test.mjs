@@ -170,8 +170,8 @@ test("separators and ./- prefixes do not escape the boundary", () => {
 });
 
 test("codeOwnership keeps docs out of the unowned list", () => {
-  // The subtle half: a docs file belongs to no package, but it is not the
-  // unowned path that sends a run to the full suite.
+  // If a docs file counted as unowned, a doc next to a package change would
+  // run the whole suite.
   const { touched, unowned } = codeOwnership(
     ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "turbo.json"],
     readWorkspace(root),
