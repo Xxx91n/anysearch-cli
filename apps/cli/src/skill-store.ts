@@ -14,7 +14,7 @@ import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
-import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store";
+import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store/paths";
 import { atomicRename as renameWithRetry, renameSeam, setRenameSeam, sleepSync } from "./fs-atomic";
 
 export interface SkillOptions {
@@ -678,12 +678,13 @@ const SKILL_BODY_LINE_LIMIT = 500;
 const SKILL_DESCRIPTION_MIN_CHARS = 1;
 const SKILL_DESCRIPTION_MAX_CHARS = 1024;
 /**
- * Words that carry the "when to use it" half of a description. The spec asks for
- * it in prose, so the check has to settle for a marker: English `when`/`whenever`
- * and the Chinese ways of saying it. A description that says it some other way is
- * sent back with this list, which is the cheapest thing to point at.
+ * Markers that carry the "when to use it" half of a description. The spec asks
+ * for prose, so the check settles for a word: English `when`/`whenever`, the
+ * Chinese forms (both scripts) and the Japanese one. It still misses
+ * descriptions that phrase it another way — that is a known limit, not a bug,
+ * and the error says what to add.
  */
-const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用|使用时/i;
+const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用|使用时|时用|時|とき/i;
 
 /**
  * Require a description that says what the skill does and when to use it (#387).
@@ -703,7 +704,7 @@ function requireDescription(value: unknown, path: string): void {
     fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
   }
   if (!WHEN_TO_USE.test(description)) {
-    fail(`SKILL.md description must also say when to use the skill — use "when"/"whenever" or say 什么时候用/何时/时使用/使用时; got "${description.slice(0, 120)}": ${path}`);
+    fail(`SKILL.md description must also say when to use the skill — e.g. "Use when the user …", 什么时候用 / 何时 / 使用时; got "${description.slice(0, 120)}": ${path}`);
   }
 }
 

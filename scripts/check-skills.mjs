@@ -1,11 +1,9 @@
 #!/usr/bin/env node
-// Repo-wide Agent Skills spec check (#387, parent #378).
+// Repo-wide Agent Skills check (#387).
 //
-// Every SKILL.md this repository ships goes through the *same* code the product
-// uses: `ans skill install` and `ans skill validate` both call
-// validateSkillDirectory / validateSkillFile in apps/cli/src/skill-store.ts, and
-// so does this script. Nothing is re-implemented here on purpose — a rule that
-// only existed in CI would drift from the one users hit.
+// Every SKILL.md Git can see is handed to validateSkillDirectory from
+// apps/cli/src/skill-store.ts — the same code `ans skill install` and
+// `ans skill validate` run, so the three cannot drift apart.
 //
 // Usage:
 //   node scripts/check-skills.mjs                  # every SKILL.md Git can see
@@ -18,6 +16,7 @@
 // `ANS_CHECK_SKILLS_ROOT` retargets discovery at another checkout; only the
 // script's tests use it.
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -29,8 +28,15 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const ROOT = process.env.ANS_CHECK_SKILLS_ROOT ? path.resolve(process.env.ANS_CHECK_SKILLS_ROOT) : SCRIPT_ROOT;
 /** Set in the child so the re-entry below happens exactly once. */
 const TSX_MARKER = "ANS_CHECK_SKILLS_TSX";
-/** The workspace tsx loader: the checker imports TypeScript sources directly, no build first. */
-const TSX_LOADER = path.join(SCRIPT_ROOT, "apps", "cli", "node_modules", "tsx", "dist", "loader.mjs");
+/**
+ * The workspace tsx loader: the checker imports TypeScript sources directly, no
+ * build first. Resolved through the package so a tsx upgrade that moves its
+ * files does not turn into "skill check failed".
+ */
+function tsxLoader() {
+  const fromCli = createRequire(path.join(SCRIPT_ROOT, "apps", "cli", "package.json"));
+  return fromCli.resolve("tsx");
+}
 
 function fail(code, detail) {
   process.stderr.write("check-skills: " + detail + "\n");
@@ -54,7 +60,7 @@ function skillFileOf(target) {
  */
 function gitVisibleSkillFiles() {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
-    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000,
   });
   if (listed.error) throw new Error("cannot run git ls-files: " + listed.error.message);
   if (listed.status !== 0) {
@@ -121,13 +127,17 @@ async function run() {
 }
 
 if (process.env[TSX_MARKER] !== "1") {
-  if (!fs.existsSync(TSX_LOADER)) {
-    fail(2, `tsx loader not found at ${TSX_LOADER}; run pnpm install before this check`);
+  let loader;
+  try {
+    loader = tsxLoader();
+  } catch (error) {
+    fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
   }
   const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
-  const child = spawnSync(process.execPath, ["--import", pathToFileURL(TSX_LOADER).href, entry, ...process.argv.slice(2)], {
+  const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
     env: { ...process.env, [TSX_MARKER]: "1" },
     stdio: "inherit",
+    timeout: 10 * 60_000,
   });
   if (child.error) fail(2, "cannot start the TypeScript loader: " + child.error.message);
   process.exit(child.status ?? 2);

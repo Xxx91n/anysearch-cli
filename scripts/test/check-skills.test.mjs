@@ -1,8 +1,6 @@
-// scripts/check-skills.mjs (#387): the repo-wide Agent Skills spec check.
-//
-// The three cases the ticket asks to see go red — uppercase name, empty
-// description, a body past 500 lines — plus the green path and the discovery
-// mode that CI runs.
+// scripts/check-skills.mjs (#387): what the exit codes mean (0 every skill
+// passes / 1 a rule broke or nothing was found / 2 the check could not run),
+// which files discovery finds, and one case per rule that has to go red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -19,8 +17,16 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
  * `root` swaps in another checkout for the no-argument discovery mode.
  */
 function check(args = [], { cwd = ROOT, root } = {}) {
-  const env = root ? { ...process.env, ANS_CHECK_SKILLS_ROOT: root } : process.env;
+  const env = { ...process.env };
+  // A stray export on the developer's machine must not choose the tree, and the
+  // child has to do its own tsx re-entry.
+  delete env.ANS_CHECK_SKILLS_TSX;
+  if (root) env.ANS_CHECK_SKILLS_ROOT = root;
+  else delete env.ANS_CHECK_SKILLS_ROOT;
   const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8", timeout: 120_000 });
+  if (result.error || result.signal) {
+    throw new Error(`check-skills did not finish: ${result.error ? result.error.message : result.signal}`);
+  }
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
@@ -138,7 +144,7 @@ test("no arguments checks what Git can see: tracked, untracked, not ignored", (t
 });
 
 test("no arguments in this checkout finds the shipped skill and passes it", () => {
-  const result = check();
+  const result = check([], { root: ROOT });
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /apps\/plugin\/skills\/ans\/SKILL\.md/);
   assert.match(result.stdout, /([1-9]\d*) SKILL\.md checked, 0 failed/);
