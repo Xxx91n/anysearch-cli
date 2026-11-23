@@ -1,5 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // c8 (coverage lane) sets NODE_V8_COVERAGE per run; without pass-through,
+  // strict env mode drops it for tasks and the lcov comes out empty (#479).
+  "globalPassThroughEnv": [
+    "NODE_V8_COVERAGE"
+  ],
   "tasks": {
     "build": {
       "dependsOn": [

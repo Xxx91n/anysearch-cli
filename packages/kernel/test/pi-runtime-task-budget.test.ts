@@ -392,7 +392,9 @@ async function main() {
     const elapsed = Date.now() - t0;
     assert(stuckResult === "still-running",
       "drain: a stream that never ends reports still-running, not settled");
-    assert(elapsed >= 50 && elapsed < 2000,
+    // The bound means "not hung", not tight: under c8 coverage on a loaded
+    // CI runner this 60ms wait took 2230ms and tripped a 2000ms bound (#479).
+    assert(elapsed >= 50 && elapsed < 5000,
       "drain: the wait is bounded by the caller's window (took " + elapsed + " ms)");
     assert((runtime as any).lateSettlement === stuck,
       "drain: a window that closed first keeps the tail — forgetting it would report settled for spend still in flight");
