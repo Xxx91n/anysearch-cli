@@ -234,7 +234,7 @@ try {
     }
   }
   symlinkSync(join(nm, "@anysearch-cli", "embedding"), join(hashB, "@anysearch-cli", "embedding"), "junction");
-  const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix });
+  const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix, timeoutMs: CLI_TIMEOUT_MS });
   check("pnpm-layout: doctor runs under isolated roots", pd.code === 0, pd.out.slice(-500));
   check("pnpm-layout: sibling-root fallback reports vector arm present", /vector arm.*present/.test(pd.out), pd.out.slice(-500));
 

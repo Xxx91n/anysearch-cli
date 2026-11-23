@@ -40,6 +40,24 @@ export function formatProviderHintLines(hints: Record<string, string>): string[]
   return Object.entries(hints).map(([id, sentence]) => "  " + id + ": " + sentence);
 }
 
+// The failed-arm block both render paths print: the "Providers failed" line,
+// then one remedy line per arm whose class has a sentence. Empty list means no
+// arm failed, so the healthy path stays as quiet as before. One function for
+// both branches, so a branch cannot forget the remedy, and a unit test can pin
+// the block without a built CLI. The hints arrive from the caller because the
+// table lives in the kernel and this module stays free of runtime imports.
+export function formatFailedArmLines(input: {
+  providersFailed: readonly string[];
+  credentialSources?: CredentialSources;
+  hints: Record<string, string>;
+}): string[] {
+  if (input.providersFailed.length === 0) return [];
+  return [
+    formatProvidersFailedLine(input.providersFailed, input.credentialSources),
+    ...formatProviderHintLines(input.hints),
+  ];
+}
+
 // Provider build-failure absence line (#180, follow-up to #41's kernel-side
 // record): pairs the kernel's construction-time providerBuildErrors record
 // with the runtime provider chain lines ("Providers queried" / "Providers

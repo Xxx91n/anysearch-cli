@@ -53,15 +53,16 @@ export function providerFailureMetadata(
 /**
  * The envelope's own verdict, read instead of re-decided here: the kernel
  * classifies a search once and writes metadata.outcome, so this surface and the
- * audit trace cannot disagree about what happened. The fallback is the
- * classifier's own default for a hand-built envelope that predates the field,
- * not a second rule. `failed` is the one outcome that is an error: every
- * queried arm failed and nothing came back. Zero queried arms cannot be an
- * outage, and a cancelled arm is a transport outcome, so neither classifies as
- * `failed`.
+ * audit trace cannot disagree about what happened. `failed` is the one outcome
+ * that is an error: every queried arm failed and nothing came back. Zero
+ * queried arms cannot be an outage, and a cancelled arm is a transport outcome,
+ * so neither classifies as `failed`.
+ *
+ * No fallback on purpose: a missing verdict is a producer bug, and inventing
+ * one — least of all `empty` — would report an outage as a successful miss.
  */
-export function outcomeOf(envelope: { metadata?: { outcome?: SearchOutcome } }): SearchOutcome {
-  return envelope.metadata?.outcome ?? "empty";
+export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): SearchOutcome {
+  return envelope.metadata.outcome;
 }
 
 /**

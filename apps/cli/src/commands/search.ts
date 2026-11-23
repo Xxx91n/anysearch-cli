@@ -3,7 +3,7 @@
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -11,25 +11,29 @@ import { currentCliTask } from "../cli-task-context";
 import {
   searchExitCode,
   formatAbstainLine,
+  formatFailedArmLines,
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
-  formatProvidersFailedLine,
-  formatProviderHintLines,
 } from "./search-abstain";
 
-// Both render paths print "Providers failed"; both must print the remedy
-// beside it, or an abstain hides why the arm died.
-function printProviderFailureHints(metadata: {
-  providersFailed: string[];
-  providerErrorClasses?: Record<string, ProviderErrorClass>;
-  providerErrorRetryAfterSeconds?: Record<string, number>;
-}): void {
+// Both render paths print "Providers failed" and the remedy beside it, or an
+// abstain hides why the arm died. One helper, so neither branch can drop half.
+function printFailedArms(
+  metadata: {
+    providersFailed: string[];
+    providerErrorClasses?: Record<string, ProviderErrorClass>;
+    providerErrorRetryAfterSeconds?: Record<string, number>;
+  },
+  credentialSources?: CredentialSources,
+): void {
   const hints = providerErrorHints(
     metadata.providersFailed,
     metadata.providerErrorClasses,
     metadata.providerErrorRetryAfterSeconds,
   );
-  for (const line of formatProviderHintLines(hints)) console.log(line);
+  for (const line of formatFailedArmLines({ providersFailed: metadata.providersFailed, credentialSources, hints })) {
+    console.log(line);
+  }
 }
 
 export async function runSearch(args: string[]): Promise<number> {
@@ -261,10 +265,9 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log(formatAbstainLine(abstain));
       console.log("---");
       console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
-      if (envelope.metadata.providersFailed.length > 0) {
-        console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
-        printProviderFailureHints(envelope.metadata);
-      }
+      // Reachable: the gate dropped arrivals while another arm failed, which is
+      // still a refusal — and the failed arm's remedy belongs beside it.
+      printFailedArms(envelope.metadata, credentialSources);
       // 这条分支不打 cancelled：拒答本身就要求没有臂被掐断（有一条被掐，
       // 再说「这个域里没有」就说得太满），所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
@@ -307,10 +310,7 @@ export async function runSearch(args: string[]): Promise<number> {
     }
 
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
-    if (envelope.metadata.providersFailed.length > 0) {
-      console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
-      printProviderFailureHints(envelope.metadata);
-    }
+    printFailedArms(envelope.metadata, credentialSources);
     const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);

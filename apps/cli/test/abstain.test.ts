@@ -16,6 +16,7 @@ import { providerErrorHints } from "@anysearch-cli/kernel";
 import {
   searchExitCode,
   formatAbstainLine,
+  formatFailedArmLines,
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
   formatProvidersFailedLine,
@@ -89,6 +90,25 @@ async function main() {
     const authLines = formatProviderHintLines(providerErrorHints(["tavily"], { tavily: "permanent-auth" }));
     assert(authLines.length === 1, "the auth class gets a hint line");
     assert(authLines[0].startsWith("  tavily: "), "the hint line names the arm; got: " + authLines[0]);
+  }
+
+  // 3c. The failed-arm block both render paths print (#514 / #476): the failed
+  //     line, then the remedy of each class that has one. Empty when no arm
+  //     failed, so the healthy path stays as quiet as before. This is the
+  //     assertion the abstain branch could never get from a spawned CLI without
+  //     a build: the branch's rendering is a function now.
+  {
+    const block = formatFailedArmLines({
+      providersFailed: ["exa"],
+      credentialSources: { status: "resolved", tavily: "none", exa: "env", anysearch: "none" },
+      hints: { exa: "add a key for this provider" },
+    });
+    assert(block.length === 2, "one failed line plus one remedy line (got " + block.length + ")");
+    assert(block[0] === "Providers failed: exa（key 来自环境变量）", "failed line first, with its key source; got: " + block[0]);
+    assert(block[1] === "  exa: add a key for this provider", "remedy line second; got: " + block[1]);
+    assert(formatFailedArmLines({ providersFailed: [], hints: {} }).length === 0, "no failed arms, no lines");
+    const noRemedy = formatFailedArmLines({ providersFailed: ["anysearch"], hints: {} });
+    assert(noRemedy.length === 1, "a class without a sentence adds no line (got " + noRemedy.length + ")");
   }
 
   // 4. Failed-provider line carries the arm's key source (#441). Same
