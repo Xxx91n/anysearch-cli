@@ -12,7 +12,7 @@
 // - compaction.lowWatermark as {fraction} must land in (0,1);
 // - compaction.reuseCap must be a finite number >= 1;
 // - compaction.sufficiencyMaxRerounds must be an integer in 0..3 (#493; 0 turns
-// the sufficiency gate off);
+// the re-search off);
 // - compaction unknown keys (a typo used to read as "not set", #493);
 // - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
 // each a finite number > 0 (config errors fail fast).
@@ -126,12 +126,14 @@ for (const file of files) {
       fail(`${file}:${lineOf(src, "[compaction]")} [compaction] must be a table`);
     }
     // #493: a misspelled key used to be indistinguishable from "not set".
-    // Mirrors packages/store/src/domain-schema.ts validate(); the key list is
-    // intentionally duplicated there (this script has no TS dependency).
+    // Mirrors packages/store/src/domain-schema.ts validate(); this script has no
+    // TS dependency, so the key list and the bound are duplicated there (keep in
+    // sync — the field name and the "must be" sentence are word-for-word).
+    const MAX_SUFFICIENCY_REROUNDS = 3;
     const COMPACTION_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
     for (const k of Object.keys(c)) {
       if (!COMPACTION_KEYS.includes(k)) {
-        fail(`${file}:${lineOf(src, k)} unknown compaction key "${k}" (supported: ${COMPACTION_KEYS.join(", ")})`);
+        fail(`${file}:${lineOf(src, k)} compaction unknown key(s) "${k}" — supported keys: ${COMPACTION_KEYS.join(", ")}`);
       }
     }
     if (c.lowWatermark !== undefined) {
@@ -162,12 +164,12 @@ for (const file of files) {
     if (c.model !== undefined && typeof c.model !== "string") {
       fail(`${file}:${lineOf(src, "model")} compaction.model must be a string`);
     }
-    // #493: "3" used to be coerced by the gate's loop bound, and NaN ran zero
-    // rounds after paying for the gap model call. ADR-0014 D5 caps the loop at 3.
+    // #493: "3" used to be coerced by the loop bound, and NaN ran zero rounds
+    // after paying for the gap model call. Design: default 1, at most 3.
     if (c.sufficiencyMaxRerounds !== undefined) {
       const v = c.sufficiencyMaxRerounds;
-      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 3) {
-        fail(`${file}:${lineOf(src, "sufficiencyMaxRerounds")} compaction.sufficiencyMaxRerounds=${String(v)} must be an integer in 0..3 (0 turns the reround gate off)`);
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_SUFFICIENCY_REROUNDS) {
+        fail(`${file}:${lineOf(src, "sufficiencyMaxRerounds")} compaction.sufficiencyMaxRerounds=${String(v)} must be an integer in 0..${MAX_SUFFICIENCY_REROUNDS} (0 turns the reround off)`);
       }
     }
   }

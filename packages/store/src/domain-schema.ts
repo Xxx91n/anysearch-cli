@@ -68,18 +68,18 @@ export interface PromptEntry {
   content: string;
 }
 
-// #493: upper bound of the sufficiency gate's bounded reround. ADR-0014 D5 set
-// it to "default 1, max 3 via domain TOML"; the gate's loop had no clamp before,
-// so a TOML typo could bill an unbounded number of searches. One constant shared
-// by validate() and the gate's own backstop.
+// #493: upper bound of the bounded re-search (补搜) the sufficiency check may run
+// in one turn. Design: default 1, at most 3 via [compaction].sufficiencyMaxRerounds
+// — the loop had no clamp, so a TOML typo could bill an unbounded number of
+// searches. One constant shared by validate() and the evaluator's backstop.
 export const MAX_SUFFICIENCY_REROUNDS = 3;
 
 // compaction config for independent summary model.
 // threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
 // lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
 // reuseCap: consecutive REUSE cap before forcing COMPRESS.
-// sufficiencyMaxRerounds: how many bounded re-searches the sufficiency gate runs
-// in one turn (#493). 0 turns the gate off; absent = 1.
+// sufficiencyMaxRerounds: how many bounded re-searches the sufficiency check runs
+// in one turn (#493). 0 turns it off; absent = 1.
 export interface CompactionConfig {
   model?: string; // summary model id (default: cheap model e.g. deepseek-v4-fast)
   lowWatermark?: number | { fraction: number };
@@ -353,7 +353,7 @@ export function validate(schema: DomainSchema): void {
     // so they fail here where the operator can see the field name.
     if (c.sufficiencyMaxRerounds !== undefined
       && (!Number.isInteger(c.sufficiencyMaxRerounds) || c.sufficiencyMaxRerounds < 0 || c.sufficiencyMaxRerounds > MAX_SUFFICIENCY_REROUNDS))
-      throw new Error("Domain schema: compaction.sufficiencyMaxRerounds must be an integer in 0.." + MAX_SUFFICIENCY_REROUNDS + " (0 turns the reround gate off)");
+      throw new Error("Domain schema: compaction.sufficiencyMaxRerounds must be an integer in 0.." + MAX_SUFFICIENCY_REROUNDS + " (0 turns the reround off)");
   }
   // #187: [budget] shape. Unknown keys are fail-fast for the same reason as
   // sources.vertical: a silently dropped cap is a policy that never takes

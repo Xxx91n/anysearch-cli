@@ -330,7 +330,8 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   };
 
   const badString = err(head + 'sufficiencyMaxRerounds = "3"\n');
-  assert("sufficiencyMaxRerounds string rejected naming field", badString.includes("compaction.sufficiencyMaxRerounds"));
+  assert("sufficiencyMaxRerounds string rejected naming field",
+    badString.startsWith("Domain schema: compaction.sufficiencyMaxRerounds"));
   for (const bad of ["-1", "2.5", "4", "nan", "inf", "true"]) {
     const msg = err(head + "sufficiencyMaxRerounds = " + bad + "\n");
     assert("sufficiencyMaxRerounds " + bad + " rejected", msg.includes("compaction.sufficiencyMaxRerounds"));

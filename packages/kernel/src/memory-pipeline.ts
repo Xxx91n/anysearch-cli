@@ -523,10 +523,10 @@ export async function adjudicateReuseCompress(
 // Returns decision + optional summaryRequest. Shell executes LLM + persistence.
 // options injectable; defaults 128000 / 3 preserve zero-behavior-change.
 //
-// The threshold fields are picked from the domain's CompactionConfig rather than
-// restated (#493): one definition, so a retyped or renamed threshold breaks here
-// at compile time instead of drifting. `contextWindow` is not domain config — it
-// is the real model window the shell carries.
+// Design: the threshold fields are picked from CompactionConfig rather than
+// restated (#493), so a retyped or renamed threshold breaks this compile;
+// contextWindow is not domain config — it is the real model window the shell
+// carries.
 export interface ConsolidateOpts extends Pick<CompactionConfig, "lowWatermark" | "reuseCap"> {
   /** Model context window (LlmSession.contextWindow, REAL value) used to resolve {fraction}. */
   contextWindow?: number;

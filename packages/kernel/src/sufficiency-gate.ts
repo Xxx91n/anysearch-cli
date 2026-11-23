@@ -93,9 +93,9 @@ export class SufficiencyEvaluator {
 
     // D6: sufficiencyMaxRerounds from domain config. Loading validates the field
     // as an integer in 0..MAX, so a "3" string or a NaN never reaches here through
-    // TOML. The guards below are the deep-module backstop for a hand-built domain:
-    // without them a NaN pays for the gap model call and then reports "rerounded"
-    // while running zero rounds (#493).
+    // TOML. The guards below are this module's own backstop for a hand-built
+    // domain: without them a NaN pays for the gap model call and then reports a
+    // reround while running zero rounds (#493).
     const maxRerounds = domain.compaction?.sufficiencyMaxRerounds ?? 1;
     if (!Number.isInteger(maxRerounds) || maxRerounds < 0 || maxRerounds > MAX_SUFFICIENCY_REROUNDS) {
       process.stderr.write("[anysearch] compaction.sufficiencyMaxRerounds 不是 0.." + MAX_SUFFICIENCY_REROUNDS + " 的整数，本次跳过补搜。\n");
@@ -138,7 +138,7 @@ export class SufficiencyEvaluator {
         {
           text: gapPrompt[1]!.content,
           source: "retrieved",
-          traceId: (envelope.results?.[0] as any)?.label?.traceId ?? "sufficiency-gap",
+          traceId: envelope.results?.[0]?.label?.traceId ?? "sufficiency-gap",
         },
         "sufficiency-judge",
       );

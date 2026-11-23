@@ -80,9 +80,9 @@ export interface DomainConfigPort {
   // and the output reserve from here; an absent section means unmetered.
   budget?: BudgetConfig;
   // compaction config for independent summary model.
-  // This is store's CompactionConfig (single definition in
-  // packages/store/src/domain-schema.ts), not a copy of its shape: restating the
-  // fields here is what let sufficiencyMaxRerounds drift (#493).
+  // Design: this is store's CompactionConfig (packages/store/src/domain-schema.ts),
+  // not a copy of its shape — restating the fields here is what let
+  // sufficiencyMaxRerounds drift (#493).
   compaction?: CompactionConfig;
 }
 
