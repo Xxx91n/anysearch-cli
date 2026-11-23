@@ -13,9 +13,7 @@
 // Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted), or the
 // probe self-check failed (errorName + stage, no arm ran).
 
-// plain `node` 解析不了适配器和 store 的源码：`anysearch.ts` 的 import 没写扩展名，store 的写
-// 了 `.js`（指到 `.ts`）。probe-credentials 注册的钩子补上这两条，所以它必须第一个加载 ——
-// 后面的 import 都靠它。不构建、不装 tsx（decision #413：plain `node <文件>`）。
+// probe-credentials 的钩子必须先加载（原因见该文件头部）；后面这些 import 都靠它。
 import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");

@@ -13,12 +13,12 @@ import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const JS_SUFFIX = /\.([cm]?)js$/;
-const TS_SUFFIX = /\.[cm]?[jt]s$/;
+const ALREADY_TS_SUFFIX = /\.[cm]?ts$/;
 
 /** 这个 specifier 该换成哪个 `.ts` 路径；不该换的返回 undefined。 */
 function tsCandidate(specifier) {
   if (JS_SUFFIX.test(specifier)) return specifier.replace(JS_SUFFIX, ".$1ts");
-  if (TS_SUFFIX.test(specifier)) return undefined;
+  if (ALREADY_TS_SUFFIX.test(specifier)) return undefined;
   return specifier + ".ts";
 }
 
@@ -38,8 +38,7 @@ const { resolveSearchCredentials, SEARCH_PROVIDER_ENV_KEYS, SEARCH_PROVIDER_IDS 
   await import("../packages/store/src/credentials.ts");
 
 function assertProvider(provider) {
-  // 名字写错就静默拿到「没 key」、探针白白跑成不带 key 的一跑（#422 就是这种静默）。
-  // providers/ 不在 pnpm -r check 里，类型检查兜不住这个字面量。
+  // 名字写错就直接抛，别让它静默跑成不带 key 的一跑。
   if (!SEARCH_PROVIDER_IDS.includes(provider)) {
     throw new Error("unknown search provider " + JSON.stringify(provider) + "; known: " + SEARCH_PROVIDER_IDS.join(", "));
   }
