@@ -15,18 +15,19 @@ export interface UrlCandidate {
   raw: string;
 }
 
-// TLDs that are also common file extensions or code placeholders. `toml` is not
-// a TLD at all, so it never reaches this gate — the snapshot check rejects it first.
 // Real TLDs that are also common source or build artifacts. Adding one here costs
 // detection of a bare domain under that TLD; leaving it out costs an ask prompt on
-// every mention of the file. `.org` is deliberately absent: org-mode files are
-// rarer than real `.org` sites. `main.tf`, `model.ml` and `bundle.js.map` are the
+// every mention of the file. `main.tf`, `model.ml` and `bundle.js.map` are the
 // kind of text this list keeps out of the gate.
+//
+// `.org` and `.app` are deliberately absent. Both are common real TLDs — org-mode
+// notes stay rare, and `cash.app` / `foo.vercel.app` are everyday search terms —
+// so blacklisting them would hide hosts the gate exists to see. `Safari.app`
+// therefore asks; that is the cheaper mistake.
 const FILE_EXT_TLDS: Record<string, true> = {
-  ac: true, am: true, app: true, as: true, cc: true, cr: true, in: true, inc: true, java: true,
-  la: true, map: true, md: true, mk: true, ml: true, mm: true, mov: true, mo: true, ninja: true,
-  pl: true, pm: true, ps: true, py: true, rs: true, sh: true, so: true, sv: true, tf: true,
-  zip: true,
+  ac: true, am: true, as: true, cc: true, cr: true, in: true, inc: true, java: true, la: true,
+  map: true, md: true, mk: true, ml: true, mm: true, mov: true, mo: true, ninja: true, pl: true,
+  pm: true, ps: true, py: true, rs: true, sh: true, so: true, sv: true, tf: true, zip: true,
 };
 const PLACEHOLDER_TLDS: Record<string, true> = { bar: true, foo: true };
 const BRACKET_OPEN: Record<string, string> = { ")": "(", "]": "[", "}": "{" };

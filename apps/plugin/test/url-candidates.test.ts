@@ -94,7 +94,7 @@ test("file names, versions, IPs, emails, localhost and placeholders are not host
     "main.tf", "model.ml", "app.pm", "deploy.ps", "Makefile.mk", "schema.tf",
     "Makefile.in", "configure.ac", "Makefile.am", "foo.mo", "libfoo.la", "main.mm", "app.as",
     "Hello.java", "crystal.cr", "top.sv", "config.inc", "header.inc",
-    "bundle.js.map", "build.ninja", "Safari.app",
+    "bundle.js.map", "build.ninja",
     "v1.2", "1.2.3", "1.2.3.4", "1.2.3.4:8080",
     "foo@bar.com", "user:pass@example.com",
     "localhost", "localhost:3000",
@@ -157,6 +157,12 @@ test("non-text fields and opaque handles are not scanned", () => {
     [],
   );
   assert.deepEqual(toolInputCandidates("mcp__anysearch__ans_chat", { sessionId: "example.com/a" }), []);
+});
+
+test("a macOS app bundle is read as a host on purpose", () => {
+  // `.app` is a real, common TLD (cash.app, foo.vercel.app). Blacklisting it would
+  // hide those hosts, so `Safari.app` asks instead — the cheaper mistake.
+  assert.deepEqual(hosts("open Safari.app"), ["safari.app"]);
 });
 
 test("the committed TLD snapshot is well formed", () => {
