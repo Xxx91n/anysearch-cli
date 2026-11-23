@@ -98,22 +98,21 @@ export ANS_DOMAIN=docs      # 选当前域
 `ANS_DOMAIN` 写的域找不到时，搜索会退回所有信息源，白名单也会一起关掉，
 所以先把域名和 TOML 检查一遍。
 
-筛完一个结果都不剩时，`ans` 会**拒答（abstain）**。这是正常结果，不是报错：
+筛完一个结果都不剩时，`ans` 可能会**拒答（abstain）**——但得说得出理由：要么闸门自己筛掉过东西，要么问过的每一家都答完、一家没失败。这是正常结果，不是报错：
 
 ```text
 abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
 ```
 
-- 默认退出码 **0**（拒答也算正常完成）；加 `--fail-on-abstain` 时，自动化
-  会拿到专用退出码 **3**。
-- `--json` 里有 `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }`；
+- 默认退出码 **0**（拒答也算正常完成）；加 `--fail-on-abstain` 时，自动化会拿到专用退出码 **3**。
+- 零结果但不算拒答就是失败：信息源全挂了，或者挂了几家、其余几家什么都没给，`ans` 退出 **1**，点出挂掉的是谁，不会赖到域策略头上。
+- `--json` 在标记成立时给 `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }`；每次搜索还带 `outcome`（`answer` / `abstain` / `empty` / `failed` / `cancelled`）。
   MCP 工具把同一个对象放在 `structuredContent.abstain`，`isError` 保持 false。
 - 每次按域搜索会往运行记录里写两条审计事件：`retrieval.domain_filter.pre` 和
   `retrieval.domain_filter.post`。
 - `research_web` 的拒答标记只代表最后一轮；前几轮可能已经有结果。
 
-> 退出码：`0` 正常或拒答 · `1` 一般失败，或没有域名策略时零结果 · `2` 用法错误 ·
-`3` 开了 `--fail-on-abstain` 后的拒答。
+> 退出码：`0` 正常或拒答 · `1` 一般失败，或零结果但不算拒答 · `2` 用法错误 · `3` 开了 `--fail-on-abstain` 后的拒答 · `4` 升级暂停了新任务（`ans upgrade cancel` 解封）。
 
 ### 编写 domain 的 description（`ans recommend`）
 
@@ -220,7 +219,7 @@ flowchart LR
     T & E & A --> G{"按域名筛<br/>搜前 + 搜后 urlAllowlist"}
     G -->|"留着"| F["RRF 合并 + 标来源"]
     G -->|"扔掉"| X["名单外的网址"]
-    G -->|"一个不剩"| Z["拒答 —— 正常结果"]
+    G -->|"一个不剩"| Z["拒答 —— 有理由时才是正常结果"]
     F --> S[("store<br/>FTS5 记忆 + 运行记录")]
 ```
 
@@ -259,7 +258,7 @@ flowchart LR
 
 - **垂直领域**：域就是一份 TOML 文件，里面写死一份说了算的白名单 `urlAllowlist`，
   由检索引擎强制执行，不是写在提示词里盼着模型听话。
-- **没结果就直说**：筛完一个不剩就是正常拒答，绝不编答案。
+- **没结果就直说**：能说清是域策略筛空的，就干净拒答，绝不编答案。
 - **出故障就放行**：钩子、信息源、可选组件坏了就跳过，不把宿主 agent 拖死。
 
 ## 给贡献者

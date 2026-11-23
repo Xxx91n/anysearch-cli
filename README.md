@@ -96,20 +96,21 @@ Filtering happens in two steps:
 
 Filtering only runs when the effective allowlist is non-empty. A domain TOML without `urlAllowlist` normally returns unfiltered results (the dev-only `ANS_URL_ALLOWLIST` override can still add hosts when `ANS_ALLOW_ENV_OVERRIDE` is on). If `ANS_DOMAIN` names a domain that cannot be found, search falls back to every provider and turns the allowlist off too, so verify the domain name and the TOML first.
 
-When filtering leaves zero results, `ans` will **abstain**. This is a normal result, not an error:
+When filtering leaves zero results, `ans` may **abstain** — but only when it can say why: either the gate dropped results, or every provider was asked and none failed. It is a normal result, not an error:
 
 ```text
 abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
 ```
 
 - Default exit code is **0** (abstaining counts as a successful run). When you pass `--fail-on-abstain`, automation gets a dedicated exit code **3**.
-- `--json` includes `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }`.
-  MCP tools put the same object in `structuredContent.abstain`, and `isError` stays false.
+- Zero results that are not an abstain are failures: when every provider failed, or some failed while the rest returned nothing, `ans` exits **1** and names the failed arms instead of blaming the domain policy.
+- `--json` includes `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }` when the marker is set, and `outcome` (`answer` / `abstain` / `empty` / `failed` / `cancelled`) on every search.
+  MCP tools put the same abstain object in `structuredContent.abstain`, and `isError` stays false.
 - Every domain search writes two audit events into the run trace: `retrieval.domain_filter.pre` and
   `retrieval.domain_filter.post`.
 - For `research_web`, the abstain marker describes only the last round; earlier rounds may already have results.
 
-> Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a domain policy · `2` usage error · `3` abstain under `--fail-on-abstain` · `4` refused because an upgrade paused new tasks (`ans upgrade cancel` ends the pause).
+> Exit codes: `0` ok or abstain · `1` generic failure, or zero results that are not an abstain · `2` usage error · `3` abstain under `--fail-on-abstain` · `4` refused because an upgrade paused new tasks (`ans upgrade cancel` ends the pause).
 
 ### Writing domain descriptions (`ans recommend`)
 
@@ -225,7 +226,7 @@ flowchart LR
     T & E & A --> G{"Domain filter<br/>pre + post urlAllowlist"}
     G -->|"kept"| F["RRF merge + source tagging"]
     G -->|"dropped"| X["URLs outside allowlist"]
-    G -->|"none left"| Z["Abstain — normal result"]
+    G -->|"none left"| Z["Abstain — normal result when the gate is the reason"]
     F --> S[("store<br/>FTS5 memory + run traces")]
 ```
 
@@ -262,7 +263,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 ## Why It's Designed This Way
 
 - **Vertical domains**: a domain is just a TOML file with a strict, authoritative allowlist `urlAllowlist` enforced by the retrieval engine, not a prompt wish hoping the model plays along.
-- **Say so when there are no results**: when filtering leaves nothing, it cleanly abstains instead of making up answers.
+- **Say so when there are no results**: when the gate is the reason, it abstains cleanly instead of making up answers.
 - **When something breaks, skip it**: when hooks, providers, or optional components fail, they get skipped so they never crash the host agent.
 
 ## For Contributors
