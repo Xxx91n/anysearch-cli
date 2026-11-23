@@ -66,7 +66,7 @@ if (plan.mode === "full") {
 } else {
   console.log(`[preflight] changed ${plan.files.length} file(s) in ${plan.touched.length} package(s)`);
   console.log(`[preflight] run: ${plan.packages.join(", ")} (the change plus everything that depends on it)`);
-  console.log("[preflight] turbo also tests what these packages depend on");
+  console.log("[preflight] turbo runs tests in these packages only, not in the packages they depend on");
 }
 
 const runArgs = commandArgs(plan);
