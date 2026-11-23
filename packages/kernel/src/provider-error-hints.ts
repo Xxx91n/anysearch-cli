@@ -1,12 +1,8 @@
-// One plain sentence per error class saying what to do next; `unknown` has
-// none. A sentence may carry `{wait}`: the classes whose remedy names a wait
-// fill it with the arm's retry-after ("3600 seconds") or with "a moment" when
-// the upstream did not say. The wait value is per arm, so it cannot be baked
-// into the table.
+// One plain sentence per error class saying what to do next (`unknown` has
+// none). `{wait}` is filled by the caller from the arm's retry-after.
 //
-// Design: the table lives in the kernel, not in one host — both print it (the
-// MCP tools append it to the all-failed text, `ans search` prints it under its
-// "Providers failed" line), and a copy per host is how the two drift apart.
+// Design: one table in the kernel, not one per host — both hosts print these
+// sentences, and a copy per host is how the two drift apart.
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
 
 export const PROVIDER_ERROR_HINTS: Record<ProviderErrorClass, string | undefined> = {
@@ -27,8 +23,6 @@ export function providerErrorHint(cls: ProviderErrorClass, retryAfterSeconds?: n
   const sentence = PROVIDER_ERROR_HINTS[cls];
   if (!sentence) return undefined;
   if (!sentence.includes("{wait}")) return sentence;
-  // Design: a missing number says "a moment" — the reader still gets an
-  // action, and the template's braces never reach the output.
   const known = retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0;
   return sentence.replace("{wait}", known ? retryAfterSeconds + " seconds" : "a moment");
 }

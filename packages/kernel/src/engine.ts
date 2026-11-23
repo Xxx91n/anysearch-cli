@@ -593,12 +593,11 @@ export class RetroaererdEngine {
           // keep the captured error's CLASS beside the flag —
           // the "flag without error text" generic-wrapping defect ends here
           // (enum only; forensic name+message stays with the probe channel).
-          const errorClass = classifyProviderError(inner.error);
-          providerErrorClasses[providerIds[i]] = errorClass;
-          if (errorClass === "free-quota-exhausted") {
-            const wait = retryAfterSeconds(inner.error);
-            if (wait !== null) providerErrorRetryAfterSeconds[providerIds[i]] = wait;
-          }
+          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error);
+          // Recorded whenever the arm said one: whether any sentence uses it is
+          // the hint table's business, not this engine's.
+          const wait = retryAfterSeconds(inner.error);
+          if (wait !== null) providerErrorRetryAfterSeconds[providerIds[i]] = wait;
         }
       }
     }

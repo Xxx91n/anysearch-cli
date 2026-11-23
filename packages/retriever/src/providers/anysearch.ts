@@ -153,6 +153,9 @@ const QUOTA_EXHAUSTED_NOTICE = new RegExp(QUOTA_EXHAUSTED_TEXT, "i");
 const RETRY_NOTICE = /retry after|try again later|稍后再试|稍后重试/i;
 
 type ReplyFailure = { cls: ProviderErrorClass; prefix: string };
+// The reply text, classified once: the shape guess (if any) plus what the shared
+// classifier says about the same text.
+type ReplyReading = { failure?: ReplyFailure; classifier: ProviderErrorClass };
 
 // Provisioning replies name the issued key as `api_key=...`, `"api_key": "..."`
 // or `apiKey: ...`. This pattern redacts the value in any of those forms.
@@ -182,19 +185,18 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
   return undefined;
 }
 
-// The reply scan above, with an explicit credential fault taking precedence:
-// a 403 body that happens to say a key was issued is a wrong key, not a quota.
-// No shape guess returns undefined and leaves the call to the caller: the
-// isError path falls back to the classifier (a plain invalid_api_key reply
-// still reads as the generic isError it always was), while a reply that is
-// not a results envelope at all is malformed.
-function replyFailure(md: string): ReplyFailure | undefined {
+// The reply scan above with an explicit credential fault taking precedence: a
+// 403 body that happens to say a key was issued is a wrong key, not a quota.
+// `failure` is undefined when no shape matched — the caller decides then (the
+// isError path falls back to `classifier`, a plain reply text is malformed).
+function readReply(md: string): ReplyReading {
+  const classifier = classifyProviderError(stripErrorClassMarkers(md));
   const guessed = replyFailurePrefix(md);
-  if (!guessed) return undefined;
-  const explicit = classifyProviderError(stripErrorClassMarkers(md));
-  return isExplicitAuthFault(explicit)
-    ? { cls: explicit, prefix: "auth fault: upstream rejected the credential" }
-    : guessed;
+  if (!guessed) return { classifier };
+  if (isExplicitAuthFault(classifier)) {
+    return { classifier, failure: { cls: classifier, prefix: "auth fault: upstream rejected the credential" } };
+  }
+  return { classifier, failure: guessed };
 }
 
 // #214: result._meta.request_id is a server-generated diagnostic correlation id
@@ -219,11 +221,10 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const r = result as McpToolResult;
   if (r.isError === true) {
     const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
-    const failure = replyFailure(full);
+    const { failure, classifier } = readReply(full);
     // Fix the class here (reply marker, else the shared classifier); the
     // marker goes before the displayed copy.
-    const fallback = classifyProviderError(stripErrorClassMarkers(full));
-    const cls = failure?.cls ?? (fallback === "unknown" ? "permanent-protocol" : fallback);
+    const cls = failure?.cls ?? (classifier === "unknown" ? "permanent-protocol" : classifier);
     const shown = redactSecrets(full, { keepPaths: false })
       .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
       .slice(0, 200);
@@ -245,7 +246,7 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // payload ("account ... automatically generated ... api_key=...") is the
     // free quota ending, not protocol drift → free-quota-exhausted; a used-up
     // plan is quota-exhausted even when the wording is Chinese 额度.
-    const failure = replyFailure(md);
+    const { failure } = readReply(md);
     if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");

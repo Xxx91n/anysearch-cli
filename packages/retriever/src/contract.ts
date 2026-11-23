@@ -291,13 +291,10 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const explicit = t.match(EXPLICIT_CLASS);
   if (explicit) return explicit[1] as ProviderErrorClass;
   const http = (code: string) => t.includes("HTTP " + code);
-  // An SDK keeps the status on the error object (exa-js: ExaError.statusCode),
-  // so providerErrorText writes it into the text as `status=<n>`. Read that
-  // form too: a 403 that never says "HTTP 403" must not be guessed from the
-  // body words.
+  // An SDK keeps the status on the error object, so providerErrorText writes it
+  // into the text as `status=<n>`; read that form too, not just "HTTP 403".
   const statusOf = (code: string) => http(code) || new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + code + "\\b", "i").test(t);
-  // The same structured status for a whole family: a `status=500` in the text
-  // is a 5xx just as much as the words "HTTP 500" are.
+  // The structured status for a whole family (`status=500` is a 5xx).
   const statusFamily = (lead: string) => new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + lead + "\\d\\d\\b", "i").test(t);
   const is402 = statusOf("402") || /payment required/i.test(t);
   // A 402 is one of two things: the x402 payment challenge means no key was
@@ -306,11 +303,8 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const x402Challenge = /X402_PAYMENT_REQUIRED|x402Version|maxTimeoutSeconds/i.test(t);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
   if (statusOf("401") || statusOf("403") || x402Challenge || /invalid_api_key|invalid api key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
-  // Design: the free quota's wall sits between the auth shapes and the retry
-  // shapes — an explicit auth fault outranks wording a cap reply may share with
-  // it ("this API key was issued for a different project" is a 403, not a
-  // quota), while a cap reply that also carries a 429/5xx must not be read as
-  // an ordinary throttle.
+  // Design: an explicit auth fault outranks the free-quota wall, which in turn
+  // outranks the retry shapes.
   if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
   if (/HTTP 5[0-9][0-9]/.test(t) || statusFamily("5") || statusOf("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
@@ -330,11 +324,8 @@ function errorStatus(err: unknown): number | undefined {
   return typeof structured?.status === "number" ? structured.status : undefined;
 }
 
-// The text form the classifier sees. An SDK keeps structured bits on the Error
-// object (Tavily: capType, retryAfter; exa-js: statusCode) and String(err) drops
-// them, so the classifier would read half the shape — a 403 would be guessed
-// from its body words. Appending them belongs here, at the capture seam, not in
-// the classifier: that stays a pure function of its text.
+// The text form the classifier sees: an SDK keeps structured bits on the Error
+// object and String(err) drops them, so the capture seam writes them back in.
 export function providerErrorText(err: unknown): string {
   const text = String(err);
   const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
@@ -348,9 +339,8 @@ export function providerErrorText(err: unknown): string {
   return bits.length > 0 ? text + " (" + bits.join(", ") + ")" : text;
 }
 
-// Seconds per unit a retry-after can be written in. The unit-less form (the
-// header's own shape) is seconds. Checked longest-prefix first so "ms" never
-// reads as minutes.
+// Seconds per unit; the unit-less form (the header's own) is seconds. "ms"
+// is checked before "m" so milliseconds never read as minutes.
 function unitSeconds(unit: string): number {
   if (unit.startsWith("ms") || unit.startsWith("milli")) return 0.001;
   if (unit.startsWith("h")) return 3600;
@@ -358,13 +348,8 @@ function unitSeconds(unit: string): number {
   return 1;
 }
 
-// Seconds until the arm expects to allow another call, as the capture seam's
-// text carries it: `retry-after=3600` from providerErrorText, or whatever the
-// upstream wrote in its body ("retry after 5 minutes", "retry-after: 30ms").
-// Units are honoured, and the LAST match wins — providerErrorText appends the
-// SDK's own value, so it outranks a number the message happened to mention.
-// null when there is no usable wait: a hint then says "a moment" rather than
-// inventing one.
+// Seconds until the arm expects another call. The last match wins: the SDK's
+// own value is appended by providerErrorText, after anything the body said.
 export function retryAfterSeconds(errText: string): number | null {
   const matches = [...String(errText).matchAll(/retry[ -]?after\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)?/gi)];
   const last = matches.pop();

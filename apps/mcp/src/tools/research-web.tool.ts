@@ -88,7 +88,13 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
-            Object.assign(providerErrorRetryAfterSeconds, envelope.metadata?.providerErrorRetryAfterSeconds ?? {});
+            // Per round, not a union: an arm that failed again without a wait must
+            // not keep last round's number, or the hint quotes a stale one.
+            for (const id of roundFailed) {
+              const wait = envelope.metadata?.providerErrorRetryAfterSeconds?.[id];
+              if (wait !== undefined) providerErrorRetryAfterSeconds[id] = wait;
+              else delete providerErrorRetryAfterSeconds[id];
+            }
             if (queriedProviders.some((id) => !roundFailed.includes(id) && !cancelledProviders.includes(id))) {
               anyProviderAnswered = true;
             }
