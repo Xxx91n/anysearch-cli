@@ -41,6 +41,28 @@
 - **`/v1/search` → `/mcp` 的垫片规则在探针里抄了一份**：为三行规则去改适配器不值当（也不该让探针依赖适配器的内部实现），代价是这条规则两处维护。
 - **`providers/<id>/README.md` 的「最近一次真跑」没动**：那栏记的是真搜索，`--live` 只打免费面。
 - **模型没有免费面可打**：`/models` 类接口没实测，所以没做。
+## Unreleased — #470: 网址策略认得裸域名，只检出不改写
+
+一句话说清：**钩子的网址策略以前只认字符串里带 `http(s)://` 的网址，`query` 里写 `example.com/a` 就绕过判定；现在按「会出门的字段」取文本，裸域名也认（结构合法 + 末段是真顶级域 + 不在文件后缀/占位符黑名单），入参一个字不改。`recall_memory` / `query_knowledge` 走本地索引，不再判——这是有意的行为变化。**
+
+### Changed
+
+- **网址策略看得见裸域名**：`search_web.query`、`research_web.question`、`ans_chat.message`、`verticalParams`（含嵌套）里的 `example.com/a`、`www.example.com`、`example.com:8080` 都进 allow/deny；`main.py`、`README.md`、`v1.2`、`1.2.3.4`、`foo@bar.com`、`localhost:3000` 不认。
+- **先 deny 再 ask**：一条 query 点名多个 host 时，先把所有候选的 deny 跑完再考虑 ask，避免「点同意把 denied 域名一起带出去」。
+- **本地索引工具不再判网址**：`recall_memory` / `query_knowledge` 的查询走 FTS5，扫了或改了都会改变召回结果。
+- **`site:denied.com` 这类搜索限域写法正常判**：`site:` 不再被当成协议名而整段跳过。
+
+### Added
+
+- **IANA 快照进仓库**（`apps/plugin/src/hooks/tlds.generated.ts`，1435 条）加生成脚本 `apps/plugin/scripts/gen-tlds.mjs`：`--check` 判新鲜度，`pnpm -C apps/plugin gen:tlds` 刷新。
+- **周更工作流**（`.github/workflows/tld-snapshot.yml`）：每周一跑一次 `--check`，快照过期才有信号；只在定时和手动派发时跑，IANA 更新不会把无关 PR 变红。
+
+### Tests
+
+- `apps/plugin/test/url-candidates.test.ts`：什么算网址、什么绝不能算（含 CJK 粘连、首尾标点与括号、非 http 协议、`site:`、`//`、解析失败的网址、常见文件后缀）。
+- `apps/plugin/test/url-gate-fields.test.ts`：扫哪些字段与行为变化（裸域名判 ask、本地索引工具不判、文件名不判）。
+- `apps/plugin/test/policy.test.ts`：裸域名的 allow / deny / ask，以及多域名时 deny 压过 ask。
+
 ## Unreleased — #428: 协议版本收尾：raw 探针参数化，dsh-plugin 的死常量删掉
 
 一句话说清：**raw 探针以前把 `initialize` 的协议版本写死成 `2025-03-26`，比产品（`2025-11-25`）落后两个版本；现在它默认发产品的版本，旧版本靠 `--protocol-version` / `ANS_PROBE_PROTOCOL_VERSION` 还能测。`dsh-plugin` 里那个同名的 `MCP_DEFAULT_VERSION` 一直没人读，直接删掉——它不影响任何一次握手。**
