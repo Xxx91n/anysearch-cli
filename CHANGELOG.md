@@ -1,3 +1,21 @@
+## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
+
+一句话说清：**#442 的报错文案表和 #455 新加的错误类各自绿，合到一起 `tsc` 红。补上 `free-quota-exhausted` 的文案，把免费额度墙从「未检查」改成「失败」；合并闸门从「跑全量测试」改成「先接到最新 main，再跑 `pnpm gate`（类型检查 + 全量测试）」。**
+
+### Fixed
+
+- **`ans doctor --live` 补上 `free-quota-exhausted` 的中文**：以前这个类让 `FAULT_TEXT` 缺 key、`tsc` 直接报错。现在说「免费额度用尽（等等再试，或给这家配个 key）」，和「额度用尽」（key 没问题、套餐用完）分开说，因为补救办法不一样。
+- **`probeState` 改成按类全填的状态表**：以前是 if-chain 加兜底，新类会静默算「未检查」（退出码 0）。现在 `free-quota-exhausted` 和 `quota-exhausted` 一样算失败（`ans doctor --live` 的退出码因此从 0 变 1；默认离线 doctor 和仓库脚本里的 doctor 调用不受影响），传输类故障仍算未检查；漏填或填错新类都会编译失败。
+
+### Changed
+
+- **根目录多了 `pnpm gate`**（`turbo run check` + 全量测试）。`AGENTS.md` 的 `### Gate rules` 把合并闸门改成：合并前先 rebase 到当前 `origin/main`，再跑 `pnpm gate`，绿了立刻合；main 最新 push 红着不合并。push 前的钩子只跑测试、不查类型，抓不到这种跨 PR 的类型漂移。GitHub 的 merge queue 要 branch protection，私库 + Free 拿不到（403），所以这条仍是纪律性闸门。
+
+### Known limits
+
+- **每条 push 的成本没变**：类型检查只进合并闸门，不进 pre-push；一次合并多约 1 分钟 `tsc`。
+- **网页上直接合仍然绕过本地闸门**：规矩要求 rebase 后的那次 push 是合并前最后一个动作；中间又有别的合并进来，就得重新 rebase、重新跑。
+
 ## Unreleased — #475: 被掐掉的信息源，三个出口都露名字
 
 一句话说清：**宽限窗口掐掉的臂以前只有引擎自己知道，`ans search --json`、MCP 的 content 和 `structuredContent` 都不说；现在三处都写 `providersCancelled`，并把 `providersQueried` 一起补齐——「问过谁、掐了谁」放一起读，「全被掐」就不再伪装成「没搜到」。**
@@ -17,6 +35,7 @@
 - **`research_web` 的「最后一轮」指最后一个正常完成的轮**，跟 `abstain` / `sufficiency` 同一轮；被调用方掐断的那一轮由 `interrupted` 交代，那两栏不替它说话。
 - **`allProvidersFailed` 没动**：被掐不算失败，所以「全被掐 + 0 条」还是成功，现在由 `providersCancelled === providersQueried` 表达，不加新错误类。
 - **CLI 走不到「全被掐」**：它不传调用方信号，宽限窗口只在够结果后才掐，所以纯文本那行只表示「有臂被提前掐掉」。
+- **`research_web` 里两个尺度并存**：`providersFailed` / `providerErrorClasses` 是多轮并集（任何一轮失败都算这次跑降解了），`providersQueried` / `providersCancelled` 只报最后一个正常完成的轮。同一个臂因此可能既在失败里、又在被掐里——它先失败、后来被掐，两条各答各的问题。
 
 ## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
 

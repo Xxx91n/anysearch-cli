@@ -30,6 +30,7 @@ import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, 
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
+import { LANES } from "./ci-changes.mjs";
 import { ansDbPath } from "./ans-home.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -648,14 +649,27 @@ function stepStaticAssertions() {
       || (typeof v === "string" && v.replace(/\s+/g, "") === "false"));
     if (laneCoErrRejected(onlineJob["continue-on-error"]))
       fail("ci.yml test-online job sets continue-on-error (only absent or explicit false is accepted) — online failures cannot pass silently");
-    const laneRun = onlineJob.steps.map((s) => s && s.run).filter((r) => typeof r === "string");
-    if (!laneRun.some((r) => r.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
-      fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
-    if (!onlineJob.steps.some((s) => s && typeof s.run === "string"
-      && !laneDisabled(s.if)
-      && !laneCoErrRejected(s["continue-on-error"])
-      && s.run.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
-      fail("ci.yml test-online 'pnpm -C packages/store test:online' step is disabled (if: false) or opts out of failure (continue-on-error) — excluded cases have no active online coverage");
+    const onlineStep = onlineJob.steps.find((s) => s && typeof s.run === "string"
+      && s.run.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online"));
+    if (!onlineStep) fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
+    if (laneCoErrRejected(onlineStep["continue-on-error"]))
+      fail("ci.yml test-online step opts out of failure (continue-on-error) — excluded cases have no active online coverage");
+    // Only `run-test-online != 'false'` passes, with or without the `${{ }}`
+    // wrapper. Anything else fails: a wrong flag name would leave the lane off
+    // while the job stays green.
+    const onlineLane = "test-online";
+    if (onlineStep.if !== undefined) {
+      const normalized = typeof onlineStep.if === "string"
+        ? onlineStep.if.replace(/\s+/g, "").replace(/"/g, "'")
+        : "";
+      const flag = `steps.setup.outputs.run-${onlineLane}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const bare = `${flag}!='false'`;
+      const wrapped = `\\$\\{\\{${flag}!='false'\\}\\}`;
+      if (!new RegExp(`^(${bare}|${wrapped})$`).test(normalized))
+        fail("ci.yml test-online step has an unrecognized if — only the run-test-online lane flag is accepted");
+    }
+    if (!LANES[onlineLane]?.includes("@anysearch-cli/store"))
+      fail("scripts/ci-changes.mjs test-online lane does not declare @anysearch-cli/store — the online slice is not tied to store changes");
     report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 

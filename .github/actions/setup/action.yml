@@ -7,17 +7,9 @@
 # defaults to "false" (fail-closed) so release jobs stay strict unless a job
 # explicitly opts into the temporary CI bypass.
 
-# Design: one place works out the change set — when detection is on, the
-# template unshallows, takes the base from the event (pull_request: base.sha,
-# push: event.before, workflow_dispatch: the default branch), and reports
-# docs-only plus the changed files. Anything it cannot read reports
-# docs-only=false, so every lane runs. Release and conformance turn detection
-# off because they never read docs-only, so their checkout stays shallow. The
-# doc boundary lives in scripts/ci-changes.mjs.
-#
-# Design: docs-only skips the bootstrap and the caller's expensive steps, while
-# the job still reports success — a skipped check-run is not evidence, and the
-# release gate still needs every required family registered.
+# Design: the lane list lives in scripts/ci-changes.mjs; this action exports
+# docs-only and one `run-<lane>` flag for pull requests. A missing flag means
+# "run" at the call site.
 
 name: Setup Node, pnpm, and dependencies
 description: Install pnpm from packageManager, set up Node.js with pnpm cache, optionally run the self-expiring dep-age override, and install dependencies.
@@ -26,12 +18,37 @@ outputs:
   docs-only:
     description: "'true' only when every changed file is documentation"
     value: ${{ steps.changes.outputs.docs-only }}
-  changed-files:
-    description: "Newline-delimited changed paths; empty when the change set cannot be read"
-    value: ${{ steps.changes.outputs.changed-files }}
-  changes-readable:
-    description: "'true' when the changed-file list was read; 'false' means every lane must run"
-    value: ${{ steps.changes.outputs.changes-readable }}
+  # These names must match scripts/ci-changes.mjs LANES; the sync test checks it.
+  run-check-build:
+    description: "Whether the check-build lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-check-build }}
+  run-spaced-path:
+    description: "Whether the spaced-path lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-spaced-path }}
+  run-install-smoke:
+    description: "Whether the install-smoke lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-install-smoke }}
+  run-test-online:
+    description: "Whether the test-online lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-test-online }}
+  run-test-online-anysearch:
+    description: "Whether the test-online-anysearch lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-test-online-anysearch }}
+  run-coverage:
+    description: "Whether the coverage lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-coverage }}
+  run-native-smoke:
+    description: "Whether the native-smoke lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-native-smoke }}
+  run-ship-gate:
+    description: "Whether the ship-gate lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-ship-gate }}
+  run-memory-eval:
+    description: "Whether the memory-eval lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-memory-eval }}
+  run-macos-spillover-probe:
+    description: "Whether the macos-spillover-probe lane runs ('true' or 'false')"
+    value: ${{ steps.changes.outputs.run-macos-spillover-probe }}
 
 inputs:
   node-version:
@@ -47,7 +64,7 @@ inputs:
     required: false
     default: "false"
   detect-changes:
-    description: "Whether to compute docs-only / changed-files from the event ('true' or 'false'). Set false only where no caller reads them (release, conformance): the outputs stay empty and the checkout is not unshallowed."
+    description: "Whether to compute docs-only and the lane flags from the event ('true' or 'false'). Set false only where no caller reads them (release, conformance): the outputs stay empty and the checkout is not unshallowed."
     required: false
     default: "true"
 
@@ -63,10 +80,24 @@ runs:
       env:
         EVENT_NAME: ${{ github.event_name }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PUSH_BEFORE: ${{ github.event.before }}
-        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
         set -uo pipefail
+        emit_all_lanes() {
+          node scripts/ci-changes.mjs --github --all </dev/null >> "$GITHUB_OUTPUT" \
+            || echo "::warning::ci-changes could not emit lane flags; every lane runs"
+        }
+        # Design: push and manual dispatch run every lane; no diff to compute.
+        if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### CI lane selection"
+              echo "- selected: every lane"
+              echo "- reason: $EVENT_NAME event"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          emit_all_lanes
+          exit 0
+        fi
         git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
         history_complete=true
         if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
@@ -80,22 +111,13 @@ runs:
         fi
         if [ -n "$git_dir" ] && [ -f "$git_dir/shallow" ]; then
           history_complete=false
-          echo "::warning::could not unshallow; docs-only stays false and every lane runs"
+          echo "::warning::could not unshallow"
         fi
 
-        base=""
-        if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_BASE_SHA" ]; then
-          base="$PR_BASE_SHA"
-        elif [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
-          base="$PUSH_BEFORE"
-        elif [ -n "$DEFAULT_BRANCH" ]; then
-          base="origin/$DEFAULT_BRANCH"
-          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" || true
-        fi
+        base="$PR_BASE_SHA"
+        fallback_reason="no PR base"
 
-        docs_only=false
-        changed_files=""
-        changes_readable=false
+        ci_output=""
         diff_file="$(mktemp)"
         err_file="$(mktemp)"
         if [ -n "$base" ]; then
@@ -103,28 +125,57 @@ runs:
             git fetch --no-tags origin "$base" || true
           fi
           merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
-          if [ "$history_complete" = "true" ] && [ -n "$merge_base" ] && git diff --name-only --no-renames -z "$merge_base" HEAD > "$diff_file" 2>/dev/null; then
-            changed_files="$(tr '\0' '\n' < "$diff_file")"
-            changes_readable=true
-            if [ "$EVENT_NAME" = "pull_request" ]; then
-              if verdict="$(node scripts/ci-changes.mjs < "$diff_file" 2>"$err_file")"; then
-                if [ "$verdict" = "true" ]; then docs_only=true; fi
-              else
-                echo "::warning::ci-changes failed, treating the change set as unknown: $(tr '\n' ' ' < "$err_file")"
-              fi
-            fi
+          if [ -z "$merge_base" ]; then
+            fallback_reason="no merge base"
+          elif [ "$history_complete" != "true" ]; then
+            fallback_reason="history incomplete"
+          elif ! git diff --name-only --no-renames -z "$merge_base" HEAD > "$diff_file" 2>/dev/null; then
+            fallback_reason="diff failed"
+          elif ci_output="$(node scripts/ci-changes.mjs --github < "$diff_file" 2>"$err_file")"; then
+            :
+          else
+            fallback_reason="selector failed"
+            echo "::warning::ci-changes failed, treating the change set as unknown: $(tr '\n' ' ' < "$err_file")"
+            ci_output=""
           fi
+        fi
+
+        # No PR base, shallow clone, or selector failure: every lane runs.
+        if [ -z "$ci_output" ]; then
+          rm -f "$diff_file" "$err_file"
+          if [ "$fallback_reason" != "selector failed" ]; then
+            echo "::warning::lane selection fell back to every lane: $fallback_reason"
+          fi
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### CI lane selection"
+              echo "- selected: every lane"
+              echo "- fallback: $fallback_reason"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          emit_all_lanes
+          exit 0
         fi
         rm -f "$diff_file" "$err_file"
 
-        delim="ANS_CHANGED_FILES_${GITHUB_RUN_ID}_$RANDOM"
-        {
-          echo "docs-only=$docs_only"
-          echo "changes-readable=$changes_readable"
-          echo "changed-files<<$delim"
-          if [ -n "$changed_files" ]; then printf '%s\n' "$changed_files"; fi
-          echo "$delim"
-        } >> "$GITHUB_OUTPUT"
+        printf '%s\n' "$ci_output" >> "$GITHUB_OUTPUT"
+
+        # Design: the job stays green when a lane is skipped; the summary names
+        # what ran, what did not, and why a fallback ran everything.
+        reason="$(printf '%s\n' "$ci_output" | sed -n 's/^reason=//p')"
+        if [ -n "$reason" ]; then
+          echo "::warning::lane selection fell back to every lane: $reason"
+        fi
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          selected="$(printf '%s\n' "$ci_output" | awk -F= '/^run-.*=true$/{sub(/^run-/,"",$1); printf "%s%s", sep, $1; sep=","}')"
+          skipped="$(printf '%s\n' "$ci_output" | awk -F= '/^run-.*=false$/{sub(/^run-/,"",$1); printf "%s%s", sep, $1; sep=","}')"
+          {
+            echo "### CI lane selection"
+            echo "- selected: ${selected:-none}"
+            echo "- skipped: ${skipped:-none}"
+            if [ -n "$reason" ]; then echo "- fallback: $reason"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2; reads packageManager (11.24.0) automatically
       if: ${{ steps.changes.outputs.docs-only != 'true' }}
