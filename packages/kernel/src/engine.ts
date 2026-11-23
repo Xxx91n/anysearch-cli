@@ -477,10 +477,9 @@ export class RetroaererdEngine {
           }
         })
         .catch((err) => {
-          // A rejection caused by an abort we issued is a cancellation, not a
-          // provider failure: leaving out[i] null makes the snapshot classify it
-          // as providersCancelled. Genuine failures (and arms we did not abort)
-          // keep the rejected status.
+          // An arm we aborted is a cancellation whatever it threw, even a real
+          // 429: out[i] stays null and the snapshot counts it as cancelled. Only
+          // arms we did not abort keep the rejected status.
           if (cancelledArms.has(i)) return;
           // The capture seam: structured bits an SDK keeps on the Error
           // object (capType, retryAfter) go back into the text here, or the

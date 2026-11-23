@@ -217,7 +217,8 @@ export async function runSearch(args: string[]): Promise<number> {
         providersFailed: envelope.metadata?.providersFailed ?? [],
         // Who was asked, and who we cut off — with providersFailed above, these
         // three answer "what happened to each arm". A source the domain config
-        // never enabled is in none of them: it never joins the fanout.
+        // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
+        // never joins the fanout.
         providersQueried: envelope.metadata?.providersQueried ?? [],
         providersCancelled: envelope.metadata?.providersCancelled ?? [],
         // error-class channel next to the flag (additive).
