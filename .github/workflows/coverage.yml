@@ -20,14 +20,37 @@ jobs:
           install-args: --frozen-lockfile
           dep-age-override: true
       # Design: lane flag; see scripts/ci-changes.mjs. A missing flag runs.
+      # Design: c8 wraps the whole suite once at the lane level, not in the
+      # per-package test scripts: only this lane pays the V8-coverage overhead,
+      # and one merged coverage/lcov.info lands at the repo root. This lane
+      # re-runs the suite on purpose — check-build's run is uninstrumented and
+      # produces no lcov, so the instrumented run has to happen somewhere;
+      # keeping it here keeps the overhead out of the gate lanes. Node's
+      # built-in --experimental-test-coverage only prints a text table to
+      # stdout (no file, no cross-process merge), so it cannot feed Codecov.
+      # --src scopes the report to product code; test files, scripts and
+      # node_modules stay out. No --all: under tsx a src file no run ever
+      # loads has no runtime source map, so c8 cannot map it; the default
+      # reports exactly what the suite executed, and the full suite loads
+      # nearly all src.
       - name: Run tests with coverage
         if: ${{ steps.setup.outputs.run-coverage != 'false' }}
-        run: pnpm test
+        run: pnpm exec c8 --reporter=lcov --report-dir=coverage --src "packages/*/src/**" --src "apps/*/src/**" -- pnpm test
 
+      # Design: the old lane stayed green when no lcov existed — the exact state
+      # this ticket closes. A missing or empty report is a broken lane, so the
+      # check asserts real data before the upload; fail_ci_if_error alone does
+      # not guarantee "no file => red".
+      - name: Assert lcov was produced
+        if: ${{ steps.setup.outputs.run-coverage != 'false' }}
+        run: test -s coverage/lcov.info && grep -q '^SF:' coverage/lcov.info
+
+      # Design: fail_ci_if_error: true — an upload failure (no file, auth,
+      # network) now fails the check instead of exiting 0.
       - name: Upload coverage to Codecov
         if: ${{ steps.setup.outputs.run-coverage != 'false' }}
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           files: "**/coverage/lcov.info"
-          fail_ci_if_error: false
+          fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
