@@ -378,7 +378,15 @@ export function createEngine(
       // of leaving `creds` undefined — exa's factory is a pure function of its
       // argument (#500), and an undefined one there means the free-quota arm even
       // on a machine that has EXA_API_KEY set. The file itself is not read again.
-      creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));
+      //
+      // The second call walks part of the same failure surface (home resolution,
+      // env reads), so it is guarded too: fail-open means "no keys", never a
+      // process that refuses to start.
+      try {
+        creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));
+      } catch {
+        creds = undefined;
+      }
       // Classified, never forwarded: this text reaches stderr and the engine
       // result, and it comes from a module that reads a key file (CWE-532, same
       // rule as buildProvider above).

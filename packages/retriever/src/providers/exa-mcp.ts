@@ -1,18 +1,12 @@
 // Exa 的免费额度臂：没配 key 时打 Exa 自己的 MCP 端点，只借它的 web_search_exa。
 //
-// Design: Exa 自己写一份最小 MCP 客户端，不和 anysearch.ts 合成一个、也不抽公共层
-// （#449）— 两家的传输和回包有三处对不上：
-// 1. 握手不一样。anysearch 要先 initialize + notifications/initialized，404 还要重跑一次握手；
-//    Exa 这条是无状态的，不握手直接 tools/call 也回 200，会话 id 给了也被忽略。
-// 2. 错误通道不一样。anysearch 的失败是 200 + 正文里的 isError；Exa 的限流和协议错是
-//    HTTP 状态码 + application/json，只有工具自己失败才回 isError。
-// 3. 回包不一样。anysearch 是「## Search Results」开头的 markdown；这条是 Title / URL /
-//    Published / Author / Highlights 的文本块。两套解析器没有一行能共用。
-// 合在一份客户端里，省下的重复还没有为这三种差异打的补丁多。等出现第三家走 MCP 的适配器，
-// 或者 anysearch 的传输层本来就要大改（那时三家一起改，公共层才有人分摊维护），再抽。
+// Design: 单独写一份最小 MCP 客户端，不和 anysearch.ts 合成一个、也不抽公共层（#449）——
+// 两家在握手（initialize vs 无状态）、错误通道（200+isError vs HTTP 状态码）、回包
+// （markdown vs Title/URL 文本块）三处都对不上，合起来省下的重复没有补丁多。等出现第三家
+// 走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽。
 //
 // 事实来源：#447 的实测（工具名、两种回包、429 的形状）；端点和能力读
-// PROVIDER_FACTS.exa.freeArm。#503 会把这条路写进 providers/exa/README.md。
+// PROVIDER_FACTS.exa.freeArm；文档在 providers/exa/README.md（#503）。
 // 这个端点不开放环境变量开关：免费额度这条路不给用户换地址（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
@@ -185,7 +179,7 @@ function textOf(result: McpToolResult | undefined): string {
   return (result?.content ?? [])
     .filter((part) => part?.type === "text" && typeof part.text === "string")
     .map((part) => part.text as string)
-    .join("");
+    .join("\n");
 }
 
 export class ExaMcpProvider implements SearchProvider {

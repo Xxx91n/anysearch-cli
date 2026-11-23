@@ -146,6 +146,33 @@ async function main() {
     assert(JSON.stringify(fromSse) === JSON.stringify(fromJson), "both reply formats normalize to the same results");
   }
 
+  // 2b. 上游把结果拆成两个文本块：块和块之间要断开，不能粘成一行（粘起来会串记录）。
+  {
+    const first = "Title: First\nURL: https://example.com/first\nHighlights:\nalpha";
+    const second = "Title: Second\nURL: https://example.com/second\nHighlights:\nbeta";
+    const f = installFetch((call) => ({
+      ct: "application/json",
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: call.body.id,
+        result: { content: [{ type: "text", text: first }, { type: "text", text: second }] },
+      }),
+    }));
+    let results: NormalizedResult[] = [];
+    try {
+      results = (await new ExaMcpProvider().search(REQ, SIG)).results;
+    } finally { f.restore(); }
+    assert(results.length === 2, "two text blocks stay two records, got " + results.length);
+    assert(
+      results[0]?.title === "First" && results[1]?.title === "Second",
+      "each block keeps its own title, got " + JSON.stringify(results.map((r) => r.title)),
+    );
+    assert(
+      results[0]?.url === "https://example.com/first" && results[1]?.url === "https://example.com/second",
+      "each block keeps its own url",
+    );
+  }
+
   // 3. 文本块的三种缺字段形状：缺 Title 回落到 url，缺 Highlights 就是空摘要，没 URL 丢掉。
   {
     const missingTitle = [

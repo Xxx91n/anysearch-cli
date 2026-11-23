@@ -19,7 +19,8 @@ const cliPath = path.join(ROOT, "apps", "cli", "dist", "index.js");
 const mcpPath = path.join(ROOT, "apps", "mcp", "dist", "index.js");
 // #500：exa 没配 key 时会换成免费额度臂并真发请求；这个烟测要求零外部网络，
 // 所以给它一把构造时就会抛的 key（值里带换行，exa-js 往请求头里塞就当场抛），
-// 让 exa 在装配阶段就缺席——空串在旧行为里起的就是这个作用。
+// 让 exa 在装配阶段就缺席。下面读 --json 的 providerBuildErrors / providersQueried
+// 把这件事钉死，不靠 exa-js 的行为碰巧不变。
 const UNUSABLE_EXA_KEY = "sk-unusable\nheader-fault";
 const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: UNUSABLE_EXA_KEY, ANYSEARCH_API_KEY: "" };
 
@@ -77,6 +78,21 @@ async function main() {
   // install-smoke's abstain contract); the SIGNAL is the reliable marker.
   // (The MCP child is exempt: its bounded fallback kill is our own signal.)
   if (cli.signal) fail("CLI search terminated by signal " + cli.signal);
+
+  // #500：零联网的前提是 exa 真的没建起来，不能只靠「exa-js 会拒这把 key」——哪天它不
+  // 拒了，这个烟测会安静地打 mcp.exa.ai，自己还是绿的。两个结构化字段直接钉住它。
+  let searchPayload;
+  try {
+    searchPayload = JSON.parse(cli.stdout);
+  } catch {
+    fail("CLI --json stdout is not one JSON document");
+  }
+  if (!searchPayload.providerBuildErrors || !searchPayload.providerBuildErrors.exa) {
+    fail("exa built an arm despite the unusable key; this smoke must stay offline");
+  }
+  if ((searchPayload.providersQueried ?? []).includes("exa")) {
+    fail("exa was queried; this smoke must stay offline");
+  }
 
   const child = spawn(
     process.execPath,

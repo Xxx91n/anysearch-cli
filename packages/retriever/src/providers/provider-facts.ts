@@ -74,6 +74,8 @@ export const PROVIDER_FACTS = {
     },
     // 没配 key 时换成 Exa 自己的 MCP 端点，只借它的 web_search_exa：没有 answer，
     // 免费工具只有 query / numResults，也没有垂域路由。适配器见 exa-mcp.ts。
+    // 三档都声明：端点没有深度参数，fast / index / deep 打出去是同一条请求（mode 只
+    // 改 REST 臂的 type）；引擎也不按 modes 过滤 provider，少写档位只会让诊断少报能力。
     freeArm: {
       endpoint: "https://mcp.exa.ai/mcp",
       modes: ["fast", "index", "deep"],

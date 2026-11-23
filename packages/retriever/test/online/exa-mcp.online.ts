@@ -14,7 +14,19 @@ function assert(cond: boolean, msg: string) {
 async function main() {
   const provider = createExaProvider("");
   assert(provider.modes.join(",") === "fast,index,deep", "the probe drives the free-quota arm, not the REST one");
-  const env = await provider.search({ query: "cloudflare workers", mode: "fast", maxResults: 3 }, AbortSignal.timeout(30000));
+  // 免费额度是大家共用的：别的机器打满时这里回 429。那不是代码坏了，报一行就收工，
+  // 免得这条车道变红把人往错方向带。其余错误（形状不对、协议错）照旧算红。
+  const env = await provider
+    .search({ query: "cloudflare workers", mode: "fast", maxResults: 3 }, AbortSignal.timeout(30000))
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("HTTP 429")) return null;
+      throw error;
+    });
+  if (env === null) {
+    console.log("--- exa free-quota live probe: free quota exhausted (HTTP 429), skipped ---");
+    return;
+  }
   assert(env.provider === "exa", "provider id");
   assert(env.results.length >= 1, "live web_search_exa returns >=1 result");
   assert(typeof env.results[0]?.url === "string" && env.results[0].url.startsWith("http"), "result url shape");

@@ -239,22 +239,18 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「信息源」）`,
         });
       } catch (error) {
-        // 今天三家不带 key 都能建（exa 没 key 走免费额度臂）；这个分支留给将来那种
-        // 没 key 就拒的构造器。没配 key 是合法的空，不是坏了；配了 key 还构造不出来，
-        // 那才是真的坏了。
+        // 三家不带 key 现在都建得起来（exa 走免费额度臂），所以走到这里就是真坏了，
+        // 没配 key 也一样——不再有「没 key 就拒」那种合法的空。
         //
         // 原始报错一个字都不打：构造器手里就有 key，运行时报错可能把它带出来
         // （Node 的 "Headers.append: <value> is an invalid header value"）。
-        const configured = Boolean(credentials[id]);
-        let detail: string;
-        if (!configured) detail = "没配 key，构造器会拒；配好了才会用";
-        else if (classifyProviderBuildError(error) === "credential")
-          detail = "配了 key，但构造器没建起来：key 可能格式不对或服务端不认。原始报错不打印，免得把 key 带出来";
-        else detail = "构造器出了意外的错。原始报错不打印，免得把 key 带出来";
+        const detail = Boolean(credentials[id]) && classifyProviderBuildError(error) === "credential"
+          ? "配了 key，但构造器没建起来：key 可能格式不对或服务端不认。原始报错不打印，免得把 key 带出来"
+          : "构造器出了意外的错。原始报错不打印，免得把 key 带出来";
         report.add({
           layer: "capability",
           name: `provider ${id}`,
-          state: configured ? "failed" : "unconfigured",
+          state: "failed",
           mode: "offline",
           detail,
         });
@@ -395,8 +391,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const provider of SEARCH_PROVIDER_IDS) {
       const entry = credentials[provider];
       if (!entry) {
-        // 没配 key 不等于这个源没参与：tavily 和 anysearch 照常用免费额度发请求，
-        // 只有 exa 的适配器不建这个臂。仍报 unconfigured——免费额度不是稳定可用。
+        // 没配 key 不等于这个源没参与：三家都能不带 key 发请求（tavily / anysearch
+        // 的免费额度、exa 的免费额度臂）。仍报 unconfigured——免费额度不是稳定可用。
         report.add({
           layer: "capability",
           name: `信息源 ${provider}`,

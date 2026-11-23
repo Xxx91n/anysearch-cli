@@ -149,8 +149,7 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
     ["--json"],
   );
   // 没配 key 的三家现在都能用免费额度跑（有上限，所以仍报 unconfigured）。
-  // 注意：exa 的「信息源」一句仍是 #501 的活——这一票只让它的免费额度臂建得起来，
-  // 那行文案要等 #501 才和 tavily 合成同一句。
+  // 三家同一句：exa 的免费额度臂也是「能跑，但不是稳定可用」，跟 tavily / anysearch 一个说法。
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 tavily")?.detail,
     "没配 key，用免费额度跑（有次数和速度上限）",
@@ -161,7 +160,7 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 exa")?.detail,
-    "没配 key，这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
+    "没配 key，用免费额度跑（有次数和速度上限）",
   );
   for (const provider of ["tavily", "exa", "anysearch"]) {
     assert.equal(

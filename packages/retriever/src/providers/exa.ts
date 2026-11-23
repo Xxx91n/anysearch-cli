@@ -98,10 +98,9 @@ export class ExaProvider implements SearchProvider {
 /**
  * 装配方调这个工厂 — 换构造方式、换走哪条路时只改这里，两张装配表不用跟着动。
  *
- * Design: 分岔只看传进来的这一个值 — trim 后非空走 REST，空串、纯空格、没传都走免费额度臂
- * （Exa 自己的 MCP 端点）。不在这里读 EXA_API_KEY：装配把解析好的 key 传进来（#301、#500），
- * 工厂再看一眼环境变量的话，「没传」到底算不算有 key 就要看现场，诊断和装配会各说各话。
- * 坏 key 不退（#448），照旧在构造时抛。
+ * 分岔只看传进来的这一个值：trim 后非空走 REST，空串、纯空格、没传都走免费额度臂。
+ * 这里不读 EXA_API_KEY —— 读了的话「没传」算不算有 key 就要看现场，诊断和装配会各说各话。
+ * 坏 key 不退，照旧在构造时抛。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
   const key = apiKey?.trim();
