@@ -62,6 +62,7 @@ interface JsonOut {
   results?: Array<{ url: string; extra?: { vertical?: { domain?: string } } }>;
   fusion?: { labels: string[]; lists: string[][] } | null;
   providersFailed?: string[];
+  providersCancelled?: string[];
   providerErrorClasses?: Record<string, string>;
   abstain?: unknown;
 }
@@ -210,13 +211,15 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     for (const [tag, j] of [["isoOn", isoOn], ["isoOff", isoOff], ["fullOn", fullOn], ["fullOff", fullOff]] as const) {
       if (j !== null && j.__error) console.log("DEGRADED " + e.id + " " + tag + " run error: " + j.__error);
     }
-    // a provider-failed iso leg is UNMEASURED — the arm never
-    // produced a list; its empty fused output must not masquerade as a
+    // A provider-failed or deadline-cancelled iso leg is UNMEASURED — the arm
+    // never produced a list; its empty fused output must not masquerade as a
     // measured zero-result arm (the r85 fake-tied scoreboard defect).
-    const isoOnFailed = isoOn !== null && !isoOn.__error && (isoOn.providersFailed ?? []).includes("anysearch");
-    const isoOffFailed = !isoOff.__error && (isoOff.providersFailed ?? []).includes("anysearch");
-    const aOn = isoOn === null || isoOn.__error || isoOnFailed ? null : fusedUrls(isoOn);
-    const aOff = isoOff.__error || isoOffFailed ? null : fusedUrls(isoOff);
+    const isoOnUnmeasured = isoOn !== null && !isoOn.__error &&
+      ((isoOn.providersFailed ?? []).includes("anysearch") || (isoOn.providersCancelled ?? []).includes("anysearch"));
+    const isoOffUnmeasured = !isoOff.__error &&
+      ((isoOff.providersFailed ?? []).includes("anysearch") || (isoOff.providersCancelled ?? []).includes("anysearch"));
+    const aOn = isoOn === null || isoOn.__error || isoOnUnmeasured ? null : fusedUrls(isoOn);
+    const aOff = isoOff.__error || isoOffUnmeasured ? null : fusedUrls(isoOff);
     const on = fullOn, off = fullOff;
     const fOn = on === null || on.__error ? [] : fusedUrls(on);
     const fOff = off.__error ? [] : fusedUrls(off);
