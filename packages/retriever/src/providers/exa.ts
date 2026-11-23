@@ -27,8 +27,9 @@ export class ExaProvider implements SearchProvider {
 
   constructor(apiKey?: string) {
     // atomcode research: new Exa(apiKey), key falls back to EXA_API_KEY env.
-    // 没拿到 key（没传、空串）时 exa-js 自己会去读环境变量，读不到就当场抛。
-    this.client = new Exa(apiKey);
+    // 没拿到 key（没传、空串、纯空格）时 exa-js 自己会去读环境变量，读不到就当场抛。
+    // 归一化放在这里，直接 new 这个类和走工厂拿到的东西才一致（类是导出的）。
+    this.client = new Exa(apiKey?.trim() || undefined);
   }
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
