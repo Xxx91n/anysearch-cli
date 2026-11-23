@@ -13,6 +13,7 @@ import type { DiagState } from "./diagnostics";
 const FAULT_TEXT: Record<ProbeFaultClass, string> = {
   "permanent-auth": "上游不认这把 key",
   "quota-exhausted": "额度用尽",
+  "free-quota-exhausted": "免费额度到顶",
   "permanent-protocol": "入口回的东西跟预期对不上",
   "session-expired": "会话过期",
   transient: "上游抽风（429 / 5xx 一类）",
