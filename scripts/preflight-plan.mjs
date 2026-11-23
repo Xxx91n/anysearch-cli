@@ -60,7 +60,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  const { code, owners, unowned: outside } = codeOwnership(files, packages);
+  const { touched, unowned: outside } = codeOwnership(files, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
@@ -73,7 +73,6 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, outside, packages: [] };
   }
 
-  const touched = [...new Set(code.map((file) => owners.get(file).name))].sort();
   return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
 }
 
@@ -102,17 +101,22 @@ export function docsOnly(files) {
 }
 
 /**
- * The change set with docs removed, the owning package of each file left, and
+ * How the code half of a change is owned: the packages its files belong to, and
  * the files no package owns. Both planners ask this, so a docs filter that
  * moves cannot leave one of them looking at a different set of files.
  *
  * @param {string[]} files normalized paths, docs not removed yet
  * @param {{ name: string, dir: string, deps: string[] }[]} packages
+ * @returns {{ touched: string[], unowned: string[] }}
  */
 export function codeOwnership(files, packages) {
   const code = files.filter((file) => !isDocumentation(file));
   const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
-  return { code, owners, unowned: code.filter((file) => !owners.get(file)) };
+  const owned = code.filter((file) => owners.get(file));
+  return {
+    unowned: code.filter((file) => !owners.get(file)),
+    touched: [...new Set(owned.map((file) => owners.get(file).name))].sort(),
+  };
 }
 
 /**

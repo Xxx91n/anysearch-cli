@@ -71,12 +71,11 @@ export function planLanes(files, packages) {
 
   // A code+docs change selects on the code only. docs/eval/ is not
   // documentation, so it still reaches the unowned fallback.
-  const { owners, unowned } = codeOwnership(list, packages);
+  const { touched, unowned } = codeOwnership(list, packages);
   if (unowned.length > 0) {
     return { lanes: all, reason: `unowned path: ${safeList(unowned)}` };
   }
 
-  const touched = [...new Set([...owners.values()].map((owner) => owner.name))].sort();
   const closure = new Set(withDependents(touched, packages));
   // A package in the closure that no lane names is new (or the declarations are
   // stale). Run everything: otherwise a PR that also touches a known app runs

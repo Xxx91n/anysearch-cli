@@ -396,6 +396,15 @@ test("a docs-only change says skipped, runs nothing, and never claims green", as
   });
 });
 
+test("a docs-only dry run also says skipped, not would run", async () => {
+  await withWorkspace({ changed: "docs/limitations.md" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--dry-run"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation/);
+    assert.equal(result.stdout.includes("would run"), false);
+  });
+});
+
 test("a pushed docs-only ref says skipped and runs nothing", async () => {
   await withWorkspace({ pushed: "docs/limitations.md" }, ({ root, bin, refs }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: refs, selfTest: true });
@@ -412,7 +421,7 @@ test("docs next to a package file still run that package, not the suite", async 
   await withWorkspace(
     { changed: ["apps/dsh-plugin/src/index.ts", "docs/limitations.md"], echoArgs: true },
     ({ root, bin }) => {
-      const result = runCliIn(root, bin, [], { selfTest: true });
+      const result = runCliIn(root, bin, []);
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /changed 2 file\(s\), running 1 package\(s\)/);
       assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin \(the change plus everything that depends on it\)/);
@@ -431,7 +440,7 @@ test("the banner counts the packages that run, not just the changed one", async 
     },
   };
   await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", extraPackages, echoArgs: true }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, [], { selfTest: true });
+    const result = runCliIn(root, bin, []);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /changed 1 file\(s\), running 2 package\(s\)/);
     assert.match(result.stdout, /run: @anysearch-cli\/consumer, @anysearch-cli\/dsh-plugin/);
