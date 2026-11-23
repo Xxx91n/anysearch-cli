@@ -417,16 +417,17 @@ export class RetroaererdEngine {
     // provider work and releases the fanout wait below; it is read again after
     // the wait to suppress post-cancellation anchor writes.
     const callerSignal = q.signal;
-    // Arms we aborted on the caller's behalf. A provider that rejects because
-    // of that abort must stay "cancelled", not become a genuine failure merely
-    // because its rejection handler won the race against the snapshot.
-    const callerCancelledArms = new Set<number>();
+    // Every arm we aborted ourselves, whoever asked: the caller (#209) or the
+    // grace window (#475). A provider that rejects because of that abort must
+    // stay "cancelled", not become a genuine failure merely because its
+    // rejection handler won the race against the snapshot.
+    const cancelledArms = new Set<number>();
     let callerAbortResolve: () => void = () => { };
     const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
     const cancelProviders = () => {
       for (let i = 0; i < controllers.length; i++) {
         if (out[i] == null) {
-          callerCancelledArms.add(i);
+          cancelledArms.add(i);
           controllers[i].abort(callerSignal?.reason);
         }
       }
@@ -464,17 +465,24 @@ export class RetroaererdEngine {
           if (!deepMode && !graceArmed && uniqueUrls.size >= needed) {
             graceArmed = true;
             setTimeout(() => {
-              for (let j = 0; j < controllers.length; j++) if (out[j] == null) controllers[j].abort();
+              for (let j = 0; j < controllers.length; j++) {
+                if (out[j] != null) continue;
+                // Record before aborting: the arm's rejection lands in the same
+                // microtask turn as the snapshot below, so who wins that race
+                // must not decide the classification (#475).
+                cancelledArms.add(j);
+                controllers[j].abort();
+              }
               graceResolve();
             }, graceWindow).unref();
           }
         })
         .catch((err) => {
-          // #209: a rejection caused by our own caller abort is a cancellation,
-          // not a provider failure — leaving out[i] null makes the snapshot
-          // classify it as providersCancelled. Genuine failures (and arms whose
-          // controllers we did not abort) keep the rejected status.
-          if (callerCancelledArms.has(i)) return;
+          // #209 / #475: a rejection caused by an abort we issued is a
+          // cancellation, not a provider failure — leaving out[i] null makes the
+          // snapshot classify it as providersCancelled. Genuine failures (and
+          // arms whose controllers we did not abort) keep the rejected status.
+          if (cancelledArms.has(i)) return;
           // The capture seam: structured bits an SDK keeps on the Error
           // object (capType, retryAfter) go back into the text here, or the
           // classifier and the wait hint only ever see half the shape.

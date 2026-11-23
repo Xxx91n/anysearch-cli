@@ -306,6 +306,34 @@ function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:b
   ]);
   const r3 = await eng3.search({ query: "g", mode: "fast", maxResults: 10 }, { graceWindowMs: 10 });
   assert(r3.metadata.providersCancelled.length === 0, "under-limit: all providers awaited");
+
+  // #475: the same grace abort, but the arm is NOT async. Its rejection lands
+  // in the same microtask turn as the engine's snapshot, so who won that race
+  // used to decide whether the arm read as cancelled or as failed+unknown. The
+  // engine records the arm it aborted, so the answer no longer depends on it.
+  const abortedFlat = { v: false };
+  const flatSlow: SearchProvider = {
+    id: "slow-flat",
+    modes: ["fast"],
+    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      return new Promise<ProviderEnvelope>((res, rej) => {
+        const t = setTimeout(() => {
+          const results: NormalizedResult[] = [{ url: "https://slow-flat.com/x", title: "slow-flat r0", snippet: "s", source: "slow-flat" }];
+          res({ provider: "slow-flat", results, answers: [], elapsedMs: 500 });
+        }, 500);
+        signal.addEventListener("abort", () => { abortedFlat.v = true; clearTimeout(t); rej(new Error("aborted")); }, { once: true });
+      });
+    },
+  };
+  const eng4 = new RetroaererdEngine([
+    mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
+    flatSlow,
+  ]);
+  const r4 = await eng4.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30 });
+  assert(abortedFlat.v, "non-async straggler: AbortController fired");
+  assert(r4.metadata.providersCancelled.includes("slow-flat"), "non-async straggler reported cancelled");
+  assert(r4.metadata.providersFailed.length === 0, "a cancelled arm never becomes a failure");
+  assert(r4.metadata.providerErrorClasses === undefined, "no error class invented for a cancelled arm");
 }
 
   // 12.: rejected providers carry an error CLASS parallel to
