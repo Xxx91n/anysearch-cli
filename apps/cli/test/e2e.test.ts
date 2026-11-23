@@ -573,9 +573,10 @@ async function t(name: string, fn: () => Promise<void>) {
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
       env.EXA_API_KEY = "";
-      // #441: the assertion below reads the anysearch arm's own source. Scrub
-      // both key channels — env and the user credential file — so "endpoint
-      // only, no key" is the fixture, not a property of whoever runs the suite.
+      // #441 / #459: the assertions below read each arm's own source. Scrub all
+      // three key channels — env and the user credential file — so "no key" is
+      // the fixture, not a property of whoever runs the suite.
+      env.TAVILY_API_KEY = "";
       env.ANYSEARCH_API_KEY = "";
       env.HOME = dir;
       env.USERPROFILE = dir;
@@ -588,12 +589,19 @@ async function t(name: string, fn: () => Promise<void>) {
       const doc = JSON.parse(r.stdout);
       assert.equal(doc.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
         "structured field carries the safe category verbatim");
-      // #441: the engine's credential-source record reaches --json unchanged.
-      // anysearch is constructed with an endpoint and no key, so its own
-      // label says `none`; exa recorded nothing because it never built.
+      // #441 / #459: the engine's credential-source record reaches --json
+      // unchanged, and carries every arm whether or not it has a key.
       assert.equal(doc.credentialSources?.status, "resolved", "credential sources travel in --json");
       assert.equal(doc.credentialSources?.anysearch, "none",
         "an endpoint-only arm is reported as keyless, not authenticated");
+      assert.equal(doc.credentialSources?.tavily, "none", "a keyless arm is labelled, not left out");
+      assert.equal(doc.credentialSources?.exa, "none",
+        "an arm that never built is still labelled: the record is about keys, not construction");
+      assert.deepEqual(
+        Object.keys(doc.credentialSources ?? {}).sort(),
+        ["anysearch", "exa", "status", "tavily"],
+        "all three arms travel, so a fourth cannot be dropped silently",
+      );
       assert.match(r.stderr, /\[anysearch\] provider exa construction failed: /);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
