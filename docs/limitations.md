@@ -67,9 +67,10 @@
 - **Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts
   cannot be cancelled through the SDK. The budget guard limits spend, not wall
   time. The engine now stops waiting at a request-level deadline (4s counted
-  from the moment the request fans out) and reports unfinished arms as
-  `providersCancelled`, but it cannot stop a Tavily call that ignores the
-  signal; that call can keep running upstream after the search has returned.
+  from the moment the request fans out) and marks unfinished arms as
+  `providersCancelled` in its metadata, but it cannot stop a Tavily call that
+  ignores the signal; that call can keep running upstream after the search has
+  returned.
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, macOS CI
   job restored (#183, after #16 / PR #174).** The family is **not**
   "better-sqlite3 leaks a handle". It is `process.exit()` running C++ static

@@ -457,8 +457,11 @@ export class RetroaererdEngine {
     // into a rejection here: an escaping throw would skip the finally below and
     // leave the ref'd deadline timer (and the ledger reservation) behind.
     const startArm = (p: SearchProvider, i: number): Promise<ProviderEnvelope> => {
+      // Request construction stays outside the try: a kernel-side bug there
+      // must not masquerade as the provider failing.
+      const req = providerRequest(p);
       try {
-        return Promise.resolve(p.search(providerRequest(p), controllers[i].signal));
+        return Promise.resolve(p.search(req, controllers[i].signal));
       } catch (err) {
         return Promise.reject(err);
       }
@@ -466,6 +469,11 @@ export class RetroaererdEngine {
     const promises = allProviders.map((p, i) =>
       startArm(p, i)
         .then((env) => {
+          // The arm resolved only after our own abort (some adapters answer an
+          // abort with an empty envelope). It did not land before the cap or the
+          // caller's cancel, so it stays cancelled: counting it as answered
+          // would re-bucket by microtask order.
+          if (abortedArms.has(i)) return;
           out[i] = { provider: p.id, status: "fulfilled", envelope: env };
         })
         .catch((err) => {

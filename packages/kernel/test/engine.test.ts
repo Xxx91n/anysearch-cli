@@ -292,6 +292,22 @@ function abortRejectProvider(id: string, delayMs: number, urls: string[], aborte
     },
   };
 }
+// Arm that resolves with an empty envelope when aborted (an adapter that
+// answers a cancel instead of rejecting).
+function resolveOnAbortProvider(id: string, aborted: {v:boolean}): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      const waited = Promise.withResolvers<ProviderEnvelope>();
+      signal.addEventListener("abort", () => {
+        aborted.v = true;
+        waited.resolve({ provider: id, results: [], answers: [], elapsedMs: 0 });
+      });
+      return waited.promise;
+    },
+  };
+}
 // Arm that never settles; only records whether the deadline reached its signal.
 function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   return {
@@ -368,6 +384,19 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(r5.metadata.providersFailed.includes("sync-boom"), "sync throw: classified as a failure");
   assert(!r5.metadata.providersCancelled.includes("sync-boom"), "sync throw: not misread as cancelled");
   assert(r5.results.length >= 1, "sync throw: the other arm's results kept");
+
+  // (e) An adapter that resolves empty when aborted must stay cancelled, not
+  // be counted as an answered arm just because its promise won the microtask race.
+  const aborted5 = { v: false };
+  const eng6 = new RetroaererdEngine([
+    mockProvider("fast", ["https://a.com/1", "https://a.com/2"]),
+    resolveOnAbortProvider("slow", aborted5),
+  ], { requestTimeoutMs: 40 });
+  const r6 = await eng6.search({ query: "g", mode: "fast" });
+  assert(aborted5.v, "resolve-on-abort: deadline reached the arm");
+  assert(r6.metadata.providersCancelled.includes("slow"), "resolve-on-abort: stays cancelled");
+  assert(!r6.metadata.providersFailed.includes("slow"), "resolve-on-abort: not a failure");
+  assert(r6.metadata.sufficiency?.volume.successfulProviders === 1, "resolve-on-abort: not counted as an answered provider");
 
   // (f) The sufficiency gate moved to constructor opts and is live again.
   const relaxed = await new RetroaererdEngine(
