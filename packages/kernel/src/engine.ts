@@ -417,9 +417,9 @@ export class RetroaererdEngine {
     // provider work and releases the fanout wait below; it is read again after
     // the wait to suppress post-cancellation anchor writes.
     const callerSignal = q.signal;
-    // Every arm we aborted ourselves, whoever asked: the caller (#209) or the
-    // grace window (#475). A rejection caused by our own abort is cancelled, not
-    // a failure; an arm aborted here also loses any error it was about to throw.
+    // Arms we aborted ourselves, for either reason: the caller went away, or the
+    // grace window closed. Their rejection is a cancellation, not a failure, so
+    // any error such an arm was about to throw is dropped.
     const cancelledArms = new Set<number>();
     let callerAbortResolve: () => void = () => { };
     const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
@@ -466,9 +466,9 @@ export class RetroaererdEngine {
             setTimeout(() => {
               for (let j = 0; j < controllers.length; j++) {
                 if (out[j] !== null) continue;
-                // Record before aborting: a rejection caused by this abort lands
-                // in the same microtask turn as the snapshot, so the classification
-                // must not depend on which wins (#475).
+                // Record before aborting: the rejection this causes lands in the
+                // same microtask turn as the snapshot below, so the classification
+                // must not depend on the order.
                 cancelledArms.add(j);
                 controllers[j].abort();
               }

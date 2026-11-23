@@ -99,9 +99,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
               providerAnswers: envelope.metadata?.providerAnswers ?? [],
               providersQueried: queriedProviders,
-              // #475: the grace window cut these off — asked, never answered.
-              // Paired with providersQueried so a missing arm is visible as
-              // "not waited for" instead of simply absent.
+              // Arms we cut off ourselves: enough results were already in, or the
+              // caller went away. Paired with providersQueried, so neither case
+              // reads as an arm that never ran.
               providersCancelled: cancelledProviders,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),

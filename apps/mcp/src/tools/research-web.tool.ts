@@ -50,9 +50,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if ("stop" in budget) return budget.stop;
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
-        // #475: the arms asked, and the arms cut off, in the last completed
-        // round only. Uniting rounds would call an arm cancelled that answered
-        // later; a round cut short by the caller is `interrupted`'s story.
+        // Arms asked and arms cut off, for the last completed round only:
+        // unioning rounds would call an arm cancelled that answered later, and a
+        // round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
         let lastEnvelope: any = null;
@@ -93,8 +93,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
 
             const queriedProviders = envelope.metadata?.providersQueried ?? [];
             const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
-            // #475: overwritten every round — the last completed round wins,
-            // the same round abstain and sufficiency describe.
+            // Overwritten every round: the last completed round wins, the same
+            // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
@@ -156,8 +156,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
-              // #475: the last completed round's arm state, never a union
-              // across rounds — the same round abstain describes.
+              // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -182,7 +181,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
             ...(providerFailures ?? {}),
-            // #475: the same two fields the content JSON carries.
+            // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,
             providersCancelled: lastRoundCancelled,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。

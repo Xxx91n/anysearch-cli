@@ -215,10 +215,9 @@ export async function runSearch(args: string[]): Promise<number> {
         // providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
-        // #475: who was actually asked, and who the grace window cut off. Paired
-        // with providersFailed above, these three answer "what happened to each
-        // arm" — without providersQueried a domain-disabled arm is invisible,
-        // and without providersCancelled a cut-off arm simply vanishes.
+        // Who was asked, and who we cut off. With providersFailed above, these
+        // three answer "what happened to each arm": without providersQueried a
+        // domain-disabled arm is invisible, and a cut-off arm simply vanishes.
         providersQueried: envelope.metadata?.providersQueried ?? [],
         providersCancelled: envelope.metadata?.providersCancelled ?? [],
         // error-class channel next to the flag (additive).
@@ -262,8 +261,8 @@ export async function runSearch(args: string[]): Promise<number> {
         console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
         printProviderFailureHints(envelope.metadata);
       }
-      const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
-      if (cancelledLine) console.log(cancelledLine);
+      // 这条分支不打 cancelled：宽限窗口要先攒够结果才武装，拒答的前提是结果池
+      // 是空的，CLI 又不传调用方信号，所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
       return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
