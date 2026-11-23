@@ -3,10 +3,10 @@
 // regenerates them into a temp dir and compares every emitted file with the
 // version committed in HEAD.
 //
-// Why HEAD and not the working tree: `pnpm test` from the repo root runs
-// `gen:configs` before the tests (the build task), so a hand-edited file is
-// overwritten and a worktree comparison always agrees. HEAD is the copy a
-// build cannot wash. A file the generator emits but HEAD lacks fails here:
+// Design: compare with HEAD, not the working tree — `pnpm test` from the repo
+// root runs `gen:configs` before the tests (the build task), so a hand-edited
+// file is overwritten and a worktree comparison always agrees. HEAD is the copy
+// a build cannot wash. A file the generator emits but HEAD lacks fails here:
 // commit the regenerated file.
 //
 // Without git or HEAD (a source tarball) the check skips and says why — it

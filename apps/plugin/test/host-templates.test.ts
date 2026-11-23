@@ -3,9 +3,9 @@
 //
 // The templates are what a user copies into a host, and the `ans host connect`
 // candidates in apps/cli/src/host-wiring/hosts.ts are what the CLI writes.
-// HOSTS is imported from apps/cli on purpose: the CLI already dev-depends on
-// this package, so declaring the reverse would close a build cycle. The merge
-// gate runs both suites, which is what keeps the pair honest.
+// Design: import HOSTS from apps/cli instead of copying the connect candidates —
+// the CLI already dev-depends on this package, so declaring the reverse would
+// close a build cycle; the merge gate runs both suites.
 // The two must describe the same hooks: same event, matcher, command and
 // timeout. They drifted apart before (codebuddy kept a `node "$(npm root -g)"`
 // command while hosts.ts used ans-hook-codebuddy), and no test compared them.
@@ -128,6 +128,14 @@ test("every timeout is a positive whole number of seconds", () => {
     const where = hostId + "." + event + " (" + handler.command + ")";
     assert.ok(Number.isInteger(handler.timeout), where + ": timeout must be a whole number, got " + JSON.stringify(handler.timeout));
     assert.ok(handler.timeout > 0, where + ": timeout must be positive, got " + handler.timeout);
+  });
+});
+
+test("every command names a bin the plugin package ships", () => {
+  const pkg = JSON.parse(readFileSync(join(PLUGIN_ROOT, "package.json"), "utf8"));
+  eachHandler((hostId, event, handler) => {
+    const bin = handler.command.split(" ")[0];
+    assert.ok(bin in pkg.bin, hostId + "." + event + ": " + bin + " is not a plugin package bin");
   });
 });
 
