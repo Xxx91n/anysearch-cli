@@ -3,7 +3,7 @@
 // not run), which files discovery finds, and the cases that have to go red.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -31,6 +31,16 @@ function check(args = [], { cwd = ROOT, root, env: extra } = {}) {
     throw new Error(`check-skills did not finish: ${result.error ? result.error.message : result.signal}`);
   }
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** True when the permission bits just set did not deny a directory listing (root). */
+function canListDirectory(dir) {
+  try {
+    readdirSync(dir);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** True when the permission bits just set did not actually deny a read (root). */
@@ -138,6 +148,14 @@ test("a body that breaks lines with lone CR is still counted line by line", (t) 
   const result = check([dir]);
   assert.equal(result.code, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /body must stay under 500 lines, got 501/);
+});
+
+test("a SKILL.md given by path is checked like its directory", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "byfile", "name: byfile\ndescription: Use when a test passes the file.");
+  const result = check([path.join(dir, "SKILL.md")]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[OK\] .*byfile[/\\]SKILL\.md/);
 });
 
 test("a skill directory with no SKILL.md goes red", (t) => {
@@ -281,10 +299,18 @@ test("a skill directory that cannot be read is not skipped", (t) => {
   const dir = skill(root, "locked", "name: locked\ndescription: Use when a test locks a dir.");
   git(root, ["add", "--", "locked"]);
   chmodSync(dir, 0o000);
-  // Restore inline, not via t.after: hooks run after the cleanup hook that
-  // deletes the tree, so a hook here would throw ENOENT on POSIX.
-  const result = check([], { cwd: root, root });
-  chmodSync(dir, 0o755);
+  // Restore inline in a finally, not via t.after: hooks run after the cleanup
+  // hook that deletes the tree, so a hook here would throw ENOENT on POSIX.
+  let result;
+  try {
+    if (canListDirectory(dir)) {
+      t.skip("this user can list a 000-mode directory (root); the branch needs a denied read");
+      return;
+    }
+    result = check([], { cwd: root, root });
+  } finally {
+    chmodSync(dir, 0o755);
+  }
   assert.equal(result.code, 2, result.stdout + result.stderr);
   assert.match(result.stdout, /\[ERROR\] .*locked[/\\]SKILL\.md/);
   assert.doesNotMatch(result.stdout, /\[skip\]/);
