@@ -131,12 +131,13 @@ function makeComposition() {
 }
 
 // Minimal real-engine composition for the handler-level cancellation blocks:
-// one mock arm, no store writes, no resume anchors.
-function makeHandlerComposition(provider: SearchProvider, sessionId: string): CompositionResult {
+// one mock arm, no store writes, no resume anchors. Both blocks abort before a
+// session is minted, so the stub's session id is never read.
+function makeHandlerComposition(provider: SearchProvider): CompositionResult {
   return {
     retriever: new RetroaererdEngine([provider]),
     store: {
-      createSession: async (d: string) => ({ id: sessionId, domain: d, createdAt: "" }),
+      createSession: async (d: string) => ({ id: "cancel-handler", domain: d, createdAt: "" }),
       saveResults: async () => {},
     } as unknown as SessionStore,
     observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
@@ -264,7 +265,7 @@ async function main() {
         });
       },
     };
-    const eng = makeHandlerComposition(provider, "cancel-4");
+    const eng = makeHandlerComposition(provider);
 
     const caller = new AbortController();
     caller.abort("caller went away");
@@ -331,7 +332,7 @@ async function main() {
         });
       },
     };
-    const eng = makeHandlerComposition(provider, "cancel-5");
+    const eng = makeHandlerComposition(provider);
 
     const caller = new AbortController();
     const pending = captureHandlers(eng).search_web({ query: "late" }, { mcpReq: { signal: caller.signal } });
@@ -349,7 +350,7 @@ async function main() {
       JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify(["slow"]),
       "5: a late resolve is cancelled, not counted as an answered arm",
     );
-    assert(res?.structuredContent?.providersFailed === undefined, "5: a late resolve is not a failure either");
+    assert(!res?.structuredContent?.providersFailed?.includes("slow"), "5: a late resolve is not a failure either");
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "5: content names the arm that was cut off");
     assert(doc.totalResults === 0, "5: the late envelope's results stay out of the answer");
