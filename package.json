@@ -10,6 +10,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test --concurrency=2",
     "check": "turbo run check",
+    "gate": "turbo run check && turbo run test --concurrency=2",
     "hooks:install": "node scripts/preflight-hooks.mjs install",
     "hooks:status": "node scripts/preflight-hooks.mjs status"
   },
