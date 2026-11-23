@@ -25,6 +25,39 @@
 - 不动 provider 适配器；Tavily 不转发 `AbortSignal`（#32）仍是上游限制。
 - `providersCancelled` 的 CLI / MCP 出口由 #475 单独落地；本票只保证引擎分类正确。
 
+## Unreleased — #505: 宿主模板检查：坏形状、非整数 timeout、指错适配器都会红
+
+一句话说清：**四份 `configs/*/hooks.json` 以前各测各的，没人横向比对；codebuddy 模板的命令和 `ans host connect` 写出来的已经不是同一条。现在一条测试读四份模板：timeout 必须是正整数、命令必须是本宿主自己的 bin、每条 hook 必须和 `hosts.ts` 的 `HOSTS` 候选逐字对上。生成物漂移改成和 `HEAD` 比，根目录 `pnpm test` 先跑 `gen:configs` 也洗不绿了。**
+
+### Added
+
+- **`apps/plugin/test/host-templates.test.ts`**：四份模板一起查。timeout 是正整数；命令是本宿主的适配器/bin（claude → `ans-hook-claude`，codebuddy → `ans-hook-codebuddy`，codex → `ans-hook-codex`，antigravity → `ans-hook-antigravity <Event>`，claude 和 codex 的 SessionStart 走 `ans-hook-session-start --envelope`）；每条 hook 和 `HOSTS` 候选一致。比较前把 JSON 设置模板、Codex 的 TOML 候选、Antigravity 的命名钩子表归一成 `{event: [{matcher?, hooks}]}`，只比 hook 单元，MCP 注册不管。模板和 `HOSTS` 的宿主名单也必须一样多。
+- **codebuddy 补一条和 claude / codex / antigravity 同款的形状检查**：顶层 `hooks`、事件、matcher、`hooks[]`、`type: "command"`、命令是字符串、不带 `name` / `args`。
+
+### Changed
+
+- **codebuddy 模板统一走 `ans-hook-codebuddy`**：以前模板写 `node "$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs"`，`ans host connect codebuddy` 写的却是 `ans-hook-codebuddy`，两条接入路径装出来的不是同一条命令。插件包 `bin` 补上 `ans-hook-codebuddy`，单独装插件包也能解析到真实入口。
+- **`apps/cli/scripts/build-product.mjs` 删掉 codebuddy 的命令改写**：源模板已经是 `ans-hook-codebuddy`，产品构建不用再改一遍，也少了「构建后和源模板不一样」的第二份事实。
+- **生成物漂移测试改成和 `HEAD` 逐字节比**（`apps/plugin/test/config-drift.test.ts`）：用 `git show HEAD:<path>` 拿提交里的版本，再跑生成器到临时目录逐字节比；文件清单从生成器实际写出的东西取。以前比的是工作区，而根目录 `pnpm test` 会先跑 `gen:configs`，手改会被覆盖，测试照样绿。没有 git / HEAD 时明确打印 SKIP 并说明原因。
+- **`scripts/verify-installed-product.mjs` 补 codebuddy 和 antigravity 两份模板**：发布前能看出这两份有没有装进产品。
+
+### Known limits
+
+- **codebuddy 的 bin 形态还没在真宿主上重跑**：2.151.0 那轮验证跑的是 `node "$(npm root -g)/..."` 长写法，这次模板改成 `ans-hook-codebuddy`（和 `ans host connect` 同一条命令），命令形态本身没再验；验的是它背后的适配器。文档两处都写明了，没拿旧记录冒充新形态。
+
+### Docs
+
+- **`docs/per-platform-verification.md` 补 CodeBuddy 一节**，每节都写验过的宿主版本和日期；查不到的写 `not recorded`，不编。
+- **四篇 `docs/*-integration.md` 不再指向 gitignored 的 `.scratch`**：原件在 3f85fee8 跟着工作记录一起移出了仓库，里面有本机路径和宿主登录信息，公开仓库不再重新发布；文档写明来龙去脉，结论按该宿主版本当时的已知行为保留。codebuddy 的钩子示例改成 `ans-hook-codebuddy` 并删掉「模板保留长写法」的说明。
+
+## Unreleased — #502: 配错 key 的人也能看到免费额度这条路
+
+一句话说清：**`permanent-auth` 的提示句多给一条路：把这把 key 删掉，就走这一家的免费额度。句子在 kernel 的表里，`ans search` 和 MCP 两个出口同时生效。**
+
+### Changed
+
+- **`permanent-auth` 那句补上「删掉 key 走免费额度」**：以前只说「配一把有效 key」，配错的人以为只剩换 key 一条路。现在这句是：没配 key，或者 key 不对 / 权限不够 —— 配一把有效的，或者把这把 key 删掉（环境变量里 unset，或用 `ans auth remove <provider>` 删掉存的那把），走免费额度。仍然是一句，仍然不带 `{wait}`；三家共用，不按家分叉。
+
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
 
 一句话说清：**#442 的报错文案表和 #455 新加的错误类各自绿，合到一起 `tsc` 红。补上 `free-quota-exhausted` 的文案，把免费额度墙从「未检查」改成「失败」；合并闸门从「跑全量测试」改成「先接到最新 main，再跑 `pnpm gate`（类型检查 + 全量测试）」。**

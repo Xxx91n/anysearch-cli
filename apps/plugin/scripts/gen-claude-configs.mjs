@@ -15,7 +15,8 @@
 // .mcp.json — plugin's MCP server wiring (ans-mcp bin).
 //
 // Regenerate after changing the spec: node scripts/gen-claude-configs.mjs
-// Drift is caught by test/claude-contract.test.ts (byte-identical regen).
+// Drift is caught by test/config-drift.test.ts: it regenerates into a temp dir
+// and compares every emitted file with the version in HEAD.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "command": "ans-hook-codebuddy",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "command": "ans-hook-codebuddy",
             "timeout": 10
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "command": "ans-hook-codebuddy",
             "timeout": 5
           }
         ]

@@ -114,7 +114,8 @@
     "ans-hook-claude": "dist/hooks/adapters/claude.cjs",
     "ans-hook-session-start": "dist/hooks/session-start.cjs",
     "ans-hook-codex": "dist/hooks/adapters/codex.cjs",
-    "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs"
+    "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs",
+    "ans-hook-codebuddy": "dist/hooks/adapters/codebuddy.cjs"
   },
   "engines": {
     "node": ">=22.19.0"

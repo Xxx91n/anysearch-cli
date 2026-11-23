@@ -78,6 +78,13 @@ async function main() {
     );
     assert(!lines[0].includes("{"), "the {wait} slot never reaches the reader");
     assert(formatProviderHintLines({}).length === 0, "no hints, no lines");
+
+    // #502: permanent-auth gets a line through the same formatter the other
+    // classes use. The wording belongs to PROVIDER_ERROR_HINTS in
+    // packages/kernel/src/provider-error-hints.ts and is pinned by its own test.
+    const authLines = formatProviderHintLines(providerErrorHints(["tavily"], { tavily: "permanent-auth" }));
+    assert(authLines.length === 1, "the auth class gets a hint line");
+    assert(authLines[0].startsWith("  tavily: "), "the hint line names the arm; got: " + authLines[0]);
   }
 
   // 4. Failed-provider line carries the arm's key source (#441). Same
