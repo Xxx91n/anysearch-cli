@@ -918,6 +918,7 @@ function stepDocClaims() {
   if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(eng)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
   if (!/Promise\.race\(\[[^\]]*deadline[^\]]*callerAborted[^\]]*\]\)/.test(eng)) fail("engine fanout race no longer waits on the deadline and the caller abort");
   if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(eng)) fail("engine.ts lost the deadline abort loop");
+  if ((eng.match(/abortedArms\.has\(i\)/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
   report("pass", "engine request deadline wired");
 }
 

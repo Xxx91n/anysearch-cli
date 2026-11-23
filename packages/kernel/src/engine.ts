@@ -400,9 +400,10 @@ export class RetroaererdEngine {
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
-    // Each provider outcome lands in out[i] on arrival; a slot still null when
-    // the wait ends was queried but never settled -> providersCancelled.
-    // A rejected provider counts as arrived — failure is a completed fanout answer.
+    // Each provider outcome lands in out[i] on arrival; a slot left null at
+    // snapshot time is a cancelled arm (aborted at the deadline/caller, or it
+    // resolved only after that abort). A rejected provider counts as arrived —
+    // failure is a completed fanout answer.
     type ProviderOutcome =
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
       | { provider: string; status: "rejected"; error: string };
@@ -466,30 +467,33 @@ export class RetroaererdEngine {
         return Promise.reject(err);
       }
     };
-    const promises = allProviders.map((p, i) =>
-      startArm(p, i)
-        .then((env) => {
-          // The arm resolved only after our own abort (some adapters answer an
-          // abort with an empty envelope). It did not land before the cap or the
-          // caller's cancel, so it stays cancelled: counting it as answered
-          // would re-bucket by microtask order.
-          if (abortedArms.has(i)) return;
-          out[i] = { provider: p.id, status: "fulfilled", envelope: env };
-        })
-        .catch((err) => {
-          // An abort we issued (caller cancellation or the deadline) is a
-          // cancelled arm, not a provider failure — leaving out[i] null makes
-          // the snapshot below classify it as providersCancelled.
-          if (abortedArms.has(i)) return;
-          // The capture seam: structured bits an SDK keeps on the Error
-          // object (capType, retryAfter) go back into the text here, or the
-          // classifier and the wait hint only ever see half the shape.
-          out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
-        }),
-    );
-
-    // Wait for every arm, for the request deadline, or for the caller's abort (#209).
+    // The map can throw (request construction), so it lives inside the same try
+    // as the wait: the ref'd deadline timer and the caller listener must be
+    // released even if an arm never starts.
     try {
+      const promises = allProviders.map((p, i) =>
+        startArm(p, i)
+          .then((env) => {
+            // Design: an arm that settles only after our own abort stays
+            // cancelled — whether it carries results or an empty envelope.
+            // Counting it as answered would re-bucket by microtask order, and a
+            // cap/cancel means we stopped waiting before it landed.
+            if (abortedArms.has(i)) return;
+            out[i] = { provider: p.id, status: "fulfilled", envelope: env };
+          })
+          .catch((err) => {
+            // An abort we issued (caller cancellation or the deadline) is a
+            // cancelled arm, not a provider failure — leaving out[i] null makes
+            // the snapshot below classify it as providersCancelled.
+            if (abortedArms.has(i)) return;
+            // The capture seam: structured bits an SDK keeps on the Error
+            // object (capType, retryAfter) go back into the text here, or the
+            // classifier and the wait hint only ever see half the shape.
+            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
+          }),
+      );
+
+      // Wait for every arm, for the request deadline, or for the caller's abort (#209).
       await Promise.race([Promise.all(promises).then(() => undefined), deadline, callerAborted]);
     } finally {
       clearTimeout(deadlineTimer);

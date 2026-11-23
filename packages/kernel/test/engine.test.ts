@@ -292,8 +292,8 @@ function abortRejectProvider(id: string, delayMs: number, urls: string[], aborte
     },
   };
 }
-// Arm that resolves with an empty envelope when aborted (an adapter that
-// answers a cancel instead of rejecting).
+// Arm that resolves with results when aborted (an adapter that answers a
+// cancel with a late envelope instead of rejecting).
 function resolveOnAbortProvider(id: string, aborted: {v:boolean}): SearchProvider {
   return {
     id,
@@ -302,7 +302,8 @@ function resolveOnAbortProvider(id: string, aborted: {v:boolean}): SearchProvide
       const waited = Promise.withResolvers<ProviderEnvelope>();
       signal.addEventListener("abort", () => {
         aborted.v = true;
-        waited.resolve({ provider: id, results: [], answers: [], elapsedMs: 0 });
+        const results: NormalizedResult[] = [{ url: "https://" + id + ".com/x", title: id, snippet: "s", source: id }];
+        waited.resolve({ provider: id, results, answers: [], elapsedMs: 0 });
       });
       return waited.promise;
     },
@@ -385,8 +386,8 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(!r5.metadata.providersCancelled.includes("sync-boom"), "sync throw: not misread as cancelled");
   assert(r5.results.length >= 1, "sync throw: the other arm's results kept");
 
-  // (e) An adapter that resolves empty when aborted must stay cancelled, not
-  // be counted as an answered arm just because its promise won the microtask race.
+  // (f) An adapter that resolves with results when aborted must stay cancelled,
+  // not be counted as an answered arm just because its promise won the microtask race.
   const aborted5 = { v: false };
   const eng6 = new RetroaererdEngine([
     mockProvider("fast", ["https://a.com/1", "https://a.com/2"]),
@@ -397,8 +398,9 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(r6.metadata.providersCancelled.includes("slow"), "resolve-on-abort: stays cancelled");
   assert(!r6.metadata.providersFailed.includes("slow"), "resolve-on-abort: not a failure");
   assert(r6.metadata.sufficiency?.volume.successfulProviders === 1, "resolve-on-abort: not counted as an answered provider");
+  assert(!r6.results.some((x) => x.url.includes("slow.com")), "resolve-on-abort: late results stay out of the fused pool");
 
-  // (f) The sufficiency gate moved to constructor opts and is live again.
+  // (g) The sufficiency gate moved to constructor opts and is live again.
   const relaxed = await new RetroaererdEngine(
     [mockProvider("only", ["https://o.com/a"])],
     { gate: { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false } },
