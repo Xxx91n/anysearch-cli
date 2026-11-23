@@ -75,8 +75,8 @@ jobs:
       # self-dispatch the two check-producing workflows on a temp ref pinned at
       # the ledger sha, so the wait below sees REAL check-runs (ci:
       # check-build/install-smoke/test:online; ship-gate.yml:
-      # ship-gate/memory-eval — memory-eval always registers; its path filter
-      # only gates the eval steps). The temp ref pins the sha deterministically
+      # ship-gate/memory-eval — memory-eval always registers; its lane flag
+      # only gates the eval step). The temp ref pins the sha deterministically
       # (a --ref main race could land checks on a newer tip).
       - name: trigger ci + ship-gate on the ledger commit (pre-tag only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}

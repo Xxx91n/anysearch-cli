@@ -28,33 +28,33 @@ jobs:
         id: setup
         with:
           dep-age-override: true
-      # Design: docs-only PRs skip the expensive steps at step level — a
-      # job-level `if` would register the check-run as skipped, which is not
-      # evidence (and a matrix leg may not register at all).
+      # Design: a lane that was not selected skips its steps; the job still reports
+      # success. A job-level `if` would register the check as skipped, and the release
+      # gate only accepts checks that actually ran.
       - name: Validate calibration labels
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node scripts/eval-labels.mjs validate
       - name: Preflight selection tests
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node --test "scripts/test/preflight-*.test.mjs"
       - name: Change detection tests
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node --test scripts/test/ci-changes.test.mjs
       - name: Workflow checker tests
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node --test scripts/test/check-workflows.test.mjs
-      - if: ${{ steps.setup.outputs.docs-only != 'true' }}
+      - if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: pnpm -w turbo check
       - name: "Test — all packages (node:test discovery, full truth)"
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: pnpm -w turbo run test --continue=dependencies-successful
         env:
           NODE_OPTIONS: "--test-reporter=spec"
-      - if: ${{ steps.setup.outputs.docs-only != 'true' }}
+      - if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: pnpm -w turbo build
 
       - name: Pack tarballs
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: |
           pnpm --filter @anysearch-cli/mcp pack --pack-destination artifacts
           pnpm --filter @anysearch-cli/cli pack --pack-destination artifacts
@@ -62,7 +62,7 @@ jobs:
         shell: bash
 
       - name: Smoke — apps/mcp --help + 5-tool stdio & Streamable HTTP (#100)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         shell: bash
         run: |
           node apps/mcp/dist/index.js --help
@@ -73,11 +73,11 @@ jobs:
           node scripts/mcp-smoke.mjs
 
       - name: Smoke — apps/cli --help
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node apps/cli/dist/index.js --help
 
       - uses: actions/upload-artifact@v4
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         with:
           name: tarballs-${{ matrix.os }}
           path: artifacts/*.tgz
@@ -102,7 +102,7 @@ jobs:
       # resolves into its own store. `.git` stays behind; no test reads it. This
       # lane covers runtime path handling only, not the install step.
       - name: Copy workspace to a spaced + non-ASCII path
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-spaced-path != 'false' }}
         shell: bash
         run: |
           SPACED="$(dirname "$GITHUB_WORKSPACE")/ans space 空格/repo"
@@ -118,7 +118,7 @@ jobs:
       # Design: the package's own `test`, not turbo — turbo's cacheable `build`
       # could hand the copy dist built at the original checkout, skipping a rebuild.
       - name: Plugin tests inside the spaced path
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-spaced-path != 'false' }}
         shell: bash
         run: pnpm -C "$SPACED/apps/plugin" test
 
@@ -143,10 +143,10 @@ jobs:
         with:
           node-version: 22.19.0
           dep-age-override: true
-      - if: ${{ steps.setup.outputs.docs-only != 'true' }}
+      - if: ${{ steps.setup.outputs.run-install-smoke != 'false' }}
         run: pnpm -w turbo build
       - name: install-smoke lane
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-install-smoke != 'false' }}
         run: node scripts/install-smoke.mjs
         env:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
@@ -158,7 +158,7 @@ jobs:
       # the real ans_chat path only when LLM env is present, and prints SKIPPED
       # otherwise rather than pretending it passed.
       - name: recall acceptance lane (#259)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-install-smoke != 'false' }}
         run: node scripts/recall-acceptance.mjs
         env:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
@@ -174,7 +174,7 @@ jobs:
       # its tarballs on exit; the artifact is the same source tree either way. A
       # missing provider key prints SKIPPED for that one lane instead of a pass.
       - name: installed acceptance lane (#267)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-install-smoke != 'false' }}
         run: node scripts/installed-acceptance.mjs
         env:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
@@ -185,7 +185,7 @@ jobs:
       # 那个解析函数。真实搜索大多走裸 envelope，那条分支靠真跑碰不到，所以单独在
       # 这里钉住；改坏了立刻红。
       - name: acceptance parser self-test (#267)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-install-smoke != 'false' }}
         run: node scripts/installed-acceptance.mjs --self-test-parser
 
   # round-59 audit R-2 / + r59 errata: the vector-arm golden cases left
@@ -203,12 +203,12 @@ jobs:
         with:
           dep-age-override: true
       - name: vector-arm golden cases (store test:online)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-test-online != 'false' }}
         run: pnpm -C packages/store test:online
         env:
           NODE_OPTIONS: "--test-reporter=spec"
       - name: embedding model tests (embedding test:online)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-test-online != 'false' }}
         run: pnpm -C packages/embedding test:online
         env:
           NODE_OPTIONS: "--test-reporter=spec"
@@ -229,7 +229,7 @@ jobs:
         with:
           dep-age-override: true
       - name: anysearch MCP live probe (retriever test:online)
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-test-online-anysearch != 'false' }}
         run: pnpm -C packages/retriever test:online
         env:
           NODE_OPTIONS: "--test-reporter=spec"
