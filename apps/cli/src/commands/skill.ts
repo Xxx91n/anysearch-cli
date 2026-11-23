@@ -29,7 +29,7 @@ The source's current Git HEAD is recorded; checkout a commit/tag before installi
 Checked rules (agentskills.io/specification plus a few house rules): frontmatter is a YAML
 mapping; name is 1–64 lowercase letters/digits with single hyphens and is not a Windows
 device name; description is 1–1024 characters and says when to use the skill — checked by
-keyword (when / whenever / 什么时候 / 何时 / 使用时 / 時 / とき …); the body stays under
+keyword (when / 什么时候用 / 的时候用 / 何时 / 使用时 / 使用時 / とき …); the body stays under
 500 lines. validate also requires name to equal the installed directory name;
 install accepts any source folder name (a cloned repo usually has its own) and installs
 under the name the frontmatter declares.
