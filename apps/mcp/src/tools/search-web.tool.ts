@@ -148,9 +148,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
             ...(providerFailures ?? {}),
-            // #475: the same two fields the content JSON carries. Without them
-            // structuredContent could name a cut-off arm only through its
-            // absence from providersFailed.
+            // The same two fields the content JSON carries; without them a
+            // cut-off arm could be read only through its absence from
+            // providersFailed.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
