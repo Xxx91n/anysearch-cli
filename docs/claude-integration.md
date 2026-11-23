@@ -1,9 +1,10 @@
 # Claude Code integration
 
 Verified host: **Claude Code 2.1.251** (Windows 11). We checked it with
-headless `-p` stream-json probes on **2026-09-17**. The original probe
-transcripts are lost; the conclusions below are kept as the known behavior of
-Claude Code 2.1.251 at that time.
+headless `-p` stream-json probes on **2026-09-17**. The probe transcripts were
+removed from the tree in 3f85fee8, when working notes stopped being tracked,
+and are not republished here; the conclusions below are kept as the known
+behavior of Claude Code 2.1.251 at that time.
 
 These facts were checked on a real host. Do not guess them:
 

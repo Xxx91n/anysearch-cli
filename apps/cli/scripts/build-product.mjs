@@ -18,3 +18,6 @@ const domains = join(cli, "mcp/domains");
 rmSync(domains, { recursive: true, force: true });
 mkdirSync(dirname(domains), { recursive: true });
 cpSync(join(cli, "domains"), domains, { recursive: true });
+
+// Design: the source templates already name the host bins (codebuddy included),
+// so the product copy is a straight copy — no per-host command rewrite.

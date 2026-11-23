@@ -14,7 +14,7 @@
 
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -29,6 +29,8 @@ function test(name: string, fn: () => void) {
 
 const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const REPO_ROOT = join(PLUGIN_ROOT, "..", "..");
+// The directory git knows this package by, e.g. "apps/plugin" (never a drive path).
+const PLUGIN_GIT_DIR = relative(REPO_ROOT, PLUGIN_ROOT).split(sep).join("/");
 
 function headAvailable(): boolean {
   const r = spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" });
@@ -36,7 +38,7 @@ function headAvailable(): boolean {
 }
 
 function gitShow(relPath: string): { ok: boolean; bytes?: Buffer } {
-  const r = spawnSync("git", ["show", "HEAD:apps/plugin/" + relPath], { cwd: REPO_ROOT });
+  const r = spawnSync("git", ["show", "HEAD:" + PLUGIN_GIT_DIR + "/" + relPath], { cwd: REPO_ROOT });
   return r.error || r.status !== 0 ? { ok: false } : { ok: true, bytes: r.stdout };
 }
 

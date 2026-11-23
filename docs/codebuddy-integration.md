@@ -3,8 +3,10 @@
 Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks). We
 checked it on **2026-09-16** with the headless P1–P9 probe matrix: search,
 recall, ans_chat, research, 3-event hooks, fail-open, and a with/without-tool
-contrast. The original stream-json transcripts are lost; the conclusions
-below are kept as the known behavior of CodeBuddy Code 2.151.0 at that time.
+contrast. The stream-json transcripts were removed from the tree in
+3f85fee8, when working notes stopped being tracked, and are not republished
+here; the conclusions below are kept as the known behavior of CodeBuddy Code
+2.151.0 at that time.
 
 On Windows, CodeBuddy hooks run commands through Git Bash. They put
 `hook_event_name` on stdin (not `event`). They expect decisions wrapped in

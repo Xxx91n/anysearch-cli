@@ -3,6 +3,9 @@
 //
 // The templates are what a user copies into a host, and the `ans host connect`
 // candidates in apps/cli/src/host-wiring/hosts.ts are what the CLI writes.
+// HOSTS is imported from apps/cli on purpose: the CLI already dev-depends on
+// this package, so declaring the reverse would close a build cycle. The merge
+// gate runs both suites, which is what keeps the pair honest.
 // The two must describe the same hooks: same event, matcher, command and
 // timeout. They drifted apart before (codebuddy kept a `node "$(npm root -g)"`
 // command while hosts.ts used ans-hook-codebuddy), and no test compared them.
@@ -30,21 +33,22 @@ function test(name: string, fn: () => void) {
 const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CONFIGS = join(PLUGIN_ROOT, "configs");
 
-/** The bin each host's hooks must call, and the shared SessionStart command where the host takes the envelope. */
-const HOST_BIN: Record<string, { adapter: string; sessionStart?: string }> = {
-  claude: { adapter: "ans-hook-claude", sessionStart: "ans-hook-session-start --envelope" },
-  // CodeBuddy's SessionStart takes raw stdout text, not the shared
-  // --envelope shape, so its own adapter stays on all three events.
-  codebuddy: { adapter: "ans-hook-codebuddy" },
-  codex: { adapter: "ans-hook-codex", sessionStart: "ans-hook-session-start --envelope" },
-  antigravity: { adapter: "ans-hook-antigravity" },
-};
+/** SessionStart goes through the shared envelope entry on these hosts. */
+const SHARED_SESSION_START_HOSTS = ["claude", "codex"];
 
+/**
+ * The command an event must run. Adapter bins follow `ans-hook-<host>`;
+ * Antigravity takes its event name as an argument because its stdin has no
+ * event field. CodeBuddy's SessionStart is not in the shared list: that host
+ * prints the card as raw stdout text, and the --envelope shape would be
+ * injected verbatim as JSON.
+ */
 function expectedCommand(hostId: string, event: string): string {
-  const bins = HOST_BIN[hostId];
-  assert.ok(bins, "no bin mapping for host " + hostId + " — add one when a host is added");
-  if (event === "SessionStart" && bins.sessionStart) return bins.sessionStart;
-  return hostId === "antigravity" ? bins.adapter + " " + event : bins.adapter;
+  if (event === "SessionStart" && SHARED_SESSION_START_HOSTS.includes(hostId)) {
+    return "ans-hook-session-start --envelope";
+  }
+  const adapter = "ans-hook-" + hostId;
+  return hostId === "antigravity" ? adapter + " " + event : adapter;
 }
 
 function templateHostIds(): string[] {
@@ -61,18 +65,18 @@ function templateEvents(hostId: string): Record<string, unknown[]> {
 }
 
 type Handler = { type: string; command: string; timeout: number };
-type Group = { matcher?: string; hooks: Handler[] };
+type HookGroup = { matcher?: string; hooks: Handler[] };
 
-/** Both hosts use matcher groups with `hooks[]` for tool events and flat handlers for the rest. */
-function normalizeGroup(entry: any): Group {
+/** Templates and candidates both use matcher groups with `hooks[]` for tool events and flat handlers for the rest. */
+function normalizeGroup(entry: any): HookGroup {
   if (Array.isArray(entry?.hooks)) {
     return entry.matcher === undefined ? { hooks: entry.hooks } : { matcher: entry.matcher, hooks: entry.hooks };
   }
   return { hooks: [entry] };
 }
 
-function templateUnits(hostId: string): Record<string, Group[]> {
-  const out: Record<string, Group[]> = {};
+function templateHookGroups(hostId: string): Record<string, HookGroup[]> {
+  const out: Record<string, HookGroup[]> = {};
   for (const [event, entries] of Object.entries(templateEvents(hostId))) {
     assert.ok(Array.isArray(entries) && entries.length > 0, hostId + "." + event + ": entries required");
     out[event] = entries.map(normalizeGroup);
@@ -85,11 +89,11 @@ function isHookEventMap(value: unknown): value is Record<string, unknown[]> {
     Object.values(value).every((entries) => Array.isArray(entries) && entries.length > 0);
 }
 
-function candidateUnits(hostId: string): Record<string, Group[]> {
+function candidateHookGroups(hostId: string): Record<string, HookGroup[]> {
   const host = HOSTS[hostId];
   assert.ok(host, "hosts.ts HOSTS has no " + hostId + " — the template would have nowhere to connect");
-  const out: Record<string, Group[]> = {};
-  const add = (event: string, group: Group) => (out[event] ??= []).push(group);
+  const out: Record<string, HookGroup[]> = {};
+  const add = (event: string, group: HookGroup) => (out[event] ??= []).push(group);
   for (const file of host.files) {
     for (const unit of file.units) {
       if (unit.type === "json-hook-array") {
@@ -108,7 +112,7 @@ function candidateUnits(hostId: string): Record<string, Group[]> {
 
 function eachHandler(visit: (hostId: string, event: string, handler: Handler) => void) {
   for (const hostId of templateHostIds()) {
-    for (const [event, groups] of Object.entries(templateUnits(hostId))) {
+    for (const [event, groups] of Object.entries(templateHookGroups(hostId))) {
       for (const group of groups) for (const handler of group.hooks) visit(hostId, event, handler);
     }
   }
@@ -136,7 +140,7 @@ test("every template command is the host's own adapter or bin", () => {
 
 test("shipped hook entries match the hosts.ts connect candidates", () => {
   for (const hostId of templateHostIds()) {
-    assert.deepEqual(templateUnits(hostId), candidateUnits(hostId),
+    assert.deepEqual(templateHookGroups(hostId), candidateHookGroups(hostId),
       "configs/" + hostId + "/hooks.json and HOSTS." + hostId + " describe different hooks");
   }
 });

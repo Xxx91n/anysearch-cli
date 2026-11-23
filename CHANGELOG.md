@@ -17,7 +17,7 @@
 ### Docs
 
 - **`docs/per-platform-verification.md` 补 CodeBuddy 一节**，每节都写验过的宿主版本和日期；查不到的写 `not recorded`，不编。
-- **四篇 `docs/*-integration.md` 不再指向 gitignored 的 `.scratch`**：原件已经找不到，写明「原始记录已丢，结论按该宿主版本当时的已知行为保留」。codebuddy 的钩子示例改成 `ans-hook-codebuddy` 并删掉「模板保留长写法」的说明。
+- **四篇 `docs/*-integration.md` 不再指向 gitignored 的 `.scratch`**：原件在 3f85fee8 跟着工作记录一起移出了仓库，里面有本机路径和宿主登录信息，公开仓库不再重新发布；文档写明来龙去脉，结论按该宿主版本当时的已知行为保留。codebuddy 的钩子示例改成 `ans-hook-codebuddy` 并删掉「模板保留长写法」的说明。
 
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
 
