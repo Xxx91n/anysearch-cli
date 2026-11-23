@@ -40,6 +40,12 @@ import { writeStderr } from "./preflight-stderr.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 
+// Design: a reader that went away (piping into head) turns every later write into
+// an EPIPE, and Node raises it as an uncaught exception — the gate would die with
+// a stack instead of its exit code. Its answer is the exit code, so a stream that
+// cannot be written is not worth crashing over.
+for (const stream of [process.stdout, process.stderr]) stream.on("error", () => {});
+
 // Design: one `node --test` per group — a red group is named by the run that
 // failed, instead of parsed out of a reporter.
 //
@@ -348,9 +354,6 @@ async function exitAfterFlush(code) {
   const flushed = [process.stdout, process.stderr].map(
     (stream) =>
       new Promise((resolve) => {
-        // A reader that already went away (piping into head) must not turn this
-        // exit into an uncaught EPIPE: treat the error as flushed.
-        stream.once("error", resolve);
         try {
           stream.write("", () => resolve());
         } catch {
