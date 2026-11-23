@@ -12,6 +12,7 @@ import {
   readWorkspace,
   ROOT_READERS,
 } from "../preflight-plan.mjs";
+import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
 
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
@@ -129,20 +130,18 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
   assert.equal(coverage.mode, "readers");
   assert.deepEqual(coverage.packages, ["@anysearch-cli/store"]);
 
-  for (const [files, readers] of [
-    [["domains/docs.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"]],
-    [
-      ["domains/research.toml", "domains/default.toml"],
-      ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"],
-    ],
-    [["eval-looks.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
-    [["eval-badcases.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
-    [["eval-looks.json", "eval-looks.coverage.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
+  for (const [files, rows] of [
+    [["domains/docs.toml"], ["domains"]],
+    [["domains/research.toml", "domains/default.toml"], ["domains"]],
+    [["eval-looks.json"], ["eval-looks.json"]],
+    [["eval-badcases.json"], ["eval-badcases.json"]],
+    [["eval-looks.json", "eval-looks.coverage.json"], ["eval-looks.json", "eval-looks.coverage.json"]],
     // Store's docs-golden test asserts this one resolves on disk; nothing reads
     // the prose, so store is the whole run.
-    [["AGENTS.md"], ["@anysearch-cli/store"]],
+    [["AGENTS.md"], ["AGENTS.md"]],
   ]) {
     const plan = planPreflight(root, files);
+    const readers = [...new Set(rows.flatMap((row) => EXPECTED_ROOT_READERS[row]))].sort();
     assert.equal(plan.mode, "readers", files.join(","));
     assert.deepEqual(plan.packages, readers, files.join(","));
   }
@@ -176,20 +175,12 @@ test("a root file outside the reader table still runs the full suite", () => {
 test("a root file change next to a package change runs both", () => {
   const plan = planPreflight(root, ["domains/docs.toml", "apps/dsh-plugin/src/index.ts"]);
   assert.equal(plan.mode, "incremental");
-  assert.deepEqual(plan.readers, [
-    "@anysearch-cli/cli",
-    "@anysearch-cli/kernel",
-    "@anysearch-cli/mcp",
-    "@anysearch-cli/store",
-  ]);
+  assert.deepEqual(plan.readers, EXPECTED_ROOT_READERS.domains);
   assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
-  assert.deepEqual(plan.packages, [
-    "@anysearch-cli/cli",
-    "@anysearch-cli/dsh-plugin",
-    "@anysearch-cli/kernel",
-    "@anysearch-cli/mcp",
-    "@anysearch-cli/store",
-  ]);
+  assert.deepEqual(
+    plan.packages,
+    [...EXPECTED_ROOT_READERS.domains, "@anysearch-cli/dsh-plugin"].sort(),
+  );
 });
 
 test("docs next to a root file run the readers, not the suite", () => {
@@ -351,9 +342,9 @@ test("the real workspace: an mcp change runs cli, which bundles mcp source", () 
 
 // The table is hand-written, so this is what keeps it honest: every reader it
 // names is a package the workspace still has, every path is a file that still
-// exists, and the one non-obvious claim (store reads AGENTS.md) still has its
-// anchor in the data it reads. The exact lists pin today's answers, so widening
-// the table means touching this test on purpose.
+// exists, every row's list is exact, and the one non-obvious claim (store reads
+// AGENTS.md) still has its anchor in the data it reads. The exact lists pin
+// today's answers, so widening the table means touching this test on purpose.
 test("the real workspace: every reader in the table exists, and domains runs only them", () => {
   const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const names = new Set(readWorkspace(repo).map((pkg) => pkg.name));
@@ -363,17 +354,19 @@ test("the real workspace: every reader in the table exists, and domains runs onl
       assert.ok(names.has(reader), `${entry.path} names ${reader}, which is not a workspace package`);
     }
   }
+  const sortedRows = (rows) =>
+    Object.fromEntries(Object.entries(rows).map(([path, list]) => [path, [...list].sort()]));
+  assert.deepEqual(
+    sortedRows(Object.fromEntries(ROOT_READERS.map((entry) => [entry.path, entry.readers]))),
+    sortedRows(EXPECTED_ROOT_READERS),
+    "ROOT_READERS and scripts/test/preflight-root-readers.mjs disagree",
+  );
   const plan = planPreflight(repo, ["domains/docs.toml"]);
   assert.equal(plan.mode, "readers");
   // cli's doctor test resolves the default domain through the repo-root
   // fallback and asserts the [skills] active list it finds there.
-  assert.deepEqual(plan.packages, [
-    "@anysearch-cli/cli",
-    "@anysearch-cli/kernel",
-    "@anysearch-cli/mcp",
-    "@anysearch-cli/store",
-  ]);
-  assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, ["@anysearch-cli/store"]);
+  assert.deepEqual(plan.packages, EXPECTED_ROOT_READERS.domains);
+  assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, EXPECTED_ROOT_READERS["AGENTS.md"]);
   // That row rests on a golden entry anchoring on the file: without the anchor,
   // store would have no reason to run and the row should go with it.
   const looks = JSON.parse(readFileSync(join(repo, "eval-looks.json"), "utf8"));

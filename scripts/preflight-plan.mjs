@@ -156,8 +156,7 @@ export function codeOwnership(files, packages) {
 
 /**
  * Root files with known readers: for each, the workspace packages a change to
- * the file can break. A reader's tests read the file, or its build copies it —
- * mcp's build syncs the root domains into its committed `apps/mcp/domains`.
+ * the file can break, because a test of theirs reads it.
  *
  * Design: the table is hand-written and deliberately short (#489) — a root file
  * that is not here keeps the full-suite fallback, the safe direction to be wrong
@@ -167,14 +166,22 @@ export function codeOwnership(files, packages) {
  * store never opens the file through store's tests, so a dependent that does
  * read it is named in its own right, as cli is on the domains row.
  *
- * `scripts/test/preflight-plan.test.mjs` pins every row against the real
- * workspace, so the rows carry no evidence list of their own.
+ * mcp's build copies the root domains into its committed `apps/mcp/domains`, and
+ * that is still not a reader: turbo caches `build`, a root-only change is not in
+ * that hash, so a warm cache skips the sync and the lane's mcp tests read the
+ * stale copy. A row there would claim coverage the gate does not have; it stays
+ * out until the copy has a check of its own.
+ *
+ * `scripts/test/preflight-root-readers.mjs` holds the answers both test files
+ * assert, and the plan test pins every row against the real workspace — each
+ * path on disk, each reader a package that still exists, each list exact — so
+ * the table carries no evidence prose of its own.
  */
 export const ROOT_READERS = [
   {
     path: "domains",
     ext: ".toml",
-    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/mcp", "@anysearch-cli/store"],
+    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
   },
   { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
   { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },

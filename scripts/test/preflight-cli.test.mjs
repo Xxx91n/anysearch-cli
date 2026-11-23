@@ -17,6 +17,7 @@ import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
+import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -390,18 +391,22 @@ test("a root file with readers runs those packages, says why, and runs no self-t
     ({ root, bin }) => {
       const result = runCliIn(root, bin, [], { selfTest: true });
       assert.equal(result.status, 0, result.stderr);
-      assert.match(
+      const readers = EXPECTED_ROOT_READERS.domains.join(", ");
+      assert.ok(
+        result.stdout.includes(`run: ${readers} (the packages whose tests read these root files)`),
         result.stdout,
-        /run: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
       );
-      assert.match(result.stdout, /--filter=@anysearch-cli\/cli/);
-      assert.match(result.stdout, /--filter=@anysearch-cli\/kernel/);
-      assert.match(result.stdout, /--filter=@anysearch-cli\/mcp/);
-      assert.match(result.stdout, /--filter=@anysearch-cli\/store/);
+      for (const pkg of EXPECTED_ROOT_READERS.domains) {
+        assert.ok(result.stdout.includes(`--filter=${pkg}`), pkg);
+      }
       assert.match(result.stdout, /green in \d+\.\ds \(readers\)/);
       // The package the workspace also has does not join in: it does not read
       // the file, and no closure is applied here.
       assert.equal(result.stdout.includes("dsh-plugin"), false, result.stdout);
+      // Neither does mcp, which the fixture also has: its build copies the root
+      // domains, but turbo caches that build, so the copy can stay stale and
+      // the lane would run tests that cannot see the change.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
       assert.equal(result.stdout.includes("running the gate's own tests"), false, result.stdout);
     },
   );
@@ -429,14 +434,20 @@ test("a root file plus a package file runs both, and the readers do not bring th
     ({ root, bin }) => {
       const result = runCliIn(root, bin, []);
       assert.equal(result.status, 0, result.stderr);
-      assert.match(
+      const ran = [...EXPECTED_ROOT_READERS.domains, "@anysearch-cli/dsh-plugin"].sort();
+      assert.ok(
+        result.stdout.includes(
+          `run: ${ran.join(", ")} (the change plus its dependents, plus the readers of root files)`,
+        ),
         result.stdout,
-        /run: @anysearch-cli\/cli, @anysearch-cli\/dsh-plugin, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store \(the change plus its dependents, plus the readers of root files\)/,
       );
-      for (const pkg of ["cli", "dsh-plugin", "kernel", "mcp", "store"]) {
-        assert.match(result.stdout, new RegExp(`--filter=@anysearch-cli/${pkg}`), pkg);
+      for (const pkg of ran) {
+        assert.ok(result.stdout.includes(`--filter=${pkg}`), pkg);
       }
       assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+      // mcp is in the workspace and untouched, and its build only copies the
+      // root domains when turbo runs it, so it is not a reader either.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
       // consumer depends on kernel, a reader; it still does not run, because a
       // reader's dependents cannot see the root file.
       assert.equal(result.stdout.includes("--filter=@anysearch-cli/consumer"), false, result.stdout);
@@ -453,7 +464,7 @@ test("a root file whose reader is missing from the workspace runs the suite and 
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
-      /full suite: no workspace package named: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/mcp, @anysearch-cli\/store/,
+      new RegExp(`full suite: no workspace package named: ${EXPECTED_ROOT_READERS.domains.join(", ")}`),
     );
     assert.match(result.stdout, /^test$/m, result.stdout);
     assert.equal(result.stdout.includes("--filter="), false, result.stdout);
