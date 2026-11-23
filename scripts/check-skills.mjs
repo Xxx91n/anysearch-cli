@@ -71,7 +71,7 @@ function skillFileOf(target) {
  */
 function gitVisibleSkillFiles() {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
-    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000, env: gitEnv(),
+    cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000,
   });
   if (listed.error) throw new Error("cannot run git ls-files: " + listed.error.message);
   if (listed.status !== 0) {
@@ -143,6 +143,9 @@ if (process.env[TSX_MARKER] !== "1") {
       fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
     }
     const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
+    // Design: this is the one place the environment crosses into the process
+    // that runs git — the push hook exports GIT_DIR in a linked worktree, and an
+    // inherited pointer would list another repository's files.
     const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
       env: gitEnv({ ...process.env, [TSX_MARKER]: "1" }),
       stdio: "inherit",

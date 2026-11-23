@@ -47,8 +47,9 @@ function canStillRead(file) {
 function git(cwd, args) {
   // gitEnv drops GIT_DIR, GIT_CONFIG_* and friends, so `-C` alone picks the repo.
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv(), timeout: 30_000 });
-  assert.equal(result.status, 0,
-    `git ${args.join(" ")}: ${result.error ? result.error.message : result.stderr}`);
+  // A timed-out or signalled child has no stderr to show, so name what happened.
+  const why = result.error ? result.error.message : result.signal ?? result.stderr;
+  assert.equal(result.status, 0, `git ${args.join(" ")}: ${why}`);
 }
 
 /** Write one skill directory under a throwaway root and return its path. */
