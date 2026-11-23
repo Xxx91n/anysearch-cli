@@ -22,6 +22,12 @@
       "cache": false
     },
     "check": {},
+    "@anysearch-cli/dsh-plugin#test": {
+      "dependsOn": [
+        "build",
+        "^test"
+      ]
+    },
     "@anysearch-cli/cli#build": {
       "dependsOn": [
         "^build"
