@@ -14,6 +14,11 @@ export interface DiagEntry {
   state: DiagState;
   mode: DiagMode;
   detail?: string;
+  /**
+   * 这一条验不到什么。只挂在实测的搜索源那几行上：不写的话，一个绿勾会被读成
+   * 「连 key 和额度都验过了」，而免费面本来就验不全（#416）。
+   */
+  undetectable?: string[];
 }
 
 export interface DiagSummary {

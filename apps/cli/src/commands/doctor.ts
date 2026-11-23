@@ -4,8 +4,12 @@
 // 免得一个没配的 key 把整台机器说成坏的，也免得“没查”被当成“没问题”。
 // 每条还标 offline 或 live：离线检查只证明本机文件/解析/构造器没问题，不证明
 // 联网、模型、宿主真的能用。真实能力要在 live 里单独跑，doctor 不替它打包票。
+//
+// --live 是唯一联网的开关（#416 定的）。它只打三家搜索源的免费面（Tavily /usage、
+// Exa 空体 /search、AnySearch initialize + tools/list + 空参数 tools/call），一次
+// 真搜索都不跑；模型那几家不验 —— 要么真调一次花钱，要么 /models 类接口没实测。
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, ExaProvider, AnySearchProvider, probeProviderAuth } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider } from "@anysearch-cli/retriever";
 import {
   MANUAL_RECOVERY_NOTE,
@@ -36,6 +40,7 @@ import { computePlan } from "../host-wiring/plan";
 import { findInterrupted, wiringRoot } from "../host-wiring/journal";
 import { readSwitchHistory } from "../upgrade-record";
 import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly } from "../skill-store";
+import { probeDetail, probeState } from "../probe-report";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -43,7 +48,7 @@ declare const __PACKAGE_VERSION__: string | undefined;
 const PKG_VERSION: string =
   typeof __PACKAGE_VERSION__ === "string" && __PACKAGE_VERSION__ ? __PACKAGE_VERSION__ : "0.0.0";
 
-const HELP = `ans doctor [--json] [--strict]
+const HELP = `ans doctor [--json] [--strict] [--live]
 
 分层诊断：安装 / 能力 / 宿主 / 数据。每条结果只取四种状态之一：
   可用     查过，是好的
@@ -52,11 +57,18 @@ const HELP = `ans doctor [--json] [--strict]
   失败     查过，确实坏了
 
 每条还标着是离线检查还是真实调用。默认只读本机，不联网、不启动宿主。
+--live 才联网：只打三家搜索源的免费面，给每把 key 一个 auth 结论，一次真搜索
+都不跑、不花额度。模型那几家不验（真调一次要花钱，--live 不替它花）。
 --json 输出结构化结果。退出码：有失败是 1；加了 --strict 又有未检查是 5；
 其余是 0。`;
 
 export interface DoctorOptions {
   stdout?: (line: string) => void;
+  /**
+   * 测试缝：把某家的探针指到本地假端点，测 --live 时不碰真上游。生产不传，
+   * 探针走各家的公开端点（anysearch 例外：它本来就有 ANYSEARCH_ENDPOINT）。
+   */
+  endpoints?: Partial<Record<SearchProviderId, string>>;
 }
 
 function errorText(error: unknown): string {
@@ -99,6 +111,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   const write = opts.stdout ?? ((line: string) => process.stdout.write(line + "\n"));
   const json = args.includes("--json");
   const strict = args.includes("--strict");
+  // 默认一个字都不联网：CI 的 install-smoke 会跑 ans doctor，默认联网就变成有外部依赖的检查。
+  const live = args.includes("--live");
   if (args.includes("--help") || args.includes("-h")) {
     write(HELP);
     return 0;
@@ -368,12 +382,31 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         });
         continue;
       }
+      // 有 key 只说明「key 在这」。key 好不好（auth）离线看不出来，默认那句必须
+      // 把这半句写在脸上，不然一个「OK」会被读成「key 验过了」。
+      const keySource = entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件";
+      if (!live) {
+        report.add({
+          layer: "capability",
+          name: `搜索源 ${provider}`,
+          state: "ready",
+          mode: "offline",
+          detail: `${keySource}（auth 没验；--live 才打免费面）`,
+        });
+        continue;
+      }
+      // --live：打这家的免费面，只问 auth 和入口契约，一次真搜索都不跑。
+      const outcome = await probeProviderAuth(provider, {
+        apiKey: entry.apiKey,
+        endpoint: opts.endpoints?.[provider] ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined),
+      });
       report.add({
         layer: "capability",
         name: `搜索源 ${provider}`,
-        state: "ready",
-        mode: "offline",
-        detail: entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件",
+        state: probeState(outcome),
+        mode: "live",
+        detail: `${keySource}；${probeDetail(outcome)}`,
+        ...(outcome.undetectable.length > 0 ? { undetectable: [...outcome.undetectable] } : {}),
       });
     }
   }
@@ -418,14 +451,19 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       name: "真实模型调用",
       state: "unchecked",
       mode: "live",
-      detail: "doctor 不联网；要验真调用就用 ans chat",
+      // 模型不验是决定，不是漏做：真调一次要花钱，/models 类接口也没实测（#442）。
+      detail: live
+        ? "没验：真调一次要花钱，/models 类接口也没实测；要验就用 ans chat"
+        : "doctor 不联网；要验真调用就用 ans chat",
     });
     report.add({
       layer: "capability",
       name: "真实检索调用",
       state: "unchecked",
       mode: "live",
-      detail: "doctor 不联网；要验真检索就用 ans search",
+      detail: live
+        ? "没跑真搜索（--live 也不花额度）；检索入口见「搜索源」那几行的实测结论"
+        : "doctor 不联网；要验真检索就用 ans search",
     });
   }
   {
