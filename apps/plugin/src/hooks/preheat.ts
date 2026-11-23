@@ -173,7 +173,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   // +: every host written in the fields that leave the machine is gated against
   // the resolved policy (url-candidates.ts decides which fields and what counts
   // as a host). D4 fail-closed: no cache AND server unreachable -> ask for every URL.
-  // D2: deny is a first-class channel evaluated last; it overrides any allow match.
+  // D2: deny wins over allow for the same host.
   // #306: "提示后使用" — when a cached policy is what answered, the decision is
   // allowed to stand, but the user is told it rests on a snapshot. On the allow
   // path nothing else would ever say it: there is no ask and no deny to carry
