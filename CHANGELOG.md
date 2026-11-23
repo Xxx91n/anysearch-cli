@@ -16,6 +16,27 @@
 - **每条 push 的成本没变**：类型检查只进合并闸门，不进 pre-push；一次合并多约 1 分钟 `tsc`。
 - **网页上直接合仍然绕过本地闸门**：规矩要求 rebase 后的那次 push 是合并前最后一个动作；中间又有别的合并进来，就得重新 rebase、重新跑。
 
+## Unreleased — #475: 被掐掉的信息源，三个出口都露名字
+
+一句话说清：**宽限窗口掐掉的臂以前只有引擎自己知道，`ans search --json`、MCP 的 content 和 `structuredContent` 都不说；现在三处都写 `providersCancelled`，并把 `providersQueried` 一起补齐——「问过谁、掐了谁」放一起读，「全被掐」就不再伪装成「没搜到」。**
+
+### Added
+
+- **`ans search --json` 多了两个键**：`providersQueried`（这次真问了谁）和 `providersCancelled`（结果够了、没再等的那些）。之前 `--json` 里连「问过谁」都没有，被域配置关掉的源在 JSON 里完全看不见。
+- **`ans search` 纯文本多一行 `Providers cancelled: ...`**（`formatProvidersCancelledLine`，空表不打印）。措辞是「结果够了，没等它回来」，不是错误。只打结果分支：宽限窗口要攒够结果才武装，拒答那一刻结果池是空的，那条分支写死为空表。
+- **MCP 两个搜索工具都报这两栏**：`search_web` 的 content JSON 和 `structuredContent` 各一对；`research_web` 只报**最后一个正常完成的轮**，不把多轮求并集——第一轮被掐、第二轮答了的臂不是「被掐」。
+
+### Fixed
+
+- **宽限窗口掐人之后归哪一栏，不再看微任务的先后。** 以前 `catch` 只查「调用方取消」那个集合，宽限窗口掐的臂靠适配器是 `async` 多一层 hop 才碰巧算成取消；换成一个非 async、abort 时 reject 的 provider 就变成 `providersFailed` + `unknown`。现在掐之前先记名字，两个来源共用一个集合。
+
+### Known limits
+
+- **`research_web` 的「最后一轮」指最后一个正常完成的轮**，跟 `abstain` / `sufficiency` 同一轮；被调用方掐断的那一轮由 `interrupted` 交代，那两栏不替它说话。
+- **`allProvidersFailed` 没动**：被掐不算失败，所以「全被掐 + 0 条」还是成功，现在由 `providersCancelled === providersQueried` 表达，不加新错误类。
+- **CLI 走不到「全被掐」**：它不传调用方信号，宽限窗口只在够结果后才掐，所以纯文本那行只表示「有臂被提前掐掉」。
+- **`research_web` 里两个尺度并存**：`providersFailed` / `providerErrorClasses` 是多轮并集（任何一轮失败都算这次跑降解了），`providersQueried` / `providersCancelled` 只报最后一个正常完成的轮。同一个臂因此可能既在失败里、又在被掐里——它先失败、后来被掐，两条各答各的问题。
+
 ## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
 
 一句话说清：**`--live` 是 doctor 唯一的联网开关，只打三家的免费面（Tavily `/usage`、Exa 空体 `/search`、AnySearch `initialize` + `tools/list` + 空参数 `tools/call`），一次真搜索都不跑；`ans auth set <信息源>` 写入前调同一段代码，401/403 拒存，其余只警告。**

@@ -17,6 +17,7 @@ import {
   searchExitCode,
   formatAbstainLine,
   formatProviderAbsentLine,
+  formatProvidersCancelledLine,
   formatProvidersFailedLine,
   formatProviderHintLines,
   describeCredentialSource,
@@ -131,6 +132,22 @@ async function main() {
   assert(
     describeUnconfiguredSource("exa") === describeCredentialSource("none", "exa"),
     "an arm that does not run gets no cap note",
+  );
+
+  // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named
+  //     on its own line — it was asked, just not waited for. An empty list
+  //     prints nothing, so the healthy path stays as quiet as before.
+  assert(formatProvidersCancelledLine([]) === undefined, "no cancelled arms, no line");
+  const cancelled = formatProvidersCancelledLine(["anysearch"]);
+  assert(cancelled !== undefined, "a cancelled arm renders a line");
+  assert(cancelled!.split(String.fromCharCode(10)).length === 1, "cancelled line is a single line");
+  assert(
+    cancelled === "Providers cancelled: anysearch（结果够了，没等它回来）",
+    "golden cancelled line shape; got: " + cancelled,
+  );
+  assert(
+    formatProvidersCancelledLine(["exa", "anysearch"]) === "Providers cancelled: exa, anysearch（结果够了，没等它回来）",
+    "several cut-off arms share the one reason",
   );
 
   // 5. Conditional live arm: spawn the built CLI against a narrow-allowlist

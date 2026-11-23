@@ -50,11 +50,19 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if ("stop" in budget) return budget.stop;
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
+        // Arms asked and arms cut off, for the last completed round only:
+        // unioning rounds would call an arm cancelled that answered later, and a
+        // round cut short by the caller is `interrupted`'s story.
+        let lastRoundQueried: string[] = [];
+        let lastRoundCancelled: string[] = [];
         let lastEnvelope: any = null;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
-        // the merged result. anyProviderAnswered pins "zero results with at
-        // least one successful arm" as success, not outage.
+        // the merged result — an arm that failed in any round counts, so this
+        // set is a union while the arm lists below are last-round only. The two
+        // answer different questions, and an arm can therefore appear in both:
+        // it failed early and was cut off later. anyProviderAnswered pins "zero
+        // results with at least one successful arm" as success, not outage.
         const failedProviders = new Set<string>();
         const providerErrorClasses: Record<string, ProviderErrorClass> = {};
         const providerErrorRetryAfterSeconds: Record<string, number> = {};
@@ -85,6 +93,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
 
             const queriedProviders = envelope.metadata?.providersQueried ?? [];
             const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+            // Overwritten every round: the last completed round wins, the same
+            // round abstain and sufficiency describe.
+            lastRoundQueried = queriedProviders;
+            lastRoundCancelled = cancelledProviders;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -144,6 +156,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
+              // The last completed round's arm state, never a union.
+              providersQueried: lastRoundQueried,
+              providersCancelled: lastRoundCancelled,
               // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
               // Partial-failure metadata rides the successful result.
@@ -154,8 +169,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           );
 
           // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources 恒有值；其余字段
-          // 有值时才加。
+          // 结果一定带 structuredContent：credentialSources、providersQueried、
+          // providersCancelled 恒有值；其余字段有值时才加。
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
             // #304 review: a cancelled research call stops after the aborted
@@ -166,6 +181,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
             ...(providerFailures ?? {}),
+            // The same two fields the content JSON carries.
+            providersQueried: lastRoundQueried,
+            providersCancelled: lastRoundCancelled,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

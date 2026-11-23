@@ -69,6 +69,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // every queried arm is in providersFailed this is an outage: an error
           // result, never a legitimate empty result.
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
+          const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
@@ -89,15 +90,19 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // stable output shape — always emit answers / answersAvailable / providerAnswers
-              // (these three keys are unconditional in the content JSON; structuredContent is a
-              // different shape — credentialSources always, and sufficiency / attribution /
-              // abstain / interrupted / failure metadata when present).
+              // stable output shape — answers / answersAvailable / providerAnswers /
+              // providersQueried / providersCancelled are unconditional here; structuredContent
+              // is a different shape (credentialSources and the two arm lists always,
+              // sufficiency / attribution / abstain / interrupted / failures when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
               providerAnswers: envelope.metadata?.providerAnswers ?? [],
-              providersQueried: envelope.metadata?.providersQueried ?? [],
+              providersQueried: queriedProviders,
+              // Arms we cut off ourselves: enough results were already in, or the
+              // caller went away. Paired with providersQueried, so neither case
+              // reads as an arm that never ran.
+              providersCancelled: cancelledProviders,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.
@@ -131,8 +136,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const attribution = envelope.attribution;
           const abstain = envelope.metadata?.abstain;
           // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources 恒有值；
-          // sufficiency / attribution / provider failures 有值时才加。
+          // 结果一定带 structuredContent：credentialSources、providersQueried、
+          // providersCancelled 恒有值；sufficiency / attribution / provider
+          // failures 有值时才加。
           const structuredContent = {
             // #304 review: the caller may have aborted mid-search. The engine
             // returns whatever arrived instead of throwing, so without this the
@@ -142,6 +148,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
             ...(providerFailures ?? {}),
+            // The same two fields the content JSON carries. Paired with
+            // providersQueried, a cut-off arm is named outright instead of being
+            // inferred from which other fields are missing.
+            providersQueried: queriedProviders,
+            providersCancelled: cancelledProviders,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };
