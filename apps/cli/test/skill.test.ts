@@ -540,13 +540,6 @@ test("description and body rules are enforced by install and validate alike", as
     // is YAML null, not an empty string; it has to read like a missing field.
     ["---\nname: demo\ndescription:\n---\n", "has no description"],
     ["---\nname: demo\ndescription: \"\"\n---\n", "description must be 1–1024 characters, got 0"],
-    ["---\nname: demo\ndescription: A skill about demos.\n---\n", "must also say when to use the skill"],
-    // 「有时候」带「时候」，但不是使用场景；词表不能用这两个字当通行证。
-    ["---\nname: demo\ndescription: 整理有时候会乱的下载目录。\n---\n", "must also say when to use the skill"],
-    ["---\nname: demo\ndescription: 整理有時候會亂的下載目錄。\n---\n", "must also say when to use the skill"],
-    // 「同时」里也藏着「时用」；词表只认完整的「时使用 / 的时候」这类写法。
-    ["---\nname: demo\ndescription: 同时用户也可以改配置。\n---\n", "must also say when to use the skill"],
-    ["---\nname: demo\ndescription: 同一段会话被两处同时使用。\n---\n", "must also say when to use the skill"],
     [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
     ["---\ndescription: Use when the name is gone.\n---\n", "has no name field"],
     // Same YAML-null trap as `description:` above, on the other required field.
@@ -558,6 +551,24 @@ test("description and body rules are enforced by install and validate alike", as
     assert.equal(install.code, 1, install.stdout);
     assert.ok(install.stderr.includes(expected), `install said: ${install.stderr}`);
     assert.equal(existsSync(skillManifestPath(f.opts)), false, "nothing was published");
+  }
+  // A description that says what the skill does but not when to use it is the
+  // spec's "poor example", not an invalid skill: install takes it, validate
+  // passes it, and both print the same note. The keyword match cannot be made
+  // exact (「同时使用」 is not a usage clause), so this rule never blocks.
+  for (const description of [
+    "A skill about demos.",
+    "整理有时候会乱的下载目录。",
+    "整理有時候會亂的下載目錄。",
+  ]) {
+    writeFileSync(file, `---\nname: demo\ndescription: ${description}\n---\nbody\n`);
+    const install = await f.run(["install", dir]);
+    assert.equal(install.code, 0, install.stdout + install.stderr);
+    assert.match(install.stdout, /note: SKILL\.md description does not say when to use/);
+    const validate = await f.run(["validate", "demo"]);
+    assert.equal(validate.code, 0, validate.stdout);
+    assert.match(validate.stdout, /note: SKILL\.md description does not say when to use/);
+    assert.equal((await f.run(["uninstall", "demo"])).code, 0);
   }
   writeFileSync(file, "---\nname: demo\ndescription: Use when the fixture needs a demo skill.\n---\n\nbody\n");
   assert.equal((await f.run(["install", dir])).code, 0);
@@ -589,6 +600,7 @@ test("description and body rules are enforced by install and validate alike", as
     const ok = await f.run(["validate", "demo"]);
     assert.equal(ok.code, 0, `${description} should pass: ${ok.stdout}`);
     assert.match(ok.stdout, /SKILL\.md name, description and body follow the spec/);
+    assert.doesNotMatch(ok.stdout, /note: /, `${description} should not need the note`);
   }
   // validate also holds the installed copy to its directory name, which is what
   // keeps it agreeing with the repo check about the same file.

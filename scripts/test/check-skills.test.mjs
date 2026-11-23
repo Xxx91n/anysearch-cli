@@ -101,12 +101,14 @@ test("a body past 500 lines goes red and reports the count", (t) => {
   assert.match(result.stdout, /body must stay under 500 lines, got 501/);
 });
 
-test("a description that never says when to use the skill goes red", (t) => {
+test("a description that never says when to use the skill gets a note, not a failure", (t) => {
   const root = withRoot(t);
   const dir = skill(root, "demosc", "name: demosc\ndescription: A skill about demos.");
   const result = check([dir]);
-  assert.equal(result.code, 1, result.stdout + result.stderr);
-  assert.match(result.stdout, /must also say when to use the skill/);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[OK\] .*demosc[/\\]SKILL\.md/);
+  assert.match(result.stdout, /\[note\] .*demosc[/\\]SKILL\.md: SKILL\.md description does not say when to use/);
+  assert.match(result.stdout, /1 SKILL\.md checked, 0 failed/);
 });
 
 test("a description that says it in another language passes", (t) => {
@@ -115,6 +117,7 @@ test("a description that says it in another language passes", (t) => {
   const result = check([dir]);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /1 SKILL\.md checked, 0 failed/);
+  assert.doesNotMatch(result.stdout, /\[note\]/, "a usage clause needs no note");
 });
 
 test("a name that differs from its directory goes red", (t) => {

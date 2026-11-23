@@ -42,6 +42,8 @@ export interface SkillValidation {
   name: string;
   ok: boolean;
   error?: string;
+  /** Advice for a file that passed; empty when there is nothing to improve. */
+  notes?: string[];
 }
 
 export class SkillError extends Error {
@@ -678,12 +680,13 @@ const SKILL_BODY_LINE_LIMIT = 500;
 const SKILL_DESCRIPTION_MIN_CHARS = 1;
 const SKILL_DESCRIPTION_MAX_CHARS = 1024;
 /**
- * Markers for the "when to use it" half of a description. The spec asks for
- * prose, so this is a keyword match and misses other phrasings; the error says
- * what to add.
+ * Words that suggest a description says when to use the skill. A keyword match
+ * cannot decide this (「同时使用」 is not a usage clause, 「平时用它」 is a false
+ * friend), so the answer is only ever advice: install, `ans skill validate` and
+ * scripts/check-skills.mjs all report it, and none of them refuses the file.
  */
 const WHEN_TO_USE =
-  /\bwhen|的时候|时候用|的時候|時候用|何时|何時|(?<!同)(?:时使用|時使用|使用时|使用時|时用|時用)|とき/i;
+  /\bwhen|的时候|时候用|的時候|時候用|何时|何時|时使用|時使用|使用时|使用時|时用|時用|とき/i;
 
 /** Require a description that says what the skill does and when to use it. */
 function requireDescription(value: unknown, path: string): void {
@@ -698,9 +701,34 @@ function requireDescription(value: unknown, path: string): void {
   if (length < SKILL_DESCRIPTION_MIN_CHARS || length > SKILL_DESCRIPTION_MAX_CHARS) {
     fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
   }
-  if (!WHEN_TO_USE.test(description)) {
-    fail(`SKILL.md description must also say when to use the skill — e.g. "Use when the user …", 什么时候用 / 的时候用 / 何时 / 使用时（繁体：使用時 / 何時；日本語：とき）; got "${description.slice(0, 120)}": ${path}`);
+}
+
+/** What a passing file could still say better; today that is one thing. */
+export const SKILL_WHEN_TO_USE_NOTE =
+  'SKILL.md description does not say when to use the skill — a clause like "Use when the user …" / 什么时候用 / 使用时 helps an agent pick it';
+
+/**
+ * Advice for a file that passed validation. Not an error, and never blocks:
+ * a description that says what the skill does but not when to use it is the
+ * spec's "poor example", not an invalid skill.
+ */
+export function skillNotes(path: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+  } catch {
+    return [];
   }
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!match) return [];
+  let frontmatter: unknown;
+  try {
+    frontmatter = parseDocument(match[1], { version: "1.2", uniqueKeys: true }).toJS({ maxAliasCount: 100 });
+  } catch {
+    return [];
+  }
+  if (!isRecord(frontmatter) || typeof frontmatter.description !== "string") return [];
+  return WHEN_TO_USE.test(frontmatter.description.trim()) ? [] : [SKILL_WHEN_TO_USE_NOTE];
 }
 
 /**
@@ -1116,8 +1144,10 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
     try {
       // The installed directory is <managed>/<name>, so this covers the
       // manifest cross-check too.
-      validateSkillDirectory(installedDirectory(managed, entry.name));
-      return { name: entry.name, ok: true };
+      const directory = installedDirectory(managed, entry.name);
+      validateSkillDirectory(directory);
+      const notes = skillNotes(join(directory, "SKILL.md"));
+      return { name: entry.name, ok: true, ...(notes.length > 0 ? { notes } : {}) };
     } catch (error) {
       return { name: entry.name, ok: false, error: (error as Error).message };
     }

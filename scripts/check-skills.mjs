@@ -96,7 +96,7 @@ function shown(file) {
 }
 
 async function run() {
-  const { validateSkillDirectory, SkillError } = await import("../apps/cli/src/skill-store.ts");
+  const { validateSkillDirectory, skillNotes, SkillError } = await import("../apps/cli/src/skill-store.ts");
   const args = process.argv.slice(2);
   let files;
   try {
@@ -115,6 +115,8 @@ async function run() {
     try {
       const name = validateSkillDirectory(path.dirname(file));
       process.stdout.write(`[OK] ${shown(file)} (name: ${name})\n`);
+      // Advice only: a skill that passes is not failed for a thinner description.
+      for (const note of skillNotes(file)) process.stdout.write(`[note] ${shown(file)}: ${note}\n`);
     } catch (error) {
       // A rule failure reads "field + what was expected". Anything else (a
       // permission error, an I/O failure) is "could not check", not "this skill

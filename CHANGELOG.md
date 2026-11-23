@@ -10,16 +10,16 @@
 
 ### Changed
 
-- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。规范里标 Must 的那几条照旧，另外三条是本仓库自己加的：`description` 要点出什么时候用、正文 500 行、名字不能是 Windows 保留设备名；`license` / `compatibility` / `metadata` 这些可选字段不查。
+- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字、正文少于 500 行。规范里标 Must 的那几条照旧，另外两条是本仓库自己加的：正文 500 行、名字不能是 Windows 保留设备名；`license` / `compatibility` / `metadata` 这些可选字段不查。
 - **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
-- **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了。缺 `description`、正文到 500 行、名字不合规都会被挡下来，`description` 只是把「做什么」写清楚、没写「什么时候用」的也一样被挡（规范对这种写法只说「写得不好」，这里直接不收）。已经装好但不合规的，`ans skill validate` 会报红。要装的 skill 得先改好。
+- **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了——缺 `description`、正文到 500 行、名字不合规都会被挡下来。已经装好但不合规的，`ans skill validate` 会报红。
 - **报错和通过的话都跟着改了**：`ans skill validate` 通过时打 `[OK] … SKILL.md name, description and body follow the spec`；`SKILL.md` 不存在时说「is missing」，不再说成「must be a regular file」；缺字段时说「has no name field / has no description」，不再把 YAML 空值（`name:`、`description:`）念成 `undefined` / `null` / `object`。
 
 ### Known limits
 
-- **「说了什么时候用」只能认几个词**：`description` 里要有英文的 `when` / `whenever`、中文的 `的时候` / `时候用`（「什么时候用」「的时候用它」都算，繁体同理）、`何时` / `何時`、`时使用` / `使用时`（繁体亦然），或者日文的 `とき`；「有时候」「小时候」「同時」「小時」「當時」这类不算。换个说法的（比如「审查代码时用」）、以及西班牙语这类没进词表的描述，照样会被挡；错误信息会把认的词列出来。反过来，带这些词但没真说清什么时候用的也照样过。这条挡的是漏写，不是写得不好。
+- **「说了什么时候用」只是提醒，不拦**：`description` 里认一批词（`when`、`的时候` / `什么时候用`、`何时`、`使用时` 和繁体的对应写法、日文 `とき`），没认到就在 install / `ans skill validate` / 仓库检查里打一句 `note`，退出码不变。这个词表必然挡漏不挡错：换个说法、用别的语言写，或者只是碰巧带这些词（「同时使用」），都可能被判成有或没有。之前把它当硬门试过，正常描述被误拒，所以改成提醒。
+- **规则清单**：frontmatter 必须是 mapping；`name` 1–64 位、等于目录名、不是 Windows 保留设备名；`description` 1–1024 字；正文少于 500 行。规范里的 `license`、`compatibility`、`metadata`、`allowed-tools` 和引用文件不查。
 - **正文行数不算前后空行**：frontmatter 后面那行空行、正文末尾的空行都不计入 500 行，数的是实际内容行。
-- **只查代码里写死的那些规则**：规范的 `license`、`compatibility`、`metadata`、`allowed-tools` 和引用文件一律不管，所以通过只说明名字、描述、正文这三样没问题。
 
 ## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
 

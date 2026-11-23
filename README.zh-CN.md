@@ -159,7 +159,7 @@ ans skill uninstall ans --project
 
 `install` 和 `validate` 查的是 [Agent Skills 规范](https://agentskills.io/specification) 里这个仓库认的几条，外加几条自己的规矩：
 frontmatter 是 YAML mapping，`name` 是 1–64 位小写字母数字加单连字符（不能是 Windows 保留设备名），
-`description` 1–1024 字且说清什么时候用，正文少于 500 行。
+`description` 1–1024 字，正文少于 500 行。`description` 没写「什么时候用」不会被拒，三个入口都打一句 `note` 提醒。
 源目录叫什么名字都行（clone 下来的仓库一般不是 skill 名）；`ans skill validate` 和
 `node scripts/check-skills.mjs`（查本仓库所有 `SKILL.md`）另外要求 `name` 和所在目录同名。
 

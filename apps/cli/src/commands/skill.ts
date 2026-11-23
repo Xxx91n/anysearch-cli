@@ -1,9 +1,10 @@
 // ans skill: directory convention + manifest + validation (#109, decision #92).
 // Installation never changes the Active Domain or its active skill list.
 
+import { join } from "node:path";
 import {
   inspectInstalledSkills, installSkill, MANAGED_SKILLS_REL_PATH,
-  managedSkillsRoot, skillManifestPath,
+  managedSkillsRoot, skillManifestPath, skillNotes,
   uninstallSkill, validateInstalledSkills, SkillError, type SkillOptions,
 } from "../skill-store";
 
@@ -28,9 +29,9 @@ Options:
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
 Checked rules (agentskills.io/specification plus a few house rules): frontmatter is a YAML
 mapping; name is 1–64 lowercase letters/digits with single hyphens and is not a Windows
-device name; description is 1–1024 characters and says when to use the skill — checked by
-keyword (when / 什么时候用 / 的时候用 / 何时 / 使用时 / 使用時 / 何時 / とき …); the body stays under
-500 lines. validate also requires name to equal the installed directory name;
+device name; description is 1–1024 characters; the body stays under 500 lines. A description
+that never says when to use the skill gets a note (keyword match: when / 什么时候用 / 使用时 /
+とき …) and is still accepted. validate also requires name to equal the installed directory name;
 install accepts any source folder name (a cloned repo usually has its own) and installs
 under the name the frontmatter declares.
 Managed skills live in ${MANAGED_SKILLS_REL_PATH}; sibling directories under skills/ are user-authored.
@@ -81,9 +82,12 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
     switch (command) {
       case "install": {
         const entry = await installSkill(positional[0], scopeOpts);
+        // Installing is never blocked by a description that could say more.
+        const notes = skillNotes(join(entry.source, "SKILL.md"));
         out(`Installed ${entry.name} to ${managedSkillsRoot(scopeOpts)}\n`
           + `Source: ${entry.source}\nCommit: ${entry.commit}${entry.tag ? ` (tag ${entry.tag})` : ""}${entry.dirty ? " [dirty source]" : ""}\n`
           + "Installed only; activation remains in Active Domain TOML ([skills].active).\n");
+        for (const note of notes) out(`note: ${note}\n`);
         return 0;
       }
       case "validate": {
@@ -94,7 +98,12 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
         const results = validateInstalledSkills(scopeOpts, selected);
         if (results.length === 0) out("No installed skills to validate.\n");
         for (const result of results) {
-          out(result.ok ? `[OK] ${result.name}: SKILL.md name, description and body follow the spec\n` : `[FAIL] ${result.name}: ${result.error}\n`);
+          if (!result.ok) {
+            out(`[FAIL] ${result.name}: ${result.error}\n`);
+            continue;
+          }
+          out(`[OK] ${result.name}: SKILL.md name, description and body follow the spec\n`);
+          for (const note of result.notes ?? []) out(`  note: ${note}\n`);
         }
         return results.every((result) => result.ok) ? 0 : 1;
       }
