@@ -427,13 +427,13 @@ export class RetroaererdEngine {
       queueMicrotask(() => abortedArms.add(i));
       controllers[i].abort(reason);
     };
-    // One implementation for "stop every arm that has not landed" — the deadline
-    // and a fan-out construction failure both need it.
-    const abortAllUnsettled = () => {
-      for (let i = 0; i < controllers.length; i++) abortArm(i);
+    // One implementation for "stop every arm that has not landed" — the deadline,
+    // a fan-out construction failure, and caller cancellation all use it.
+    const abortAllUnsettled = (reason?: unknown) => {
+      for (let i = 0; i < controllers.length; i++) abortArm(i, reason);
     };
     const cancelProviders = () => {
-      for (let i = 0; i < controllers.length; i++) abortArm(i, callerSignal?.reason);
+      abortAllUnsettled(callerSignal?.reason);
       callerAbortResolve();
     };
     if (callerSignal) {
