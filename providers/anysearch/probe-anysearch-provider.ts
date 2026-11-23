@@ -6,32 +6,15 @@
 // node providers/anysearch/probe-anysearch-provider.ts
 // ANS_PROBE_QUERY="..." node providers/anysearch/probe-anysearch-provider.ts
 // Red lines: ANYSEARCH_ENDPOINT / ANYSEARCH_API_KEY values are NEVER printed —
-// only presence classes (endpointSource/keyPresent); occurrences of the
-// configured values inside an error message are masked <endpoint>/<key>.
+// only classes (endpointSource/keySource); occurrences of the configured values
+// inside an error message are masked <endpoint>/<key>. The key is resolved the
+// same way the product resolves it (env first, then ~/.ans/credentials.json), so
+// a key that lives only in the credential file still reaches the adapter.
 // Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted), or the
 // probe self-check failed (errorName + stage, no arm ran).
 
-// Plain `node` cannot load the adapter from source: `anysearch.ts` imports
-// "../contract" without an extension, which tsc (Bundler resolution) and tsx
-// both accept and Node's ESM resolver does not. ".ts" is appended only when
-// that file really exists, so a genuinely bad specifier still fails loudly.
-// The alternative — writing ".ts" into the adapter — needs
-// allowImportingTsExtensions in the three tsconfigs that compile the adapter
-// (retriever, kernel, apps/cli), which is too wide a change for a manual probe
-// (decision #413: plain `node <file>`).
-import { registerHooks } from "node:module";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier.startsWith(".") && !/\.[cm]?[jt]s$/.test(specifier) && context.parentURL) {
-      const candidate = new URL(specifier + ".ts", context.parentURL);
-      if (existsSync(fileURLToPath(candidate))) return nextResolve(specifier + ".ts", context);
-    }
-    return nextResolve(specifier, context);
-  },
-});
+// probe-credentials 的钩子必须先加载（原因见该文件头部）；后面这些 import 都靠它。
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { PROVIDER_FACTS } = await import("../../packages/retriever/src/providers/provider-facts.ts");
@@ -47,6 +30,11 @@ const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
 
+// --nokey 显式压掉 key：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析。
+const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
+const KEY = credentials.apiKey;
+const SECRETS = probeSecrets("anysearch", KEY, process.env.ANYSEARCH_ENDPOINT);
+
 // --default-endpoint 要的是事实表里那个公开地址。常量被改名或搬走时 import 拿到的是
 // undefined（plain node 没有类型检查），静默退回 env 会让 endpointSource 说谎——
 // 所以先校验再放行，和过去校验 adapter 的那个导出是同一个理由。
@@ -58,20 +46,16 @@ if (FORCE_DEFAULT && (typeof DEFAULT_ENDPOINT !== "string" || DEFAULT_ENDPOINT.l
   const message = "provider-facts has no anysearch.freeProbe.endpoint — --default-endpoint has nothing to send";
   // Nothing was called, so there is no class to report and the endpoint source is unknown.
   console.log(JSON.stringify({
-    schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false, stage: "import",
+    schema: "anysearch/provider-probe@2", provider: "anysearch", ok: false, stage: "import",
     errorName: "MissingExport", errorMessage: message,
-    endpointSource: "unknown", keyPresent: NO_KEY ? false : !!process.env.ANYSEARCH_API_KEY,
+    endpointSource: "unknown", keySource: credentials.keySource,
+    ...(credentials.credentialWarning ? { credentialWarning: scrub(credentials.credentialWarning) } : {}),
   }));
   process.exit(2);
 }
 
 function scrub(s: string): string {
-  let t = s;
-  const ep = process.env.ANYSEARCH_ENDPOINT;
-  const key = process.env.ANYSEARCH_API_KEY;
-  if (ep) t = t.split(ep).join("<endpoint>");
-  if (key) t = t.split(key).join("<key>");
-  return t.slice(0, 200);
+  return maskSecrets(s, SECRETS).slice(0, 200);
 }
 
 function hostOf(u: string): string {
@@ -80,17 +64,20 @@ function hostOf(u: string): string {
 
 async function main(): Promise<void> {
   // Explicit constructor arg wins over env inside the provider —
-  // this is the P1 separation lever (endpoint/key attribution).
-  const p = new AnySearchProvider(NO_KEY ? "" : undefined, FORCE_DEFAULT ? DEFAULT_ENDPOINT : undefined);
+  // this is the P1 separation lever (endpoint/key attribution). The key is passed
+  // explicitly on purpose: leaving it undefined would let the adapter re-read
+  // process.env, and then the probe's resolution and the adapter's fallback fork.
+  const p = new AnySearchProvider(KEY, FORCE_DEFAULT ? DEFAULT_ENDPOINT : undefined);
   const t0 = Date.now();
   const envClass = {
     endpointSource: FORCE_DEFAULT ? "default(forced)" : process.env.ANYSEARCH_ENDPOINT ? "env" : "default",
-    keyPresent: NO_KEY ? false : !!process.env.ANYSEARCH_API_KEY,
+    keySource: credentials.keySource,
+    ...(credentials.credentialWarning ? { credentialWarning: scrub(credentials.credentialWarning) } : {}),
   };
   try {
     const env = await p.search({ query: QUERY, mode: "fast", maxResults: 3 }, AbortSignal.timeout(30000));
     console.log(JSON.stringify({
-      schema: "anysearch/provider-probe@1", provider: "anysearch", ok: true,
+      schema: "anysearch/provider-probe@2", provider: "anysearch", ok: true,
       results: env.results.length, elapsedMs: Date.now() - t0, serverElapsedMs: env.elapsedMs,
       sampleHosts: env.results.slice(0, 3).map((r) => hostOf(r.url)),
       ...envClass,
@@ -99,7 +86,7 @@ async function main(): Promise<void> {
     const name = e instanceof Error ? e.name : typeof e;
     const message = scrub(e instanceof Error ? e.message : String(e));
     console.log(JSON.stringify({
-      schema: "anysearch/provider-probe@1", provider: "anysearch", ok: false,
+      schema: "anysearch/provider-probe@2", provider: "anysearch", ok: false,
       errorName: name, errorMessage: message,
       errorClass: classifyProviderError(name + ": " + message),
       elapsedMs: Date.now() - t0,

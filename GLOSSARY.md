@@ -244,6 +244,9 @@
 - **用户凭据文件**:用户把某家的 API key 存一次的地方，放在配置根，本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主。内容明文，文件自己写明不是加密、也不是系统钥匙串；每条绑定到具体 provider，模型的 key 还绑定到录入时的端点，换了目标就不发出去。写之前按平台自己的口径建访问保护并核对（代码里叫 credentials.json）。
   _Avoid_: 密钥库、钥匙串、加密存储
 
+- **探针的 keySource**:手工探针输出里那格「这一跑用的 key 从哪来」，三档 `env`（环境变量）、`user`（用户凭据文件）、`none`（这一跑没发 key：两处都没有，或者传了 `--nokey`）。它说的是这一跑，不是这台机器配了什么；产品侧的 `credentialSources` 是另一回事。
+  _Avoid_: keyPresent、key 状态、key: set/unset
+
 - **服务地址登记**:长驻 server 启动后把自己真正监听的地址写进配置根，钩子读这条记录来连；默认端口被占就换空闲端口，读的人不用猜（代码里叫 server.json 和 resolveServerEndpoint）。
   _Avoid_: Port Registry、端口表
 

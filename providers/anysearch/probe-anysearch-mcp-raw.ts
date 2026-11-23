@@ -2,7 +2,8 @@
 // batch-2 — P2 raw MCP probe: speaks Streamable HTTP MCP to the
 // AnySearch endpoint directly (no provider layer) and prints the tools/call text payload
 // — credential-shaped values masked — so upstream reply-shape anomalies are attributable.
-// Values never logged: endpoint is recorded as source-class only; API key existence only.
+// Values never logged: the endpoint only as a source class, the key only as where it came
+// from (`keySource`: env / user / none).
 //
 // node providers/anysearch/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey] [--protocol-version <v>]
 //   ANS_PROBE_PROTOCOL_VERSION=<v> is the env form of the flag.
@@ -11,15 +12,23 @@
 // arguments; 3 = non-results text shape (the discriminating case this probe exists for).
 
 import { readFileSync, writeSync } from "node:fs";
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
-const SCHEMA = "anysearch/mcp-raw-probe@1";
+const SCHEMA = "anysearch/mcp-raw-probe@2";
 // version literals are pinned to the workspace package version —
 // the probe speaks as the CLI client; a hand-maintained literal would drift on
 // every release. Single read at module load; failure is fatal by design (the
 // probe must never misreport which build it ran).
 const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
+
+// Design: 先扫 --nokey、先解析凭据，再进参数校验 —— 参数报错也走同一份遮罩表；顺序反过来，
+// 遮罩表还是空的。
+const NO_KEY = ARGS.includes("--nokey");
+const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
+const KEY = credentials.apiKey;
+const SECRETS = probeSecrets("anysearch", KEY, process.env.ANYSEARCH_ENDPOINT);
 
 // Protocol version: a hand-maintained literal — the probe must keep answering when the
 // adapter is broken, so it never loads it (DEFAULT_ENDPOINT is a literal for that reason).
@@ -51,7 +60,6 @@ function protocolVersionValue(raw: string | undefined, source: string): string |
 }
 
 let FORCE_DEFAULT_ENDPOINT = false;
-let NO_KEY = false;
 let PROTOCOL_ARG_VALUE: string | undefined;
 const seen = new Set<string>();
 for (let i = 0; i < ARGS.length; i += 1) {
@@ -60,7 +68,6 @@ for (let i = 0; i < ARGS.length; i += 1) {
     if (seen.has(token)) refuseArgs(token + " given twice");
     seen.add(token);
     if (token === "--default-endpoint") FORCE_DEFAULT_ENDPOINT = true;
-    else NO_KEY = true;
     continue;
   }
   if (token === PROTOCOL_FLAG || token.startsWith(PROTOCOL_FLAG + "=")) {
@@ -85,7 +92,6 @@ const PROTOCOL_VERSION = PROTOCOL_ARG_VALUE
 
 const ENDPOINT = FORCE_DEFAULT_ENDPOINT ? DEFAULT_ENDPOINT
   : (process.env.ANYSEARCH_ENDPOINT || DEFAULT_ENDPOINT); // POSIX: empty env ≡ unset
-const KEY = NO_KEY ? "" : (process.env.ANYSEARCH_API_KEY || ""); // POSIX: empty env ≡ unset
 // Which endpoint the run used, as a class; the value itself is never printed.
 let ENDPOINT_SOURCE = "default";
 if (process.env.ANYSEARCH_ENDPOINT) ENDPOINT_SOURCE = "env";
@@ -95,19 +101,10 @@ const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
 
 // Anything the probe prints goes through this. An argument or an upstream reply that
 // carries the key or the endpoint must not come back out verbatim — the README says the
-// output gets pasted into issues. process.env is read directly because the argument loop
-// runs before KEY/ENDPOINT exist. Placeholders match probe-anysearch-provider.ts scrub().
+// output gets pasted into issues. The resolved key is masked, not just the env one: with a
+// key that lives only in the credential file there is no env value to match.
 function sanitize(s: string): string {
-  let t = s;
-  const ep = process.env.ANYSEARCH_ENDPOINT;
-  if (ep) t = t.split(ep).join("<endpoint>"); // guards first: empty values would split per-character
-  const key = process.env.ANYSEARCH_API_KEY;
-  if (key) t = t.split(key).join("<key>");
-  // Upstream can hand back a credential we never configured — the anonymous arm gets a key
-  // issued inside the reply body — so the shapes go too, prefixes and colon forms included.
-  return t
-    .replace(/([A-Za-z0-9_-]*(?:api[_-]?key|password)["']?\s*[:=]\s*)["']?[^\s&"',}]+["']?/gi, "$1<key>")
-    .replace(/\bBearer\s+[^\s"']+/gi, "Bearer <key>");
+  return maskSecrets(s, SECRETS);
 }
 
 async function post(body: unknown, sessionId: string | null, protocolVersion: string | null) {
@@ -161,7 +158,8 @@ function parseRpc(text: string, expectedId: number): JsonRpcReply {
 const out: Record<string, unknown> = {
   schema: SCHEMA,
   endpointSource: ENDPOINT_SOURCE,
-  keyPresent: !!KEY,
+  keySource: credentials.keySource,
+  ...(credentials.credentialWarning ? { credentialWarning: sanitize(credentials.credentialWarning) } : {}),
   protocolVersionRequested: PROTOCOL_VERSION,
   // Present on every run that gets past argument checking: null means initialize never got
   // far enough to ask, or upstream stayed silent.

@@ -18,13 +18,18 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 认证
 
-- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；没设就是匿名调用。
+- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；环境变量和凭据文件都没有 key 时，请求就不带这个头。
 - 匿名过了配额，上游回的是「自动签发」提示体：HTTP 200、`isError:null`、没有结果体。适配器把它判成
   `free-quota-exhausted`（免费额度到顶），不是 `malformed`，也不是 `permanent-auth`。
-- 两条探针**只读环境变量**（`ANYSEARCH_API_KEY`），不读 `~/.ans/credentials.json`。适配器本身同理，但
-  `ans` 装配时会把「环境变量 → 用户凭据文件」解析出来的 key 传进构造函数（`packages/kernel/src/composition.ts`），
-  所以探针和产品看到的可能不是同一把。把 key 只存在凭据文件里的人跑探针会静默变成匿名调用——没报错、
-  照样 `ok:true`，看不出区别（#422）。
+- **两条探针和产品现在读同一份凭据**（#418 / #506）：都走 `packages/store/src/credentials.ts` 的
+  `resolveSearchCredentials`，环境变量优先，再读 `~/.ans/credentials.json`。key 只存在凭据文件里时，
+  探针也会带 `Authorization`，不会再静默丢掉 key（#422 复现的就是这个）。
+- 输出里只用 `keySource: "env" | "user" | "none"` 说来源（`user` 就是用户凭据文件），key 的值不打印。
+  `--nokey` 显式压掉 key：跳过解析、不发 `Authorization`，env 和文件里都有 key 也一样。
+- 解析出来的 key 是**显式**传进 `AnySearchProvider` 的（没有 key 传空串）。不能让适配器再回读
+  `process.env`，否则探针的解析和适配器的兜底会再次分叉。
+- 凭据文件读坏或解析坏时，结果带一个不含密钥的 `credentialWarning`（只说路径和错误），而不是把它
+  伪装成「没配 key」。
 
 ## 协议版本
 
@@ -57,8 +62,8 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 | 脚本 | 什么时候跑 | 回答什么 | 期望输出 | 退出码 |
 |---|---|---|---|---|
-| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`ok:true`、`protocolVersionRequested` / `protocolVersion`（上游不回版本时为 `null`）、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带回复开头，凭据形状已遮成 `<key>`） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败、参数缺失 |
-| `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON：成功给 `results` / 调用失败给 `errorName`+`errorClass` / 探针自检失败给 `errorName`+`stage`（没跑调用，所以没有类别） | 0 通 / 2 失败并给出类别或自检原因 |
+| `probe-anysearch-mcp-raw.ts` | 怀疑上游原文变了，或要分清是谁的错 | 上游原文本身对不对——**唯一站在适配器下面**的面 | 一份缩进过的 JSON（`schema:"anysearch/mcp-raw-probe@2"`、`ok:true`、`keySource`、`protocolVersionRequested` / `protocolVersion`（上游不回版本时为 `null`）、`httpStatus:200`、`hasResultsHeader:true`，`textHead` 带回复开头，凭据形状已遮成 `<key>`） | 0 结果形状正常 / 3 回复不是结果形状 / 2 传输或工具失败、参数缺失 |
+| `probe-anysearch-provider.ts` | 怀疑映射、错误分类不对 | 适配器的映射和 `errorClass`——唯一打 `errorClass` 的面 | 一行 JSON（`schema:"anysearch/provider-probe@2"`）：成功给 `results` / 调用失败给 `errorName`+`errorClass` / 探针自检失败给 `errorName`+`stage`（没跑调用，所以没有类别），三档都带 `keySource` | 0 通 / 2 失败并给出类别或自检原因 |
 
 和另外两个面的分工：`packages/retriever/test/online/anysearch-mcp.online.ts` 是 CI 的活体冒烟
 （`continue-on-error`），只断言正常路径，失败就抛栈、不分类，所以它**说不出是哪一层坏的**；raw 探针
@@ -70,6 +75,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 node providers/anysearch/probe-anysearch-mcp-raw.ts
 node providers/anysearch/probe-anysearch-mcp-raw.ts --protocol-version 2025-03-26 # 退回旧协议版本
 node providers/anysearch/probe-anysearch-provider.ts
+ans auth set anysearch && node providers/anysearch/probe-anysearch-provider.ts  # key 存在凭据文件里也照样带
 ANS_PROBE_QUERY="rust tokio" node providers/anysearch/probe-anysearch-provider.ts
 node providers/anysearch/probe-anysearch-provider.ts --nokey            # 匿名臂
 node providers/anysearch/probe-anysearch-provider.ts --default-endpoint # 忽略 env，用写死地址
@@ -77,15 +83,22 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 ```
 
 输出只走 stdout，人读、贴进 issue，**不落盘**：provider 探针一行 JSON，raw 探针一份缩进过的 JSON。key
-和 endpoint 的值不打印，只打 `endpointSource` / `keyPresent`；错误消息和上游回显里出现的值会遮成
-`<endpoint>` / `<key>`。参数报错（flag 缺值、拼错、形状不对）只打 `schema` / `ok` / `stage` / `errorMessage`
+和 endpoint 的值不打印，只打 `endpointSource` / `keySource`（`env` / `user` / `none`）；错误消息和上游
+回显里出现的值会遮成 `<endpoint>` / `<key>`。凭据文件坏了会多一个 `credentialWarning`，只说路径和错误，
+不含密钥。参数报错（flag 缺值、拼错、形状不对）只打 `schema` / `ok` / `stage` / `errorMessage`
 四个字段，没有 `protocolVersionRequested` / `protocolVersion` 那些——那一步还没跑任何请求。
 SSE 多帧那条路径（同一条流里夹着别的消息）现在没有自动覆盖，手跑成功只证明单帧。
 
-`probe-anysearch-provider.ts` 头顶那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
-（`../contract`），tsc 的 Bundler 解析和 tsx 都放行，Node 的 ESM 解析不放行。钩子只在 `.ts` 文件真的
-存在时补一次，坏路径照样报错。另一个办法是往适配器里写 `.ts` 后缀，但那要给编译到适配器源码的三份
-`tsconfig`（retriever / kernel / apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值得。
+一个例外：`ANYSEARCH_ENDPOINT` 以 `/v1/search` 结尾时，适配器的 `normalizeEndpoint` 会把改写后的
+地址（含 host）打到 stderr。那条不是探针打的，探针也拦不到；要贴进 issue 的话，别用带 `/v1/search`
+尾巴的地址（见上面「## 端点」）。
+
+`providers/probe-credentials.mjs` 头上那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
+（`../contract`），store 的源码写的是 `.js`（`./ans-paths.js`，指到同目录的 `.ts`），tsc 和 tsx 都放行，
+Node 的 ESM 解析不放行。钩子只在目标 `.ts` 真的存在时替换一次，坏路径照样报错。它同时把 store 的
+`resolveSearchCredentials` 加载进来，所以三条探针（含 tavily 那条 `.mjs`）都只 import 这一个文件，
+不再各抄一份解析逻辑。另一个办法是往源码里写 `.ts` 后缀，但那要给三份 `tsconfig`（retriever / kernel /
+apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值得。
 它要 Node 22.15+（`module.registerHooks`）；仓库要求的 Node 是 22.19+，没问题，但比这更老的机器上这条
 探针在 import 阶段就会炸。
 

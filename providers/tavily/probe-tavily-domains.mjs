@@ -5,11 +5,24 @@
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
 // Design: exit 2 also covers "B never saw prefer widen" — A or C passing shows the filter
 // held, not that upstream read the field, so they cannot carry the run on their own.
+// Credentials come from the same resolver the product uses (env TAVILY_API_KEY first, then
+// ~/.ans/credentials.json); the ledger records where, as keySource: env / user / none.
+// PROBE_TAVILY_ENDPOINT points the run at a local stub; the default is the public
+// https://api.tavily.com and no endpoint value is ever printed.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 const NL = String.fromCharCode(10);
 const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "tavily-probe"); // per-run file names, so a rerun never overwrites an earlier ledger
-const KEY = process.env.TAVILY_API_KEY;
+// 产品同一套解析：环境变量优先，再读凭据文件；文件坏了会带 credentialWarning 出来，
+// 不会被当成「没配 key」。
+const credentials = resolveProbeCredentials("tavily");
+const KEY = credentials.apiKey;
+// Design: endpoint 的默认值留字面量，不从 provider-facts 取 —— 这条探针量的是上游本身，不能
+// 依赖被它检查的代码（和 raw anysearch 探针同一条规矩）；PROBE_TAVILY_ENDPOINT 只给本地桩用。
+const BASE = (process.env.PROBE_TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/+$/, "");
+const SECRETS = probeSecrets("tavily", KEY, BASE);
+const scrubText = (s) => maskSecrets(String(s), SECRETS);
 // A, B and D share this query and allowlist: A sends no mode, B sends restrict and
 // prefer, D switches to the /research endpoint (no mode field there at all).
 const QUERY = "tokio JoinSet rust spawn structured concurrency";
@@ -35,7 +48,7 @@ const settledResult = (r) => {
   if (r.status === "fulfilled") return r.value;
   const why = r.reason;
   const detail = [why?.message, why?.cause?.message].filter(Boolean).join(" — ") || String(why);
-  return { status: 0, json: null, text: detail };
+  return { status: 0, json: null, text: scrubText(detail) };
 };
 // A and D both just need the outside-allowlist count, though they answer different
 // questions: A asks whether the hard filter leaks, D whether /research stays soft.
@@ -50,7 +63,7 @@ const resultUrls = (json) => (Array.isArray(json?.results) ? json.results : [])
   .map((x) => x?.url)
   .filter((u) => typeof u === "string" && /^https?:/i.test(u));
 async function tavily(endpoint, body) {
-  const res = await fetch("https://api.tavily.com" + endpoint, {
+  const res = await fetch(BASE + endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + KEY },
     body: JSON.stringify(body),
@@ -60,21 +73,47 @@ async function tavily(endpoint, body) {
   let json = null; try { json = JSON.parse(text); } catch {}
   return { status: res.status, json, text: text.slice(0, 400) };
 }
-const ledger = { schema: "anysearch/tavily-domain-probe@1", ranAt: new Date().toISOString(), key: KEY ? "set" : "unset", evidenceStatus: "pending", arms: [] };
+const ledger = {
+  schema: "anysearch/tavily-domain-probe@2",
+  ranAt: new Date().toISOString(),
+  keySource: credentials.keySource,
+  ...(credentials.credentialWarning ? { credentialWarning: scrubText(credentials.credentialWarning) } : {}),
+  evidenceStatus: "pending",
+  arms: [],
+};
 const LEDGER_BASE = "tavily-probe-ledger-" + ledger.ranAt.replace(/[^0-9TZ]/g, "");
 // Flushed after every arm: a run killed halfway still leaves what it learned on disk.
 const flush = () => {
   mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(join(OUT_DIR, LEDGER_BASE + ".json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
   const rows = ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |");
-  const md = ["# Tavily include_domains probe ledger", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key + " | evidence: " + ledger.evidenceStatus, "", "| arm | status | summary |", "|---|---|---|", ...rows, "", "Re-run: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
+  const md = [
+    "# Tavily include_domains probe ledger", "",
+    "ranAt: " + ledger.ranAt + " | keySource: " + ledger.keySource + " | evidence: " + ledger.evidenceStatus,
+    ...(ledger.credentialWarning ? ["credentialWarning: " + ledger.credentialWarning] : []),
+    "", "| arm | status | summary |", "|---|---|---|", ...rows, "",
+    "Re-run: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs",
+    "(or `ans auth set tavily` first; PROBE_TAVILY_RESEARCH=1 enables arm D.)",
+  ].join(NL);
   writeFileSync(join(OUT_DIR, LEDGER_BASE + ".md"), md + NL, "utf8");
   return join(OUT_DIR, LEDGER_BASE + ".{json,md}");
 };
-const record = (arm) => { ledger.arms.push(arm); console.log("[" + arm.status + "] " + arm.id + " - " + arm.summary); flush(); };
+const record = (arm) => {
+  // 摘要会进 stdout 和台账：key 或 endpoint 的值出现在上游报错里也遮掉。
+  const safe = { ...arm, summary: scrubText(arm.summary) };
+  ledger.arms.push(safe);
+  console.log("[" + safe.status + "] " + safe.id + " - " + safe.summary);
+  flush();
+};
+// 文件读坏 / 解析坏不是「没配 key」：两个出口都说出来，别让人去查上游额度。
+if (credentials.credentialWarning) console.error("credentialWarning: " + scrubText(credentials.credentialWarning));
 if (!KEY) {
+  // 摘要也得分清「没配」和「文件坏了」——否则坏文件那一跑等于在台账里断言文件里没 key。
+  const why = credentials.credentialWarning
+    ? "no usable tavily key — the credential file is unreadable (see credentialWarning); live arm not run"
+    : "no tavily key in the environment or ~/.ans/credentials.json — live arm not run";
   for (const id of [ARM_A, ARM_B, ARM_C, ARM_D])
-    record({ id, status: "SKIPPED", summary: "TAVILY_API_KEY unset - live arm not run", evidence: null });
+    record({ id, status: "SKIPPED", summary: why, evidence: null });
 } else {
   let aPartial = null;
   try {

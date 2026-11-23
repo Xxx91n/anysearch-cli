@@ -13,8 +13,9 @@ Exa 的说明。信息源 id 是 `exa`，适配器在
 
 - `EXA_API_KEY`。适配器 `new Exa()` 不传 key（产品装配时把 composition 解析出的 key 传进构造函数），
   裸跑时由 SDK 自己从环境变量取。
-- 这个夹子没有探针，所以「只读环境变量、不读凭据文件」这条坑在 exa 上**没有实测过**——#422 那轮只
-  测了 anysearch 和 tavily；exa 的读取路径和它们同源，按同一套推断，别当已验证。
+- 这个夹子没有探针，所以「环境变量优先、再读 `~/.ans/credentials.json`」这套解析在 exa 上**没有在探针
+  这一面实测过**——#506 把三条手工探针都接到了 `resolveSearchCredentials` 上，但 exa 没有探针；
+  `ans doctor --live` 会验 Exa 的 key，那是免费面检查，不等于原文/适配器归因面，见「## 探针」。
 
 ## 协议版本
 
@@ -47,8 +48,10 @@ REST/JSON，走 `exa-js`（>= 2.26.0），没有 MCP 协议版本协商。适配
 
 ## 探针
 
-没有。exa 还没有一条手工探针，原因很直白：真正需要的取证面（原文 vs 适配器）在 exa 这边还不存在
-争议，而临时跑一次的成本很低。要真调用就走产品：
+没有，这是有意的：真正需要的取证面（上游原文 vs 适配器映射）在 exa 这边还没有争议，临时跑一次的成本
+又很低。#506 之后三条手工探针（anysearch 两条、tavily 一条）都和产品共用同一套凭据解析，但 exa 不在
+这三条里——`ans doctor --live` 会用空体 `POST /search` 验 Exa 的 key，那是免费面检查，只回答「这把 key
+好不好」，回答不了「原文坏了还是适配器坏了」。要真调用就走产品：
 
 ```bash
 ANS_PROVIDERS=exa ans search "cloudflare workers" --json
