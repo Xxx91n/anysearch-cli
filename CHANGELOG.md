@@ -1,3 +1,28 @@
+## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
+
+一句话说清：**`--live` 是 doctor 唯一的联网开关，只打三家的免费面（Tavily `/usage`、Exa 空体 `/search`、AnySearch `initialize` + `tools/list` + 空参数 `tools/call`），一次真搜索都不跑；`ans auth set <信息源>` 写入前调同一段代码，401/403 拒存，其余只警告。**
+
+### Added
+
+- **`ans doctor --live`**：默认仍然一个字都不联网（CI 的 install-smoke 跑的也是默认模式）。`--live` 时每家有 key 的信息源那一行从「离线」变成「实测」，给一个 auth 结论；`--strict` 下这些行不再算未检查。状态还是原来四个值，没有第五个。
+- **探针三条**（`packages/retriever/src/providers/probes.ts`）：`probeTavily` / `probeExa` / `probeAnySearch`，由 `probeProviderAuth(id, {apiKey, endpoint})` 分派。它们不 import 适配器、不改适配器的上游交互——一个 import 上去就分不清「适配器坏」还是「上游坏」了。
+- **`ans auth set` 存前验**：401/403（以及正文里明说 key 不认的）**不存**，退出码 1；429 / 5xx / 连不上 / 额度用尽只警告，key 照存。`--no-verify` 整段跳过，离线机器照旧能存。
+- **JSON 多了 `undetectable`**：哪家免费面验不到什么就写在那一行上（`["quota"]`），免得一个绿勾被读成「连额度都验过了」。
+
+### Changed
+
+- **AnySearch 的 auth 现在验得了。** `GET /health` 坏 key 也 200，所以 #416 判过「auth 验不了」；换成空参数 `tools/call` 就分得开：好 key 回 `isError` + `query is required`，坏 key 回 `isError` + `invalid_api_key`。`undetectable` 因此只剩 `quota`。
+- **AnySearch 顺手补一次 `tools/list`**：工具改名或入参换掉是真出过的事（r82 的 MCP 迁移），那一步不对就判失败，哪怕 key 是好的。
+- **默认那行不再冒充验过 key**：`信息源 <id>` 离线时仍报「可用」，但 detail 现在写着「auth 没验；--live 才打免费面」。
+- **模型三家不验**，`--live` 时 doctor 直说「没验：真调一次要花钱，/models 类接口也没实测」。
+- **`ans auth` 的输出走两个函数**（`stdout()` / `stderr()`），`AUTH_IO` 多了输出缝。测试不再挂 `process.stdout`——在 node --test 里挂全局流会让 reporter 串线，17 条只报出 7 条，后来加的用例结果直接消失。
+
+### Known limits
+
+- **匿名 / 免 key 那条路没验**：tavily、anysearch 没 key 也能查，本票只回答「配了 key 的那把好不好」。
+- **`/v1/search` → `/mcp` 的垫片规则在探针里抄了一份**：为三行规则去改适配器不值当（也不该让探针依赖适配器的内部实现），代价是这条规则两处维护。
+- **`providers/<id>/README.md` 的「最近一次真跑」没动**：那栏记的是真搜索，`--live` 只打免费面。
+- **模型没有免费面可打**：`/models` 类接口没实测，所以没做。
 ## Unreleased — #428: 协议版本收尾：raw 探针参数化，dsh-plugin 的死常量删掉
 
 一句话说清：**raw 探针以前把 `initialize` 的协议版本写死成 `2025-03-26`，比产品（`2025-11-25`）落后两个版本；现在它默认发产品的版本，旧版本靠 `--protocol-version` / `ANS_PROBE_PROTOCOL_VERSION` 还能测。`dsh-plugin` 里那个同名的 `MCP_DEFAULT_VERSION` 一直没人读，直接删掉——它不影响任何一次握手。**
@@ -259,7 +284,7 @@
 
 ### Added
 
-- **CLI 搜索按次记账**：`ans search` 的一次执行就是一个任务（`cli.search`），Active Domain 声明 `[budget]` 时额度记在这份任务预算上。没设 `ANS_DOMAIN` 时和 `ans chat`、`ans consolidate` 一样按 `default` 域读预算，不会因为历史的全量扇出把默认域的额度悄悄丢掉；默认域的 TOML 写坏（schema 错）时直接失败，不把“已声明但读不出来”当没声明。声明了预算却建不起来，请求发出去之前就停；额度拒绝时也停在发给搜索源之前，并说明是任务预算拦下的。
+- **CLI 搜索按次记账**：`ans search` 的一次执行就是一个任务（`cli.search`），Active Domain 声明 `[budget]` 时额度记在这份任务预算上。没设 `ANS_DOMAIN` 时和 `ans chat`、`ans consolidate` 一样按 `default` 域读预算，不会因为历史的全量扇出把默认域的额度悄悄丢掉；默认域的 TOML 写坏（schema 错）时直接失败，不把“已声明但读不出来”当没声明。声明了预算却建不起来，请求发出去之前就停；额度拒绝时也停在发给信息源之前，并说明是任务预算拦下的。
 - **MCP 的 `search_web` / `research_web` 也按次记账**：每次工具调用登记一个任务（`mcp.search_web` / `mcp.research_web`），`research_web` 的多轮检索共用同一份任务预算，不会每轮重新开账。回复里的 `structuredContent.closeout` 让调用方看得见这次是哪个任务、记录收没收尾。
 - **取消不再记成干净完成**：搜索和研究被调用方中断时，结果带 `structuredContent.interrupted: true`，任务以退出码 1 收尾。引擎在中断时返回已经拿到的部分而不是抛错，没有这个标记就会把被打断的调用记成正常完成。
 - **两个本地工具也登记任务**：`recall_memory` / `query_knowledge` 各自登记 `mcp.recall_memory` / `mcp.query_knowledge` 任务并带回 closeout。它们不产生模型花费，所以不写预算行；这个任务号是给 #307 的钩子后置工作（写索引、审计）挂父任务用的，等那张票合并后生效。

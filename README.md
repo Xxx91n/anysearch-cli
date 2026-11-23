@@ -25,6 +25,7 @@ A vertical-domain information specialist CLI: put search, research, memory, and 
 ```bash
 npm i -g @anysearch-cli/cli
 ans doctor                                          # layered self-check: install / capability / host / data, each line ready·unconfigured·unchecked·failed
+ans doctor --live                                   # same, plus one free-surface call per search source: does this key still work? (no search runs, no quota spent)
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # search inside the docs domain only
 

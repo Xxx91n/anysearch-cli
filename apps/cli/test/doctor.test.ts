@@ -201,9 +201,11 @@ test("ans doctor：信息源按各家没 key 时的真实行为写，provider �
       "ready",
       provider + " key in env is ready",
     );
+    // 来源那句话由 describeCredentialSource 说；后面那半句是 #442 加的，因为默认
+    // 模式不联网，一个「OK」不能让人以为 key 已经验过了。
     assert.equal(
       keyed.entries.find((entry) => entry.name === "信息源 " + provider)?.detail,
-      "key 来自环境变量",
+      "key 来自环境变量（auth 没验；--live 才打免费面）",
     );
     assert.equal(
       keyed.entries.find((entry) => entry.name === "provider " + provider)?.state,
