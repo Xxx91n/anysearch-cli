@@ -136,7 +136,7 @@ test("ans doctor：key 只在凭据文件里时，provider 不算失败", async 
   }
 });
 
-test("ans doctor：信息源按各家没 key 时的真实行为写，provider 行只验构造器（#441）", async () => {
+test("ans doctor：信息源按各家没配 key 时的真实行为写，provider 行只验构造器（#441 / #459）", async () => {
   const empty = await doctorInHome(
     {
       env: {
@@ -148,19 +148,19 @@ test("ans doctor：信息源按各家没 key 时的真实行为写，provider �
     },
     ["--json"],
   );
-  // 没 key 的三家行为不一样：tavily 照常 keyless、anysearch 照常匿名，
-  // 只有 exa 的适配器（REST + exa-js）不建臂。
+  // 没配 key 的三家行为不一样：tavily 和 anysearch 照常用免费额度跑（有上限，
+  // 所以仍报 unconfigured），只有 exa 的适配器（REST + exa-js）不建臂。
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 tavily")?.detail,
-    "无 key，按 keyless 跑",
+    "没配 key，用免费额度跑（有次数和速度上限）",
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 anysearch")?.detail,
-    "无 key，按匿名跑",
+    "没配 key，用免费额度跑（有次数和速度上限）",
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 exa")?.detail,
-    "无 key，这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
+    "没配 key，这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
   );
   for (const provider of ["tavily", "exa", "anysearch"]) {
     assert.equal(

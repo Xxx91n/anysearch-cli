@@ -60,8 +60,8 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 - pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
 - Searching needs at least one reachable provider (`ans recommend` only reads local domain configs and needs no key):
   - `EXA_API_KEY`: Exa, supports domain filtering; Exa needs a key.
-  - `TAVILY_API_KEY`: Tavily, supports domain filtering; Tavily also runs without a key by default.
-  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the anonymous tier works too, but cannot pre-filter by domain.
+  - `TAVILY_API_KEY`: Tavily, supports domain filtering; Tavily also runs on the free quota by default.
+  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the free quota works too, but cannot pre-filter by domain.
 
 ### Enter a key once: `ans auth set`
 

@@ -42,7 +42,7 @@ import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly
 import { probeDetail, probeState } from "../probe-report";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describeCredentialSource } from "./search-abstain";
+import { describeCredentialSource, describeUnconfiguredSource } from "./search-abstain";
 
 declare const __PACKAGE_VERSION__: string | undefined;
 const PKG_VERSION: string =
@@ -393,24 +393,26 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const provider of SEARCH_PROVIDER_IDS) {
       const entry = credentials[provider];
       if (!entry) {
-        // 没 key 不等于这个源没参与：tavily 和 anysearch 照常发请求，只有 exa 的适配器不建这个臂。
+        // 没配 key 不等于这个源没参与：tavily 和 anysearch 照常用免费额度发请求，
+        // 只有 exa 的适配器不建这个臂。仍报 unconfigured——免费额度不是稳定可用。
         report.add({
           layer: "capability",
           name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: describeCredentialSource("none", provider),
+          detail: describeUnconfiguredSource(provider),
         });
         continue;
       }
       // 只有 endpoint、没有 key 也算没配：install-smoke 把 arm 指到死端口时就是这种现场。
+      // 这里不套「用免费额度跑」——endpoint 已经不是厂商默认地址，那台有没有免费额度不归我们说了算。
       if (!entry.apiKey) {
         report.add({
           layer: "capability",
           name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "endpoint 设了；" + describeCredentialSource("none", provider),
+          detail: "endpoint 设了；没配 key",
         });
         continue;
       }
