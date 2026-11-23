@@ -54,7 +54,7 @@ import { rewriteQuery, classifyQdf } from "./query-rewrite";
 // applies the cap itself.
 import {
   isTimeSensitive, isEvergreen, renderSummaryBlock, removeExactBlocks, RECALL_INJECT_MAX_CHARS,
-  type LegacySummaryState,
+  type LegacySummaryState, type CompactionConfig,
 } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
@@ -522,12 +522,14 @@ export async function adjudicateReuseCompress(
 // PURE consolidateState function — zero I/O, zero side effects.
 // Returns decision + optional summaryRequest. Shell executes LLM + persistence.
 // options injectable; defaults 128000 / 3 preserve zero-behavior-change.
-export interface ConsolidateOpts {
-  /** Absolute token count OR {fraction} of the model context window (#113). */
-  lowWatermark?: number | { fraction: number };
+//
+// The threshold fields are picked from the domain's CompactionConfig rather than
+// restated (#493): one definition, so a retyped or renamed threshold breaks here
+// at compile time instead of drifting. `contextWindow` is not domain config — it
+// is the real model window the shell carries.
+export interface ConsolidateOpts extends Pick<CompactionConfig, "lowWatermark" | "reuseCap"> {
   /** Model context window (LlmSession.contextWindow, REAL value) used to resolve {fraction}. */
   contextWindow?: number;
-  reuseCap?: number;
 }
 
 // #113: absolute fallback when the model's context window is unknown (custom
