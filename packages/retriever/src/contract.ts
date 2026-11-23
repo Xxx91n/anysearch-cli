@@ -296,6 +296,9 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   // form too: a 403 that never says "HTTP 403" must not be guessed from the
   // body words.
   const statusOf = (code: string) => http(code) || new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + code + "\\b", "i").test(t);
+  // The same structured status for a whole family: a `status=500` in the text
+  // is a 5xx just as much as the words "HTTP 500" are.
+  const statusFamily = (lead: string) => new RegExp("\\bstatus(?:Code)?\\s*[:=]?\\s*" + lead + "\\d\\d\\b", "i").test(t);
   const is402 = statusOf("402") || /payment required/i.test(t);
   // A 402 is one of two things: the x402 payment challenge means no key was
   // sent, while the standard envelope means the key is valid but out of
@@ -309,14 +312,14 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   // quota), while a cap reply that also carries a 429/5xx must not be read as
   // an ordinary throttle.
   if (KEYLESS_CAP_RE.test(t) || PROVISIONING_REPLY_RE.test(t)) return "free-quota-exhausted";
-  if (/HTTP 5[0-9][0-9]/.test(t) || statusOf("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
+  if (/HTTP 5[0-9][0-9]/.test(t) || statusFamily("5") || statusOf("429") || /rate.?limit|too many requests/i.test(t) || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   // The key is valid but the plan is used up: rotating the key or retrying
   // does nothing, the owner must top up. Checked after the retryable shapes so
   // a 429/5xx that also says "usage limit" stays transient; a 402 without the
   // x402 marks is the keyed request's quota wall.
   if (is402 || QUOTA_EXHAUSTED_RE.test(t)) return "quota-exhausted";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
-  if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
+  if (/HTTP 4[0-9][0-9]/.test(t) || statusFamily("4")) return "permanent-protocol";
   return "unknown";
 }
 
@@ -324,17 +327,20 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
 // object (Tavily: capType, retryAfter) and String(err) drops them, so the
 // classifier would read half the shape. Appending them belongs here, at the
 // capture seam, not in the classifier — that stays a pure function of its text.
+// A numeric HTTP status an SDK kept on the error object, if it kept one.
+function errorStatus(err: unknown): number | undefined {
+  const structured = err as { statusCode?: unknown; status?: unknown } | null;
+  if (typeof structured?.statusCode === "number") return structured.statusCode;
+  return typeof structured?.status === "number" ? structured.status : undefined;
+}
+
 export function providerErrorText(err: unknown): string {
   const text = String(err);
-  const structured = err as { capType?: unknown; retryAfter?: unknown; statusCode?: unknown; status?: unknown } | null;
+  const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
   const bits: string[] = [];
   // exa-js and friends keep the status on the error object and rethrow only
   // the envelope text, so without this a 403 is guessed from its body words.
-  const status = typeof structured?.statusCode === "number"
-    ? structured.statusCode
-    : typeof structured?.status === "number"
-      ? structured.status
-      : undefined;
+  const status = errorStatus(err);
   if (status !== undefined) bits.push("status=" + status);
   if (typeof structured?.capType === "string" && structured.capType) bits.push("capType=" + structured.capType);
   if (typeof structured?.retryAfter === "number" && Number.isFinite(structured.retryAfter)) {

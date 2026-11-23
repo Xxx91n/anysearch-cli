@@ -56,6 +56,10 @@ const cases: Array<[string, string]> = [
   // body never says "HTTP 403", only the capture seam's status field does.
   ["ExaError: your API key was issued for a different project (status=403)", "permanent-auth"],
   ["Error: upstream refused the call (statusCode: 429)", "transient"],
+  // The structured status reaches the family fallbacks too, or a 5xx/4xx that
+  // never says "HTTP 500" would land in `unknown` and get no hint at all.
+  ["ExaError: upstream exploded (status=500)", "transient"],
+  ["ExaError: no such route (status=404)", "permanent-protocol"],
   // Exa's short-window 429 stays transient (#449): a throttle, not a used-up
   // allowance, and #455 deliberately left that classification alone.
   ["Error: Exa MCP tools/call JSON-RPC error -32000: rate limit exceeded (retry-after=1)", "transient"],

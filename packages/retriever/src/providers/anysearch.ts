@@ -184,8 +184,10 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
 
 // The reply scan above, with an explicit credential fault taking precedence:
 // a 403 body that happens to say a key was issued is a wrong key, not a quota.
-// With no shape guess at all the classifier keeps the decision, so a plain
-// invalid_api_key reply still reads as the generic isError it always was.
+// No shape guess returns undefined and leaves the call to the caller: the
+// isError path falls back to the classifier (a plain invalid_api_key reply
+// still reads as the generic isError it always was), while a reply that is
+// not a results envelope at all is malformed.
 function replyFailure(md: string): ReplyFailure | undefined {
   const guessed = replyFailurePrefix(md);
   if (!guessed) return undefined;
