@@ -323,10 +323,6 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   return "unknown";
 }
 
-// The text form the classifier sees. An SDK keeps structured bits on the Error
-// object (Tavily: capType, retryAfter) and String(err) drops them, so the
-// classifier would read half the shape. Appending them belongs here, at the
-// capture seam, not in the classifier — that stays a pure function of its text.
 // A numeric HTTP status an SDK kept on the error object, if it kept one.
 function errorStatus(err: unknown): number | undefined {
   const structured = err as { statusCode?: unknown; status?: unknown } | null;
@@ -334,12 +330,15 @@ function errorStatus(err: unknown): number | undefined {
   return typeof structured?.status === "number" ? structured.status : undefined;
 }
 
+// The text form the classifier sees. An SDK keeps structured bits on the Error
+// object (Tavily: capType, retryAfter; exa-js: statusCode) and String(err) drops
+// them, so the classifier would read half the shape — a 403 would be guessed
+// from its body words. Appending them belongs here, at the capture seam, not in
+// the classifier: that stays a pure function of its text.
 export function providerErrorText(err: unknown): string {
   const text = String(err);
   const structured = err as { capType?: unknown; retryAfter?: unknown } | null;
   const bits: string[] = [];
-  // exa-js and friends keep the status on the error object and rethrow only
-  // the envelope text, so without this a 403 is guessed from its body words.
   const status = errorStatus(err);
   if (status !== undefined) bits.push("status=" + status);
   if (typeof structured?.capType === "string" && structured.capType) bits.push("capType=" + structured.capType);
@@ -347,6 +346,16 @@ export function providerErrorText(err: unknown): string {
     bits.push("retry-after=" + structured.retryAfter);
   }
   return bits.length > 0 ? text + " (" + bits.join(", ") + ")" : text;
+}
+
+// Seconds per unit a retry-after can be written in. The unit-less form (the
+// header's own shape) is seconds. Checked longest-prefix first so "ms" never
+// reads as minutes.
+function unitSeconds(unit: string): number {
+  if (unit.startsWith("ms") || unit.startsWith("milli")) return 0.001;
+  if (unit.startsWith("h")) return 3600;
+  if (unit.startsWith("m")) return 60;
+  return 1;
 }
 
 // Seconds until the arm expects to allow another call, as the capture seam's
@@ -360,12 +369,7 @@ export function retryAfterSeconds(errText: string): number | null {
   const matches = [...String(errText).matchAll(/retry[ -]?after\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)?/gi)];
   const last = matches.pop();
   if (!last) return null;
-  const unit = (last[2] ?? "s").toLowerCase();
-  const scale = unit.startsWith("ms") || unit.startsWith("milli") ? 0.001
-    : unit.startsWith("m") ? 60
-      : unit.startsWith("h") ? 3600
-        : 1;
-  const seconds = Math.round(Number(last[1]) * scale);
+  const seconds = Math.round(Number(last[1]) * unitSeconds((last[2] ?? "s").toLowerCase()));
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
