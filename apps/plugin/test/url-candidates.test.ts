@@ -61,6 +61,17 @@ test("an explicit URL is a host however odd the hostname is", () => {
   assert.deepEqual(hosts("http://example.com../a"), ["example.com"]);
 });
 
+test("a double slash is not a scheme, so the host after it is still read", () => {
+  assert.deepEqual(hosts("查 //denied.com/x"), ["denied.com"]);
+});
+
+test("a URL the parser rejects keeps its host", () => {
+  // Bad port and stray characters make `new URL()` throw; the authority is still
+  // a host the policy has to see.
+  assert.deepEqual(hosts("http://denied.com:999999/x"), ["denied.com"]);
+  assert.deepEqual(hosts("https://denied.com/%zz"), ["denied.com"]);
+});
+
 test("a non-http scheme does not smuggle its host in through the bare pass", () => {
   assert.deepEqual(hosts("ftp://example.com/a"), []);
   assert.deepEqual(hosts("mailto:example.com"), []);
@@ -75,6 +86,7 @@ test("a bare unicode domain is deliberately not handled", () => {
 test("file names, versions, IPs, emails, localhost and placeholders are not hosts", () => {
   for (const text of [
     "main.py", "README.md", "config.toml", "src/main.py",
+    "main.tf", "model.ml", "app.pm", "deploy.ps", "Makefile.mk", "schema.tf",
     "v1.2", "1.2.3", "1.2.3.4", "1.2.3.4:8080",
     "foo@bar.com", "user:pass@example.com",
     "localhost", "localhost:3000",

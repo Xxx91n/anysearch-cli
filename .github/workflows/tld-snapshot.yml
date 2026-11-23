@@ -1,0 +1,34 @@
+# Weekly TLD snapshot freshness check.
+#
+# The URL gate reads bare domains only when their last label is in the committed
+# IANA snapshot. A stale snapshot silently narrows that gate: a newly delegated
+# TLD stops being recognised as a host, so text naming it slips past allow/deny.
+# Nothing else notices, which is why this runs on a clock.
+#
+# Scheduled only — it never runs on a PR, so an IANA update cannot turn an
+# unrelated pull request red.
+name: tld-snapshot
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Monday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: iana-snapshot-freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: compare the committed snapshot with IANA
+        run: node apps/plugin/scripts/gen-tlds.mjs --check

@@ -1,18 +1,13 @@
-// Which strings in a tool input are URLs, and which hosts they point at.
+// Hosts named in text that a tool would send off this machine.
 //
-// Design: read hosts out of the fields that leave the machine, and leave the
-// input alone — the gate only needs to know which hosts are being talked to, so
-// nothing here rewrites what the model sent.
-//
-// The hard part is telling a domain from a file name. `.py`, `.md`, `.cc` and
-// `.so` are real TLDs, so a plain "looks like a domain" test turns `main.py` and
-// `README.md` into hosts. The rule below therefore asks for three things at once:
-// labels that are structurally valid, a last label that exists in the committed
-// IANA snapshot, and — when nothing else marks the text as a URL — a last label
-// that is not a common file extension or a code placeholder. A path, a port or a
-// `www.` prefix is that "something else": `main.py/a` is a URL, `main.py` is not.
-// Explicit `http(s)://` URLs get none of that scrutiny: whatever `new URL()` can
-// parse is a host the policy already judged before this module existed.
+// Design: detect only — the policy needs the host set, not a rewritten input, so
+// nothing here edits what the model sent. A bare domain is read as a host when
+// all three hold: the labels are structurally valid, the last label is in the
+// committed IANA snapshot, and — when no path, port or `www.` marks it as a URL —
+// it is not a file extension or a code placeholder. That third gate exists
+// because `.py`, `.md`, `.cc` and `.so` are real TLDs, so `main.py` and
+// `README.md` would otherwise be hosts. Explicit `http(s)://` URLs take none of
+// that scrutiny: whatever `new URL()` produced was already judged by the policy.
 
 import { TLD_SNAPSHOT } from "./tlds.generated.js";
 
@@ -23,8 +18,11 @@ export interface UrlCandidate {
   raw: string;
 }
 
+// TLDs that are also common file extensions or code placeholders. `toml` is not
+// a TLD at all, so it never reaches this gate — the snapshot check rejects it first.
 const FILE_EXT_TLDS: Record<string, true> = {
-  py: true, md: true, sh: true, pl: true, rs: true, so: true, cc: true, zip: true, mov: true, toml: true,
+  cc: true, md: true, mk: true, ml: true, mov: true, pm: true, pl: true, ps: true, py: true,
+  rs: true, sh: true, so: true, tf: true, zip: true,
 };
 const PLACEHOLDER_TLDS: Record<string, true> = { bar: true, foo: true };
 
@@ -89,7 +87,9 @@ function bareHost(candidate: string): UrlCandidate | null {
   return { host, raw };
 }
 
-/** Hosts mentioned in one piece of text, in order, one entry per host. */
+/** Hosts mentioned in one piece of text, one entry per host. Explicit URLs are read
+ *  first, then bare domains; the first host the policy refuses is the one the
+ *  reason names. */
 export function hostCandidates(text: string): UrlCandidate[] {
   const seen = new Set<string>();
   const out: UrlCandidate[] = [];
@@ -100,13 +100,23 @@ export function hostCandidates(text: string): UrlCandidate[] {
   };
   const schemeRanges: Array<[number, number]> = [];
   for (const match of text.matchAll(SCHEME_URL)) {
-    schemeRanges.push([match.index, match.index + match[0].length]);
     const raw = trimPunctuation(match[0]);
-    let parsed: URL;
-    try { parsed = new URL(raw); } catch { continue; }
-    const host = normalizeHost(parsed.hostname);
-    // `new URL("https://../")` parses with a hostname of `..`, which is not a host.
-    add(host.length > 0 && host !== "." ? { host, raw } : null);
+    let candidate: UrlCandidate | null = null;
+    try {
+      const host = normalizeHost(new URL(raw).hostname);
+      // `new URL("https://../")` parses with a hostname of `..`, which is not a host.
+      if (host.length > 0 && host !== ".") candidate = { host, raw };
+    } catch {
+      // A URL the parser rejects (bad port, stray characters) still names a host.
+      // Read the authority straight out of the text so it is judged, not dropped.
+      const authority = /^https?:\/\/([^/?#\s]+)/i.exec(raw)?.[1] ?? "";
+      const host = normalizeHost(authority.replace(/^[^@]*@/, "").replace(/:\d+$/, ""));
+      if (host.length > 0) candidate = { host, raw };
+    }
+    add(candidate);
+    // Only a range that produced a host counts as covered; a failed parse must not
+    // hide the text from the bare pass as well.
+    if (candidate) schemeRanges.push([match.index, match.index + match[0].length]);
   }
   for (const match of text.matchAll(BARE_DOMAIN)) {
     const start = match.index;
@@ -114,8 +124,9 @@ export function hostCandidates(text: string): UrlCandidate[] {
     if (schemeRanges.some(([from, to]) => start < to && end > from)) continue;
     // `ftp://example.com`, `mailto:example.com` and friends are out of scope: the
     // gate is about http(s) hosts, so the bare pass must not pick their host up
-    // either. A scheme or a `//` right before the match is what says so.
-    if (/(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/)$/.test(text.slice(0, start))) continue;
+    // either. Only a real scheme counts — a bare `//` does not, or `//denied.example/x`
+    // would slip through both passes.
+    if (/[A-Za-z][A-Za-z0-9+.-]*:(?:\/\/)?$/.test(text.slice(0, start))) continue;
     add(bareHost(match[0]));
   }
   return out;

@@ -14,12 +14,18 @@ import { fileURLToPath } from "node:url";
 const SOURCE = "https://data.iana.org/TLD/tlds-alpha-by-domain.txt";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "hooks", "tlds.generated.ts");
 
-const res = await fetch(SOURCE);
-if (!res.ok) {
-  console.error("gen-tlds: " + SOURCE + " returned HTTP " + res.status);
+let text;
+try {
+  const res = await fetch(SOURCE, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) {
+    console.error("gen-tlds: " + SOURCE + " returned HTTP " + res.status);
+    process.exit(2);
+  }
+  text = await res.text();
+} catch (e) {
+  console.error("gen-tlds: could not fetch the IANA list — " + (e instanceof Error ? e.message : String(e)));
   process.exit(2);
 }
-const text = await res.text();
 
 const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
 const header = lines[0] ?? "";

@@ -170,8 +170,9 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   const projectRoot = project.root;
   const projectReason = project.reason ?? "no Git root or .ans/config.toml";
 
-  // +: any URL in the tool input is gated against the resolved
-  // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.
+  // +: every host written in the fields that leave the machine is gated against
+  // the resolved policy (url-candidates.ts decides which fields and what counts
+  // as a host). D4 fail-closed: no cache AND server unreachable -> ask for every URL.
   // D2: deny is a first-class channel evaluated last; it overrides any allow match.
   // #306: "提示后使用" — when a cached policy is what answered, the decision is
   // allowed to stand, but the user is told it rests on a snapshot. On the allow
@@ -210,25 +211,26 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
         cachedPolicyNote = "[anysearch] 这次判断网址规则用的是旧缓存（" +
           (policy.materialized_at ?? "更早") + " 写下的，服务没连上），不是当前项目的实时规则。";
       }
-      for (const { host, raw } of candidates) {
-        if (policy === null) {
-          return {
-            permission: "ask",
-            permissionReason: "URL policy unavailable (server unreachable, no cache) — asking for: " + raw,
-          };
-        }
-        const denied = policy.deny.some((h) => host === h || host.endsWith("." + h));
-        if (denied) {
-          return { permission: "deny", permissionReason: "URL host on denylist: " + raw + cacheNote };
-        }
-        const allowed = policy.allow.some((h) => host === h || host.endsWith("." + h));
-        if (!allowed) {
-          return {
-            permission: "ask",
-            permissionReason: "URL not on allowlist: " + raw +
-              " (persistent allow: ans hitl review --allow-url " + host + ")" + cacheNote,
-          };
-        }
+      if (policy === null) {
+        return {
+          permission: "ask",
+          permissionReason: "URL policy unavailable (server unreachable, no cache) — asking for: " + candidates[0].raw,
+        };
+      }
+      // Deny is decided over every host before any ask: one query can name several
+      // hosts, and asking about the first non-allowlisted one would let the others
+      // — including a denied one — ride along once the user says yes.
+      const denied = candidates.find(({ host }) => policy.deny.some((h) => host === h || host.endsWith("." + h)));
+      if (denied) {
+        return { permission: "deny", permissionReason: "URL host on denylist: " + denied.raw + cacheNote };
+      }
+      const notAllowed = candidates.find(({ host }) => !policy.allow.some((h) => host === h || host.endsWith("." + h)));
+      if (notAllowed) {
+        return {
+          permission: "ask",
+          permissionReason: "URL not on allowlist: " + notAllowed.raw +
+            " (persistent allow: ans hitl review --allow-url " + notAllowed.host + ")" + cacheNote,
+        };
       }
     }
   }

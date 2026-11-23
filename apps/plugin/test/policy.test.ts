@@ -130,6 +130,13 @@ async function main() {
   assert("bare unknown host -> ask", (await makePreToolUseDecision(input("other.com/x"))).permission === "ask");
   assert("bare reserved-TLD host -> not a host at all", (await makePreToolUseDecision(input("denied.example/x"))).permission === undefined);
 
+  // 3c. #470: one query can name several hosts. A denied host must win over an
+  // ask about an earlier non-allowlisted one, or saying yes would carry it along.
+  assert(
+    "multi-host: deny beats an ask that comes earlier",
+    (await makePreToolUseDecision(input("other.com/a and denied.com/b"))).permission === "deny",
+  );
+
   // 4. tampered cache: content replaced but self-declared version kept -> rejected
   writeCache(envelope({ allow: [], deny: [], policy_version: goodPolicy.policy_version }));
   const p4 = await readPolicy(DEAD, "", dir);
