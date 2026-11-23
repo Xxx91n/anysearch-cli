@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { probeAnySearch, probeExa, probeTavily } from "../src/providers/probes";
+import { isProbeProviderId, probeAnySearch, probeExa, probeTavily } from "../src/providers/probes";
 
 interface Recorded {
   method: string;
@@ -325,4 +325,40 @@ test("三家一起跑：一次真搜索都不发（钉子）", async () => {
       }
     },
   );
+});
+
+test("tavily：5xx 正文里带 unauthorized 也不算 key 被拒", async () => {
+  // 网关和 CDN 的错误页里带一句 unauthorized 很常见，那时候 key 是好的。
+  await serve(
+    (_request, res) => json(res, 502, { error: "unauthorized: upstream gateway" }),
+    async (base) => {
+      const outcome = await probeTavily({ apiKey: "tvly-good", endpoint: base + "/tavily" });
+      assert.equal(outcome.auth, "unverified", "5xx 不能判成 key 坏了");
+      assert.equal(outcome.problem?.class, "transient");
+    },
+  );
+});
+
+test("探针：回了响应头再断在半路，算连不上，不把异常抛出去", async () => {
+  // 10 秒超时管的是整条请求，不止等响应头：服务器先回 200 再卡住不回正文、
+  // 或者读到一半断，异常必须在探针里变成结论，不能一路抛到 doctor / auth set。
+  await serve(
+    (_request, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"account":');
+      res.destroy();
+    },
+    async (base) => {
+      const outcome = await probeTavily({ apiKey: "tvly-good", endpoint: base + "/tavily" });
+      assert.equal(outcome.auth, "unverified");
+      assert.equal(outcome.problem?.class, "unreachable");
+    },
+  );
+});
+
+test("isProbeProviderId：没登记的 provider 不猜", async () => {
+  assert.equal(isProbeProviderId("tavily"), true);
+  assert.equal(isProbeProviderId("exa"), true);
+  assert.equal(isProbeProviderId("anysearch"), true);
+  assert.equal(isProbeProviderId("google"), false);
 });

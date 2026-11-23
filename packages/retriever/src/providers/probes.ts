@@ -1,29 +1,23 @@
 // 免费面探针：一次不花钱的调用，只回答「这把 key 好不好」和路上看到的事实。
 //
-// 三条纪律（#416 / #417 / #442 定的）：
-//  1. 只打免费面，一次真搜索都不跑 —— 不花额度是硬约束；
-//  2. 不改适配器的上游交互：探针是各自独立的最小实现，适配器一个字不动；
-//  3. 错误类沿用 classifyProviderError 那套词，诊断不新造枚举。
-//
-// 三家的免费面（2026-11-23 实测，见 docs/research/real-baseline-*.md）：
-//  tavily     GET /usage              好 key 200 + 用量；坏 key 401；套餐满 432
-//  exa        POST /search 空体 {}     好 key 400 INVALID_REQUEST_BODY；坏 key 401
+// 一家的免费面只有一条，回包形状是实测出来的（2026-11-23，真上游）：
+//  tavily     GET /usage             好 key 200 + 用量；坏 key 401；套餐满 432
+//  exa        POST /search 空体 {}    好 key 400 INVALID_REQUEST_BODY；坏 key 401
 //  anysearch  initialize + tools/list + 空参数 tools/call
-//                                     好 key isError「query is required」；坏 key invalid_api_key
+//                                    好 key isError「query is required」；坏 key invalid_api_key
 //
-// 一家一条免费面，所以 quota 只有 Tavily 验得了：它家真有单独的用量接口（#33 / #34）。
+// 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
+// 探针是各自独立的最小实现，不 import 适配器 —— 那样就分不清「适配器坏」还是「上游坏」。
+// 一家一条免费面，所以 quota 只有 Tavily 验得了（它家真有单独的用量接口）。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 
-/** 一次探针请求多久算超时。一轮 doctor 最多三家，别让一家挂死拖住整轮。 */
-export const PROBE_TIMEOUT_MS = 10_000;
+/** 一次探针请求多久算超时。服务器回了响应头再卡住，也在这一条时限里。 */
+const PROBE_TIMEOUT_MS = 10_000;
 
 export type ProbeProviderId = "tavily" | "exa" | "anysearch";
 
-/**
- * 免费面天生验不到的错误类。auth 不在里面 —— 三家现在都能从免费面认出坏
- * key（anysearch 用空参数 tools/call，坏 key 回 invalid_api_key，#442）。
- */
+/** 免费面天生验不到的错误类：三家都认得出坏 key，只有 Tavily 看得出额度。 */
 export type UndetectableClass = "auth" | "quota";
 
 /** key 的三种结论。unverified 必须说出来，不然绿勾会被读成「验过了」。 */
@@ -40,7 +34,7 @@ export interface ProbeProblem {
   code?: string;
 }
 
-/** 一次探针的结论。喂给 doctor 渲染成一行，喂给 ans auth set 决定存不存。 */
+/** 一次探针的结论。doctor 渲染成一行，ans auth set 拿它决定存不存。 */
 export interface ProbeOutcome {
   auth: ProbeAuth;
   /** 这家免费面验不到什么，跟着结论一起报。 */
@@ -56,29 +50,36 @@ export interface ProbeInput {
   endpoint?: string;
 }
 
-/**
- * 上游文字里明说这把 key 不认的标记。Exa 的坏 key 是「Invalid API key」（带空格），
- * AnySearch 是「invalid_api_key」；Tavily 用 401 状态说话。
- */
-export const AUTH_REJECTED_TEXT = /invalid[_ ]?api[_ ]?key|unauthorized|invalid token|api key is invalid/i;
+/** 上游文字里明说这把 key 不认的标记。Exa 是「Invalid API key」，AnySearch 是「invalid_api_key」。 */
+const AUTH_REJECTED_TEXT = /invalid[_ ]?api[_ ]?key|unauthorized|invalid token|api key is invalid/i;
 
 /** 一次探针请求，带超时。网络层失败直接抛，由调用方翻成 unreachable。 */
 async function probeFetch(url: string, init: RequestInit): Promise<Response> {
   return fetch(url, { ...init, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
 }
 
-/** 只有 401 / 403（或上游文字明说 key 不认）才敢说 key 被拒，其余交给产品的分类器。 */
-export function httpOutcome(
+/**
+ * 只有 401 / 403，或者 4xx 正文里明说 key 不认，才敢说 key 被拒。
+ *
+ * 5xx 一律交给 classifyProviderError 归 transient：网关和 CDN 的错误页里带一句
+ * unauthorized 很常见，那时候 key 是好的 —— 判成 rejected 会让 ans auth set 拒存一把好 key。
+ */
+function httpOutcome(
   status: number,
   bodyText: string,
   undetectable: readonly UndetectableClass[],
 ): ProbeOutcome {
-  if (status === 401 || status === 403 || AUTH_REJECTED_TEXT.test(bodyText)) {
+  const authSaid = status < 500 && AUTH_REJECTED_TEXT.test(bodyText);
+  if (status === 401 || status === 403 || authSaid) {
     return { auth: "rejected", undetectable, problem: { class: "permanent-auth", status } };
   }
   // 免费面上这条请求本来就不该成功：2xx 说明回包形状变了，不是 key 的事。
   if (status >= 200 && status < 300) {
     return { auth: "unverified", undetectable, problem: { class: "permanent-protocol", status } };
+  }
+  // 5xx 就是上游坏了，跟 key 无关，不用再看正文 —— 错误页里出现什么词都不改变这一点。
+  if (status >= 500) {
+    return { auth: "unverified", undetectable, problem: { class: "transient", status } };
   }
   return {
     auth: "unverified",
@@ -87,8 +88,8 @@ export function httpOutcome(
   };
 }
 
-/** 连不上：DNS、拒绝连接、超时。原始报错不打（Node 的头部报错会带 key 的值）。 */
-export function networkOutcome(error: unknown, undetectable: readonly UndetectableClass[]): ProbeOutcome {
+/** 连不上：DNS、拒绝连接、超时、读到一半断。原始报错不打（Node 的头部报错会带 key 的值）。 */
+function networkOutcome(error: unknown, undetectable: readonly UndetectableClass[]): ProbeOutcome {
   const code = networkCode(error);
   return {
     auth: "unverified",
@@ -113,18 +114,20 @@ const TAVILY_UNDETECTABLE: readonly UndetectableClass[] = [];
 export async function probeTavily(input: ProbeInput): Promise<ProbeOutcome> {
   const base = (input.endpoint ?? TAVILY_ENDPOINT).replace(/\/+$/, "");
   let resp: Response;
+  let body: string;
   try {
     resp = await probeFetch(base + "/usage", {
       method: "GET",
       headers: { Authorization: "Bearer " + input.apiKey },
     });
+    // 读正文也在 try 里：超时管的是整条请求，服务器回了头再卡住就是在这里断的。
+    body = await resp.text();
   } catch (error) {
     return networkOutcome(error, TAVILY_UNDETECTABLE);
   }
-  const body = await resp.text();
   if (resp.status === 432) {
-    // @tavily/core 把套餐用尽的回包按纯文本 HTTP 432 抛出来（#294）。状态落在 4xx 里，
-    // 但意思不是「请求写错了」，是「额度没了」—— key 本身是好的。
+    // 套餐用尽的回包是纯文本 HTTP 432。状态落在 4xx 里，但意思不是「请求写错了」，
+    // 是「额度没了」—— key 本身是好的。
     return { auth: "ok", undetectable: TAVILY_UNDETECTABLE, problem: { class: "quota-exhausted", status: 432 } };
   }
   if (!resp.ok) return httpOutcome(resp.status, body, TAVILY_UNDETECTABLE);
@@ -164,23 +167,24 @@ function parseTavilyUsage(body: string): ProbeOutcome["usage"] | null {
 
 // ── Exa：POST /search 空体 ────────────────────────────────────────────
 // 空体在认证之后被拒（缺 query），所以 400 是正面回答。坏 key 到不了这里：
-// 带坏 key 是 401 INVALID_API_KEY，完全不带 key 是 402（#442 实测）。
+// 带坏 key 是 401 INVALID_API_KEY，完全不带 key 是 402。
 const EXA_ENDPOINT = "https://api.exa.ai";
 const EXA_UNDETECTABLE: readonly UndetectableClass[] = ["quota"];
 
 export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
   const base = (input.endpoint ?? EXA_ENDPOINT).replace(/\/+$/, "");
   let resp: Response;
+  let body: string;
   try {
     resp = await probeFetch(base + "/search", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": input.apiKey },
       body: "{}",
     });
+    body = await resp.text();
   } catch (error) {
     return networkOutcome(error, EXA_UNDETECTABLE);
   }
-  const body = await resp.text();
   if (resp.status === 400 && !AUTH_REJECTED_TEXT.test(body)) {
     return { auth: "ok", undetectable: EXA_UNDETECTABLE };
   }
@@ -188,13 +192,10 @@ export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
 }
 
 // ── AnySearch：initialize + tools/list + 空参数 tools/call ────────────
-// 空参数 tools/call 是 #442 换来的 auth 验法：坏 key 回 isError「invalid_api_key」，
-// 好 key 回 isError「query is required」。顺手补一次 tools/list：这只工具改名或改入参
-// 是真出过的事（r82 的 MCP 迁移），比只看 auth 多一层。
-
-// 与适配器的 ANYSEARCH_ENDPOINT / MCP_PROTOCOL_VERSION 同值。探针不 import 适配器：
-// 一个 import 上去就跟着它的内部实现走，还怎么分得清「适配器坏」和「上游坏」（#417）。
+// 空参数 tools/call 才分得开 key：好 key 回 isError「query is required」，坏 key 回
+// isError「invalid_api_key」。顺手补一次 tools/list：这只工具改名或改入参是真出过的事。
 const ANYSEARCH_DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
+// 与适配器发的版本一致；客户端支持的那个版本由我们决定，不跟服务端协商。
 const ANYSEARCH_PROTOCOL_VERSION = "2025-11-25";
 const ANYSEARCH_UNDETECTABLE: readonly UndetectableClass[] = ["quota"];
 const LEGACY_REST_SUFFIX = "/v1/search";
@@ -202,7 +203,6 @@ const LEGACY_REST_SUFFIX = "/v1/search";
 /**
  * 适配器的 normalizeEndpoint 把 `/v1/search` 尾巴改写成 `/mcp`（env 兼容垫片）。
  * 探针问的必须是适配器真会问的那个地址，否则一个老 env 值就能让 --live 报假红。
- * 这条规则刻意不 import 适配器：为了三行规则去改它，违反「适配器一个字不动」。
  */
 function normalizeAnySearchEndpoint(raw: string): string {
   const trimmed = raw.replace(/\/+$/, "");
@@ -249,19 +249,19 @@ export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
       params: {
         protocolVersion: ANYSEARCH_PROTOCOL_VERSION,
         capabilities: {},
+        // 跟适配器发的 clientInfo 一致（那边也是写死的 0.2.0）：探针要量的就是产品那条路。
         clientInfo: { name: "anysearch-cli-doctor", version: "0.2.0" },
       },
     }), 1, undetectable);
     const protocolVersion = typeof handshake.protocolVersion === "string" ? handshake.protocolVersion : undefined;
 
-    // 特性通知，产品也发；回 202 空体是正常的。发不出去就走下一步，
-    // 真正的判据在后两步 —— 这一步失败不该让整条探针变红。
+    // 特性通知，产品也发；回 202 空体是正常的。这一步失败不该让整条探针变红，
+    // 真正的判据在后两步。
     await post({ jsonrpc: "2.0", method: "notifications/initialized" }).catch(() => undefined);
 
     const listed = await readRpcReply(await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }), 2, undetectable);
     const tools = readTools(listed, protocolVersion);
-    // 工具改名 / 入参改是真出过的事（r82 的 MCP 迁移）：auth 好着也照样算失败，
-    // 不然一个绿勾会盖住「入口已经不在这儿了」。
+    // 工具改名或入参换掉，auth 好着也照样算失败：入口已经不在这儿了。
     if (!tools.searchTool || !tools.queryArg) {
       return { auth: "ok", undetectable, tools, problem: { class: "permanent-protocol" } };
     }
@@ -352,7 +352,7 @@ function readTools(
 ): NonNullable<ProbeOutcome["tools"]> {
   const list = Array.isArray(result.tools) ? (result.tools as Array<Record<string, unknown>>) : [];
   const search = list.find((tool) => tool?.name === "search");
-  const schema = search?.inputSchema as { properties?: Record<string, unknown>; required?: unknown } | undefined;
+  const schema = search?.inputSchema as { properties?: Record<string, unknown> } | undefined;
   const queryArg = Boolean(schema?.properties && "query" in schema.properties);
   return {
     count: list.length,
@@ -373,7 +373,12 @@ const PROBES: Record<ProbeProviderId, (input: ProbeInput) => Promise<ProbeOutcom
   anysearch: probeAnySearch,
 };
 
-/** 按 provider id 取那一条免费面探针。 */
+/** 这家有没有免费面探针。没登记的 provider 不猜，让调用方说清楚「还没接」。 */
+export function isProbeProviderId(id: string): id is ProbeProviderId {
+  return Object.prototype.hasOwnProperty.call(PROBES, id);
+}
+
+/** 按 provider id 取那一条免费面探针。id 必须先过 isProbeProviderId。 */
 export function probeProviderAuth(provider: ProbeProviderId, input: ProbeInput): Promise<ProbeOutcome> {
   return PROBES[provider](input);
 }
