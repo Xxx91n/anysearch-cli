@@ -43,6 +43,12 @@ jobs:
       - name: Workflow checker tests
         if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: node --test scripts/test/check-workflows.test.mjs
+      - name: Skill spec check — every SKILL.md, same rules as ans skill install (#387)
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
+        run: node scripts/check-skills.mjs
+      - name: Skill spec check tests
+        if: ${{ steps.setup.outputs.run-check-build != 'false' }}
+        run: node --test scripts/test/check-skills.test.mjs
       - if: ${{ steps.setup.outputs.run-check-build != 'false' }}
         run: pnpm -w turbo check
       - name: "Test — all packages (node:test discovery, full truth)"

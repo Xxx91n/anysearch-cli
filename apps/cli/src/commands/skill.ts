@@ -16,7 +16,7 @@ const HELP = `Usage: ans skill <command> [options]
 
 Commands:
   install <source>   Copy a directory containing SKILL.md from a local Git checkout
-  validate [name]    Validate installed SKILL.md frontmatter (all, or one skill)
+  validate [name]    Check installed SKILL.md against the Agent Skills spec (all, or one skill)
   list               List skills recorded in installed.json
   uninstall <name>   Remove only the directory recorded in installed.json
 
@@ -26,7 +26,11 @@ Options:
   --help, -h         Show this help
 
 The source's current Git HEAD is recorded; checkout a commit/tag before installing.
-Frontmatter must be a YAML mapping with a safe lowercase name (1–64 characters).
+A SKILL.md passes (agentskills.io/specification) when its frontmatter is a YAML mapping,
+name is 1–64 lowercase letters/digits with single hyphens, description is 1–1024
+characters and says when to use the skill, and the body stays under 500 lines.
+validate also wants name to equal the directory it lives in; install accepts any
+source folder name (a cloned repo usually has one) and installs under frontmatter name.
 Managed skills live in ${MANAGED_SKILLS_REL_PATH}; sibling directories under skills/ are user-authored.
 install copies the whole skill directory into ${MANAGED_SKILLS_REL_PATH}; the runtime never loads it (a host agent reads the files directly).
 [skills].active is just a list of keys for [skills.toolRequires], unrelated to directories in ${MANAGED_SKILLS_REL_PATH}.
@@ -88,7 +92,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
         const results = validateInstalledSkills(scopeOpts, selected);
         if (results.length === 0) out("No installed skills to validate.\n");
         for (const result of results) {
-          out(result.ok ? `[OK] ${result.name}: SKILL.md frontmatter\n` : `[FAIL] ${result.name}: ${result.error}\n`);
+          out(result.ok ? `[OK] ${result.name}: SKILL.md matches the Agent Skills spec\n` : `[FAIL] ${result.name}: ${result.error}\n`);
         }
         return results.every((result) => result.ok) ? 0 : 1;
       }

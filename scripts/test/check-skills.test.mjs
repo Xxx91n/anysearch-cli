@@ -1,0 +1,101 @@
+// scripts/check-skills.mjs (#387): the repo-wide Agent Skills spec check.
+//
+// The three cases the ticket asks to see go red — uppercase name, empty
+// description, a body past 500 lines — plus the green path and the discovery
+// mode that CI runs.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const CLI = fileURLToPath(new URL("../check-skills.mjs", import.meta.url));
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+/** Run the checker the way CI does: one plain node process, no build first. */
+function check(args = [], { cwd = ROOT } = {}) {
+  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", timeout: 120_000 });
+  return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** Write one skill directory under a throwaway root and return its path. */
+function skill(root, folder, frontmatter, body = "body\n") {
+  const dir = path.join(root, folder);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "SKILL.md"), `---\n${frontmatter}\n---\n${body}`);
+  return dir;
+}
+
+function withRoot(t) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "check-skills-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+test("a skill that follows the spec passes and is named in the output", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "demo", "name: demo\ndescription: Use when a test needs a demo skill.");
+  const result = check([dir]);
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[OK\] .*demo[/\\]SKILL\.md/);
+  assert.match(result.stdout, /1 SKILL\.md checked, 0 failed/);
+});
+
+test("an uppercase name goes red and names the field, the rule and the file", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "Upper", "name: Upper\ndescription: Use when a test needs an uppercase name.");
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[FAIL\] .*Upper[/\\]SKILL\.md/);
+  assert.match(result.stdout, /SKILL\.md name "Upper" must be 1–64 lowercase/);
+  assert.match(result.stdout, /1 SKILL\.md checked, 1 failed/);
+});
+
+test("an empty description goes red", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "nodesc", 'name: nodesc\ndescription: ""');
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /description must be 1–1024 characters, got 0/);
+});
+
+test("a body past 500 lines goes red and reports the count", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "longbody", "name: longbody\ndescription: Use when a test needs a long body.", "line\n".repeat(501));
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /body must stay under 500 lines, got 501/);
+});
+
+test("a name that differs from its directory goes red", (t) => {
+  const root = withRoot(t);
+  const dir = skill(root, "foldername", "name: skilename\ndescription: Use when a test needs a mismatch.");
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /name must equal the directory it lives in/);
+});
+
+test("a skill directory with no SKILL.md goes red", (t) => {
+  const root = withRoot(t);
+  mkdirSync(path.join(root, "empty"), { recursive: true });
+  const result = check([path.join(root, "empty")]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /\[FAIL\]/);
+  assert.match(result.stdout, /SKILL\.md must be a regular, non-symlink file/);
+});
+
+test("no arguments checks every SKILL.md Git tracks, and the shipped one passes", () => {
+  const result = check();
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /apps\/plugin\/skills\/ans\/SKILL\.md/);
+  assert.match(result.stdout, /([1-9]\d*) SKILL\.md checked, 0 failed/);
+});
+
+test("a path that does not exist is a usage error, not a failing skill", (t) => {
+  const root = withRoot(t);
+  const result = check([path.join(root, "nowhere")]);
+  assert.equal(result.code, 2, result.stdout + result.stderr);
+  assert.match(result.stderr, /no such file or directory/);
+});

@@ -1,3 +1,21 @@
+## Unreleased — #387: skill 规范检查进 CI，规则和 `ans skill` 共用一份
+
+一句话说清：**agentskills.io 那套规范以前靠人肉对表，现在 `node scripts/check-skills.mjs` 一条命令查全仓的 `SKILL.md`，`check-build` 里也跑它；规则没有第二份，`ans skill install` / `ans skill validate` 走的就是它导入的那段代码。**
+
+### Added
+
+- **`scripts/check-skills.mjs`**：默认用 `git ls-files` 找出所有 `SKILL.md` 逐个查（构建产物和 `node_modules` 里的副本不算），也可以直接指定目录或文件。每条结果带文件、字段和期望，例如 `description must be 1–1024 characters, got 0`，不是只说「不合法」。分成 `[OK]` / `[FAIL]` 打印，有红的退出码 1。
+- **`check-build` 多了两步**：跑这个检查，再跑它自己的测试（大写名字、清空 `description`、正文 500 行，三种改坏都会红）。
+
+### Changed
+
+- **`validateSkillFile` 的检查范围扩到整套规范**：以前只管 frontmatter 是不是 mapping、`name` 合不合规；现在还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。`ans skill validate` 输出的 `[OK] … SKILL.md frontmatter` 改成 `[OK] … SKILL.md matches the Agent Skills spec`。
+- **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
+
+### Known limits
+
+- **「说了什么时候用」只能查字面**：要求 `description` 里出现 `when`（比如 `Use when the user …`）。写得烂但带 `when` 的句子照样过；这条挡的是漏写，不是写得不好。
+
 ## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
 
 一句话说清：**anysearch 的两条探针和 tavily 那条以前各读各的环境变量，key 只存在 `~/.ans/credentials.json` 的人跑探针会静默变成不带 key 的调用（#422）。现在三条都走 store 的 `resolveSearchCredentials`：环境变量优先、再读凭据文件，输出用 `keySource: env | user | none` 说来源，key 只在文件里时也带 `Authorization`，key 和 endpoint 的值一个都不打印。**

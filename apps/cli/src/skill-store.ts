@@ -161,10 +161,13 @@ export const skillRenameIO = renameSeam;
 // Design: names are single path segments on every supported OS — the Agent Skills
 // naming rule also excludes traversal, absolute paths, Windows device names and separators.
 /** Assert a safe Agent Skill name usable as a single directory segment. */
-function requireName(value: unknown): asserts value is string {
+function requireName(value: unknown, file?: string): asserts value is string {
   if (typeof value !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
     || value.includes("--") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(value)) {
-    fail("skill name must be 1–64 lowercase letters/digits, with single hyphens, and not a reserved device name");
+    const rule = "1–64 lowercase letters/digits, with single hyphens, and not a reserved device name";
+    fail(file === undefined
+      ? `skill name must be ${rule}`
+      : `SKILL.md name ${JSON.stringify(value)} must be ${rule}: ${file}`);
   }
 }
 
@@ -669,7 +672,44 @@ function writeManifest(managed: string, manifest: SkillManifest): void {
   }
 }
 
-/** Validate YAML syntax and the name used as the install directory; not a full skill linter. */
+/** The Agent Skills spec's limit on the Markdown body that follows the frontmatter. */
+export const SKILL_BODY_LINE_LIMIT = 500;
+/** The Agent Skills spec's character bounds for `description`. */
+export const SKILL_DESCRIPTION_MIN_CHARS = 1;
+export const SKILL_DESCRIPTION_MAX_CHARS = 1024;
+
+/**
+ * Require a description that says what the skill does and when to use it (#387).
+ * The spec asks for both halves; a description with no `when` clause names the
+ * topic but never tells an agent when to reach for it.
+ */
+function requireDescription(value: unknown, path: string): void {
+  if (value === undefined) {
+    fail(`SKILL.md has no description field; the spec wants 1–1024 characters saying what the skill does and when to use it: ${path}`);
+  }
+  if (typeof value !== "string") {
+    fail(`SKILL.md description must be a string, not ${Array.isArray(value) ? "a list" : typeof value}: ${path}`);
+  }
+  const description = value.trim();
+  const length = [...description].length;
+  if (length < SKILL_DESCRIPTION_MIN_CHARS || length > SKILL_DESCRIPTION_MAX_CHARS) {
+    fail(`SKILL.md description must be 1–1024 characters, got ${length}: ${path}`);
+  }
+  if (!/\bwhen\b/i.test(description)) {
+    fail(`SKILL.md description must also say when to use the skill, e.g. "Use when the user …"; got "${description.slice(0, 120)}": ${path}`);
+  }
+}
+
+/** Keep the body under the spec's 500-line budget; the frontmatter does not count. */
+function requireShortBody(body: string, path: string): void {
+  const trimmed = body.replace(/(?:\r?\n)+$/, "");
+  const lines = trimmed === "" ? 0 : trimmed.split(/\r?\n/).length;
+  if (lines >= SKILL_BODY_LINE_LIMIT) {
+    fail(`SKILL.md body must stay under ${SKILL_BODY_LINE_LIMIT} lines, got ${lines} (move detail into files the skill references): ${path}`);
+  }
+}
+
+/** Validate YAML frontmatter, the name used as the install directory, description and body length. */
 export function validateSkillFile(path: string): string {
   requireFile(path, "SKILL.md");
   const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
@@ -685,7 +725,25 @@ export function validateSkillFile(path: string): string {
   }
   if (!isRecord(frontmatter)) fail(`SKILL.md frontmatter must be a YAML mapping: ${path}`);
   const name: unknown = frontmatter.name;
-  requireName(name);
+  requireName(name, path);
+  requireDescription(frontmatter.description, path);
+  requireShortBody(text.slice(match[0].length), path);
+  return name;
+}
+
+/**
+ * Validate one skill directory: everything `validateSkillFile` checks, plus the
+ * spec rule that `name` equals the directory it lives in. Install, `ans skill
+ * validate` and `scripts/check-skills.mjs` all come through here (#387), so the
+ * three cannot disagree about the same file.
+ */
+export function validateSkillDirectory(directory: string): string {
+  const file = join(directory, "SKILL.md");
+  const name = validateSkillFile(file);
+  const folder = basename(resolve(directory));
+  if (name !== folder) {
+    fail(`SKILL.md name must equal the directory it lives in: name is "${name}", directory is "${folder}": ${file}`);
+  }
   return name;
 }
 
@@ -921,6 +979,10 @@ export async function installSkill(sourceArgument: string, opts: SkillOptions = 
   // Design: a source path is persisted in installed.json, whose validator
   // rejects control characters — reject it here so an install cannot brick the scope.
   if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
+  // Design: install accepts any directory name (#387). The spec's "name equals
+  // its parent directory" rule holds for a skill *source tree* and is checked by
+  // scripts/check-skills.mjs; a cloned repo folder can carry another name, and
+  // the installed copy is always skills/synced/<name>, where the rule holds.
   const name = validateSkillFile(join(source, "SKILL.md"));
   const metadata = await provenance(source);
   const managed = managedSkillsRoot(opts);
@@ -1034,7 +1096,7 @@ function installedDirectory(managed: string, name: string): string {
   return target;
 }
 
-/** Validate installed SKILL.md frontmatter for one or all manifest entries. */
+/** Validate each installed skill directory against the Agent Skills spec. */
 export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: string): SkillValidation[] {
   const managed = managedSkillsRoot(opts);
   let entries: InstalledSkill[];
@@ -1049,8 +1111,9 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   }
   return entries.map((entry) => {
     try {
-      const nameInFile = validateSkillFile(join(installedDirectory(managed, entry.name), "SKILL.md"));
-      if (nameInFile !== entry.name) fail(`frontmatter name ${nameInFile} does not match manifest name ${entry.name}`);
+      // The installed directory is <managed>/<name>, so the "name equals its
+      // directory" rule covers the manifest cross-check too (#387).
+      validateSkillDirectory(installedDirectory(managed, entry.name));
       return { name: entry.name, ok: true };
     } catch (error) {
       return { name: entry.name, ok: false, error: (error as Error).message };

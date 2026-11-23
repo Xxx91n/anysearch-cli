@@ -145,6 +145,8 @@ ans skill uninstall ans --project
 `ans skill` only copies a directory inside a local Git checkout (one that contains a `SKILL.md`) into `skills/synced/`,
 recording its source and commit. It is not a package manager and does not execute skill code. Locking, manifests, and cleanup live in `apps/cli/src/skill-store.ts`.
 
+`install` and `validate` hold a skill to the [Agent Skills spec](https://agentskills.io/specification): the frontmatter is a YAML mapping, `name` is 1–64 lowercase letters/digits with single hyphens, `description` is 1–1024 characters and says when to use the skill, and the body stays under 500 lines. A source folder may carry any name (a cloned repo usually does); `ans skill validate` and `node scripts/check-skills.mjs` — which checks every `SKILL.md` in this repository — also require `name` to equal its directory.
+
 **Installed does not mean active.** These commands never touch domain TOML files:
 - **What `[skills].active` names**: skill keys declared in the domain TOML (shipped domains list runtime tags like `search`, `doctor`, `research`), not an auto-loader for `skills/synced/` directories.
 - **What `[skills.toolRequires]` is**: a reserved optional skill-to-tool filter (`filterAgentTools` keeps `hooks.toolWhitelist ∩ (∪ toolRequires[active] ∪ {search})`). No shipped domain declares `toolRequires`; when omitted, `hooks.toolWhitelist` alone filters tools and `[skills].active` does not change runtime behavior.

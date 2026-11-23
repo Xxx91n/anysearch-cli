@@ -110,7 +110,7 @@ function fixture(t: TestContext) {
   function source(name = "demo", folder = name, body = "Use the bundled template.\n"): string {
     const dir = join(repository, "skills", folder);
     mkdirSync(join(dir, "templates"), { recursive: true });
-    writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: A test skill\n---\n\n${body}`);
+    writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: Use when the fixture needs a ${name} skill.\n---\n\n${body}`);
     writeFileSync(join(dir, "templates", "report.txt"), " bundled template\n");
     git(repository, ["add", "--", dir]);
     git(repository, ["commit", "--quiet", "-m", `add ${folder}`]);
@@ -464,7 +464,7 @@ test("staged changes mark the source dirty", async (t) => {
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
   const f = fixture(t);
   f.source();
-  writeFileSync(join(f.repository, "SKILL.md"), "---\nname: root-skill\ndescription: Root\n---\n");
+  writeFileSync(join(f.repository, "SKILL.md"), "---\nname: root-skill\ndescription: Use when the whole repository is the skill\n---\n");
   git(f.repository, ["add", "SKILL.md"]);
   git(f.repository, ["commit", "--quiet", "-m", "root skill"]);
   const result = await f.run(["install", f.repository]);
@@ -497,9 +497,9 @@ test("invalid sources and frontmatter fail before publication", async (t) => {
     ["---\nname: [broken\n---\n", /YAML frontmatter/],
     ["---\njust a scalar\n---\n", /YAML mapping/],
     ["---\nname: demo\nname: other\n---\n", /YAML frontmatter/],
-    ["---\nname: ../escape\ndescription: x\n---\n", /skill name/],
-    ["---\nname: CON\ndescription: x\n---\n", /skill name/],
-    ["---\nname: a--b\ndescription: x\n---\n", /skill name/],
+    ["---\nname: ../escape\ndescription: x\n---\n", /SKILL\.md name/],
+    ["---\nname: CON\ndescription: x\n---\n", /SKILL\.md name/],
+    ["---\nname: a--b\ndescription: x\n---\n", /SKILL\.md name/],
   ];
   for (const [text, error] of cases) {
     writeFileSync(file, text);
@@ -510,7 +510,7 @@ test("invalid sources and frontmatter fail before publication", async (t) => {
   }
   const plain = join(f.base, "not-git");
   mkdirSync(plain);
-  writeFileSync(join(plain, "SKILL.md"), "---\nname: plain\n---\n");
+  writeFileSync(join(plain, "SKILL.md"), "---\nname: plain\ndescription: Use when a test needs a non-Git source.\n---\n");
   assert.match((await f.run(["install", plain])).stderr, /Git source/);
   assert.match((await f.run(["install", f.base])).stderr, /SKILL\.md/);
   const remote = await f.run(["install", "https://example.invalid/skills.git"]);
@@ -518,13 +518,50 @@ test("invalid sources and frontmatter fail before publication", async (t) => {
   assert.match(remote.stderr, /local Git checkout/);
 });
 
-test("CRLF, BOM and a name-only YAML mapping are parseable", async (t) => {
+test("CRLF and a BOM in the frontmatter still parse", async (t) => {
   const f = fixture(t);
   const dir = f.source();
-  writeFileSync(join(dir, "SKILL.md"), "\uFEFF---\r\nname: demo\r\n---\r\nbody\r\n");
+  writeFileSync(join(dir, "SKILL.md"), "\uFEFF---\r\nname: demo\r\ndescription: Use when a test needs CRLF and a BOM.\r\n---\r\nbody\r\n");
   const result = await f.run(["install", dir]);
   assert.equal(result.code, 0, result.stderr);
   assert.equal((await f.run(["validate", "demo"])).code, 0);
+});
+
+// #387: install, `ans skill validate` and scripts/check-skills.mjs share one
+// rule set. The same broken text has to draw the same sentence from install and
+// validate, otherwise CI and the product can disagree about a file.
+test("description and body rules are enforced by install and validate alike", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const file = join(dir, "SKILL.md");
+  const cases: [string, string][] = [
+    ["---\nname: demo\n---\n", "has no description field"],
+    ["---\nname: demo\ndescription: \"\"\n---\n", "description must be 1–1024 characters, got 0"],
+    ["---\nname: demo\ndescription: A skill about demos.\n---\n", "must also say when to use the skill"],
+    [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
+  ];
+  for (const [text, expected] of cases) {
+    writeFileSync(file, text);
+    const install = await f.run(["install", dir]);
+    assert.equal(install.code, 1, install.stdout);
+    assert.ok(install.stderr.includes(expected), `install said: ${install.stderr}`);
+    assert.equal(existsSync(skillManifestPath(f.opts)), false, "nothing was published");
+  }
+  writeFileSync(file, "---\nname: demo\ndescription: Use when the fixture needs a demo skill.\n---\n\nbody\n");
+  assert.equal((await f.run(["install", dir])).code, 0);
+  const installed = join(managedSkillsRoot(f.opts), "demo", "SKILL.md");
+  for (const [text, expected] of cases) {
+    writeFileSync(installed, text);
+    const validate = await f.run(["validate", "demo"]);
+    assert.equal(validate.code, 1, validate.stdout);
+    assert.ok(validate.stdout.includes(expected), `validate said: ${validate.stdout}`);
+  }
+  // The 500-line budget is exact: 499 body lines pass, 500 do not.
+  const body = (lines: number) => `---\nname: demo\ndescription: Use when the fixture needs a demo skill.\n---\n${"line\n".repeat(lines)}`;
+  writeFileSync(installed, body(499));
+  assert.equal((await f.run(["validate", "demo"])).code, 0);
+  writeFileSync(installed, body(500));
+  assert.equal((await f.run(["validate", "demo"])).code, 1);
 });
 
 test("source symlinks are rejected and staging is rolled back", async (t) => {
