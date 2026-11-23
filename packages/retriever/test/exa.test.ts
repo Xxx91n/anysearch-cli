@@ -139,9 +139,8 @@ async function main() {
   }
 
   // 9. #499/#500: 装配只有一个入口 createExaProvider，它同时决定走哪条路。
-  //    有 key → 现有 REST 臂；没 key → 免费额度臂（Exa 自己的 MCP 端点）。
-  //    显式传进来的空串、纯空格是「明确说没 key」，哪怕环境里还有一把 key 也不借；
-  //    只有完全没传时才回到环境变量兜底（复制 exa-js 以前的顺序，有 key 的机器不降级）。
+  //    有 key → 现有 REST 臂；空串、纯空格、没传 → 免费额度臂（Exa 自己的 MCP 端点）。
+  //    工厂不读 EXA_API_KEY：key 由装配解析好传进来，这里删不删环境变量都是一个答案。
   {
     const saved = process.env.EXA_API_KEY;
     delete process.env.EXA_API_KEY;
@@ -161,10 +160,10 @@ async function main() {
         assert(free.domainFilterSupported === false, "the free arm does not prefilter domains upstream");
         assert(free.verticalDomainSupported === false, "the free arm has no vertical routing");
       }
-      // 环境变量是最后一道兜底，只对「完全没传」生效。
+      // 环境变量不是这个工厂的第二个来源：没传就是没 key。
       process.env.EXA_API_KEY = "sk-from-env";
-      assert(createExaProvider(undefined) instanceof ExaProvider, "an env key still gets the REST arm");
-      assert(createExaProvider("") instanceof ExaMcpProvider, "an explicit blank key does not borrow the env key");
+      assert(createExaProvider(undefined) instanceof ExaMcpProvider, "the factory does not read the ambient key");
+      assert(createExaProvider("") instanceof ExaMcpProvider, "an explicit blank key is still no key");
       delete process.env.EXA_API_KEY;
       // 归一化在构造器里：类是导出的，直接 new 一个纯空格的 key 也不能当成钥匙。
       let whitespaceThrew = false;

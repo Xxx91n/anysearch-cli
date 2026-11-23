@@ -1,6 +1,7 @@
 // Exa 的免费额度臂：没配 key 时打 Exa 自己的 MCP 端点，只借它的 web_search_exa。
 //
-// 为什么不和 anysearch.ts 合成一个 MCP 客户端（#449 定过，这里留个说法）：
+// Design: Exa 自己写一份最小 MCP 客户端，不和 anysearch.ts 合成一个、也不抽公共层
+// （#449）— 两家的传输和回包有三处对不上：
 // 1. 握手不一样。anysearch 要先 initialize + notifications/initialized，404 还要重跑一次握手；
 //    Exa 这条是无状态的，不握手直接 tools/call 也回 200，会话 id 给了也被忽略。
 // 2. 错误通道不一样。anysearch 的失败是 200 + 正文里的 isError；Exa 的限流和协议错是
@@ -10,7 +11,8 @@
 // 合在一份客户端里，省下的重复还没有为这三种差异打的补丁多。等出现第三家走 MCP 的适配器，
 // 或者 anysearch 的传输层本来就要大改（那时三家一起改，公共层才有人分摊维护），再抽。
 //
-// 事实来源：providers/exa/README.md（#447 的实测）、PROVIDER_FACTS.exa.freeArm。
+// 事实来源：#447 的实测（工具名、两种回包、429 的形状）；端点和能力读
+// PROVIDER_FACTS.exa.freeArm。#503 会把这条路写进 providers/exa/README.md。
 // 这个端点不开放环境变量开关：免费额度这条路不给用户换地址（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
@@ -42,12 +44,13 @@ function waitSeconds(resp: Response): number | undefined {
 }
 
 // 非 2xx：状态码写进错误串（分类器认得「HTTP 429」），正文截一段带上，绝不静默变成 0 条。
-function httpFailure(resp: Response, body: string, retryAfter?: number): Error {
+function httpFailure(resp: Response, body: string): Error {
   const detail = body.trim().slice(0, 300);
   const error = new Error(
     "Exa MCP tools/call HTTP " + resp.status + (resp.statusText ? " " + resp.statusText : "") +
     (detail ? ": " + detail : ""),
   );
+  const retryAfter = waitSeconds(resp);
   if (retryAfter !== undefined) Object.assign(error, { retryAfter });
   return error;
 }
@@ -180,7 +183,6 @@ export class ExaMcpProvider implements SearchProvider {
   readonly modes: readonly Mode[] = FREE_ARM.modes;
   readonly domainFilterSupported = FREE_ARM.domainFilterSupported;
   readonly verticalDomainSupported = FREE_ARM.verticalDomainSupported;
-  private endpoint = FREE_ARM.endpoint;
   private nextId = 1;
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
@@ -188,7 +190,7 @@ export class ExaMcpProvider implements SearchProvider {
     const id = this.nextId++;
     // 无状态：不握手、不发 MCP-Protocol-Version、不带任何凭据。Accept 两个类型都要带，
     // 少了 text/event-stream 上游回 406（#447 实测）。
-    const resp = await fetch(this.endpoint, {
+    const resp = await fetch(FREE_ARM.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -210,7 +212,7 @@ export class ExaMcpProvider implements SearchProvider {
     // 非 2xx 一律失败：读正文给用户看原因，429 不重试，只把等待秒数带回引擎。
     if (!resp.ok) {
       const body = await resp.text().catch(() => "");
-      throw httpFailure(resp, body, waitSeconds(resp));
+      throw httpFailure(resp, body);
     }
 
     const contentType = (resp.headers.get("content-type") ?? "").toLowerCase();

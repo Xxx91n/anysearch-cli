@@ -388,7 +388,7 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {
   // Review (second round), high: the MCP entry exits the process on a throw from
   // this seam, so an unreadable credential file would kill the server at startup
-  // instead of falling back to each SDK's own env var like every other arm.
+  // instead of falling back to the environment like every other arm.
   const engine = createEngine(undefined, {
     dbPath: ":memory:",
     domainsDirs: [],

@@ -118,6 +118,17 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 1b. answer 模式照建、照搜，只是不出答案（#498 用户故事 7）。
+  {
+    const f = installFetch((call) => ({ ct: "text/event-stream", body: SSE(call.body.id, RECORDS) }));
+    try {
+      const env = await new ExaMcpProvider().search({ ...REQ, mode: "answer" }, SIG);
+      assert(f.calls.length === 1, "answer mode still sends the one search");
+      assert(env.results.length === 2, "answer mode still returns results");
+      assert(env.answers?.length === 0, "the free arm produces no answer text");
+    } finally { f.restore(); }
+  }
+
   // 2. application/json 和 text/event-stream 两种回包解析出同样的结果。
   {
     const sse = installFetch((call) => ({ ct: "text/event-stream", body: SSE(call.body.id, RECORDS) }));

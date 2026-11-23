@@ -46,8 +46,9 @@ import {
 //
 // #301: the credential passed in comes from the shared resolver (explicit env
 // first, then the user credential file), so a GUI host with no shell env still
-// authenticates. The constructors keep their own env fallback as a last resort;
-// an argument always wins over it.
+// authenticates. Tavily and anysearch keep their own env fallback as a last
+// resort; exa's factory takes the argument as the whole answer (#500) — a
+// missing one is the free-quota arm, never a second env read.
 type CredentialSource = ResolvedSearchCredentials | undefined;
 
 const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
@@ -349,8 +350,8 @@ export function createEngine(
   // and never carries a key value.
   //
   // The resolution is fail-open like every other arm of this build: a throwing
-  // resolver (an unreadable file, a permission fault) must degrade to "each SDK
-  // reads its own env", not kill the MCP process at startup.
+  // resolver (an unreadable file, a permission fault) must degrade to "the
+  // environment decides", not kill the MCP process at startup.
   let creds: CredentialSource = undefined;
   // undefined, not a status value: a consumer that asks "was resolution even
   // configured?" still gets a falsy answer, which is what it got before #301.
@@ -371,7 +372,12 @@ export function createEngine(
       };
       credentialSources = resolved;
     } catch (e) {
-      creds = undefined;
+      // #301: resolution failed (an unreadable or unparsable credential file), so
+      // the arms fall back to the environment. Resolve the env explicitly instead
+      // of leaving `creds` undefined: exa's factory is a pure function of its
+      // argument (#500), and an undefined one there means the free-quota arm even
+      // on a machine that has EXA_API_KEY set. The file itself is not read again.
+      creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));
       // Classified, never forwarded: this text reaches stderr and the engine
       // result, and it comes from a module that reads a key file (CWE-532, same
       // rule as buildProvider above).
@@ -379,7 +385,7 @@ export function createEngine(
       credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
-        " — falling back to each SDK's own env var\n",
+        " — falling back to environment variables only\n",
       );
     }
   }
