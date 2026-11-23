@@ -296,6 +296,65 @@ async function main() {
     );
   }
 
+  // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----
+  {
+    // Same caller abort as 4, but the adapter answers a cancel with a late
+    // envelope (results included) instead of rejecting. Without the engine's
+    // abort mark in the settle handlers this arm is recorded as fulfilled: the
+    // call reads as "one arm answered, zero results" and providersCancelled
+    // stays empty, so "cancelled" would depend on how each adapter reacts to
+    // its signal.
+    let startedResolve: () => void = () => { };
+    const started = new Promise<void>((r) => { startedResolve = r; });
+    const provider: SearchProvider = {
+      id: "slow",
+      modes: ["fast", "index", "deep", "answer"],
+      search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+        startedResolve();
+        return new Promise<ProviderEnvelope>((resolve) => {
+          const late = () => resolve({
+            provider: "slow",
+            results: [{ url: "https://slow.example/late", title: "late", snippet: "s", source: "slow" }],
+            answers: [],
+            elapsedMs: 1,
+          });
+          if (signal.aborted) late();
+          else signal.addEventListener("abort", late, { once: true });
+        });
+      },
+    };
+    const eng = {
+      retriever: new RetroaererdEngine([provider]),
+      store: {
+        createSession: async (d: string) => ({ id: "cancel-5", domain: d, createdAt: "" }),
+        saveResults: async () => {},
+      } as unknown as SessionStore,
+      observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+      providerBuildErrors: {},
+    } as unknown as CompositionResult;
+
+    const caller = new AbortController();
+    const pending = captureHandlers(eng).search_web({ query: "late" }, { mcpReq: { signal: caller.signal } });
+    await started;
+    caller.abort("caller went away");
+    const res = await pending;
+
+    assert(res?.isError !== true, "5: a cancelled call is not an error");
+    assert(res?.structuredContent?.interrupted === true, "5: the call says it was interrupted");
+    assert(
+      JSON.stringify(res?.structuredContent?.providersQueried) === JSON.stringify(["slow"]),
+      "5: structuredContent names the arm that was asked",
+    );
+    assert(
+      JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify(["slow"]),
+      "5: a late resolve is cancelled, not counted as an answered arm",
+    );
+    assert(res?.structuredContent?.providersFailed === undefined, "5: a late resolve is not a failure either");
+    const doc = JSON.parse(String(res?.content?.[0]?.text));
+    assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "5: content names the arm that was cut off");
+    assert(doc.totalResults === 0, "5: the late envelope's results stay out of the answer");
+  }
+
   console.log("--- mcp cancellation tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }
