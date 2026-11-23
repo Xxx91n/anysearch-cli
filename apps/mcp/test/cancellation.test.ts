@@ -275,6 +275,25 @@ async function main() {
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["slow"]), "4: content names the arm that was asked");
     assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "4: content names the arm that was cut off");
+
+    // The same abort on research_web: a round the cancellation cut short
+    // contributes no arm state. Its results are dropped too (#209: cancellation
+    // is not a completed search), so naming its arms would describe a round
+    // whose results are missing; `interrupted` is what says the call stopped.
+    const researchCaller = new AbortController();
+    researchCaller.abort("caller went away");
+    const research = await captureHandlers(eng).research_web(
+      { question: "names", depth: "standard" },
+      { mcpReq: { signal: researchCaller.signal } },
+    );
+    assert(research?.isError !== true, "4: a cancelled research call is not an error");
+    assert(research?.structuredContent?.interrupted === true, "4: the research call says it was interrupted");
+    const researchDoc = JSON.parse(String(research?.content?.[0]?.text));
+    assert(researchDoc.rounds === 1, "4: the cut-short round ran, and no round is retried");
+    assert(
+      JSON.stringify(research?.structuredContent?.providersQueried) === JSON.stringify([]),
+      "4: no completed round, so no arm state is claimed",
+    );
   }
 
   console.log("--- mcp cancellation tests: " + passed + " passed, " + failed + " failed ---");

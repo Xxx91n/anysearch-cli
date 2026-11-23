@@ -6,7 +6,7 @@
 
 - **`ans search --json` 多了两个键**：`providersQueried`（这次真问了谁）和 `providersCancelled`（结果够了、没再等的那些）。之前 `--json` 里连「问过谁」都没有，被域配置关掉的源在 JSON 里完全看不见。
 - **`ans search` 纯文本多一行 `Providers cancelled: ...`**（`formatProvidersCancelledLine`，空表不打印）。措辞是「结果够了，没等它回来」，不是错误；结果和拒答两个分支都打。
-- **MCP 两个搜索工具都报这两栏**：`search_web` 的 content JSON 和 `structuredContent` 各一对；`research_web` 只报**最后一轮**的值，不把多轮求并集——第一轮被掐、第二轮答了的臂不是「被掐」。
+- **MCP 两个搜索工具都报这两栏**：`search_web` 的 content JSON 和 `structuredContent` 各一对；`research_web` 只报**最后一个正常完成的轮**，不把多轮求并集——第一轮被掐、第二轮答了的臂不是「被掐」。
 
 ### Fixed
 
