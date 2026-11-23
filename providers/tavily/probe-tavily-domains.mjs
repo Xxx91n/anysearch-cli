@@ -11,18 +11,18 @@
 // https://api.tavily.com and no endpoint value is ever printed.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 const NL = String.fromCharCode(10);
 const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "tavily-probe"); // per-run file names, so a rerun never overwrites an earlier ledger
 // 产品同一套解析：环境变量优先，再读凭据文件；文件坏了会带 credentialWarning 出来，
 // 不会被当成「没配 key」。
 const credentials = resolveProbeCredentials("tavily");
 const KEY = credentials.apiKey;
-// Probe-only endpoint override: 凭据接线只能用本地桩验，不能让测试打真上游。
-// Design: 探针自己的 endpoint 用 PROBE_TAVILY_ENDPOINT 覆盖，默认仍是公开地址 —— anysearch
-// 的 ANYSEARCH_ENDPOINT 是同一个先例，适配器那边不开这个口子（#497 记的决定）。值不打印。
+// Design: endpoint 的默认值留字面量，不从 provider-facts 取 —— 这条探针量的是上游本身，不能
+// 依赖被它检查的代码（和 raw anysearch 探针同一条规矩）；PROBE_TAVILY_ENDPOINT 只给本地桩用。
 const BASE = (process.env.PROBE_TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/+$/, "");
-const scrubText = (s) => maskSecrets(String(s), [[KEY, "<key>"], [BASE, "<endpoint>"]]);
+const SECRETS = probeSecrets("tavily", KEY, BASE);
+const scrubText = (s) => maskSecrets(String(s), SECRETS);
 // A, B and D share this query and allowlist: A sends no mode, B sends restrict and
 // prefer, D switches to the /research endpoint (no mode field there at all).
 const QUERY = "tokio JoinSet rust spawn structured concurrency";

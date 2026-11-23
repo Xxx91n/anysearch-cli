@@ -12,7 +12,7 @@
 // arguments; 3 = non-results text shape (the discriminating case this probe exists for).
 
 import { readFileSync, writeSync } from "node:fs";
-import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
 const SCHEMA = "anysearch/mcp-raw-probe@2";
@@ -23,18 +23,12 @@ const SCHEMA = "anysearch/mcp-raw-probe@2";
 const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 
-// Design: 先扫 --nokey、先解析凭据，再进参数校验 —— 参数报错走的是同一份 SECRETS，key 只在
-// 凭据文件里时被人当参数贴进来才会遮成 <key>（#497「参数报错都走同一条 scrub」）。顺序反过来
-// 就会漏：参数在凭据之前处理，遮罩表还是空的。
+// Design: 先扫 --nokey、先解析凭据，再进参数校验 —— 参数报错也走同一份遮罩表；顺序反过来，
+// 遮罩表还是空的。
 const NO_KEY = ARGS.includes("--nokey");
 const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;
-// mask 跳过空值；环境变量那两个值先放进去，机主要是把 key 贴错位置也能遮住。
-const SECRETS: Array<[string | undefined, string]> = [
-  [process.env.ANYSEARCH_ENDPOINT, "<endpoint>"],
-  [process.env.ANYSEARCH_API_KEY, "<key>"],
-  [KEY, "<key>"],
-];
+const SECRETS = probeSecrets("anysearch", KEY, process.env.ANYSEARCH_ENDPOINT);
 
 // Protocol version: a hand-maintained literal — the probe must keep answering when the
 // adapter is broken, so it never loads it (DEFAULT_ENDPOINT is a literal for that reason).

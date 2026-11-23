@@ -13,15 +13,10 @@
 // Exit codes: 0 = arm alive (results returned); 2 = arm failed (class emitted), or the
 // probe self-check failed (errorName + stage, no arm ran).
 
-// Plain `node` cannot load the adapter from source: `anysearch.ts` imports "../contract"
-// without an extension, and the store's credential module imports "./ans-paths.js"; tsc
-// (Bundler resolution) and tsx accept both, Node's ESM resolver does not. probe-credentials
-// registers the one resolver hook and loads the store module, so it must be the first
-// import: the hook has to exist before anything else is loaded through a specifier plain
-// node cannot resolve. The alternative — writing extensions into the sources — needs
-// allowImportingTsExtensions in the tsconfigs that compile them, too wide a change for a
-// manual probe (decision #413: plain `node <file>`, no build, no tsx).
-import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
+// plain `node` 解析不了适配器和 store 的源码：`anysearch.ts` 的 import 没写扩展名，store 的写
+// 了 `.js`（指到 `.ts`）。probe-credentials 注册的钩子补上这两条，所以它必须第一个加载 ——
+// 后面的 import 都靠它。不构建、不装 tsx（decision #413：plain `node <文件>`）。
+import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { PROVIDER_FACTS } = await import("../../packages/retriever/src/providers/provider-facts.ts");
@@ -40,13 +35,7 @@ const NO_KEY = ARGS.includes("--nokey");
 // --nokey 显式压掉 key：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析。
 const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;
-// 遮的是「这一跑真用的那个值」，外加环境变量里可能存在的同名值（`--nokey` 时 KEY 是空串，
-// 但上游仍可能把 query 回显进错误消息）。key 只在凭据文件里时，环境变量里没有它可遮。
-const SECRETS: Array<[string | undefined, string]> = [
-  [process.env.ANYSEARCH_ENDPOINT, "<endpoint>"],
-  [process.env.ANYSEARCH_API_KEY, "<key>"],
-  [KEY, "<key>"],
-];
+const SECRETS = probeSecrets("anysearch", KEY, process.env.ANYSEARCH_ENDPOINT);
 
 // --default-endpoint 要的是事实表里那个公开地址。常量被改名或搬走时 import 拿到的是
 // undefined（plain node 没有类型检查），静默退回 env 会让 endpointSource 说谎——
