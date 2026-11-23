@@ -93,6 +93,7 @@ test("file names, versions, IPs, emails, localhost and placeholders are not host
     "main.py", "README.md", "config.toml", "src/main.py",
     "main.tf", "model.ml", "app.pm", "deploy.ps", "Makefile.mk", "schema.tf",
     "Makefile.in", "configure.ac", "Makefile.am", "foo.mo", "libfoo.la", "main.mm", "app.as",
+    "Hello.java", "crystal.cr", "top.sv", "config.inc", "header.inc",
     "v1.2", "1.2.3", "1.2.3.4", "1.2.3.4:8080",
     "foo@bar.com", "user:pass@example.com",
     "localhost", "localhost:3000",
