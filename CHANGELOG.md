@@ -5,7 +5,7 @@
 ### Changed
 
 - **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从扇出那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
-- **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先把臂号记进同一个集合，`then` / `catch` 都查集合再决定算不算「答过」；到点后才 resolve 的臂（哪怕带结果）也留在 cancelled。非 async、abort 时 reject 的 adapter 同样归 `providersCancelled`。
+- **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先在取消集合里排队标记、再 abort。已经落地的臂其结算 handler 排在前面，结果保留；只在 abort 里才 resolve/reject 的臂排在后面，留在 cancelled；同一 tick 的调用方 abort 也不会吞掉已经拿到的结果。非 async、abort 时 reject 的 adapter 同样归 `providersCancelled`。
 - **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
 - **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 里的 `deep` 从 `more sources` 改成「支持的上游搜得更深、更慢更贵，不增加源数」。
 - **非 async adapter 同步抛错不再逃出扇出**：调用各家 `search()` 的地方包了一层，同步抛转成 rejection，`finally` 照样清掉总上限计时器，账也照常结算。
@@ -18,7 +18,7 @@
 
 ### Tests
 
-- `packages/kernel/test/engine.test.ts` 的旧宽限块换成七条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、abort 后才 resolve 的臂不算「答过」、构造函数里的 `gate` 真的生效。
+- `packages/kernel/test/engine.test.ts` 的旧宽限块换成八条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、abort 后才 resolve 的臂不算「答过」、同一 tick 的 abort 不吞掉已落地的结果、构造函数里的 `gate` 真的生效。
 
 ### 边界
 

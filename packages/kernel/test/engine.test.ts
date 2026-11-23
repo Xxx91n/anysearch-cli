@@ -320,6 +320,16 @@ function cachedProvider(id: string, url: string): SearchProvider {
     },
   };
 }
+// Arm that rejects immediately (a genuine pre-abort failure).
+function rejectedProvider(id: string): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(): Promise<ProviderEnvelope> {
+      return Promise.reject(new Error(id + " rejected"));
+    },
+  };
+}
 // Arm that never settles; only records whether the deadline reached its signal.
 function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   return {
@@ -436,6 +446,20 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     assert(r8.results.length === 1, "same-tick abort, single arm: nothing was actually cancelled, result kept");
     assert(r8.metadata.providersCancelled.length === 0, "same-tick abort, single arm: nobody reported cancelled");
     assert(r8.metadata.providersFailed.length === 0, "same-tick abort, single arm: not a failure");
+
+    // A genuine rejection that settled before the abort keeps its failure class;
+    // only the still-pending arm is cancelled.
+    const ac3 = new AbortController();
+    const eng9 = new RetroaererdEngine([
+      rejectedProvider("boom"),
+      hangingProvider("hang", { v: false }),
+    ], { requestTimeoutMs: 2000 });
+    const sameTick3 = eng9.search({ query: "g", mode: "fast", signal: ac3.signal });
+    ac3.abort();
+    const r9 = await sameTick3;
+    assert(r9.metadata.providersFailed.includes("boom"), "same-tick abort: pre-abort rejection stays a failure");
+    assert(!r9.metadata.providersCancelled.includes("boom"), "same-tick abort: pre-abort rejection is not cancelled");
+    assert(r9.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm still cancelled");
   }
 
   // (h) The sufficiency gate moved to constructor opts and is live again.

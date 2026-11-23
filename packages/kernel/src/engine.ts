@@ -480,16 +480,21 @@ export class RetroaererdEngine {
     // released even if an arm never starts.
     try {
       const promises = allProviders.map((p, i) =>
-        startArm(p, i)
-          .then((env) => {
+        // One `.then` with both handlers on purpose: a rejection handler attached
+        // through a `.catch()` chain sits two microtasks out, so an abort mark
+        // queued in between would turn a genuine same-tick failure into
+        // "cancelled". One reaction keeps each settle handler at the arm's own
+        // settlement position.
+        startArm(p, i).then(
+          (env) => {
             // Design: an arm that settles only after our own abort stays
             // cancelled — whether it carries results or an empty envelope.
             // Counting it as answered would re-bucket by microtask order, and a
             // cap/cancel means we stopped waiting before it landed.
             if (abortedArms.has(i)) return;
             out[i] = { provider: p.id, status: "fulfilled", envelope: env };
-          })
-          .catch((err) => {
+          },
+          (err) => {
             // An abort we issued (caller cancellation or the deadline) is a
             // cancelled arm, not a provider failure — leaving out[i] null makes
             // the snapshot below classify it as providersCancelled.
@@ -498,7 +503,8 @@ export class RetroaererdEngine {
             // object (capType, retryAfter) go back into the text here, or the
             // classifier and the wait hint only ever see half the shape.
             out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
-          }),
+          },
+        ),
       );
 
       // Wait for every arm, for the request deadline, or for the caller's abort (#209).
