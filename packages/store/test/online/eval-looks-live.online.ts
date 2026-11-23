@@ -153,12 +153,19 @@ function main() {
   const priorVerdicts = evidenceMode ? lastEvidenceVerdicts(evidenceLog) : new Map<string, EvidenceRecord>();
 
   // Cold-domain fixture dir for entries whose domain has no shipped toml.
+  // One arm on purpose. exa and tavily take the allowlist as includeDomains and
+  // can answer with zero arrivals; with several arms one failure next to a
+  // zero-hit arm classifies as `empty`, so the live lane would be a coin flip.
+  // One arm removes both the failure and the multi-arm interaction, and the
+  // gate stage stays unpinned — "pre" and "post" are both abstains here; the
+  // deterministic gate coverage lives in the stub golden
+  // (packages/kernel/test/eval-looks-stub.test.ts).
   const coldDir = mkdtempSync(join(tmpdir(), "ans-looks-cold-"));
   writeFileSync(join(coldDir, "cold.toml"), [
     'name = "cold"', 'description = "eval-looks live cold fixture (r61 narrow domain)"',
     '[settings]', 'language = "TypeScript"', 'depth = "docs"',
     '[skills]', 'active = ["search"]',
-    '[sources]', 'enabled = ["tavily", "exa", "anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
+    '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
     '[rag]', 'adapter = "none"',
   ].join("\n"));
 
@@ -169,13 +176,25 @@ function main() {
     if (e.watch === true) console.log("WATCH " + e.id + " (post-promote watch — a CI flip re-enters quarantine via the ratchet)");
     const p0 = passed, f0 = failed;
     const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
-    if (e.domain === "cold") env.ANS_DOMAINS_DIR = coldDir;
+    if (e.domain === "cold") {
+      env.ANS_DOMAINS_DIR = coldDir;
+      // The TOML allowlist is the only authority: an ambient ANS_URL_ALLOWLIST
+      // would let a result survive and turn this abstain into an answer.
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+    }
     const j = searchJson(e.question, env, e.vertical);
     assert(!j.__error, e.id + " ran (" + (j.__error ?? "ok") + ")");
     if (!j.__error) {
       if (e.expected.verdict === "abstain") {
         assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
+        assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");
         assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
+        assert(j.outcome === "abstain", e.id + " outcome abstain (got " + j.outcome + ")");
+        if (e.domain === "cold") {
+          // A refusal with a dead arm would be an `empty`, so an empty failed
+          // list is what says the single arm really answered.
+          assert((j.providersFailed ?? []).length === 0, e.id + " the single arm answered (providersFailed " + JSON.stringify(j.providersFailed) + ")");
+        }
       } else {
         assert(!j.abstain, e.id + " answer verdict has no abstain marker");
         assert(j.results.length >= (e.expected.minResults ?? 1), e.id + " minResults " + (e.expected.minResults ?? 1) + " (got " + j.results.length + ")");

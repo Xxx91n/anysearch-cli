@@ -133,6 +133,9 @@ jobs:
   # above (arm64 better-sqlite3 prebuild delta only).
   install-smoke:
     name: "install-smoke (B2: pack -> clean install -> doctor -> domain -> search)"
+    # A stub that stops answering must fail this lane in minutes, not hold the
+    # job for the workflow default (360).
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

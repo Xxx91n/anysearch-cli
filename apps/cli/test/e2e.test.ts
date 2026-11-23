@@ -92,6 +92,40 @@ async function runSplit(args: string[], env?: NodeJS.ProcessEnv): Promise<{ code
   });
 }
 
+// A local fake AnySearch MCP endpoint: handshake + one tools/call, no network.
+// Distinct from install-smoke's stub, which must live in its own process —
+// install-smoke drives the CLI with spawnSync, and a blocking parent cannot
+// accept the request. Here the CLI is spawned asynchronously, so an in-process
+// server keeps answering.
+async function fakeAnySearch(markdown: string): Promise<{ endpoint: string; close: () => Promise<void> }> {
+  const http = await import("node:http");
+  const server = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let parsed: { id?: number; method?: string } = {};
+    try { parsed = JSON.parse(body); } catch { /* notification framing */ }
+    const reply = (result: unknown) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result }));
+    };
+    if (parsed.method === "initialize") {
+      return reply({ protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "stub", version: "1" } });
+    }
+    if (parsed.method === "notifications/initialized") {
+      res.writeHead(202);
+      return res.end();
+    }
+    if (parsed.method === "tools/call") return reply({ content: [{ type: "text", text: markdown }] });
+    return reply({});
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const { port } = server.address() as { port: number };
+  return {
+    endpoint: "http://127.0.0.1:" + port + "/mcp",
+    close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),
+  };
+}
+
 async function t(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -457,15 +491,29 @@ async function t(name: string, fn: () => Promise<void>) {
     }
   });
 
-  // Partial absence (the presentation path that completes): exa fails
-  // construction while anysearch (optional key) constructs fine, so the run
-  // reaches the abstain branch — the urlAllowlist gate deterministically
-  // empties the pool whatever anysearch returns. The absence line renders on
-  // stdout next to the runtime chain lines.
+  // Partial absence on the refusal path: exa fails construction while anysearch
+  // builds, answers with two out-of-domain URLs, and the allowlist throws both
+  // away. That is the reviewed zero-result shape — `abstain`, gate "post" — and
+  // it is what this fixture now pins (#476): the dead port it used to use
+  // produced an all-failed run, which is a fault, not a refusal. The absence
+  // line renders on stdout next to the runtime chain lines.
   await t("search prints provider build-failure absence line (abstain branch)", async () => {
     const fs = await import("node:fs");
     const os = await import("node:os");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr2-"));
+    const stub = await fakeAnySearch([
+      "## Search Results (2 results, 12ms)",
+      "",
+      "### 1. Out of domain one",
+      "- **URL**: https://outside.example/one",
+      "- first out-of-domain arrival",
+      "",
+      "### 2. Out of domain two",
+      "- **URL**: https://outside.example/two",
+      "- second out-of-domain arrival",
+      "",
+    ].join("
+"));
     try {
       fs.writeFileSync(path.join(dir, "partial.toml"), [
         'name = "partial"',
@@ -475,7 +523,8 @@ async function t(name: string, fn: () => Promise<void>) {
         "[rag]",
         'adapter = "none"',
         "",
-      ].join("\n"), "utf8");
+      ].join("
+"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
       env.EXA_API_KEY = UNUSABLE_EXA_KEY;
       env.ANS_PROVIDERS = "";
@@ -484,49 +533,51 @@ async function t(name: string, fn: () => Promise<void>) {
       // and flip this abstain fixture. "0" disables env override — the TOML
       // allowlist stays authoritative.
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
-      // Dead-port fault injection (CodeRabbit Major, PR #194; the
-      // install-smoke pattern): keeps this fixture independent of the live
-      // AnySearch endpoint — the arm still constructs and is still queried,
-      // it just fails fast with ECONNREFUSED instead of depending on
-      // live-endpoint timing.
-      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
+      // The arm answers; the gate is what empties the pool. The gate field and
+      // the counters are the assertion that keeps this from silently degrading
+      // into "nobody answered".
+      env.ANYSEARCH_ENDPOINT = stub.endpoint;
       const r = await run(["search", "q"], env);
       assert.equal(r.code, 0, r.out);
       assert.match(r.out, /abstain: no results within allowed partial domain/);
+      assert.match(r.out, /pre-filtered 2, post-filtered 0, gate post/, "the gate dropped the arrivals; got: " + r.out.slice(-400));
       assert.match(r.out, /Providers queried: anysearch/);
+      assert.ok(!r.out.includes("Providers failed:"), "a refusal is not a failure; got: " + r.out.slice(-400));
       assert.ok(
-        r.out.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
+        r.out.split("
+").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
         "absence line on the abstain branch; got: " + r.out.slice(-400),
       );
     } finally {
+      await stub.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  // Both render paths print the failed arm's remedy: the results branch and the
-  // abstain branch share one helper, and this fixture is what stops a future
-  // "one branch forgot to print it" from passing. The dead-port anysearch arm
-  // fails as `transient`, so the sentence is the shared table's, not a fixture's.
-  await t("both render paths print the failed arm's remedy", async () => {
+  // The failure path prints the failed arm's remedy: the dead-port anysearch
+  // arm fails as `transient`, so the sentence is the shared table's, not a
+  // fixture's. The refusal half that used to live here is gone on purpose — a
+  // refusal needs an arm that answered, and this fixture has none. That shape
+  // is the gate-dropped fixture above (#476).
+  await t("search failure path prints the failed arm's remedy", async () => {
     const fs = await import("node:fs");
     const os = await import("node:os");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-hints-"));
-    const writeDomain = (name: string, allow: boolean) => {
-      fs.writeFileSync(path.join(dir, name + ".toml"), [
-        'name = "' + name + '"',
+    const hintLine = "  anysearch: " + (providerErrorHint("transient") ?? "");
+    try {
+      fs.writeFileSync(path.join(dir, "hintsres.toml"), [
+        'name = "hintsres"',
         "[sources]",
         'enabled = ["anysearch"]',
-        ...(allow ? ['urlAllowlist = ["nonexistent.invalid"]'] : []),
         "[rag]",
         'adapter = "none"',
         "",
-      ].join("\n"), "utf8");
-    };
-    const runOne = (name: string) => {
+      ].join("
+"), "utf8");
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         ANS_DOMAINS_DIR: dir,
-        ANS_DOMAIN: name,
+        ANS_DOMAIN: "hintsres",
         ANS_DB_PATH: path.join(dir, "anysearch.db"),
       };
       env.ANYSEARCH_API_KEY = "";
@@ -534,25 +585,15 @@ async function t(name: string, fn: () => Promise<void>) {
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
       // Dead-port fault injection: the arm constructs, is queried, fails fast.
       env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
-      return run(["search", "q"], env);
-    };
-    const hintLine = "  anysearch: " + (providerErrorHint("transient") ?? "");
-    try {
-      writeDomain("hintsres", false);
-      writeDomain("hintsabs", true);
-      const results = await runOne("hintsres");
-      assert.equal(results.code, 1, results.out);
+      const r = await run(["search", "q"], env);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /^Providers failed: anysearch/m);
       assert.ok(
-        results.out.split("\n").includes(hintLine),
-        "results branch prints the arm's remedy; got " + results.out.slice(-400),
+        r.out.split("
+").includes(hintLine),
+        "the failed arm's remedy; got " + r.out.slice(-400),
       );
-      const abstain = await runOne("hintsabs");
-      assert.equal(abstain.code, 0, abstain.out);
-      assert.match(abstain.out, /abstain: no results within allowed hintsabs domain/);
-      assert.ok(
-        abstain.out.split("\n").includes(hintLine),
-        "abstain branch prints the arm's remedy; got " + abstain.out.slice(-400),
-      );
+      assert.match(r.out, /Results: 0/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -616,6 +657,15 @@ async function t(name: string, fn: () => Promise<void>) {
         ["anysearch", "exa", "status", "tavily"],
         "all three arms travel, so a fourth cannot be dropped silently",
       );
+      // #514: this fixture is an outage end to end. The verdict, the exit code
+      // and the arm lists have to agree, or the test stays green on a build
+      // whose search never queried an arm (the old shape asserted the marker
+      // was there, which only a broken run produced).
+      assert.equal(r.code, 1, "an all-failed search exits 1");
+      assert.equal(doc.outcome, "failed", "--json names the outcome");
+      assert.equal(doc.abstain, null, "an outage carries no abstain marker");
+      assert.deepEqual(doc.providersQueried, ["anysearch"], "the queried arm is named");
+      assert.deepEqual(doc.providersFailed, ["anysearch"], "the failed arm is named");
       assert.match(r.stderr, /\[anysearch\] provider exa construction failed: /);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

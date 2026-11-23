@@ -4,7 +4,7 @@
 // separating the two signature families:
 // - better-sqlite3 registration segfault (SIGSEGV / exit 139 at require/load)
 // - exit-time libc++abi mutex abort ( / onnxruntime issue family)
-// This script drives the abstain-path repro through the real bundled ans bin
+// This script drives a zero-result search through the real bundled ans bin
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
@@ -39,25 +39,28 @@ lines.push("## macOS spillover probe (experiment — non-blocking)","");
 lines.push("| run | command | exit | signature |","|---|---|---|---|");
 
 for (let i = 1; i <= RUNS; i++) {
-  // Abstain/no-results path exercises createPersistentEngine handles + teardown.
+  // The zero-result path exercises createPersistentEngine handles + teardown.
   const s = spawnSync(process.execPath, [BIN, "search", "macos exit probe query"], { encoding: "utf8" });
   const out = (s.stdout ?? "") + (s.stderr ?? "");
   const sig = classify(s.status, out + (s.signal ?? ""));
   if (!sig.startsWith("clean")) crashes++;
   lines.push("| " + i + " | search | " + String(s.status) + (s.signal ? " (" + s.signal + ")" : "") + " | " + sig + " |");
 }
-// pin the abstain leg — ANS_DOMAIN=docs makes the out-of-domain
-// ghost query (bc0001's tokio question) exercise the real abstain write path
-// (domain filter -> abstain marker -> exit 0), then teardown.
+// One labelled zero-result leg: ANS_DOMAIN=docs makes the out-of-domain ghost
+// query (bc0001's tokio question) run the domain gate on a machine with no
+// search key. It lands in abstain / empty / failed depending on what the arms
+// do here, so the marker is recorded, never asserted. classify() counts exit
+// 0 and 1 as clean on purpose: this probe reports crash signatures, and both
+// codes are legitimate for a zero-result run. Do not "fix" it to expect 0.
 {
   const a = spawnSync(process.execPath, [BIN, "search", "tokio JoinSet rust scheduler internals"], {
     encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs" },
   });
   const out = (a.stdout ?? "") + (a.stderr ?? "");
   const sig = classify(a.status, out + (a.signal ?? ""));
-  const marker = /abstain/i.test(out) ? "abstain-marker" : "NO-ABSTAIN-MARKER";
+  const marker = /abstain/i.test(out) ? "abstain-line (advisory)" : "no-abstain-line (advisory; expected when arms fail)";
   if (!sig.startsWith("clean")) crashes++;
-  lines.push("| - | search --domain docs (abstain leg) | " + String(a.status) + (a.signal ? " (" + a.signal + ")" : "") + " | " + sig + "; " + marker + " |");
+  lines.push("| - | search --domain docs (zero-result leg) | " + String(a.status) + (a.signal ? " (" + a.signal + ")" : "") + " | " + sig + "; " + marker + " |");
 }
 
 {

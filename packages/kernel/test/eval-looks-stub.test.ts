@@ -200,8 +200,18 @@ async function main() {
       assert(ab?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty");
       assert(env.results.length === 0, e.id + " zero survivors (got " + env.results.length + ")");
       assert(typeof ab?.preFiltered === "number" && typeof ab?.postFiltered === "number", e.id + " gate counters present");
+      assert(env.metadata.outcome === "abstain", e.id + " => outcome abstain");
+      // Offline the gate stage is deterministic: every abstain scene here has
+      // arrivals the gate threw away, so it must be "post" — a "pre" would mean
+      // nobody answered, which is a different story. Counts come from the
+      // observed scenes, never from the corpus.
+      assert(ab?.gate === "post", e.id + " gate=post (got " + ab?.gate + ")");
+      const wantPreFiltered: Record<string, number> = { "docs-g0013": 2, "docs-g0014": 1 };
+      if (e.id in wantPreFiltered) assert(ab?.preFiltered === wantPreFiltered[e.id], e.id + " preFiltered " + wantPreFiltered[e.id] + " (got " + ab?.preFiltered + ")");
+      if (e.id === "docs-g0007") assert((ab?.preFiltered ?? 0) > 0, e.id + " preFiltered > 0 (got " + ab?.preFiltered + ")");
     } else {
       assert(env.metadata.abstain === undefined, e.id + " answer verdict has no abstain marker");
+      assert(env.metadata.outcome === "answer", e.id + " => outcome answer");
       assert(env.results.length >= (e.expected.minResults ?? 1), e.id + " meets minResults structure");
     }
     // draft: expected.vertical assertion surface. Offline the
