@@ -37,7 +37,38 @@ import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
+
+// The gate's own tests, in groups: the gate is the only mechanical stop before
+// a push, so the judgments it shares with CI run here too. CI's change policy
+// decides which lanes a push needs and the workflow checker decides whether
+// those lanes can start at all; a broken one used to stay green locally and
+// surface only in the CI run this gate exists to spare. Each group runs on its
+// own so a red one is named by construction instead of read back out of a
+// reporter's prose. PREFLIGHT_GATE_TESTS replaces the whole list for the tests
+// that drive this script with a fake pnpm.
+function gateGroups() {
+  const override = process.env.PREFLIGHT_GATE_TESTS;
+  if (override) {
+    const files = override.split(",");
+    return [{ name: files.join(", "), files }];
+  }
+  return [
+    { name: "push gate", files: ["scripts/test/preflight-*.test.mjs"] },
+    { name: "CI change policy", files: ["scripts/test/ci-changes.test.mjs"], shared: true },
+    { name: "workflow checks", files: ["scripts/test/check-workflows.test.mjs"], shared: true },
+  ];
+}
+
+const GATE_GROUPS = gateGroups();
+
+// Name the groups, and say which ones are not the gate's own: those run here
+// because a broken shared judgment is invisible until CI.
+function describeGateGroups() {
+  const names = (groups) => groups.map((group) => group.name).join(", ");
+  const shared = GATE_GROUPS.filter((group) => group.shared);
+  if (shared.length === 0) return names(GATE_GROUPS);
+  return `${names(GATE_GROUPS.filter((group) => !group.shared))}, plus the shared judgments (${names(shared)})`;
+}
 
 // Design: the old commit hook gets a notice, not a test run — a clone that
 // still has pre-commit-user calls this with --staged and nothing else. Name the
@@ -74,7 +105,7 @@ const selfTest = plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0"
 
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
-  if (selfTest) console.log(`[preflight] dry run, would also run the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  if (selfTest) console.log(`[preflight] dry run, would also run the gate's own tests: ${describeGateGroups()}`);
   process.exit(0);
 }
 
@@ -97,22 +128,24 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
 // PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
-// fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
+// fake pnpm; PREFLIGHT_GATE_TESTS replaces the group list so that test does not
 // re-enter the whole suite.
 if (selfTest) {
-  let status;
+  let result;
   try {
-    status = await runGateTests();
+    result = await runGateTests();
   } catch (error) {
-    status = null;
-    writeStderr(`[preflight] could not start the gate's own tests: ${error.message}`);
+    result = { failed: [], tests: null, failure: `could not start the gate's own tests: ${error.message}` };
   }
   if (interrupted) process.exit(interrupted);
-  if (status !== 0) {
+  if (result.failure || result.failed.length > 0) {
+    const reason = result.failure ?? `gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`;
+    writeStderr(`[preflight] ${reason}`);
     reportKeptTestHome(testHome);
     writeStderr("[preflight] blocked: the gate's own tests failed");
-    process.exit(status ?? 1);
+    process.exit(1);
   }
+  console.log(`[preflight] gate self-test green: ${describeCount(result.tests)}`);
 }
 
 child = spawn("pnpm", runArgs, {
@@ -123,16 +156,7 @@ child = spawn("pnpm", runArgs, {
   detached: process.platform !== "win32",
 });
 
-let tail = "";
-for (const [stream, out] of [
-  [child.stdout, process.stdout],
-  [child.stderr, process.stderr],
-]) {
-  stream.on("data", (chunk) => {
-    out.write(chunk);
-    tail = (tail + chunk).slice(-64 * 1024);
-  });
-}
+const tail = drain(child, 64 * 1024);
 
 let status;
 try {
@@ -150,7 +174,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
-  const failed = failedTask(tail);
+  const failed = failedTask(tail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome, console.error);
   process.exitCode = status ?? 1;
@@ -245,24 +269,67 @@ function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
 }
 
+// Run each group and report which ones failed plus how many tests ran. The
+// reporter is pinned to spec so the summary line the count comes from has one
+// shape, on a terminal and down a pipe alike.
 async function runGateTests() {
-  console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  console.log(`[preflight] running the gate's own tests: ${describeGateGroups()}`);
   const gateEnv = { ...testHome.env };
   delete gateEnv.NODE_TEST_CONTEXT;
-  child = spawn(process.execPath, ["--test", ...GATE_TESTS], {
-    cwd: root,
-    env: gateEnv,
-    stdio: "inherit",
-    detached: process.platform !== "win32",
-  });
-  try {
-    return await new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", resolve);
+  const failed = [];
+  const counts = [];
+  for (const group of GATE_GROUPS) {
+    child = spawn(process.execPath, ["--test", "--test-reporter=spec", ...group.files], {
+      cwd: root,
+      env: gateEnv,
+      stdio: ["inherit", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
-  } finally {
-    child = null;
+    const tail = drain(child, 8 * 1024);
+    let status;
+    try {
+      status = await new Promise((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", resolve);
+      });
+    } finally {
+      child = null;
+    }
+    counts.push(testCount(tail()));
+    if (status !== 0) failed.push(group);
+    if (interrupted) break;
   }
+  // An unreadable count is left out of the total rather than guessed at.
+  const tests = counts.every((count) => count !== null) ? counts.reduce((sum, count) => sum + count, 0) : null;
+  return { failed, tests, failure: null };
+}
+
+// Forward both streams and keep the last bytes, so a caller can read a line out
+// of output the operator has already seen.
+function drain(source, limit) {
+  let tail = "";
+  for (const [stream, out] of [
+    [source.stdout, process.stdout],
+    [source.stderr, process.stderr],
+  ]) {
+    stream.on("data", (chunk) => {
+      out.write(chunk);
+      tail = (tail + chunk).slice(-limit);
+    });
+  }
+  return () => tail;
+}
+
+// node's spec reporter ends with "ℹ tests N"; TAP, which a non-terminal may
+// still get, says "# tests N". Both are last, so the tail holds them.
+function testCount(output) {
+  const match = /^(?:ℹ|#) tests (\d+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
+  return match ? Number(match[1]) : null;
+}
+
+function describeCount(tests) {
+  const groups = `${GATE_GROUPS.length} group${GATE_GROUPS.length === 1 ? "" : "s"}`;
+  return tests === null ? groups : `${tests} tests in ${groups}`;
 }
 
 // Stop the whole tree: pnpm's turbo and the tests it starts are grandchildren,

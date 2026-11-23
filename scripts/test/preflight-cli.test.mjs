@@ -20,6 +20,21 @@ import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
 
+// A stand-in for the files the gate's three groups look for: one trivial test,
+// so the total a test asserts stays predictable. The failing one differs by
+// that one assertion only, which is the point: one broken judgment, one red.
+const PASSING_GATE_TEST = [
+  'import assert from "node:assert/strict";',
+  'import test from "node:test";',
+  "",
+  'test("a stand-in judgment", () => {',
+  "  assert.equal(1, 1);",
+  "});",
+  "",
+].join("\n");
+
+const FAILING_GATE_TEST = PASSING_GATE_TEST.replace("assert.equal(1, 1);", "assert.equal(1, 2);");
+
 test("a red run exits non-zero and names the failed task", () => {
   withFakePnpm({ code: 1, lines: [" Tasks:    1 successful, 1 failed", "\u001b[31mFailed:\u001b[0m @anysearch-cli/kernel#test"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
@@ -196,6 +211,46 @@ test("a full run runs the gate's own tests first", () => {
   });
 });
 
+// The two shared judgments are the ones the gate and CI both read: a broken
+// change policy or workflow checker used to pass every local push and show up
+// only in the CI run the gate exists to spare.
+test("a full run also runs the shared judgments and reports how many tests ran", async () => {
+  await withWorkspace({ pnpm: passingPnpm, files: gateTestFiles() }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /running the gate's own tests: push gate, plus the shared judgments \(CI change policy, workflow checks\)/,
+    );
+    // One test per stand-in file: the three groups' counts add up.
+    assert.match(result.stdout, /gate self-test green: 3 tests in 3 groups/);
+    // The suite still runs after the self-test.
+    assert.match(result.stdout, /pnpm ran/);
+  });
+});
+
+test("a red shared judgment names the group it belongs to", async () => {
+  const files = gateTestFiles({ "scripts/test/ci-changes.test.mjs": FAILING_GATE_TEST });
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /gate self-test failed: CI change policy/);
+    assert.match(result.stderr, /blocked: the gate's own tests failed/);
+    // A red self-test blocks before the suite: the fake pnpm never got a word.
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    clearKeptHome(result);
+  });
+});
+
+test("an incremental push does not pay for the gate's own tests", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+    assert.equal(result.stdout.includes("running the gate's own tests"), false);
+  });
+});
+
 test("the gate's own tests also run under the throwaway home", () => {
   const probeDir = mkdtempSync(join(tmpdir(), "ans-preflight-probe-"));
   const probe = join(probeDir, "home-probe.test.mjs");
@@ -236,7 +291,10 @@ test("a full dry run also announces the gate's own tests", () => {
     const result = runCliIn(repoRoot, bin, ["--full", "--dry-run"], { selfTest: true });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /would run: pnpm test/);
-    assert.match(result.stdout, /would also run the gate's own tests: scripts\/test\/preflight-\*\.test\.mjs/);
+    assert.match(
+      result.stdout,
+      /would also run the gate's own tests: push gate, plus the shared judgments \(CI change policy, workflow checks\)/,
+    );
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
@@ -264,12 +322,13 @@ test("an incremental run hands pnpm one filter per selected package", async () =
   });
 });
 
-test("a clean tree reports nothing to run", async () => {
+test("a clean tree reports nothing to run and runs no self-test", async () => {
   await withWorkspace({}, ({ root, bin }) => {
-    const result = runCliIn(root, bin, []);
+    const result = runCliIn(root, bin, [], { selfTest: true });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /nothing to run/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("gate self-test"), false);
   });
 });
 
@@ -359,7 +418,7 @@ async function withWorkspace(options = {}, run) {
 // a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
@@ -373,6 +432,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
   ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
+  for (const [name, content] of Object.entries(files ?? {})) write(join(root, name), content);
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);
@@ -422,6 +482,23 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   const sh = ["#!/bin/sh", ...(echoArgs ? ['echo "$@"'] : lines.map((line) => `echo "${line}"`)), `exit ${code}`].join("\n");
   const cmd = ["@echo off", ...(echoArgs ? ["echo %*"] : lines.map((line) => `echo ${line}`)), `exit /b ${code}`].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm that passes and says it ran, so a test can tell whether the
+// suite started at all.
+function passingPnpm(bin) {
+  writeFakePnpm(bin, { code: 0, lines: ["pnpm ran"] });
+}
+
+// The gate's three group files, one passing stand-in each; an override swaps in
+// a failing body for the group under test.
+function gateTestFiles(overrides = {}) {
+  return {
+    "scripts/test/preflight-plan.test.mjs": PASSING_GATE_TEST,
+    "scripts/test/ci-changes.test.mjs": PASSING_GATE_TEST,
+    "scripts/test/check-workflows.test.mjs": PASSING_GATE_TEST,
+    ...overrides,
+  };
 }
 
 // A stand-in pnpm that writes where a sloppy test would: the home it was given,
