@@ -221,7 +221,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   {
     // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
     // 只回落到环境变量的构造器会把这类机器误判成失败。规则和运行时一致。
-    // #499: exa 走它自己的工厂，「有没有 key」的判断不在这里写第二份。
+    // exa 交给它自己的工厂建；下面那个 catch 只按「配没配 key」给构造失败分个类。
     const make: Record<SearchProviderId, () => SearchProvider> = {
       tavily: () => new TavilyProvider(credentials.tavily?.apiKey),
       exa: () => createExaProvider(credentials.exa?.apiKey),

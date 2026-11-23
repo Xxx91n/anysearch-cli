@@ -27,8 +27,7 @@ export class ExaProvider implements SearchProvider {
 
   constructor(apiKey?: string) {
     // atomcode research: new Exa(apiKey), key falls back to EXA_API_KEY env.
-    // 不传 key 时 exa-js 自己会去读环境变量，读不到就当场抛；这个分支由
-    // createExaProvider 决定，装配方不直接 new 这个类。
+    // 没拿到 key（没传、空串）时 exa-js 自己会去读环境变量，读不到就当场抛。
     this.client = new Exa(apiKey);
   }
 
@@ -93,24 +92,13 @@ export class ExaProvider implements SearchProvider {
 }
 
 /**
- * 装配 exa 这一臂时该走的入口（#499）。kernel 的装配表和 `ans doctor` 的构造函数
- * 表都调它，不再各自决定「传不传 key」。
+ * Design: 装配 exa 只走这一个工厂 — kernel 的装配表和 `ans doctor` 的构造函数表
+ * 只调用、不判断「传不传 key」，下一票要长免费额度那一支时也只改这里。
  *
- * Design: 装配 exa 只留这一个入口，判断和构造都在这里 — 以前「传不传 key」散在
- * 调用方（两张表各自把可选的 key 递进来）、「怎么建」藏在构造器的三元里；收到工厂
- * 之后改一处就够，下一票（#500）长出免费额度那一支时也只动这里。
- *
- * 空串、纯空格、没传都算没配 key：凭据解析器（`resolveSearchCredentials`）本来就
- * 把纯空格当没配（#459），产品路径递进来的值早 trim 过；这里再 trim 一次，是挡住
- * 绕过解析器直接调工厂的人。
- *
- * 没配 key 这一支今天还是老路：不带 key 去建同一个 REST 适配器，exa-js 自己再读一次
- * EXA_API_KEY，读不到就当场抛，装配把这条臂记成「构造失败」并点名，用户看到的东西
- * 一个字没变。产品路径上 env 早被解析器读过一遍，那个兜底找不到第二把钥匙，只剩
- * 「读不到就抛」这一个作用；#500 会把整支换成走免费额度的 MCP 客户端，兜底一起消失。
+ * 空串、纯空格、没传都算没配 key（凭据解析器先 trim 过，这里再 trim 一次）。今天
+ * 这一支仍是 REST 适配器：不带 key 去建，exa-js 读不到环境变量就当场抛，装配照旧
+ * 记「构造失败」并点名，用户看到的东西没变。#500 把这一支换成免费额度臂。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
-  const key = apiKey?.trim();
-  if (!key) return new ExaProvider();
-  return new ExaProvider(key);
+  return new ExaProvider(apiKey?.trim() || undefined);
 }

@@ -37,8 +37,7 @@ import {
 // Only exa throws, and on a missing OR unusable key (a header-invalid value does it
 // too); tavily builds a keyless client and anysearch goes anonymous, so their missing
 // key surfaces at call time instead.
-// #499: exa 这一臂不在这里选构造方式，交给它自己的工厂 createExaProvider——
-// `ans doctor` 的构造函数表调的是同一个，这张表不再判「到底传不传 key」。
+// exa 的构造方式由它自己的工厂决定（createExaProvider），这里只负责调用。
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
