@@ -535,10 +535,14 @@ test("description and body rules are enforced by install and validate alike", as
   const dir = f.source();
   const file = join(dir, "SKILL.md");
   const cases: [string, string][] = [
-    ["---\nname: demo\n---\n", "has no description field"],
+    ["---\nname: demo\n---\n", "has no description"],
+    // Clearing the value the obvious way (`description:` with nothing after it)
+    // is YAML null, not an empty string; it has to read like a missing field.
+    ["---\nname: demo\ndescription:\n---\n", "has no description"],
     ["---\nname: demo\ndescription: \"\"\n---\n", "description must be 1–1024 characters, got 0"],
     ["---\nname: demo\ndescription: A skill about demos.\n---\n", "must also say when to use the skill"],
     [`---\nname: demo\ndescription: Use when the body is too long.\n---\n${"line\n".repeat(500)}`, "body must stay under 500 lines, got 500"],
+    ["---\ndescription: Use when the name is gone.\n---\n", "has no name field"],
   ];
   for (const [text, expected] of cases) {
     writeFileSync(file, text);
@@ -556,12 +560,19 @@ test("description and body rules are enforced by install and validate alike", as
     assert.equal(validate.code, 1, validate.stdout);
     assert.ok(validate.stdout.includes(expected), `validate said: ${validate.stdout}`);
   }
-  // The 500-line budget is exact: 499 body lines pass, 500 do not.
-  const body = (lines: number) => `---\nname: demo\ndescription: Use when the fixture needs a demo skill.\n---\n${"line\n".repeat(lines)}`;
+  // The 500-line budget is exact, and the blank line after the frontmatter is a
+  // separator, not body content: 499 content lines pass, 500 do not.
+  const body = (lines: number) => `---\nname: demo\ndescription: Use when the fixture needs a demo skill.\n---\n\n${"line\n".repeat(lines)}`;
   writeFileSync(installed, body(499));
   assert.equal((await f.run(["validate", "demo"])).code, 0);
   writeFileSync(installed, body(500));
   assert.equal((await f.run(["validate", "demo"])).code, 1);
+  // validate also holds the installed copy to its directory name, which is what
+  // keeps it agreeing with the repo check about the same file.
+  writeFileSync(installed, "---\nname: other\ndescription: Use when the name drifted.\n---\nbody\n");
+  const drift = await f.run(["validate", "demo"]);
+  assert.equal(drift.code, 1, drift.stdout);
+  assert.match(drift.stdout, /name must equal the directory it lives in/);
 });
 
 test("source symlinks are rejected and staging is rolled back", async (t) => {

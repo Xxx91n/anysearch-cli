@@ -92,7 +92,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
         const results = validateInstalledSkills(scopeOpts, selected);
         if (results.length === 0) out("No installed skills to validate.\n");
         for (const result of results) {
-          out(result.ok ? `[OK] ${result.name}: SKILL.md matches the Agent Skills spec\n` : `[FAIL] ${result.name}: ${result.error}\n`);
+          out(result.ok ? `[OK] ${result.name}: SKILL.md name, description and body follow the spec\n` : `[FAIL] ${result.name}: ${result.error}\n`);
         }
         return results.every((result) => result.ok) ? 0 : 1;
       }

@@ -76,9 +76,8 @@ function requireDirectory(path: string, label: string): void {
 /** Require a regular file, rejecting directories and symlinks. */
 function requireFile(path: string, label: string): void {
   const stat = statIfPresent(path);
-  if (!stat || !stat.isFile() || stat.isSymbolicLink()) {
-    fail(`${label} must be a regular, non-symlink file: ${path}`);
-  }
+  if (!stat) fail(`${label} is missing: ${path}`);
+  if (!stat.isFile() || stat.isSymbolicLink()) fail(`${label} must be a regular, non-symlink file: ${path}`);
 }
 
 /** Resolve the selected scope's skills root (user or project). */
@@ -165,8 +164,9 @@ function requireName(value: unknown, file?: string): asserts value is string {
   if (typeof value !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
     || value.includes("--") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(value)) {
     const rule = "1–64 lowercase letters/digits, with single hyphens, and not a reserved device name";
-    fail(file === undefined
-      ? `skill name must be ${rule}`
+    if (file === undefined) fail(`skill name must be ${rule}`);
+    fail(value === undefined
+      ? `SKILL.md has no name field; it must be ${rule}: ${file}`
       : `SKILL.md name ${JSON.stringify(value)} must be ${rule}: ${file}`);
   }
 }
@@ -673,19 +673,26 @@ function writeManifest(managed: string, manifest: SkillManifest): void {
 }
 
 /** The Agent Skills spec's limit on the Markdown body that follows the frontmatter. */
-export const SKILL_BODY_LINE_LIMIT = 500;
+const SKILL_BODY_LINE_LIMIT = 500;
 /** The Agent Skills spec's character bounds for `description`. */
-export const SKILL_DESCRIPTION_MIN_CHARS = 1;
-export const SKILL_DESCRIPTION_MAX_CHARS = 1024;
+const SKILL_DESCRIPTION_MIN_CHARS = 1;
+const SKILL_DESCRIPTION_MAX_CHARS = 1024;
+/**
+ * Words that carry the "when to use it" half of a description. The spec asks for
+ * it in prose, so the check has to settle for a marker: English `when`/`whenever`
+ * and the Chinese ways of saying it. A description that says it some other way is
+ * sent back with this list, which is the cheapest thing to point at.
+ */
+const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用/i;
 
 /**
  * Require a description that says what the skill does and when to use it (#387).
- * The spec asks for both halves; a description with no `when` clause names the
+ * The spec asks for both halves; a description with no such clause names the
  * topic but never tells an agent when to reach for it.
  */
 function requireDescription(value: unknown, path: string): void {
-  if (value === undefined) {
-    fail(`SKILL.md has no description field; the spec wants 1–1024 characters saying what the skill does and when to use it: ${path}`);
+  if (value === undefined || value === null) {
+    fail(`SKILL.md has no description; it must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters saying what the skill does and when to use it: ${path}`);
   }
   if (typeof value !== "string") {
     fail(`SKILL.md description must be a string, not ${Array.isArray(value) ? "a list" : typeof value}: ${path}`);
@@ -693,16 +700,20 @@ function requireDescription(value: unknown, path: string): void {
   const description = value.trim();
   const length = [...description].length;
   if (length < SKILL_DESCRIPTION_MIN_CHARS || length > SKILL_DESCRIPTION_MAX_CHARS) {
-    fail(`SKILL.md description must be 1–1024 characters, got ${length}: ${path}`);
+    fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
   }
-  if (!/\bwhen\b/i.test(description)) {
-    fail(`SKILL.md description must also say when to use the skill, e.g. "Use when the user …"; got "${description.slice(0, 120)}": ${path}`);
+  if (!WHEN_TO_USE.test(description)) {
+    fail(`SKILL.md description must also say when to use the skill — use "when"/"whenever" or say 什么时候用/何时/时使用; got "${description.slice(0, 120)}": ${path}`);
   }
 }
 
-/** Keep the body under the spec's 500-line budget; the frontmatter does not count. */
+/**
+ * Keep the body under the spec's 500-line budget; the frontmatter does not count,
+ * and neither do the blank lines around the body — they are separators, not
+ * content, and counting them would make the house style lose two lines.
+ */
 function requireShortBody(body: string, path: string): void {
-  const trimmed = body.replace(/(?:\r?\n)+$/, "");
+  const trimmed = body.replace(/^(?:\r?\n)+/, "").replace(/(?:\r?\n)+$/, "");
   const lines = trimmed === "" ? 0 : trimmed.split(/\r?\n/).length;
   if (lines >= SKILL_BODY_LINE_LIMIT) {
     fail(`SKILL.md body must stay under ${SKILL_BODY_LINE_LIMIT} lines, got ${lines} (move detail into files the skill references): ${path}`);

@@ -14,10 +14,20 @@ import { fileURLToPath } from "node:url";
 const CLI = fileURLToPath(new URL("../check-skills.mjs", import.meta.url));
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
-/** Run the checker the way CI does: one plain node process, no build first. */
-function check(args = [], { cwd = ROOT } = {}) {
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", timeout: 120_000 });
+/**
+ * Run the checker the way CI does: one plain node process, no build first.
+ * `root` swaps in another checkout for the no-argument discovery mode.
+ */
+function check(args = [], { cwd = ROOT, root } = {}) {
+  const env = root ? { ...process.env, ANS_CHECK_SKILLS_ROOT: root } : process.env;
+  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8", timeout: 120_000 });
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** Run a Git command in a fixture repository and insist it worked. */
+function git(cwd, args) {
+  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
 }
 
 /** Write one skill directory under a throwaway root and return its path. */
@@ -83,14 +93,43 @@ test("a skill directory with no SKILL.md goes red", (t) => {
   const result = check([path.join(root, "empty")]);
   assert.equal(result.code, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /\[FAIL\]/);
-  assert.match(result.stdout, /SKILL\.md must be a regular, non-symlink file/);
+  assert.match(result.stdout, /SKILL\.md is missing/);
 });
 
-test("no arguments checks every SKILL.md Git tracks, and the shipped one passes", () => {
+test("no arguments checks what Git can see: tracked, untracked, not ignored", (t) => {
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  git(root, ["config", "user.name", "Check Skills Test"]);
+  git(root, ["config", "user.email", "check-skills@example.invalid"]);
+  skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
+  git(root, ["add", "--", "alpha/SKILL.md", "alpha"]);
+  git(root, ["commit", "--quiet", "-m", "alpha"]);
+  // Written but not staged: a new skill has to be caught before it is committed.
+  skill(root, "beta", "name: beta\ndescription: Use when a test needs beta.");
+  writeFileSync(path.join(root, ".gitignore"), "ignored/\n");
+  // Ignored on purpose: build output and scratch copies are not sources.
+  skill(root, "ignored/gamma", 'name: gamma\ndescription: ""');
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /alpha[/\\]SKILL\.md/);
+  assert.match(result.stdout, /beta[/\\]SKILL\.md/);
+  assert.doesNotMatch(result.stdout, /gamma/);
+  assert.match(result.stdout, /2 SKILL\.md checked, 0 failed/);
+});
+
+test("no arguments in this checkout finds the shipped skill and passes it", () => {
   const result = check();
   assert.equal(result.code, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /apps\/plugin\/skills\/ans\/SKILL\.md/);
   assert.match(result.stdout, /([1-9]\d*) SKILL\.md checked, 0 failed/);
+});
+
+test("a checkout with no skill is refused instead of passing vacuously", (t) => {
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  const result = check([], { cwd: root, root });
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /no SKILL\.md found/);
 });
 
 test("a path that does not exist is a usage error, not a failing skill", (t) => {

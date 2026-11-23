@@ -4,17 +4,20 @@
 
 ### Added
 
-- **`scripts/check-skills.mjs`**：默认用 `git ls-files` 找出所有 `SKILL.md` 逐个查（构建产物和 `node_modules` 里的副本不算），也可以直接指定目录或文件。每条结果带文件、字段和期望，例如 `description must be 1–1024 characters, got 0`，不是只说「不合法」。分成 `[OK]` / `[FAIL]` 打印，有红的退出码 1。
+- **`scripts/check-skills.mjs`**：默认用 `git ls-files` 找出 Git 看得见的所有 `SKILL.md` 逐个查（已跟踪的，加上还没被忽略的新文件；构建产物和 `node_modules` 里的副本不算），也可以直接指定目录或文件。结果一行一个，带文件、字段和期望，比如 `[FAIL] …/SKILL.md: SKILL.md description must be 1–1024 characters, got 0`，不是只说「不合法」。有红的退出码 1；文件读不了算「没查成」，退出码 2，不混进「这个 skill 不合格」。
+- **一个 `SKILL.md` 都找不到也报红**：宁可退出码 1 也不假装查过了——仓库本来就该带着这份 skill。
 - **`check-build` 多了两步**：跑这个检查，再跑它自己的测试（大写名字、清空 `description`、正文 500 行，三种改坏都会红）。
 
 ### Changed
 
-- **`validateSkillFile` 的检查范围扩到整套规范**：以前只管 frontmatter 是不是 mapping、`name` 合不合规；现在还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。`ans skill validate` 输出的 `[OK] … SKILL.md frontmatter` 改成 `[OK] … SKILL.md matches the Agent Skills spec`。
+- **`validateSkillFile` 的检查范围扩到整套规范**：以前只管 frontmatter 是不是 mapping、`name` 合不合规；现在还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。`ans skill validate` 输出的 `[OK] … SKILL.md frontmatter` 改成 `[OK] … SKILL.md name, description and body follow the spec`。
 - **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
+- **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了——缺 `description`、正文过 500 行、名字不合规都会被挡下来；已经装好但不合规的，`ans skill validate` 会报红。要装的 skill 得先改好。
 
 ### Known limits
 
-- **「说了什么时候用」只能查字面**：要求 `description` 里出现 `when`（比如 `Use when the user …`）。写得烂但带 `when` 的句子照样过；这条挡的是漏写，不是写得不好。
+- **「说了什么时候用」只能认几个词**：`description` 里要有 `when` / `whenever`，或者中文的 `什么时候` / `何时` / `时使用`。换个说法的（比如「审查代码时用」）照样会被挡，错误信息会把认的词列出来；写得烂但带这些词的也照样过。这条挡的是漏写，不是写得不好。
+- **正文行数不算前后空行**：frontmatter 后面那行空行、正文末尾的空行都不计入 500 行，数的是实际内容行。
 
 ## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
 
