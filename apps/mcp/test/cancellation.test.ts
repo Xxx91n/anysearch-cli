@@ -7,6 +7,8 @@
 //     session auto-index write happens afterwards.
 //   - stdio e2e: `notifications/cancelled` on the SDK request signal reaches the
 //     same seam through a real stdio transport.
+//   - Handler seam: an arm the caller cut off is named in providersCancelled,
+//     whether it rejects or resolves late with an envelope (#475, #481).
 //
 // Test setup: real buildServer()/createHttpApp() over a real RetroaererdEngine with a
 // mock provider (offline, no LLM, no network). No test framework (repo
@@ -126,6 +128,21 @@ function makeComposition() {
   } as unknown as CompositionResult;
 
   return { comp, signals, anchors, saves, started };
+}
+
+// Minimal real-engine composition for the handler-level cancellation blocks:
+// one mock arm, no store writes, no resume anchors. Both blocks abort before a
+// session is minted, so the stub's session id is never read.
+function makeHandlerComposition(provider: SearchProvider): CompositionResult {
+  return {
+    retriever: new RetroaererdEngine([provider]),
+    store: {
+      createSession: async (d: string) => ({ id: "cancel-handler", domain: d, createdAt: "" }),
+      saveResults: async () => {},
+    } as unknown as SessionStore,
+    observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+    providerBuildErrors: {},
+  } as unknown as CompositionResult;
 }
 
 async function main() {
@@ -248,15 +265,7 @@ async function main() {
         });
       },
     };
-    const eng = {
-      retriever: new RetroaererdEngine([provider]),
-      store: {
-        createSession: async (d: string) => ({ id: "cancel-4", domain: d, createdAt: "" }),
-        saveResults: async () => {},
-      } as unknown as SessionStore,
-      observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
-      providerBuildErrors: {},
-    } as unknown as CompositionResult;
+    const eng = makeHandlerComposition(provider);
 
     const caller = new AbortController();
     caller.abort("caller went away");
@@ -294,6 +303,57 @@ async function main() {
       JSON.stringify(research?.structuredContent?.providersQueried) === JSON.stringify([]),
       "4: no completed round, so no arm state is claimed",
     );
+  }
+
+  // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----
+  {
+    // Same caller abort as 4, but the provider answers a cancel with a late
+    // envelope (one result included) instead of rejecting. Without the engine's
+    // abort mark in the settle handlers this arm is recorded as fulfilled: the
+    // call reads as "one arm answered", the late result reaches the pool, and
+    // providersCancelled stays empty — so "cancelled" would depend on how each
+    // provider reacts to its signal.
+    let startedResolve: () => void = () => { };
+    const started = new Promise<void>((r) => { startedResolve = r; });
+    const provider: SearchProvider = {
+      id: "slow",
+      modes: ["fast", "index", "deep", "answer"],
+      search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+        startedResolve();
+        return new Promise<ProviderEnvelope>((resolve) => {
+          const late = () => resolve({
+            provider: "slow",
+            results: [{ url: "https://slow.example/late", title: "late", snippet: "s", source: "slow" }],
+            answers: [],
+            elapsedMs: 1,
+          });
+          if (signal.aborted) late();
+          else signal.addEventListener("abort", late, { once: true });
+        });
+      },
+    };
+    const eng = makeHandlerComposition(provider);
+
+    const caller = new AbortController();
+    const pending = captureHandlers(eng).search_web({ query: "late" }, { mcpReq: { signal: caller.signal } });
+    await started;
+    caller.abort("caller went away");
+    const res = await pending;
+
+    assert(res?.isError !== true, "5: a cancelled call is not an error");
+    assert(res?.structuredContent?.interrupted === true, "5: the call says it was interrupted");
+    assert(
+      JSON.stringify(res?.structuredContent?.providersQueried) === JSON.stringify(["slow"]),
+      "5: structuredContent names the arm that was asked",
+    );
+    assert(
+      JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify(["slow"]),
+      "5: a late resolve is cancelled, not counted as an answered arm",
+    );
+    assert(!res?.structuredContent?.providersFailed?.includes("slow"), "5: a late resolve is not a failure either");
+    const doc = JSON.parse(String(res?.content?.[0]?.text));
+    assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "5: content names the arm that was cut off");
+    assert(doc.totalResults === 0, "5: the late envelope's results stay out of the answer");
   }
 
   console.log("--- mcp cancellation tests: " + passed + " passed, " + failed + " failed ---");
