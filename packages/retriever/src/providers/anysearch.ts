@@ -284,6 +284,8 @@ export class AnySearchProvider implements SearchProvider {
     // defer-r84 closure: POSIX empty-string env == unset — ""
     // is a value for ?? (not nullish), so the chain used to fall to an
     // empty endpoint and every call failed into providersFailed.
+    // 兜底是表里那一格 freeProbe.endpoint：anysearch 的免费面就是 MCP 入口，那格同时是
+    // 适配器的默认地址（理由写在 provider-facts 的 Design 注里）。
     this.endpoint = normalizeEndpoint(endpoint ?? (process.env.ANYSEARCH_ENDPOINT || undefined) ?? PROVIDER_FACTS.anysearch.freeProbe.endpoint);
   }
 

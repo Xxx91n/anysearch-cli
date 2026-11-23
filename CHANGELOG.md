@@ -1,19 +1,22 @@
 ## Unreleased — #504: 信息源能力和免费面事实收成一张表（provider-facts）
 
-一句话说清：**三个适配器各写一份的 `modes`、`domainFilterSupported`、`verticalDomainSupported`，加上免费面探针里的默认 endpoint、`undetectable`、AnySearch 的 MCP 协议版本，现在都从 `packages/retriever/src/providers/provider-facts.ts` 的一张表读。行为一点没变；以后改一家信息源只改一格，少填一家或少填一个字段是类型错误。**
+一句话说清：**三个适配器各写一份的 `modes`、`domainFilterSupported`、`verticalDomainSupported`，加上免费面探针里的默认 endpoint、`undetectable`、AnySearch 的 MCP 协议版本，现在都从 `packages/retriever/src/providers/provider-facts.ts` 的一张表读。行为一点没变；以后改一家信息源的代码只改一格——少填一家、少填一个必填字段、把某一行的 id 写成别家的，类型检查都直接红。文档仍然手写，见下面的边界。**
 
 ### Changed
 
-- **新增 `provider-facts`**（retriever 包，`./providers` 公开面导出）：按 provider id 键控，字段只有代码真的会读的那几个——`id`、`modes`、两个能力位、`freeProbe.endpoint`、`freeProbe.undetectable`、`mcpProtocolVersion`（只有 anysearch 有）。每一行的 `id` 必须等于自己的键，写成别家的类型检查就红。
+- **新增 `provider-facts`**（retriever 包，`./providers` 公开面导出）：按 provider id 键控。字段只有代码真的会读的那几个：`id`、`modes`、两个能力位、`freeProbe.endpoint`、`freeProbe.undetectable`、`mcpProtocolVersion`（只有 anysearch 有）。`id` 由键给出，不用在行里重复写，写错就红。
 - **三个适配器改成读表**：exa / tavily / anysearch 的 `id`、`modes`、两个能力位不再各写一份。exa 和 tavily 以前没声明 `verticalDomainSupported`，现在显式写 `false`——引擎读的是真假值，`undefined` 和 `false` 一样走降级，所以行为没变。
-- **免费面探针读表**：`probeTavily` / `probeExa` / `probeAnySearch` 的默认 endpoint、`undetectable`、AnySearch 协议版本从表里取，模块内那几个同名常量删掉。`isProbeProviderId` 改成以表键为准；`probeProviderAuth` 仍是一家一个函数，表里加一家而 `PROBES` 少一个就编译失败。
-- **`ANYSEARCH_ENDPOINT` 和 `MCP_PROTOCOL_VERSION` 两个符号没了**：默认地址和协议版本搬进 `PROVIDER_FACTS.anysearch`（`freeProbe.endpoint` / `mcpProtocolVersion`）。环境变量 `ANYSEARCH_ENDPOINT` 的名字和语义没动；provider 探针的 `--default-endpoint` 改成从表里取地址，取不到就退出 2，不静默退回 env。
-- **`providers/anysearch/README.md` 的两处指路跟着改**：端点和协议版本都指向 `provider-facts.ts` 里的那一格。
+- **免费面探针读表**：`probeTavily` / `probeExa` / `probeAnySearch` 的默认 endpoint、`undetectable`、AnySearch 协议版本从表里取，模块内那几个同名常量删掉。`isProbeProviderId` 以表键为准；`probeProviderAuth` 仍是一家一个函数，表里加一家而 `PROBES` 少一个就编译失败。
+- **`providers/anysearch/README.md` 的两处指路跟着改**：端点和协议版本都指向 `provider-facts.ts` 里的那一格；provider 探针的 `--default-endpoint` 改成从表里取地址，取不到就退出 2，不静默退回 env。
+
+### Removed
+
+- **`ANYSEARCH_ENDPOINT` 和 `MCP_PROTOCOL_VERSION` 两个符号**：默认地址和协议版本搬进 `PROVIDER_FACTS.anysearch`（`freeProbe.endpoint` / `mcpProtocolVersion`）。环境变量 `ANYSEARCH_ENDPOINT` 的名字和语义没动。
 
 ### Known limits
 
-- **表里只收代码会读的字段**：transport 描述、cancellable、用量、解释文字仍然由 `providers/<id>/README.md` 和 `docs/mcp-server.md` 手写承载，后者仍是唯一的能力表；没有生成器，也没有文档一致性测试（#419 / #415）。
-- **raw 探针继续自己留字面量**：`probe-anysearch-mcp-raw.ts` 的 endpoint 和协议版本不 import 被它检查的代码；改表里的值要同步那一份和 README。
+- **文档还是手写、还是第二份**：`docs/mcp-server.md` 的「## Upstream provider transport matrix」和三份 `providers/<id>/README.md` 照旧把同一批事实写一遍；改表只保证代码改一处，这几份文档要人跟着改（#419 定的分工，没有生成器，也没有文档一致性测试）。
+- **raw 探针和 tavily 那条手工域过滤探针各自留字面量**：`probe-anysearch-mcp-raw.ts` 的 endpoint 与协议版本故意不 import 被它检查的代码；`providers/tavily/probe-tavily-domains.mjs` 也写死了 `https://api.tavily.com`。
 - **`providers/` 不在 `pnpm -r check` 里**：provider 探针的改动只做了模块加载冒烟（plain `node` 下事实表和适配器的取值对得上），没跑真调用。
 
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查

@@ -7,8 +7,9 @@
 //                                    好 key isError「query is required」；坏 key invalid_api_key
 //
 // 一次真搜索都不跑：这条请求本身就是搜索入口，带上 query 就变成真查询、花额度。
-// 探针是各自独立的最小实现，不 import 适配器 —— 那样就分不清「适配器坏」还是「上游坏」。
-// 地址和 undetectable 从 provider-facts 读：那是数据，不是适配器的请求路径，归因没被绑到一起。
+// Design: 探针不 import 适配器，但读 provider-facts —— 地址和 undetectable 是数据，
+// 不是适配器的请求路径，归因没被绑到一起。代价认了：表里的地址写错时，探针会和适配器
+// 一起错（#415 的取舍；拒绝合并两条 anysearch 探针也是同一个理由）。
 // 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
@@ -370,7 +371,11 @@ const PROBES: Record<ProbeProviderId, (input: ProbeInput) => Promise<ProbeOutcom
   anysearch: probeAnySearch,
 };
 
-/** 这家有没有免费面探针：以事实表的键为准。没登记的 provider 不猜，让调用方说清楚「还没接」。 */
+/**
+ * 这家有没有免费面探针：以事实表的键为准。没登记的 provider 不猜，让调用方说清楚「还没接」。
+ * 表键和 `PROBES` 不会分叉——`PROBES` 的类型就是 `Record<ProbeProviderId, …>`，
+ * 表里加一家而这里少一个函数，编译就红。
+ */
 export function isProbeProviderId(id: string): id is ProbeProviderId {
   return Object.prototype.hasOwnProperty.call(PROVIDER_FACTS, id);
 }
