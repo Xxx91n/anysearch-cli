@@ -273,18 +273,21 @@ test("a red push gate names its own group", async () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /\[preflight\] gate self-test failed: push gate$/m);
     assert.equal(result.stderr.includes("CI change policy"), false, result.stderr);
+    // The suite never starts: the self-test stopped the run.
+    assert.equal(result.stdout.includes("pnpm ran"), false);
     clearKeptHome(result);
   });
 });
 
-// A tree without installed dependencies cannot answer for a shared judgment, and
-// reporting it as a broken judgment sends the operator to the wrong place.
-test("a full run without installed dependencies says which command to run", async () => {
+// The judgement needs a parser, not just a node_modules directory: a tree that
+// has the directory but no parser is still uninstalled as far as this run goes,
+// and reporting it as a broken judgment sends the operator to the wrong place.
+test("a full run without a resolvable parser says which command to run", async () => {
   await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
-    rmSync(join(root, "node_modules"), { recursive: true, force: true });
+    rmSync(join(root, "node_modules", ".pnpm"), { recursive: true, force: true });
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /no node_modules — run `pnpm install --ignore-scripts` first/);
+    assert.match(result.stderr, /no YAML parser under node_modules — run `pnpm install --ignore-scripts` first/);
     assert.equal(result.stderr.includes("gate self-test failed"), false, result.stderr);
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
@@ -470,6 +473,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   mkdirSync(join(root, "scripts"));
   for (const name of [
     "preflight-test.mjs",
+    "check-workflows.mjs",
     "preflight-change.mjs",
     "preflight-git.mjs",
     "preflight-plan.mjs",
@@ -479,9 +483,11 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
   for (const [name, content] of Object.entries(files ?? {})) write(join(root, name), content);
-  // The gate refuses a full run without installed dependencies, and a workspace
-  // with none would never reach the suite either.
-  mkdirSync(join(root, "node_modules"), { recursive: true });
+  // The gate refuses a full run without the YAML parser a shared judgment
+  // resolves, so the fixture ships one in the layout pnpm uses.
+  const yaml = join(root, "node_modules", ".pnpm", "yaml@0.0.0", "node_modules", "yaml");
+  write(join(yaml, "package.json"), JSON.stringify({ name: "yaml", version: "0.0.0", main: "index.js" }));
+  write(join(yaml, "index.js"), "module.exports = {};\n");
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);

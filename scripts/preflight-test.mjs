@@ -30,6 +30,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveYaml } from "./check-workflows.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
@@ -137,13 +138,13 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 // fake pnpm; PREFLIGHT_GATE_TESTS replaces the group list so that test does not
 // re-enter the whole suite.
 if (selfTest) {
-  // Design: a shared judgment reads a parser from node_modules, so a tree without
-  // it would report a broken judgment that is only an uninstalled one. Say which
-  // command fixes it, before anything runs. PREFLIGHT_GATE_TESTS means a test
-  // supplied its own files.
-  if (!process.env.PREFLIGHT_GATE_TESTS && !fs.existsSync(path.join(root, "node_modules"))) {
+  // Design: the shared judgment that needs a YAML parser is asked for here, by
+  // resolving the parser the same way check-workflows does — an uninstalled or
+  // half-installed tree would otherwise report a broken judgment. Name the
+  // command instead. PREFLIGHT_GATE_TESTS means a test supplied its own files.
+  if (!process.env.PREFLIGHT_GATE_TESTS && !resolveYaml(root)) {
     removeTestHome(testHome);
-    writeStderr("[preflight] blocked: no node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need it");
+    writeStderr("[preflight] blocked: no YAML parser under node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need the workspace dependencies");
     process.exit(1);
   }
   let result;
@@ -339,16 +340,15 @@ function forwardKeepingTail(source, limit) {
 }
 
 // Design: a write to a pipe is queued, and process.exit drops what has not left
-// yet — on a red self-test that is the failing group's own output. Give it a
-// moment, but not forever: a pipe nobody reads must not hang the gate.
+// yet — on a red self-test that is the failing group's own output. An empty
+// write's callback runs behind everything already queued, which flushes without
+// depending on 'drain' (that only fires after a write returned false). The timer
+// keeps a pipe nobody reads from hanging the gate.
 async function exitAfterFlush(code) {
-  const pending = [process.stdout, process.stderr].filter((stream) => stream.writableLength > 0);
-  if (pending.length > 0) {
-    await Promise.race([
-      Promise.all(pending.map((stream) => new Promise((resolve) => stream.once("drain", resolve)))),
-      new Promise((resolve) => setTimeout(resolve, 1000)),
-    ]);
-  }
+  const flushed = [process.stdout, process.stderr].map(
+    (stream) => new Promise((resolve) => stream.write("", resolve)),
+  );
+  await Promise.race([Promise.all(flushed), new Promise((resolve) => setTimeout(resolve, 1000))]);
   process.exit(code);
 }
 
