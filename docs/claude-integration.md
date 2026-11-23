@@ -10,7 +10,9 @@ These facts were checked on a real host. Do not guess them:
 - **stdin field is `hook_event_name`.** Adapters also accept the old `event` field.
 - **stdout must be wrapped in `hookSpecificOutput`.** A bare top-level
   `additionalContext`, `updatedToolOutput`, or `permissionDecision` is dropped
-  without notice. We proved this with deny sentinels.
+  without notice. Nested, `hookSpecificOutput.updatedToolOutput` does replace a
+  PostToolUse tool result (hooks reference, §Decision control, checked
+  2026-11-23); the ER-2 finding above was about the bare top-level form. We proved this with deny sentinels.
   `hookSpecificOutput.permissionDecision: "deny"` and the old
   `{decision:"block"}` both block the tool call. The same fields at top level
   do not block: the call runs anyway (`permission_denials: []`).
@@ -106,8 +108,16 @@ What each event does:
 | Event | Behavior |
 |-------|----------|
 | SessionStart | `hookSpecificOutput.additionalContext` carries the ans_* routing card, which goes into context |
-| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same `hookSpecificOutput` |
+| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same `hookSpecificOutput`; a decision that rewrites the tool's arguments ships them as `hookSpecificOutput.updatedInput` |
 | PostToolUse | distills `tool_response.results[]` into a `hookSpecificOutput.additionalContext` summary; also POSTs index entries to the plugin server (`/index`) |
+
+On the rewrite channel: `updatedInput` replaces the tool's whole input object,
+so whatever sets it has to send the unchanged fields along. It works without a
+`permissionDecision` — Claude Code then judges the changed call by its normal
+rules. In auto mode the classifier had already reviewed the arguments Claude
+wrote, not the rewritten ones, so a changed call can be refused and Claude
+asked to send it again. That is the host's call, not something this hook works
+around.
 
 ## 6. Plugin form (experimental)
 

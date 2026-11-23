@@ -90,10 +90,10 @@ is live; this adapter is MCP-only」那条，由 #206 改写（现在用户能�
 
 解除信号: 上游匿名配额边界换形态——也就是在配额边界对一个匿名（没有
 `ANYSEARCH_API_KEY`）的 `tools/call search` 探针，不再回自动签凭证的那段内容
-（HTTP 200 + `isError:null` + "account ... automatically generated ... api_key=..."），
-而是回真正的错误（`isError:true`、401/403，或者结构化的配额错误）。到那时，
-`/automatically generated|api_key *=/i` 探测器和「quota/auth nudge」抛
-permanent-auth 的那段代码
+（HTTP 200，`isError:null` 或 `isError:true`，正文是 "account ... automatically
+generated ... api_key=..."），而是回真正的错误（401/403，或者结构化的配额错误）。
+到那时，`PROVISIONING_NOTICE`（账号/key + automatically generated、key issued
+这类开户措辞）和「quota/auth nudge」抛 permanent-auth 的那段代码
 （`packages/retriever/src/providers/anysearch.ts` 的 `mapToolsCallResult()`；分类在
 `packages/retriever/src/contract.ts` 的 `classifyProviderError()`；夹具测试
 `packages/retriever/test/provider-error-class.test.ts` 里 `cases` 那几条）要跟着改映射。

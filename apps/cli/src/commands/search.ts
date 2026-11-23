@@ -8,7 +8,12 @@ import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
 
-import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "./search-abstain";
+import {
+  searchExitCode,
+  formatAbstainLine,
+  formatProviderAbsentLine,
+  formatProvidersFailedLine,
+} from "./search-abstain";
 
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
@@ -116,7 +121,7 @@ export async function runSearch(args: string[]): Promise<number> {
   // arms inside the engine grace window). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
   const engine = createPersistentEngine(active.declaredName);
-  const { retriever, observation, providerBuildErrors, store, config } = engine;
+  const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that
   // cannot be established stops before any provider request; an undeclared one
@@ -200,6 +205,8 @@ export async function runSearch(args: string[]): Promise<number> {
         // "which arm never entered the fanout, and why" (#180). Additive; {}
         // when every enabled arm built.
         providerBuildErrors,
+        // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
+        credentialSources: credentialSources ?? null,
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
@@ -229,7 +236,7 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log("---");
       console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
       if (envelope.metadata.providersFailed.length > 0) {
-        console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));
+        console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
       }
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
@@ -272,7 +279,7 @@ export async function runSearch(args: string[]): Promise<number> {
 
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     if (envelope.metadata.providersFailed.length > 0) {
-      console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));
+      console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
     }
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);

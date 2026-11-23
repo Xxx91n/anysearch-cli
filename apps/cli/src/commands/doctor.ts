@@ -5,7 +5,7 @@
 // 每条还标 offline 或 live：离线检查只证明本机文件/解析/构造器没问题，不证明
 // 联网、模型、宿主真的能用。真实能力要在 live 里单独跑，doctor 不替它打包票。
 //
-// --live 是唯一联网的开关（#416 定的）。它只打三家搜索源的免费面（Tavily /usage、
+// --live 是唯一联网的开关（#416 定的）。它只打三家信息源的免费面（Tavily /usage、
 // Exa 空体 /search、AnySearch initialize + tools/list + 空参数 tools/call），一次
 // 真搜索都不跑；模型那几家不验 —— 要么真调一次花钱，要么 /models 类接口没实测。
 
@@ -43,6 +43,7 @@ import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly
 import { probeDetail, probeState } from "../probe-report";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { describeCredentialSource } from "./search-abstain";
 
 declare const __PACKAGE_VERSION__: string | undefined;
 const PKG_VERSION: string =
@@ -57,7 +58,7 @@ const HELP = `ans doctor [--json] [--strict] [--live]
   失败     查过，确实坏了
 
 每条还标着是离线检查还是真实调用。默认只读本机，不联网、不启动宿主。
---live 才联网：只打三家搜索源的免费面，给每把 key 一个 auth 结论，一次真搜索
+--live 才联网：只打三家信息源的免费面，给每把 key 一个 auth 结论，一次真搜索
 都不跑、不花额度。模型那几家不验（真调一次要花钱，--live 不替它花）。
 --json 输出结构化结果。退出码：有失败是 1；加了 --strict 又有未检查是 5；
 其余是 0。`;
@@ -212,12 +213,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const id of SEARCH_PROVIDER_IDS) {
       try {
         const instance = make[id]();
+        // 这一行只证明构造器能建；联网和 key 是否有效不在这里验。
         report.add({
           layer: "capability",
           name: `provider ${id}`,
-          state: instance.id.length > 0 && instance.modes.length >= 3 ? "ready" : "failed",
+          state: "ready",
           mode: "offline",
-          detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「搜索源」）`,
+          detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「信息源」）`,
         });
       } catch (error) {
         // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
@@ -362,12 +364,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const provider of SEARCH_PROVIDER_IDS) {
       const entry = credentials[provider];
       if (!entry) {
+        // 没 key 不等于这个源没参与：tavily 和 anysearch 照常发请求，只有 exa 的适配器不建这个臂。
         report.add({
           layer: "capability",
-          name: `搜索源 ${provider}`,
+          name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "没有 key，这个源不会参与检索",
+          detail: describeCredentialSource("none", provider),
         });
         continue;
       }
@@ -375,23 +378,23 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       if (!entry.apiKey) {
         report.add({
           layer: "capability",
-          name: `搜索源 ${provider}`,
+          name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "endpoint 设了，但没有 key；这个源不会参与检索",
+          detail: "endpoint 设了；" + describeCredentialSource("none", provider),
         });
         continue;
       }
       // 有 key 只说明「key 在这」。key 好不好（auth）离线看不出来，默认那句必须
       // 把这半句写在脸上，不然一个「OK」会被读成「key 验过了」。
-      const keySource = entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件";
+      const source = describeCredentialSource(entry.source, provider);
       if (!live) {
         report.add({
           layer: "capability",
-          name: `搜索源 ${provider}`,
+          name: `信息源 ${provider}`,
           state: "ready",
           mode: "offline",
-          detail: `${keySource}（auth 没验；--live 才打免费面）`,
+          detail: `${source}（auth 没验；--live 才打免费面）`,
         });
         continue;
       }
@@ -402,10 +405,10 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       });
       report.add({
         layer: "capability",
-        name: `搜索源 ${provider}`,
+        name: `信息源 ${provider}`,
         state: probeState(outcome),
         mode: "live",
-        detail: `${keySource}；${probeDetail(outcome)}`,
+        detail: `${source}；${probeDetail(outcome)}`,
         ...(outcome.undetectable.length > 0 ? { undetectable: [...outcome.undetectable] } : {}),
       });
     }
@@ -462,7 +465,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       state: "unchecked",
       mode: "live",
       detail: live
-        ? "没跑真搜索（--live 也不花额度）；检索入口见「搜索源」那几行的实测结论"
+        ? "没跑真搜索（--live 也不花额度）；检索入口见「信息源」那几行的实测结论"
         : "doctor 不联网；要验真检索就用 ans search",
     });
   }

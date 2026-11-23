@@ -136,6 +136,85 @@ test("ans doctor：key 只在凭据文件里时，provider 不算失败", async 
   }
 });
 
+test("ans doctor：信息源按各家没 key 时的真实行为写，provider 行只验构造器（#441）", async () => {
+  const empty = await doctorInHome(
+    {
+      env: {
+        TAVILY_API_KEY: undefined,
+        EXA_API_KEY: undefined,
+        ANYSEARCH_API_KEY: undefined,
+        ANYSEARCH_ENDPOINT: undefined,
+      },
+    },
+    ["--json"],
+  );
+  // 没 key 的三家行为不一样：tavily 照常 keyless、anysearch 照常匿名，
+  // 只有 exa 的适配器（REST + exa-js）不建臂。
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "信息源 tavily")?.detail,
+    "无 key，按 keyless 跑",
+  );
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "信息源 anysearch")?.detail,
+    "无 key，按匿名跑",
+  );
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "信息源 exa")?.detail,
+    "无 key，这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
+  );
+  for (const provider of ["tavily", "exa", "anysearch"]) {
+    assert.equal(
+      empty.entries.find((entry) => entry.name === "信息源 " + provider)?.state,
+      "unconfigured",
+      provider + " has no key",
+    );
+  }
+
+  // provider 行不再拿恒真式冒充检查：tavily / anysearch 的构造器不带 key 也能建，
+  // exa 的构造器会拒——两种都按“构造器能不能建”如实报。
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "provider tavily")?.state,
+    "ready",
+  );
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "provider anysearch")?.state,
+    "ready",
+  );
+  assert.equal(
+    empty.entries.find((entry) => entry.name === "provider exa")?.state,
+    "unconfigured",
+  );
+
+  const keyed = await doctorInHome(
+    {
+      env: {
+        TAVILY_API_KEY: "test-tavily-key",
+        EXA_API_KEY: "test-exa-key",
+        ANYSEARCH_API_KEY: "test-anysearch-key",
+      },
+    },
+    ["--json"],
+  );
+  for (const provider of ["tavily", "exa", "anysearch"]) {
+    assert.equal(
+      keyed.entries.find((entry) => entry.name === "信息源 " + provider)?.state,
+      "ready",
+      provider + " key in env is ready",
+    );
+    // 来源那句话由 describeCredentialSource 说；后面那半句是 #442 加的，因为默认
+    // 模式不联网，一个「OK」不能让人以为 key 已经验过了。
+    assert.equal(
+      keyed.entries.find((entry) => entry.name === "信息源 " + provider)?.detail,
+      "key 来自环境变量（auth 没验；--live 才打免费面）",
+    );
+    assert.equal(
+      keyed.entries.find((entry) => entry.name === "provider " + provider)?.state,
+      "ready",
+      provider + " constructor built",
+    );
+  }
+});
+
 test("ans doctor --json：四层都在，状态只四种，实测项绝不报 ready", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-"));
   const saved = {

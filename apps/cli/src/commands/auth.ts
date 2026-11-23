@@ -9,7 +9,7 @@
 // The file is plaintext on purpose and says so, in its prompt, its `list`
 // output and in the file's own note. Nothing here prints a key value: `list`
 // shows only whether an entry exists and which provider/endpoint it is bound
-// to, plus the last four characters so a user can tell two keys apart.
+// to — not the value, and not any prefix or suffix of it.
 
 import {
   CREDENTIAL_PROVIDERS,

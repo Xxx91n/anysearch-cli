@@ -34,10 +34,10 @@ export function readConfig(): Record<string, string> {
 // with it. "A failed write keeps the old selection" only holds if the old file
 // is never opened for truncation.
 export function writeConfig(key: string, value: string): void {
-  // The target's own directory, not a second guess at the home dir: the path
-  // comes from configEnvPath() (USERPROFILE || HOME || "."), and homedir()
-  // reads the passwd entry instead. When they disagree the file was written
-  // into a directory nobody created.
+  // The target's own directory, not a second guess at the home dir: configPath()
+  // already resolved it — ~/.ans/config.env wins when it exists, and the legacy
+  // ~/.anysearch/config.env is used only when it does not. Recomputing the home
+  // here would go through homedir()'s passwd entry and could land somewhere else.
   const target = configPath();
   const dir = dirname(target);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

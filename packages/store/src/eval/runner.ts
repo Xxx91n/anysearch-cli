@@ -175,7 +175,8 @@ export interface EvalMetrics {
   forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };
 }
 
-// step 7 +: Observational zone — fixed 7-key shape; any metric value may be a SkipMarker.
+// step 7 +: Observational zone — the key set is fixed; most metrics may be a SkipMarker,
+// eventWriteFailures and armDeltas never are.
 export interface ObservationalZone {
   schema: "anysearch/observational@1";
   // offline runs that exclude a group (vector arm) record it here - never silent.

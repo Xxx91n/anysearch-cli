@@ -15,7 +15,7 @@
 //
 // Relaxed rung deviation from fts5.ts: memory evidence requires a strict majority of content words
 // (coversMajority) to keep near-miss distractors out; a recommender is a suggestion, not evidence,
-// so the relaxed OR rung fires at ≥2 content words and ambiguity is handled by the margin instead.
+// so the relaxed OR rung fires at ≥1 content word and ambiguity is handled by the margin instead.
 
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";

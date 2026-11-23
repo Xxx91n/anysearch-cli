@@ -1,5 +1,5 @@
 // CodeBuddy hook contract tests —.
-// Synthetic stdin per the real CodeBuddy Code 2.149.0 contract:
+// Synthetic stdin per the CodeBuddy Code hook contract (docs/codebuddy-integration.md):
 // stdin: hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
 // stdout: hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}
 // SessionStart: raw stdout text -> context verbatim.

@@ -11,10 +11,10 @@
 // to a non-security whitelist so a malicious repo cannot redirect the endpoint
 // or the secret source (Codex project-key precedent).
 // The key itself comes from, in order: ANS_LLM_API_KEY, the env var named by
-// `env_key`, then the user credential file (#301). The credential file is the
-// GUI-friendly path (a GUI host inherits no shell env) and its entries are
-// bound to a provider - and, for model providers, an endpoint - so a key
-// entered for one provider is never sent to another one.
+// `env_key`, the selected provider's own env vars, then the user credential file
+// (#301). The credential file is the GUI-friendly path (a GUI host inherits no
+// shell env) and its entries are bound to a provider - and, for model providers,
+// an endpoint - so a key entered for one provider is never sent to another one.
 // The resolver reads env + files and passes values in; the kernel stays env-free
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.
@@ -77,7 +77,8 @@ export interface ResolvedLlmConfig {
   model?: string;
   baseUrl?: string;
   api?: "chat" | "messages" | "responses";
-  /** Secret material resolved via ANS_LLM_API_KEY, env_key indirection or the user credential file. */
+  /** Secret material resolved via ANS_LLM_API_KEY, env_key indirection, the provider's own env vars
+   * or the user credential file. */
   apiKey?: string;
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
@@ -199,8 +200,10 @@ function loadFile(
 
 /**
  * Resolve effective LLM config: CLI flag > env > project > user per key.
- * apiKey comes from ANS_LLM_API_KEY env, else from the env var named by the
- * winning layer's env_key (file stores the var NAME, never the secret).
+ * apiKey comes from ANS_LLM_API_KEY env, else from the env var named by the user
+ * file's env_key (project files may only set provider/model, and a file stores the
+ * var NAME, never the secret), else the provider's own env vars, else the user
+ * credential file.
  */
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;

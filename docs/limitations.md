@@ -295,9 +295,10 @@
   for them. The id never enters query results and is never an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`**
   — upstream answers anonymous calls past their allowance with an
-  auto-provisioning payload (HTTP 200, `isError:null`, no result body) instead
-  of an error. The provider names this `quota/auth nudge` → `permanent-auth`.
-  The fix is on the user side: set `ANYSEARCH_API_KEY`.
+  auto-provisioning payload (HTTP 200, no result body) instead of an error; the
+  same payload can also arrive with `isError:true`. The provider names this
+  `quota/auth nudge` → `permanent-auth`. The fix is on the user side: set
+  `ANYSEARCH_API_KEY`.
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.
@@ -305,8 +306,9 @@
   the doc implies `symbol` suffices (eval cell `vert-f1105` is disabled and
   marked `tombstoned` on this; see `eval-looks.json`).
 - **Tavily's result package always has `usage` set to `undefined`** — `@tavily/core` returns
-  credits only per-call (`response.usage.credits`) and offers no standalone
-  usage API, so `usage()` is unimplemented (the contract field is optional).
+  credits only per-call (`response.usage.credits`), so `usage()` is
+  unimplemented (the contract field is optional). Endpoints:
+  `providers/tavily/README.md`.
 - **An exhausted provider plan is its own error class (`quota-exhausted`)** —
   some upstreams answer a used-up plan with a plain 4xx body instead of a
   typed error (Tavily: HTTP 432,

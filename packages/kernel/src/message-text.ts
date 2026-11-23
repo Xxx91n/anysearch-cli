@@ -2,7 +2,7 @@
 // Why this exists: pi-agent-core normalizes `agent.prompt("hello")` into a
 // content-BLOCK user message —
 //   { role: "user", content: [{ type: "text", text: "hello" }] }
-// (verified against @earendil-works/pi-agent-core 0.84.2), not a string. An
+// (verified against @earendil-works/pi-agent-core 1.5.1), not a string. An
 // inject path that only understands `typeof content === "string"` therefore
 // either never fires or, worse, rewrites the user's message down to the
 // injected text. These helpers make "read the text" and "append text" total

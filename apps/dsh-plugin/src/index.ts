@@ -133,7 +133,6 @@ const mcpBaseUrl = (): string => process.env.ANS_MCP_URL || 'http://127.0.0.1:30
 /** Bearer for the MCP endpoint: ANS_MCP_KEY when the server enforces auth, else the server token. */
 const mcpBearer = (): string => process.env.ANS_MCP_KEY || resolveServerToken().token;
 const MCP_ACCEPT = 'application/json, text/event-stream';
-const MCP_DEFAULT_VERSION = '2025-03-26';
 
 let rpcSeq = 0;
 interface McpChannel { version: string }

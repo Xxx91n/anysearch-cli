@@ -87,7 +87,7 @@ async function withSandbox(run: (doctor: Doctor) => Promise<void>): Promise<void
 }
 
 function sourceRows(entries: Entry[]): Entry[] {
-  return entries.filter((entry) => entry.name.startsWith("搜索源 "));
+  return entries.filter((entry) => entry.name.startsWith("信息源 "));
 }
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
@@ -210,14 +210,14 @@ test("ans doctor --live：三家各给一个 auth 结论，全从免费面来", 
           assert.match(row.detail ?? "", /auth 通过/);
           assert.match(row.detail ?? "", /key 来自环境变量/);
         }
-        const anysearch = rows.find((row) => row.name === "搜索源 anysearch");
+        const anysearch = rows.find((row) => row.name === "信息源 anysearch");
         assert.match(anysearch!.detail ?? "", /tools\/list/, "anysearch 顺手报了入口契约");
         // 额度只有 tavily 验得了，另两家必须说出来（#416 的 undetectable）。
-        for (const name of ["搜索源 exa", "搜索源 anysearch"]) {
+        for (const name of ["信息源 exa", "信息源 anysearch"]) {
           const row = rows.find((entry) => entry.name === name)!;
           assert.deepEqual(row.undetectable, ["quota"], name + " 没标验不到什么");
         }
-        assert.deepEqual(rows.find((row) => row.name === "搜索源 tavily")!.undetectable, undefined);
+        assert.deepEqual(rows.find((row) => row.name === "信息源 tavily")!.undetectable, undefined);
         assert.equal(run.code, 0);
       });
     },
@@ -278,7 +278,7 @@ test("ans doctor --live：没 key 的源不探，还是「未配置」", async (
         const run = await doctor(["--json", "--live"], {
           endpoints: { tavily: base + "/tavily", exa: base + "/exa", anysearch: base + "/mcp" },
         });
-        const exa = sourceRows(run.entries).find((row) => row.name === "搜索源 exa")!;
+        const exa = sourceRows(run.entries).find((row) => row.name === "信息源 exa")!;
         assert.equal(exa.state, "unconfigured");
         assert.equal(exa.mode, "offline", "没 key 就没有可验的东西");
       });
@@ -296,7 +296,7 @@ test("ans doctor --live：文字输出里那几行标着「实测」", async () 
         const run = await doctor(["--live"], {
           endpoints: { tavily: base + "/tavily", exa: base + "/exa", anysearch: base + "/mcp" },
         });
-        const line = run.text.split("\n").find((each) => each.includes("搜索源 tavily"));
+        const line = run.text.split("\n").find((each) => each.includes("信息源 tavily"));
         assert.ok(line, "文字输出里要有那一行");
         assert.match(line, /（实测）/);
         assert.match(line, /auth 通过/);

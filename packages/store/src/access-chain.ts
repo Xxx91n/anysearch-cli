@@ -14,7 +14,8 @@
 // first chained row carries prev_hash = genesis_hash; each later row chains on the previous row's hash
 //
 // Type whitelist (D4): INTEGER columns must be integer numbers, TEXT columns strings, NULL only in
-// prev_hash / schema_version / event_type. REAL / blob / NaN entering the chain input throws.
+// prev_hash / schema_version / event_type / source_label — plus memory_id on a switch row (a non-access
+// event_type, which canonicalEventJson short-circuits). REAL / blob / NaN entering the chain input throws.
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 
@@ -40,7 +41,7 @@ function assertScalar(k: string, v: unknown): void {
   if (v === null) { if (k === "prev_hash" || k === "schema_version" || k === "event_type" || k === "source_label") return; throw new Error("access-chain: " + k + " must not be NULL"); }
   if (typeof v === "string") return;
   // D4 whitelist: INTEGER only — REAL (non-integer number) or anything else is rejected.
-  // source_label and trace_id are nullable TEXT in the v2 boundary.
+  // source_label is nullable TEXT in the v2 boundary.
   if (typeof v === "number" && Number.isInteger(v) && (k === "id" || k === "memory_id" || k === "schema_version")) return;
   throw new Error("access-chain: non-whitelisted value for " + k + " (" + Object.prototype.toString.call(v) + ")");
 }
@@ -51,8 +52,8 @@ export function canonicalEventJson(row: ChainEventRow): string {
   const fields: readonly (keyof ChainEventRow)[] = row.schema_version === 1 ? CHAIN_FIELDS_V1 : CHAIN_FIELDS;
   for (const k of fields) {
     const v = row[k as keyof ChainEventRow];
-    // switch edges carry a NULL memory_id; the access chain keeps the same
-    // six-field canonical form while the switch_events side table holds the edge provenance.
+    // switch edges carry a NULL memory_id; the row is hashed with the field list of its own
+    // schema_version, while the switch_events side table holds the edge provenance.
     if (v === null && k === "memory_id" && typeof out.event_type === "string" && out.event_type !== CHAIN_EVENT_TYPE) {
       out[k] = v;
       continue;

@@ -1,9 +1,8 @@
 // #129 — the memory-wiring decision behind `ans chat`.
 //
-// Lives in its own module so the wiring can be tested: `chat.ts`
-// imports the kernel, whose pi-agent-core dependency is ESM-only, while this
-// CLI package is CommonJS — importing chat.ts from a test breaks module
-// resolution before any assertion runs.
+// Lives in its own module so the wiring can be tested without loading `chat.ts`,
+// which pulls the kernel, the engine and process-level I/O this helper does not
+// need.
 import { randomUUID } from "node:crypto";
 import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 import type { BudgetLedgerPort, SessionStorePort } from "@anysearch-cli/kernel";

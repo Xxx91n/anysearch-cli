@@ -38,7 +38,7 @@ export * from "./relation";
 // queue rows, and the query's "which object is this?" resolution.
 export * from "./entity-alias";
 
-// consolidation + reversible forgetting (sixth arm, Phase-1 shadow).
+// consolidation + reversible forgetting (sixth arm, serving at weight 0.5).
 export * from "./consolidate";
 
 // #263: summary provenance and the suspension a correction causes (D8/D9).

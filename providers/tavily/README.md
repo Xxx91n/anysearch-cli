@@ -13,7 +13,9 @@ Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
 
 ## 认证
 
-- `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 就报 `TAVILY_API_KEY unset`。
+- `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 不会抛：它构造一个 keyless 客户端
+  （请求头 `X-Tavily-Access-Mode: keyless`），上游按匿名额度处理。`TAVILY_API_KEY unset` 是**探针
+  自己**缺 key 时的说法，别当成 SDK 的行为。
 - 探针**只读环境变量** `TAVILY_API_KEY`；产品走 composition 的「env 优先、再用户凭据文件」解析
   （`packages/kernel/src/composition.ts`）。所以 key 只在凭据文件里时，`ans` 能跑、探针会退 2 并明说
   `TAVILY_API_KEY unset`——不会静默匿名（这一点比 anysearch 友好，#422）。
@@ -27,9 +29,12 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 - 成功：`results[]`，每条 `title` / `url` / `content` / `publishedDate` / `score`；`answer` 模式下多
   一个 `answer` 字段。
-- `include_domains` 支持两档：默认（加权）和 `include_domains_mode:"filter"`（硬过滤）。
+- `include_domains` 两档：`restrict`（上游默认，硬过滤）和 `prefer`（也搜全网）。适配器和探针发的
+  是 `include_domains_mode:"filter"`——上游文档里没有这个值，所以那两处「硬过滤」实际发的是未定义取值，
+  待修（#444）。
 - SDK 包装后的 `usage` **永远是 `undefined`**：`@tavily/core` 只在单次回包里给
-  `response.usage.credits`，没有独立的用量 API，所以契约里的 `usage()` 没实现。
+  `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事，
+  见上面「端点」一节——现在没人打。
 
 ## 已知异常
 

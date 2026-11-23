@@ -149,7 +149,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(ses
 -- Budget ledger: Mole reserve-then-settle pattern (decision 4).
 -- Non-negative constraints in DB schema layer (not application layer).
 -- Budget = resource consumption, belongs to store layer (not kernel).
--- Three dimensions: token-cap / usd-cap / time-limit.
+-- Four caps: token / usd / time / call. Only token, usd and call are reservable
+-- dimensions (budget_reservations.dim); no TOML key sets time_limit_ms, so it stays unlimited.
 -- #187: one row per session (table-level uniqueness keeps the upsert in
 -- BudgetLedger.initBudget valid on new databases without a separate,
 -- fail-hard index statement in the middle of the schema).
@@ -472,7 +473,7 @@ CREATE TABLE IF NOT EXISTS edge_patterns (
   UNIQUE (head_type, relation, tail_type)
 );
 
--- semantic memory layer (sixth RRF arm, Phase-1 shadow). Consolidated, LLM-summarized
+-- semantic memory layer (sixth RRF arm, serving at weight 0.5). Consolidated, LLM-summarized
 -- memories distilled from episode clusters; episodes (retrieval_results) are never physically deleted.
 -- valid_until = bi-temporal soft-close used by the UPDATE op (old row closed, new row written).
 CREATE TABLE IF NOT EXISTS semantic_memories (

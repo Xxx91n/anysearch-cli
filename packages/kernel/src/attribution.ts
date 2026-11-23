@@ -3,7 +3,8 @@
 //
 // Architecture:
 // L0 segment — Intl.Segmenter(sentence) + abbreviation whitelist merge
-// L1 fragments — deterministic signal classification (connector/enum/density/entity)
+// L1 fragments — deterministic signal classification (connector/enum/long-sentence/
+//                  comma-density/entity/mixed-abbrev)
 // classifyClaim — BM25-lite overlap + cosine hook + arms + entity -> 3-state label
 // gap/abstain — unsupported -> GapRequest; all-unsupported+no-evidence+suff-low -> abstain
 //

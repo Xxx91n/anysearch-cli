@@ -18,7 +18,8 @@ export class TavilyProvider implements SearchProvider {
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
   // forwards includeDomains as include_domains. The 0.7.7 SDK
   // passes unknown kwargs through verbatim, so include_domains_mode reaches the
-  // wire; "filter" is the hard mode (Tavily changelog 2026-08: boost leaks).
+  // wire; upstream documents "restrict" (the default, hard filter) and "prefer"
+  // (also searches the rest of the web), so "filter" below is neither one (#444).
   readonly domainFilterSupported = true;
   private client: ReturnType<typeof tavily>;
 
@@ -38,9 +39,10 @@ export class TavilyProvider implements SearchProvider {
       maxResults: req.maxResults ?? 10,
       includeAnswer: req.mode === "answer",
       includeRawContent: false,
-      // pre-filter send-down. include_domains_mode "filter" pins the
-      // hard-filter semantics (subdomains of a listed parent are included); the
-      // field rides the SDK kwargs passthrough (index signature on options).
+      // pre-filter send-down: include_domains goes upstream, so subdomains of a
+      // listed parent come along and the local filter has less to drop. The mode
+      // value is the one noted above (not an upstream enum member), so the local
+      // filter still runs as the backstop.
       ...(req.includeDomains?.length
         ? { includeDomains: req.includeDomains, include_domains_mode: "filter" }
         : {}),
@@ -65,10 +67,10 @@ export class TavilyProvider implements SearchProvider {
       results,
       answers,
       elapsedMs: res.responseTime ?? (Date.now() - start),
-      usage: undefined, // ponytail: Tavily usage comes per-call in response.usage.credits, no standalone API.
+      usage: undefined, // ponytail: no usage() — the SDK surfaces credits per call (response.usage.credits) only.
     };
   }
 
-  // ponytail: Tavily usage comes per-call in response.usage.credits, no standalone API.
-  // No standalone usage() method — contract's usage?() is optional.
+  // ponytail: no usage() — the SDK surfaces credits per call (response.usage.credits);
+  // the contract's usage?() is optional. Upstream endpoints: providers/tavily/README.md.
 }

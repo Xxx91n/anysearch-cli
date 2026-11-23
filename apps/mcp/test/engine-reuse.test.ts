@@ -1,4 +1,5 @@
-// #112 acceptance — MCP engine per-CONNECTION reuse over stateless HTTP.
+// #112 acceptance — MCP engine reuse over stateless HTTP (one engine per process,
+// one transport + McpServer per request).
 //
 //   - HTTP 高频调用复用同一 engine/store: many requests, ONE injected engine,
 //     and NO engine construction per request (proved by ANS_DB_PATH staying

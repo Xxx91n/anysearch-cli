@@ -517,6 +517,12 @@ async function t(name: string, fn: () => Promise<void>) {
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
       env.EXA_API_KEY = "";
+      // #441: the assertion below reads the anysearch arm's own source. Scrub
+      // both key channels — env and the user credential file — so "endpoint
+      // only, no key" is the fixture, not a property of whoever runs the suite.
+      env.ANYSEARCH_API_KEY = "";
+      env.HOME = dir;
+      env.USERPROFILE = dir;
       env.ANS_PROVIDERS = "";
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
       // Same dead-port fault injection as the abstain fixture above — no
@@ -526,6 +532,12 @@ async function t(name: string, fn: () => Promise<void>) {
       const doc = JSON.parse(r.stdout);
       assert.equal(doc.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
         "structured field carries the safe category verbatim");
+      // #441: the engine's credential-source record reaches --json unchanged.
+      // anysearch is constructed with an endpoint and no key, so its own
+      // label says `none`; exa recorded nothing because it never built.
+      assert.equal(doc.credentialSources?.status, "resolved", "credential sources travel in --json");
+      assert.equal(doc.credentialSources?.anysearch, "none",
+        "an endpoint-only arm is reported as keyless, not authenticated");
       assert.match(r.stderr, /\[anysearch\] provider exa construction failed: /);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -595,7 +607,10 @@ async function t(name: string, fn: () => Promise<void>) {
       const r = await run(["search", "q"], env);
       assert.equal(r.code, 1, r.out);
       assert.ok(!r.out.includes("Providers absent"), "healthy build: no absence line (zero noise)");
-      assert.ok(r.out.includes("Providers failed: exa"), "runtime failure rides the failed line, not the absence line");
+      assert.ok(
+        r.out.includes("Providers failed: exa（key 来自环境变量）"),
+        "runtime failure rides the failed line with the key's source (#441); got: " + r.out.slice(-300),
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

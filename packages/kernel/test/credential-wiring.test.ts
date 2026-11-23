@@ -27,7 +27,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createLlmSession } from "../src/llm-init";
-import { createEngine, redactPathFault } from "../src/composition";
+import { createEngine } from "../src/composition";
+import { redactSecrets } from "@anysearch-cli/retriever";
 import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
@@ -475,7 +476,7 @@ test("a key is redacted under every shape a real one takes", () => {
     "value was Q7xR2mN8pL4vK1wZ9tY3",                      // 20 chars, no known prefix
   ];
   for (const input of mustRedact) {
-    assert.ok(redactPathFault(input).includes("[redacted]"), "must be redacted: " + input);
+    assert.ok(redactSecrets(input).includes("[redacted]"), "must be redacted: " + input);
   }
 });
 
@@ -490,17 +491,17 @@ test("a path survives, because the message exists to name the file", () => {
     "C:\\Users\\me\\.ans\\credentials.json: EACCES",
   ];
   for (const input of mustSurvive) {
-    assert.equal(redactPathFault(input), input, "path must stay readable: " + input);
+    assert.equal(redactSecrets(input), input, "path must stay readable: " + input);
   }
 });
 
 test("an identifier that merely embeds a prefix is left alone", () => {
-  assert.equal(redactPathFault("my_key_abc123"), "my_key_abc123");
+  assert.equal(redactSecrets("my_key_abc123"), "my_key_abc123");
 });
 
 test("the useful part of a warning survives redaction", () => {
   const secret = "sk-live-abcdefghijklmnopqrstuvwxyz012345";
-  const out = redactPathFault("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
+  const out = redactSecrets("/home/me/credentials.json: could not read it (EACCES); value was " + secret);
   assert.ok(!out.includes(secret), "the key is gone");
   assert.match(out, /\[redacted\]/);
   assert.match(out, /credentials\.json/, "the file name is still there");

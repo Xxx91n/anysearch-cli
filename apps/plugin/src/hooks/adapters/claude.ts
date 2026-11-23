@@ -9,11 +9,12 @@
 // block, top-level permissionDecision executes anyway).
 // Q5: only intercept ans_* tools.
 
-import { isAnsTool, unwrapToolResponse, type HookDecision } from "../core.js";
+import { isAnsTool, unwrapToolResponse } from "../core.js";
 import { resolveHookProject } from "../project-identity.js";
 import { indexToProject } from "../index-entries.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
+import { claudePreToolUseOutput } from "./claude-envelope.js";
 
 interface ClaudeHookStdin {
   // real Claude Code injects hook_event_name; keep event as legacy fallback.
@@ -61,19 +62,10 @@ async function main(): Promise<void> {
         projectPath: projectRoot ?? "",
         sessionId: stdin.session_id || "",
       });
-      // + ER-2: every PreToolUse decision key goes inside the
-      // hookSpecificOutput envelope (official names: additionalContext,
-      // updatedToolInput, permissionDecision, permissionDecisionReason).
-      const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
-      if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
-      if (decision.updatedInput) hookSpecificOutput.updatedToolInput = decision.updatedInput;
-      if (decision.permission) {
-        hookSpecificOutput.permissionDecision = decision.permission;
-        if (decision.permissionReason) hookSpecificOutput.permissionDecisionReason = decision.permissionReason;
-      }
-      if (Object.keys(hookSpecificOutput).length > 1) {
-        process.stdout.write(JSON.stringify({ hookSpecificOutput }));
-      }
+      // permissionDecision / additionalContext / updatedInput only count inside
+      // hookSpecificOutput; the same keys at the top level are dropped.
+      const output = claudePreToolUseOutput(decision);
+      if (output) process.stdout.write(JSON.stringify(output));
       process.exit(0);
     } else if (event === "PostToolUse") {
       // Parse tool response — unwrap content-block envelopes (shared with
@@ -98,10 +90,11 @@ async function main(): Promise<void> {
       // Send to server for indexing (fail-open). A project-less hook does not index.
       await indexToProject(projectRoot, toolName, decision.indexEntries, stdin.session_id || "");
 
-      // Return distilled output to Claude. PostToolUse has no output-rewrite
-      // field on Claude — the only honored channel is
-      // hookSpecificOutput.additionalContext (ER-2: top-level
-      // updatedToolOutput is dropped), so the distilled summary goes there.
+      // Return distilled output to Claude. PostToolUse can rewrite the result through
+      // hookSpecificOutput.updatedToolOutput (Claude Code hooks reference, §Decision
+      // control, checked 2026-11-23 — the 2.1.251 ER-2 finding was about the TOP-LEVEL
+      // key, which is still dropped). This adapter only injects context, so the
+      // distilled summary goes to hookSpecificOutput.additionalContext.
       if (decision.distilledOutput) {
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
