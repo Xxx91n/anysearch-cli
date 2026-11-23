@@ -7,18 +7,23 @@ Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
 
 - `https://api.tavily.com`，写死在 `@tavily/core` 的 `BASE_URL` 里；适配器构造 `tavily({})` 不传
   baseURL，**没有**环境变量开关（#421 查实，三家只有 anysearch 有）。
-- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。适配器只打 `/search`，探针打 `/search` 和
-  `/research`；`/usage` 现在没人打——#416 打算让它进 doctor 的联网检查，那个决定还没实现（今天的 doctor
-  只有 `--json` / `--strict`，live 行一律 `unchecked`，写着「doctor 不联网」）。
+- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。适配器只打 `/search`；探针打 `/search` 和
+  `/research`。`/usage` 是这一家的免费面：`ans doctor --live` 拿它验 key 和用量，`ans auth set tavily`
+  在存之前也打它（401/403 拒存，其余只警告，#442）。默认的 `ans doctor` 仍然一个字都不联网。
+- 探针有一个 **probe-only** 的 endpoint 覆盖：`PROBE_TAVILY_ENDPOINT`，默认还是 `https://api.tavily.com`。
+  用处是把探针指到本地桩——凭据接线只能这么验，不能让测试打真上游（anysearch 那边有 `ANYSEARCH_ENDPOINT`
+  这个先例）。这个值不打印。
 
 ## 认证
 
 - `TAVILY_API_KEY`，走 `Authorization: Bearer`。SDK 不传 key 不会抛：它构造一个 keyless 客户端
-  （请求头 `X-Tavily-Access-Mode: keyless`），上游按匿名额度处理。`TAVILY_API_KEY unset` 是**探针
-  自己**缺 key 时的说法，别当成 SDK 的行为。
-- 探针**只读环境变量** `TAVILY_API_KEY`；产品走 composition 的「env 优先、再用户凭据文件」解析
-  （`packages/kernel/src/composition.ts`）。所以 key 只在凭据文件里时，`ans` 能跑、探针会退 2 并明说
-  `TAVILY_API_KEY unset`——不会静默匿名（这一点比 anysearch 友好，#422）。
+  （请求头 `X-Tavily-Access-Mode: keyless`），上游按匿名额度处理。没有 key 时探针不会走到 SDK：它自己
+  退 2 说「这一跑没有结论」，别把这句话当成 SDK 的行为。
+- 探针和产品读同一份凭据（#418 / #506）：都走 `packages/store/src/credentials.ts` 的
+  `resolveSearchCredentials`，环境变量优先，再读 `~/.ans/credentials.json`。所以 key 只在凭据文件里时，
+  探针也带着它跑（以前是整轮 SKIPPED、退 2，和真的没配 key 逐字相同）。
+- 台账里只记 `keySource: "env" | "user" | "none"`（`user` 就是用户凭据文件），不记 key 的值。凭据文件
+  读坏或解析坏时，台账多一个不含密钥的 `credentialWarning`，stderr 也说一句——别把它读成「没配 key」。
 
 ## 协议版本
 
@@ -37,8 +42,8 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
   线上，靠的是 `@tavily/core` 把不认识的选项原样展开进请求体（`...kwargs`）；依赖是 `^0.7.7`，升大版本
   时要确认这条还在，不在了探针会退 2（`prefer` 不再放宽），不会假装绿。
 - SDK 包装后的 `usage` **永远是 `undefined`**：`@tavily/core` 只在单次回包里给
-  `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事，
-  见上面「端点」一节——现在没人打。
+  `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事：
+  它是 `doctor --live` 和 `ans auth set` 的免费面，见上面「端点」一节。
 
 ## 已知异常
 
@@ -64,13 +69,16 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 ```bash
 node providers/tavily/probe-tavily-domains.mjs
+ans auth set tavily && node providers/tavily/probe-tavily-domains.mjs          # key 存在凭据文件里也照样带
 TAVILY_API_KEY=tvly-... PROBE_TAVILY_RESEARCH=1 node providers/tavily/probe-tavily-domains.mjs
+PROBE_TAVILY_ENDPOINT=http://127.0.0.1:8080 node providers/tavily/probe-tavily-domains.mjs  # 指到本地桩
 ```
 
 期望输出：每个臂一行 `[PASS|LEAK|INCONCLUSIVE|SKIPPED|ERROR] <id> - <摘要>`，再落两份台账
 `tavily-probe-ledger-<ranAt>.{json,md}`，默认目录 `.scratch/tavily-probe/`（相对当前目录；`.scratch/`
 是 gitignore 的，所以台账不随仓库走，要留证据就贴进 issue）。文件名带 `ranAt`，重跑不会盖掉上一轮；
-用 `PROBE_TAVILY_OUT_DIR=/some/dir` 改目录。
+用 `PROBE_TAVILY_OUT_DIR=/some/dir` 改目录。台账的 schema 是 `anysearch/tavily-domain-probe@2`，
+头部记 `keySource`（不是 key 本身），凭据文件坏了再多一条 `credentialWarning`。
 
 退出码：`0` B 对照证成了（`restrict` 不漏、`prefer` 漏了）且没泄漏；`1` A / B / C 有臂判 LEAK；
 `2` 没有能证明上游读了这个字段的证据（缺 key、额度用满、结果为空、`prefer` 没放宽都算没有证据，

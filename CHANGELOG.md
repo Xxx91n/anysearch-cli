@@ -1,3 +1,34 @@
+## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
+
+一句话说清：**anysearch 的两条探针和 tavily 那条以前各读各的环境变量，key 只存在 `~/.ans/credentials.json` 的人跑探针会静默变成匿名调用（#422）。现在三条都走 store 的 `resolveSearchCredentials`：环境变量优先、再读凭据文件，输出用 `keySource: env | user | none` 说来源，key 只在文件里时也带 `Authorization`，key 和 endpoint 的值一个都不打印。**
+
+### Added
+
+- **`providers/probe-credentials.mjs`**：三条探针共用的那一份。里面是 loader 钩子（store 源码写 `./ans-paths.js`、retriever 源码不写扩展名，plain `node` 两个都不认）、一次 store import、`keySource` 的映射。`.mjs` 和 `.ts` 探针都 import 它，`node <文件>` 直接跑的前提没变。
+- **`packages/retriever/test/provider-probe-credentials.test.ts`**：把三条脚本当子进程跑，本地桩记请求上的 `Authorization`，逐条覆盖 env / 凭据文件 / 没 key / `--nokey` / 文件坏 / 凭据文件里塞 endpoint。不需要活 key，也不打真上游。
+- **`credentialWarning` 字段**：凭据文件读坏或解析坏时，三份输出（两条 anysearch 的 JSON、tavily 的台账 + stderr）都带上它。store 那句只说路径和错误，不含密钥；不报出来就会被读成「没配 key」。
+- **tavily 探针的 `PROBE_TAVILY_ENDPOINT`**：probe-only 的 endpoint 覆盖，默认还是 `https://api.tavily.com`，值不打印。凭据接线只能用本地桩证，不能让测试打真上游。
+
+### Changed
+
+- **凭据解析统一**：三条探针都调 `resolveSearchCredentials`，不再各写一份「读 env」。anysearch 的 `ANYSEARCH_API_KEY`、tavily 的 `TAVILY_API_KEY` 仍然是环境变量优先，其次才是凭据文件里的同名 binding。
+- **`keyPresent` / `key: "set" | "unset"` 换成 `keySource`**：`env | user | none`。`user` 就是 `~/.ans/credentials.json`。三份 probe schema 跟着升到 `@2`（`anysearch/mcp-raw-probe@2`、`anysearch/provider-probe@2`、`anysearch/tavily-domain-probe@2`），README 的期望输出同步改。
+- **provider 探针把 key 显式传进适配器**：没有 key 传空串，不再留 `undefined` 让 `AnySearchProvider` 回读 `process.env`——那样探针的解析和适配器的兜底会再次分叉。
+- **脱敏覆盖解析出来的 key**：以前只遮 `process.env.ANYSEARCH_API_KEY`；key 只在凭据文件里时没有任何值可遮。现在遮的是「这一跑真用的那个值」，raw 探针和 provider 探针共用同一个口径。
+- **`--nokey` 仍然是显式匿名臂**：整段跳过解析，不发 `Authorization`，env 和文件里都有 key 也一样。退出码语义没动（anysearch 0/3/2、tavily 0/1/2；tavily 没 key 仍然退 2 表示「这一跑没有结论」）。
+
+### Docs
+
+- **`providers/anysearch/README.md`**：认证段改成「env 优先、再凭据文件」，输出字段改 `keySource`，补 `credentialWarning` 和 `--nokey`；`registerHooks` 那段改指 `providers/probe-credentials.mjs`。
+- **`providers/tavily/README.md`**：`/usage` 现在由 `ans doctor --live` 和 `ans auth set` 使用（默认 doctor 仍然离线）；凭据来源、台账的 `keySource`/`credentialWarning`、`PROBE_TAVILY_ENDPOINT` 都补上，删掉「现在没人打」那两句过时的话。
+- **`providers/exa/README.md`**：写明「没有手工探针是有意的」，并区分 `doctor --live` 的免费面检查和原文/适配器归因面。
+
+### Known limits
+
+- **`providers/` 仍然不在 `pnpm -r check` 里**：三条探针的改动靠新测试（子进程跑真脚本）和手跑兜着，类型检查碰不到它们。
+- **新测试全打本地桩**：真上游的回包形状仍由 `provider-probes.test.ts` 的夹具和 `docs/research/real-baseline-2026-11-22.md` 记着，这次不重新实测。
+- **anysearch 的 endpoint 规则没变**：仍然只认 `ANYSEARCH_ENDPOINT`，凭据文件里存了 endpoint 也不起作用（新测试钉了这一点）。
+
 ## Unreleased — #504: 信息源能力和免费面事实收成一张表（provider-facts）
 
 一句话说清：**三个适配器各写一份的 `modes`、`domainFilterSupported`、`verticalDomainSupported`，加上免费面探针里的默认 endpoint、`undetectable`、AnySearch 的 MCP 协议版本，现在都从 `packages/retriever/src/providers/provider-facts.ts` 的一张表读。行为一点没变；以后改一家信息源的代码只改一格——少填一家、少填一个必填字段、把某一行的 id 写成别家的，类型检查都直接红。文档仍然手写，见下面的边界。**
