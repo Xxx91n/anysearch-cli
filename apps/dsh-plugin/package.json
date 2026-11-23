@@ -43,7 +43,7 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=lib/index.js --external:@deepseek-ai/* --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" && tsc -p tsconfig.build.json --declaration --emitDeclarationOnly --noEmit false --outDir lib --rootDir src",
     "lint": "tsc --noEmit",
-    "pretest": "pnpm -C ../plugin run build:hooks",
+    "pretest": "node scripts/ensure-plugin-hooks.mjs",
     "test": "node --import tsx --test \"test/**/*.test.ts\" --test-timeout=30000",
     "check": "tsc --noEmit"
   },
