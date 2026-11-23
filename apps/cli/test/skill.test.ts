@@ -575,6 +575,7 @@ test("description and body rules are enforced by install and validate alike", as
     "Reviews pull requests. Use whenever the user asks for a review.",
     "搜索网页并整理结果，用户要求查资料时使用。",
     "把一周的提交整理成周报，周会前使用时最合适。",
+    "搜索网页并整理结果，用户想查资料的时候用它。",
   ]) {
     writeFileSync(installed, `---\nname: demo\ndescription: ${description}\n---\nbody\n`);
     const ok = await f.run(["validate", "demo"]);
