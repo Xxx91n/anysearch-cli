@@ -15,7 +15,7 @@ permissions:
 jobs:
   coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # Design: step if-conditions cannot read the secrets context (it resolves
     # empty there, so the upload would skip forever); expose a boolean via env.
     env:
