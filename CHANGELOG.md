@@ -14,6 +14,10 @@
 - **生成物漂移测试改成和 `HEAD` 逐字节比**（`apps/plugin/test/config-drift.test.ts`）：用 `git show HEAD:<path>` 拿提交里的版本，再跑生成器到临时目录逐字节比；文件清单从生成器实际写出的东西取。以前比的是工作区，而根目录 `pnpm test` 会先跑 `gen:configs`，手改会被覆盖，测试照样绿。没有 git / HEAD 时明确打印 SKIP 并说明原因。
 - **`scripts/verify-installed-product.mjs` 补 codebuddy 和 antigravity 两份模板**：发布前能看出这两份有没有装进产品。
 
+### Known limits
+
+- **codebuddy 的 bin 形态还没在真宿主上重跑**：2.151.0 那轮验证跑的是 `node "$(npm root -g)/..."` 长写法，这次模板改成 `ans-hook-codebuddy`（和 `ans host connect` 同一条命令），命令形态本身没再验；验的是它背后的适配器。文档两处都写明了，没拿旧记录冒充新形态。
+
 ### Docs
 
 - **`docs/per-platform-verification.md` 补 CodeBuddy 一节**，每节都写验过的宿主版本和日期；查不到的写 `not recorded`，不编。

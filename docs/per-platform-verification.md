@@ -16,7 +16,9 @@ Verified: Claude Code 2.1.251, 2026-09-17.
 
 ## CodeBuddy (supports SessionStart)
 
-Verified: CodeBuddy Code 2.151.0, 2026-09-16.
+Verified: CodeBuddy Code 2.151.0, 2026-09-16. The probe matrix ran the long
+`node "$(npm root -g)/..."` command; the shipped template's
+`ans-hook-codebuddy` bin form has not been re-run on a real host yet.
 
 - [ ] `hooks.json` is registered with CodeBuddy
 - [ ] SessionStart fires, and the routing card enters context word for word (the host takes raw stdout, not the envelope)

@@ -94,6 +94,12 @@ install (`npm i -g @anysearch-cli/cli`) ships the same bin, so the template
 works under either install shape without a `$(npm root -g)` path lookup. The
 same commands are what `ans host connect codebuddy` writes.
 
+The 2.151.0 probe matrix this page records ran the long form — `node "$(npm
+root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs"`. The shipped
+template now names the bin instead, so that exact command form has not been
+re-run on a real CodeBuddy host yet; what was verified is the adapter behind
+it, not the spelling that reaches it.
+
 What each event does:
 
 | Event | Behavior |

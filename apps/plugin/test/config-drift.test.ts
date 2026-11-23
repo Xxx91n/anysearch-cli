@@ -20,10 +20,15 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
 let passed = 0;
+let skipped = 0;
 let failed = 0;
 
-function test(name: string, fn: () => void) {
-  try { fn(); passed++; console.log("  PASS " + name); }
+/** A test that returns "skip" records a skip — it must not print PASS. */
+function test(name: string, fn: () => "skip" | void) {
+  try {
+    if (fn() === "skip") { skipped++; console.log("  SKIP " + name); return; }
+    passed++; console.log("  PASS " + name);
+  }
   catch (e) { failed++; console.error("  FAIL " + name + ": " + (e instanceof Error ? e.message : String(e))); }
 }
 
@@ -44,8 +49,8 @@ function gitShow(relPath: string): { ok: boolean; bytes?: Buffer } {
 
 test("generated configs match HEAD byte for byte", () => {
   if (!headAvailable()) {
-    console.log("    SKIP: no git or HEAD here (source tarball?) — nothing to compare the generator output against");
-    return;
+    console.log("    no git or HEAD here (source tarball?) — nothing to compare the generator output against");
+    return "skip";
   }
   const tmp = mkdtempSync(join(tmpdir(), "ans-gen-head-"));
   try {
@@ -76,6 +81,6 @@ test("generated configs match HEAD byte for byte", () => {
 });
 
 process.on("exit", () => {
-  console.log("  config-drift: " + passed + " passed, " + failed + " failed");
+  console.log("  config-drift: " + passed + " passed, " + skipped + " skipped, " + failed + " failed");
   if (failed > 0) process.exitCode = 1;
 });
