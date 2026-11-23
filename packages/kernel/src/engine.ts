@@ -2,7 +2,7 @@
 // decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
 // atomcode research (paperfoot source-level): JoinSet completion-order collect,
 // request-level deadline + abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
-// JS adaptation: Promise.allSettled + AbortController; the deadline clock starts when the arms are called.
+// JS adaptation: Promise.allSettled + AbortController; the deadline clock starts when the request fans out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
@@ -278,7 +278,7 @@ export class RetroaererdEngine {
 
   // Fanout search: parallel provider queries, one request-level deadline, RRF fusion.
   // decision 1A: implements RetrieverPort.
-  // decision 1B: accepts Query (superset with budget + provider filter).
+  // decision 1B: accepts Query (superset with provider filter + kernel-side extras).
   async search(q: Query): Promise<FusedEnvelope> {
     const start = Date.now();
     const gate = this.gate;
@@ -349,7 +349,7 @@ export class RetroaererdEngine {
       });
     }
     // Provider-facing request carries only SearchRequest fields — kernel-side
-    // Query extras (budget/providers/span) never cross the provider boundary.
+    // Query extras (taskBudget/providers/span/sessionId/signal) never cross the provider boundary.
     const providerRequest = (p: SearchProvider): SearchRequest => {
       const req: SearchRequest = { query: q.query, mode: q.mode };
       if (q.maxResults !== undefined) req.maxResults = q.maxResults;
@@ -441,10 +441,10 @@ export class RetroaererdEngine {
     let gateIn = 0;
     let gateDropped = 0;
     let gateSurvivors = 0;
-    // Request-level deadline (#461 decision 3): the clock starts when the arms
-    // are called, not when enough results arrive. Every arm still unsettled at
-    // the deadline is aborted and reported cancelled; if every arm lands first,
-    // the race below finishes immediately instead of waiting out the window.
+    // Request-level deadline (#461 decision 3): the clock starts at fan-out, not
+    // when enough results arrive. Every arm still unsettled at the deadline is
+    // aborted and reported cancelled; if every arm lands first, the race below
+    // finishes immediately instead of waiting out the window.
     let deadlineResolve: () => void = () => { };
     const deadline = new Promise<void>((r) => { deadlineResolve = r; });
     // The timer is ref'd on purpose: the request itself is waiting for it, so

@@ -198,7 +198,8 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     const paths: string[] = vexp.hitPaths ?? [];
 
     // Four runs per spec-carrying entry: the isolated anysearch arm pair is
-    // the PRIMARY measurement (no grace-window cancellation from faster arms);
+    // the PRIMARY measurement (the anysearch arm is cut only by the request
+    // deadline, not by faster arms filling the quota);
     // the full-fanout pair feeds the fused-level secondary column.
     // No-spec controls run the OFF pair only (a self-pair measures nothing).
     const isoEnv = { ...baseEnv, ANS_PROVIDERS: "anysearch" };
@@ -242,7 +243,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       },
       fusedOn: { n: fOn.length, hostHit: hosts.length ? anyHostHit(fOn, hosts) : null, rankOf: hosts.length ? rankOf(fOn, hosts) : null, marked: on === null || on.__error ? null : marked(on) },
       fusedOff: { n: fOff.length, hostHit: hosts.length ? anyHostHit(fOff, hosts) : null, rankOf: hosts.length ? rankOf(fOff, hosts) : null },
-      // Whether the anysearch arm survived the fanout grace window (its raw
+      // Whether the anysearch arm landed before the request deadline (its raw
       // list inside fusion.lists) — survival is upstream-timing evidence, not
       // a gate.
       armInFanoutOn: on === null || on.__error ? null : armList(on) !== null,

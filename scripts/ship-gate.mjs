@@ -916,7 +916,7 @@ function stepDocClaims() {
   report("info", "step 1c/9: engine request-deadline assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
   if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(eng)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
-  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*\]\)/.test(eng)) fail("engine request deadline is no longer raced against the fanout");
+  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*callerAborted[^\]]*\]\)/.test(eng)) fail("engine fanout race no longer waits on the deadline and the caller abort");
   if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(eng)) fail("engine.ts lost the deadline abort loop");
   report("pass", "engine request deadline wired");
 }

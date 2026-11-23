@@ -67,7 +67,7 @@
 - **Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts
   cannot be cancelled through the SDK. The budget guard limits spend, not wall
   time. The engine now stops waiting at a request-level deadline (4s counted
-  from the moment the arms are called) and reports unfinished arms as
+  from the moment the request fans out) and reports unfinished arms as
   `providersCancelled`, but it cannot stop a Tavily call that ignores the
   signal; that call can keep running upstream after the search has returned.
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, macOS CI

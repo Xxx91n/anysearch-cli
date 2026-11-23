@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从调用各家 `search` 那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
+- **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从扇出那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
 - **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先把臂号记进同一个集合，`catch` 查集合再决定算「取消」还是「失败」。非 async、abort 时 reject 的 adapter 也归 `providersCancelled`。
 - **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
 - **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 里的 `deep` 从 `more sources` 改成「支持的上游搜得更深、更慢更贵，不增加源数」。
