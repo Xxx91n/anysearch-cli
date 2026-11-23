@@ -1,6 +1,7 @@
 export * from "./tavily";
 export * from "./exa";
 export * from "./anysearch";
+export * from "./provider-facts";
 
 export { isProbeProviderId, probeProviderAuth } from "./probes";
 export type {
@@ -10,5 +11,4 @@ export type {
   ProbeOutcome,
   ProbeProblem,
   ProbeProviderId,
-  UndetectableClass,
 } from "./probes";

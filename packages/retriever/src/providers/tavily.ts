@@ -4,6 +4,7 @@
 
 import { tavily } from "@tavily/core";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
+import { PROVIDER_FACTS } from "./provider-facts";
 
 // Mode mapping: our modes -> Tavily searchDepth.
 const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
@@ -14,10 +15,11 @@ const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
 };
 
 export class TavilyProvider implements SearchProvider {
-  readonly id = "tavily";
-  readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
+  readonly id = PROVIDER_FACTS.tavily.id;
+  readonly modes: readonly Mode[] = PROVIDER_FACTS.tavily.modes;
   // true: includeDomains goes upstream as include_domains, so upstream filters by it.
-  readonly domainFilterSupported = true;
+  readonly domainFilterSupported = PROVIDER_FACTS.tavily.domainFilterSupported;
+  readonly verticalDomainSupported = PROVIDER_FACTS.tavily.verticalDomainSupported;
   private client: ReturnType<typeof tavily>;
 
   constructor(apiKey?: string) {
