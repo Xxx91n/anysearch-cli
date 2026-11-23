@@ -57,7 +57,7 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 - Node.js >= 22.19.0
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
 - 搜索至少要有一个能连上的信息源（`ans recommend` 只读本地域配置，不需要 key）：
-  - `EXA_API_KEY`：Exa，支持按域名筛；Exa 必须有 key
+  - `EXA_API_KEY`：Exa，支持按域名筛；没配 key 也能用免费额度跑
   - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认用免费额度也能跑
   - `ANYSEARCH_API_KEY`：anysearch MCP，可选；免费额度也能用，但不能在搜之前按域名筛
 

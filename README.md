@@ -59,7 +59,7 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 - Node.js >= 22.19.0
 - pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
 - Searching needs at least one reachable provider (`ans recommend` only reads local domain configs and needs no key):
-  - `EXA_API_KEY`: Exa, supports domain filtering; Exa needs a key.
+  - `EXA_API_KEY`: Exa, supports domain filtering; without a key it also runs on the free quota.
   - `TAVILY_API_KEY`: Tavily, supports domain filtering; Tavily also runs on the free quota by default.
   - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the free quota works too, but cannot pre-filter by domain.
 

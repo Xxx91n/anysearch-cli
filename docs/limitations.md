@@ -352,3 +352,24 @@
 - **Exa's result package always has `usage` set to `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()` is
   unimplemented (the contract field is optional).
+- **Exa without a key is a narrower arm, not the same search** — with no key,
+  `createExaProvider` hands back the free-quota arm, which posts one
+  `tools/call` to Exa's own MCP endpoint instead of going through `exa-js`.
+  Three things it gives up: `answer` (that endpoint has no such tool, so an
+  `answer`-mode request still searches on this arm and simply comes back with
+  no answer), the upstream domain pre-filter (`includeDomains` only exists on
+  the REST arm, so a domain allowlist is applied to the results after they
+  arrive, not at the upstream), and speed (the free quota is throttled). It
+  keeps `fast` / `index` / `deep`, but all three send the same request —
+  there is no depth parameter to turn up. Shape and limits:
+  `providers/exa/README.md`.
+- **A 403 from Exa's free-quota endpoint is reported as `permanent-auth`** —
+  with no key and an IPv6 or proxy egress, Exa answers 403. The classifier has
+  no better class for it. The hint's first half ("set a valid key") is the
+  right action; its second half ("or the key is wrong") is not, because no key
+  is configured — that half is written for the reader who has one. We did not
+  add a class for this: one shape, seen only from a no-key IPv6 or proxy
+  egress, does not earn a new machine tag every host has to learn, and the
+  remedy it would carry is the one the current sentence already gives. The
+  sentence is shared by all three providers, so this stays a wording note, not
+  an Exa branch.
