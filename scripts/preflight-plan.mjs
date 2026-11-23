@@ -12,8 +12,8 @@
 // suite, because no rule here names which packages read it. A root file the
 // reader table below names is the exception: it runs those packages and nothing
 // else (#489). The rest of the root still runs everything — the lockfile,
-// turbo.json, pnpm-workspace.yaml, .github/, and the root AGENTS.md, which no
-// test reads.
+// turbo.json, pnpm-workspace.yaml, .github/, and .gitignore, which changes what
+// git sees for every package.
 //
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
@@ -33,6 +33,9 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
 
 /**
  * Decide what a preflight run should do.
+ *
+ * `readers` is set only when an incremental run mixed a root file in; on a
+ * `readers` run the package list is the readers already.
  *
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
@@ -61,16 +64,16 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  // Design: a root file the reader table names runs those packages alone; every
-  // other file goes through the package lookup. A reader the workspace no longer
-  // has would filter turbo down to nothing while the gate printed green, so a
-  // miss reads as the full suite instead.
+  // Design: a root file the reader table names runs those packages alone, and
+  // every other file goes through the package lookup — a reader the workspace no
+  // longer has would filter turbo down to no task while the gate printed green,
+  // so a miss reads as the full suite instead.
   const readers = new Set();
-  const rest = [];
+  const withoutReaders = [];
   for (const file of files) {
-    const named = rootReaders(file);
-    if (named) for (const name of named) readers.add(name);
-    else rest.push(file);
+    const readBy = rootReaders(file);
+    if (readBy) for (const name of readBy) readers.add(name);
+    else withoutReaders.push(file);
   }
   const known = new Set(packages.map((pkg) => pkg.name));
   const missing = [...readers].filter((name) => !known.has(name));
@@ -78,13 +81,11 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason: `no workspace package named: ${missing.sort().join(", ")}`, files, packages: [] };
   }
 
-  const { touched, unowned: outside } = codeOwnership(rest, packages);
+  const { touched, unowned: outside } = codeOwnership(withoutReaders, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
-    const underNameless = outside.every((file) =>
-      nameless.some((dir) => file === dir || file.startsWith(`${dir}/`)),
-    );
+    const underNameless = outside.every((file) => nameless.some((dir) => isWithin(file, dir)));
     const reason = underNameless
       ? "files under a directory whose package.json has no name"
       : "files outside the workspace packages";
@@ -92,9 +93,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   }
 
   const readerPackages = [...readers].sort();
-  if (touched.length === 0) {
-    return { mode: "readers", files, packages: readerPackages, readers: readerPackages };
-  }
+  if (touched.length === 0) return { mode: "readers", files, packages: readerPackages };
   return {
     mode: "incremental",
     files,
@@ -160,14 +159,21 @@ export function codeOwnership(files, packages) {
  * deliberately short (#489) — a root file that is not here keeps the full-suite
  * fallback, which is the safe direction to be wrong in.
  *
+ * That fallback covers the lockfile, `package.json`, `turbo.json`,
+ * `pnpm-workspace.yaml`, `.github/`, and `.gitignore`, which changes what git
+ * sees for every package. `ext` is the ticket's own scope for the domains tree
+ * (`domains/*.toml`): a file dropped next to them keeps the fallback until a test
+ * reads it.
+ *
  * Readers do not bring their dependents: an app that depends on store never
  * opens the file through store's tests, so running it would cost time and prove
- * nothing. `domains` covers the whole directory, so a new TOML in it lands on
- * the same two readers.
+ * nothing.
  *
  * Evidence, so the next editor can re-check instead of grepping blind:
- *   domains/                 kernel test/rag-adapter.test.ts, test/eval-looks-stub.test.ts;
+ *   domains/*.toml           kernel test/rag-adapter.test.ts, test/eval-looks-stub.test.ts;
  *                            store test/domain-loader.test.ts, test/eval-docs-golden.test.ts
+ *   AGENTS.md                store test/eval-docs-golden.test.ts — the golden entry's
+ *                            provenance ref has to resolve on disk; nothing reads the prose
  *   eval-looks.json          kernel test/eval-looks-stub.test.ts;
  *                            store test/eval-docs-golden.test.ts, test/eval-looks-live-parity.test.ts,
  *                            test/eval-release-layering.test.ts
@@ -175,7 +181,8 @@ export function codeOwnership(files, packages) {
  *   eval-looks.coverage.json store test/eval-docs-golden.test.ts
  */
 export const ROOT_READERS = [
-  { path: "domains", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "domains", ext: ".toml", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
   { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
   { path: "eval-looks.coverage.json", readers: ["@anysearch-cli/store"] },
   { path: "eval-looks.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
@@ -185,7 +192,9 @@ export const ROOT_READERS = [
 function rootReaders(file) {
   const normalized = normalizePath(file);
   for (const entry of ROOT_READERS) {
-    if (normalized === entry.path || normalized.startsWith(`${entry.path}/`)) return entry.readers;
+    if (!isWithin(normalized, entry.path)) continue;
+    if (entry.ext && !normalized.endsWith(entry.ext)) continue;
+    return entry.readers;
   }
   return null;
 }
@@ -275,7 +284,7 @@ export function withDependents(touched, packages) {
 export function packageForFile(file, packages) {
   let owner = null;
   for (const pkg of packages) {
-    if (file === pkg.dir || file.startsWith(`${pkg.dir}/`)) {
+    if (isWithin(file, pkg.dir)) {
       if (!owner || pkg.dir.length > owner.dir.length) owner = pkg;
     }
   }
@@ -356,6 +365,11 @@ function workspaceDeps(manifest) {
 /** Repo-relative path with forward slashes, no `./` prefix, no trailing `/`. */
 export function normalizePath(file) {
   return String(file).replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+/** True when the file is the directory itself or sits inside it. */
+function isWithin(file, dir) {
+  return file === dir || file.startsWith(`${dir}/`);
 }
 
 function isDirectory(dir) {

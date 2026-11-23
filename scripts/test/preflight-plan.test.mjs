@@ -143,6 +143,9 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     [["eval-looks.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
     [["eval-badcases.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
     [["eval-looks.json", "eval-looks.coverage.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    // Store's docs-golden test asserts this one resolves on disk; nothing reads
+    // the prose, so store is the whole run.
+    [["AGENTS.md"], ["@anysearch-cli/store"]],
   ]) {
     const plan = planPreflight(root, files);
     assert.equal(plan.mode, "readers", files.join(","));
@@ -151,7 +154,19 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
 });
 
 test("a root file outside the table still runs the full suite", () => {
-  for (const file of ["pnpm-lock.yaml", "package.json", "codecov.yml", ".npmrc", "AGENTS.md", "LICENSE"]) {
+  // The domains row is scoped to the TOMLs the loader reads: a neighbour that
+  // no test opens keeps the fallback like any other unowned path. .gitignore is
+  // kept out on purpose: it changes what git sees for every package, which is
+  // not a reader list.
+  for (const file of [
+    "pnpm-lock.yaml",
+    "package.json",
+    "codecov.yml",
+    ".npmrc",
+    ".gitignore",
+    "LICENSE",
+    "domains/schema.json",
+  ]) {
     const plan = planPreflight(root, [file]);
     assert.equal(plan.mode, "full", file);
     assert.deepEqual(plan.outside, [file], file);
@@ -339,6 +354,7 @@ test("the real workspace: every reader in the table exists, and domains runs onl
   const plan = planPreflight(repo, ["domains/docs.toml"]);
   assert.equal(plan.mode, "readers");
   assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, ["@anysearch-cli/store"]);
 });
 
 test("the workspace reader picks up both directions of the dependency graph", () => {

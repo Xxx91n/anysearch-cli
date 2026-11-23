@@ -7,10 +7,10 @@
 // Design: docs-only skips every lane. Everything else uncertain (empty set,
 // unreadable workspace, unowned path, a package no lane names) runs every lane.
 //
-// Design: a root file with a known reader still runs every lane here (#489
-// narrowed the push gate only). A lane names many packages, so the reader list
-// buys back no lane that matters: check-build runs the full suite for a root
-// file either way.
+// Design: a root file with a known reader still runs every lane (#489 narrowed
+// the push gate only) — a lane names many packages, so the reader list buys back
+// no lane that matters, and check-build runs the full suite for a root file
+// either way.
 //
 // Design: the documentation boundary lives in preflight-plan.mjs, and this
 // module imports it instead of keeping a copy.
