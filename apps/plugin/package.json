@@ -58,6 +58,7 @@
   "scripts": {
     "build": "pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks",
     "gen:configs": "node scripts/gen-claude-configs.mjs",
+    "gen:tlds": "node scripts/gen-tlds.mjs",
     "build:hooks": "node scripts/build-hooks.mjs",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
@@ -113,7 +114,8 @@
     "ans-hook-claude": "dist/hooks/adapters/claude.cjs",
     "ans-hook-session-start": "dist/hooks/session-start.cjs",
     "ans-hook-codex": "dist/hooks/adapters/codex.cjs",
-    "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs"
+    "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs",
+    "ans-hook-codebuddy": "dist/hooks/adapters/codebuddy.cjs"
   },
   "engines": {
     "node": ">=22.19.0"

@@ -3,24 +3,51 @@
 // stdin: hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
 // stdout: hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}
 // SessionStart: raw stdout text -> context verbatim.
+// configs/codebuddy/hooks.json must use the same settings schema as the other
+// hosts: { "<Event>": [{ matcher, hooks: [{ type:"command", command, timeout }] }] }.
 // Spawns the BUILT dist adapters (same skip-if-unbuilt convention as hooks.test.ts).
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 let passed = 0;
 let failed = 0;
+
+function test(name: string, fn: () => void) {
+  try { fn(); passed++; console.log("  PASS " + name); }
+  catch (e) { failed++; console.error("  FAIL " + name + ": " + (e instanceof Error ? e.message : String(e))); }
+}
 
 async function testAsync(name: string, fn: () => Promise<void>) {
   try { await fn(); passed++; console.log("  PASS " + name); }
   catch (e) { failed++; console.error("  FAIL " + name + ": " + (e instanceof Error ? e.message : String(e))); }
 }
 
-const CB_ADAPTER = join(process.cwd(), "dist", "hooks", "adapters", "codebuddy.cjs");
-const CLAUDE_ADAPTER = join(process.cwd(), "dist", "hooks", "adapters", "claude.cjs");
+const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const CB_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "codebuddy.cjs");
+const CLAUDE_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "claude.cjs");
+
+// ==== shipped config: official settings schema ====
+test("configs/codebuddy/hooks.json uses the official hooks schema", () => {
+  const cfg = JSON.parse(readFileSync(join(PLUGIN_ROOT, "configs", "codebuddy", "hooks.json"), "utf8"));
+  assert.ok(cfg.hooks && typeof cfg.hooks === "object", "needs top-level hooks object");
+  for (const event of ["PreToolUse", "PostToolUse", "SessionStart"]) {
+    const entries = cfg.hooks[event];
+    assert.ok(Array.isArray(entries) && entries.length > 0, event + ": missing entries");
+    for (const e of entries) {
+      assert.equal(typeof e.matcher, "string", event + ": matcher must be a string");
+      assert.ok(Array.isArray(e.hooks) && e.hooks.length > 0, event + ": hooks[] required");
+      for (const h of e.hooks) {
+        assert.equal(h.type, "command", event + ": hook.type must be 'command'");
+        assert.equal(typeof h.command, "string", event + ": hook.command must be a single string");
+        assert.ok(!("args" in h) && !("name" in h), event + ": name/args shape registers zero hooks");
+      }
+    }
+  }
+});
 
 function runHook(cjsPath: string, stdinPayload: string, args: string[] = []): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve, reject) => {
@@ -179,7 +206,7 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
 // === Per-platform hook_event_name closure (field fix, every adapter) ===
 // Each adapter must honor hook_event_name on its own stdin/output shape.
 testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
+  const p = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "codex.cjs");
   if (!existsSync(p)) { console.log("    SKIP: codex.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({
     hook_event_name: "PostToolUse", tool_name: "search_web",
@@ -191,7 +218,7 @@ testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", as
 });
 
 testAsync("session-start: hook_event_name SessionStart honored", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
+  const p = join(PLUGIN_ROOT, "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({ hook_event_name: "SessionStart", cwd: "/tmp/cb" }));
   // audit: bare top-level additionalContext is the shared-host default;
@@ -206,7 +233,7 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
 const BLOCKS = [{ type: "text", text: TOOL_RESP }];
 
 testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
+  const p = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "codex.cjs");
   if (!existsSync(p)) { console.log("    SKIP: codex.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({
     hook_event_name: "PostToolUse", tool_name: "search_web",
@@ -224,12 +251,12 @@ testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () 
 // said that host was wired.
 testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints", async () => {
   const { readdirSync, readFileSync } = await import("node:fs");
-  const configsDir = join(process.cwd(), "configs");
+  const configsDir = join(PLUGIN_ROOT, "configs");
   for (const host of readdirSync(configsDir)) {
     const cfgPath = join(configsDir, host, "hooks.json");
     if (!existsSync(cfgPath)) continue;
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync(join(PLUGIN_ROOT, "package.json"), "utf8"));
     const targets: string[] = [];
     const walk = (v: unknown): void => {
       if (typeof v === "string") {
@@ -247,7 +274,7 @@ testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints
     walk(cfg);
     assert.ok(targets.length >= 3, host + ": expected >=3 dist/hooks targets, got " + targets.length);
     for (const t of targets) {
-      const p = join(process.cwd(), ...t.split(/[\\/]/));
+      const p = join(PLUGIN_ROOT, ...t.split(/[\\/]/));
       assert.ok(existsSync(p), host + " target missing from dist build: " + t);
       const src = readFileSync(p, "utf8");
       assert.ok(

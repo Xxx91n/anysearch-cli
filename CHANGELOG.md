@@ -1,3 +1,36 @@
+## Unreleased — #505: 宿主模板检查：坏形状、非整数 timeout、指错适配器都会红
+
+一句话说清：**四份 `configs/*/hooks.json` 以前各测各的，没人横向比对；codebuddy 模板的命令和 `ans host connect` 写出来的已经不是同一条。现在一条测试读四份模板：timeout 必须是正整数、命令必须是本宿主自己的 bin、每条 hook 必须和 `hosts.ts` 的 `HOSTS` 候选逐字对上。生成物漂移改成和 `HEAD` 比，根目录 `pnpm test` 先跑 `gen:configs` 也洗不绿了。**
+
+### Added
+
+- **`apps/plugin/test/host-templates.test.ts`**：四份模板一起查。timeout 是正整数；命令是本宿主的适配器/bin（claude → `ans-hook-claude`，codebuddy → `ans-hook-codebuddy`，codex → `ans-hook-codex`，antigravity → `ans-hook-antigravity <Event>`，claude 和 codex 的 SessionStart 走 `ans-hook-session-start --envelope`）；每条 hook 和 `HOSTS` 候选一致。比较前把 JSON 设置模板、Codex 的 TOML 候选、Antigravity 的命名钩子表归一成 `{event: [{matcher?, hooks}]}`，只比 hook 单元，MCP 注册不管。模板和 `HOSTS` 的宿主名单也必须一样多。
+- **codebuddy 补一条和 claude / codex / antigravity 同款的形状检查**：顶层 `hooks`、事件、matcher、`hooks[]`、`type: "command"`、命令是字符串、不带 `name` / `args`。
+
+### Changed
+
+- **codebuddy 模板统一走 `ans-hook-codebuddy`**：以前模板写 `node "$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs"`，`ans host connect codebuddy` 写的却是 `ans-hook-codebuddy`，两条接入路径装出来的不是同一条命令。插件包 `bin` 补上 `ans-hook-codebuddy`，单独装插件包也能解析到真实入口。
+- **`apps/cli/scripts/build-product.mjs` 删掉 codebuddy 的命令改写**：源模板已经是 `ans-hook-codebuddy`，产品构建不用再改一遍，也少了「构建后和源模板不一样」的第二份事实。
+- **生成物漂移测试改成和 `HEAD` 逐字节比**（`apps/plugin/test/config-drift.test.ts`）：用 `git show HEAD:<path>` 拿提交里的版本，再跑生成器到临时目录逐字节比；文件清单从生成器实际写出的东西取。以前比的是工作区，而根目录 `pnpm test` 会先跑 `gen:configs`，手改会被覆盖，测试照样绿。没有 git / HEAD 时明确打印 SKIP 并说明原因。
+- **`scripts/verify-installed-product.mjs` 补 codebuddy 和 antigravity 两份模板**：发布前能看出这两份有没有装进产品。
+
+### Known limits
+
+- **codebuddy 的 bin 形态还没在真宿主上重跑**：2.151.0 那轮验证跑的是 `node "$(npm root -g)/..."` 长写法，这次模板改成 `ans-hook-codebuddy`（和 `ans host connect` 同一条命令），命令形态本身没再验；验的是它背后的适配器。文档两处都写明了，没拿旧记录冒充新形态。
+
+### Docs
+
+- **`docs/per-platform-verification.md` 补 CodeBuddy 一节**，每节都写验过的宿主版本和日期；查不到的写 `not recorded`，不编。
+- **四篇 `docs/*-integration.md` 不再指向 gitignored 的 `.scratch`**：原件在 3f85fee8 跟着工作记录一起移出了仓库，里面有本机路径和宿主登录信息，公开仓库不再重新发布；文档写明来龙去脉，结论按该宿主版本当时的已知行为保留。codebuddy 的钩子示例改成 `ans-hook-codebuddy` 并删掉「模板保留长写法」的说明。
+
+## Unreleased — #502: 配错 key 的人也能看到免费额度这条路
+
+一句话说清：**`permanent-auth` 的提示句多给一条路：把这把 key 删掉，就走这一家的免费额度。句子在 kernel 的表里，`ans search` 和 MCP 两个出口同时生效。**
+
+### Changed
+
+- **`permanent-auth` 那句补上「删掉 key 走免费额度」**：以前只说「配一把有效 key」，配错的人以为只剩换 key 一条路。现在这句是：没配 key，或者 key 不对 / 权限不够 —— 配一把有效的，或者把这把 key 删掉（环境变量里 unset，或用 `ans auth remove <provider>` 删掉存的那把），走免费额度。仍然是一句，仍然不带 `{wait}`；三家共用，不按家分叉。
+
 ## Unreleased — #480: main 的类型漂移——doctor 补齐免费额度文案，合并闸门加上类型检查
 
 一句话说清：**#442 的报错文案表和 #455 新加的错误类各自绿，合到一起 `tsc` 红。补上 `free-quota-exhausted` 的文案，把免费额度墙从「未检查」改成「失败」；合并闸门从「跑全量测试」改成「先接到最新 main，再跑 `pnpm gate`（类型检查 + 全量测试）」。**
@@ -15,6 +48,27 @@
 
 - **每条 push 的成本没变**：类型检查只进合并闸门，不进 pre-push；一次合并多约 1 分钟 `tsc`。
 - **网页上直接合仍然绕过本地闸门**：规矩要求 rebase 后的那次 push 是合并前最后一个动作；中间又有别的合并进来，就得重新 rebase、重新跑。
+
+## Unreleased — #475: 被掐掉的信息源，三个出口都露名字
+
+一句话说清：**宽限窗口掐掉的臂以前只有引擎自己知道，`ans search --json`、MCP 的 content 和 `structuredContent` 都不说；现在三处都写 `providersCancelled`，并把 `providersQueried` 一起补齐——「问过谁、掐了谁」放一起读，「全被掐」就不再伪装成「没搜到」。**
+
+### Added
+
+- **`ans search --json` 多了两个键**：`providersQueried`（这次真问了谁）和 `providersCancelled`（结果够了、没再等的那些）。之前 `--json` 里连「问过谁」都没有，被域配置关掉的源在 JSON 里完全看不见。
+- **`ans search` 纯文本多一行 `Providers cancelled: ...`**（`formatProvidersCancelledLine`，空表不打印）。措辞是「结果够了，没等它回来」，不是错误。只打结果分支：宽限窗口要攒够结果才武装，拒答那一刻结果池是空的，那条分支写死为空表。
+- **MCP 两个搜索工具都报这两栏**：`search_web` 的 content JSON 和 `structuredContent` 各一对；`research_web` 只报**最后一个正常完成的轮**，不把多轮求并集——第一轮被掐、第二轮答了的臂不是「被掐」。
+
+### Fixed
+
+- **宽限窗口掐人之后归哪一栏，不再看微任务的先后。** 以前 `catch` 只查「调用方取消」那个集合，宽限窗口掐的臂靠适配器是 `async` 多一层 hop 才碰巧算成取消；换成一个非 async、abort 时 reject 的 provider 就变成 `providersFailed` + `unknown`。现在掐之前先记名字，两个来源共用一个集合。
+
+### Known limits
+
+- **`research_web` 的「最后一轮」指最后一个正常完成的轮**，跟 `abstain` / `sufficiency` 同一轮；被调用方掐断的那一轮由 `interrupted` 交代，那两栏不替它说话。
+- **`allProvidersFailed` 没动**：被掐不算失败，所以「全被掐 + 0 条」还是成功，现在由 `providersCancelled === providersQueried` 表达，不加新错误类。
+- **CLI 走不到「全被掐」**：它不传调用方信号，宽限窗口只在够结果后才掐，所以纯文本那行只表示「有臂被提前掐掉」。
+- **`research_web` 里两个尺度并存**：`providersFailed` / `providerErrorClasses` 是多轮并集（任何一轮失败都算这次跑降解了），`providersQueried` / `providersCancelled` 只报最后一个正常完成的轮。同一个臂因此可能既在失败里、又在被掐里——它先失败、后来被掐，两条各答各的问题。
 
 ## Unreleased — #442: `ans doctor --live`，以及 `ans auth set` 存前验 key
 
@@ -41,6 +95,28 @@
 - **`/v1/search` → `/mcp` 的垫片规则在探针里抄了一份**：为三行规则去改适配器不值当（也不该让探针依赖适配器的内部实现），代价是这条规则两处维护。
 - **`providers/<id>/README.md` 的「最近一次真跑」没动**：那栏记的是真搜索，`--live` 只打免费面。
 - **模型没有免费面可打**：`/models` 类接口没实测，所以没做。
+## Unreleased — #470: 网址策略认得裸域名，只检出不改写
+
+一句话说清：**钩子的网址策略以前只认字符串里带 `http(s)://` 的网址，`query` 里写 `example.com/a` 就绕过判定；现在按「会出门的字段」取文本，裸域名也认（结构合法 + 末段是真顶级域 + 不在文件后缀/占位符黑名单），入参一个字不改。`recall_memory` / `query_knowledge` 走本地索引，不再判——这是有意的行为变化。**
+
+### Changed
+
+- **网址策略看得见裸域名**：`search_web.query`、`research_web.question`、`ans_chat.message`、`verticalParams`（含嵌套）里的 `example.com/a`、`www.example.com`、`example.com:8080` 都进 allow/deny；`main.py`、`README.md`、`v1.2`、`1.2.3.4`、`foo@bar.com`、`localhost:3000` 不认。
+- **先 deny 再 ask**：一条 query 点名多个 host 时，先把所有候选的 deny 跑完再考虑 ask，避免「点同意把 denied 域名一起带出去」。
+- **本地索引工具不再判网址**：`recall_memory` / `query_knowledge` 的查询走 FTS5，扫了或改了都会改变召回结果。
+- **`site:denied.com` 这类搜索限域写法正常判**：`site:` 不再被当成协议名而整段跳过。
+
+### Added
+
+- **IANA 快照进仓库**（`apps/plugin/src/hooks/tlds.generated.ts`，1435 条）加生成脚本 `apps/plugin/scripts/gen-tlds.mjs`：`--check` 判新鲜度，`pnpm -C apps/plugin gen:tlds` 刷新。
+- **周更工作流**（`.github/workflows/tld-snapshot.yml`）：每周一跑一次 `--check`，快照过期才有信号；只在定时和手动派发时跑，IANA 更新不会把无关 PR 变红。
+
+### Tests
+
+- `apps/plugin/test/url-candidates.test.ts`：什么算网址、什么绝不能算（含 CJK 粘连、首尾标点与括号、非 http 协议、`site:`、`//`、解析失败的网址、常见文件后缀）。
+- `apps/plugin/test/url-gate-fields.test.ts`：扫哪些字段与行为变化（裸域名判 ask、本地索引工具不判、文件名不判）。
+- `apps/plugin/test/policy.test.ts`：裸域名的 allow / deny / ask，以及多域名时 deny 压过 ask。
+
 ## Unreleased — #428: 协议版本收尾：raw 探针参数化，dsh-plugin 的死常量删掉
 
 一句话说清：**raw 探针以前把 `initialize` 的协议版本写死成 `2025-03-26`，比产品（`2025-11-25`）落后两个版本；现在它默认发产品的版本，旧版本靠 `--protocol-version` / `ANS_PROBE_PROTOCOL_VERSION` 还能测。`dsh-plugin` 里那个同名的 `MCP_DEFAULT_VERSION` 一直没人读，直接删掉——它不影响任何一次握手。**
@@ -61,24 +137,31 @@
 - **`providers/` 不在 `pnpm -r check` 里**：探针是手跑夹具，不进构建（#425 已记）。这次验的是真跑：默认、flag、env 三路各 `ok:true`，缺值那路退出 2。
 - **`docs/eval/ip-corpus-probe-2026-11-07.md` 里那条 `2025-03-26` 不回改**：那是带日期的历史记录。
 
-## Unreleased — #441: 把每家的凭据状态说出来（`credentialSources` 有了消费者）
+## Unreleased — #441 / #459: 把每家的凭据状态说出来（三家永远都写，文案统一说「免费额度」）
 
-一句话说清：**引擎一直算着每家的 key 从哪来（env / 用户凭据文件 / 没有），但产品代码没人读；现在 `ans search --json`、MCP 的 `search_web` / `research_web` 和 `ans doctor` 都说同一件事。doctor 还改掉了两句假话——没 key 的 tavily / anysearch 照样参与检索，provider 那行的恒真判断也不再冒充检查。**
+一句话说清：**引擎一直算着每家的 key 从哪来（env / 用户凭据文件 / 没配），但产品代码没人读；现在 `ans search --json`、MCP 的 `search_web` / `research_web` 和 `ans doctor` 都说同一件事，而且是三家每次都写全。`none` 只表示「没配 key」——没 key 的 tavily / anysearch 照样参与检索，跑的是免费额度。doctor 还改掉了两句假话，provider 那行的恒真判断也不再冒充检查。**
 
 ### Changed
 
-- **`ans search --json` 多一个 `credentialSources`**：原样带上引擎的 `CompositionResult.credentialSources`（`{status:"resolved", tavily/exa/anysearch: "env"|"user"|"none"}`，解析抛错时是 `{status:"failed", error}`），字段名与结构都不重造；没有凭据接线时是 `null`。
-- **失败时那句 `Providers failed` 带上来源**：只在某一臂运行时失败时，括号里说清 key 从哪来，例如 `Providers failed: anysearch（无 key，按匿名跑）`；没 key 的 tavily 说「按 keyless 跑」，anysearch 说「按匿名跑」。解析没跑成、或记录里没这个 arm 时不编来源。没有臂失败时纯文本输出不变。
+- **`ans search --json` 多一个 `credentialSources`**：原样带上引擎的 `CompositionResult.credentialSources`，字段名与结构都不重造；没有凭据接线时是 `null`。`status:"resolved"` 时 `tavily` / `exa` / `anysearch` 三个键都在，值是 `"env"`、`"user"` 或 `"none"`；解析抛错时是 `{status:"failed", error}`。
+- **三家都写，`none` 只表示没配 key**：以前只有 anysearch 会写 `none`，tavily / exa 没 key 就干脆不出现在记录里，「没配」和「没查」长得一样。空串、纯空格也算没配（解析器本来就先 trim）。`resolved` 说的是「解析跑过」，不是「找到 key」；`none` 也不说这一臂不干活——tavily 和 anysearch 没配 key 仍发请求，用的是免费额度。建不建得起来是另一件事，看 `providerBuildErrors`。
+- **失败时那句 `Providers failed` 带上来源**：只在某一臂运行时失败时，括号里说清 key 从哪来，例如 `Providers failed: tavily（没配 key，用免费额度跑）`；有 key 的说 `key 来自环境变量` / `key 来自用户凭据文件`。解析没跑成、或记录里没这个 arm 时不编来源。没有臂失败时纯文本输出不变。
 - **MCP 的 `structuredContent.credentialSources`**：`search_web` / `research_web` 的成功结果（含部分失败）带上同一份引擎记录，没有凭据接线时和 CLI 一样是 `null`；错误结果照旧不带 `structuredContent`。
-- **`ans doctor` 的「信息源 X」按各家的真实行为写**：没 key 时 tavily「按 keyless 跑」、anysearch「按匿名跑」、exa「这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）」。
+- **`ans doctor` 的「信息源 X」按各家的真实行为写**：没配 key 时 tavily / anysearch 说「没配 key，用免费额度跑（有次数和速度上限）」，exa 说「这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）」。免费额度能跑但不是稳定可用，这一行仍报 `unconfigured`。
 - **`ans doctor` 的 `provider X` 行只验构造器能建**：删掉 `instance.id.length > 0 && instance.modes.length >= 3` 这条恒真式；构造器建起来就报可用，key 归「信息源」，联网与 key 是否有效留给 #442 的联网检查。
 
 ### Tests
 
-- `apps/cli/test/abstain.test.ts`：失败行的来源标注（env / user / 无 key 三家措辞 / 解析失败不编来源 / 多臂）。
-- `apps/cli/test/doctor.test.ts`：没 key 三家「信息源」措辞、provider 行只按构造器成败报；env key 下三行都报来源。
-- `apps/cli/test/e2e.test.ts`：`--json` 带上 `credentialSources`（endpoint-only 的 anysearch 记 `none`）；运行时失败行带上「key 来自环境变量」。
+- `packages/kernel/test/credential-wiring.test.ts`：没 key 时三家都记 `none`，`resolved` 的键集就是 `status` + 三家。
+- `apps/cli/test/abstain.test.ts`：失败行的来源标注（env / user / 没配 key 的免费额度措辞 / 解析失败不编来源 / 多臂）。
+- `apps/cli/test/doctor.test.ts`：没配 key 三家「信息源」措辞、provider 行只按构造器成败报；env key 下三行都报来源。
+- `apps/cli/test/e2e.test.ts`：`--json` 的 `credentialSources` 三家键都在（endpoint-only 的 anysearch 记 `none`）；运行时失败行带上「key 来自环境变量」。
 - `apps/mcp/test/failure-semantics.test.ts`：`search_web` / `research_web` 部分失败时 `structuredContent.credentialSources` 与引擎一致。
+
+### Docs
+
+- **`docs/mcp-server.md` 的凭据一节**：补上「没配 key 的臂也写 `none`」「`resolved` 是解析跑过、不是找到 key」「建不起来归 `providerBuildErrors`」三句；环境变量表里 Tavily / AnySearch 的描述改成免费额度。
+- **`README.md` / `README.zh-CN.md` 只换措辞**：`runs without a key` → `runs on the free quota`、`匿名层` → `免费额度`。`Exa needs a key` 还是真的，没动。
 
 ## Unreleased — #424: Cursor 那一套全删掉
 

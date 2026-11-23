@@ -120,6 +120,23 @@ async function main() {
   const dAsk = await makePreToolUseDecision(input("https://other.example/x"));
   assert("unallowed host -> ask", dAsk.permission === "ask");
 
+  // 3b. #470: a bare domain is a host too — same three answers, no scheme needed.
+  // `.example` is reserved and not in the IANA snapshot, so this fixture uses
+  // delegated TLDs; a bare `.example` host is deliberately never recognised.
+  const real = { allow: ["good.com"], deny: ["denied.com"] };
+  writeCache(envelope({ ...real, policy_version: canonicalVersion(real.allow, real.deny) }));
+  assert("bare allowed host -> no ask/deny", (await makePreToolUseDecision(input("good.com/x"))).permission === undefined);
+  assert("bare denied host -> deny", (await makePreToolUseDecision(input("denied.com/x"))).permission === "deny");
+  assert("bare unknown host -> ask", (await makePreToolUseDecision(input("other.com/x"))).permission === "ask");
+  assert("bare reserved-TLD host -> not a host at all", (await makePreToolUseDecision(input("denied.example/x"))).permission === undefined);
+
+  // 3c. #470: one query can name several hosts. A denied host must win over an
+  // ask about an earlier non-allowlisted one, or saying yes would carry it along.
+  assert(
+    "multi-host: deny beats an ask that comes earlier",
+    (await makePreToolUseDecision(input("other.com/a and denied.com/b"))).permission === "deny",
+  );
+
   // 4. tampered cache: content replaced but self-declared version kept -> rejected
   writeCache(envelope({ allow: [], deny: [], policy_version: goodPolicy.policy_version }));
   const p4 = await readPolicy(DEAD, "", dir);

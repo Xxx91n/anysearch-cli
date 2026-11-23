@@ -2,11 +2,15 @@
 // to run because they use one of them.
 //
 // Design: the gate runs the changed packages plus every package that depends
-// on them. A change outside apps/ and packages/ runs the whole suite: turbo's
-// --filter only pulls upstream tests, so a filtered run skipped apps/cli's
-// build after a kernel change. Root files change what every package runs (the
-// lockfile, turbo.json) and belong to no package, so they run the whole suite
-// too; docs follow the same rule.
+// on them, and no upstream tests: turbo's test task builds a package's
+// dependencies first but does not run their tests (#490). A test that reads
+// another package's files can sit upstream of the change that breaks it:
+// kernel's tests read apps/mcp/domains, which only an unfiltered full run
+// covers — the push gate's --full, CI's check-build lane, and the merge gate.
+// A change outside apps/ and packages/ runs the whole suite, because no rule
+// here names which packages read it. Root files change what every package runs
+// (the lockfile, turbo.json) and belong to no package, so they run the whole
+// suite too; docs follow the same rule.
 //
 // CI removes docs before selecting lanes; the push gate does not.
 //

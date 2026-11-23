@@ -55,6 +55,22 @@ const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchP
   anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 
+/**
+ * Trim every resolved key once. `searchCredentials` is a public seam, so a test
+ * or an embedder can hand back a whitespace-only key; the provider constructors
+ * and the credential record must agree that such an arm has no key.
+ */
+function trimResolvedKeys(creds: CredentialSource): CredentialSource {
+  if (!creds) return creds;
+  const key = (value?: string) => value?.trim() || undefined;
+  return {
+    ...creds,
+    ...(creds.tavily ? { tavily: { ...creds.tavily, apiKey: key(creds.tavily.apiKey) } } : {}),
+    ...(creds.exa ? { exa: { ...creds.exa, apiKey: key(creds.exa.apiKey) } } : {}),
+    ...(creds.anysearch ? { anysearch: { ...creds.anysearch, apiKey: key(creds.anysearch.apiKey) } } : {}),
+  };
+}
+
 // Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
 // the pipe) must not turn the fail-open engine build into a process crash —
 // both synchronous write throws and asynchronous stream errors are absorbed.
@@ -229,16 +245,22 @@ export interface CompositionResult {
  */
 export type CredentialSources =
   /**
-   * Resolution completed. Each arm says where its key came from, or `"none"` when
-   * the arm was configured without one - the anysearch arm can carry an endpoint
-   * and no key, and that arm is degraded, not authenticated. Recording it keeps
-   * "not configured" and "configured but keyless" distinguishable.
+   * Resolution completed. `createEngine` writes all three arms, `"none"` when an arm
+   * has no key.
+   *
+   * Design: require all three and label the keyless arm - an omitted field and a
+   * missing key used to look the same, and only the writer knows which it is.
    */
-  | { status: "resolved"; tavily?: CredentialSourceLabel; exa?: CredentialSourceLabel; anysearch?: CredentialSourceLabel }
+  | { status: "resolved"; tavily: CredentialSourceLabel; exa: CredentialSourceLabel; anysearch: CredentialSourceLabel }
   /** Resolution threw. The arms fell back to their own env; `error` explains why. */
   | { status: "failed"; error: string };
 
-/** Where one search arm's key came from; `"none"` means the arm has no key. */
+/**
+ * Where one search arm's key came from. `"none"` means no key is configured: a
+ * missing, empty, or whitespace-only key all read as none, because the resolver
+ * and this record both trim. Whether the arm can still search, or was built at
+ * all, is providerBuildErrors' business.
+ */
 export type CredentialSourceLabel = "env" | "user" | "none";
 
 // createEngine: build configured engine.
@@ -334,19 +356,18 @@ export function createEngine(
   let credentialSources: CredentialSources | undefined;
   if (opts?.searchCredentials) {
     try {
-      creds = opts.searchCredentials(env);
+      creds = trimResolvedKeys(opts.searchCredentials(env));
       for (const warning of creds?.warnings ?? []) {
         // Same rule as a thrown fault: the sentence is useful, so it is kept,
         // but only after anything key-shaped has been removed.
         writeProviderDiagnostic("[anysearch] " + redactSecrets(warning) + "\n");
       }
-      const resolved: CredentialSources = { status: "resolved" };
-      // `"none"` is only meaningful for anysearch: it is the one arm the resolver
-      // emits without a key (an endpoint alone). tavily and exa are simply absent
-      // when keyless, so nothing is recorded for them.
-      if (creds?.tavily) resolved.tavily = creds.tavily.source;
-      if (creds?.exa) resolved.exa = creds.exa.source;
-      if (creds?.anysearch) resolved.anysearch = creds.anysearch.apiKey ? creds.anysearch.source : "none";
+      const resolved: CredentialSources = {
+        status: "resolved",
+        tavily: creds?.tavily?.apiKey ? creds.tavily.source : "none",
+        exa: creds?.exa?.apiKey ? creds.exa.source : "none",
+        anysearch: creds?.anysearch?.apiKey ? creds.anysearch.source : "none",
+      };
       credentialSources = resolved;
     } catch (e) {
       creds = undefined;

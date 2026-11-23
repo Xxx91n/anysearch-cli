@@ -58,8 +58,8 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
 - 搜索至少要有一个能连上的信息源（`ans recommend` 只读本地域配置，不需要 key）：
   - `EXA_API_KEY`：Exa，支持按域名筛；Exa 必须有 key
-  - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认不带 key 也能跑
-  - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
+  - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认用免费额度也能跑
+  - `ANYSEARCH_API_KEY`：anysearch MCP，可选；免费额度也能用，但不能在搜之前按域名筛
 
 ### key 录一次就够：`ans auth set`
 
