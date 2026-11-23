@@ -17,6 +17,7 @@ import {
   searchExitCode,
   formatAbstainLine,
   formatProviderAbsentLine,
+  formatProvidersCancelledLine,
   formatProvidersFailedLine,
   formatProviderHintLines,
   describeCredentialSource,
@@ -77,6 +78,13 @@ async function main() {
     );
     assert(!lines[0].includes("{"), "the {wait} slot never reaches the reader");
     assert(formatProviderHintLines({}).length === 0, "no hints, no lines");
+
+    // #502: permanent-auth gets a line through the same formatter the other
+    // classes use. The wording belongs to PROVIDER_ERROR_HINTS in
+    // packages/kernel/src/provider-error-hints.ts and is pinned by its own test.
+    const authLines = formatProviderHintLines(providerErrorHints(["tavily"], { tavily: "permanent-auth" }));
+    assert(authLines.length === 1, "the auth class gets a hint line");
+    assert(authLines[0].startsWith("  tavily: "), "the hint line names the arm; got: " + authLines[0]);
   }
 
   // 4. Failed-provider line carries the arm's key source (#441). Same
@@ -131,6 +139,22 @@ async function main() {
   assert(
     describeUnconfiguredSource("exa") === describeCredentialSource("none", "exa"),
     "an arm that does not run gets no cap note",
+  );
+
+  // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named
+  //     on its own line — it was asked, just not waited for. An empty list
+  //     prints nothing, so the healthy path stays as quiet as before.
+  assert(formatProvidersCancelledLine([]) === undefined, "no cancelled arms, no line");
+  const cancelled = formatProvidersCancelledLine(["anysearch"]);
+  assert(cancelled !== undefined, "a cancelled arm renders a line");
+  assert(cancelled!.split(String.fromCharCode(10)).length === 1, "cancelled line is a single line");
+  assert(
+    cancelled === "Providers cancelled: anysearch（结果够了，没等它回来）",
+    "golden cancelled line shape; got: " + cancelled,
+  );
+  assert(
+    formatProvidersCancelledLine(["exa", "anysearch"]) === "Providers cancelled: exa, anysearch（结果够了，没等它回来）",
+    "several cut-off arms share the one reason",
   );
 
   // 5. Conditional live arm: spawn the built CLI against a narrow-allowlist
