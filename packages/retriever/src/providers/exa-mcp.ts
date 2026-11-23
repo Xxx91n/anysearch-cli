@@ -1,14 +1,10 @@
 // Exa 的免费额度臂：没配 key 时打 Exa 自己的 MCP 端点，只借它的 web_search_exa。
+// 一条 POST 到 mcp.exa.ai，不握手、不带凭据；回包是 Title / URL / Highlights 的文本块。
 //
-// Design: 单独写一份最小 MCP 客户端，不和 anysearch.ts 合成一个、也不抽公共层（#449）——
-// 两家在握手（initialize vs 无状态）、错误通道（200+isError vs HTTP 状态码）、回包
-// （markdown vs Title/URL 文本块）三处都对不上，合起来省下的重复没有补丁多。等出现第三家
-// 走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽。
-//
-// 事实来源：#447 的实测（工具名、两种回包、429 的形状）；端点和能力读
-// PROVIDER_FACTS.exa.freeArm。免费臂的文档随 #503 补进 providers/exa/README.md
-// （那一页现在还没有这一节）。
-// 这个端点不开放环境变量开关：免费额度这条路不给用户换地址（#448）。
+// 不跟 anysearch.ts 合成一个客户端：两家在握手、错误通道、回包三处都对不上（#449 实测）。
+// 等出现第三家走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽公共层。
+// 端点和能力读 PROVIDER_FACTS.exa.freeArm；文档随 #503 补进 providers/exa/README.md
+// （那一页现在还没有这一节）。这个端点不给用户换地址，也没有环境变量开关（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { Mode, NormalizedResult, ProviderEnvelope, SearchProvider, SearchRequest } from "../contract";

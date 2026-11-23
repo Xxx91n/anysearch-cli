@@ -398,7 +398,7 @@ export function createEngine(
         "[anysearch] search credentials could not be resolved: " + reason +
         (fromEnvironment
           ? " — falling back to environment variables only\n"
-          : " — the environment could not be read either; every arm runs as if unconfigured\n"),
+          : " — the second read failed too; exa falls back to its free-quota arm, tavily / anysearch to their own env reads\n"),
       );
     }
   }

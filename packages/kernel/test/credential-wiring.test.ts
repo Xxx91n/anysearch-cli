@@ -441,6 +441,35 @@ test("a throwing credential resolver still honours the environment keys", () => 
   }
 });
 
+test("a throwing resolver whose env read also throws still builds the engine", () => {
+  // #500: the degradation path re-reads the env. When that read fails too, fail-open
+  // means "no keys", not "no engine": exa lands on the free-quota arm and the engine
+  // still assembles. The proxy throws only on the search-key names, so nothing else in
+  // the composition root (paths, domain dirs) sees a fault.
+  const keyNames = new Set(["TAVILY_API_KEY", "EXA_API_KEY", "ANYSEARCH_API_KEY", "ANYSEARCH_ENDPOINT"]);
+  const env = new Proxy({} as NodeJS.ProcessEnv, {
+    get(_target, key) {
+      if (typeof key === "string" && keyNames.has(key)) throw new Error("EACCES: environment unreadable");
+      return undefined;
+    },
+  });
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env,
+    searchCredentials: () => { throw new Error("EACCES: credentials.json is unreadable"); },
+  });
+  try {
+    assert.equal(engine.credentialSources?.status, "failed", "the resolution fault is still reported");
+    assert.equal(engine.providerBuildErrors.exa, undefined, "exa fell back to the free-quota arm");
+    assert.equal(typeof (engine.retriever as { search?: unknown }).search, "function",
+      "the retriever is usable, not a half-built object");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
 test("an endpoint without a key is reported as keyless, not as authenticated", () => {
   // `resolveSearchCredentials` emits the anysearch arm with an endpoint alone
   // when ANYSEARCH_ENDPOINT is set and no key exists (that is how the offline

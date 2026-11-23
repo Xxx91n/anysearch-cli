@@ -89,12 +89,11 @@ export function describeUnconfiguredSource(provider: SearchProviderId): string {
  * 没这个臂，就什么都不写（不编来源）。
  */
 function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
-  if (id === "tavily") return describeCredentialSource(sources.tavily, "tavily");
-  if (id === "exa") return describeCredentialSource(sources.exa, "exa");
+  // tavily / exa 的端点是固定的，没配 key 就走默认服务上的免费额度，失败行可以说全。
+  if (id === "tavily" || id === "exa") return describeCredentialSource(sources[id], id);
   if (id === "anysearch") {
     // anysearch 的端点能被环境变量改掉，失败行没法承诺「默认服务上的免费额度」，
-    // 只说 key 状态，免得和 doctor 那行打架。exa 的端点固定、没 key 就走免费额度臂，
-    // 所以它和 tavily 一样说全那句。
+    // 只说 key 状态，免得和 doctor 那行打架。
     const label = sources.anysearch;
     return label === "env" || label === "user" ? describeCredentialSource(label, "anysearch") : NO_KEY_LABEL;
   }

@@ -89,10 +89,10 @@ async function main() {
     fail("CLI --json stdout is not one JSON document");
   }
   if (!searchPayload.providerBuildErrors || !searchPayload.providerBuildErrors.exa) {
-    fail("exa built an arm despite the unusable key; this smoke must stay offline");
+    fail("exa built an arm despite the unusable key; this smoke pins that arm out of the fanout");
   }
   if ((searchPayload.providersQueried ?? []).includes("exa")) {
-    fail("exa was queried; this smoke must stay offline");
+    fail("exa was queried; this smoke pins that arm out of the fanout");
   }
 
   const child = spawn(

@@ -27,6 +27,8 @@ async function main() {
     });
   if (env === null) {
     console.log("--- exa free-quota live probe: free quota exhausted (HTTP 429 / quota wall), skipped ---");
+    // 前面已经挂掉的断言不能被这条捷径吞掉（撞上额度墙时结尾那句判不到这里）。
+    if (failed > 0) process.exit(1);
     return;
   }
   assert(env.provider === "exa", "provider id");
