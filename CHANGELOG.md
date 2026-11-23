@@ -82,24 +82,31 @@
 - **`providers/` 不在 `pnpm -r check` 里**：探针是手跑夹具，不进构建（#425 已记）。这次验的是真跑：默认、flag、env 三路各 `ok:true`，缺值那路退出 2。
 - **`docs/eval/ip-corpus-probe-2026-11-07.md` 里那条 `2025-03-26` 不回改**：那是带日期的历史记录。
 
-## Unreleased — #441: 把每家的凭据状态说出来（`credentialSources` 有了消费者）
+## Unreleased — #441 / #459: 把每家的凭据状态说出来（三家永远都写，文案统一说「免费额度」）
 
-一句话说清：**引擎一直算着每家的 key 从哪来（env / 用户凭据文件 / 没有），但产品代码没人读；现在 `ans search --json`、MCP 的 `search_web` / `research_web` 和 `ans doctor` 都说同一件事。doctor 还改掉了两句假话——没 key 的 tavily / anysearch 照样参与检索，provider 那行的恒真判断也不再冒充检查。**
+一句话说清：**引擎一直算着每家的 key 从哪来（env / 用户凭据文件 / 没配），但产品代码没人读；现在 `ans search --json`、MCP 的 `search_web` / `research_web` 和 `ans doctor` 都说同一件事，而且是三家每次都写全。`none` 只表示「没配 key」——没 key 的 tavily / anysearch 照样参与检索，跑的是免费额度。doctor 还改掉了两句假话，provider 那行的恒真判断也不再冒充检查。**
 
 ### Changed
 
-- **`ans search --json` 多一个 `credentialSources`**：原样带上引擎的 `CompositionResult.credentialSources`（`{status:"resolved", tavily/exa/anysearch: "env"|"user"|"none"}`，解析抛错时是 `{status:"failed", error}`），字段名与结构都不重造；没有凭据接线时是 `null`。
-- **失败时那句 `Providers failed` 带上来源**：只在某一臂运行时失败时，括号里说清 key 从哪来，例如 `Providers failed: anysearch（无 key，按匿名跑）`；没 key 的 tavily 说「按 keyless 跑」，anysearch 说「按匿名跑」。解析没跑成、或记录里没这个 arm 时不编来源。没有臂失败时纯文本输出不变。
+- **`ans search --json` 多一个 `credentialSources`**：原样带上引擎的 `CompositionResult.credentialSources`，字段名与结构都不重造；没有凭据接线时是 `null`。`status:"resolved"` 时 `tavily` / `exa` / `anysearch` 三个键都在，值是 `"env"`、`"user"` 或 `"none"`；解析抛错时是 `{status:"failed", error}`。
+- **三家都写，`none` 只表示没配 key**：以前只有 anysearch 会写 `none`，tavily / exa 没 key 就干脆不出现在记录里，「没配」和「没查」长得一样。空串、纯空格也算没配（解析器本来就先 trim）。`resolved` 说的是「解析跑过」，不是「找到 key」；`none` 也不说这一臂不干活——tavily 和 anysearch 没配 key 仍发请求，用的是免费额度。建不建得起来是另一件事，看 `providerBuildErrors`。
+- **失败时那句 `Providers failed` 带上来源**：只在某一臂运行时失败时，括号里说清 key 从哪来，例如 `Providers failed: tavily（没配 key，用免费额度跑）`；有 key 的说 `key 来自环境变量` / `key 来自用户凭据文件`。解析没跑成、或记录里没这个 arm 时不编来源。没有臂失败时纯文本输出不变。
 - **MCP 的 `structuredContent.credentialSources`**：`search_web` / `research_web` 的成功结果（含部分失败）带上同一份引擎记录，没有凭据接线时和 CLI 一样是 `null`；错误结果照旧不带 `structuredContent`。
-- **`ans doctor` 的「信息源 X」按各家的真实行为写**：没 key 时 tavily「按 keyless 跑」、anysearch「按匿名跑」、exa「这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）」。
+- **`ans doctor` 的「信息源 X」按各家的真实行为写**：没配 key 时 tavily / anysearch 说「没配 key，用免费额度跑（有次数和速度上限）」，exa 说「这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）」。免费额度能跑但不是稳定可用，这一行仍报 `unconfigured`。
 - **`ans doctor` 的 `provider X` 行只验构造器能建**：删掉 `instance.id.length > 0 && instance.modes.length >= 3` 这条恒真式；构造器建起来就报可用，key 归「信息源」，联网与 key 是否有效留给 #442 的联网检查。
 
 ### Tests
 
-- `apps/cli/test/abstain.test.ts`：失败行的来源标注（env / user / 无 key 三家措辞 / 解析失败不编来源 / 多臂）。
-- `apps/cli/test/doctor.test.ts`：没 key 三家「信息源」措辞、provider 行只按构造器成败报；env key 下三行都报来源。
-- `apps/cli/test/e2e.test.ts`：`--json` 带上 `credentialSources`（endpoint-only 的 anysearch 记 `none`）；运行时失败行带上「key 来自环境变量」。
+- `packages/kernel/test/credential-wiring.test.ts`：没 key 时三家都记 `none`，`resolved` 的键集就是 `status` + 三家。
+- `apps/cli/test/abstain.test.ts`：失败行的来源标注（env / user / 没配 key 的免费额度措辞 / 解析失败不编来源 / 多臂）。
+- `apps/cli/test/doctor.test.ts`：没配 key 三家「信息源」措辞、provider 行只按构造器成败报；env key 下三行都报来源。
+- `apps/cli/test/e2e.test.ts`：`--json` 的 `credentialSources` 三家键都在（endpoint-only 的 anysearch 记 `none`）；运行时失败行带上「key 来自环境变量」。
 - `apps/mcp/test/failure-semantics.test.ts`：`search_web` / `research_web` 部分失败时 `structuredContent.credentialSources` 与引擎一致。
+
+### Docs
+
+- **`docs/mcp-server.md` 的凭据一节**：补上「没配 key 的臂也写 `none`」「`resolved` 是解析跑过、不是找到 key」「建不起来归 `providerBuildErrors`」三句；环境变量表里 Tavily / AnySearch 的描述改成免费额度。
+- **`README.md` / `README.zh-CN.md` 只换措辞**：`runs without a key` → `runs on the free quota`、`匿名层` → `免费额度`。`Exa needs a key` 还是真的，没动。
 
 ## Unreleased — #424: Cursor 那一套全删掉
 

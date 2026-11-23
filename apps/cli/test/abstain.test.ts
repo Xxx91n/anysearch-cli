@@ -20,8 +20,8 @@ import {
   formatProvidersCancelledLine,
   formatProvidersFailedLine,
   formatProviderHintLines,
-  describeKeylessBehavior,
   describeCredentialSource,
+  describeUnconfiguredSource,
 } from "../src/commands/search-abstain";
 
 let passed = 0, failed = 0;
@@ -82,48 +82,56 @@ async function main() {
 
   // 4. Failed-provider line carries the arm's key source (#441). Same
   //    resolution the engine hands us; no source when resolution never ran.
+  // #459: the engine writes all three arms, so the fixtures carry all three.
   assert(
-    formatProvidersFailedLine(["exa"], { status: "resolved", exa: "env" }) ===
+    formatProvidersFailedLine(["exa"], { status: "resolved", tavily: "none", exa: "env", anysearch: "none" }) ===
       "Providers failed: exa（key 来自环境变量）",
     "env key is named on the failed line",
   );
   assert(
-    formatProvidersFailedLine(["tavily"], { status: "resolved", tavily: "user" }) ===
+    formatProvidersFailedLine(["tavily"], { status: "resolved", tavily: "user", exa: "none", anysearch: "none" }) ===
       "Providers failed: tavily（key 来自用户凭据文件）",
     "user key is named on the failed line",
   );
   assert(
-    formatProvidersFailedLine(["anysearch"], { status: "resolved", anysearch: "none" }) ===
-      "Providers failed: anysearch（无 key，按匿名跑）",
-    "a keyless arm says it runs anonymously",
-  );
-  assert(
-    formatProvidersFailedLine(["tavily"], { status: "resolved" }) ===
-      "Providers failed: tavily（无 key，按 keyless 跑）",
-    "an arm the resolver left absent is keyless, not unknown",
+    formatProvidersFailedLine(["anysearch"], { status: "resolved", tavily: "none", exa: "none", anysearch: "none" }) ===
+      "Providers failed: anysearch（没配 key）",
+    "anysearch names only its key state: its endpoint can point anywhere",
   );
   assert(
     formatProvidersFailedLine(["exa"], { status: "failed", error: "unreadable" }) === "Providers failed: exa",
     "a failed resolution adds no invented source",
   );
   assert(
-    formatProvidersFailedLine(["exa", "tavily"], { status: "resolved", exa: "env", tavily: "none" }) ===
-      "Providers failed: exa（key 来自环境变量）, tavily（无 key，按 keyless 跑）",
+    formatProvidersFailedLine(["exa", "tavily"], { status: "resolved", tavily: "none", exa: "env", anysearch: "none" }) ===
+      "Providers failed: exa（key 来自环境变量）, tavily（没配 key，用免费额度跑）",
     "each failed arm keeps its own note",
   );
   assert(
-    formatProvidersFailedLine(["other"], { status: "resolved" }) === "Providers failed: other",
+    formatProvidersFailedLine(["other"], { status: "resolved", tavily: "none", exa: "none", anysearch: "none" }) ===
+      "Providers failed: other",
     "an arm the resolver never named gets no invented source",
   );
   assert(
-    formatProvidersFailedLine(["exa"], { status: "resolved" }) === "Providers failed: exa（无 key）",
+    formatProvidersFailedLine(["exa"], { status: "resolved", tavily: "none", exa: "none", anysearch: "none" }) ===
+      "Providers failed: exa（没配 key）",
     "a failed arm names only its key state; 'does not participate' belongs to doctor",
   );
-  assert(describeKeylessBehavior("exa").includes("这个源不参与"), "exa's keyless arm does not join the fanout");
+  assert(describeCredentialSource("none", "exa").includes("这个源不参与"), "exa's keyless arm does not join the fanout");
   assert(
     describeCredentialSource("env", "tavily") === "key 来自环境变量" &&
-      describeCredentialSource("none", "tavily") === "无 key，按 keyless 跑",
+      describeCredentialSource("none", "tavily") === "没配 key，用免费额度跑",
     "doctor and search share one source wording",
+  );
+  // doctor's own row adds the cap note, because it reports `unconfigured` and a
+  // reader would otherwise take "runs" for "stable".
+  assert(
+    describeUnconfiguredSource("tavily") === "没配 key，用免费额度跑（有次数和速度上限）",
+    "doctor's keyless row says the free quota is capped",
+  );
+  assert(
+    describeUnconfiguredSource("exa") === describeCredentialSource("none", "exa"),
+    "an arm that does not run gets no cap note",
   );
 
   // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named

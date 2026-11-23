@@ -255,7 +255,7 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
   }
 });
 
-test("a search arm with no stored key and no env still degrades by name, never pretending", () => {
+test("a search arm with no stored key and no env is labelled none, never left out", () => {
   const { home, cleanup } = tempHome();
   const scrub = scrubEnv();
   try {
@@ -272,9 +272,20 @@ test("a search arm with no stored key and no env still degrades by name, never p
       // exa refuses to construct without a key, and that stays a named
       // degradation instead of a silent skip.
       assert.ok(engine.providerBuildErrors.exa, "the keyless exa arm reports a named failure");
-      assert.equal(
-        engine.credentialSources?.status === "resolved" ? engine.credentialSources.exa : undefined,
-        undefined,
+      // #459: a keyless arm is labelled, not omitted. Before this the record
+      // named only the arms that had a key, so "no key here" and "this arm was
+      // never looked at" had the same shape.
+      const sources = engine.credentialSources;
+      assert.equal(sources?.status, "resolved");
+      assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
+      assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
+      assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
+      // The key set itself is the contract: an arm added later cannot be
+      // skipped silently, because this assertion counts what the record carries.
+      assert.deepEqual(
+        Object.keys(sources ?? {}).sort(),
+        ["anysearch", "exa", "status", "tavily"],
+        "resolved names all three arms plus status",
       );
     } finally {
       (engine.store as { close?: () => void }).close?.();
@@ -283,6 +294,39 @@ test("a search arm with no stored key and no env still degrades by name, never p
   } finally {
     scrub.restore();
     cleanup();
+  }
+});
+
+test("a blank key from a hand-built seam is labelled none, not env", () => {
+  // The seam is public (tests and embedders pass their own resolver), so the
+  // record cannot assume its caller trimmed. A whitespace-only key is not a key.
+  // The env is scrubbed too: the SDKs fall back to their own env var, which would
+  // make "the blank key built nothing" pass for the wrong reason.
+  const scrub = scrubEnv();
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({
+      warnings: [],
+      tavily: { apiKey: "   ", source: "env" },
+      exa: { apiKey: "", source: "user" },
+      anysearch: { apiKey: "  ", endpoint: "http://127.0.0.1:1", source: "env" },
+    }),
+  });
+  try {
+    const sources = engine.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
+    assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
+    assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
+    // The constructors see the same normalised value: a blank key must not build
+    // the exa arm, which refuses without one.
+    assert.ok(engine.providerBuildErrors.exa, "a blank key does not build the exa arm");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+    scrub.restore();
   }
 });
 

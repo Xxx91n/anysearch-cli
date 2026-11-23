@@ -256,12 +256,19 @@ Rules behind the table:
   both the content JSON and `structuredContent`.
 - **Credential sources travel with every successful result.**
   `structuredContent.credentialSources` is the engine's own record of where
-  each search arm's key came from — `env`, `user`, or `none` (an arm with an
-  endpoint and no key) — never a key value. It is the same object
-  `ans search --json` emits, so the two surfaces cannot disagree. A
-  construction-failed arm records nothing, and an engine built without a
-  credential seam reports `null` in both surfaces. Error results do not carry
-  it.
+  each search arm's key came from — `env`, `user`, or `none` — never a key
+  value. The engine writes every search arm on every result, keyless or not:
+  `none` means no key is configured for that arm (absent, empty, and
+  whitespace-only all read as none), so a reader never has to infer a missing
+  key from a missing field. `status: "resolved"` says the resolution ran, never that a key
+  was found, and `none` is not a claim that the arm sits idle — tavily and
+  anysearch search on the provider's free quota without a key. Whether an arm
+  was *built* is a different question, answered by `providerBuildErrors`: an
+  arm can record `none` and still fail to construct (exa's adapter refuses
+  without a key, so it records `none` and reports the build failure). It is the
+  same object `ans search --json` emits, so the two surfaces cannot disagree.
+  An engine built without a credential seam reports `null` in both surfaces.
+  Error results do not carry it.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in
@@ -593,7 +600,7 @@ the file's definition and protection, `docs/ans-layout.md` its position.
 | `ANS_DOMAIN` | engine construction | Selects the current domain (TOML allowlist + provider set). Unset = search all providers. An unknown/unresolvable name also falls back to searching all providers **without the URL allowlist** — a typo silently turns off domain filtering, so check the TOML first. Snapshotted at startup. |
 | `ANS_DB_PATH` | engine construction | Store path; default `~/.ans/anysearch.db`. The directory and DB get owner-only permissions when created (best-effort). |
 | `ANS_DOMAINS_DIR` | engine construction | Extra directory of domain TOMLs, prepended to the default search chain. |
-| `EXA_API_KEY` / `TAVILY_API_KEY` / `ANYSEARCH_API_KEY` | provider adapters | Per-provider keys. Exa requires one. Tavily runs without a key by default, and AnySearch has an anonymous tier. |
+| `EXA_API_KEY` / `TAVILY_API_KEY` / `ANYSEARCH_API_KEY` | provider adapters | Per-provider keys. Exa requires one. Tavily and AnySearch both run on the free quota. |
 | `ANYSEARCH_ENDPOINT` | anysearch adapter | Upstream MCP endpoint override (default `https://api.anysearch.com/mcp`). A value ending in `/v1/search` is rewritten to `<base>/mcp` once per process with a stderr warning. |
 | `ANS_MCP_KEY` | HTTP transport only | When set, every HTTP request must send `Authorization: Bearer <key>`. Otherwise HTTP returns 401 with `{error:{code:-32001, message:"Unauthorized"}}` (an error object, not a full JSON-RPC response). Unset = no MCP-level auth; the listener is still bound to `127.0.0.1` (see Start the server). |
 | `ANS_SERVER_URL` / `ANS_SERVER_TOKEN` | `recall_memory` fallback | Address and bearer token of the local plugin server. When unset, MCP reads the address published in `~/.ans/server.json` and the token in `~/.ans/server-token` (`%USERPROFILE%` on Windows), then falls back to `http://127.0.0.1:33333`. No token means no server has run for this installation; the fallback then reports itself unavailable. |

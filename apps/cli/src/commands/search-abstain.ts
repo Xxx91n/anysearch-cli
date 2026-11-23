@@ -6,10 +6,10 @@
 // render; the absence line additionally rides stderr on the error path.
 
 // 只做类型导入，运行时擦除。标签类型在 kernel/composition；本模块还管
-// `Providers failed` 行的来源标注和 doctor 共用的 keyless/凭据措辞。
+// `Providers failed` 行的来源标注和 doctor 共用的「免费额度」/凭据措辞。
 import type { CredentialSourceLabel, CredentialSources } from "@anysearch-cli/kernel";
 // 同样只做类型导入；provider 联合由 store 拥有，这里不复制一份。新增
-// provider 时下面的 Record 会编译失败，直到补上它的无 key 措辞。
+// provider 时下面的 Record 会编译失败，直到补上它没配 key 时的说法。
 import type { SearchProviderId } from "@anysearch-cli/store";
 
 // Exit codes: 0 = ok (including abstain), 1 = generic failure / zero results
@@ -50,21 +50,22 @@ export function formatProviderAbsentLine(buildErrors: Record<string, string>): s
   return "Providers absent (build failure): " + entries.map(([id, category]) => id + " — " + category).join("; ");
 }
 
-/**
- * What one arm does when it has no key, in the same words doctor uses for its
- * 「信息源」 row. These are adapter facts, not service facts: all three services
- * have a free route, but only tavily and anysearch are wired to reach it from
- * this product; exa's adapter speaks REST only.
- */
-const KEYLESS_BEHAVIOR: Record<SearchProviderId, string> = {
-  tavily: "按 keyless 跑",
-  anysearch: "按匿名跑",
-  exa: "这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
-};
+const FREE_QUOTA_LIMIT = "有次数和速度上限";
 
-export function describeKeylessBehavior(provider: SearchProviderId): string {
-  return KEYLESS_BEHAVIOR[provider];
-}
+/** 没配 key 这一句只有一份：失败行和凭据措辞都从这儿取。 */
+const NO_KEY_LABEL = "没配 key";
+
+/**
+ * 没配 key 时这一臂实际怎么跑：doctor 读 `runs` + `limit`，失败行只有 tavily 读
+ * `runs`（exa / anysearch 在失败行只说 key 状态，见 sourceNote）。三家服务都有免费
+ * 路，但只有 tavily 和 anysearch 的适配器能不带 key 发请求；exa 的适配器只走 REST，
+ * 没 key 就建不起来（它自己的 MCP 端点不用 key，那是另一条路）。
+ */
+const KEYLESS_BEHAVIOR: Record<SearchProviderId, { runs: string; limit?: string }> = {
+  tavily: { runs: "用免费额度跑", limit: FREE_QUOTA_LIMIT },
+  anysearch: { runs: "用免费额度跑", limit: FREE_QUOTA_LIMIT },
+  exa: { runs: "这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）" },
+};
 
 /**
  * 一处 key 来源措辞，`ans search` 和 `ans doctor` 共用，避免两边说两套。
@@ -72,7 +73,17 @@ export function describeKeylessBehavior(provider: SearchProviderId): string {
 export function describeCredentialSource(label: CredentialSourceLabel, provider: SearchProviderId): string {
   if (label === "env") return "key 来自环境变量";
   if (label === "user") return "key 来自用户凭据文件";
-  return "无 key，" + describeKeylessBehavior(provider);
+  return NO_KEY_LABEL + "，" + KEYLESS_BEHAVIOR[provider].runs;
+}
+
+/**
+ * doctor 的「信息源」行专用：就是 `describeCredentialSource("none", …)` 再加免费
+ * 额度的上限说明。这一行报 `unconfigured`，得说清「能跑」不等于「稳定可用」，
+ * 报 `ready` 会骗人；exa 那句自己就说明了不参与，所以没有上限说明可加。
+ */
+export function describeUnconfiguredSource(provider: SearchProviderId): string {
+  const limit = KEYLESS_BEHAVIOR[provider].limit;
+  return describeCredentialSource("none", provider) + (limit ? "（" + limit + "）" : "");
 }
 
 /**
@@ -80,23 +91,17 @@ export function describeCredentialSource(label: CredentialSourceLabel, provider:
  * 没这个臂，就什么都不写（不编来源）。
  */
 function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
-  switch (id) {
-    case "tavily":
-      return describeCredentialSource(sources.tavily ?? "none", "tavily");
-    case "anysearch":
-      return describeCredentialSource(sources.anysearch ?? "none", "anysearch");
-    case "exa":
-      // A runtime-failed exa arm was built, so it had a key. If the record
-      // says none, name only the key state: "does not participate" would
-      // contradict the "Providers failed" line it rides.
-      return sources.exa === "env" || sources.exa === "user"
-        ? describeCredentialSource(sources.exa, "exa")
-        : "无 key";
-    // Unknown ids get no note: the kernel record only names the three search
-    // arms, and inventing a key state for anything else would be a lie.
-    default:
-      return undefined;
+  if (id === "tavily") return describeCredentialSource(sources.tavily, "tavily");
+  if (id === "exa" || id === "anysearch") {
+    // Neither can promise the default service in a failure line: anysearch's
+    // endpoint is an env override, and exa's adapter refuses without a key. Name
+    // the key state only, so this never contradicts doctor's own row.
+    const label = sources[id];
+    return label === "env" || label === "user" ? describeCredentialSource(label, id) : NO_KEY_LABEL;
   }
+  // Unknown ids get no note: the kernel record only names the three search arms,
+  // and inventing a key state for anything else would be a lie.
+  return undefined;
 }
 
 /**
