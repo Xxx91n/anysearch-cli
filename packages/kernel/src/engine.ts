@@ -504,7 +504,7 @@ export class RetroaererdEngine {
     const providersQueried: string[] = [];
     const providersFailed: string[] = [];
     const providerErrorClasses: Record<string, ProviderErrorClass> = {};
-    // seconds the arm asked us to wait; only the free-quota class carries one.
+    // seconds the failing arm asked us to wait; recorded whenever it gave one.
     const providerErrorRetryAfterSeconds: Record<string, number> = {};
     const providersCancelled: string[] = [];
     const answers: string[] = [];

@@ -88,8 +88,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
-            // Per round, not a union: an arm that failed again without a wait must
-            // not keep last round's number, or the hint quotes a stale one.
+            // Follows each arm's latest failure: overwrite when it gave a number,
+            // drop when it failed again without one, keep the last otherwise
+            // (providerErrorClasses above accumulates the same way).
             for (const id of roundFailed) {
               const wait = envelope.metadata?.providerErrorRetryAfterSeconds?.[id];
               if (wait !== undefined) providerErrorRetryAfterSeconds[id] = wait;

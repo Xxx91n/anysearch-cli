@@ -369,9 +369,9 @@ export interface FusedEnvelope {
     // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
-    // per-arm wait seconds, recorded only for the class whose remedy names a
-    // wait (free-quota-exhausted), so the sentence carries the number the
-    // upstream gave instead of "a moment".
+    // per-arm wait seconds, recorded whenever a failing arm gave one; the
+    // hint table decides which remedy sentences quote it, so the sentence
+    // carries the number the upstream gave instead of "a moment".
     providerErrorRetryAfterSeconds?: Record<string, number>;
     elapsedMs: number;
     // sufficiency signal from computeSufficiency.
