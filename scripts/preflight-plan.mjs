@@ -102,21 +102,23 @@ export function docsOnly(files) {
 
 /**
  * How the code half of a change is owned: the packages its files belong to, and
- * the files no package owns. Both planners ask this, so a docs filter that
- * moves cannot leave one of them looking at a different set of files.
+ * the files no package owns. One pass, so a file is either owned or unowned and
+ * cannot be counted as both.
  *
  * @param {string[]} files normalized paths, docs not removed yet
  * @param {{ name: string, dir: string, deps: string[] }[]} packages
  * @returns {{ touched: string[], unowned: string[] }}
  */
 export function codeOwnership(files, packages) {
-  const code = files.filter((file) => !isDocumentation(file));
-  const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
-  const owned = code.filter((file) => owners.get(file));
-  return {
-    unowned: code.filter((file) => !owners.get(file)),
-    touched: [...new Set(owned.map((file) => owners.get(file).name))].sort(),
-  };
+  const touched = [];
+  const unowned = [];
+  for (const file of files) {
+    if (isDocumentation(file)) continue;
+    const owner = packageForFile(file, packages);
+    if (owner) touched.push(owner.name);
+    else unowned.push(file);
+  }
+  return { unowned, touched: [...new Set(touched)].sort() };
 }
 
 /**
