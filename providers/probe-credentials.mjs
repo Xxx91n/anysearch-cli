@@ -32,7 +32,7 @@ registerHooks({
   },
 });
 
-const { resolveSearchCredentials } = await import("../packages/store/src/credentials.ts");
+const { resolveSearchCredentials, SEARCH_PROVIDER_IDS } = await import("../packages/store/src/credentials.ts");
 
 /**
  * 探针看到的那把 key，和它是从哪来的。
@@ -46,6 +46,11 @@ const { resolveSearchCredentials } = await import("../packages/store/src/credent
  * 所以即使环境变量和凭据文件里都有 key，这一跑也报 none。
  */
 export function resolveProbeCredentials(provider, { anonymous = false } = {}) {
+  // 名字写错就静默拿到「没 key」、探针白白跑成匿名（#422 就是这种静默），所以这里先拦。
+  // providers/ 不在 pnpm -r check 里，类型检查兜不住这个字面量。
+  if (!SEARCH_PROVIDER_IDS.includes(provider)) {
+    throw new Error("unknown search provider " + JSON.stringify(provider) + "; known: " + SEARCH_PROVIDER_IDS.join(", "));
+  }
   if (anonymous) return { apiKey: "", keySource: "none", credentialWarning: undefined };
   const resolved = resolveSearchCredentials();
   const arm = resolved[provider];

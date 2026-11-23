@@ -15,7 +15,7 @@ Exa 的说明。信息源 id 是 `exa`，适配器在
   裸跑时由 SDK 自己从环境变量取。
 - 这个夹子没有探针，所以「环境变量优先、再读 `~/.ans/credentials.json`」这套解析在 exa 上**没有在探针
   这一面实测过**——#506 把三条手工探针都接到了 `resolveSearchCredentials` 上，但 exa 没有探针；
-  `ans doctor --live` 会验 Exa 的 key，那是免费面检查，不等于原文/适配器归因面，见最后一节。
+  `ans doctor --live` 会验 Exa 的 key，那是免费面检查，不等于原文/适配器归因面，见「## 探针」。
 
 ## 协议版本
 

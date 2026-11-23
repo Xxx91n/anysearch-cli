@@ -23,8 +23,9 @@ const SCHEMA = "anysearch/mcp-raw-probe@2";
 const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 
-// 参数报错也要遮 key，而参数比凭据先处理：所以 --nokey 先扫出来、凭据先解析，再进参数
-// 校验。这样只存在凭据文件里的 key 被人当参数贴进来，也走同一条 scrub。
+// Design: 先扫 --nokey、先解析凭据，再进参数校验 —— 参数报错走的是同一份 SECRETS，key 只在
+// 凭据文件里时被人当参数贴进来才会遮成 <key>（#497「参数报错都走同一条 scrub」）。顺序反过来
+// 就会漏：参数在凭据之前处理，遮罩表还是空的。
 const NO_KEY = ARGS.includes("--nokey");
 const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;

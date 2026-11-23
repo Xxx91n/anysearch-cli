@@ -92,7 +92,8 @@ const flush = () => {
     "ranAt: " + ledger.ranAt + " | keySource: " + ledger.keySource + " | evidence: " + ledger.evidenceStatus,
     ...(ledger.credentialWarning ? ["credentialWarning: " + ledger.credentialWarning] : []),
     "", "| arm | status | summary |", "|---|---|---|", ...rows, "",
-    "Re-run: TAVILY_API_KEY=tvly-... (or `ans auth set tavily`) node providers/tavily/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D).",
+    "Re-run: TAVILY_API_KEY=tvly-... node providers/tavily/probe-tavily-domains.mjs",
+    "(or `ans auth set tavily` first; PROBE_TAVILY_RESEARCH=1 enables arm D.)",
   ].join(NL);
   writeFileSync(join(OUT_DIR, LEDGER_BASE + ".md"), md + NL, "utf8");
   return join(OUT_DIR, LEDGER_BASE + ".{json,md}");
