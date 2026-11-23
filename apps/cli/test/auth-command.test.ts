@@ -8,6 +8,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,36 +24,43 @@ function tempHome(): { home: string; cleanup: () => void } {
 }
 
 /**
- * Capture stdout/stderr while running fn, with the secret fed through the
- * command's stdin seam. `input` stands for what a pipe would deliver.
+ * Capture the command's output while running fn, with the secret fed through the
+ * command's own IO seam. `input` stands for what a pipe would deliver.
+ *
+ * The sinks are the command's seam, not process.stdout/process.stderr: patching
+ * those globals inside a node --test file desyncs the reporter, and later test
+ * results disappear from the output entirely (#442 found this file reporting 7
+ * of its 13 tests).
  */
 async function capture(
   fn: () => Promise<number>,
   input?: string,
 ): Promise<{ code: number; out: string }> {
-  const originalOut = process.stdout.write.bind(process.stdout);
-  const originalErr = process.stderr.write.bind(process.stderr);
   let out = "";
-  const sink = (chunk: unknown) => { out += String(chunk); return true; };
-  process.stdout.write = sink as typeof process.stdout.write;
-  process.stderr.write = sink as typeof process.stderr.write;
+  const previous = { input: AUTH_IO.input, output: AUTH_IO.output, stdout: AUTH_IO.stdout, stderr: AUTH_IO.stderr };
+  AUTH_IO.stdout = (text) => { out += text; };
+  AUTH_IO.stderr = (text) => { out += text; };
 
   const { PassThrough } = await import("node:stream");
-  const previous = AUTH_IO.input;
   if (input !== undefined) {
+    const prompt = new PassThrough();
+    prompt.on("data", (chunk) => { out += String(chunk); });
+    AUTH_IO.output = prompt as typeof AUTH_IO.output;
     const stream = new PassThrough();
     stream.end(input);
     AUTH_IO.input = stream as typeof AUTH_IO.input;
   } else {
+    AUTH_IO.output = undefined;
     AUTH_IO.input = undefined;
   }
   try {
     const code = await fn();
     return { code, out };
   } finally {
-    AUTH_IO.input = previous;
-    process.stdout.write = originalOut;
-    process.stderr.write = originalErr;
+    AUTH_IO.input = previous.input;
+    AUTH_IO.output = previous.output;
+    AUTH_IO.stdout = previous.stdout;
+    AUTH_IO.stderr = previous.stderr;
   }
 }
 
@@ -368,4 +377,163 @@ test("the endpoint shown on write and on remove carries no credentials", async (
     if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
     cleanup();
   }
+});
+
+// ── #442: 存之前先验这把 key ────────────────────────────────────────────
+//
+// 只有 anysearch 有一个真产品杠杆（ANYSEARCH_ENDPOINT）能把探针指到本地假端点，
+// 所以下面几条都打这条腿；tavily / exa 抄同一个函数的另一格，映射由
+// packages/retriever/test/provider-probes.test.ts 钉着。
+
+interface McpSeen {
+  method: string;
+  args?: Record<string, unknown>;
+}
+
+type AnySearchSurface = { callText: string } | { status: number };
+
+/** 假 anysearch MCP：握手和 tools/list 都正常，空参数 tools/call 用 callText 说话。 */
+async function withAnySearchMcp(
+  surface: AnySearchSurface,
+  run: (base: string, seen: McpSeen[]) => Promise<void>,
+): Promise<void> {
+  const seen: McpSeen[] = [];
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      const payload = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as {
+        id?: number;
+        method?: string;
+        params?: { arguments?: Record<string, unknown> };
+      };
+      seen.push({
+        method: payload.method ?? "",
+        ...(payload.params?.arguments === undefined ? {} : { args: payload.params.arguments }),
+      });
+      const reply = (body: unknown) =>
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+      if ("status" in surface) {
+        res.writeHead(surface.status, { "content-type": "application/json" }).end("{}");
+        return;
+      }
+      if (payload.method === "initialize") {
+        return reply({ jsonrpc: "2.0", id: payload.id, result: { protocolVersion: "2025-11-25" } });
+      }
+      if (payload.method === "notifications/initialized") {
+        res.writeHead(202).end();
+        return;
+      }
+      if (payload.method === "tools/list") {
+        return reply({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: { tools: [{ name: "search", inputSchema: { properties: { query: {} } } }] },
+        });
+      }
+      if (payload.method === "tools/call") {
+        return reply({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: { isError: true, content: [{ type: "text", text: surface.callText }] },
+        });
+      }
+      reply({ jsonrpc: "2.0", id: payload.id, result: {} });
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    await run("http://127.0.0.1:" + port, seen);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+/** 一个临时家目录 + 一个能指到假端点的 anysearch 环境。 */
+async function withSearchSandbox(run: (home: string) => Promise<void>): Promise<void> {
+  const { home, cleanup } = tempHome();
+  const saved = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    ANYSEARCH_ENDPOINT: process.env.ANYSEARCH_ENDPOINT,
+    ANYSEARCH_API_KEY: process.env.ANYSEARCH_API_KEY,
+  };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  delete process.env.ANYSEARCH_API_KEY;
+  try {
+    await run(home);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    cleanup();
+  }
+}
+
+test("ans auth set：上游拒了这把 key 就不存 (#442)", async () => {
+  await withSearchSandbox(async () => {
+    await withAnySearchMcp({ callText: "invalid_api_key" }, async (base, seen) => {
+      process.env.ANYSEARCH_ENDPOINT = base;
+      const { code, out } = await capture(() => runAuth(["set", "anysearch"]), "ans-bad-key\n");
+
+      assert.equal(code, 1, out);
+      assert.match(out, /rejected this key \(permanent-auth\)/);
+      assert.match(out, /--no-verify/, "离线的人还得知道逃逸口在哪");
+      assert.equal(readUserCredentials().bindings.length, 0, "坏 key 不落盘");
+      assert.ok(!out.includes("ans-bad-key"), "key 不回显");
+      // 认证结论来自空参数 tools/call（#442），不是坏 key 也 200 的 /health。
+      assert.ok(
+        seen.some((call) => call.method === "tools/call" && Object.keys(call.args ?? {}).length === 0),
+        "要发一次空参数 tools/call：" + JSON.stringify(seen),
+      );
+    });
+  });
+});
+
+test("ans auth set --no-verify：离线也存得进去，一个请求都不发 (#442)", async () => {
+  await withSearchSandbox(async () => {
+    await withAnySearchMcp({ callText: "invalid_api_key" }, async (base, seen) => {
+      process.env.ANYSEARCH_ENDPOINT = base;
+      // 顺手钉住参数顺序：--no-verify 写在 provider 前面也不能被当成 provider 名。
+      const { code, out } = await capture(() => runAuth(["set", "--no-verify", "anysearch"]), "ans-offline-key\n");
+
+      assert.equal(code, 0, out);
+      assert.equal(seen.length, 0, "--no-verify 不该联网");
+      const stored = readUserCredentials();
+      assert.equal(stored.bindings.length, 1);
+      assert.equal(stored.bindings[0]?.apiKey, "ans-offline-key");
+    });
+  });
+});
+
+test("ans auth set：上游抽风只警告，key 照存 (#442)", async () => {
+  await withSearchSandbox(async () => {
+    await withAnySearchMcp({ status: 503 }, async (base) => {
+      process.env.ANYSEARCH_ENDPOINT = base;
+      const { code, out } = await capture(() => runAuth(["set", "anysearch"]), "ans-maybe-good\n");
+
+      assert.equal(code, 0, out);
+      assert.match(out, /\[warn\] could not check the key \(transient: HTTP 503\)/);
+      assert.match(out, /stored anyway/);
+      assert.equal(readUserCredentials().bindings[0]?.apiKey, "ans-maybe-good", "抽风不是拒存的理由");
+    });
+  });
+});
+
+test("ans auth set：好 key 存进去，并说一句验过了 (#442)", async () => {
+  await withSearchSandbox(async () => {
+    await withAnySearchMcp({ callText: "query is required" }, async (base) => {
+      process.env.ANYSEARCH_ENDPOINT = base;
+      const { code, out } = await capture(() => runAuth(["set", "anysearch"]), "ans-good-key\n");
+
+      assert.equal(code, 0, out);
+      assert.match(out, /Checked: anysearch's free surface accepted this key/);
+      assert.equal(readUserCredentials().bindings[0]?.apiKey, "ans-good-key");
+      assert.ok(!out.includes("ans-good-key"), "key 不回显");
+    });
+  });
 });

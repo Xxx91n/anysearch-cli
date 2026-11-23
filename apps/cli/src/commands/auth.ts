@@ -25,15 +25,40 @@ import {
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
+import {
+  probeProviderAuth,
+  type ProbeOutcome,
+  type ProbeProviderId,
+} from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
  * Test seam: lets a test supply the stdin stream a scripted run would give
- * (`printf '%s' "$KEY" | ans auth set openai`) without swapping the real
- * process.stdin. Production leaves it unset and gets the terminal.
+ * (`printf '%s' "$KEY" | ans auth set openai`), an output sink for the prompt,
+ * and sinks for the two output channels — without patching process.stdin,
+ * process.stdout or process.stderr. Patching those globals inside a node --test
+ * file desyncs the reporter and silently drops later test results (#442).
+ * Production leaves it unset and gets the terminal.
  */
-export const AUTH_IO: { input?: SecretInputIO["input"] } = {};
+export const AUTH_IO: {
+  input?: SecretInputIO["input"];
+  output?: SecretInputIO["output"];
+  stdout?: (text: string) => void;
+  stderr?: (text: string) => void;
+} = {};
+
+/** One line, same shape as console.log: the newline is part of the seam. */
+function stdout(text: string): void {
+  if (AUTH_IO.stdout) AUTH_IO.stdout(text + "\n");
+  else process.stdout.write(text + "\n");
+}
+
+/** Verbatim write, same shape as process.stderr.write: the caller owns newlines. */
+function stderr(text: string): void {
+  if (AUTH_IO.stderr) AUTH_IO.stderr(text);
+  else process.stderr.write(text);
+}
 
 /** Show whether an entry exists, bound where — and it must never show the value. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
@@ -41,17 +66,18 @@ function describeBinding(binding: { provider: string; endpoint: string | null })
 }
 
 function usage(): number {
-  process.stderr.write("ans auth - provider API keys\n");
-  process.stderr.write("\n");
-  process.stderr.write("  ans auth                     Show where each provider's key comes from\n");
-  process.stderr.write("  ans auth list                Same, plus the stored entries and where the file is\n");
-  process.stderr.write("  ans auth set <provider>      Store a key in the user credential file (typed, never echoed)\n");
-  process.stderr.write("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
-  process.stderr.write("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
-  process.stderr.write("\n");
-  process.stderr.write("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
-  process.stderr.write("The store is plain text, owner-only, and shared by the CLI and GUI entries of this account.\n");
-  process.stderr.write("An explicit env value (e.g. ANS_LLM_API_KEY) always wins over it.\n");
+  stderr("ans auth - provider API keys\n");
+  stderr("\n");
+  stderr("  ans auth                     Show where each provider's key comes from\n");
+  stderr("  ans auth list                Same, plus the stored entries and where the file is\n");
+  stderr("  ans auth set <provider>      Store a key in the user credential file (typed, never echoed)\n");
+  stderr("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
+  stderr("      [--no-verify]            Do not check a search key upstream before storing it (offline machines)\n");
+  stderr("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
+  stderr("\n");
+  stderr("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
+  stderr("The store is plain text, owner-only, and shared by the CLI and GUI entries of this account.\n");
+  stderr("An explicit env value (e.g. ANS_LLM_API_KEY) always wins over it.\n");
   return 2;
 }
 
@@ -129,10 +155,58 @@ function statusLines(
   return lines;
 }
 
+/**
+ * One line for a probe outcome: the error class this repo already uses, plus the
+ * HTTP status when there was one. No raw upstream text — an error body can echo
+ * the key, and nothing here needs it.
+ */
+function faultLine(outcome: ProbeOutcome): string {
+  const problem = outcome.problem;
+  if (!problem) return outcome.auth;
+  const where = (problem.status === undefined ? "" : " HTTP " + problem.status) + (problem.code ? " " + problem.code : "");
+  return problem.class + (where ? ":" + where : "");
+}
+
+/**
+ * Check a search key against its provider's free surface before storing it
+ * (#442). Only the free surface: no search runs and no quota is spent.
+ *
+ * A rejected key is not stored — the point of the check is that a typo never
+ * becomes a stored key. Anything else (429, 5xx, no network, an exhausted plan)
+ * is a warning: the key may well be fine, and an offline machine must still be
+ * able to store one. Returns false only when the upstream refused the key.
+ */
+async function verifySearchKey(
+  provider: ProbeProviderId,
+  apiKey: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const endpoint = provider === "anysearch" ? env.ANYSEARCH_ENDPOINT?.trim() || undefined : undefined;
+  stderr("Checking " + provider + " against its free surface (no search, no quota)...\n");
+  const outcome = await probeProviderAuth(provider, { apiKey, endpoint });
+  if (outcome.auth === "rejected") {
+    stderr("upstream rejected this key (" + faultLine(outcome) + "); nothing was written.\n" +
+      "Copy the key from " + provider + "'s own console, or add --no-verify to store it without checking.\n");
+    return false;
+  }
+  if (outcome.auth !== "ok") {
+    stderr("[warn] could not check the key (" + faultLine(outcome) + "); it was stored anyway. " +
+      "Run `ans doctor --live` when the network is back.\n");
+  } else if (outcome.problem) {
+    // The key is good, the account is not usable right now (exhausted plan,
+    // drifted entry). Worth saying; not a reason to refuse the key.
+    stderr("[warn] the key is good, but " + provider + " cannot answer right now (" +
+      faultLine(outcome) + "); the key was stored anyway.\n");
+  } else {
+    stderr("Checked: " + provider + "'s free surface accepted this key.\n");
+  }
+  return true;
+}
+
 /** One shared rejection so `set` and `remove` cannot drift apart. */
 function rejectUnknownProvider(provider: string): number {
-  process.stderr.write("Unknown provider: " + provider + "\n");
-  process.stderr.write("Available: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
+  stderr("Unknown provider: " + provider + "\n");
+  stderr("Available: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
   return 2;
 }
 
@@ -147,27 +221,27 @@ export async function runAuth(args: string[]): Promise<number> {
     // Design: 整条命令读一次凭据文件，来源表和模型解析器共用；读坏了 status 说一次，
     // list 只在文件块里说一次。
     const file = readUserCredentials({ home });
-    console.log("ans auth - provider API keys");
-    console.log("---");
-    for (const line of statusLines(env, home, file)) console.log(line);
+    stdout("ans auth - provider API keys");
+    stdout("---");
+    for (const line of statusLines(env, home, file)) stdout(line);
     // `list` 紧接着的「BROKEN —」那行说的就是这句，那里说一遍就够了。
     const fault = credentialFileWarning(file);
-    if (sub !== "list" && fault) console.log("[WARN] " + fault);
-    console.log("---");
+    if (sub !== "list" && fault) stdout("[WARN] " + fault);
+    stdout("---");
     if (sub === "list") {
       const path = userCredentialsPath(home);
-      console.log("Credential file: " + path);
-      console.log("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
+      stdout("Credential file: " + path);
+      stdout("  " + (file.error ? "BROKEN — " + file.error : "plain text, not encrypted, owner-only"));
       if (file.bindings.length > 0) {
         for (const binding of file.bindings) {
-          console.log("  " + describeBinding(binding));
+          stdout("  " + describeBinding(binding));
         }
       } else if (!file.error) {
-        console.log("  (no stored keys)");
+        stdout("  (no stored keys)");
       }
     }
-    console.log("Store a key: ans auth set <provider>   (typed, never echoed)");
-    console.log("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
+    stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
+    stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
     return 0;
   }
 
@@ -177,15 +251,18 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       ({ endpoint, rest } = takeEndpoint(args.slice(1)));
     } catch (e) {
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 2;
     }
-    const provider = rest[0];
+    // --no-verify rides on `set` only, and it must not be mistaken for the
+    // provider name (`ans auth set --no-verify tavily` is legal).
+    const skipVerify = rest.includes("--no-verify");
+    const provider = rest.find((arg) => arg !== "--no-verify");
     if (!provider) return usage();
     const info = credentialProvider(provider);
     if (!info) return rejectUnknownProvider(provider);
     if (endpoint !== null && info.kind !== "model") {
-      process.stderr.write(
+      stderr(
         provider + " is a search provider; --endpoint only applies to model providers " +
         "(the anysearch arm takes its endpoint from ANYSEARCH_ENDPOINT).\n",
       );
@@ -195,38 +272,45 @@ export async function runAuth(args: string[]): Promise<number> {
     const target = endpoint !== null
       ? displayEndpoint(endpoint)
       : (info.kind === "model" ? "the provider's default endpoint" : "the provider's fixed endpoint");
-    process.stderr.write("Storing the " + provider + " key in " + userCredentialsPath(home) + " for " + target + ".\n" +
+    stderr("Storing the " + provider + " key in " + userCredentialsPath(home) + " for " + target + ".\n" +
       "The file is PLAIN TEXT (not encrypted, not a system keychain); it is locked to your account.\n",
     );
     let raw: string;
     try {
-      raw = await readSecret(info.envKey + " (typing is hidden, Enter to save): ", AUTH_IO.input ? { input: AUTH_IO.input } : {});
+      raw = await readSecret(info.envKey + " (typing is hidden, Enter to save): ", {
+        ...(AUTH_IO.input ? { input: AUTH_IO.input } : {}),
+        ...(AUTH_IO.output ? { output: AUTH_IO.output } : {}),
+      });
     } catch (e) {
       if (e instanceof SecretInputCancelled) {
-        process.stderr.write("cancelled; nothing was written\n");
+        stderr("cancelled; nothing was written\n");
         return 1;
       }
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 1;
     }
     let apiKey: string;
     try {
       apiKey = cleanSecret(raw);
     } catch (e) {
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 2;
+    }
+    if (info.kind === "search" && !skipVerify) {
+      const accepted = await verifySearchKey(info.id as ProbeProviderId, apiKey, env);
+      if (!accepted) return 1;
     }
     try {
       const path = writeUserCredential({ provider: info.id, endpoint, apiKey }, { home });
       // Not the value, not a prefix of it: only what was stored and where.
-      console.log("Stored the " + info.id + " key for " + target + " in " + path + ".");
-      console.log("An explicit env value (" + info.envKey + " / ANS_LLM_API_KEY) still wins over it.");
+      stdout("Stored the " + info.id + " key for " + target + " in " + path + ".");
+      stdout("An explicit env value (" + info.envKey + " / ANS_LLM_API_KEY) still wins over it.");
       if (info.kind === "model") {
-        console.log("Next: ans llm set " + info.id + " <model>   (the key alone does not choose a model)");
+        stdout("Next: ans llm set " + info.id + " <model>   (the key alone does not choose a model)");
       }
       return 0;
     } catch (e) {
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 1;
     }
   }
@@ -237,7 +321,7 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       ({ endpoint, rest } = takeEndpoint(args.slice(1)));
     } catch (e) {
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 2;
     }
     const provider = rest[0];
@@ -246,21 +330,21 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       const removed = removeUserCredential({ provider, endpoint }, { home });
       if (!removed) {
-        process.stderr.write("Nothing stored for " + provider +
+        stderr("Nothing stored for " + provider +
           (endpoint ? " at " + displayEndpoint(endpoint) : " at the provider default endpoint") + ".\n");
         return 1;
       }
-      console.log("Removed the " + provider + " key" +
+      stdout("Removed the " + provider + " key" +
         (endpoint ? " for " + displayEndpoint(endpoint) : " for the provider default endpoint") +
         " from " + userCredentialsPath(home) + ".");
       return 0;
     } catch (e) {
-      process.stderr.write((e as Error).message + "\n");
+      stderr((e as Error).message + "\n");
       return 1;
     }
   }
 
-  process.stderr.write("Unknown subcommand: " + sub + "\n");
+  stderr("Unknown subcommand: " + sub + "\n");
   return usage();
 }
 
