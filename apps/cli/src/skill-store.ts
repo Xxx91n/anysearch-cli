@@ -682,7 +682,8 @@ const SKILL_DESCRIPTION_MAX_CHARS = 1024;
  * prose, so this is a keyword match and misses other phrasings; the error says
  * what to add.
  */
-const WHEN_TO_USE = /\bwhen|的时候|时候用|的時候|時候用|何时|何時|时使用|時使用|使用时|使用時|とき/i;
+const WHEN_TO_USE =
+  /\bwhen|的时候|时候用|的時候|時候用|何时|何時|(?<!同)(?:时使用|時使用|使用时|使用時|时用|時用)|とき/i;
 
 /** Require a description that says what the skill does and when to use it. */
 function requireDescription(value: unknown, path: string): void {
