@@ -5,7 +5,7 @@
 // decision 1A: returns RetrieverPort, not concrete RetroaererdEngine.
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
@@ -37,6 +37,8 @@ import {
 // Only exa throws, and on a missing OR unusable key (a header-invalid value does it
 // too); tavily builds a keyless client and anysearch goes anonymous, so their missing
 // key surfaces at call time instead.
+// #499: exa 这一臂不在这里选构造方式，交给它自己的工厂 createExaProvider——
+// `ans doctor` 的构造函数表调的是同一个，这张表不再判「到底传不传 key」。
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
@@ -51,7 +53,7 @@ type CredentialSource = ResolvedSearchCredentials | undefined;
 
 const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
   tavily: (creds) => new TavilyProvider(creds?.tavily?.apiKey),
-  exa: (creds) => new ExaProvider(creds?.exa?.apiKey),
+  exa: (creds) => createExaProvider(creds?.exa?.apiKey),
   anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 

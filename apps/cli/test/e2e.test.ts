@@ -11,6 +11,11 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(here, "..", "dist", "index.js");
 
+// 用不了的 exa key：值里带换行，exa-js 构造时往请求头里塞就当场抛。这些夹具要的是
+// 「这一臂建不起来，所以零联网」，不是「没配 key」：从 #500 起没配 key 那一支会走
+// 免费额度，再拿空串当夹具就会真的发请求。
+const UNUSABLE_EXA_KEY = "sk-unusable\nheader-fault";
+
 let passed = 0;
 let failed = 0;
 
@@ -409,9 +414,11 @@ async function t(name: string, fn: () => Promise<void>) {
   // #180: provider construction absences surface in the existing command
   // output — which provider is missing from the fanout and under which safe
   // category (CWE-532 wording rides verbatim; raw error text never does).
-  // EXA_API_KEY is set to an explicit empty string: rehydrateConfigEnv never
-  // overwrites explicit values (not even empty ones), so a developer's
-  // persisted key cannot re-arm exa mid-test.
+  // EXA_API_KEY carries an unusable value (a newline makes exa-js throw while it
+  // builds the request header): construction fails exactly as it did on a
+  // missing key, so these fixtures stay zero-network. rehydrateConfigEnv only
+  // fills variables that are unset, so this explicit value cannot be replaced by
+  // a key a developer persisted on the machine.
   //
   // All-absent arm case: with every enabled arm failing construction the
   // kernel engine throws "No providers registered" (pinned contract,
@@ -432,7 +439,7 @@ async function t(name: string, fn: () => Promise<void>) {
         "",
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "exaonly", ANS_DB_PATH: path.join(dir, "anysearch.db") };
-      env.EXA_API_KEY = "";
+      env.EXA_API_KEY = UNUSABLE_EXA_KEY;
       // Sanitize the eval-channel provider filter: a shell-leftover value
       // (e.g. ANS_PROVIDERS=exa) would fan the engine down to zero arms and
       // turn this fixture red. Explicit empty string — rehydrateConfigEnv
@@ -470,7 +477,7 @@ async function t(name: string, fn: () => Promise<void>) {
         "",
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
-      env.EXA_API_KEY = "";
+      env.EXA_API_KEY = UNUSABLE_EXA_KEY;
       env.ANS_PROVIDERS = "";
       // Hermetic allowlist: an ambient ANS_URL_ALLOWLIST (union-only, gated by
       // ANS_ALLOW_ENV_OVERRIDE) could let anysearch results survive the gate
@@ -572,10 +579,11 @@ async function t(name: string, fn: () => Promise<void>) {
         "",
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
-      env.EXA_API_KEY = "";
-      // #441 / #459: the assertions below read each arm's own source. Scrub all
-      // three key channels — env and the user credential file — so "no key" is
-      // the fixture, not a property of whoever runs the suite.
+      env.EXA_API_KEY = UNUSABLE_EXA_KEY;
+      // #441 / #459: the assertions below read each arm's own source. Scrub the
+      // key channels — env and the user credential file — so the fixture decides
+      // who has a key, not whoever runs the suite. exa is the one arm here that
+      // does hold a key; it just cannot be used.
       env.TAVILY_API_KEY = "";
       env.ANYSEARCH_API_KEY = "";
       env.HOME = dir;
@@ -595,8 +603,8 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.equal(doc.credentialSources?.anysearch, "none",
         "an endpoint-only arm is reported as keyless, not authenticated");
       assert.equal(doc.credentialSources?.tavily, "none", "a keyless arm is labelled, not left out");
-      assert.equal(doc.credentialSources?.exa, "none",
-        "an arm that never built is still labelled: the record is about keys, not construction");
+      assert.equal(doc.credentialSources?.exa, "env",
+        "配了一把用不了的 key 记成 env：这条记录只说 key 从哪来，不说这一臂建没建起来");
       assert.deepEqual(
         Object.keys(doc.credentialSources ?? {}).sort(),
         ["anysearch", "exa", "status", "tavily"],
@@ -627,7 +635,7 @@ async function t(name: string, fn: () => Promise<void>) {
         "",
       ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "exaonly", ANS_DB_PATH: path.join(dir, "anysearch.db") };
-      env.EXA_API_KEY = "";
+      env.EXA_API_KEY = UNUSABLE_EXA_KEY;
       env.ANS_PROVIDERS = "";
       const r = await runSplit(["search", "q", "--json"], env);
       assert.equal(r.code, 1, r.stderr + r.stdout);

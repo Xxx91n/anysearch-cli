@@ -7,7 +7,7 @@
 //
 // --live 是唯一联网的开关：只打三家信息源的免费面，不跑真搜索、不花额度；模型不验。
 
-import { TavilyProvider, ExaProvider, AnySearchProvider, isProbeProviderId, probeProviderAuth } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, AnySearchProvider, createExaProvider, isProbeProviderId, probeProviderAuth } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider } from "@anysearch-cli/retriever";
 import type { ProbeOutcome } from "@anysearch-cli/retriever/providers";
 import {
@@ -221,9 +221,10 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   {
     // 凭据要显式传进去：key 存在 ~/.ans/credentials.json 里是产品推荐的做法，
     // 只回落到环境变量的构造器会把这类机器误判成失败。规则和运行时一致。
+    // #499: exa 走它自己的工厂，「有没有 key」的判断不在这里写第二份。
     const make: Record<SearchProviderId, () => SearchProvider> = {
       tavily: () => new TavilyProvider(credentials.tavily?.apiKey),
-      exa: () => new ExaProvider(credentials.exa?.apiKey),
+      exa: () => createExaProvider(credentials.exa?.apiKey),
       anysearch: () => new AnySearchProvider(credentials.anysearch?.apiKey, credentials.anysearch?.endpoint),
     };
     for (const id of SEARCH_PROVIDER_IDS) {
