@@ -46,8 +46,9 @@ const body = [
   "// Source: " + SOURCE,
   "// Version: " + version[1] + " (last updated " + version[2] + ")",
   "//",
-  "// A bare domain is only read as a host when its last label is in here; that",
-  "// is what keeps `main.py`, `v1.2` and `config.toml` out of the URL gate.",
+  "// A bare domain's last label is a host only when it is in here; that is what",
+  "// keeps `v1.2` and `config.toml` out. File names whose extension is a real TLD",
+  "// (`main.py`, `README.md`) are rejected by url-candidates.ts, not here.",
   'export const TLD_SNAPSHOT_VERSION = "' + version[1] + '";',
   "export const TLD_SNAPSHOT: ReadonlySet<string> = new Set([",
   ...tlds.map((t) => '  "' + t + '",'),
@@ -56,7 +57,13 @@ const body = [
 ].join("\n");
 
 if (process.argv.includes("--check")) {
-  const current = readFileSync(OUT, "utf8");
+  let current;
+  try {
+    current = readFileSync(OUT, "utf8");
+  } catch (e) {
+    console.error("gen-tlds: cannot read " + OUT + " — " + (e instanceof Error ? e.message : String(e)));
+    process.exit(2);
+  }
   if (current !== body) {
     console.error("gen-tlds: snapshot is stale — run node apps/plugin/scripts/gen-tlds.mjs");
     process.exit(1);

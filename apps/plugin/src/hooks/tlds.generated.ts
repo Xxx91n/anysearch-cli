@@ -2,8 +2,9 @@
 // Source: https://data.iana.org/TLD/tlds-alpha-by-domain.txt
 // Version: 2026112200 (last updated Sun Nov 22 07:07:02 2026 UTC)
 //
-// A bare domain is only read as a host when its last label is in here; that
-// is what keeps `main.py`, `v1.2` and `config.toml` out of the URL gate.
+// A bare domain's last label is a host only when it is in here; that is what
+// keeps `v1.2` and `config.toml` out. File names whose extension is a real TLD
+// (`main.py`, `README.md`) are rejected by url-candidates.ts, not here.
 export const TLD_SNAPSHOT_VERSION = "2026112200";
 export const TLD_SNAPSHOT: ReadonlySet<string> = new Set([
   "aaa",

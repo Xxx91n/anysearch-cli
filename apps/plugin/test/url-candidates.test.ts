@@ -72,6 +72,11 @@ test("a URL the parser rejects keeps its host", () => {
   assert.deepEqual(hosts("https://denied.com/%zz"), ["denied.com"]);
 });
 
+test("a search operator is not a scheme, so its host is judged", () => {
+  // `site:` is how people narrow a search; skipping it would hide the host.
+  assert.deepEqual(hosts("site:denied.com 财报"), ["denied.com"]);
+});
+
 test("a non-http scheme does not smuggle its host in through the bare pass", () => {
   assert.deepEqual(hosts("ftp://example.com/a"), []);
   assert.deepEqual(hosts("mailto:example.com"), []);
@@ -87,6 +92,7 @@ test("file names, versions, IPs, emails, localhost and placeholders are not host
   for (const text of [
     "main.py", "README.md", "config.toml", "src/main.py",
     "main.tf", "model.ml", "app.pm", "deploy.ps", "Makefile.mk", "schema.tf",
+    "Makefile.in", "configure.ac", "Makefile.am", "foo.mo", "libfoo.la", "main.mm", "app.as",
     "v1.2", "1.2.3", "1.2.3.4", "1.2.3.4:8080",
     "foo@bar.com", "user:pass@example.com",
     "localhost", "localhost:3000",

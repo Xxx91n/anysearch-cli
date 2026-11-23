@@ -1,13 +1,10 @@
 // Hosts named in text that a tool would send off this machine.
 //
-// Design: detect only — the policy needs the host set, not a rewritten input, so
-// nothing here edits what the model sent. A bare domain is read as a host when
-// all three hold: the labels are structurally valid, the last label is in the
-// committed IANA snapshot, and — when no path, port or `www.` marks it as a URL —
-// it is not a file extension or a code placeholder. That third gate exists
-// because `.py`, `.md`, `.cc` and `.so` are real TLDs, so `main.py` and
-// `README.md` would otherwise be hosts. Explicit `http(s)://` URLs take none of
-// that scrutiny: whatever `new URL()` produced was already judged by the policy.
+// Design: detect only — nothing here edits what the model sent. A bare domain is
+// a host when its labels are valid, its last label is a real TLD (IANA snapshot),
+// and — with no path, port or `www.` marking it as a URL — it is not a file
+// extension or code placeholder. Explicit `http(s)://` URLs count as hosts
+// whatever `new URL()` produced.
 
 import { TLD_SNAPSHOT } from "./tlds.generated.js";
 
@@ -21,10 +18,19 @@ export interface UrlCandidate {
 // TLDs that are also common file extensions or code placeholders. `toml` is not
 // a TLD at all, so it never reaches this gate — the snapshot check rejects it first.
 const FILE_EXT_TLDS: Record<string, true> = {
-  cc: true, md: true, mk: true, ml: true, mov: true, pm: true, pl: true, ps: true, py: true,
-  rs: true, sh: true, so: true, tf: true, zip: true,
+  ac: true, am: true, as: true, cc: true, in: true, la: true, md: true, mk: true, ml: true,
+  mm: true, mov: true, mo: true, pl: true, pm: true, ps: true, py: true, rs: true, sh: true,
+  so: true, tf: true, zip: true,
 };
 const PLACEHOLDER_TLDS: Record<string, true> = { bar: true, foo: true };
+const BRACKET_OPEN: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+// Schemes the gate does not cover. `site:` is deliberately absent: it is a search
+// operator, and its host must be judged like any other.
+const NON_HTTP_SCHEMES: Record<string, true> = {
+  mailto: true, ftp: true, ftps: true, ssh: true, git: true, file: true, javascript: true,
+  data: true, tel: true, urn: true, ws: true, wss: true, magnet: true, news: true, irc: true,
+  xmpp: true, sms: true, mms: true,
+};
 
 // Explicit http(s) URLs. The lookbehind keeps `xhttps://` out and the character
 // class stops at whitespace, quotes and angle brackets.
@@ -44,8 +50,8 @@ function trimPunctuation(candidate: string): string {
   for (;;) {
     const last = text.slice(-1);
     if (/[.,;:!?'"]/.test(last)) { text = text.slice(0, -1); continue; }
-    if (last === ")" || last === "]" || last === "}") {
-      const open = last === ")" ? "(" : last === "]" ? "[" : "{";
+    const open = BRACKET_OPEN[last];
+    if (open !== undefined) {
       const closes = text.split(last).length - 1;
       const opens = text.split(open).length - 1;
       if (closes > opens) { text = text.slice(0, -1); continue; }
@@ -124,9 +130,10 @@ export function hostCandidates(text: string): UrlCandidate[] {
     if (schemeRanges.some(([from, to]) => start < to && end > from)) continue;
     // `ftp://example.com`, `mailto:example.com` and friends are out of scope: the
     // gate is about http(s) hosts, so the bare pass must not pick their host up
-    // either. Only a real scheme counts — a bare `//` does not, or `//denied.example/x`
-    // would slip through both passes.
-    if (/[A-Za-z][A-Za-z0-9+.-]*:(?:\/\/)?$/.test(text.slice(0, start))) continue;
+    // either. A `//` or a known non-http scheme before the match is what says so;
+    // a bare `//` or a search operator like `site:` must not skip the host.
+    const scheme = /([A-Za-z][A-Za-z0-9+.-]*):(?:\/\/)?$/.exec(text.slice(0, start));
+    if (scheme && (scheme[0].endsWith("//") || NON_HTTP_SCHEMES[scheme[1].toLowerCase()] === true)) continue;
     add(bareHost(match[0]));
   }
   return out;
@@ -154,12 +161,11 @@ function collectStrings(value: unknown, out: string[]): void {
 
 /** Hosts mentioned anywhere the given ans_* tool would send text out, one entry per host. */
 export function toolInputCandidates(toolName: string, toolInput: Record<string, unknown>): UrlCandidate[] {
-  // Hosts prefix our tools differently (`ans_search_web`, `mcp__anysearch__search_web`),
-  // so the name is reduced to the bare tool name before the field lookup.
-  const name = toolName.includes("__") ? toolName.slice(toolName.lastIndexOf("__") + 2) : toolName;
-  // `ans_chat` is itself a tool name, so the `ans_` prefix is only stripped when
-  // the whole name is not one of ours.
-  const base = SCANNED_FIELDS[name] ? name : name.replace(/^ans_/, "");
+  // Hosts prefix our tools differently (`ans_search_web`, `x_search_web`,
+  // `mcp__anysearch__search_web`), so a name matches exactly or after one or two
+  // underscores — the same shapes `isAnsTool` accepts. Matching by suffix keeps
+  // `ans_chat` working as a tool name in its own right.
+  const base = Object.keys(SCANNED_FIELDS).find((name) => toolName === name || toolName.endsWith("_" + name)) ?? "";
   const fields = SCANNED_FIELDS[base];
   if (!fields) return [];
   const texts: string[] = [];

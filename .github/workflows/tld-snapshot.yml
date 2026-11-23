@@ -1,11 +1,6 @@
-# Weekly TLD snapshot freshness check.
-#
-# The URL gate reads bare domains only when their last label is in the committed
-# IANA snapshot. A stale snapshot silently narrows that gate: a newly delegated
-# TLD stops being recognised as a host, so text naming it slips past allow/deny.
-# Nothing else notices, which is why this runs on a clock.
-#
-# Scheduled only — it never runs on a PR, so an IANA update cannot turn an
+# Weekly check that the committed IANA snapshot still matches upstream.
+# A stale snapshot narrows the URL gate without any signal: a newly delegated TLD
+# stops counting as a host. Scheduled only, so an IANA update never turns an
 # unrelated pull request red.
 name: tld-snapshot
 
@@ -26,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
