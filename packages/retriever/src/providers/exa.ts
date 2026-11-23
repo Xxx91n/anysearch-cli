@@ -92,10 +92,8 @@ export class ExaProvider implements SearchProvider {
 }
 
 /**
- * Design: 装配 exa 只走这一个工厂 — kernel 的装配表和 `ans doctor` 的构造函数表
- * 只调用、不判断「传不传 key」；下一票（#500）换成免费额度臂也只改这里。
- *
- * 空串、纯空格、没传都算没配 key：今天走不带 key 的构造，exa-js 读不到环境变量就抛。
+ * Design: 装配 exa 只走这个工厂 — 调用方只把解析出来的 key 递进来，构造方式别处不再判。
+ * 空串、纯空格、没传都算没配 key：走不带 key 的构造，exa-js 自己去找环境变量，找不到就抛。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
   return new ExaProvider(apiKey?.trim() || undefined);
