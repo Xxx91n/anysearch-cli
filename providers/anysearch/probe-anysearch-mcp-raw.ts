@@ -190,9 +190,12 @@ try {
     params: { name: "search", arguments: { query: QUERY } },
   }, sessionId, negotiated);
   out.httpStatus = call.status;
-  if (call.status !== 200) { out.ok = false; out.stage = "tools/call"; out.bodyHead = sanitize(call.text).slice(0, 200); emit(JSON.stringify(out), 2); }
+  // Cap the input before sanitizing: the redaction regex backtracks quadratically
+  // on long alphanumeric text, and an error page can be hundreds of KB. The
+  // output is only the first 200 chars, so 4000 is ample.
+  if (call.status !== 200) { out.ok = false; out.stage = "tools/call"; out.bodyHead = sanitize(call.text.slice(0, 4000)).slice(0, 200); emit(JSON.stringify(out), 2); }
   const rpc = parseRpc(call.text, 2);
-  out.rpcError = rpc.error ? { code: rpc.error.code, messageHead: sanitize(String(rpc.error.message ?? "")).slice(0, 200) } : null;
+  out.rpcError = rpc.error ? { code: rpc.error.code, messageHead: sanitize(String(rpc.error.message ?? "").slice(0, 4000)).slice(0, 200) } : null;
   // A JSON-RPC error is a tool failure (exit 2), not a reply-shape anomaly (3):
   // the adapter throws on the same reply and classifies it, so reporting it as
   // drift would send the reader looking at the payload instead of the error.
@@ -212,6 +215,6 @@ try {
   emit(JSON.stringify(out, null, 2), exitCode);
 } catch (e) {
   out.ok = false; out.stage = "exception";
-  out.errorName = (e as Error).name; out.errorMessage = sanitize(String((e as Error).message ?? e)).slice(0, 300);
+  out.errorName = (e as Error).name; out.errorMessage = sanitize(String((e as Error).message ?? e).slice(0, 4000)).slice(0, 300);
   emit(JSON.stringify(out), 2);
 }
