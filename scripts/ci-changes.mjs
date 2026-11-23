@@ -71,9 +71,8 @@ export function planLanes(files, packages) {
     return { lanes: all, reason: "workspace unreadable" };
   }
 
-  // Docs belong to no package, but they are not root files: a code+docs PR
-  // selects on the code only. docs/eval/ is not documentation, so it still
-  // reaches the unowned fallback.
+  // A code+docs change selects on the code only. docs/eval/ is not
+  // documentation, so it still reaches the unowned fallback.
   const code = list.filter((file) => !isDocumentation(file));
   const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
   const unowned = code.filter((file) => !owners.get(file));

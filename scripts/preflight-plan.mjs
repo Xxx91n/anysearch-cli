@@ -43,8 +43,9 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
   if (forceFull) return { mode: "full", reason: "forced", files, packages: [] };
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
-  // Before the workspace is read: a docs-only change needs no package, and a
-  // broken tree should not turn "ran nothing" into "ran everything".
+  // Design: the docs check runs before the workspace read — a docs-only change
+  // needs no package, and a broken tree must not turn "ran nothing" into "ran
+  // everything".
   if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
   const { packages, nameless } = readWorkspaceReport(root);

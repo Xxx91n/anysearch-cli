@@ -159,7 +159,7 @@ test("docs next to a root file still run the whole suite, and the docs are not t
 
 // The boundary is CI's, so the exclusions matter here too: a product asset and
 // docs/eval are read by tests and must not buy a skipped run.
-test("product assets and docs/eval are not documentation", () => {
+test("a product asset runs its readers, and docs/eval/ still runs the suite", () => {
   // The readers run, not just the owner: plugin's own tests plus every app
   // that depends on it.
   const asset = planPreflight(root, ["apps/plugin/AGENTS.md"]);

@@ -406,13 +406,19 @@ test("a pushed docs-only ref says skipped and runs nothing", async () => {
   });
 });
 
-test("a docs file next to a package file still runs that package", async () => {
-  await withWorkspace({ files: { "docs/limitations.md": "# limits\n" }, changed: "apps/dsh-plugin/src/index.ts", echoArgs: true }, ({ root, bin }) => {
-    const result = runCliIn(root, bin, [], { selfTest: true });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin \(the change plus everything that depends on it\)/);
-    assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
-  });
+test("docs next to a package file still run that package, not the suite", async () => {
+  // Two changed files, one of them documentation: only the package lane runs,
+  // and the banner must not claim the docs live inside that package.
+  await withWorkspace(
+    { changed: ["apps/dsh-plugin/src/index.ts", "docs/limitations.md"], echoArgs: true },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, [], { selfTest: true });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /changed 2 file\(s\), running 1 package\(s\)/);
+      assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin \(the change plus everything that depends on it\)/);
+      assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+    },
+  );
 });
 
 test("the old --staged flag names the hook to delete and runs nothing", async () => {
@@ -534,8 +540,8 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) 
   git(root, ["commit", "-q", "-m", "base"]);
   const base = rev(root, "HEAD");
   git(root, ["update-ref", "refs/remotes/origin/HEAD", base]);
-  const changedFile = changed ?? pushed;
-  if (changedFile) write(join(root, changedFile), "export const two = 2;\n");
+  const changedFiles = [changed ?? pushed].flat().filter(Boolean);
+  for (const file of changedFiles) write(join(root, file), file.endsWith(".md") ? "# limits\n" : "export const two = 2;\n");
   let refs;
   if (pushed) {
     git(root, ["add", "."]);
