@@ -16,8 +16,7 @@
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
 // package lookup, so they belong to no package but are not the unowned path
-// that would run everything. The boundary is isDocumentation, the same function
-// CI asks before it skips every lane, so the two sides cannot drift (#488).
+// that would run everything. The boundary is isDocumentation (#488).
 //
 // A file belongs to the package whose directory contains it. A workspace that
 // cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
@@ -102,8 +101,8 @@ export function docsOnly(files) {
 
 /**
  * How the code half of a change is owned: the packages its files belong to, and
- * the files no package owns. One pass, so a file is either owned or unowned and
- * cannot be counted as both.
+ * the files no package owns. Docs are skipped here, so they never count as
+ * unowned.
  *
  * @param {string[]} files normalized paths, docs not removed yet
  * @param {{ name: string, dir: string, deps: string[] }[]} packages

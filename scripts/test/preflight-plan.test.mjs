@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
-import { docsOnly, isDocumentation, planPreflight, readWorkspace } from "../preflight-plan.mjs";
+import { codeOwnership, docsOnly, isDocumentation, planPreflight, readWorkspace } from "../preflight-plan.mjs";
 
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
@@ -167,6 +167,17 @@ test("docsOnly needs at least one file and every file inside the boundary", () =
 test("separators and ./- prefixes do not escape the boundary", () => {
   assert.equal(docsOnly([".\\docs\\a.md"]), true);
   assert.equal(docsOnly(["./apps/plugin/AGENTS.md"]), false);
+});
+
+test("codeOwnership keeps docs out of the unowned list", () => {
+  // The subtle half: a docs file belongs to no package, but it is not the
+  // unowned path that sends a run to the full suite.
+  const { touched, unowned } = codeOwnership(
+    ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "turbo.json"],
+    readWorkspace(root),
+  );
+  assert.deepEqual(touched, ["@anysearch-cli/dsh-plugin"]);
+  assert.deepEqual(unowned, ["turbo.json"]);
 });
 
 test("a change that is all documentation runs nothing", () => {
