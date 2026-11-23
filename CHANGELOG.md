@@ -1,4 +1,4 @@
-## Unreleased — #475: 被掐掉的搜索源，三个出口都露名字
+## Unreleased — #475: 被掐掉的信息源，三个出口都露名字
 
 一句话说清：**宽限窗口掐掉的臂以前只有引擎自己知道，`ans search --json`、MCP 的 content 和 `structuredContent` 都不说；现在三处都写 `providersCancelled`，并把 `providersQueried` 一起补齐——「问过谁、掐了谁」放一起读，「全被掐」就不再伪装成「没搜到」。**
 
@@ -14,7 +14,7 @@
 
 ### Known limits
 
-- **`research_web` 的「最后一轮」指真的跑过的那一轮**，包括被调用方中断的那一轮——`interrupted` 说的也是同一轮。`abstain` 仍然只描述最后一个正常完成的轮。
+- **`research_web` 的「最后一轮」指最后一个正常完成的轮**，跟 `abstain` / `sufficiency` 同一轮；被调用方掐断的那一轮由 `interrupted` 交代，那两栏不替它说话。
 - **`allProvidersFailed` 没动**：被掐不算失败，所以「全被掐 + 0 条」还是成功，现在由 `providersCancelled === providersQueried` 表达，不加新错误类。
 - **CLI 走不到「全被掐」**：它不传调用方信号，宽限窗口只在够结果后才掐，所以纯文本那行只表示「有臂被提前掐掉」。
 

@@ -236,11 +236,10 @@ Rules behind the table:
   `providersCancelled` beside `providersQueried`, so an arm that was asked and
   then cut off cannot be read as an arm that never ran. Zero queried providers
   is not an outage, and a cancelled provider never counts as an answered one.
-  For `research_web` the pair describes the **last round that ran** — a caller
-  cancellation that cut the final round short is named there, which is the same
-  round `interrupted` refers to.
+  For `research_web` the pair describes the **last completed round**, the same
+  round the `abstain` marker and `sufficiency` describe. A caller cancellation
+  that cut a round short is reported by `interrupted`, not by this pair.
 - **Partial failures come with the successful result.** `providersFailed`,
-  `providersQueried` / `providersCancelled`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
   `session-expired` / `unknown`),

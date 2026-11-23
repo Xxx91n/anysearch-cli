@@ -50,8 +50,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if ("stop" in budget) return budget.stop;
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
-        // #475: the arms asked, and the arms cut off, in the last round only.
-        // Uniting rounds would call an arm cancelled that answered later.
+        // #475: the arms asked, and the arms cut off, in the last completed
+        // round only. Uniting rounds would call an arm cancelled that answered
+        // later; a round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
         let lastEnvelope: any = null;
@@ -80,19 +81,20 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               signal,
             });
             rounds++;
-            const queriedProviders = envelope.metadata?.providersQueried ?? [];
-            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
-            lastRoundQueried = queriedProviders;
-            lastRoundCancelled = cancelledProviders;
             // #209: a cancelled research call stops after the aborted round —
-            // no further provider quota, no post-cancellation work. The state
-            // above is recorded first: the aborted round is still the round
-            // whose cut-off arms this call has to name.
+            // no further provider quota, no post-cancellation work.
             if (signal?.aborted) break;
             // sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
+            const queriedProviders = envelope.metadata?.providersQueried ?? [];
+            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+            // #475: overwritten every round, so the payload describes the last
+            // completed round — the same round abstain and sufficiency describe,
+            // never a union across rounds.
+            lastRoundQueried = queriedProviders;
+            lastRoundCancelled = cancelledProviders;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -152,9 +154,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
-              // #475: the last round that ran — not a union across rounds, and
-              // not the last completed round either, so a caller cancel still
-              // names the arms it cut off in the round it stopped.
+              // #475: the last completed round's arm state, never a union
+              // across rounds — the same round abstain describes.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -167,8 +168,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           );
 
           // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources 恒有值；其余字段
-          // 有值时才加。
+          // 结果一定带 structuredContent：credentialSources、providersQueried、
+          // providersCancelled 恒有值；其余字段有值时才加。
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
             // #304 review: a cancelled research call stops after the aborted

@@ -71,10 +71,7 @@
 - **A cancelled arm is spare capacity, not a lost result** — the grace window
   arms only after the fused pool already covers `maxResults` unique URLs, so it
   can trim the pool but never empty it. That is why `providersCancelled` is not
-  an error class: `ans search`, `search_web` and `research_web` all report it
-  as a successful outcome. The one path that can leave nothing behind is caller
-  cancellation (an MCP `tools/call` cancel), which returns success with
-  `interrupted: true` rather than an error.
+  an error class.
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, macOS CI
   job restored (#183, after #16 / PR #174).** The family is **not**
   "better-sqlite3 leaks a handle". It is `process.exit()` running C++ static

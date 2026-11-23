@@ -136,8 +136,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const attribution = envelope.attribution;
           const abstain = envelope.metadata?.abstain;
           // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources 恒有值；
-          // sufficiency / attribution / provider failures 有值时才加。
+          // 结果一定带 structuredContent：credentialSources、providersQueried、
+          // providersCancelled 恒有值；sufficiency / attribution / provider
+          // failures 有值时才加。
           const structuredContent = {
             // #304 review: the caller may have aborted mid-search. The engine
             // returns whatever arrived instead of throwing, so without this the
