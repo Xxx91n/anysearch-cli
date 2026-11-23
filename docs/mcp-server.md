@@ -85,7 +85,8 @@ answer mode, `answersAvailable` is `false`.
 Every tool returns MCP `content: [{type:"text", ...}]`. Search results are a
 pretty-printed JSON document in that text block. For the search tools,
 `structuredContent` carries machine-readable metadata (the `sufficiency`
-verdict, attribution, abstain, and provider-failure fields). It never carries
+verdict, attribution, abstain, which arms were asked and which were cut off,
+and the provider-failure fields). It never carries
 the result list itself. When a task was registered, `search_web` and
 `research_web` also put `closeout` here (see
 [Search and research tasks](#search-and-research-tasks-304)). `ans_chat`
@@ -200,10 +201,11 @@ The server follows the MCP rule that an execution failure is an
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, no provider answered, and provider failures are the reason | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
-| Successful search / research with results | absent (success) | `credentialSources`, plus sufficiency / attribution when present |
-| Search returned zero hits but at least one provider answered | absent (success) | `credentialSources`; optional metadata; abstain only if the domain filter emptied the pool |
+| Successful search / research with results | absent (success) | `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
+| Search returned zero hits but at least one provider answered | absent (success) | `providersQueried`, `providersCancelled`, `credentialSources`; optional metadata; abstain only if the domain filter emptied the pool |
+| Some arms were cut off (grace window, or the caller cancelled) | absent (success) | `providersCancelled` names them; with `providersQueried` beside it, "every arm cancelled" is readable as `providersCancelled === providersQueried` — never an outage |
 | Domain gate emptied the pool (abstain) | absent (success) | `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `credentialSources` |
-| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `credentialSources` |
+| Partial provider failure with ≥ 1 provider answering | absent (success) | `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
@@ -229,10 +231,16 @@ Rules behind the table:
   in any round and at least one failed. Partial and cancelled
   outcomes keep the empty result a success.
 - **Cancelled providers are neither failures nor outages.** A cancelled
-  provider is recorded as `providersCancelled` in the engine metadata (the
-  MCP tool result does not show that field). Zero queried providers is not an
-  outage. A cancelled provider never counts as an answered one.
+  provider is recorded as `providersCancelled` in the engine metadata, and
+  both search tools report it: the content JSON and `structuredContent` carry
+  `providersCancelled` beside `providersQueried`, so an arm that was asked and
+  then cut off cannot be read as an arm that never ran. Zero queried providers
+  is not an outage, and a cancelled provider never counts as an answered one.
+  For `research_web` the pair describes the **last round that ran** — a caller
+  cancellation that cut the final round short is named there, which is the same
+  round `interrupted` refers to.
 - **Partial failures come with the successful result.** `providersFailed`,
+  `providersQueried` / `providersCancelled`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
   `session-expired` / `unknown`),

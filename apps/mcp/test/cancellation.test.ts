@@ -229,6 +229,54 @@ async function main() {
     }
   }
 
+  // ---- 4. A caller cancel names the arms it cut off (#475) ----
+  {
+    // A real engine whose only arm rejects because of the caller's abort, and
+    // is NOT async: its rejection lands in the same microtask turn as the
+    // engine's snapshot. Without the engine recording the arms it aborted this
+    // arm would be reported as a failure; with it, as cancelled.
+    const provider: SearchProvider = {
+      id: "slow",
+      modes: ["fast", "index", "deep", "answer"],
+      search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+        return new Promise<ProviderEnvelope>((_resolve, reject) => {
+          if (signal.aborted) {
+            reject(new Error("aborted before start"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(new Error("aborted by caller")), { once: true });
+        });
+      },
+    };
+    const eng = {
+      retriever: new RetroaererdEngine([provider]),
+      store: {
+        createSession: async (d: string) => ({ id: "cancel-4", domain: d, createdAt: "" }),
+        saveResults: async () => {},
+      } as unknown as SessionStore,
+      observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+      providerBuildErrors: {},
+    } as unknown as CompositionResult;
+
+    const caller = new AbortController();
+    caller.abort("caller went away");
+    const res = await captureHandlers(eng).search_web({ query: "names" }, { mcpReq: { signal: caller.signal } });
+
+    assert(res?.isError !== true, "4: a cancelled call is not an error");
+    assert(res?.structuredContent?.interrupted === true, "4: the call says it was interrupted");
+    assert(
+      JSON.stringify(res?.structuredContent?.providersQueried) === JSON.stringify(["slow"]),
+      "4: structuredContent names the arm that was asked",
+    );
+    assert(
+      JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify(["slow"]),
+      "4: structuredContent names the arm that was cut off",
+    );
+    const doc = JSON.parse(String(res?.content?.[0]?.text));
+    assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["slow"]), "4: content names the arm that was asked");
+    assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "4: content names the arm that was cut off");
+  }
+
   console.log("--- mcp cancellation tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

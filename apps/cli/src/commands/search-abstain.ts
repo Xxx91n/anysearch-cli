@@ -99,6 +99,16 @@ function sourceNote(id: string, sources: Extract<CredentialSources, { status: "r
   }
 }
 
+/**
+ * Providers cancelled 那一行：宽限窗口掐掉的臂（#454 / #475）。不是失败，也
+ * 不是没问——引擎真问了它，只是结果够了没再等。空表返回 undefined，所以健康
+ * 路径一个字都不多。
+ */
+export function formatProvidersCancelledLine(providersCancelled: readonly string[]): string | undefined {
+  if (providersCancelled.length === 0) return undefined;
+  return "Providers cancelled: " + providersCancelled.join(", ") + "（结果够了，没等它回来）";
+}
+
 export function formatProvidersFailedLine(
   providersFailed: readonly string[],
   sources?: CredentialSources,

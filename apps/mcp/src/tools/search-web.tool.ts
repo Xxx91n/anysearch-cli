@@ -69,6 +69,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // every queried arm is in providersFailed this is an outage: an error
           // result, never a legitimate empty result.
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
+          const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
@@ -97,7 +98,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
               providerAnswers: envelope.metadata?.providerAnswers ?? [],
-              providersQueried: envelope.metadata?.providersQueried ?? [],
+              providersQueried: queriedProviders,
+              // #475: the grace window cut these off — asked, never answered.
+              // Paired with providersQueried so a missing arm is visible as
+              // "not waited for" instead of simply absent.
+              providersCancelled: cancelledProviders,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.
@@ -142,6 +147,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
             ...(providerFailures ?? {}),
+            // #475: the same two fields the content JSON carries. Without them
+            // structuredContent could name a cut-off arm only through its
+            // absence from providersFailed.
+            providersQueried: queriedProviders,
+            providersCancelled: cancelledProviders,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

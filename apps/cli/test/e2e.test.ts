@@ -594,6 +594,12 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.equal(doc.credentialSources?.status, "resolved", "credential sources travel in --json");
       assert.equal(doc.credentialSources?.anysearch, "none",
         "an endpoint-only arm is reported as keyless, not authenticated");
+      // #475: both arm-state keys are part of the --json contract. They are
+      // pinned offline on purpose — this fixture never cancels anything, so a
+      // key that only showed up on cancellation would stay untested here.
+      assert.ok(Array.isArray(doc.providersQueried), "--json carries providersQueried as an array");
+      assert.ok(Array.isArray(doc.providersCancelled), "--json carries providersCancelled as an array");
+      assert.equal(doc.providersCancelled.length, 0, "no arm is reported cancelled when nothing was cut off");
       assert.match(r.stderr, /\[anysearch\] provider exa construction failed: /);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

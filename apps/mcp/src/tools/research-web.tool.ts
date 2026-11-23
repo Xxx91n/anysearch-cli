@@ -50,6 +50,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if ("stop" in budget) return budget.stop;
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
+        // #475: the arms asked, and the arms cut off, in the last round only.
+        // Uniting rounds would call an arm cancelled that answered later.
+        let lastRoundQueried: string[] = [];
+        let lastRoundCancelled: string[] = [];
         let lastEnvelope: any = null;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
@@ -76,15 +80,19 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               signal,
             });
             rounds++;
+            const queriedProviders = envelope.metadata?.providersQueried ?? [];
+            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+            lastRoundQueried = queriedProviders;
+            lastRoundCancelled = cancelledProviders;
             // #209: a cancelled research call stops after the aborted round —
-            // no further provider quota, no post-cancellation work.
+            // no further provider quota, no post-cancellation work. The state
+            // above is recorded first: the aborted round is still the round
+            // whose cut-off arms this call has to name.
             if (signal?.aborted) break;
             // sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
-            const queriedProviders = envelope.metadata?.providersQueried ?? [];
-            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -144,6 +152,11 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
+              // #475: the last round that ran — not a union across rounds, and
+              // not the last completed round either, so a caller cancel still
+              // names the arms it cut off in the round it stopped.
+              providersQueried: lastRoundQueried,
+              providersCancelled: lastRoundCancelled,
               // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
               // Partial-failure metadata rides the successful result.
@@ -166,6 +179,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
             ...(providerFailures ?? {}),
+            // #475: the same two fields the content JSON carries.
+            providersQueried: lastRoundQueried,
+            providersCancelled: lastRoundCancelled,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

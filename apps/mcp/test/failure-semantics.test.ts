@@ -199,6 +199,32 @@ function freeQuotaPartialEnvelope(retryAfterSeconds: number): FusedEnvelope {
   return env;
 }
 
+function partialCancelledEnvelope(): FusedEnvelope {
+  return {
+    results: [{ url: "https://example.com/a", title: "A", snippet: "s", source: "exa" } as any],
+    answers: [],
+    metadata: {
+      providersQueried: ["exa", "anysearch"],
+      providersFailed: [],
+      providersCancelled: ["anysearch"],
+      elapsedMs: 1,
+    },
+  } as FusedEnvelope;
+}
+
+function allCancelledEnvelope(): FusedEnvelope {
+  return {
+    results: [],
+    answers: [],
+    metadata: {
+      providersQueried: ["anysearch"],
+      providersFailed: [],
+      providersCancelled: ["anysearch"],
+      elapsedMs: 1,
+    },
+  } as FusedEnvelope;
+}
+
 function unknownPartialEnvelope(): FusedEnvelope {
   const env = partialEnvelope();
   env.metadata.providerErrorClasses = { tavily: "unknown" };
@@ -373,6 +399,50 @@ async function main() {
       const res = await captureHandlers(makeEngine(async () => emptyEnvelope(["exa"]))).search_web({ query: "x" });
       assert(res?.isError !== true, "search_web zero results with one successful provider: isError is not true");
       assert(!String(res?.content?.[0]?.text).includes("all providers failed"), "search_web zero results: not an outage message");
+    }
+
+    // ---- 8b. Cancelled arms are named, and they never make an outage (#475) ----
+    {
+      // Partial: one arm answered, the grace window cut the other off. Both
+      // channels must name who was asked and who was cut off — a cut-off arm
+      // that appears nowhere reads exactly like an arm that was never enabled.
+      const partial = await captureHandlers(makeEngine(async () => partialCancelledEnvelope())).search_web({ query: "x" });
+      assert(partial?.isError !== true, "partial cancel: isError is not true");
+      const pDoc = JSON.parse(String(partial?.content?.[0]?.text));
+      assert(JSON.stringify(pDoc.providersQueried) === JSON.stringify(["exa", "anysearch"]), "partial cancel: content names who was asked");
+      assert(JSON.stringify(pDoc.providersCancelled) === JSON.stringify(["anysearch"]), "partial cancel: content names the cut-off arm");
+      assert(JSON.stringify(partial?.structuredContent?.providersQueried) === JSON.stringify(["exa", "anysearch"]),
+        "partial cancel: structuredContent names who was asked");
+      assert(JSON.stringify(partial?.structuredContent?.providersCancelled) === JSON.stringify(["anysearch"]),
+        "partial cancel: structuredContent names the cut-off arm");
+
+      // Whole pool cut off: providersCancelled === providersQueried is the
+      // signal. It stays a success — a cancelled arm did not fail — and there
+      // is no new error branch for it.
+      const all = await captureHandlers(makeEngine(async () => allCancelledEnvelope())).search_web({ query: "x" });
+      assert(all?.isError !== true, "all cancel: isError is not true");
+      assert(all?.structuredContent?.interrupted === undefined, "all cancel: no caller abort, so no interrupted marker");
+      const aDoc = JSON.parse(String(all?.content?.[0]?.text));
+      assert(JSON.stringify(aDoc.providersQueried) === JSON.stringify(["anysearch"]), "all cancel: content names the asked arm");
+      assert(JSON.stringify(aDoc.providersCancelled) === JSON.stringify(["anysearch"]), "all cancel: content names the cut-off arm");
+      assert(!String(all?.content?.[0]?.text).includes("all providers failed"), "all cancel: not reported as an outage");
+    }
+
+    // ---- 8c. research_web reports the LAST round's arm state, never a union (#475) ----
+    {
+      let round = 0;
+      const eng = makeEngine(async () => {
+        round++;
+        // Round 1 cut anysearch off; round 2 has no cancellation. A union would
+        // keep calling an arm cancelled that has since answered.
+        return round === 1 ? partialCancelledEnvelope() : partialEnvelope();
+      });
+      const res = await captureHandlers(eng).research_web({ question: "x", depth: "standard" });
+      assert(round === 2, "research cancel: the fixture ran both rounds");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(JSON.stringify(doc.providersCancelled) === JSON.stringify([]), "research cancel: a later round clears the earlier cancellation");
+      assert(JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify([]), "research cancel: structuredContent agrees");
+      assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["exa", "tavily"]), "research cancel: the last round's asked arms win");
     }
 
     // ---- 9. Abstain keeps its successful policy-result contract ----

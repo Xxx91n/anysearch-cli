@@ -12,6 +12,7 @@ import {
   searchExitCode,
   formatAbstainLine,
   formatProviderAbsentLine,
+  formatProvidersCancelledLine,
   formatProvidersFailedLine,
   formatProviderHintLines,
 } from "./search-abstain";
@@ -214,6 +215,12 @@ export async function runSearch(args: string[]): Promise<number> {
         // providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
+        // #475: who was actually asked, and who the grace window cut off. Paired
+        // with providersFailed above, these three answer "what happened to each
+        // arm" — without providersQueried a domain-disabled arm is invisible,
+        // and without providersCancelled a cut-off arm simply vanishes.
+        providersQueried: envelope.metadata?.providersQueried ?? [],
+        providersCancelled: envelope.metadata?.providersCancelled ?? [],
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         // construction-time provider absences (id -> safe category), paired
@@ -255,6 +262,8 @@ export async function runSearch(args: string[]): Promise<number> {
         console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
         printProviderFailureHints(envelope.metadata);
       }
+      const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
+      if (cancelledLine) console.log(cancelledLine);
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
       return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
@@ -299,6 +308,8 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
       printProviderFailureHints(envelope.metadata);
     }
+    const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
+    if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
