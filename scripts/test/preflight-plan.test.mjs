@@ -128,8 +128,8 @@ test("a root file falls back to the full suite", () => {
 });
 
 // The reader table names a root file's readers instead of the whole suite. It is
-// short on purpose: the lockfile, the build config, CI's own files and the root
-// AGENTS.md (which no test reads) stay on the fallback above.
+// short on purpose: the lockfile, the build config, CI's own files and
+// .gitignore stay on the fallback above.
 test("a root file runs the packages whose tests read it, and stops there", () => {
   // kernel depends on store, and this file is read by store's tests alone: a
   // dependent cannot see it through the reader's tests, so it does not run.

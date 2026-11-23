@@ -252,10 +252,12 @@ function listFirst(files) {
   return files.length > 5 ? `${shown}, +${files.length - 5} more` : shown;
 }
 
-// Why these packages and no others. A readers run has no dependency closure to
-// claim; a mixed one has both, so it says so instead of naming only one of them.
+// Why these packages and no others. Each mode that exists says what it is; an
+// unknown one is named without a reason rather than borrowing a closure claim
+// that did not happen.
 function runReason(plan) {
   if (plan.mode === "readers") return "the packages whose tests read these root files";
+  if (plan.mode !== "incremental") return "the packages this change selected";
   if (plan.readers?.length) return "the change plus its dependents, plus the readers of root files";
   return "the change plus everything that depends on it";
 }

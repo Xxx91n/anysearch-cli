@@ -155,9 +155,11 @@ export function codeOwnership(files, packages) {
 
 /**
  * Root files with known readers: for each, the workspace packages whose tests
- * open the file, so a change to it can only break those. Hand-written and
- * deliberately short (#489) — a root file that is not here keeps the full-suite
- * fallback, which is the safe direction to be wrong in.
+ * open the file, so a change to it can only break those.
+ *
+ * Design: the table is hand-written and deliberately short (#489) — a root file
+ * that is not here keeps the full-suite fallback, which is the safe direction to
+ * be wrong in, over guessing a reader from a directory name.
  *
  * That fallback covers the lockfile, `package.json`, `turbo.json`,
  * `pnpm-workspace.yaml`, `.github/`, and `.gitignore`, which changes what git
