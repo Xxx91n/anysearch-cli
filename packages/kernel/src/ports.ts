@@ -6,12 +6,6 @@ import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-
 import type { SessionStore, Message, BudgetConfig, BudgetCaps } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
-export type Budget = {
-  tokenCap?: number;
-  usdCap?: number;
-  timeLimitMs?: number;
-};
-
 // per-call observation sink. The engine emits the dual audit
 // events retrieval.domain_filter.pre/post (plus the anysearch.outcome dimension)
 // into the caller's active span. Structural subset of pi-telemetry TelemetrySpan
@@ -23,7 +17,6 @@ export interface RetrievalObservationSink {
 }
 
 export type Query = SearchRequest & {
-  budget?: Budget;
   providers?: string[]; // restrict to subset of registered providers
   /** Include full links for display. Normalized result URLs still key dedup and the archive. */
   includeSourceUrls?: boolean;
@@ -46,7 +39,7 @@ export type Query = SearchRequest & {
   // #209: caller cancellation. The engine combines it with its per-provider
   // AbortControllers, so aborting it stops in-flight provider work, ends the
   // fanout wait, and suppresses post-cancellation anchor writes. Caller-absent
-  // means the engine's own grace-window cancellation is the only canceller.
+  // means the engine's request deadline is the only canceller.
   signal?: AbortSignal;
 };
 

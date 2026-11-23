@@ -34,7 +34,7 @@ export const SearchWebInput = Type.Object({
       Type.Literal("index"),
       Type.Literal("deep"),
       Type.Literal("answer"),
-    ], { description: "Search mode: fast (default), index, deep (each provider searches deeper; slower and costlier, no extra sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally)" })
+    ], { description: "Search mode: fast (default), index, deep (deeper upstream search where the provider supports it; slower and costlier, no extra sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally)" })
   ),
   // the vertical-spec arg block is the shared
   // verticalSpecProps fragment (legislated once, consumed by both tools).

@@ -259,7 +259,7 @@ export function createSearchTool(
         Type.Literal("index"),
         Type.Literal("deep"),
         Type.Literal("answer"),
-      ], { description: "Search mode: fast (default), index, deep (each provider searches deeper; slower and costlier, no extra sources), answer (provider-generated answer, available only when provider supports it)" })),
+      ], { description: "Search mode: fast (default), index, deep (deeper upstream search where the provider supports it; slower and costlier, no extra sources), answer (provider-generated answer, available only when provider supports it)" })),
     }),
     execute: async (_toolCallId: string, params: any, signal?: AbortSignal) => {
       const q: Query = {

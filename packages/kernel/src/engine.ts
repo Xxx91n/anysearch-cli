@@ -30,10 +30,11 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// One fanout request gets this long, counted from the moment its arms are
-// called (#461 / #478). Arms still unsettled at the deadline are aborted and
-// reported as cancelled; an arm that never returns cannot hold the request
-// open. Exposed through the constructor only so tests can shrink it.
+// Design: one request-level 4s deadline replaces "enough results + 1.5s grace"
+// — the old clock started after the fastest arm filled the quota, so the
+// slowest arm lost by ~1.5s routinely (#461 baseline), and a short result pool
+// never armed the timer at all. The constructor knob exists only so tests can
+// shrink it; there is deliberately no second per-search config object.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 
 // Normalize URL for dedup: strip scheme + leading www + tracking params.
@@ -452,8 +453,18 @@ export class RetroaererdEngine {
       for (let i = 0; i < controllers.length; i++) abortArm(i);
       deadlineResolve();
     }, this.requestTimeoutMs);
+    // A non-async adapter can throw before it ever returns a promise. Turn that
+    // into a rejection here: an escaping throw would skip the finally below and
+    // leave the ref'd deadline timer (and the ledger reservation) behind.
+    const startArm = (p: SearchProvider, i: number): Promise<ProviderEnvelope> => {
+      try {
+        return Promise.resolve(p.search(providerRequest(p), controllers[i].signal));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
     const promises = allProviders.map((p, i) =>
-      p.search(providerRequest(p), controllers[i].signal)
+      startArm(p, i)
         .then((env) => {
           out[i] = { provider: p.id, status: "fulfilled", envelope: env };
         })

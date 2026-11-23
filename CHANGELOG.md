@@ -7,17 +7,18 @@
 - **收工口径**：`packages/kernel/src/engine.ts` 的 `search(q)` 和 `RetrieverPort` 对齐。计时从调用各家 `search` 那一刻算起，默认 4000ms（`requestTimeoutMs` 只开给测试注入口）。结果不足 `maxResults` 条时也一样到点收工，一条永不返回的臂拖不住请求。
 - **取消的分类不再看微任务时序**：调用方 abort 和总上限 abort 都先把臂号记进同一个集合，`catch` 查集合再决定算「取消」还是「失败」。非 async、abort 时 reject 的 adapter 也归 `providersCancelled`。
 - **`gate` 挪到构造函数 opts**：以前挂在没人能传的第二个参数上，永远吃 `DEFAULT_GATE`；现在构造时传 `{ gate }` 就真的生效。
-- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 里的 `deep` 从 `more sources` 改成「每家搜得更深、更慢更贵，不增加源数」。
-- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：不再断言 `graceWindowMs` 字面量，改成断言总上限和 abort 循环还在。
+- **工具描述说实话**：`packages/kernel/src/tool-schemas.ts` 和 `pi-runtime.ts` 里的 `deep` 从 `more sources` 改成「支持的上游搜得更深、更慢更贵，不增加源数」。
+- **非 async adapter 同步抛错不再逃出扇出**：调用各家 `search()` 的地方包了一层，同步抛转成 rejection，`finally` 照样清掉总上限计时器，账也照常结算。
+- **`scripts/ship-gate.mjs` 的 `stepDocClaims`** 跟着改：不再断言 `graceWindowMs` 字面量，改成钉住 4000ms、总上限参与 `Promise.race`、abort 循环还在。
 - **`docs/limitations.md`** 的 Tavily 段按新语义重写：总上限能让引擎不再等，但停不掉一个不认 `AbortSignal` 的上游调用。
 
 ### Removed
 
-- **`EngineConfig`**，以及它的 `budget`（`search()` 从没读过）、`graceWindowMs`、`deepMode`（产品里没人传）。「等齐所有源」这条路不再保留，也没有用户开关。
+- **`EngineConfig`**，以及它的 `budget`（`search()` 从没读过）、`graceWindowMs`、`deepMode`（产品里没人传）。`Query` 上那个同样没人读、没人传的 `budget` 字段和 `Budget` 类型也一起删了。「等齐所有源」这条路不再保留，也没有用户开关。
 
 ### Tests
 
-- `packages/kernel/test/engine.test.ts` 的旧宽限块换成五条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、构造函数里的 `gate` 真的生效。
+- `packages/kernel/test/engine.test.ts` 的旧宽限块换成六条：全部臂提前回来时不等满、超时臂进 cancelled 不进 failed、非 async abort-reject 同样算 cancelled、不足条数时永不返回的臂被总上限收掉、非 async 同步抛错不逃出扇出、构造函数里的 `gate` 真的生效。
 
 ### 边界
 

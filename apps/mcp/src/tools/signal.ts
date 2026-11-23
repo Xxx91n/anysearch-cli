@@ -5,8 +5,8 @@
 // same-connection notification channel, so the HTTP entry stashes the
 // request-scoped signal in AsyncLocalStorage (mcp-context.ts) and the handlers
 // read it there. Either source is a caller signal; the engine treats them the
-// same. Absent sources collapse to undefined so non-cancellable callers keep
-// the engine's original grace-window-only behavior.
+// same. Absent sources collapse to undefined so non-cancellable callers rely on
+// the engine's request deadline alone.
 import type { ServerContext } from "@modelcontextprotocol/server";
 import { currentRequestSignal } from "../mcp-context.js";
 

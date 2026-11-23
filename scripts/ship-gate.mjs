@@ -909,14 +909,15 @@ function stepStaticAssertions() {
 // ---------------------------------------------------------------------------
 // Step 2 — domain schema validation (blocking)
 // ---------------------------------------------------------------------------
-// the grace window is WIRED now — the invariant
-// flips from "debt note survives" to"implementation present + docs not over-claiming".
+// the request deadline is WIRED now — the invariant
+// is "implementation present + docs not over-claiming".
 // The anti-pattern stays identical: silently re-claiming or silently de-wiring recurs.
 function stepDocClaims() {
   report("info", "step 1c/9: engine request-deadline assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
-  if (!/requestTimeoutMs/.test(eng)) fail("engine.ts no longer declares the request deadline - update this assertion");
-  if (!/deadlineResolve\(\)/.test(eng) || !/controllers\[[\w]+\]\.abort\(/.test(eng)) fail("engine.ts lost the deadline abort loop");
+  if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(eng)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
+  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*\]\)/.test(eng)) fail("engine request deadline is no longer raced against the fanout");
+  if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(eng)) fail("engine.ts lost the deadline abort loop");
   report("pass", "engine request deadline wired");
 }
 

@@ -306,15 +306,15 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
 }
 {
   // (a) Every arm lands before the deadline -> return with the slowest arm,
-  // not after the full 2s window.
+  // not after the full 1s window.
   const aborted = { v: false };
   const eng = new RetroaererdEngine([
     mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
     slowProvider("slow", 80, ["https://slow.com/x"], aborted),
-  ], { requestTimeoutMs: 2000 });
+  ], { requestTimeoutMs: 1000 });
   const t0 = Date.now();
   const r = await eng.search({ query: "g", mode: "fast", maxResults: 3 });
-  assert(Date.now() - t0 < 1000, "deadline: all arms landed, returned without waiting out the window");
+  assert(Date.now() - t0 < 700, "deadline: all arms landed, returned without waiting out the window");
   assert(!aborted.v, "deadline: no abort when every arm lands in time");
   assert(r.metadata.providersCancelled.length === 0, "deadline: nobody cancelled");
   assert(r.results.some((x) => x.url.includes("slow.com")), "deadline: slow arm results kept");
@@ -356,7 +356,20 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(r4.metadata.providersFailed.length === 0, "deadline: never-returning arm is not a failure");
   assert(r4.results.length === 1, "deadline: partial results kept");
 
-  // (e) The sufficiency gate moved to constructor opts and is live again.
+  // (e) A non-async adapter that throws before returning a promise must not
+  // escape the fanout (that would skip the timer cleanup).
+  const eng5 = new RetroaererdEngine([
+    mockProvider("ok", ["https://ok.com/a"]),
+    { id: "sync-boom", modes: ["fast"], search(): Promise<ProviderEnvelope> { throw new Error("sync boom"); } },
+  ], { requestTimeoutMs: 2000 });
+  const t5 = Date.now();
+  const r5 = await eng5.search({ query: "g", mode: "fast" });
+  assert(Date.now() - t5 < 700, "sync throw: search settled instead of leaking the deadline timer");
+  assert(r5.metadata.providersFailed.includes("sync-boom"), "sync throw: classified as a failure");
+  assert(!r5.metadata.providersCancelled.includes("sync-boom"), "sync throw: not misread as cancelled");
+  assert(r5.results.length >= 1, "sync throw: the other arm's results kept");
+
+  // (f) The sufficiency gate moved to constructor opts and is live again.
   const relaxed = await new RetroaererdEngine(
     [mockProvider("only", ["https://o.com/a"])],
     { gate: { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false } },
