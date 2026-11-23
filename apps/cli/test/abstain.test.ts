@@ -8,7 +8,9 @@
 // ponytail: no test framework, assert-based demo.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,12 +33,15 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  // 1. Exit-code contract.
-  assert(searchExitCode({ resultCount: 5, abstain: false, failOnAbstain: false }) === 0, "results -> 0");
-  assert(searchExitCode({ resultCount: 0, abstain: false, failOnAbstain: false }) === 1, "empty non-domain -> 1 (legacy no-match)");
-  assert(searchExitCode({ resultCount: 0, abstain: true, failOnAbstain: false }) === 0, "abstain -> 0 (first-class success)");
-  assert(searchExitCode({ resultCount: 0, abstain: true, failOnAbstain: true }) === 3, "abstain + --fail-on-abstain -> 3 (dedicated)");
-  assert(searchExitCode({ resultCount: 0, abstain: false, failOnAbstain: true }) === 1, "no abstain + flag -> still 1");
+  // 1. Exit-code contract: the table reads the engine's verdict, so the code
+  //    and the reported outcome cannot disagree.
+  assert(searchExitCode({ outcome: "answer", failOnAbstain: false }) === 0, "answer -> 0");
+  assert(searchExitCode({ outcome: "empty", failOnAbstain: false }) === 1, "zero results outside a policy -> 1");
+  assert(searchExitCode({ outcome: "failed", failOnAbstain: false }) === 1, "an outage -> 1");
+  assert(searchExitCode({ outcome: "cancelled", failOnAbstain: false }) === 1, "nothing arrived and an arm was cut off -> 1");
+  assert(searchExitCode({ outcome: "abstain", failOnAbstain: false }) === 0, "abstain -> 0 (first-class success)");
+  assert(searchExitCode({ outcome: "abstain", failOnAbstain: true }) === 3, "abstain + --fail-on-abstain -> 3 (dedicated)");
+  assert(searchExitCode({ outcome: "empty", failOnAbstain: true }) === 1, "no abstain + flag -> still 1");
 
   // 2. One-line message contract: domain + pre/post counts + gate.
   const line = formatAbstainLine({ domain: "docs", preFiltered: 10, postFiltered: 0, gate: "post" });
@@ -157,30 +162,68 @@ async function main() {
     "several cut-off arms share the one reason",
   );
 
-  // 5. Conditional live arm: spawn the built CLI against a narrow-allowlist
-  // domain — deterministic abstain whenever one keyed provider exists.
+  // 5. Built-CLI arm: a narrow-allowlist domain plus a local stub endpoint, so
+  //    the run is a real abstain (one arm answered with nothing, gate "pre")
+  //    with no network and no key. Guarded on dist alone — the previous fixture
+  //    needed a provider key, so CI skipped it and a keyed machine could turn
+  //    it red (#476 §七).
   const here = dirname(fileURLToPath(import.meta.url));
   const dist = join(here, "..", "dist", "index.js");
-  const keyed = ["EXA_API_KEY", "TAVILY_API_KEY"].some((k) => process.env[k]);
-  if (!existsSync(dist) || !keyed) {
-    console.log("SKIP live arm: dist or provider key absent (run pnpm build + set EXA_API_KEY to enable)");
+  if (!existsSync(dist)) {
+    console.log("SKIP stub arm: dist absent (run pnpm build)");
   } else {
     const d = mkdtempSync(join(tmpdir(), "ans-cold-domain-"));
-    writeFileSync(join(d, "cold.toml"), [
-      'name = "cold"', 'description = "r61 abstain fixture"', '[settings]', 'language = "TypeScript"', 'depth = "docs"', '[skills]', 'active = ["search"]', '[sources]', 'enabled = ["tavily", "exa"]', 'urlAllowlist = ["nonexistent.invalid"]', '[rag]', 'adapter = "none"',
-    ].join(String.fromCharCode(10)));
-    const env = { ...process.env, ANS_DOMAIN: "cold", ANS_DOMAINS_DIR: d };
-    const run = (extra: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
-      const p = spawn(process.execPath, [dist, "search", "tokio JoinSet rust", ...extra], { env, stdio: ["ignore", "pipe", "pipe"] });
-      let out = ""; p.stdout.on("data", (c) => (out += c)); p.stderr.on("data", (c) => (out += c));
-      p.on("close", (code) => resolve({ code: code ?? -1, out }));
-      setTimeout(() => { p.kill(); resolve({ code: -9, out: out + " TIMEOUT" }); }, 60000);
+    const server = createServer(async (req, res) => {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      let parsed: { id?: number; method?: string } = {};
+      try { parsed = JSON.parse(body); } catch { /* notification framing */ }
+      const reply = (result: unknown) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result }));
+      };
+      if (parsed.method === "initialize") {
+        return reply({ protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "stub", version: "1" } });
+      }
+      if (parsed.method === "notifications/initialized") {
+        res.writeHead(202);
+        return res.end();
+      }
+      if (parsed.method === "tools/call") {
+        return reply({ content: [{ type: "text", text: "## Search Results (0 results, 2ms)\n" }] });
+      }
+      return reply({});
     });
-    const def = await run([]);
-    assert(def.code === 0, "live abstain default exit 0 (got " + def.code + ") out=" + def.out.slice(-200));
-    assert(/abstain: no results within allowed cold domain/.test(def.out), "live abstain line printed");
-    const strict = await run(["--fail-on-abstain"]);
-    assert(strict.code === 3, "live abstain --fail-on-abstain exit 3 (got " + strict.code + ")");
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      writeFileSync(join(d, "cold.toml"), [
+        'name = "cold"', 'description = "r61 abstain fixture"', '[settings]', 'language = "TypeScript"', 'depth = "docs"', '[skills]', 'active = ["search"]', '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]', '[rag]', 'adapter = "none"',
+      ].join(String.fromCharCode(10)));
+      const env = {
+        ...process.env,
+        ANS_DOMAIN: "cold",
+        ANS_DOMAINS_DIR: d,
+        ANS_DB_PATH: join(d, "anysearch.db"),
+        ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/mcp",
+        ANS_ALLOW_ENV_OVERRIDE: "0",
+      };
+      const run = (extra: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
+        const p = spawn(process.execPath, [dist, "search", "tokio JoinSet rust", ...extra], { env, stdio: ["ignore", "pipe", "pipe"] });
+        let out = ""; p.stdout.on("data", (c) => (out += c)); p.stderr.on("data", (c) => (out += c));
+        p.on("close", (code) => resolve({ code: code ?? -1, out }));
+        setTimeout(() => { p.kill(); resolve({ code: -9, out: out + " TIMEOUT" }); }, 60000);
+      });
+      const def = await run([]);
+      assert(def.code === 0, "stub abstain default exit 0 (got " + def.code + ") out=" + def.out.slice(-300));
+      assert(/abstain: no results within allowed cold domain/.test(def.out), "stub abstain line printed");
+      const strict = await run(["--fail-on-abstain"]);
+      assert(strict.code === 3, "stub abstain --fail-on-abstain exit 3 (got " + strict.code + ")");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((r) => server.close(() => r()));
+      rmSync(d, { recursive: true, force: true });
+    }
   }
 
   console.log("--- cli abstain tests: " + passed + " passed, " + failed + " failed ---");

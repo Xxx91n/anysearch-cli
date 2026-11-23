@@ -1,4 +1,5 @@
 import type { AttributionReport } from "./attribution";
+import type { SearchOutcome } from "./outcome";
 
 // SearchProvider contract: normalized interface for all search providers.
 // Split 1 from the atomcode kernel-split research.
@@ -393,11 +394,24 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // abstain marker. Set by the kernel post-filter
-    // when a domain allowlist policy is active and zero results survive (including
-    // the cold-domain zero-arrival case). A successful policy execution, never an
-    // error. preFiltered = provider results that reached the authoritative gate;
-    // postFiltered = survivors (0 whenever abstain is set). Consumed by the CLI
+    // five-value search outcome, written once by the kernel for every search
+    // that reaches envelope assembly: "answer" (results or answers),
+    // "failed" (every queried provider failed), "cancelled" (an arm was
+    // cancelled and not every arm failed), "abstain" (the marker below is
+    // present), "empty" (at least one provider answered and none of the above).
+    // The audit attribute anysearch.outcome carries the same value;
+    // outcome === "abstain" iff metadata.abstain is present.
+    outcome: SearchOutcome;
+    // abstain marker. Set by the kernel post-filter only when the domain
+    // allowlist policy is the evidence-backed reason: a domain allowlist is
+    // active, zero results survive, at least one provider answered, no arm was
+    // cancelled, and either the gate dropped arrivals or every queried arm
+    // answered with nothing and none failed. An all-failed or all-cancelled
+    // search writes no marker (outcome: "failed" / "cancelled"). A successful
+    // policy execution, never an error. preFiltered = provider results that
+    // reached the authoritative gate; postFiltered = survivors (0 whenever
+    // abstain is set). gate: "post" = the gate dropped arrivals; "pre" = every
+    // queried arm answered with nothing, none failed. Consumed by the CLI
     // one-line message (exit 0) and MCP structuredContent.abstain (isError:false).
     abstain?: {
       abstain: true;

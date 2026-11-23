@@ -125,6 +125,142 @@ async function main() {
   const r9 = await eng3.search({ query: "q", mode: "fast" });
   assert(r9.metadata.abstain?.abstain === true, "no span: abstain marker still set");
 
+  // ---- Zero-result outcomes (issue #514): the verdict, the marker and the
+  // audit dimension are one judgment, written once. A zero-result search is an
+  // abstain only when the domain policy is the evidence-backed reason.
+
+  const failing = (id: string): SearchProvider => ({
+    id,
+    modes: ["fast"],
+    async search(): Promise<ProviderEnvelope> {
+      throw new Error("ECONNREFUSED upstream down");
+    },
+  });
+  const answeringWithNothing = (id: string): SearchProvider => ({
+    id,
+    modes: ["fast"],
+    async search(): Promise<ProviderEnvelope> {
+      return { provider: id, results: [], answers: [], elapsedMs: 1 };
+    },
+  });
+
+  // 10. Every queried arm failed while the policy is on -> failed, and no
+  //     abstain marker. This is the #460 defect that used to read as a refusal.
+  {
+    const eng = new RetroaererdEngine([failing("dead")], { urlPolicy: resolvePolicy, domainName: "docs" });
+    const s10 = fakeSink();
+    const r10 = await eng.search({ query: "q", mode: "fast", span: s10.sink });
+    assert(r10.results.length === 0, "10: all-failed search returns zero results");
+    assert(r10.metadata.outcome === "failed", "10: all-failed => outcome failed (got " + r10.metadata.outcome + ")");
+    assert(r10.metadata.abstain === undefined, "10: all-failed writes no abstain marker");
+    assert(s10.attrs["anysearch.outcome"] === "failed", "10: span records outcome=failed");
+    const post10 = s10.events.find((e) => e.name === "retrieval.domain_filter.post");
+    assert(post10?.attributes?.["anysearch.outcome"] === "failed", "10: post event carries the same verdict");
+    assert(post10?.attributes?.["providers.failed_count"] === 1, "10: post event counts the failed arm");
+    assert(post10?.attributes?.["providers.cancelled_count"] === 0, "10: post event counts cancelled arms (0)");
+  }
+
+  // 11. All arms cut off. Two ways an arm is cancelled: it never settles, or it
+  //     resolves only after our abort (the #481 pin). Both are `cancelled`,
+  //     neither writes a marker, and the resolved-after-abort arm is NOT counted
+  //     as one that answered.
+  {
+    const abandonedSearch = async (onAbort: "hang" | "resolve") => {
+      let startedResolve: () => void = () => { };
+      const started = new Promise<void>((r) => { startedResolve = r; });
+      const slow: SearchProvider = {
+        id: "slow",
+        modes: ["fast"],
+        async search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+          startedResolve();
+          return new Promise<ProviderEnvelope>((resolve) => {
+            signal.addEventListener("abort", () => {
+              if (onAbort === "resolve") {
+                resolve({
+                  provider: "slow",
+                  results: [{ url: "https://a.com/after-abort", title: "late", snippet: "s", source: "slow" }],
+                  answers: [],
+                  elapsedMs: 1,
+                });
+              }
+            }, { once: true });
+          });
+        },
+      };
+      const engine = new RetroaererdEngine([slow], { urlPolicy: resolvePolicy, domainName: "docs" });
+      const sink = fakeSink();
+      const caller = new AbortController();
+      const search = engine.search({ query: "q", mode: "fast", signal: caller.signal, span: sink.sink });
+      // The arm holds the engine's per-arm signal by the time this resolves.
+      await started;
+      caller.abort("caller went away");
+      return { result: await search, sink };
+    };
+
+    const hung = await abandonedSearch("hang");
+    assert(hung.result.metadata.outcome === "cancelled", "11: aborted arm that never settles => cancelled (got " + hung.result.metadata.outcome + ")");
+    assert(hung.result.metadata.abstain === undefined, "11: cancelled writes no abstain marker");
+    assert(hung.result.metadata.providersCancelled.includes("slow"), "11: the arm is named cancelled");
+    assert(hung.sink.attrs["anysearch.outcome"] === "cancelled", "11: span records outcome=cancelled");
+
+    const late = await abandonedSearch("resolve");
+    assert(late.result.metadata.outcome === "cancelled", "11: an arm that resolves only after the abort is cancelled too (got " + late.result.metadata.outcome + ")");
+    assert(late.result.metadata.abstain === undefined, "11: a post-abort resolve writes no abstain marker");
+    assert(late.result.results.length === 0, "11: a post-abort resolve contributes no results (#481)");
+    assert(late.result.metadata.providersCancelled.includes("slow"), "11: a post-abort resolve is named cancelled (#481)");
+  }
+
+  // 12. One arm answered with nothing, another failed: neither an abstain nor a
+  //     fault — `empty`, and the failed arm is named.
+  {
+    const eng = new RetroaererdEngine([answeringWithNothing("quiet"), failing("dead")], { urlPolicy: resolvePolicy, domainName: "docs" });
+    const s12 = fakeSink();
+    const r12 = await eng.search({ query: "q", mode: "fast", span: s12.sink });
+    assert(r12.metadata.outcome === "empty", "12: empty + failed => empty (got " + r12.metadata.outcome + ")");
+    assert(r12.metadata.abstain === undefined, "12: empty + failed writes no abstain marker");
+    assert(r12.metadata.providersFailed.includes("dead"), "12: the failed arm is still named");
+    const post12 = s12.events.find((e) => e.name === "retrieval.domain_filter.post");
+    assert(post12?.attributes?.["providers.failed_count"] === 1, "12: the event separates this empty from a clean one");
+  }
+
+  // 13. A provider answer with zero results is an answer, not an abstain.
+  {
+    const answered: SearchProvider = {
+      id: "exa",
+      modes: ["fast", "answer"],
+      async search(): Promise<ProviderEnvelope> {
+        return { provider: "exa", results: [], answers: ["a provider-written answer"], elapsedMs: 1 };
+      },
+    };
+    const eng = new RetroaererdEngine([answered], { urlPolicy: resolvePolicy, domainName: "docs" });
+    const s13 = fakeSink();
+    const r13 = await eng.search({ query: "q", mode: "fast", span: s13.sink });
+    assert(r13.metadata.outcome === "answer", "13: answers-only => answer (got " + r13.metadata.outcome + ")");
+    assert(r13.metadata.abstain === undefined, "13: answers-only writes no abstain marker");
+    assert(r13.answers.length === 1, "13: the answer survives");
+  }
+
+  // 14. Partial cancellation with results: the results are the verdict, the
+  //     cut-off arm is named beside them. The deadline is shrunk so the slow arm
+  //     is cut off deterministically.
+  {
+    const quick = mockProvider("quick", ["https://a.com/1"], true);
+    const slow: SearchProvider = {
+      id: "slow",
+      modes: ["fast"],
+      async search(): Promise<ProviderEnvelope> {
+        return new Promise<ProviderEnvelope>(() => { });
+      },
+    };
+    const eng = new RetroaererdEngine([quick, slow], { urlPolicy: resolvePolicy, domainName: "docs", requestTimeoutMs: 40 });
+    const s14 = fakeSink();
+    const r14 = await eng.search({ query: "q", mode: "fast", span: s14.sink });
+    assert(r14.results.length === 1, "14: the fast arm's result survives");
+    assert(r14.metadata.outcome === "answer", "14: results with a cut-off arm => answer (got " + r14.metadata.outcome + ")");
+    assert(r14.metadata.providersCancelled.includes("slow"), "14: the cut-off arm is named cancelled");
+    assert(s14.attrs["anysearch.outcome"] === "answer", "14: span records the same answer");
+  }
+
   console.log("--- domain-filter engine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

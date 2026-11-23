@@ -5,7 +5,7 @@
 // JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds, classifySearchOutcome } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
@@ -694,10 +694,22 @@ export class RetroaererdEngine {
       }
     }
 
-    // post-gate audit event + outcome dimension. abstain is
-    // its own outcome value on the span — criterion 6 keeps it out of error counts.
+    // Outcome dimension + post-gate audit event. The verdict is classified
+    // once, here, from evidence this search already produced; the span, the
+    // envelope and all three surfaces read that one value. abstain is its own
+    // outcome value on the span — criterion 6 keeps it out of error counts.
+    // outcome === "abstain" iff the envelope carries the marker below.
+    const outcome = classifySearchOutcome({
+      resultCount: rankedResults.length,
+      answerCount: answers.length,
+      providersQueried,
+      providersFailed,
+      providersCancelled,
+      domainActive,
+      gateDropped,
+    });
+    q.span?.setAttributes?.({ "anysearch.outcome": outcome });
     if (domainActive) {
-      const outcome = allResults.size === 0 ? "abstain" : "answer";
       q.span?.addEvent("retrieval.domain_filter.post", {
         "anysearch.domain": this.domainName ?? "",
         "anysearch.policy_version": domainPolicy.policyVersion,
@@ -707,8 +719,12 @@ export class RetroaererdEngine {
         "anysearch.domain_filter.post": gateSurvivors,
         "anysearch.domain_filter.dropped": gateDropped,
         "anysearch.outcome": outcome,
+        // Arm-state counts: without them a clean `empty` and an `empty` with
+        // one arm answering and another failing look identical, and the
+        // failure rate cannot be measured from the trace.
+        "providers.failed_count": providersFailed.length,
+        "providers.cancelled_count": providersCancelled.length,
       });
-      q.span?.setAttributes?.({ "anysearch.outcome": outcome });
     }
 
     const envelope: FusedEnvelope = {
@@ -741,11 +757,12 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
-        // abstain marker — domain_filter_empty when
-        // the authoritative gate leaves zero results (empty post-gate pool is
-        // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
-        // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.
-        ...(domainActive && allResults.size === 0
+        // The one judgment every surface reads (see outcome.ts).
+        outcome,
+        // abstain marker — written only when shouldAbstain says the domain
+        // policy is the evidence-backed reason (see contract.ts metadata.abstain).
+        // All-failed and all-cancelled searches never abstain. Never an error.
+        ...(outcome === "abstain"
           ? { abstain: { abstain: true as const, reason: "domain_filter_empty" as const, ...(this.domainName ? { domain: this.domainName } : {}), preFiltered: gateIn, postFiltered: gateSurvivors, gate: gateIn === 0 ? "pre" as const : "post" as const } }
           : {}),
       },

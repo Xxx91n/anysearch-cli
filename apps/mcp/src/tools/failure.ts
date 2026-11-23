@@ -7,7 +7,7 @@
 // is a success whose content and structuredContent name the degraded arms.
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import type { ProviderErrorClass } from "@anysearch-cli/retriever";
+import type { ProviderErrorClass, SearchOutcome } from "@anysearch-cli/retriever";
 import { providerErrorHints } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
@@ -51,16 +51,17 @@ export function providerFailureMetadata(
 }
 
 /**
- * True when every queried arm failed: a provider outage, not an empty search.
- * Zero queried arms cannot be an outage, and a cancelled arm is a transport
- * outcome rather than a failure, so neither satisfies this predicate alone.
+ * The envelope's own verdict, read instead of re-decided here: the kernel
+ * classifies a search once and writes metadata.outcome, so this surface and the
+ * audit trace cannot disagree about what happened. The fallback is the
+ * classifier's own default for a hand-built envelope that predates the field,
+ * not a second rule. `failed` is the one outcome that is an error: every
+ * queried arm failed and nothing came back. Zero queried arms cannot be an
+ * outage, and a cancelled arm is a transport outcome, so neither classifies as
+ * `failed`.
  */
-export function allProvidersFailed(
-  providersQueried: readonly string[],
-  providersFailed: readonly string[],
-): boolean {
-  if (providersQueried.length === 0) return false;
-  return providersQueried.every((id) => providersFailed.includes(id));
+export function outcomeOf(envelope: { metadata?: { outcome?: SearchOutcome } }): SearchOutcome {
+  return envelope.metadata?.outcome ?? "empty";
 }
 
 /**

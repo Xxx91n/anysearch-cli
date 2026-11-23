@@ -11,13 +11,18 @@ import type { CredentialSourceLabel, CredentialSources } from "@anysearch-cli/ke
 // 同样只做类型导入；provider 联合由 store 拥有，这里不复制一份。新增
 // provider 时下面的 Record 会编译失败，直到补上它没配 key 时的说法。
 import type { SearchProviderId } from "@anysearch-cli/store";
+// 判据只有一份，在 retriever 的 outcome 模块里。这里只借它的类型，
+// 运行时不留依赖 —— 退出码表读的就是引擎写进信封的那个值。
+import type { SearchOutcome } from "@anysearch-cli/retriever";
 
-// Exit codes: 0 = ok (including abstain), 1 = generic failure / zero results
-// outside any domain policy, 2 = usage error, 3 = abstain with --fail-on-abstain
-// (dedicated nonzero so automation can discriminate without scraping text).
-export function searchExitCode(input: { resultCount: number; abstain?: boolean; failOnAbstain: boolean }): number {
-  if (input.abstain) return input.failOnAbstain ? 3 : 0;
-  return input.resultCount > 0 ? 0 : 1;
+// Exit codes: 0 = ok (including abstain), 1 = generic failure, all providers
+// failed, or zero results that are not an abstain (empty), 2 = usage error,
+// 3 = abstain with --fail-on-abstain (dedicated nonzero so automation can
+// discriminate without scraping text). A cancelled search never exits 0: it
+// returns whatever arrived, and with nothing arrived the code is 1.
+export function searchExitCode(input: { outcome: SearchOutcome; failOnAbstain: boolean }): number {
+  if (input.outcome === "abstain") return input.failOnAbstain ? 3 : 0;
+  return input.outcome === "answer" ? 0 : 1;
 }
 
 // One-line structured abstain message: domain, pre/post gate

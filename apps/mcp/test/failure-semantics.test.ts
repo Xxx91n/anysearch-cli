@@ -125,7 +125,7 @@ function emptyEnvelope(providersQueried: string[]): FusedEnvelope {
   return {
     results: [],
     answers: [],
-    metadata: { providersQueried, providersFailed: [], providersCancelled: [], elapsedMs: 1 },
+    metadata: { providersQueried, providersFailed: [], providersCancelled: [], elapsedMs: 1, outcome: "empty" },
   };
 }
 
@@ -139,6 +139,7 @@ function allFailedEnvelope(providers: string[]): FusedEnvelope {
       providersCancelled: [],
       providerErrorClasses: { [providers[0]]: "transient", [providers[1] ?? providers[0]]: "permanent-auth" },
       elapsedMs: 1,
+      outcome: "failed",
     },
   } as FusedEnvelope;
 }
@@ -153,6 +154,7 @@ function partialEnvelope(): FusedEnvelope {
       providersCancelled: [],
       providerErrorClasses: { tavily: "transient" },
       elapsedMs: 1,
+      outcome: "answer",
     },
   } as FusedEnvelope;
 }
@@ -167,6 +169,7 @@ function quotaAllFailedEnvelope(): FusedEnvelope {
       providersCancelled: [],
       providerErrorClasses: { tavily: "quota-exhausted" },
       elapsedMs: 1,
+      outcome: "failed",
     },
   } as FusedEnvelope;
 }
@@ -188,6 +191,7 @@ function freeQuotaAllFailedEnvelope(retryAfterSeconds?: number): FusedEnvelope {
       providerErrorClasses: { tavily: "free-quota-exhausted" },
       ...(retryAfterSeconds !== undefined ? { providerErrorRetryAfterSeconds: { tavily: retryAfterSeconds } } : {}),
       elapsedMs: 1,
+      outcome: "failed",
     },
   } as FusedEnvelope;
 }
@@ -208,6 +212,7 @@ function partialCancelledEnvelope(): FusedEnvelope {
       providersFailed: [],
       providersCancelled: ["anysearch"],
       elapsedMs: 1,
+      outcome: "answer",
     },
   } as FusedEnvelope;
 }
@@ -221,6 +226,7 @@ function allCancelledEnvelope(): FusedEnvelope {
       providersFailed: [],
       providersCancelled: ["anysearch"],
       elapsedMs: 1,
+      outcome: "cancelled",
     },
   } as FusedEnvelope;
 }
@@ -367,6 +373,8 @@ async function main() {
       );
       assert(sc.providerErrorClasses?.tavily === "transient", "search_web partial failure: structuredContent carries providerErrorClasses");
       assert(typeof sc.providerBuildErrors?.exa === "string", "search_web partial failure: structuredContent carries providerBuildErrors");
+      assert(sc.outcome === "answer", "search_web partial failure: structuredContent says outcome=answer");
+      assert(doc.outcome === "answer", "search_web partial failure: content says outcome=answer");
       assert(sc.credentialSources?.status === "resolved", "search_web partial failure: structuredContent carries credentialSources");
       assert(
         sc.credentialSources?.exa === "env" &&
@@ -407,6 +415,11 @@ async function main() {
       const res = await captureHandlers(makeEngine(async () => emptyEnvelope(["exa"]))).search_web({ query: "x" });
       assert(res?.isError !== true, "search_web zero results with one successful provider: isError is not true");
       assert(!String(res?.content?.[0]?.text).includes("all providers failed"), "search_web zero results: not an outage message");
+      // The zero-result outcome a host can act on: `empty`, not a policy claim.
+      assert(res?.structuredContent?.outcome === "empty", "search_web zero results: structuredContent says outcome=empty");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.outcome === "empty", "search_web zero results: content says outcome=empty");
+      assert(doc.abstain === null, "search_web zero results without a policy: no abstain marker");
     }
 
     // ---- 8b. Cancelled arms are named, and they never make an outage (#475) ----
@@ -423,6 +436,8 @@ async function main() {
         "partial cancel: structuredContent names who was asked");
       assert(JSON.stringify(partial?.structuredContent?.providersCancelled) === JSON.stringify(["anysearch"]),
         "partial cancel: structuredContent names the cut-off arm");
+      assert(partial?.structuredContent?.outcome === "answer", "partial cancel: results still win, outcome=answer");
+      assert(pDoc.outcome === "answer", "partial cancel: content agrees");
 
       // Whole pool cut off: providersCancelled === providersQueried is the
       // signal. It stays a success — a cancelled arm did not fail — and there
@@ -434,6 +449,10 @@ async function main() {
       assert(JSON.stringify(aDoc.providersQueried) === JSON.stringify(["anysearch"]), "all cancel: content names the asked arm");
       assert(JSON.stringify(aDoc.providersCancelled) === JSON.stringify(["anysearch"]), "all cancel: content names the cut-off arm");
       assert(!String(all?.content?.[0]?.text).includes("all providers failed"), "all cancel: not reported as an outage");
+      // The distinguishing value: nothing answered and an arm was cut off.
+      assert(all?.structuredContent?.outcome === "cancelled", "all cancel: structuredContent says outcome=cancelled");
+      assert(aDoc.outcome === "cancelled", "all cancel: content says outcome=cancelled");
+      assert(aDoc.abstain === null, "all cancel: no abstain marker");
     }
 
     // ---- 8c. research_web reports the LAST round's arm state, never a union (#475) ----
@@ -463,12 +482,15 @@ async function main() {
           providersFailed: [],
           providersCancelled: [],
           elapsedMs: 1,
+          outcome: "abstain",
           abstain: { abstain: true, reason: "domain_filter_empty", domain: "docs", preFiltered: 3, postFiltered: 0, gate: "post" },
         },
       } as FusedEnvelope;
       const res = await captureHandlers(makeEngine(async () => abstainEnvelope)).search_web({ query: "x" });
       assert(res?.isError !== true, "abstain: isError is not true");
       assert(res?.structuredContent?.abstain?.abstain === true, "abstain: structured marker preserved");
+      assert(res?.structuredContent?.outcome === "abstain", "abstain: structuredContent says outcome=abstain");
+      assert(JSON.parse(String(res?.content?.[0]?.text)).outcome === "abstain", "abstain: content says outcome=abstain");
     }
 
     // ---- 10. query_knowledge none/note stay successful ----

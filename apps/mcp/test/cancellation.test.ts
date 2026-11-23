@@ -281,9 +281,15 @@ async function main() {
       JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify(["slow"]),
       "4: structuredContent names the arm that was cut off",
     );
+    // A hand-built envelope cannot fake this: the value comes from the engine's
+    // own classifier, so a cancelled search reads as `cancelled`, never as an
+    // abstain with a policy reason.
+    assert(res?.structuredContent?.outcome === "cancelled", "4: structuredContent says outcome=cancelled");
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["slow"]), "4: content names the arm that was asked");
     assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "4: content names the arm that was cut off");
+    assert(doc.outcome === "cancelled", "4: content says outcome=cancelled");
+    assert(doc.abstain === null, "4: a cancelled search carries no abstain marker");
 
     // The same abort on research_web: a round the cancellation cut short
     // contributes no arm state. Its results are dropped too (#209: cancellation
@@ -351,8 +357,11 @@ async function main() {
       "5: a late resolve is cancelled, not counted as an answered arm",
     );
     assert(!res?.structuredContent?.providersFailed?.includes("slow"), "5: a late resolve is not a failure either");
+    assert(res?.structuredContent?.outcome === "cancelled", "5: a late resolve still classifies as cancelled");
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "5: content names the arm that was cut off");
+    assert(doc.outcome === "cancelled", "5: content agrees with structuredContent");
+    assert(doc.abstain === null, "5: a cancelled search carries no abstain marker");
     assert(doc.totalResults === 0, "5: the late envelope's results stay out of the answer");
   }
 

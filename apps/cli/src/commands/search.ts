@@ -234,6 +234,10 @@ export async function runSearch(args: string[]): Promise<number> {
         attribution: envelope.attribution ?? null,
         // first-class abstain marker is part of the --json contract.
         abstain: envelope.metadata.abstain ?? null,
+        // How this run ended: answer / failed / cancelled / abstain / empty.
+        // Written once by the engine, so this field and the exit code below
+        // can never disagree.
+        outcome: envelope.metadata.outcome,
         // resolved query-level vertical spec (repo defaults ride on the
         // retrieval.vertical.pre audit event).
         vertical: vertical ?? null,
@@ -245,7 +249,7 @@ export async function runSearch(args: string[]): Promise<number> {
         ...(process.env.ANS_ARM_SNAPSHOT === "1" ? { fusion: envelope.metadata?.fusion ?? null } : {}),
       };
       process.stdout.write(JSON.stringify(out, null, 2) + "\n");
-      return searchExitCode({ resultCount: envelope.results.length, abstain: !!envelope.metadata.abstain, failOnAbstain });
+      return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });
     }
 
     console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
@@ -261,11 +265,11 @@ export async function runSearch(args: string[]): Promise<number> {
         console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
         printProviderFailureHints(envelope.metadata);
       }
-      // 这条分支不打 cancelled：宽限窗口要先攒够结果才武装，拒答的前提是结果池
-      // 是空的，CLI 又不传调用方信号，所以这里的 cancelled 恒为空表。
+      // 这条分支不打 cancelled：拒答本身就要求没有臂被掐断（有一条被掐，
+      // 「这个域里没有」就是超结论），所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
-      return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
+      return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });
     }
 
     // Render results.
@@ -313,7 +317,7 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("Results: " + envelope.results.length);
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
-    return searchExitCode({ resultCount: envelope.results.length, abstain: false, failOnAbstain });
+    return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });
   } catch (e: any) {
     // A refused reservation never reached a provider: name the budget stop
     // instead of reporting it as an upstream error.
