@@ -5,7 +5,8 @@
 // 等出现第三家走 MCP 的适配器、或者 anysearch 的传输层本来就要大改时，再抽公共层。
 // 端点和能力读 PROVIDER_FACTS.exa.freeArm；形状、限速和失败分类写在
 // providers/exa/README.md 的「## 回复形状」「## 已知异常」。这个端点不给用户换地址，
-// 也没有环境变量开关：没配 key 默认就走这条路，不想跑某一家的用 ANS_PROVIDERS 把它拿掉（#448）。
+// 也没有环境变量开关：没配 key 默认就走这条路，不想跑它就在域 TOML 的 [sources].enabled
+// 里删掉（#448）。
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { Mode, NormalizedResult, ProviderEnvelope, SearchProvider, SearchRequest } from "../contract";
