@@ -121,7 +121,7 @@ test("windows separators name the same package", () => {
   assert.equal(plan.packages.length, 7);
 });
 
-test("a root file falls back to the full suite", () => {
+test("a root file outside the reader table falls back to the full suite", () => {
   for (const file of ["turbo.json", "pnpm-workspace.yaml", "scripts/preflight-test.mjs", ".github/workflows/ci.yml"]) {
     assert.equal(planPreflight(root, [file]).mode, "full", file);
   }
@@ -291,7 +291,7 @@ test("docs next to a package change run that package, not the whole suite", () =
   assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
 });
 
-test("docs next to a root file still run the whole suite, and the docs are not the reason", () => {
+test("docs next to a root file outside the table still run the whole suite, and the docs are not the reason", () => {
   const plan = planPreflight(root, ["README.md", "turbo.json"]);
   assert.equal(plan.mode, "full");
   assert.deepEqual(plan.outside, ["turbo.json"]);
