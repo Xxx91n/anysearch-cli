@@ -1,9 +1,9 @@
 // Stand-in AnySearch MCP endpoint for install-smoke's refusal leg.
 //
-// Its own process on purpose: install-smoke drives the installed CLI with
-// spawnSync, which blocks the parent's event loop, so an in-process server
-// would never accept the request (#474 measured a 6s timeout and zero requests
-// that way; a separate process answers in under a second).
+// Design: its own process, never an in-process server — install-smoke drives
+// the installed CLI with spawnSync, which blocks the parent's event loop, so an
+// in-process stub could never accept the request (#474 measured a 6s timeout
+// and zero requests that way; a separate process answers in under a second).
 //
 // Usage: start it, read the single `PORT=<n>` line it prints, point
 // ANYSEARCH_ENDPOINT at http://127.0.0.1:<n>/mcp, then kill it.

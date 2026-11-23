@@ -13,7 +13,7 @@ import type { SessionStore } from "@anysearch-cli/store";
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
-  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
 };
 
 // Minimal observation span: recordOperation just invokes the callback with it.

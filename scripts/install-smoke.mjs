@@ -83,10 +83,11 @@ function check(name, cond, detail) {
 }
 const CLI_TIMEOUT_MS = 30000;
 
-// `timeoutMs` bounds a single call. CLI calls pass it: the engine has no
-// per-arm timeout, so one unanswered request would otherwise outlive the step.
-// Pack and install keep the platform default — they are not CLI calls, and a
-// 30s cap there would fail the lane on a slow npm mirror.
+// `timeoutMs` bounds a single call. CLI calls pass it: the engine's own 4s
+// deadline only covers the search itself, so this bound is what catches what
+// that deadline cannot — a wedged child, a console that never drains. Pack and
+// install keep the platform default — they are not CLI calls, and a 30s cap
+// there would fail the lane on a slow npm mirror.
 function sh(cmd, opts = {}) {
   const { timeoutMs, ...rest } = opts;
   const r = spawnSync(cmd, {

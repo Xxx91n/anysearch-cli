@@ -46,6 +46,7 @@ function makeEngine(verdictFor: (call: number) => SufficiencySignal["verdict"]) 
           providersFailed: [],
           providersCancelled: [],
           elapsedMs: 1,
+          outcome: "empty",
           sufficiency: sufficiency(verdictFor(calls)),
         },
       };

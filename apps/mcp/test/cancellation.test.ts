@@ -48,7 +48,7 @@ const fakeSpan = {
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
-  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
 };
 
 async function waitFor(predicate: () => boolean, label: string, timeoutMs = 2000): Promise<void> {
@@ -309,6 +309,10 @@ async function main() {
       JSON.stringify(research?.structuredContent?.providersQueried) === JSON.stringify([]),
       "4: no completed round, so no arm state is claimed",
     );
+    // `outcome` is a field, not optional metadata: no completed round means
+    // null on both surfaces, never a missing key a host has to interpret.
+    assert(research?.structuredContent?.outcome === null, "4: no completed round, so the round verdict is null");
+    assert(researchDoc.outcome === null, "4: content agrees with structuredContent");
   }
 
   // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----

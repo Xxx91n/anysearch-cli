@@ -179,8 +179,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           );
 
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources、providersQueried、
-          // providersCancelled 恒有值；其余字段（含最后一轮的 outcome）有值时才加。
+          // 结果一定带 structuredContent：outcome、credentialSources、
+          // providersQueried、providersCancelled 恒有值；其余字段有值时才加。
           const structuredContent = {
             // #304 review: a cancelled research call stops after the aborted
             // round and then returns normally. Say so, or the task wrapper
@@ -189,7 +189,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
-            ...(lastOutcome ? { outcome: lastOutcome } : {}),
+            // Always present, null included: `outcome` is the round's verdict,
+            // not optional metadata, and a host should not have to tell "no
+            // round finished" from "this build forgot the field".
+            outcome: lastOutcome,
             ...(providerFailures ?? {}),
             // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,

@@ -14,10 +14,10 @@
 //             (shouldAbstain).
 //   empty     anything else: an arm answered with nothing, and that is all.
 //
-// `answer` comes first because a result is an answer even when another arm was
-// cut off or failed; degradation is a separate axis (interrupted,
-// providersFailed). `cancelled` outranks `abstain` because "nothing in this
-// domain" is a conclusion that needs the whole fanout to have finished.
+// Design: five outcomes, first match wins — a result is an answer even beside a
+// failed arm (degradation is a separate axis: interrupted, providersFailed),
+// and cancelled outranks abstain because "nothing in this domain" is a
+// conclusion that needs the whole fanout to have finished.
 
 export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "empty"] as const;
 
@@ -47,6 +47,11 @@ function answeredProviders(e: SearchOutcomeEvidence): string[] {
   );
 }
 
+/** Every queried arm failed: an outage. Zero queried arms is not one. */
+function allQueriedArmsFailed(e: SearchOutcomeEvidence): boolean {
+  return e.providersQueried.length > 0 && e.providersQueried.every((id) => e.providersFailed.includes(id));
+}
+
 /**
  * The abstain predicate: the domain policy emptied the pool AND the search can
  * say why. Two ways to say it — the gate itself dropped arrivals, or every
@@ -61,9 +66,7 @@ export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
   // The earlier outcomes win here too, so the predicate and the classifier
   // answer the same thing on every input, reachable or not: an all-failed
   // search is an outage, never a refusal.
-  if (e.providersQueried.length > 0 && e.providersQueried.every((id) => e.providersFailed.includes(id))) {
-    return false;
-  }
+  if (allQueriedArmsFailed(e)) return false;
   if (e.gateDropped > 0) return true;
   return answeredProviders(e).length > 0 && e.providersFailed.length === 0;
 }
@@ -71,9 +74,7 @@ export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
 /** The five-value verdict, decided once. First match wins. */
 export function classifySearchOutcome(e: SearchOutcomeEvidence): SearchOutcome {
   if (e.resultCount > 0 || e.answerCount > 0) return "answer";
-  if (e.providersQueried.length > 0 && e.providersQueried.every((id) => e.providersFailed.includes(id))) {
-    return "failed";
-  }
+  if (allQueriedArmsFailed(e)) return "failed";
   if (e.providersCancelled.length > 0) return "cancelled";
   if (shouldAbstain(e)) return "abstain";
   return "empty";

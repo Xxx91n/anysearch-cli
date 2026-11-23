@@ -58,8 +58,10 @@ export function providerFailureMetadata(
  * queried arms cannot be an outage, and a cancelled arm is a transport outcome,
  * so neither classifies as `failed`.
  *
- * No fallback on purpose: a missing verdict is a producer bug, and inventing
- * one — least of all `empty` — would report an outage as a successful miss.
+ * Design: read the field, never re-derive it or default it — a second rule here
+ * would drift from the classifier, and a fallback would report a producer that
+ * forgot the field as a successful miss. The contract makes the field required,
+ * so a missing one is a typing breach nobody ships.
  */
 export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): SearchOutcome {
   return envelope.metadata.outcome;
