@@ -394,9 +394,9 @@ export class RetroaererdEngine {
     }
 
     // #478: per-provider AbortController. Two things abort an arm: the caller's
-    // signal and the request deadline below. Both add the arm to `abortedArms`
-    // before abort(), and the rejection handler consults that set — so an
-    // aborted arm is classified cancelled regardless of microtask order.
+    // signal and the request deadline below. Both schedule the arm's mark in
+    // `abortedArms` and then abort it; the settle handlers consult that set,
+    // so the ordering — not promise microtask luck — decides what landed.
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
@@ -415,13 +415,21 @@ export class RetroaererdEngine {
     const callerSignal = q.signal;
     // Arms this engine aborted, either for the caller or at the deadline.
     const abortedArms = new Set<number>();
+    // One abort attempt per arm; a later deadline must not re-schedule the mark.
+    const abortingArms = new Set<number>();
     // ES2022 libs (apps/mcp, apps/cli) have no Promise.withResolvers; keep the
     // resolver-store shape so this shared source typechecks everywhere.
     let callerAbortResolve: () => void = () => { };
     const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
     const abortArm = (i: number, reason?: unknown) => {
-      if (out[i] != null) return;
-      abortedArms.add(i);
+      if (out[i] != null || abortingArms.has(i)) return;
+      abortingArms.add(i);
+      // Mark in a microtask, not inline. An arm whose promise already fulfilled
+      // has its settle handler queued ahead of us: that envelope landed before
+      // this abort and must be kept. A pending arm resolves or rejects only
+      // inside abort() below, so its handler is queued after this mark and stays
+      // cancelled. The wait's own resolution is queued after the mark too.
+      queueMicrotask(() => abortedArms.add(i));
       controllers[i].abort(reason);
     };
     const cancelProviders = () => {

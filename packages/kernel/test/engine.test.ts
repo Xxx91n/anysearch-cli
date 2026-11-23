@@ -309,6 +309,17 @@ function resolveOnAbortProvider(id: string, aborted: {v:boolean}): SearchProvide
     },
   };
 }
+// Arm that resolves immediately from a cache (non-async, already-filled promise).
+function cachedProvider(id: string, url: string): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(): Promise<ProviderEnvelope> {
+      const results: NormalizedResult[] = [{ url, title: id, snippet: "s", source: id }];
+      return Promise.resolve({ provider: id, results, answers: [], elapsedMs: 0 });
+    },
+  };
+}
 // Arm that never settles; only records whether the deadline reached its signal.
 function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   return {
@@ -400,7 +411,34 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(r6.metadata.sufficiency?.volume.successfulProviders === 1, "resolve-on-abort: not counted as an answered provider");
   assert(!r6.results.some((x) => x.url.includes("slow.com")), "resolve-on-abort: late results stay out of the fused pool");
 
-  // (g) The sufficiency gate moved to constructor opts and is live again.
+  // (g) Caller abort in the same tick as fan-out: an arm whose promise had
+  // already fulfilled keeps its envelope; only the pending arm is cancelled.
+  {
+    const ac = new AbortController();
+    const hangAbort = { v: false };
+    const eng7 = new RetroaererdEngine([
+      cachedProvider("cached", "https://cached.com/1"),
+      hangingProvider("hang", hangAbort),
+    ], { requestTimeoutMs: 2000 });
+    const sameTick = eng7.search({ query: "g", mode: "fast", signal: ac.signal });
+    ac.abort();
+    const r7 = await sameTick;
+    assert(r7.results.some((x) => x.url.includes("cached.com")), "same-tick abort: already-fulfilled arm keeps results");
+    assert(!r7.metadata.providersCancelled.includes("cached"), "same-tick abort: landed arm is not cancelled");
+    assert(r7.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm is cancelled");
+    assert(r7.metadata.sufficiency?.volume.successfulProviders === 1, "same-tick abort: landed arm still counts");
+
+    const ac2 = new AbortController();
+    const eng8 = new RetroaererdEngine([cachedProvider("cached", "https://cached.com/1")], { requestTimeoutMs: 2000 });
+    const sameTick2 = eng8.search({ query: "g", mode: "fast", signal: ac2.signal });
+    ac2.abort();
+    const r8 = await sameTick2;
+    assert(r8.results.length === 1, "same-tick abort, single arm: nothing was actually cancelled, result kept");
+    assert(r8.metadata.providersCancelled.length === 0, "same-tick abort, single arm: nobody reported cancelled");
+    assert(r8.metadata.providersFailed.length === 0, "same-tick abort, single arm: not a failure");
+  }
+
+  // (h) The sufficiency gate moved to constructor opts and is live again.
   const relaxed = await new RetroaererdEngine(
     [mockProvider("only", ["https://o.com/a"])],
     { gate: { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false } },
