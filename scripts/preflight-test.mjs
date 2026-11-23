@@ -346,7 +346,17 @@ function forwardKeepingTail(source, limit) {
 // keeps a pipe nobody reads from hanging the gate.
 async function exitAfterFlush(code) {
   const flushed = [process.stdout, process.stderr].map(
-    (stream) => new Promise((resolve) => stream.write("", resolve)),
+    (stream) =>
+      new Promise((resolve) => {
+        // A reader that already went away (piping into head) must not turn this
+        // exit into an uncaught EPIPE: treat the error as flushed.
+        stream.once("error", resolve);
+        try {
+          stream.write("", () => resolve());
+        } catch {
+          resolve();
+        }
+      }),
   );
   await Promise.race([Promise.all(flushed), new Promise((resolve) => setTimeout(resolve, 1000))]);
   process.exit(code);

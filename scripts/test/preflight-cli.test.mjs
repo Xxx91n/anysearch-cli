@@ -279,9 +279,9 @@ test("a red push gate names its own group", async () => {
   });
 });
 
-// The judgement needs a parser, not just a node_modules directory: a tree that
-// has the directory but no parser is still uninstalled as far as this run goes,
-// and reporting it as a broken judgment sends the operator to the wrong place.
+// Design: the guard asks for a parser, not for a node_modules directory — a tree
+// with the directory but no parser cannot answer either, and calling that a
+// broken judgment sends the operator to the wrong place.
 test("a full run without a resolvable parser says which command to run", async () => {
   await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
     rmSync(join(root, "node_modules", ".pnpm"), { recursive: true, force: true });
