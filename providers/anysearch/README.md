@@ -18,14 +18,14 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 认证
 
-- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；环境变量和凭据文件都没有 key 时才走匿名调用。
+- `ANYSEARCH_API_KEY`，走 `Authorization: Bearer`；环境变量和凭据文件都没有 key 时，请求就不带这个头。
 - 匿名过了配额，上游回的是「自动签发」提示体：HTTP 200、`isError:null`、没有结果体。适配器把它判成
   `free-quota-exhausted`（免费额度到顶），不是 `malformed`，也不是 `permanent-auth`。
 - **两条探针和产品现在读同一份凭据**（#418 / #506）：都走 `packages/store/src/credentials.ts` 的
   `resolveSearchCredentials`，环境变量优先，再读 `~/.ans/credentials.json`。key 只存在凭据文件里时，
-  探针也会带 `Authorization`，不会再静默变成匿名调用（#422 复现的就是这个）。
+  探针也会带 `Authorization`，不会再静默丢掉 key（#422 复现的就是这个）。
 - 输出里只用 `keySource: "env" | "user" | "none"` 说来源（`user` 就是用户凭据文件），key 的值不打印。
-  `--nokey` 是显式的匿名臂：跳过解析、不发 `Authorization`，env 和文件里都有 key 也一样。
+  `--nokey` 显式压掉 key：跳过解析、不发 `Authorization`，env 和文件里都有 key 也一样。
 - 解析出来的 key 是**显式**传进 `AnySearchProvider` 的（没有 key 传空串）。不能让适配器再回读
   `process.env`，否则探针的解析和适配器的兜底会再次分叉。
 - 凭据文件读坏或解析坏时，结果带一个不含密钥的 `credentialWarning`（只说路径和错误），而不是把它
@@ -88,6 +88,10 @@ ANYSEARCH_ENDPOINT=http://127.0.0.1:9/mcp node providers/anysearch/probe-anysear
 不含密钥。参数报错（flag 缺值、拼错、形状不对）只打 `schema` / `ok` / `stage` / `errorMessage`
 四个字段，没有 `protocolVersionRequested` / `protocolVersion` 那些——那一步还没跑任何请求。
 SSE 多帧那条路径（同一条流里夹着别的消息）现在没有自动覆盖，手跑成功只证明单帧。
+
+一个例外：`ANYSEARCH_ENDPOINT` 以 `/v1/search` 结尾时，适配器的 `normalizeEndpoint` 会把改写后的
+地址（含 host）打到 stderr。那条不是探针打的，探针也拦不到；要贴进 issue 的话，别用带 `/v1/search`
+尾巴的地址（见上面「## 端点」）。
 
 `providers/probe-credentials.mjs` 头上那段 `registerHooks` 是必要的：适配器源码里的相对 import 没写扩展名
 （`../contract`），store 的源码写的是 `.js`（`./ans-paths.js`，指到同目录的 `.ts`），tsc 和 tsx 都放行，

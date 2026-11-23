@@ -21,7 +21,7 @@
 // node cannot resolve. The alternative — writing extensions into the sources — needs
 // allowImportingTsExtensions in the tsconfigs that compile them, too wide a change for a
 // manual probe (decision #413: plain `node <file>`, no build, no tsx).
-import { mask, resolveProbeCredentials } from "../probe-credentials.mjs";
+import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { PROVIDER_FACTS } = await import("../../packages/retriever/src/providers/provider-facts.ts");
@@ -37,7 +37,7 @@ const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
 const NO_KEY = ARGS.includes("--nokey");
 
-// --nokey 是显式的匿名臂：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析。
+// --nokey 显式压掉 key：整段跳过解析，凭据文件坏了也不读。其余情况跟产品同一套解析。
 const credentials = resolveProbeCredentials("anysearch", { anonymous: NO_KEY });
 const KEY = credentials.apiKey;
 // 遮的是「这一跑真用的那个值」，外加环境变量里可能存在的同名值（`--nokey` 时 KEY 是空串，
@@ -68,7 +68,7 @@ if (FORCE_DEFAULT && (typeof DEFAULT_ENDPOINT !== "string" || DEFAULT_ENDPOINT.l
 }
 
 function scrub(s: string): string {
-  return mask(s, SECRETS).slice(0, 200);
+  return maskSecrets(s, SECRETS).slice(0, 200);
 }
 
 function hostOf(u: string): string {

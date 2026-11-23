@@ -35,6 +35,7 @@ const TAVILY = "providers/tavily/probe-tavily-domains.mjs";
 const SCRUBBED_ENV_PREFIX = /^(?:ANYSEARCH_|TAVILY_|EXA_|PROBE_|ANS_PROBE_)/;
 
 interface Recorded {
+  method: string;
   path: string;
   body: string;
   authorization?: string;
@@ -53,6 +54,7 @@ async function withStub(run: (base: string, requests: Recorded[]) => Promise<voi
     req.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
       requests.push({
+        method: req.method ?? "",
         path: req.url ?? "",
         body,
         ...(req.headers.authorization ? { authorization: req.headers.authorization } : {}),
@@ -174,23 +176,25 @@ test("anysearch raw：三档 keySource 和 Authorization 对得上", async () =>
     assert.equal(envOut["keySource"], "env");
     assert.equal(fromEnv.code, 0, "桩回的是结果形状：" + fromEnv.stdout + fromEnv.stderr);
     assertNoKey(fromEnv, "raw/env");
-    assert.equal(requests.at(-1)?.authorization, "Bearer " + KEY, "env 里的 key 必须上请求头");
+    assert.ok(
+      requests.slice(-3).every((r) => r.method === "POST" && r.authorization === "Bearer " + KEY),
+      "env 里的 key 必须上每一次请求头（MCP 三步都走 POST）",
+    );
 
     const fromFile = await runProbe(RAW, [], probeEnv(makeHome("raw-user", bindingsFile("anysearch")), { ANYSEARCH_ENDPOINT: endpoint }));
     const userOut = readJson(fromFile.stdout);
     assert.equal(userOut["keySource"], "user", "user 指用户凭据文件");
     assert.equal(fromFile.code, 0, "key 只在凭据文件里也要跑通：" + fromFile.stdout + fromFile.stderr);
     assertNoKey(fromFile, "raw/user");
-    assert.equal(
-      requests.at(-1)?.authorization,
-      "Bearer " + KEY,
-      "#422：key 只在凭据文件里时以前会静默跑成匿名",
+    assert.ok(
+      requests.slice(-3).every((r) => r.authorization === "Bearer " + KEY),
+      "#422：key 只在凭据文件里时以前会静默跑成不带 key 的一跑",
     );
 
     const none = await runProbe(RAW, [], probeEnv(makeHome("raw-none"), { ANYSEARCH_ENDPOINT: endpoint }));
     const noneOut = readJson(none.stdout);
     assert.equal(noneOut["keySource"], "none");
-    assert.equal(requests.at(-1)?.authorization, undefined, "没 key 就不发 Authorization");
+    assert.ok(requests.slice(-3).every((r) => r.authorization === undefined), "没 key 就不发 Authorization");
     assertNoKey(none, "raw/none");
   });
 });
@@ -202,8 +206,11 @@ test("anysearch raw：--nokey 压掉两处的 key，文件坏了带 credentialWa
     const both = makeHome("raw-nokey", bindingsFile("anysearch"));
     const noKey = await runProbe(RAW, ["--nokey"], probeEnv(both, { ANYSEARCH_ENDPOINT: endpoint, ANYSEARCH_API_KEY: KEY }));
     const noKeyOut = readJson(noKey.stdout);
-    assert.equal(noKeyOut["keySource"], "none", "--nokey 是显式匿名臂");
-    assert.equal(requests.at(-1)?.authorization, undefined, "--nokey 时即使 env 和文件里都有 key 也不发头");
+    assert.equal(noKeyOut["keySource"], "none", "--nokey 显式压掉 key");
+    assert.ok(
+      requests.every((r) => r.method === "POST" && r.authorization === undefined),
+      "--nokey 时即使 env 和文件里都有 key，每一次请求也不发头",
+    );
     assertNoKey(noKey, "raw/nokey");
 
     const broken = await runProbe(RAW, [], probeEnv(makeHome("raw-broken", "{ not json"), { ANYSEARCH_ENDPOINT: endpoint }));
@@ -241,28 +248,30 @@ test("anysearch provider：解析出的 key 显式传进适配器，输出 keySo
     assert.equal(envOut["results"], 1, "适配器必须真的拿到结果：" + fromEnv.stdout + fromEnv.stderr);
     assert.equal(fromEnv.code, 0, "exit 0 是「这条臂活着」");
     assertNoKey(fromEnv, "provider/env");
-    assert.equal(requests.at(-1)?.authorization, "Bearer " + KEY);
+    assert.ok(
+      requests.slice(-3).every((r) => r.method === "POST" && r.authorization === "Bearer " + KEY),
+      "适配器那条路也要带 key",
+    );
 
     const fromFile = await runProbe(PROVIDER, [], probeEnv(makeHome("prov-user", bindingsFile("anysearch")), { ANYSEARCH_ENDPOINT: endpoint }));
     const userOut = readJson(fromFile.stdout);
     assert.equal(userOut["keySource"], "user");
     assert.equal(fromFile.code, 0, "key 只存在凭据文件里也要活着：" + fromFile.stdout + fromFile.stderr);
     assertNoKey(fromFile, "provider/user");
-    assert.equal(
-      requests.at(-1)?.authorization,
-      "Bearer " + KEY,
+    assert.ok(
+      requests.slice(-3).every((r) => r.authorization === "Bearer " + KEY),
       "适配器不能回读 process.env 兜底：解析出的 key 要显式传进去",
     );
 
     const none = await runProbe(PROVIDER, [], probeEnv(makeHome("prov-none"), { ANYSEARCH_ENDPOINT: endpoint }));
     const noneOut = readJson(none.stdout);
     assert.equal(noneOut["keySource"], "none");
-    assert.equal(requests.at(-1)?.authorization, undefined);
+    assert.ok(requests.slice(-3).every((r) => r.authorization === undefined));
     assertNoKey(none, "provider/none");
   });
 });
 
-test("anysearch provider：--nokey 匿名，文件坏了带 credentialWarning", async () => {
+test("anysearch provider：--nokey 压掉 key，文件坏了带 credentialWarning", async () => {
   await withStub(async (base, requests) => {
     const endpoint = anySearchEndpoint(base);
 
@@ -270,7 +279,7 @@ test("anysearch provider：--nokey 匿名，文件坏了带 credentialWarning", 
     const noKey = await runProbe(PROVIDER, ["--nokey"], probeEnv(both, { ANYSEARCH_ENDPOINT: endpoint, ANYSEARCH_API_KEY: KEY }));
     const noKeyOut = readJson(noKey.stdout);
     assert.equal(noKeyOut["keySource"], "none");
-    assert.equal(requests.at(-1)?.authorization, undefined, "--nokey 时不发任何 Authorization");
+    assert.ok(requests.every((r) => r.method === "POST" && r.authorization === undefined), "--nokey 时每一次请求都不发 Authorization");
     assertNoKey(noKey, "provider/nokey");
 
     const broken = await runProbe(PROVIDER, [], probeEnv(makeHome("prov-broken", "{ not json"), { ANYSEARCH_ENDPOINT: endpoint }));
@@ -311,6 +320,7 @@ test("tavily：三档 keySource，凭据文件里的 key 也会上请求头", as
     assert.equal(fromEnv.code, 0, "B 臂证成了就退 0：" + fromEnv.stdout + fromEnv.stderr);
     assert.ok(requests.length >= 5, "A/B/C 三臂共 5 次调用");
     for (const request of requests) {
+      assert.equal(request.method, "POST", "Tavily 的搜索调用都是 POST");
       assert.equal(request.authorization, "Bearer " + KEY, "每一次调用都要带 key");
       assert.ok(!request.path.startsWith("http"), "地址由 PROBE_TAVILY_ENDPOINT 决定");
     }
@@ -327,6 +337,7 @@ test("tavily：三档 keySource，凭据文件里的 key 也会上请求头", as
     assert.equal(fromFile.code, 0, "key 只存在凭据文件里时以前会整轮 SKIPPED 退 2：" + fromFile.stdout + fromFile.stderr);
     assert.ok(requests.length >= 5, "凭据文件那一跑也要真的调用");
     for (const request of requests) {
+      assert.equal(request.method, "POST");
       assert.equal(request.authorization, "Bearer " + KEY, "凭据文件里的 key 也要上每一次调用（#422 要钉的就是这个）");
     }
     assertNoKey(fromFile, "tavily/user");

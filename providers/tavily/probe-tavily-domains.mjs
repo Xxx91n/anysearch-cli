@@ -11,7 +11,7 @@
 // https://api.tavily.com and no endpoint value is ever printed.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { mask, resolveProbeCredentials } from "../probe-credentials.mjs";
+import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 const NL = String.fromCharCode(10);
 const OUT_DIR = process.env.PROBE_TAVILY_OUT_DIR || join(process.cwd(), ".scratch", "tavily-probe"); // per-run file names, so a rerun never overwrites an earlier ledger
 // 产品同一套解析：环境变量优先，再读凭据文件；文件坏了会带 credentialWarning 出来，
@@ -22,7 +22,7 @@ const KEY = credentials.apiKey;
 // Design: 探针自己的 endpoint 用 PROBE_TAVILY_ENDPOINT 覆盖，默认仍是公开地址 —— anysearch
 // 的 ANYSEARCH_ENDPOINT 是同一个先例，适配器那边不开这个口子（#497 记的决定）。值不打印。
 const BASE = (process.env.PROBE_TAVILY_ENDPOINT || "https://api.tavily.com").replace(/\/+$/, "");
-const scrubText = (s) => mask(String(s), [[KEY, "<key>"], [BASE, "<endpoint>"]]);
+const scrubText = (s) => maskSecrets(String(s), [[KEY, "<key>"], [BASE, "<endpoint>"]]);
 // A, B and D share this query and allowlist: A sends no mode, B sends restrict and
 // prefer, D switches to the /research endpoint (no mode field there at all).
 const QUERY = "tokio JoinSet rust spawn structured concurrency";

@@ -12,7 +12,7 @@
 // arguments; 3 = non-results text shape (the discriminating case this probe exists for).
 
 import { readFileSync, writeSync } from "node:fs";
-import { mask, resolveProbeCredentials } from "../probe-credentials.mjs";
+import { maskSecrets, resolveProbeCredentials } from "../probe-credentials.mjs";
 
 const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
 const SCHEMA = "anysearch/mcp-raw-probe@2";
@@ -110,11 +110,7 @@ const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
 // output gets pasted into issues. The resolved key is masked, not just the env one: with a
 // key that lives only in the credential file there is no env value to match.
 function sanitize(s: string): string {
-  // Upstream can hand back a credential we never configured — the anonymous arm gets a key
-  // issued inside the reply body — so the shapes go too, prefixes and colon forms included.
-  return mask(s, SECRETS)
-    .replace(/([A-Za-z0-9_-]*(?:api[_-]?key|password)["']?\s*[:=]\s*)["']?[^\s&"',}]+["']?/gi, "$1<key>")
-    .replace(/\bBearer\s+[^\s"']+/gi, "Bearer <key>");
+  return maskSecrets(s, SECRETS);
 }
 
 async function post(body: unknown, sessionId: string | null, protocolVersion: string | null) {

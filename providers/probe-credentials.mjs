@@ -1,4 +1,4 @@
-// 三条手工探针共用的凭据解析：一份 loader 钩子，一个 store 调用，外加一个 `mask`，
+// 三条手工探针共用的凭据解析：一份 loader 钩子，一个 store 调用，外加一个 `maskSecrets`，
 // 谁也不许再抄一遍 —— 解析逻辑在 store，遮 key 的写法也只该有一份。
 //
 // Design: 三条探针共享这一份 loader 钩子 + store import，而不是各复制一份，也不往源码里写
@@ -46,7 +46,7 @@ const { resolveSearchCredentials, SEARCH_PROVIDER_IDS } = await import("../packa
  * 所以即使环境变量和凭据文件里都有 key，这一跑也报 none。
  */
 export function resolveProbeCredentials(provider, { anonymous = false } = {}) {
-  // 名字写错就静默拿到「没 key」、探针白白跑成匿名（#422 就是这种静默），所以这里先拦。
+  // 名字写错就静默拿到「没 key」、探针白白跑成不带 key 的一跑（#422 就是这种静默），所以这里先拦。
   // providers/ 不在 pnpm -r check 里，类型检查兜不住这个字面量。
   if (!SEARCH_PROVIDER_IDS.includes(provider)) {
     throw new Error("unknown search provider " + JSON.stringify(provider) + "; known: " + SEARCH_PROVIDER_IDS.join(", "));
@@ -66,10 +66,23 @@ export function resolveProbeCredentials(provider, { anonymous = false } = {}) {
 }
 
 /** 把给定值从一段文字里遮掉。空值不参与，否则会在每个字符之间都切一刀。 */
-export function mask(text, entries) {
+function mask(text, entries) {
   let out = String(text);
   for (const [value, placeholder] of entries) {
     if (typeof value === "string" && value.length > 0) out = out.split(value).join(placeholder);
   }
   return out;
+}
+
+/**
+ * 探针输出的唯一遮法：先遮「这一跑真用的那几个值」，再遮凭据形状。
+ *
+ * 形状那两条不是多余的：上游会给一把我们从没配过的 key（免费额度那一跑的回包里直接签发），
+ * 也可能在错误正文里回显 `Bearer ...`、`api_key=...`。raw 和 provider 两条探针的输出都按
+ * README 贴进 issue，所以口径必须是同一份。
+ */
+export function maskSecrets(text, entries) {
+  return mask(text, entries)
+    .replace(/([A-Za-z0-9_-]*(?:api[_-]?key|password)["']?\s*[:=]\s*)["']?[^\s&"',}]+["']?/gi, "$1<key>")
+    .replace(/\bBearer\s+[^\s"']+/gi, "Bearer <key>");
 }
