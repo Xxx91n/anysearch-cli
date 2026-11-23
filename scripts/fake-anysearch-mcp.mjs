@@ -10,8 +10,9 @@
 //
 // It answers the handshake and one `tools/call` with two out-of-domain URLs, so
 // the CLI's allowlist gate throws both away and the run is a refusal. Every
-// request gets a reply — the engine has no per-arm timeout, so an unanswered
-// request would park the lane until the workflow's own bound.
+// request gets a reply: the engine's 4s request-level deadline would turn a
+// silent endpoint into a cancelled-arm run, which is a different leg than the
+// one this stub exists to drive.
 
 import { createServer } from "node:http";
 

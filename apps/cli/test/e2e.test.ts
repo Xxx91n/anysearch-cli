@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { providerErrorHint } from "@anysearch-cli/kernel";
+import { startFakeAnySearch } from "./helpers/fake-anysearch";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -90,40 +91,6 @@ async function runSplit(args: string[], env?: NodeJS.ProcessEnv): Promise<{ code
     p.on("error", reject);
     setTimeout(() => { p.kill(); reject(new Error("timeout " + args[0])); }, 15000);
   });
-}
-
-// A local fake AnySearch MCP endpoint: handshake + one tools/call, no network.
-// Distinct from install-smoke's stub, which must live in its own process —
-// install-smoke drives the CLI with spawnSync, and a blocking parent cannot
-// accept the request. Here the CLI is spawned asynchronously, so an in-process
-// server keeps answering.
-async function fakeAnySearch(markdown: string): Promise<{ endpoint: string; close: () => Promise<void> }> {
-  const http = await import("node:http");
-  const server = http.createServer(async (req, res) => {
-    let body = "";
-    for await (const chunk of req) body += chunk;
-    let parsed: { id?: number; method?: string } = {};
-    try { parsed = JSON.parse(body); } catch { /* notification framing */ }
-    const reply = (result: unknown) => {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result }));
-    };
-    if (parsed.method === "initialize") {
-      return reply({ protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "stub", version: "1" } });
-    }
-    if (parsed.method === "notifications/initialized") {
-      res.writeHead(202);
-      return res.end();
-    }
-    if (parsed.method === "tools/call") return reply({ content: [{ type: "text", text: markdown }] });
-    return reply({});
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const { port } = server.address() as { port: number };
-  return {
-    endpoint: "http://127.0.0.1:" + port + "/mcp",
-    close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),
-  };
 }
 
 async function t(name: string, fn: () => Promise<void>) {
@@ -501,7 +468,7 @@ async function t(name: string, fn: () => Promise<void>) {
     const fs = await import("node:fs");
     const os = await import("node:os");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr2-"));
-    const stub = await fakeAnySearch([
+    const stub = await startFakeAnySearch([
       "## Search Results (2 results, 12ms)",
       "",
       "### 1. Out of domain one",
@@ -512,8 +479,7 @@ async function t(name: string, fn: () => Promise<void>) {
       "- **URL**: https://outside.example/two",
       "- second out-of-domain arrival",
       "",
-    ].join("
-"));
+    ].join("\n"));
     try {
       fs.writeFileSync(path.join(dir, "partial.toml"), [
         'name = "partial"',
@@ -523,8 +489,7 @@ async function t(name: string, fn: () => Promise<void>) {
         "[rag]",
         'adapter = "none"',
         "",
-      ].join("
-"), "utf8");
+      ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
       env.EXA_API_KEY = UNUSABLE_EXA_KEY;
       env.ANS_PROVIDERS = "";
@@ -544,8 +509,7 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.match(r.out, /Providers queried: anysearch/);
       assert.ok(!r.out.includes("Providers failed:"), "a refusal is not a failure; got: " + r.out.slice(-400));
       assert.ok(
-        r.out.split("
-").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
+        r.out.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
         "absence line on the abstain branch; got: " + r.out.slice(-400),
       );
     } finally {
@@ -572,8 +536,7 @@ async function t(name: string, fn: () => Promise<void>) {
         "[rag]",
         'adapter = "none"',
         "",
-      ].join("
-"), "utf8");
+      ].join("\n"), "utf8");
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         ANS_DOMAINS_DIR: dir,
@@ -589,8 +552,7 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.equal(r.code, 1, r.out);
       assert.match(r.out, /^Providers failed: anysearch/m);
       assert.ok(
-        r.out.split("
-").includes(hintLine),
+        r.out.split("\n").includes(hintLine),
         "the failed arm's remedy; got " + r.out.slice(-400),
       );
       assert.match(r.out, /Results: 0/);

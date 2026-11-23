@@ -33,9 +33,11 @@
 // the domain gate itself blocked. They are separate outcomes, not one contract
 // replacing another.
 //
-// Every CLI call goes through sh(), which carries a timeout: the engine has no
-// per-arm timeout, so an endpoint that accepts a request and never answers would
-// otherwise park this lane until the workflow's bound.
+// Every CLI call goes through sh(), which carries a 30s bound. The engine
+// already stops a search at its own 4s request-level deadline, so an arm that
+// never answers resolves as cancelled arms instead of parking the lane; the
+// bound here catches what hangs outside that deadline (a wedged child, a slow
+// console), and a timeout is reported as a named failure.
 //
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.

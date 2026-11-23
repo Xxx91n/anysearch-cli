@@ -203,7 +203,7 @@ The server follows the MCP rule that an execution failure is an
 | Zero results, and the failure rule below holds (`failed`) | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
 | Successful search / research with results (`answer`) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
 | Search returned zero hits, at least one provider answered, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`; no `abstain` marker |
-| Some arms were cut off, no arm answered, and not every queried arm failed (`cancelled`) | absent (success) | `outcome`, `interrupted: true`, `providersQueried`, `providersCancelled`, `credentialSources` |
+| Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`; `interrupted: true` when the caller aborted the call, never for an arm the engine's deadline cut off |
 | Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `credentialSources` |
 | Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
@@ -240,7 +240,7 @@ Rules behind the table:
   then cut off cannot be read as an arm that never ran. Zero queried providers
   is not an outage, and a cancelled provider never counts as an answered one.
   A cancelled provider never counts as an answered one, so a search with any
-  cancelled arm cannot abstain: if nothing answered, it is `cancelled`, or
+  cancelled arm cannot abstain: if nothing came back, it is `cancelled`, or
   `failed` when every queried arm failed.
   `search_web` reports the pair for the one fanout it ran;
   `research_web` reports it for its last completed round and never unions

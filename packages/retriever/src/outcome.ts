@@ -58,6 +58,12 @@ function answeredProviders(e: SearchOutcomeEvidence): string[] {
 export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
   if (!e.domainActive || e.resultCount > 0 || e.answerCount > 0) return false;
   if (e.providersCancelled.length > 0) return false;
+  // The earlier outcomes win here too, so the predicate and the classifier
+  // answer the same thing on every input, reachable or not: an all-failed
+  // search is an outage, never a refusal.
+  if (e.providersQueried.length > 0 && e.providersQueried.every((id) => e.providersFailed.includes(id))) {
+    return false;
+  }
   if (e.gateDropped > 0) return true;
   return answeredProviders(e).length > 0 && e.providersFailed.length === 0;
 }

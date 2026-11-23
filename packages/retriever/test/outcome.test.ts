@@ -85,6 +85,15 @@ row(
   "abstain",
 );
 
+// 6b. The unroutable combination the tables above cannot produce: gate counters
+//     claiming a drop while every queried arm failed. The verdict is still the
+//     outage, and the predicate agrees — the classifier's order is the rule.
+row(
+  "all arms failed with a stale drop counter => failed",
+  { domainActive: true, gateDropped: 2, providersFailed: ["anysearch"] },
+  "failed",
+);
+
 // 7. The two near-misses that used to be reported as abstain.
 row(
   "cold domain, an arm failed => empty, not abstain and not failed",
@@ -109,6 +118,7 @@ const abstainCases: Array<[string, Partial<SearchOutcomeEvidence>, boolean]> = [
   ["a result survived", { domainActive: true, resultCount: 1, gateDropped: 1 }, false],
   ["provider answer", { domainActive: true, answerCount: 1 }, false],
   ["no drop and a failure", { domainActive: true, providersQueried: ["exa", "anysearch"], providersFailed: ["exa"] }, false],
+  ["every arm failed", { domainActive: true, gateDropped: 2, providersFailed: ["anysearch"] }, false],
 ];
 for (const [label, e, want] of abstainCases) {
   const got = shouldAbstain(evidence(e));

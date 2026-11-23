@@ -266,7 +266,7 @@ export async function runSearch(args: string[]): Promise<number> {
         printProviderFailureHints(envelope.metadata);
       }
       // 这条分支不打 cancelled：拒答本身就要求没有臂被掐断（有一条被掐，
-      // 「这个域里没有」就是超结论），所以这里的 cancelled 恒为空表。
+      // 再说「这个域里没有」就说得太满），所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
       return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });

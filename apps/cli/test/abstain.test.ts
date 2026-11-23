@@ -9,8 +9,6 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +23,7 @@ import {
   describeCredentialSource,
   describeUnconfiguredSource,
 } from "../src/commands/search-abstain";
+import { startFakeAnySearch } from "./helpers/fake-anysearch";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -173,29 +172,7 @@ async function main() {
     console.log("SKIP stub arm: dist absent (run pnpm build)");
   } else {
     const d = mkdtempSync(join(tmpdir(), "ans-cold-domain-"));
-    const server = createServer(async (req, res) => {
-      let body = "";
-      for await (const chunk of req) body += chunk;
-      let parsed: { id?: number; method?: string } = {};
-      try { parsed = JSON.parse(body); } catch { /* notification framing */ }
-      const reply = (result: unknown) => {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result }));
-      };
-      if (parsed.method === "initialize") {
-        return reply({ protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "stub", version: "1" } });
-      }
-      if (parsed.method === "notifications/initialized") {
-        res.writeHead(202);
-        return res.end();
-      }
-      if (parsed.method === "tools/call") {
-        return reply({ content: [{ type: "text", text: "## Search Results (0 results, 2ms)\n" }] });
-      }
-      return reply({});
-    });
-    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-    const port = (server.address() as AddressInfo).port;
+    const stub = await startFakeAnySearch("## Search Results (0 results, 2ms)\n");
     try {
       writeFileSync(join(d, "cold.toml"), [
         'name = "cold"', 'description = "r61 abstain fixture"', '[settings]', 'language = "TypeScript"', 'depth = "docs"', '[skills]', 'active = ["search"]', '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]', '[rag]', 'adapter = "none"',
@@ -205,7 +182,7 @@ async function main() {
         ANS_DOMAIN: "cold",
         ANS_DOMAINS_DIR: d,
         ANS_DB_PATH: join(d, "anysearch.db"),
-        ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/mcp",
+        ANYSEARCH_ENDPOINT: stub.endpoint,
         ANS_ALLOW_ENV_OVERRIDE: "0",
       };
       const run = (extra: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
@@ -220,8 +197,7 @@ async function main() {
       const strict = await run(["--fail-on-abstain"]);
       assert(strict.code === 3, "stub abstain --fail-on-abstain exit 3 (got " + strict.code + ")");
     } finally {
-      server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
+      await stub.close();
       rmSync(d, { recursive: true, force: true });
     }
   }
