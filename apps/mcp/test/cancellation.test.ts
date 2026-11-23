@@ -7,6 +7,8 @@
 //     session auto-index write happens afterwards.
 //   - stdio e2e: `notifications/cancelled` on the SDK request signal reaches the
 //     same seam through a real stdio transport.
+//   - Handler seam: an arm the caller cut off is named in providersCancelled,
+//     whether it rejects or resolves late with an envelope (#475, #481).
 //
 // Test setup: real buildServer()/createHttpApp() over a real RetroaererdEngine with a
 // mock provider (offline, no LLM, no network). No test framework (repo
@@ -126,6 +128,20 @@ function makeComposition() {
   } as unknown as CompositionResult;
 
   return { comp, signals, anchors, saves, started };
+}
+
+// Minimal real-engine composition for the handler-level cancellation blocks:
+// one mock arm, no store writes, no resume anchors.
+function makeHandlerComposition(provider: SearchProvider, sessionId: string): CompositionResult {
+  return {
+    retriever: new RetroaererdEngine([provider]),
+    store: {
+      createSession: async (d: string) => ({ id: sessionId, domain: d, createdAt: "" }),
+      saveResults: async () => {},
+    } as unknown as SessionStore,
+    observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
+    providerBuildErrors: {},
+  } as unknown as CompositionResult;
 }
 
 async function main() {
@@ -248,15 +264,7 @@ async function main() {
         });
       },
     };
-    const eng = {
-      retriever: new RetroaererdEngine([provider]),
-      store: {
-        createSession: async (d: string) => ({ id: "cancel-4", domain: d, createdAt: "" }),
-        saveResults: async () => {},
-      } as unknown as SessionStore,
-      observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
-      providerBuildErrors: {},
-    } as unknown as CompositionResult;
+    const eng = makeHandlerComposition(provider, "cancel-4");
 
     const caller = new AbortController();
     caller.abort("caller went away");
@@ -298,12 +306,12 @@ async function main() {
 
   // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----
   {
-    // Same caller abort as 4, but the adapter answers a cancel with a late
-    // envelope (results included) instead of rejecting. Without the engine's
+    // Same caller abort as 4, but the provider answers a cancel with a late
+    // envelope (one result included) instead of rejecting. Without the engine's
     // abort mark in the settle handlers this arm is recorded as fulfilled: the
-    // call reads as "one arm answered, zero results" and providersCancelled
-    // stays empty, so "cancelled" would depend on how each adapter reacts to
-    // its signal.
+    // call reads as "one arm answered", the late result reaches the pool, and
+    // providersCancelled stays empty — so "cancelled" would depend on how each
+    // provider reacts to its signal.
     let startedResolve: () => void = () => { };
     const started = new Promise<void>((r) => { startedResolve = r; });
     const provider: SearchProvider = {
@@ -323,15 +331,7 @@ async function main() {
         });
       },
     };
-    const eng = {
-      retriever: new RetroaererdEngine([provider]),
-      store: {
-        createSession: async (d: string) => ({ id: "cancel-5", domain: d, createdAt: "" }),
-        saveResults: async () => {},
-      } as unknown as SessionStore,
-      observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
-      providerBuildErrors: {},
-    } as unknown as CompositionResult;
+    const eng = makeHandlerComposition(provider, "cancel-5");
 
     const caller = new AbortController();
     const pending = captureHandlers(eng).search_web({ query: "late" }, { mcpReq: { signal: caller.signal } });
