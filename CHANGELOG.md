@@ -5,7 +5,7 @@
 ### Fixed
 
 - **`ans doctor --live` 补上 `free-quota-exhausted` 的中文**：以前这个类让 `FAULT_TEXT` 缺 key、`tsc` 直接报错。现在说「免费额度用尽（等等再试，或给这家配个 key）」，和「额度用尽」（key 没问题、套餐用完）分开说，因为补救办法不一样。
-- **`probeState` 改成按类全填的状态表**：以前是 if-chain 加兜底，新类会静默算「未检查」（退出码 0）。现在 `free-quota-exhausted` 和 `quota-exhausted` 一样算失败，传输类故障仍算未检查；漏填新类会编译失败。
+- **`probeState` 改成按类全填的状态表**：以前是 if-chain 加兜底，新类会静默算「未检查」（退出码 0）。现在 `free-quota-exhausted` 和 `quota-exhausted` 一样算失败（`ans doctor --live` 的退出码因此从 0 变 1；默认离线 doctor 和仓库脚本里的 doctor 调用不受影响），传输类故障仍算未检查；漏填或填错新类都会编译失败。
 
 ### Changed
 

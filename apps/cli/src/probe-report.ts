@@ -10,10 +10,7 @@ import type {
 } from "@anysearch-cli/retriever/providers";
 import type { DiagState } from "./diagnostics";
 
-// Design: FAULT_TEXT is a total Record over the fault class set on purpose — a new
-// error class must break `tsc` here, not reach `ans doctor --live` as a raw class
-// tag (#480). If a class ever needs no sentence, widen the value to
-// `string | undefined` (the kernel's PROVIDER_ERROR_HINTS shape), never `Partial`.
+// Design: 这张表按错误类全填 —— 新类漏了 tsc 就红，不会在 `ans doctor --live` 里露出原始类名。
 const FAULT_TEXT: Record<ProbeFaultClass, string> = {
   "permanent-auth": "上游不认这把 key",
   "quota-exhausted": "额度用尽",
@@ -34,12 +31,10 @@ const UNDETECTABLE_TEXT: Record<UndetectableClass, string> = {
  * 四种状态里挑一个。只有「key 确实被拒」判失败；额度用尽和入口变了也是要修的真问题，
  * 同样算失败；抽风、连不上、认不出来只能算未检查 —— 上游抽风不等于 key 坏了。
  *
- * Design: the mapping is a total Record, not an if-chain with a catch-all, so a
- * new fault class has to state its diagnosis instead of silently becoming
- * unchecked (#480). `free-quota-exhausted` is a real wall to clear (wait or add a
- * key), so it sits with `quota-exhausted`, not with the transport failures.
+ * Design: 状态也按类全填，类型只给「失败 / 未检查」两个值 —— 新类要么真问题、要么
+ * 传输故障，填错或漏填都编译不过；免 key 额度墙是要修的真问题，和额度用尽同桶。
  */
-const FAULT_STATE: Record<ProbeFaultClass, DiagState> = {
+const FAULT_STATE: Record<ProbeFaultClass, "failed" | "unchecked"> = {
   "permanent-auth": "failed",
   "quota-exhausted": "failed",
   "free-quota-exhausted": "failed",
