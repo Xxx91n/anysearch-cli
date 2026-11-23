@@ -4,8 +4,7 @@
 // SqliteSessionStore. A dropped store, or a session id that never gets
 // registered, fails here even though the kernel-level assertions stay green.
 //
-// Deliberately NOT imported: ../src/commands/chat (it pulls in the kernel, the
-// engine and process-level I/O this helper does not need).
+// Deliberately NOT imported: ../src/commands/chat — see the why in chat-memory.ts.
 // The runtime side — injection reaching the model, restart recall — is proven
 // in packages/kernel/test/pi-runtime.test.ts.
 //

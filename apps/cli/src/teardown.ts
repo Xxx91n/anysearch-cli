@@ -7,7 +7,7 @@
 // opened through the tracked opener (packages/store/src/db.ts) register there,
 // and the CLI exit path must close them too.
 //
-// This module stays the CLI's import seam (index.ts + test/teardown.test.ts):
-// nothing but that one re-export, and no other import, so it stays trivially
-// loadable wherever the CLI wiring runs.
+// This module stays the CLI's import seam (index.ts + test/teardown.test.ts): one
+// re-export, nothing else — anything added here becomes a dependency of every CLI
+// entry point that imports the seam.
 export { registerTeardown, runTeardown, unrefPendingHandles } from "@anysearch-cli/store";

@@ -69,8 +69,8 @@ export interface ToolPort {
 // decision 4C: mirrors the domain sections the kernel consumes — the five
 // whole-section replacements (prompts/skills/sources/rag/hooks) plus budget and
 // compaction; settings, base and entityAliases stay store-side. sources declares
-// only enabled/weights: urlAllowlist, urlDenylist and vertical are read through
-// casts (pi-runtime, composition), not through this type.
+// only enabled/weights: urlAllowlist and urlDenylist are read through a cast in
+// pi-runtime, while vertical is read off DomainSchema, which declares it.
 export interface DomainConfigPort {
   // optional per-provider weight Record (user preference overlay).
   sources: { enabled: string[]; weights?: Record<string, number> };

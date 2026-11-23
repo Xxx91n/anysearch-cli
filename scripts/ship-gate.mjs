@@ -230,7 +230,7 @@ function stepStaticAssertions() {
   if (!kernelExports["."]) fail("packages/kernel missing top-level export");
 
   // 1c. tool registry barrel must register all five tools (search_web / research_web /
-  // recall_memory / query_knowledge / ans_chat — only the last one carries the ans_ prefix)
+  // recall_memory / query_knowledge / ans_chat)
   const toolsIndex = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/index.ts"),
     "utf8"
   );

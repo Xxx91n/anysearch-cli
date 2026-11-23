@@ -12,9 +12,10 @@
 // and the audit event records client_id = "mcp_unknown" (still safe).
 // - Fallback never set (stdio transport bypasses the HTTP shim): same fallback.
 //
-// session_id is intentionally NOT stashed here - this server runs stateless and
-// never issues a Mcp-Session-Id (the 2026-07-28 revision removed the header
-// outright, SEP-2567). Cross-call state is
+// session_id is intentionally NOT stashed here - neither transport mints an
+// Mcp-Session-Id (HTTP builds a fresh stateless server per POST; stdio is one
+// long-lived server), and the 2026-07-28 revision removed the header outright
+// (SEP-2567). Cross-call state is
 // explicit instead: `ans_chat` threads a server-minted handle as an ordinary tool
 // argument (#132); that handle is not a transport session and never becomes a
 // request identity here.

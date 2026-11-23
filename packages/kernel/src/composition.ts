@@ -34,8 +34,9 @@ import {
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — a provider whose constructor throws is skipped, not crashed.
-// Only exa throws, and only for a missing key; tavily builds a keyless client and
-// anysearch goes anonymous, so their missing key surfaces at call time instead.
+// Only exa throws, and on a missing OR unusable key (a header-invalid value does it
+// too); tavily builds a keyless client and anysearch goes anonymous, so their missing
+// key surfaces at call time instead.
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
@@ -423,9 +424,10 @@ export function createEngine(
   // the domain schema loads. The lazy-mtime reloader refreshes the schema when
   // the TOML changes; resolvePolicyFromSchema runs on every search() call so
   // TOML edits take effect without restart, and ANS_URL_ALLOWLIST appends hosts
-  // only when ANS_ALLOW_ENV_OVERRIDE=1 — otherwise the list is dropped here with
-  // no warning (the warning prints in pi-runtime and the plugin server). Deny
-  // comes from the TOML only. No cached policy snapshot lives inside the retriever.
+  // only when ANS_ALLOW_ENV_OVERRIDE is 1/true — 0/false/empty drops the list here
+  // with no warning (the warning prints in pi-runtime and the plugin server), and
+  // any other value makes the policy resolver throw. Deny comes from the TOML only.
+  // No cached policy snapshot lives inside the retriever.
   let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
   // repo-level vertical default — lazy resolver over the
   // same liveSchema the urlPolicy reloader maintains (TOML edits take effect

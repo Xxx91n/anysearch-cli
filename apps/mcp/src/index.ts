@@ -59,8 +59,8 @@ async function main() {
     // stdio: log to stderr only (stdout is protocol channel)
     process.stderr.write("anysearch MCP server: stdio transport ready\n");
   } else {
-    // #112: HTTP is stateless per request, but the engine is per CONNECTION
-    // (this process). Build it ONCE here and hand it to every request; before
+    // #112: HTTP is stateless per request, so the engine is built ONCE here and
+    // shared by every request in this process; before
     // this change each request called createEngine() and opened two fresh
     // better-sqlite3 handles, so connections grew with request count.
     // This process serves many callers, so its cwd is not their project (S3).

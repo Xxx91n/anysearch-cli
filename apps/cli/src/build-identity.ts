@@ -22,7 +22,7 @@ export type InstallSource =
   | "checkout"
   /** 装出来的包（npm i -g / npx 之类）。 */
   | "package"
-  /** 说不清：包根读不出来（判断目录时出错）。 */
+  /** 说不清：往上找包根时判断出错（目录读不了）。 */
   | "unknown";
 
 /** 一次版本的三句话：标识、版本号、commit。缺的部分留 null，不补。 */

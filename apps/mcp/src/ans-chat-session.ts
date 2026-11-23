@@ -49,10 +49,11 @@ export interface AnsChatSessionWiring {
   ledger?: BudgetLedgerPort;
 }
 
-// The handle rule is enforced here, not on the wire (tool-schemas.ts leaves
+// The chat handle rule is enforced here, not on the wire (tool-schemas.ts leaves
 // sessionId unconstrained so a malformed handle fails open): visible ASCII,
 // 1..128 chars, and the value becomes a SQLite key, so control characters and
-// unbounded lengths are refused.
+// unbounded lengths are refused. Consolidation is the exception — there the same
+// field names a scope and a bad value fails CLOSED (ConsolidateScopeError).
 const HANDLE_MAX_CHARS = 128;
 const HANDLE_PATTERN = /^[\x21-\x7E]+$/;
 
