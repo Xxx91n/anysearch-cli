@@ -462,7 +462,48 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     assert(r9.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm still cancelled");
   }
 
-  // (h) The sufficiency gate moved to constructor opts and is live again.
+  // (i) A fan-out construction throw releases the per-call reservation instead
+  // of pinning the session's call cap.
+  {
+    let settled: [number, number] | null = null;
+    const ledger = {
+      reserveCalls: (_sessionId: string, _count: number) => true,
+      settleCalls: (_sessionId: string, reserved: number, actual: number) => { settled = [reserved, actual]; },
+      reserveTokens: () => true,
+      settleTokens: () => { },
+      reserveUsd: () => true,
+      settleUsd: () => { },
+    };
+    let reads = 0;
+    const throwingArm: SearchProvider = {
+      id: "throw-in-request",
+      modes: ["fast"],
+      get domainFilterSupported() {
+        reads += 1;
+        if (reads === 3) throw new Error("boom in providerRequest");
+        return false;
+      },
+      search(): Promise<ProviderEnvelope> {
+        throw new Error("provider must not be called");
+      },
+    };
+    const eng9 = new RetroaererdEngine([throwingArm], {
+      ledger,
+      sessionId: "construction-throw",
+      urlPolicy: () => ({ allow: ["example.com"], deny: [], policyVersion: "v1" }),
+      requestTimeoutMs: 2000,
+    });
+    let thrown = "";
+    try {
+      await eng9.search({ query: "g", mode: "fast" });
+    } catch (e) {
+      thrown = String(e instanceof Error ? e.message : e);
+    }
+    assert(thrown.includes("boom in providerRequest"), "construction throw: surfaces as a search error");
+    assert(settled !== null && settled![0] === 1 && settled![1] === 0, "construction throw: reservation released");
+  }
+
+  // (j) The sufficiency gate moved to constructor opts and is live again.
   const relaxed = await new RetroaererdEngine(
     [mockProvider("only", ["https://o.com/a"])],
     { gate: { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false } },

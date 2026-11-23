@@ -915,10 +915,14 @@ function stepStaticAssertions() {
 function stepDocClaims() {
   report("info", "step 1c/9: engine request-deadline assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
-  if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(eng)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
-  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*callerAborted[^\]]*\]\)/.test(eng)) fail("engine fanout race no longer waits on the deadline and the caller abort");
-  if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(eng)) fail("engine.ts lost the deadline abort loop");
-  if ((eng.match(/abortedArms\.has\(i\)/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
+  // Strip comment lines before matching, so prose can never satisfy a guard.
+  const code = eng.replace(/^\s*\/\/[^\n]*$/gm, "");
+  if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(code)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
+  if (!/Promise\.race\(\[[^\]]*deadline[^\]]*callerAborted[^\]]*\]\)/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
+  if (!/for \(let i = 0; i < controllers\.length; i\+\+\) abortArm\(i\)/.test(code)) fail("engine.ts lost the deadline abort loop");
+  if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
+  const limits = fs.readFileSync(path.join(ROOT, "docs", "limitations.md"), "utf8");
+  if (!/request-level deadline \(4s/.test(limits)) fail("docs/limitations.md no longer states the 4s request deadline");
   report("pass", "engine request deadline wired");
 }
 

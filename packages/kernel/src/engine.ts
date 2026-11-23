@@ -2,7 +2,7 @@
 // decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
 // atomcode research (paperfoot source-level): JoinSet completion-order collect,
 // request-level deadline + abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
-// JS adaptation: Promise.allSettled + AbortController; the deadline clock starts when the request fans out.
+// JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
@@ -30,11 +30,10 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one request-level 4s deadline replaces "enough results + 1.5s grace"
-// — the old clock started after the fastest arm filled the quota, so the
-// slowest arm lost by ~1.5s routinely (#461 baseline), and a short result pool
-// never armed the timer at all. The constructor knob exists only so tests can
-// shrink it; there is deliberately no second per-search config object.
+// Design: one request-level 4s deadline instead of "enough results + 1.5s grace".
+// The old clock started only after the result pool filled, so the slowest arm
+// routinely lost, and a short pool never armed it. `requestTimeoutMs` exists so
+// tests can shrink the deadline.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 
 // Normalize URL for dedup: strip scheme + leading www + tracking params.
@@ -393,10 +392,9 @@ export class RetroaererdEngine {
       }
     }
 
-    // #478: per-provider AbortController. Two things abort an arm: the caller's
-    // signal and the request deadline below. Both schedule the arm's mark in
-    // `abortedArms` and then abort it; the settle handlers consult that set,
-    // so the ordering — not promise microtask luck — decides what landed.
+    // Per-provider AbortController. The caller's signal and the request deadline
+    // both abort an arm; each abort schedules the cancellation mark and then
+    // aborts, so settle handlers on either side land in the right bucket.
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
@@ -413,22 +411,21 @@ export class RetroaererdEngine {
     // provider work and releases the fanout wait below; it is read again after
     // the wait to suppress post-cancellation anchor writes.
     const callerSignal = q.signal;
-    // Arms this engine aborted, either for the caller or at the deadline.
+    // Arms the engine aborted, either for the caller or at the deadline.
     const abortedArms = new Set<number>();
-    // One abort attempt per arm; a later deadline must not re-schedule the mark.
+    // One abort attempt per arm, so the deadline cannot re-schedule a mark.
     const abortingArms = new Set<number>();
     // ES2022 libs (apps/mcp, apps/cli) have no Promise.withResolvers; keep the
     // resolver-store shape so this shared source typechecks everywhere.
     let callerAbortResolve: () => void = () => { };
     const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
     const abortArm = (i: number, reason?: unknown) => {
-      if (out[i] != null || abortingArms.has(i)) return;
+      if (out[i] !== null || abortingArms.has(i)) return;
       abortingArms.add(i);
-      // Mark in a microtask, not inline. An arm whose promise already fulfilled
-      // has its settle handler queued ahead of us: that envelope landed before
-      // this abort and must be kept. A pending arm resolves or rejects only
-      // inside abort() below, so its handler is queued after this mark and stays
-      // cancelled. The wait's own resolution is queued after the mark too.
+      // The mark is queued, not applied inline: an arm that already fulfilled
+      // has its settle handler queued first, so a landed envelope is kept. A
+      // pending arm settles inside abort() below, after this mark, so it stays
+      // cancelled.
       queueMicrotask(() => abortedArms.add(i));
       controllers[i].abort(reason);
     };
@@ -450,24 +447,20 @@ export class RetroaererdEngine {
     let gateIn = 0;
     let gateDropped = 0;
     let gateSurvivors = 0;
-    // Request-level deadline (#461 decision 3): the clock starts at fan-out, not
-    // when enough results arrive. Every arm still unsettled at the deadline is
-    // aborted and reported cancelled; if every arm lands first, the race below
-    // finishes immediately instead of waiting out the window.
+    // Request-level deadline: the clock starts at fan-out, not when enough
+    // results arrive. Unsettled arms are aborted at the deadline; if every arm
+    // lands first, the race finishes without waiting it out.
     let deadlineResolve: () => void = () => { };
     const deadline = new Promise<void>((r) => { deadlineResolve = r; });
-    // The timer is ref'd on purpose: the request itself is waiting for it, so
-    // an arm that never returns must not let the host process exit early.
+    // The timer stays ref'd: the request itself waits on it.
     const deadlineTimer = setTimeout(() => {
       for (let i = 0; i < controllers.length; i++) abortArm(i);
       deadlineResolve();
     }, this.requestTimeoutMs);
-    // A non-async adapter can throw before it ever returns a promise. Turn that
-    // into a rejection here: an escaping throw would skip the finally below and
-    // leave the ref'd deadline timer (and the ledger reservation) behind.
+    // A non-async adapter may throw before returning a promise; turn that into
+    // a rejection so the fanout still settles. Request construction stays outside
+    // the try: a kernel-side bug there must not look like a provider failure.
     const startArm = (p: SearchProvider, i: number): Promise<ProviderEnvelope> => {
-      // Request construction stays outside the try: a kernel-side bug there
-      // must not masquerade as the provider failing.
       const req = providerRequest(p);
       try {
         return Promise.resolve(p.search(req, controllers[i].signal));
@@ -475,40 +468,33 @@ export class RetroaererdEngine {
         return Promise.reject(err);
       }
     };
-    // The map can throw (request construction), so it lives inside the same try
-    // as the wait: the ref'd deadline timer and the caller listener must be
-    // released even if an arm never starts.
+    // A construction throw can interrupt the map; the catch below releases the
+    // reservation and the finally clears the timer and caller listener.
     try {
       const promises = allProviders.map((p, i) =>
-        // One `.then` with both handlers on purpose: a rejection handler attached
-        // through a `.catch()` chain sits two microtasks out, so an abort mark
-        // queued in between would turn a genuine same-tick failure into
-        // "cancelled". One reaction keeps each settle handler at the arm's own
-        // settlement position.
+        // One `.then` with both handlers: a `.catch` chain would delay the
+        // rejection handler by a microtask and let an abort mark overtake it.
         startArm(p, i).then(
           (env) => {
             // Design: an arm that settles only after our own abort stays
-            // cancelled — whether it carries results or an empty envelope.
-            // Counting it as answered would re-bucket by microtask order, and a
-            // cap/cancel means we stopped waiting before it landed.
+            // cancelled; counting it as answered would re-bucket by microtask order.
             if (abortedArms.has(i)) return;
             out[i] = { provider: p.id, status: "fulfilled", envelope: env };
           },
           (err) => {
-            // An abort we issued (caller cancellation or the deadline) is a
-            // cancelled arm, not a provider failure — leaving out[i] null makes
-            // the snapshot below classify it as providersCancelled.
+            // An abort we issued is cancellation, not failure: leave the slot null.
             if (abortedArms.has(i)) return;
-            // The capture seam: structured bits an SDK keeps on the Error
-            // object (capType, retryAfter) go back into the text here, or the
-            // classifier and the wait hint only ever see half the shape.
             out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
           },
         ),
       );
 
-      // Wait for every arm, for the request deadline, or for the caller's abort (#209).
       await Promise.race([Promise.all(promises).then(() => undefined), deadline, callerAborted]);
+    } catch (err) {
+      // Never reached by a provider outcome (both handlers return normally); a
+      // throw here is fan-out construction. Release the reserve before rethrowing.
+      if (hasLedger) budgetLedger!.settleCalls(budgetScope!, perCallEstimate, 0);
+      throw err;
     } finally {
       clearTimeout(deadlineTimer);
       callerSignal?.removeEventListener("abort", cancelProviders);

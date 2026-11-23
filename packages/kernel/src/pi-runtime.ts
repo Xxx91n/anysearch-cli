@@ -50,6 +50,7 @@ import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPor
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
+import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
 
 // HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
 // Kernel reads no env config (r94 discipline): the wiring passes
@@ -259,7 +260,7 @@ export function createSearchTool(
         Type.Literal("index"),
         Type.Literal("deep"),
         Type.Literal("answer"),
-      ], { description: "Search mode: fast (default), index, deep (deeper upstream search where the provider supports it; slower and costlier, no extra sources), answer (provider-generated answer, available only when provider supports it)" })),
+      ], { description: SEARCH_MODE_DESCRIPTION })),
     }),
     execute: async (_toolCallId: string, params: any, signal?: AbortSignal) => {
       const q: Query = {
