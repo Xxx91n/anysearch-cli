@@ -1,9 +1,9 @@
 # Claude Code integration
 
 Verified host: **Claude Code 2.1.251** (Windows 11). We checked it with
-headless `-p` stream-json probes on **2026-09-17**. Transcripts are in
-`.scratch/grill-round-66/evidence/`.
-Contract source: `.scratch/grill-round-66/evidence/defect-ledger.md`.
+headless `-p` stream-json probes on **2026-09-17**. The original probe
+transcripts are lost; the conclusions below are kept as the known behavior of
+Claude Code 2.1.251 at that time.
 
 These facts were checked on a real host. Do not guess them:
 

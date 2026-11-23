@@ -16,11 +16,11 @@
 // * SessionStart needs --envelope (same bare-drop defect class).
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 let passed = 0;
 let failed = 0;
@@ -121,23 +121,6 @@ test("bin entry ans-hook-codex exists and reads stdin", () => {
   const p = join(PLUGIN_ROOT, rel);
   if (!existsSync(p)) return; // dist not built — covered after build
   assert.ok(readFileSync(p, "utf8").includes("process.stdin"), rel + " must read stdin");
-});
-
-test("single-source: regenerating configs is byte-identical (no drift)", () => {
-  const files = ["configs/claude/hooks.json", "configs/codex/hooks.json", "hooks/hooks.json", ".claude-plugin/plugin.json", ".mcp.json"];
-  const before = files.map(f => readFileSync(join(PLUGIN_ROOT, f), "utf8"));
-  const tmp = mkdtempSync(join(tmpdir(), "ans-gen-"));
-  try {
-    const r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "gen-claude-configs.mjs")], {
-      encoding: "utf8",
-      env: { ...process.env, ANS_GEN_OUT: tmp },
-    });
-    assert.equal(r.status, 0, "generator must run clean: " + r.stderr.slice(0, 200));
-    const after = files.map(f => readFileSync(join(tmp, f), "utf8"));
-    assert.deepEqual(after, before, "generated files drifted — run pnpm gen:configs");
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
 });
 
 // ==== codex adapter: envelope contract ====

@@ -4,9 +4,9 @@ Verified hosts: **Antigravity CLI (`agy`) 1.2.5** (Windows 11, headless
 `agy -p` probes). We checked the hook contract and the end-to-end adapter on
 2026-09-17. **Antigravity IDE 2.12.2** does not run hooks (we reproduced
 this). On that host the supported surface is the rules fallback
-`.antigravity/rules/anysearch.mdc`. Contract source:
-`.scratch/grill-round-68/evidence/` (s2 contract checks, s3 six-part
-acceptance, SEP-2484 exclusion ledger).
+`.antigravity/rules/anysearch.mdc`. The original records are lost; the
+conclusions below are kept as the known behavior of these two host versions at
+that time.
 
 These facts were checked on a real host (agy 1.2.5). Do not guess them:
 
@@ -178,8 +178,8 @@ printf '{}' | ans-hook-antigravity Stop           # {}
 agy -p "<task>"                                    # all five events fire
 ```
 
-Evidence ledger: `.scratch/grill-round-68/evidence/t3-s2s3-verdict.md`. It
-covers s2 contract checks, s3 six-part acceptance, and SEP-2484 exclusions:
-`call_mcp_tool` unwrap, `conversationId`→session propagation, `injectSteps`
-delivery, fail-open, the `PostToolUse` no-output shape, and the `.mdc`
-fallback.
+The original evidence ledger is lost. It covered s2 contract checks, s3
+six-part acceptance, and SEP-2484 exclusions: `call_mcp_tool` unwrap,
+`conversationId`→session propagation, `injectSteps` delivery, fail-open, the
+`PostToolUse` no-output shape, and the `.mdc` fallback. The conclusions stay
+as the known behavior of agy 1.2.5 at that time.

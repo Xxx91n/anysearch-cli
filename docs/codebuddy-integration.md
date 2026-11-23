@@ -3,9 +3,8 @@
 Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks). We
 checked it on **2026-09-16** with the headless P1–P9 probe matrix: search,
 recall, ans_chat, research, 3-event hooks, fail-open, and a with/without-tool
-contrast. The stream-json transcripts are in
-`.scratch/grill-round-65/evidence/t2-*.stream.jsonl`.
-Contract source: `.scratch/grill-round-65/evidence/`.
+contrast. The original stream-json transcripts are lost; the conclusions
+below are kept as the known behavior of CodeBuddy Code 2.151.0 at that time.
 
 On Windows, CodeBuddy hooks run commands through Git Bash. They put
 `hook_event_name` on stdin (not `event`). They expect decisions wrapped in
@@ -78,27 +77,20 @@ Shipped template: `@anysearch-cli/plugin/configs/codebuddy/hooks.json`.
 {
   "hooks": {
     "PreToolUse":  [{ "matcher": "search_web|research_web|recall_memory|query_knowledge|ans_chat",
-      "hooks": [{ "type": "command",
-        "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"", "timeout": 5 }] }],
+      "hooks": [{ "type": "command", "command": "ans-hook-codebuddy", "timeout": 5 }] }],
     "PostToolUse": [{ "matcher": "search_web|research_web|recall_memory|query_knowledge|ans_chat",
-      "hooks": [{ "type": "command",
-        "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"", "timeout": 10 }] }],
+      "hooks": [{ "type": "command", "command": "ans-hook-codebuddy", "timeout": 10 }] }],
     "SessionStart": [{ "matcher": "*",
-      "hooks": [{ "type": "command",
-        "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"", "timeout": 5 }] }]
+      "hooks": [{ "type": "command", "command": "ans-hook-codebuddy", "timeout": 5 }] }]
   }
 }
 ```
 
 One adapter entry serves all three events. It dispatches on `hook_event_name`
-itself. `$(npm root -g)` resolves the global install inside Git Bash.
-
-> `ans host connect codebuddy` writes the same events with the command
-> `ans-hook-codebuddy` instead of the `node "$(npm root -g)/..."` line above:
-> the complete install (`npm i -g @anysearch-cli/cli`) ships that bin on PATH,
-> so the plugin package does not have to be installed globally. The template
-> here keeps the verified long form; both reach the same adapter
-> (`dist/hooks/adapters/codebuddy.cjs`).
+itself. `ans-hook-codebuddy` is the plugin package's own bin, and the complete
+install (`npm i -g @anysearch-cli/cli`) ships the same bin, so the template
+works under either install shape without a `$(npm root -g)` path lookup. The
+same commands are what `ans host connect codebuddy` writes.
 
 What each event does:
 

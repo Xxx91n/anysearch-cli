@@ -1,9 +1,9 @@
 # Codex CLI integration
 
 Verified host: **codex-cli 0.142.5** (Windows 11). We checked it with headless
-`codex exec --json` probes on **2026-09-17**. Transcripts are in
-`.scratch/grill-round-67/evidence/`.
-Contract source: `.scratch/grill-round-67/evidence/t1-defect-ledger.md`.
+`codex exec --json` probes on **2026-09-17**. The original probe transcripts
+are lost; the conclusions below are kept as the known behavior of codex-cli
+0.142.5 at that time.
 
 These facts were checked on a real host (0.142.5). Do not guess them:
 

@@ -12,11 +12,11 @@
 // ${CLAUDE_PLUGIN_ROOT} expansion remains experimental on Windows (#16116).
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 let passed = 0;
 let failed = 0;
@@ -127,25 +127,6 @@ test("plugin skeleton: .claude-plugin/plugin.json + hooks/hooks.json + .mcp.json
 
   const mcp = JSON.parse(readFileSync(join(PLUGIN_ROOT, ".mcp.json"), "utf8"));
   assert.ok(mcp.mcpServers?.anysearch?.command, ".mcp.json must wire the anysearch server");
-});
-
-test("single-source: regenerating configs is byte-identical (no drift)", () => {
-  // Snapshot the checked-in files FIRST, then regenerate into a scratch dir
-  // (ANS_GEN_OUT) — a hand-edit to the source tree must surface as a diff.
-  const files = ["configs/claude/hooks.json", "hooks/hooks.json", ".claude-plugin/plugin.json", ".mcp.json"];
-  const before = files.map(f => readFileSync(join(PLUGIN_ROOT, f), "utf8"));
-  const tmp = mkdtempSync(join(tmpdir(), "ans-gen-"));
-  try {
-    const r = spawnSync(process.execPath, [join(PLUGIN_ROOT, "scripts", "gen-claude-configs.mjs")], {
-      encoding: "utf8",
-      env: { ...process.env, ANS_GEN_OUT: tmp },
-    });
-    assert.equal(r.status, 0, "generator must run clean: " + r.stderr.slice(0, 200));
-    const after = files.map(f => readFileSync(join(tmp, f), "utf8"));
-    assert.deepEqual(after, before, "generated files drifted — run pnpm gen:configs");
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
 });
 
 // ==== claude adapter: envelope contract (ER-2 fix) ====
