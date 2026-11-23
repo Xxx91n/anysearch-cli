@@ -9,6 +9,7 @@
 import Exa from "exa-js";
 import type { ProviderAnswer, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
 import { PROVIDER_FACTS } from "./provider-facts";
+import { ExaMcpProvider } from "./exa-mcp";
 
 // Mode mapping: our modes -> Exa search type.
 const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
@@ -29,8 +30,8 @@ export class ExaProvider implements SearchProvider {
 
   constructor(apiKey?: string) {
     // atomcode research: new Exa(apiKey), key falls back to EXA_API_KEY env.
-    // 没拿到 key（没传、空串、纯空格）时 exa-js 自己会去读环境变量，读不到就当场抛。
-    // 归一化放在这里，直接 new 这个类和走工厂拿到的东西才一致（类是导出的）。
+    // 直接 new 这个类是付费 REST 臂：没拿到 key 时 exa-js 自己会去读环境变量，读不到就当场抛。
+    // 「没 key 走免费额度」是工厂 createExaProvider 的分岔，不在这个类里。
     this.client = new Exa(apiKey?.trim() || undefined);
   }
 
@@ -95,9 +96,14 @@ export class ExaProvider implements SearchProvider {
 }
 
 /**
- * Design: 装配方调这个工厂 — 换构造方式时只改这里，两张装配表不用跟着动。
- * 归一化在构造器：空串、纯空格、没传都算没配 key，exa-js 自己去找环境变量，找不到就抛。
+ * 装配方调这个工厂 — 换构造方式、换走哪条路时只改这里，两张装配表不用跟着动。
+ *
+ * 分岔只看「有没有 key」：显式传进来的值永远优先，空串、纯空格是「明确说没 key」，
+ * 走免费额度臂（Exa 自己的 MCP 端点）。只有完全没传时才回到 exa-js 以前那道兜底——
+ * 装配拿不到 key（比如凭据文件读坏了）时仍按环境变量走 REST，有 key 的机器不会被
+ * 悄悄降到免费额度。坏 key 不退（#448），照旧在构造时抛。
  */
 export function createExaProvider(apiKey?: string): SearchProvider {
-  return new ExaProvider(apiKey);
+  const key = (apiKey === undefined ? process.env.EXA_API_KEY : apiKey)?.trim();
+  return key ? new ExaProvider(key) : new ExaMcpProvider();
 }

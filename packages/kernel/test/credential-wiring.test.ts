@@ -173,8 +173,20 @@ test("a stored key bound to another endpoint is never sent", async () => {
 test("stored SEARCH keys reach the real provider arms built by createEngine", async () => {
   const { home, cleanup } = tempHome();
   const scrub = scrubEnv();
+  const domains = mkdtempSync(join(home, "domains-"));
   try {
     writeUserCredential({ provider: "anysearch", apiKey: STORED_ANYS_KEY }, { home });
+    // The domain narrows the fanout to the arm under test: #500 lets a keyless
+    // exa build too, and this test must not send its search to the free-quota
+    // endpoint (the offline suite does not reach the network).
+    writeFileSync(join(domains, "wire.toml"), [
+      'name = "wire"',
+      '[sources]',
+      'enabled = ["anysearch"]',
+      '[rag]',
+      'adapter = "none"',
+      "",
+    ].join("\n"), "utf8");
 
     // A real local MCP endpoint. The anysearch arm is the one search client
     // whose endpoint can be pointed at a test server (ANYSEARCH_ENDPOINT), so it
@@ -218,9 +230,9 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
     assert.equal(resolved.anysearch?.source, "user");
     assert.equal(resolved.exa, undefined, "no exa key anywhere - that arm stays keyless");
 
-    const engine = createEngine(undefined, {
+    const engine = createEngine("wire", {
       dbPath: ":memory:",
-      domainsDirs: [],
+      domainsDirs: [domains],
       env,
       searchCredentials: (e) => resolveSearchCredentials(e),
     });
@@ -251,6 +263,7 @@ test("stored SEARCH keys reach the real provider arms built by createEngine", as
     }
   } finally {
     scrub.restore();
+    rmSync(domains, { recursive: true, force: true });
     cleanup();
   }
 });
@@ -280,6 +293,10 @@ test("a search arm with no stored key and no env is labelled none, never left ou
       assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
       assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
+      // #500: a keyless exa is not a construction failure any more — the arm
+      // builds on the free-quota endpoint, it just has no key to report.
+      assert.equal(engine.providerBuildErrors.exa, undefined,
+        "a keyless exa arm builds; 'no key' is not a build error");
       // The key set itself is the contract: an arm added later cannot be
       // skipped silently, because this assertion counts what the record carries.
       assert.deepEqual(
@@ -334,9 +351,11 @@ test("a search arm holding a key it cannot use degrades by name, never pretendin
 
 test("a blank key from a hand-built seam is labelled none, not env", () => {
   // The seam is public (tests and embedders pass their own resolver), so the
-  // record cannot assume its caller trimmed. A whitespace-only key is not a key.
-  // The env is scrubbed too: the SDKs fall back to their own env var, which would
-  // make "the blank key built nothing" pass for the wrong reason.
+  // record cannot assume its caller trimmed. A whitespace-only key is not a key:
+  // it is labelled `none` and the arm builds on the free quota instead.
+  // The env is scrubbed too: an explicit blank value must not borrow an ambient
+  // EXA_API_KEY, or "the blank key built the free arm" would pass for the wrong
+  // reason on a developer machine.
   const scrub = scrubEnv();
   const engine = createEngine(undefined, {
     dbPath: ":memory:",
@@ -355,9 +374,10 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
     assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
     assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "none");
     assert.equal(sources?.status === "resolved" ? sources.anysearch : "unset", "none");
-    // The constructors see the same normalised value: a blank key must not build
-    // the exa arm, which refuses without one.
-    assert.ok(engine.providerBuildErrors.exa, "a blank key does not build the exa arm");
+    // The constructors see the same normalised value: a blank key is not a key.
+    // #500: exa takes its free-quota arm from here instead of failing to build.
+    assert.equal(engine.providerBuildErrors.exa, undefined,
+      "a blank key builds the free-quota arm, not a build error");
   } finally {
     (engine.store as { close?: () => void }).close?.();
     engine.observation.close();

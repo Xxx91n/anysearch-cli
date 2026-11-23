@@ -239,8 +239,9 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「信息源」）`,
         });
       } catch (error) {
-        // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
-        // 配了 key 还构造不出来，那才是真的坏了。
+        // 今天三家不带 key 都能建（exa 没 key 走免费额度臂）；这个分支留给将来那种
+        // 没 key 就拒的构造器。没配 key 是合法的空，不是坏了；配了 key 还构造不出来，
+        // 那才是真的坏了。
         //
         // 原始报错一个字都不打：构造器手里就有 key，运行时报错可能把它带出来
         // （Node 的 "Headers.append: <value> is an invalid header value"）。

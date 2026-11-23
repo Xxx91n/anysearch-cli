@@ -17,7 +17,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-observation-smoke-"
 const dbPath = path.join(dir, "trace.db");
 const cliPath = path.join(ROOT, "apps", "cli", "dist", "index.js");
 const mcpPath = path.join(ROOT, "apps", "mcp", "dist", "index.js");
-const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: "", ANYSEARCH_API_KEY: "" };
+// #500：exa 没配 key 时会换成免费额度臂并真发请求；这个烟测要求零外部网络，
+// 所以给它一把构造时就会抛的 key（值里带换行，exa-js 往请求头里塞就当场抛），
+// 让 exa 在装配阶段就缺席——空串在旧行为里起的就是这个作用。
+const UNUSABLE_EXA_KEY = "sk-unusable\nheader-fault";
+const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: UNUSABLE_EXA_KEY, ANYSEARCH_API_KEY: "" };
 
 function fail(message) {
   process.stderr.write("verify-observation: " + message + "\n");

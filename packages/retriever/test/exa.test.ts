@@ -5,6 +5,7 @@
 // ponytail: no test framework, assert-based demo.
 
 import { ExaProvider, createExaProvider } from "../src/providers/exa";
+import { ExaMcpProvider } from "../src/providers/exa-mcp";
 
 // The mapping function extracted for testability: same logic as ExaProvider.search().
 function mapExaResult(r: { title: string | null; url: string; text?: string; publishedDate?: string; score?: number }) {
@@ -137,10 +138,10 @@ async function main() {
     assert(calls[1].args[2]?.signal.aborted === true, "answer() signal is already aborted");
   }
 
-  // 9. #499: 装配只有一个入口 createExaProvider，别处不再自己判断「传不传 key」。
-  // 今天两支都还是 REST 适配器：没 key 时 exa-js 再读一次环境变量、读不到就抛，
-  // 装配照旧把它记成「构造失败」并点名，用户看到的东西不变。#500 会把「没配」
-  // 那一支换成免费额度臂，到时候这几条断言要跟着改。
+  // 9. #499/#500: 装配只有一个入口 createExaProvider，它同时决定走哪条路。
+  //    有 key → 现有 REST 臂；没 key → 免费额度臂（Exa 自己的 MCP 端点）。
+  //    显式传进来的空串、纯空格是「明确说没 key」，哪怕环境里还有一把 key 也不借；
+  //    只有完全没传时才回到环境变量兜底（复制 exa-js 以前的顺序，有 key 的机器不降级）。
   {
     const saved = process.env.EXA_API_KEY;
     delete process.env.EXA_API_KEY;
@@ -152,14 +153,19 @@ async function main() {
       assert(keyed.modes.join(",") === "fast,index,deep,answer", "answer mode is still on the REST arm");
       assert(keyed.domainFilterSupported === true, "includeDomains prefilter is still supported");
       for (const missing of [undefined, "", "   "]) {
-        let threw = false;
-        try {
-          createExaProvider(missing);
-        } catch {
-          threw = true;
-        }
-        assert(threw, "no key and no env key: construction still throws (" + JSON.stringify(missing) + ")");
+        const free = createExaProvider(missing);
+        assert(free.id === "exa", "the free arm keeps the provider id exa (" + JSON.stringify(missing) + ")");
+        assert(free instanceof ExaMcpProvider, "no key gets the free-quota arm (" + JSON.stringify(missing) + ")");
+        assert(free.modes.join(",") === "fast,index,deep", "the free arm has no answer mode");
+        assert(!free.modes.includes("answer"), "answer is not advertised without a key");
+        assert(free.domainFilterSupported === false, "the free arm does not prefilter domains upstream");
+        assert(free.verticalDomainSupported === false, "the free arm has no vertical routing");
       }
+      // 环境变量是最后一道兜底，只对「完全没传」生效。
+      process.env.EXA_API_KEY = "sk-from-env";
+      assert(createExaProvider(undefined) instanceof ExaProvider, "an env key still gets the REST arm");
+      assert(createExaProvider("") instanceof ExaMcpProvider, "an explicit blank key does not borrow the env key");
+      delete process.env.EXA_API_KEY;
       // 归一化在构造器里：类是导出的，直接 new 一个纯空格的 key 也不能当成钥匙。
       let whitespaceThrew = false;
       try {
@@ -167,7 +173,7 @@ async function main() {
       } catch {
         whitespaceThrew = true;
       }
-      assert(whitespaceThrew, "a whitespace-only key is not a key on direct construction either");
+      assert(whitespaceThrew, "a whitespace-only key is not a key on direct REST construction either");
     } finally {
       if (saved === undefined) delete process.env.EXA_API_KEY;
       else process.env.EXA_API_KEY = saved;

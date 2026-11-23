@@ -34,9 +34,10 @@ import {
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — a provider whose constructor throws is skipped, not crashed.
-// Only exa throws, and on a missing OR unusable key (a header-invalid value does it
-// too); tavily builds a keyless client and anysearch goes anonymous, so their missing
-// key surfaces at call time instead.
+// Exa is the only arm that can throw, and only on a key it cannot use (a
+// header-invalid value does it). A missing key gets its free-quota arm instead
+// (#500); tavily builds a keyless client and anysearch goes anonymous, so their
+// missing key surfaces at call time.
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and

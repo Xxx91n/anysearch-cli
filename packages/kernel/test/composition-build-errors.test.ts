@@ -99,18 +99,18 @@ try {
     "stderr carries no raw error text");
   closeResult(leak);
 
-  // #499 验收：没配 key 那条路的输出逐字不变——分类仍走 credential 那一句。
-  // 这是本文件里唯一还拿「没配 key」当前提的地方，而且它断言的正是这句话本身；
-  // 下一票（#500）让没配 key 走免费额度时，这条要跟着换成「建得起来、不报错」。
+  // #500 验收：没配 key 不再是一次构造失败——exa 臂换成免费额度，建得起来，记录里不点名。
   delete process.env.EXA_API_KEY;
   captured = "";
   const keyless = createEngine(undefined, { dbPath: ":memory:" });
-  assert.equal(keyless.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
-    "a missing key still yields the same named line");
+  assert.deepEqual(keyless.providerBuildErrors, {}, "a missing key builds the free-quota arm, nothing to report");
+  assert.equal(captured, "", "the keyless path writes no construction failure");
   closeResult(keyless);
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
-  // build. Sync arm — write() throws.
+  // build. Sync arm — write() throws. The failure has to be a real one, so the
+  // unusable key comes back for these two arms.
+  process.env.EXA_API_KEY = UNUSABLE_EXA_KEY;
   process.stderr.write = (() => { throw new Error("EPIPE: broken pipe"); }) as typeof process.stderr.write;
   const syncBroken = createEngine(undefined, { dbPath: ":memory:" });
   assert.ok(syncBroken.providerBuildErrors.exa, "record populated despite a throwing stderr");
