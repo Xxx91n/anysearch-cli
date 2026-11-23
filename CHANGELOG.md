@@ -10,14 +10,14 @@
 
 ### Changed
 
-- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。规范里标 Must 的那几条照旧，另外两条（`description` 要点出什么时候用、正文 500 行）是本仓库自己加的；`license` / `compatibility` / `metadata` 这些可选字段不查。
+- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字并说清什么时候用、正文少于 500 行。规范里标 Must 的那几条照旧，另外三条是本仓库自己加的：`description` 要点出什么时候用、正文 500 行、名字不能是 Windows 保留设备名；`license` / `compatibility` / `metadata` 这些可选字段不查。
 - **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
 - **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了。缺 `description`、正文到 500 行、名字不合规都会被挡下来，`description` 只是把「做什么」写清楚、没写「什么时候用」的也一样被挡（规范对这种写法只说「写得不好」，这里直接不收）。已经装好但不合规的，`ans skill validate` 会报红。要装的 skill 得先改好。
 - **报错和通过的话都跟着改了**：`ans skill validate` 通过时打 `[OK] … SKILL.md name, description and body follow the spec`；`SKILL.md` 不存在时说「is missing」，不再说成「must be a regular file」；缺字段时说「has no name field / has no description」，不再把 YAML 空值（`name:`、`description:`）念成 `undefined` / `null` / `object`。
 
 ### Known limits
 
-- **「说了什么时候用」只能认几个词**：`description` 里要有 `when` / `whenever`，或者中文的 `什么时候` / `何时` / `时使用`。换个说法的（比如「审查代码时用」）、以及日语西语之类的描述，照样会被挡；错误信息会把认的词列出来。反过来，带这些词但没真说清什么时候用的也照样过。这条挡的是漏写，不是写得不好。
+- **「说了什么时候用」只能认几个词**：`description` 里要有 `when` / `whenever`，或者中文的 `什么时候` / `何时` / `时使用` / `使用时`。换个说法的（比如「审查代码时用」）、以及日语西语之类的描述，照样会被挡；错误信息会把认的词列出来。反过来，带这些词但没真说清什么时候用的也照样过。这条挡的是漏写，不是写得不好。
 - **正文行数不算前后空行**：frontmatter 后面那行空行、正文末尾的空行都不计入 500 行，数的是实际内容行。
 - **只查代码里写死的那些规则**：规范的 `license`、`compatibility`、`metadata`、`allowed-tools` 和引用文件一律不管，所以通过只说明名字、描述、正文这三样没问题。
 

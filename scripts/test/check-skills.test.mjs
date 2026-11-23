@@ -5,7 +5,7 @@
 // mode that CI runs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,6 +22,16 @@ function check(args = [], { cwd = ROOT, root } = {}) {
   const env = root ? { ...process.env, ANS_CHECK_SKILLS_ROOT: root } : process.env;
   const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8", timeout: 120_000 });
   return { code: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+/** True when the permission bits just set did not actually deny a read (root). */
+function canStillRead(file) {
+  try {
+    readFileSync(file);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Run a Git command in a fixture repository and insist it worked. */
@@ -87,6 +97,16 @@ test("a name that differs from its directory goes red", (t) => {
   assert.match(result.stdout, /name must equal the directory it lives in/);
 });
 
+test("a body that breaks lines with lone CR is still counted line by line", (t) => {
+  const root = withRoot(t);
+  const name = "crbody";
+  const description = "Use when a test counts CR-separated lines.";
+  const dir = skill(root, name, `name: ${name}\ndescription: ${description}`, "line\r".repeat(501));
+  const result = check([dir]);
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /body must stay under 500 lines, got 501/);
+});
+
 test("a skill directory with no SKILL.md goes red", (t) => {
   const root = withRoot(t);
   mkdirSync(path.join(root, "empty"), { recursive: true });
@@ -134,12 +154,17 @@ test("an unreadable SKILL.md is reported apart and exits 2", (t) => {
   const root = withRoot(t);
   const dir = skill(root, "locked", "name: locked\ndescription: Use when the file cannot be read.");
   const file = path.join(dir, "SKILL.md");
+  // No restore hook: deleting a 000-mode file only needs write permission on its
+  // directory, and a hook registered here would run after the cleanup hook.
   chmodSync(file, 0o000);
-  t.after(() => chmodSync(file, 0o600));
+  if (canStillRead(file)) {
+    t.skip("this user can read a 000-mode file (root); the branch needs a denied read");
+    return;
+  }
   const result = check([dir]);
   assert.equal(result.code, 2, result.stdout + result.stderr);
-  assert.match(result.stdout, /\[ERROR\]/);
-  assert.match(result.stdout, /could not be read/);
+  assert.match(result.stdout, /\[ERROR\] .*locked[/\\]SKILL\.md/);
+  assert.match(result.stdout, /1 could not be read/);
 });
 
 test("a checkout with no skill is refused instead of passing vacuously", (t) => {

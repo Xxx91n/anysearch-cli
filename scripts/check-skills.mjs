@@ -103,7 +103,8 @@ async function run() {
       // A rule failure reads "field + what was expected"; anything else (a
       // permission error, an I/O failure) is reported apart and fails the run as
       // "could not check", never as "this skill is broken". SkillError carries
-      // the exit code the CLI would use, so a usage-class error stays apart too.
+      // the exit code the CLI would use, so a usage-class error would stay apart
+      // too — no rule raises one today, but the split does not depend on that.
       if (error instanceof SkillError && error.exitCode === 1) {
         failed += 1;
         process.stdout.write(`[FAIL] ${shown(file)}: ${withoutTrailingPath(error.message, file)}\n`);

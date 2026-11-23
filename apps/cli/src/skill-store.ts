@@ -683,7 +683,7 @@ const SKILL_DESCRIPTION_MAX_CHARS = 1024;
  * and the Chinese ways of saying it. A description that says it some other way is
  * sent back with this list, which is the cheapest thing to point at.
  */
-const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用/i;
+const WHEN_TO_USE = /\bwhen|什么时候|何时|时使用|使用时/i;
 
 /**
  * Require a description that says what the skill does and when to use it (#387).
@@ -703,7 +703,7 @@ function requireDescription(value: unknown, path: string): void {
     fail(`SKILL.md description must be ${SKILL_DESCRIPTION_MIN_CHARS}–${SKILL_DESCRIPTION_MAX_CHARS} characters, got ${length}: ${path}`);
   }
   if (!WHEN_TO_USE.test(description)) {
-    fail(`SKILL.md description must also say when to use the skill — use "when"/"whenever" or say 什么时候用/何时/时使用; got "${description.slice(0, 120)}": ${path}`);
+    fail(`SKILL.md description must also say when to use the skill — use "when"/"whenever" or say 什么时候用/何时/时使用/使用时; got "${description.slice(0, 120)}": ${path}`);
   }
 }
 
