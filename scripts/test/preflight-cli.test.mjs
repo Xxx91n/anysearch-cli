@@ -13,12 +13,41 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
+
+// A stand-in for the files the gate's groups look for: one trivial test each,
+// except the first, which holds two — so "N tests in M groups" cannot pass when
+// the gate prints the group count in both slots. The failing one differs by that
+// one assertion only, which is the point: one broken judgment, one red.
+const PASSING_GATE_TEST = [
+  'import assert from "node:assert/strict";',
+  'import test from "node:test";',
+  "",
+  'test("a stand-in judgment", () => {',
+  "  assert.equal(1, 1);",
+  "});",
+  "",
+].join("\n");
+
+const TWO_TEST_GATE_TEST = [
+  PASSING_GATE_TEST,
+  'test("a second stand-in judgment", () => {',
+  "  assert.equal(2, 2);",
+  "});",
+  "",
+].join("\n");
+
+const FAILING_GATE_TEST = PASSING_GATE_TEST.replace("assert.equal(1, 1);", "assert.equal(1, 2);");
+
+// The group names the gate must print. One copy, so a wording change lands in
+// one place instead of leaving two assertions to drift apart.
+const GATE_GROUP_NAMES = "push gate, plus the shared judgments (CI change policy, workflow checks)";
 
 test("a red run exits non-zero and names the failed task", () => {
   withFakePnpm({ code: 1, lines: [" Tasks:    1 successful, 1 failed", "\u001b[31mFailed:\u001b[0m @anysearch-cli/kernel#test"] }, (bin) => {
@@ -190,9 +219,87 @@ test("a full run runs the gate's own tests first", () => {
   withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"], { gateTests: "scripts/test/preflight-plan.test.mjs" });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /\[preflight\] running the gate's own tests: scripts\/test\/preflight-plan\.test\.mjs/);
+    // The override replaces the group list, and the files line says which files
+    // it actually runs.
+    assert.ok(result.stdout.includes("running the gate's own tests: PREFLIGHT_GATE_TESTS override"), result.stdout);
+    assert.match(result.stdout, /\[preflight\] gate self-test files: scripts\/test\/preflight-plan\.test\.mjs/);
     // The child's reporter output must reach this pipe, not vanish.
     assert.match(result.stdout, /# pass \d+|✔/);
+  });
+});
+
+// The two shared judgments are the ones the gate and CI both read: a broken
+// change policy or workflow checker used to pass every local push and show up
+// only in the CI run the gate exists to spare.
+test("a full run also runs the shared judgments and reports how many tests ran", async () => {
+  const files = gateTestFiles();
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(`running the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
+    // The files line names the shared judgment, whatever else it lists.
+    assert.match(result.stdout, /\[preflight\] gate self-test files: .*scripts\/test\/ci-changes\.test\.mjs/);
+    // Four stand-in tests across three groups, so the group count cannot stand
+    // in for the total and still pass.
+    assert.ok(result.stdout.includes("gate self-test green: 4 tests in 3 groups"), result.stdout);
+    // The suite still runs after the self-test.
+    assert.match(result.stdout, /pnpm ran/);
+  });
+});
+
+// One shared group goes red: the gate names that group, and only that one. The
+// stand-in has to sit at the real `check-workflows` path for it to be seen at
+// all, so this also pins the path.
+test("a red shared judgment names only the group it belongs to", async () => {
+  const files = gateTestFiles({ "scripts/test/check-workflows.test.mjs": FAILING_GATE_TEST });
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /\[preflight\] gate self-test failed: workflow checks$/m);
+    // The other shared group passed, so naming it would be a lie.
+    assert.equal(result.stderr.includes("CI change policy"), false, result.stderr);
+    assert.match(result.stderr, /blocked: the gate's own tests failed/);
+    // A red self-test blocks before the suite: the fake pnpm never got a word.
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    clearKeptHome(result);
+  });
+});
+
+// The gate's own group can go red too, and it must not borrow the shared
+// judgments' names.
+test("a red push gate names its own group", async () => {
+  const files = gateTestFiles({ "scripts/test/preflight-plan.test.mjs": FAILING_GATE_TEST });
+  await withWorkspace({ pnpm: passingPnpm, files }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /\[preflight\] gate self-test failed: push gate$/m);
+    assert.equal(result.stderr.includes("CI change policy"), false, result.stderr);
+    // The suite never starts: the self-test stopped the run.
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    clearKeptHome(result);
+  });
+});
+
+// Design: the guard asks for a parser, not for a node_modules directory — a tree
+// with the directory but no parser cannot answer either, and calling that a
+// broken judgment sends the operator to the wrong place.
+test("a full run without a resolvable parser says which command to run", async () => {
+  await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
+    rmSync(join(root, "node_modules", ".pnpm"), { recursive: true, force: true });
+    const result = runCliIn(root, bin, ["--full"], { selfTest: true });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no YAML parser under node_modules — run `pnpm install --ignore-scripts` first/);
+    assert.equal(result.stderr.includes("gate self-test failed"), false, result.stderr);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+  });
+});
+
+test("an incremental push does not pay for the gate's own tests", async () => {
+  await withWorkspace({ changed: "apps/dsh-plugin/src/index.ts", pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+    assert.equal(result.stdout.includes("running the gate's own tests"), false);
   });
 });
 
@@ -236,7 +343,8 @@ test("a full dry run also announces the gate's own tests", () => {
     const result = runCliIn(repoRoot, bin, ["--full", "--dry-run"], { selfTest: true });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /would run: pnpm test/);
-    assert.match(result.stdout, /would also run the gate's own tests: scripts\/test\/preflight-\*\.test\.mjs/);
+    assert.ok(result.stdout.includes(`would also run the gate's own tests: ${GATE_GROUP_NAMES}`), result.stdout);
+    assert.match(result.stdout, /\[preflight\] dry run, gate self-test files: .*scripts\/test\/check-workflows\.test\.mjs/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
@@ -264,12 +372,13 @@ test("an incremental run hands pnpm one filter per selected package", async () =
   });
 });
 
-test("a clean tree reports nothing to run", async () => {
+test("a clean tree reports nothing to run and runs no self-test", async () => {
   await withWorkspace({}, ({ root, bin }) => {
-    const result = runCliIn(root, bin, []);
+    const result = runCliIn(root, bin, [], { selfTest: true });
     assert.equal(result.status, 0);
     assert.match(result.stdout, /nothing to run/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("gate self-test"), false);
   });
 });
 
@@ -359,12 +468,14 @@ async function withWorkspace(options = {}, run) {
 // a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
   for (const name of [
     "preflight-test.mjs",
+    "check-workflows.mjs",
+    "preflight-flush.mjs",
     "preflight-change.mjs",
     "preflight-git.mjs",
     "preflight-plan.mjs",
@@ -373,6 +484,12 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm } = {}) {
   ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
+  for (const [name, content] of Object.entries(files ?? {})) write(join(root, name), content);
+  // The gate refuses a full run without the YAML parser a shared judgment
+  // resolves, so the fixture ships one in the layout pnpm uses.
+  const yaml = join(root, "node_modules", ".pnpm", "yaml@0.0.0", "node_modules", "yaml");
+  write(join(yaml, "package.json"), JSON.stringify({ name: "yaml", version: "0.0.0", main: "index.js" }));
+  write(join(yaml, "index.js"), "module.exports = {};\n");
   write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   git(root, ["init", "-q"]);
@@ -422,6 +539,24 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   const sh = ["#!/bin/sh", ...(echoArgs ? ['echo "$@"'] : lines.map((line) => `echo "${line}"`)), `exit ${code}`].join("\n");
   const cmd = ["@echo off", ...(echoArgs ? ["echo %*"] : lines.map((line) => `echo ${line}`)), `exit /b ${code}`].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm that passes and says it ran, so a test can tell whether the
+// suite started at all.
+function passingPnpm(bin) {
+  writeFakePnpm(bin, { code: 0, lines: ["pnpm ran"] });
+}
+
+// The gate's group files, one passing stand-in each; an override swaps in a
+// failing body for the group under test. The first holds two tests, so a test
+// can tell the test total apart from the group count.
+function gateTestFiles(overrides = {}) {
+  return {
+    "scripts/test/preflight-plan.test.mjs": TWO_TEST_GATE_TEST,
+    "scripts/test/ci-changes.test.mjs": PASSING_GATE_TEST,
+    "scripts/test/check-workflows.test.mjs": PASSING_GATE_TEST,
+    ...overrides,
+  };
 }
 
 // A stand-in pnpm that writes where a sloppy test would: the home it was given,
@@ -585,6 +720,51 @@ function write(file, content) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, content);
 }
+
+// The flush before a red exit: a stream whose reader went away must not turn the
+// exit into a throw, and a stream that never answers must not hang the gate.
+test("a stream that throws on the flush counts as flushed", async () => {
+  await flushStreams([
+    {
+      write() {
+        throw Object.assign(new Error("gone"), { code: "EPIPE" });
+      },
+    },
+  ]);
+});
+
+test("a stream that never answers gives up at the cap", async () => {
+  const started = Date.now();
+  await flushStreams([{ write() {} }], 20);
+  // The cap is the thing under test: ignoring the argument and waiting the
+  // default second instead would land far above this bound. 700ms leaves room
+  // for a loaded CI box without letting a hardcoded 1000 through.
+  const waited = Date.now() - started;
+  assert.ok(waited >= 10 && waited < 700, `waited ${waited}ms`);
+});
+
+// Design: measure it by the child's own exit time — deleting the cap's
+// clearTimeout leaves the in-process cases green, so only a process that had to
+// sit out the cap shows the difference.
+test("a finished flush does not keep the process alive", () => {
+  const module = new URL("../preflight-flush.mjs", import.meta.url).href;
+  const script = [
+    `import { flushStreams } from ${JSON.stringify(module)};`,
+    "await flushStreams([{ write: (_chunk, done) => done() }], 1000);",
+  ].join("\n");
+  const started = Date.now();
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(result.signal, null, "the child had to be killed");
+  assert.equal(result.error, undefined, String(result.error));
+  assert.equal(result.status, 0, result.stderr);
+  // Magnitude only: a fresh Node start stays well under this, a lingering cap
+  // cannot.
+  const waited = Date.now() - started;
+  assert.ok(waited < 900, `the cap held the process for ${waited}ms`);
+});
 
 // These cases pin the retry loop without a real stalled pipe.
 test("a full stderr pipe is retried until the whole line is written", () => {

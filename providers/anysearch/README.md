@@ -6,10 +6,10 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 ## 端点
 
 - 默认 `https://api.anysearch.com/mcp`（MCP Streamable HTTP，只有 `POST /mcp`）。**这个值的第一来源是
-  代码**：`packages/retriever/src/providers/anysearch.ts` 的 `ANYSEARCH_ENDPOINT`；`probe-anysearch-provider.ts`
-  import 的就是它（拿到后先校验不是空串，不然 `--default-endpoint` 那一路会静默退回 env 还打
-  `default(forced)`）。`probe-anysearch-mcp-raw.ts` 故意自己留一份字面量——它不能经过 provider 层。
-  改代码里那个常量要同步这份 README。
+  代码**：`packages/retriever/src/providers/provider-facts.ts` 的 `PROVIDER_FACTS.anysearch.freeProbe.endpoint`
+  （适配器、免费面探针、`probe-anysearch-provider.ts` 都从这一格取；provider 探针拿到后先校验不是空串，
+  不然 `--default-endpoint` 那一路会静默退回 env 还打 `default(forced)`）。`probe-anysearch-mcp-raw.ts`
+  故意自己留一份字面量——它不能经过 provider 层。改表里那个值要同步这份 README。
 - `ANYSEARCH_ENDPOINT` 可覆盖。值以 `/v1/search` 结尾时自动改写成 `base+/mcp` 并打一次 stderr 警告——
   REST 还活着（`POST /v1/search` 200），改写成兼容垫片，不是 REST 退役。
 - 官方归属 2026-11-04 确认（#15，证据在适配器头注释）；证书 `*.anysearch.com` 有效期到 2027-04-07，
@@ -28,11 +28,12 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 协议版本
 
-- 适配器发 `2025-11-25`（`MCP_PROTOCOL_VERSION`），上游按请求协商；往下退就跟着退，不硬扛。
+- 适配器发 `2025-11-25`（`PROVIDER_FACTS.anysearch.mcpProtocolVersion`，适配器和免费面探针同一格），
+  上游按请求协商；往下退就跟着退，不硬扛。
 - raw 探针默认也发 `2025-11-25`；要测旧版本用 `--protocol-version <v>` / `--protocol-version=<v>`，或设
   `ANS_PROBE_PROTOCOL_VERSION=<v>`，例如 `--protocol-version 2025-03-26`。上游「要哪个给哪个」，所以版本做成
-  参数，不是替换掉旧的（#428）。探针那份是手写字面量（不 import 适配器），**改适配器的 `MCP_PROTOCOL_VERSION`
-  要同步改探针的 `DEFAULT_PROTOCOL_VERSION` 和这份 README**。
+  参数，不是替换掉旧的（#428）。探针那份是手写字面量（不 import 被检查的代码），**改表里的
+  `mcpProtocolVersion` 要同步改探针的 `DEFAULT_PROTOCOL_VERSION` 和这份 README**。
 - 事实：五种协商下 `tools/call` 的回复形状完全一致，所以对齐版本本身安全（#423）。
 
 ## 回复形状

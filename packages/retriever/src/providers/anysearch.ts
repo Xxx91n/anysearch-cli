@@ -13,9 +13,10 @@
 // Auth: optional API key via Authorization: Bearer; anonymous access works.
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
+import type { Mode, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
 import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
 import { redactSecrets } from "../redact";
+import { PROVIDER_FACTS } from "./provider-facts";
 
 // CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
 // endpoint — the deferred legal/ops ownership item is settled. Official evidence:
@@ -41,12 +42,8 @@ import { redactSecrets } from "../redact";
 // never the fused envelope.
 // Review: CT/expiry watch remains (cert valid to 2027-04-07) — re-confirm on the
 // next rotation.
-export const ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp";
-
-// Client-supported protocol version, sent on every POST per spec MUST. The
-// endpoint negotiates down: requesting 2026-07-28 returns 2025-11-25
-// (probe) — we still forward whatever initialize negotiated.
-const MCP_PROTOCOL_VERSION = "2025-11-25";
+// 默认地址和协议版本本身在 provider-facts 的 PROVIDER_FACTS.anysearch 那一格：这个适配器、
+// 免费面探针、provider 探针都从那里取，这里不再留字面量。
 
 const LEGACY_REST_SUFFIX = "/v1/search";
 let endpointRewriteWarned = false;
@@ -106,7 +103,7 @@ async function readSseJsonRpc(resp: Response, id: number, method: string): Promi
 }
 
 function toResult(url: string, title: string, snippet: string): NormalizedResult {
-  return { url, title: title || url, snippet: snippet.slice(0, 500), source: "anysearch" };
+  return { url, title: title || url, snippet: snippet.slice(0, 500), source: PROVIDER_FACTS.anysearch.id };
 }
 
 function mapStructuredResults(list: Array<{ title?: string; url?: string; snippet?: string; content?: string }>): NormalizedResult[] {
@@ -255,23 +252,23 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
 }
 
 export class AnySearchProvider implements SearchProvider {
-  readonly id = "anysearch";
+  readonly id = PROVIDER_FACTS.anysearch.id;
   // eval leg /: the MCP domain param is a vertical-routing
   // enum (academic..travel, 17 values) — NOT a hostname allowlist, so it cannot
   // carry SearchRequest.includeDomains. This arm stays post-filter-only on the
   // host axis; the orthogonal vertical axis is served by verticalDomainSupported.
-  readonly domainFilterSupported = false;
+  readonly domainFilterSupported = PROVIDER_FACTS.anysearch.domainFilterSupported;
   // declared — SearchRequest.vertical maps to the MCP
   // search tool's domain/sub_domain/sub_domain_params arguments in callSearch.
-  readonly verticalDomainSupported = true;
-  readonly modes: readonly ("fast" | "index" | "deep" | "answer")[] = ["fast", "index", "deep"];
+  readonly verticalDomainSupported = PROVIDER_FACTS.anysearch.verticalDomainSupported;
+  readonly modes: readonly Mode[] = PROVIDER_FACTS.anysearch.modes;
   // ponytail: AnySearch has no answer mode like Tavily/Exa; the wire schema
   // has no mode param at all (additionalProperties risk), so req.mode is never
   // sent — an answer intent degrades to a plain search (mapping documented in
   // .scratch/grill-round-82/issues/01-fix-r82-anysearch-mcp-migration.md).
   private apiKey?: string;
   private endpoint: string;
-  private protocolVersion = MCP_PROTOCOL_VERSION;
+  private protocolVersion: string = PROVIDER_FACTS.anysearch.mcpProtocolVersion;
   private sessionId?: string;
   private handshake?: Promise<void>;
   private nextId = 1;
@@ -287,7 +284,9 @@ export class AnySearchProvider implements SearchProvider {
     // defer-r84 closure: POSIX empty-string env == unset — ""
     // is a value for ?? (not nullish), so the chain used to fall to an
     // empty endpoint and every call failed into providersFailed.
-    this.endpoint = normalizeEndpoint(endpoint ?? (process.env.ANYSEARCH_ENDPOINT || undefined) ?? ANYSEARCH_ENDPOINT);
+    // 兜底是表里那一格 freeProbe.endpoint：anysearch 的免费面就是 MCP 入口，那格同时是
+    // 适配器的默认地址（理由写在 provider-facts 的 Design 注里）。
+    this.endpoint = normalizeEndpoint(endpoint ?? (process.env.ANYSEARCH_ENDPOINT || undefined) ?? PROVIDER_FACTS.anysearch.freeProbe.endpoint);
   }
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
@@ -319,7 +318,7 @@ export class AnySearchProvider implements SearchProvider {
       }
     }
     return {
-      provider: "anysearch",
+      provider: this.id,
       results: mapped.results,
       answers: [],
       elapsedMs: mapped.elapsedMs ?? (Date.now() - start),
@@ -361,7 +360,7 @@ export class AnySearchProvider implements SearchProvider {
     // handshake resets so the next call retries cleanly.
     this.handshake ??= (async () => {
       const res = await this.rpc("initialize", {
-        protocolVersion: MCP_PROTOCOL_VERSION,
+        protocolVersion: PROVIDER_FACTS.anysearch.mcpProtocolVersion,
         capabilities: {},
         clientInfo: { name: "anysearch-cli", version: "0.2.0" },
       }, signal);

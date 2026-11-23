@@ -25,10 +25,13 @@
 //   node scripts/preflight-test.mjs --dry-run  # print the plan, run nothing
 
 import { spawn, spawnSync } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveYaml } from "./check-workflows.mjs";
+import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
@@ -37,7 +40,46 @@ import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const GATE_TESTS = (process.env.PREFLIGHT_GATE_TESTS ?? "scripts/test/preflight-*.test.mjs").split(",");
+
+// Design: a reader that went away (piping into head) turns every later write into
+// an EPIPE, and Node raises it as an uncaught exception — the gate would die with
+// a stack instead of its exit code. Its answer is the exit code, so a stream that
+// cannot be written is not worth crashing over.
+for (const stream of [process.stdout, process.stderr]) stream.on("error", () => {});
+
+// Design: one `node --test` per group — a red group is named by the run that
+// failed, instead of parsed out of a reporter.
+//
+// Design: a full run covers the shared judgments too — the gate is the only
+// mechanical stop before a push, so a broken change policy or workflow checker
+// should not wait for CI to notice. Incremental pushes skip all of it.
+//
+// PREFLIGHT_GATE_TESTS replaces the group list for the tests that drive this
+// script with a fake pnpm.
+function gateGroups() {
+  const override = process.env.PREFLIGHT_GATE_TESTS;
+  if (override) return [{ name: "PREFLIGHT_GATE_TESTS override", files: override.split(",") }];
+  return [
+    { name: "push gate", files: ["scripts/test/preflight-*.test.mjs"] },
+    { name: "CI change policy", files: ["scripts/test/ci-changes.test.mjs"], shared: true },
+    { name: "workflow checks", files: ["scripts/test/check-workflows.test.mjs"], shared: true },
+  ];
+}
+
+const GATE_GROUPS = gateGroups();
+
+// Name the groups, and say which ones are not the gate's own: those run here
+// because a broken shared judgment is invisible until CI.
+function describeGateGroups() {
+  const names = (groups) => groups.map((group) => group.name).join(", ");
+  const shared = GATE_GROUPS.filter((group) => group.shared);
+  if (shared.length === 0) return names(GATE_GROUPS);
+  return `${names(GATE_GROUPS.filter((group) => !group.shared))}, plus the shared judgments (${names(shared)})`;
+}
+
+function gateFileList() {
+  return GATE_GROUPS.flatMap((group) => group.files).join(", ");
+}
 
 // Design: the old commit hook gets a notice, not a test run — a clone that
 // still has pre-commit-user calls this with --staged and nothing else. Name the
@@ -74,7 +116,10 @@ const selfTest = plan.mode === "full" && process.env.PREFLIGHT_SELF_TEST !== "0"
 
 if (args.includes("--dry-run")) {
   console.log(`[preflight] dry run, would run: pnpm ${runArgs.join(" ")}`);
-  if (selfTest) console.log(`[preflight] dry run, would also run the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  if (selfTest) {
+    console.log(`[preflight] dry run, would also run the gate's own tests: ${describeGateGroups()}`);
+    console.log(`[preflight] dry run, gate self-test files: ${gateFileList()}`);
+  }
   process.exit(0);
 }
 
@@ -97,22 +142,33 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 // A scripts/ change falls back to pnpm test, which only knows the workspace
 // packages — the gate's own tests have to run here or a broken gate ships.
 // PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
-// fake pnpm; PREFLIGHT_GATE_TESTS narrows the list so that test does not
+// fake pnpm; PREFLIGHT_GATE_TESTS replaces the group list so that test does not
 // re-enter the whole suite.
 if (selfTest) {
-  let status;
-  try {
-    status = await runGateTests();
-  } catch (error) {
-    status = null;
-    writeStderr(`[preflight] could not start the gate's own tests: ${error.message}`);
+  // Design: the shared judgment that needs a YAML parser is asked for here, by
+  // resolving the parser the same way check-workflows does — an uninstalled or
+  // half-installed tree would otherwise report a broken judgment. Name the
+  // command instead. PREFLIGHT_GATE_TESTS means a test supplied its own files.
+  if (!process.env.PREFLIGHT_GATE_TESTS && !resolveYaml(root)) {
+    removeTestHome(testHome);
+    writeStderr("[preflight] blocked: no YAML parser under node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need the workspace dependencies");
+    process.exit(1);
   }
-  if (interrupted) process.exit(interrupted);
-  if (status !== 0) {
+  let result;
+  try {
+    result = await runGateTests();
+  } catch (error) {
+    result = { failed: [], tests: null, failure: `could not start the gate's own tests: ${error.message}` };
+  }
+  if (interrupted) await exitAfterFlush(interrupted);
+  if (result.failure || result.failed.length > 0) {
+    const reason = result.failure ?? `gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`;
+    writeStderr(`[preflight] ${reason}`);
     reportKeptTestHome(testHome);
     writeStderr("[preflight] blocked: the gate's own tests failed");
-    process.exit(status ?? 1);
+    await exitAfterFlush(1);
   }
+  console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
 
 child = spawn("pnpm", runArgs, {
@@ -123,16 +179,7 @@ child = spawn("pnpm", runArgs, {
   detached: process.platform !== "win32",
 });
 
-let tail = "";
-for (const [stream, out] of [
-  [child.stdout, process.stdout],
-  [child.stderr, process.stderr],
-]) {
-  stream.on("data", (chunk) => {
-    out.write(chunk);
-    tail = (tail + chunk).slice(-64 * 1024);
-  });
-}
+const readTail = forwardKeepingTail(child, 64 * 1024);
 
 let status;
 try {
@@ -150,7 +197,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
-  const failed = failedTask(tail);
+  const failed = failedTask(readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome, console.error);
   process.exitCode = status ?? 1;
@@ -245,24 +292,78 @@ function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
 }
 
+// Design: pin the reporter to spec — the total is read from the summary line it
+// ends with, so a terminal and a pipe must print the same shape.
 async function runGateTests() {
-  console.log(`[preflight] running the gate's own tests: ${GATE_TESTS.join(", ")}`);
+  console.log(`[preflight] running the gate's own tests: ${describeGateGroups()}`);
+  console.log(`[preflight] gate self-test files: ${gateFileList()}`);
   const gateEnv = { ...testHome.env };
   delete gateEnv.NODE_TEST_CONTEXT;
-  child = spawn(process.execPath, ["--test", ...GATE_TESTS], {
-    cwd: root,
-    env: gateEnv,
-    stdio: "inherit",
-    detached: process.platform !== "win32",
-  });
-  try {
-    return await new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", resolve);
+  const failed = [];
+  const counts = [];
+  for (const group of GATE_GROUPS) {
+    if (interrupted) break;
+    child = spawn(process.execPath, ["--test", "--test-reporter=spec", ...group.files], {
+      cwd: root,
+      env: gateEnv,
+      stdio: ["inherit", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
-  } finally {
-    child = null;
+    const groupTail = forwardKeepingTail(child, 8 * 1024);
+    let status;
+    try {
+      status = await new Promise((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", resolve);
+      });
+    } finally {
+      child = null;
+    }
+    counts.push(testCount(groupTail()));
+    if (status !== 0) failed.push(group);
   }
+  // One unreadable count makes the total unknown: the rest do not add up to it,
+  // and a partial sum would be reported as the whole.
+  const tests = counts.every((count) => count !== null) ? counts.reduce((sum, count) => sum + count, 0) : null;
+  return { failed, tests, failure: null };
+}
+
+// Forward both streams and keep the last bytes, so a caller can read a line out
+// of output the operator has already seen. Design: decode through StringDecoder —
+// a `ℹ` split across two chunks would otherwise fail the count's regex.
+function forwardKeepingTail(source, limit) {
+  let tail = "";
+  for (const [stream, out] of [
+    [source.stdout, process.stdout],
+    [source.stderr, process.stderr],
+  ]) {
+    const decoder = new StringDecoder("utf8");
+    stream.on("data", (chunk) => {
+      out.write(chunk);
+      tail = (tail + decoder.write(chunk)).slice(-limit);
+    });
+  }
+  return () => tail;
+}
+
+// Design: the flush lives in preflight-flush.mjs so a test can give it a fake
+// stream — preflight-stderr.mjs is there for the same reason.
+async function exitAfterFlush(code) {
+  await flushStreams([process.stdout, process.stderr]);
+  process.exit(code);
+}
+
+// node's spec reporter prints "ℹ tests N" once per run. A run that printed so
+// much the summary fell out of the tail reports no count rather than a wrong one.
+function testCount(output) {
+  const match = /^ℹ tests (\d+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
+  return match ? Number(match[1]) : null;
+}
+
+function describeCount(tests, count) {
+  const groups = `${count} group${count === 1 ? "" : "s"}`;
+  // Say the count is unknown instead of passing the group count off as it.
+  return tests === null ? `${groups} (test count unreadable)` : `${tests} tests in ${groups}`;
 }
 
 // Stop the whole tree: pnpm's turbo and the tests it starts are grandchildren,
