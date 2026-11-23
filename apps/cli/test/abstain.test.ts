@@ -12,7 +12,14 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "../src/commands/search-abstain";
+import {
+  searchExitCode,
+  formatAbstainLine,
+  formatProviderAbsentLine,
+  formatProvidersFailedLine,
+  describeKeylessBehavior,
+  describeCredentialSource,
+} from "../src/commands/search-abstain";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -51,7 +58,53 @@ async function main() {
   assert(multi!.includes("tavily — unexpected construction fault"), "each arm carries its own category");
   assert(multi!.includes("exa — permanent: missing/invalid credential"), "second arm keeps the credential category");
 
-  // 4. Conditional live arm: spawn the built CLI against a narrow-allowlist
+  // 4. Failed-provider line carries the arm's key source (#441). Same
+  //    resolution the engine hands us; no source when resolution never ran.
+  assert(
+    formatProvidersFailedLine(["exa"], { status: "resolved", exa: "env" }) ===
+      "Providers failed: exa（key 来自环境变量）",
+    "env key is named on the failed line",
+  );
+  assert(
+    formatProvidersFailedLine(["tavily"], { status: "resolved", tavily: "user" }) ===
+      "Providers failed: tavily（key 来自用户凭据文件）",
+    "user key is named on the failed line",
+  );
+  assert(
+    formatProvidersFailedLine(["anysearch"], { status: "resolved", anysearch: "none" }) ===
+      "Providers failed: anysearch（无 key，按匿名跑）",
+    "a keyless arm says it runs anonymously",
+  );
+  assert(
+    formatProvidersFailedLine(["tavily"], { status: "resolved" }) ===
+      "Providers failed: tavily（无 key，按 keyless 跑）",
+    "an arm the resolver left absent is keyless, not unknown",
+  );
+  assert(
+    formatProvidersFailedLine(["exa"], { status: "failed", error: "unreadable" }) === "Providers failed: exa",
+    "a failed resolution adds no invented source",
+  );
+  assert(
+    formatProvidersFailedLine(["exa", "tavily"], { status: "resolved", exa: "env", tavily: "none" }) ===
+      "Providers failed: exa（key 来自环境变量）, tavily（无 key，按 keyless 跑）",
+    "each failed arm keeps its own note",
+  );
+  assert(
+    formatProvidersFailedLine(["other"], { status: "resolved" }) === "Providers failed: other",
+    "an arm the resolver never named gets no invented source",
+  );
+  assert(
+    formatProvidersFailedLine(["exa"], { status: "resolved" }) === "Providers failed: exa（无 key）",
+    "a failed arm names only its key state; 'does not participate' belongs to doctor",
+  );
+  assert(describeKeylessBehavior("exa").includes("这个源不参与"), "exa's keyless arm does not join the fanout");
+  assert(
+    describeCredentialSource("env", "tavily") === "key 来自环境变量" &&
+      describeCredentialSource("none", "tavily") === "无 key，按 keyless 跑",
+    "doctor and search share one source wording",
+  );
+
+  // 5. Conditional live arm: spawn the built CLI against a narrow-allowlist
   // domain — deterministic abstain whenever one keyed provider exists.
   const here = dirname(fileURLToPath(import.meta.url));
   const dist = join(here, "..", "dist", "index.js");

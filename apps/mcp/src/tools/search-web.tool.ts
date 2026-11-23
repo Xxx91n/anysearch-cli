@@ -88,8 +88,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
               // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
-              // (these three keys are unconditional in the content JSON; structuredContent
-              // carries only sufficiency / attribution / abstain / failure metadata).
+              // (these three keys are unconditional in the content JSON; structuredContent is a
+              // different shape — credentialSources always, sufficiency / attribution / abstain /
+              // failure metadata when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
@@ -127,9 +128,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
 
           const attribution = envelope.attribution;
           const abstain = envelope.metadata?.abstain;
-          // Abstain surfaces as structuredContent.abstain with
-          // isError absent (false). The block is emitted whenever any of
-          // sufficiency/attribution/abstain is present.
+          // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
+          // 结果一定带 structuredContent：credentialSources 恒有值；
+          // sufficiency / attribution / provider failures 有值时才加。
           const structuredContent = {
             // #304 review: the caller may have aborted mid-search. The engine
             // returns whatever arrived instead of throwing, so without this the
@@ -139,10 +140,12 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
             ...(providerFailures ?? {}),
+            // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
+            credentialSources: eng.credentialSources ?? null,
           };
           return {
             content: [{ type: "text" as const, text: summary }],
-            ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
+            structuredContent,
           };
         } catch (e) {
           // A refused reservation never reached a provider: report it as the

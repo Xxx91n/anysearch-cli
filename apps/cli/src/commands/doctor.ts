@@ -38,6 +38,7 @@ import { readSwitchHistory } from "../upgrade-record";
 import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly } from "../skill-store";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { describeCredentialSource } from "./search-abstain";
 
 declare const __PACKAGE_VERSION__: string | undefined;
 const PKG_VERSION: string =
@@ -198,12 +199,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const id of SEARCH_PROVIDER_IDS) {
       try {
         const instance = make[id]();
+        // 这一行只证明构造器能建；联网和 key 是否有效不在这里验。
         report.add({
           layer: "capability",
           name: `provider ${id}`,
-          state: instance.id.length > 0 && instance.modes.length >= 3 ? "ready" : "failed",
+          state: "ready",
           mode: "offline",
-          detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「搜索源」）`,
+          detail: `id=${instance.id} modes=${instance.modes.join(",")}（只验构造器能建，key 另见「信息源」）`,
         });
       } catch (error) {
         // 有的构造器没 key 就拒（exa 就是）。没配 key 是合法的空，不是坏了；
@@ -348,12 +350,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     for (const provider of SEARCH_PROVIDER_IDS) {
       const entry = credentials[provider];
       if (!entry) {
+        // 没 key 不等于这个源没参与：tavily 和 anysearch 照常发请求，只有 exa 的适配器不建这个臂。
         report.add({
           layer: "capability",
-          name: `搜索源 ${provider}`,
+          name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "没有 key，这个源不会参与检索",
+          detail: describeCredentialSource("none", provider),
         });
         continue;
       }
@@ -361,19 +364,19 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       if (!entry.apiKey) {
         report.add({
           layer: "capability",
-          name: `搜索源 ${provider}`,
+          name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "endpoint 设了，但没有 key；这个源不会参与检索",
+          detail: "endpoint 设了；" + describeCredentialSource("none", provider),
         });
         continue;
       }
       report.add({
         layer: "capability",
-        name: `搜索源 ${provider}`,
+        name: `信息源 ${provider}`,
         state: "ready",
         mode: "offline",
-        detail: entry.source === "env" ? "key 来自环境变量" : "key 来自用户凭据文件",
+        detail: describeCredentialSource(entry.source, provider),
       });
     }
   }

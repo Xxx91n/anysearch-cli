@@ -55,16 +55,17 @@ cd packages/retriever && node --import tsx ../../.scratch/wf421/baseline.ts
 
 套餐 `Researcher`，`plan_usage` 1000 / `plan_limit` 1000，搜索用量 1000。`/usage` 的回包里
 没有重置日期，什么时候能跑要看 tavily 控制台。`classifyProviderError` 把它判成
-`quota-exhausted`——`contract.ts:250-251` 那条注释说的正是这个形状（tavily 回纯文本
-432，`@tavily/core` 把状态码丢了），这次是第一次拿真回包验到。
+`quota-exhausted`——`contract.ts` 里 `classifyProviderError` 判 `quota-exhausted` 的那段
+注释说的正是这个形状（tavily 回纯文本 432，`@tavily/core` 把状态码丢了），这次是第一次拿
+真回包验到。
 
 ## 顺手查实的两个事实
 
-- **只有 anysearch 有 endpoint 环境变量开关。** `anysearch.ts:232` 读
-  `ANYSEARCH_ENDPOINT`，没设就用写死的默认公开地址。exa 和 tavily 的适配器把默认地址
-  写死了（`exa.ts` 构造 `new Exa()` 不传 baseURL，`@tavily/core` 里有个 `BASE_URL` 常量），
-  没有 env 开关。所以「endpoint 来源」这一栏，三家现在都是 default，但只有 anysearch 能
-  变成 env。
+- **只有 anysearch 有 endpoint 环境变量开关。** `anysearch.ts` 里 `AnySearchProvider` 的
+  构造函数读 `ANYSEARCH_ENDPOINT`，没设就用写死的默认公开地址。exa 和 tavily 的适配器把
+  默认地址写死了（`exa.ts` 构造 `new Exa()` 不传 baseURL，`@tavily/core` 里有个 `BASE_URL`
+  常量），没有 env 开关。所以「endpoint 来源」这一栏，三家现在都是 default，但只有
+  anysearch 能变成 env。
 - **三个 key 都来自环境变量。** 本机没有 `~/.ans/credentials.json`，三个适配器也都只读
   `process.env`（`ANYSEARCH_API_KEY` / `EXA_API_KEY` / `TAVILY_API_KEY`）。这一条跟 #418、
   #422 是同一件事：按 README 把 key 存进凭据文件的人，跑探针会变成匿名调用。

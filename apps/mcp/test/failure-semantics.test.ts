@@ -292,6 +292,8 @@ async function main() {
     {
       const eng = makeEngine(async () => partialEnvelope(), {
         providerBuildErrors: { exa: "permanent: missing/invalid credential — set the provider's API key env" },
+        // #441: the same record the CLI's --json carries.
+        credentialSources: { status: "resolved", exa: "env", tavily: "none" },
       });
       const h = captureHandlers(eng);
       const res = await h.search_web({ query: "x" });
@@ -316,12 +318,16 @@ async function main() {
       );
       assert(sc.providerErrorClasses?.tavily === "transient", "search_web partial failure: structuredContent carries providerErrorClasses");
       assert(typeof sc.providerBuildErrors?.exa === "string", "search_web partial failure: structuredContent carries providerBuildErrors");
+      assert(sc.credentialSources?.status === "resolved", "search_web partial failure: structuredContent carries credentialSources");
+      assert(sc.credentialSources?.exa === "env" && sc.credentialSources?.tavily === "none",
+        "search_web partial failure: credential labels are unchanged from the engine");
     }
 
     // ---- 7. research_web: same partial-failure contract ----
     {
       const eng = makeEngine(async () => partialEnvelope(), {
         providerBuildErrors: { exa: "permanent: missing/invalid credential — set the provider's API key env" },
+        credentialSources: { status: "resolved", exa: "env", tavily: "none" },
       });
       const res = await captureHandlers(eng).research_web({ question: "x", depth: "brief" });
       assert(res?.isError !== true, "research_web partial failure: isError is not true");
@@ -334,6 +340,9 @@ async function main() {
       assert(sc?.providersFailed?.[0] === "tavily", "research_web partial failure: structuredContent carries providersFailed");
       assert(sc?.providerErrorClasses?.tavily === "transient", "research_web partial failure: structuredContent carries providerErrorClasses");
       assert(typeof sc?.providerBuildErrors?.exa === "string", "research_web partial failure: structuredContent carries providerBuildErrors");
+      assert(sc?.credentialSources?.status === "resolved", "research_web partial failure: structuredContent carries credentialSources");
+      assert(sc?.credentialSources?.exa === "env" && sc?.credentialSources?.tavily === "none",
+        "research_web partial failure: credential labels are unchanged from the engine");
     }
 
     // ---- 8. Zero results with an answering arm stays a success ----
