@@ -3,10 +3,10 @@
 // 三个适配器（exa / tavily / anysearch）和免费面探针都从这里读 id、modes、两个能力位、
 // 免费面的 endpoint 与 undetectable、AnySearch 的 MCP 协议版本。改一家信息源改一行。
 //
-// Design: 代码事实表和手写文档分工，不合并 —— transport 描述、cancellable、用量、
-// 解释文字、中英双语 prose 留在 providers/<id>/README.md 和
-// docs/mcp-server.md 的「## Upstream provider transport matrix」。那张表是唯一的能力表
-// （#419），代码里再收一份就是第二份拷贝，所以 #415 按 code-only 收窄。
+// Design: 行为值归这张表，说明文字归文档 —— 改一家信息源只改这里一行，编译器盯着；
+// transport 描述、cancellable、用量、解释文字、中英双语 prose 留在 providers/<id>/README.md
+// 和 docs/mcp-server.md 的「## Upstream provider transport matrix」手写（#419 定的分工）。
+// 表不当文档的源：往这里塞 prose 只会多一份要维护的拷贝，所以 #415 按 code-only 收窄。
 import type { Mode } from "../contract";
 
 /** 免费面天生验不到的错误类：这一跑过了，也不代表这类问题是好的。
@@ -35,8 +35,8 @@ export interface ProviderFacts {
 }
 
 /**
- * 表的形状：一家一行，每行都要填全 `ProviderFacts`，`id` 由键给出——写错在类型检查就红，
- * 不用在行里重复声明。少填一家 = 少了键，少填一个必填字段 = 那一行不满足 `ProviderFacts`。
+ * 表的形状：一家一行，每行都要填全 `ProviderFacts`，`id` 必须和键一致——写错在类型检查就红。
+ * 少填一家 = 少了键，少填一个必填字段 = 那一行不满足 `ProviderFacts`。
  * 唯一的可选字段是 `mcpProtocolVersion`：删掉它不会让表本身红，读它的适配器和探针会红。
  */
 type ProviderFactsTable = { [K in ProviderKey]: ProviderFacts & { readonly id: K } };

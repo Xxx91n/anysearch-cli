@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **新增 `provider-facts`**（retriever 包，`./providers` 公开面导出）：按 provider id 键控。字段只有代码真的会读的那几个：`id`、`modes`、两个能力位、`freeProbe.endpoint`、`freeProbe.undetectable`、`mcpProtocolVersion`（只有 anysearch 有）。`id` 由键给出，不用在行里重复写，写错就红。
+- **新增 `provider-facts`**（retriever 包，`./providers` 公开面导出）：按 provider id 键控。字段只有代码真的会读的那几个：`id`、`modes`、两个能力位、`freeProbe.endpoint`、`freeProbe.undetectable`、`mcpProtocolVersion`（只有 anysearch 有）。`id` 必须和键一致，写错就红。
 - **三个适配器改成读表**：exa / tavily / anysearch 的 `id`、`modes`、两个能力位不再各写一份。exa 和 tavily 以前没声明 `verticalDomainSupported`，现在显式写 `false`——引擎读的是真假值，`undefined` 和 `false` 一样走降级，所以行为没变。
 - **免费面探针读表**：`probeTavily` / `probeExa` / `probeAnySearch` 的默认 endpoint、`undetectable`、AnySearch 协议版本从表里取，模块内那几个同名常量删掉。`isProbeProviderId` 以表键为准；`probeProviderAuth` 仍是一家一个函数，表里加一家而 `PROBES` 少一个就编译失败。
 - **`providers/anysearch/README.md` 的两处指路跟着改**：端点和协议版本都指向 `provider-facts.ts` 里的那一格；provider 探针的 `--default-endpoint` 改成从表里取地址，取不到就退出 2，不静默退回 env。

@@ -18,7 +18,11 @@ import { PROVIDER_FACTS, type UndetectableClass } from "./provider-facts";
 /** 一次探针请求多久算超时。服务器回了响应头再卡住，也在这一条时限里。 */
 const PROBE_TIMEOUT_MS = 10_000;
 
-/** 免费面探针覆盖的 provider：就是事实表的键，不另立一份清单。 */
+/**
+ * 免费面探针覆盖的 provider：就是事实表的键，不另立一份清单。
+ * 表里每一家都必须有探针 —— `PROBES` 的类型是 `Record<ProbeProviderId, …>`，
+ * 少一个函数就编译失败，所以两个集合永远是同一个。
+ */
 export type ProbeProviderId = keyof typeof PROVIDER_FACTS;
 
 /** key 的三种结论。unverified 必须说出来，不然绿勾会被读成「验过了」。 */
@@ -371,11 +375,7 @@ const PROBES: Record<ProbeProviderId, (input: ProbeInput) => Promise<ProbeOutcom
   anysearch: probeAnySearch,
 };
 
-/**
- * 这家有没有免费面探针：以事实表的键为准。没登记的 provider 不猜，让调用方说清楚「还没接」。
- * 表键和 `PROBES` 不会分叉——`PROBES` 的类型就是 `Record<ProbeProviderId, …>`，
- * 表里加一家而这里少一个函数，编译就红。
- */
+/** 这家有没有免费面探针：以事实表的键为准。没登记的 provider 不猜，让调用方说清楚「还没接」。 */
 export function isProbeProviderId(id: string): id is ProbeProviderId {
   return Object.prototype.hasOwnProperty.call(PROVIDER_FACTS, id);
 }
