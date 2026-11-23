@@ -417,6 +417,30 @@ test("a throwing credential resolver degrades to env, it does not kill the engin
   }
 });
 
+test("a throwing credential resolver still honours the environment keys", () => {
+  // #500: the degradation path re-resolves the injected env explicitly. Without
+  // that, `creds` stayed undefined, exa's factory took the free-quota arm, and a
+  // machine with EXA_API_KEY set would silently lose the paid REST arm just
+  // because the credential file was unreadable.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: { EXA_API_KEY: "sk-unusable" + String.fromCharCode(10) + "header-fault" },
+    searchCredentials: () => { throw new Error("EACCES: credentials.json is unreadable"); },
+  });
+  try {
+    assert.equal(engine.credentialSources?.status, "failed", "the resolution fault is still reported");
+    assert.equal(
+      engine.providerBuildErrors.exa,
+      "permanent: missing/invalid credential — set the provider's API key env",
+      "the env key reached the REST arm instead of the free-quota arm",
+    );
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
 test("an endpoint without a key is reported as keyless, not as authenticated", () => {
   // `resolveSearchCredentials` emits the anysearch arm with an endpoint alone
   // when ANYSEARCH_ENDPOINT is set and no key exists (that is how the offline

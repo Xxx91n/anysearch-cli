@@ -36,7 +36,7 @@ import {
 // ponytail: wrap in try/catch — a provider whose constructor throws is skipped, not crashed.
 // Exa is the only arm that can throw, and only on a key it cannot use (a
 // header-invalid value does it). A missing key gets its free-quota arm instead
-// (#500); tavily builds a keyless client and anysearch goes anonymous, so their
+// (#500); tavily builds a client without a key and anysearch goes anonymous, so their
 // missing key surfaces at call time.
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in

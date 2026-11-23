@@ -29,6 +29,7 @@ const envCredentials = (e?: NodeJS.ProcessEnv) =>
 // 「构造会抛」的真实样本（#500 起没配 key 走免费额度，不再算样本）。
 // 值本身不许出现在记录或 stderr 里，下面有专门一条断言盯着。
 const UNUSABLE_EXA_KEY = "sk-secret-do-not-log\nheader-fault";
+const savedExaKey = process.env.EXA_API_KEY;
 const origStderrWrite = process.stderr.write;
 let captured = "";
 try {
@@ -110,10 +111,10 @@ try {
   // #500 验收：没配 key 不再是一次构造失败——exa 臂换成免费额度，建得起来，记录里不点名。
   delete process.env.EXA_API_KEY;
   captured = "";
-  const keyless = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
-  assert.deepEqual(keyless.providerBuildErrors, {}, "a missing key builds the free-quota arm, nothing to report");
-  assert.equal(captured, "", "the keyless path writes no construction failure");
-  closeResult(keyless);
+  const withoutKey = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
+  assert.deepEqual(withoutKey.providerBuildErrors, {}, "a missing key builds the free-quota arm, nothing to report");
+  assert.equal(captured, "", "the path without a key writes no construction failure");
+  closeResult(withoutKey);
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the
