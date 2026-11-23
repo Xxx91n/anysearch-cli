@@ -2,8 +2,8 @@
 // 都从这里读，改一家信息源改一行。
 //
 // Design: 行为值归这张表，说明文字归文档（providers/<id>/README.md、
-// docs/mcp-server.md 的「## Upstream provider transport matrix」）——表不当文档的源，
-// 往这里塞 prose 只会多一份要维护的拷贝（#419、#415 的 code-only 收窄）。
+// docs/mcp-server.md 的「## Upstream provider transport matrix」）。每行的短注只回答
+// 「这个值为什么是这个」；成段的解释、transport 描述和用量留在文档里（#419、#415）。
 import type { Mode } from "../contract";
 
 /** 免费面天生验不到的错误类：这一跑过了，也不代表这类问题是好的。
@@ -12,10 +12,10 @@ import type { Mode } from "../contract";
 export type UndetectableClass = "auth" | "quota";
 
 /**
- * 代码里有适配器、也有免费面探针的这几家。这组 id 现在各写一份、没有类型把它们绑在一起：
+ * 代码里有适配器、也有免费面探针的这几家。新增一家时，`probes` 的 `PROBES` 由类型盯着
+ * （`Record<ProbeProviderId, …>`，少一个函数就红），另外三处要手动一起改：
  * 这里、packages/store/src/credentials.ts 的 `SEARCH_PROVIDER_IDS`（凭据那侧）、
- * packages/kernel/src/composition.ts 的 `PROVIDER_CONSTRUCTORS`（装配）、probes 的 `PROBES`。
- * 新增一家要四处一起改。
+ * packages/kernel/src/composition.ts 的 `PROVIDER_CONSTRUCTORS`（装配）。
  */
 type ProviderKey = "exa" | "tavily" | "anysearch";
 
