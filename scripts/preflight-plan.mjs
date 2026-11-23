@@ -169,11 +169,15 @@ export function codeOwnership(files, packages) {
  *
  * Readers do not bring their dependents: an app that depends on store never
  * opens the file through store's tests, so running it would cost time and prove
- * nothing.
+ * nothing. A dependent that does open the file is named in its own right: cli,
+ * on the domains row, is one.
  *
  * Evidence, so the next editor can re-check instead of grepping blind:
  *   domains/*.toml           kernel test/rag-adapter.test.ts, test/eval-looks-stub.test.ts;
- *                            store test/domain-loader.test.ts, test/eval-docs-golden.test.ts
+ *                            store test/domain-loader.test.ts, test/eval-docs-golden.test.ts;
+ *                            cli test/doctor.test.ts — doctor resolves the default domain
+ *                            through domainSearchDirs(), whose last stop is this directory,
+ *                            and asserts the [skills] active list it finds
  *   AGENTS.md                store test/eval-docs-golden.test.ts — the golden entry's
  *                            provenance ref has to resolve on disk; nothing reads the prose
  *   eval-looks.json          kernel test/eval-looks-stub.test.ts;
@@ -183,7 +187,11 @@ export function codeOwnership(files, packages) {
  *   eval-looks.coverage.json store test/eval-docs-golden.test.ts
  */
 export const ROOT_READERS = [
-  { path: "domains", ext: ".toml", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  {
+    path: "domains",
+    ext: ".toml",
+    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
+  },
   { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
   { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
   { path: "eval-looks.coverage.json", readers: ["@anysearch-cli/store"] },

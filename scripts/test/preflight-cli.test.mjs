@@ -381,6 +381,7 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       changed: "domains/docs.toml",
       echoArgs: true,
       extraPackages: {
+        "apps/cli": { name: "@anysearch-cli/cli" },
         "apps/kernel": { name: "@anysearch-cli/kernel" },
         "apps/store": { name: "@anysearch-cli/store" },
       },
@@ -390,8 +391,9 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       assert.equal(result.status, 0, result.stderr);
       assert.match(
         result.stdout,
-        /run: @anysearch-cli\/kernel, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
+        /run: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/store \(the packages whose tests read these root files\)/,
       );
+      assert.match(result.stdout, /--filter=@anysearch-cli\/cli/);
       assert.match(result.stdout, /--filter=@anysearch-cli\/kernel/);
       assert.match(result.stdout, /--filter=@anysearch-cli\/store/);
       assert.match(result.stdout, /green in \d+\.\ds \(readers\)/);
@@ -401,6 +403,22 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       assert.equal(result.stdout.includes("running the gate's own tests"), false, result.stdout);
     },
   );
+});
+
+test("a root file whose reader is missing from the workspace runs the suite and says which", async () => {
+  await withWorkspace({ changed: "domains/docs.toml", echoArgs: true }, ({ root, bin }) => {
+    // The fixture workspace has only dsh-plugin, so every reader domains names
+    // is missing: a renamed package would otherwise filter turbo down to no
+    // task and still exit 0, which reads as green.
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /full suite: no workspace package named: @anysearch-cli\/cli, @anysearch-cli\/kernel, @anysearch-cli\/store/,
+    );
+    assert.match(result.stdout, /^test$/m, result.stdout);
+    assert.equal(result.stdout.includes("--filter="), false, result.stdout);
+  });
 });
 
 test("a clean tree reports nothing to run and runs no self-test", async () => {
