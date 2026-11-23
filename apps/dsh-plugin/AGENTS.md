@@ -25,3 +25,5 @@ If the server cannot be reached, hooks allow the call, IPC calls disappear silen
 ## Tests
 
 `node --import tsx --test` runs them. A mock Cordis ctx plus real localhost stand-ins cover both the anysearch server and the ans-mcp HTTP endpoint (stateless JSON-RPC `initialize`, `notifications/initialized` and `tools/call`). No dsh process is needed.
+
+The tests import `@anysearch-cli/plugin/hooks/*`, which resolves to that package's built `dist/hooks/*.cjs`. Turbo builds them first: `@anysearch-cli/dsh-plugin#test` keeps the upstream-test edge for that reason (see the root `AGENTS.md`, `### Gate rules`). Running this package's tests on its own needs `pnpm -C apps/plugin run build:hooks` first, or the first import fails with `ERR_MODULE_NOT_FOUND`.

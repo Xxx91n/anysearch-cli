@@ -34,11 +34,10 @@ jobs:
         with:
           install-args: --frozen-lockfile
           dep-age-override: true
-      # Design: docs-only PRs skip both probes; native-smoke is not a
-      # release-gate family.
+      # Design: lane flag; see scripts/ci-changes.mjs. A missing flag runs.
       - name: Verify probe process-tree cleanup
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-native-smoke != 'false' }}
         run: node --test scripts/test/probe-process.test.mjs
       - name: Verify native prebuild loads (${{ matrix.label }})
-        if: ${{ steps.setup.outputs.docs-only != 'true' }}
+        if: ${{ steps.setup.outputs.run-native-smoke != 'false' }}
         run: node scripts/verify-native.mjs

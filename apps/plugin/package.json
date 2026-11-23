@@ -58,6 +58,7 @@
   "scripts": {
     "build": "pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks",
     "gen:configs": "node scripts/gen-claude-configs.mjs",
+    "gen:tlds": "node scripts/gen-tlds.mjs",
     "build:hooks": "node scripts/build-hooks.mjs",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",

@@ -13,6 +13,9 @@
 - **信息源**:一个对外的搜索入口，比如 Exa、Tavily 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
   _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
+- **免费额度**:没配 key 时信息源自己给的免费档，照样能发请求，但有次数和速度上限，不像有 key 那样稳。`credentialSources` 里这一臂记 `none`，那只说明没配 key，不说这一臂不干活，也不说它建没建起来（代码里叫 CredentialSourceLabel 的 `"none"`）。
+  _Avoid_: keyless、匿名调用、匿名层、无 key
+
 - **领域检索适配器**:把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
   _Avoid_: RAG Adapter、领域专属检索适配器
 
@@ -211,6 +214,7 @@
 - **领域约束**:当前领域到底有没有按它配的那样在跑，只有三种答案——没指定领域（合法，全量扇出、不做网址过滤）、已经建起来（白名单、信息源、工具名单按它的来）、没建起来。第三种要分两件事看：文件根本不在（missing），只有有人点名了才算故障，没人点名就是合法退回全量扇出；文件在但读不出来（broken），不管有没有人点名都算故障，因为那说明声明的规则坏了。故障一律报错停下，不会悄悄变成"全网、不过滤"（代码里叫 resolveDomainConstraint，三种状态是 undeclared / established / failed，失败里带 fault 和 fatal）。
   _Avoid_: Domain State、领域状态机、配置健康度
 
+- **网址策略**:工具真正跑之前，钩子把这次调用会碰到的网址拿去跟项目的白名单、黑名单比一遍——黑名单命中就拒绝，不在白名单就问，规则拿不到也问（代码里叫 `makePreToolUseDecision` 的 URL 分支，取网址靠 `toolInputCandidates`）。它只看会把文本送出去的字段，所以 `recall_memory`、`query_knowledge` 的查询不在其列；跟「域过滤」不是一回事：那条管的是拿回来的结果。
 - **域过滤**:白名单非空时只留名单里的网址，黑名单永远优先，信息源支持就先让它筛，引擎再本地筛一遍；名单为空时这条域过滤不启用（代码里叫 shouldAllowUrl）。
   _Avoid_: Dual-Gate Domain Filtering、双闸域过滤
 

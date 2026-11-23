@@ -46,6 +46,8 @@ assert(!release.includes("--decision"), "release.yml delegates the decision flag
 
 // --- 3. ship-gate.yml aligned on Node 22 (ledger 4) ------------------
 const shipGateYml = read(".github/workflows/ship-gate.yml");
+assert(/^\s{2}memory-eval:/m.test(shipGateYml), "ship-gate.yml must keep the memory-eval job");
+assert(/^\s{4}name:\s*memory-eval\b/m.test(shipGateYml), "memory-eval check name must start with memory-eval");
 assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin Node 24");
 // the macOS spillover probe is a third job again (restored by the PR #174
 // repair after the promotion reversal) — assert EVERY node-version pin is 22

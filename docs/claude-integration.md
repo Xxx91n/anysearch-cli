@@ -108,8 +108,16 @@ What each event does:
 | Event | Behavior |
 |-------|----------|
 | SessionStart | `hookSpecificOutput.additionalContext` carries the ans_* routing card, which goes into context |
-| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same `hookSpecificOutput`; a decision that rewrites the tool's arguments ships them as `hookSpecificOutput.updatedInput` |
+| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same `hookSpecificOutput`, judging any host written in `search_web.query`, `research_web.question`, `ans_chat.message` or `verticalParams` — bare ones like `example.com/a` included; a decision that rewrites the tool's arguments ships them as `hookSpecificOutput.updatedInput` |
 | PostToolUse | distills `tool_response.results[]` into a `hookSpecificOutput.additionalContext` summary; also POSTs index entries to the plugin server (`/index`) |
+
+On the URL policy: the hosts it judges are read from the fields whose text leaves
+the machine. `recall_memory` and `query_knowledge` read the local index, so a URL
+written there is not judged — widening or rewriting those queries would change
+which rows come back. A bare domain counts as a host when its last label is a real
+TLD; file names (`main.py`), versions (`v1.2`), bare IPs, emails and `localhost`
+are left alone. That list is a committed IANA snapshot refreshed by
+`node apps/plugin/scripts/gen-tlds.mjs`.
 
 On the rewrite channel: `updatedInput` replaces the tool's whole input object,
 so whatever sets it has to send the unchanged fields along. It works without a

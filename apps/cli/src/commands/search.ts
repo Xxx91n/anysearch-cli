@@ -12,6 +12,7 @@ import {
   searchExitCode,
   formatAbstainLine,
   formatProviderAbsentLine,
+  formatProvidersCancelledLine,
   formatProvidersFailedLine,
   formatProviderHintLines,
 } from "./search-abstain";
@@ -213,6 +214,12 @@ export async function runSearch(args: string[]): Promise<number> {
         // providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
+        // Who was asked, and who we cut off — with providersFailed above, these
+        // three answer "what happened to each arm". A source the domain config
+        // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
+        // never joins the fanout.
+        providersQueried: envelope.metadata?.providersQueried ?? [],
+        providersCancelled: envelope.metadata?.providersCancelled ?? [],
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         // construction-time provider absences (id -> safe category), paired
@@ -254,6 +261,8 @@ export async function runSearch(args: string[]): Promise<number> {
         console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
         printProviderFailureHints(envelope.metadata);
       }
+      // 这条分支不打 cancelled：宽限窗口要先攒够结果才武装，拒答的前提是结果池
+      // 是空的，CLI 又不传调用方信号，所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
       return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
@@ -298,6 +307,8 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log(formatProvidersFailedLine(envelope.metadata.providersFailed, credentialSources));
       printProviderFailureHints(envelope.metadata);
     }
+    const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
+    if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");

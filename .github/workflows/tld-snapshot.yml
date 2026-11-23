@@ -1,0 +1,29 @@
+# Weekly check that the committed IANA snapshot still matches upstream.
+# A stale snapshot narrows the URL gate without any signal: a newly delegated TLD
+# stops counting as a host. Scheduled only, so an IANA update never turns an
+# unrelated pull request red.
+name: tld-snapshot
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Monday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: iana-snapshot-freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: compare the committed snapshot with IANA
+        run: node apps/plugin/scripts/gen-tlds.mjs --check

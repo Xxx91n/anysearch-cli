@@ -71,6 +71,11 @@
   `providersCancelled` in its metadata, but it cannot stop a Tavily call that
   ignores the signal; that call can keep running upstream after the search has
   returned.
+- **A cancelled arm is spare capacity, not a lost result** — the request-level
+  deadline can return a short pool, so `providersCancelled` stays separate from
+  `providersFailed` and is not an error class. All arms cancelled with zero
+  results is still reported as an empty success; that classification is tracked
+  separately (#460).
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, macOS CI
   job restored (#183, after #16 / PR #174).** The family is **not**
   "better-sqlite3 leaks a handle". It is `process.exit()` running C++ static
