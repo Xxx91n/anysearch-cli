@@ -18,7 +18,7 @@ import { maskSecrets, probeSecrets, resolveProbeCredentials } from "../probe-cre
 
 const { AnySearchProvider } = await import("../../packages/retriever/src/providers/anysearch.ts");
 const { PROVIDER_FACTS } = await import("../../packages/retriever/src/providers/provider-facts.ts");
-const { classifyProviderError } = await import("../../packages/retriever/src/contract.ts");
+const { classifyProviderError, providerErrorClassOf } = await import("../../packages/retriever/src/contract.ts");
 
 // Probe overrides (P1 env/key/endpoint separation):
 // --default-endpoint force the baked-in public endpoint (env ignored)
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({
       schema: "anysearch/provider-probe@2", provider: "anysearch", ok: false,
       errorName: name, errorMessage: message,
-      errorClass: classifyProviderError(name + ": " + message),
+      errorClass: classifyProviderError(name + ": " + message, providerErrorClassOf(e)),
       elapsedMs: Date.now() - t0,
       ...envClass,
     }));

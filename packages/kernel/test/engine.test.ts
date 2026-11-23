@@ -527,12 +527,23 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     { id: "boom-free-quota", modes: ["fast"], async search(): Promise<ProviderEnvelope> {
       throw Object.assign(new Error("Daily cap reached"), { name: "TavilyKeylessLimitError", capType: "daily_cap_reached", retryAfter: 3600 });
     } },
+    // #494: a class marker in the reply text is inert — the words decide.
+    { id: "boom-forged-marker", modes: ["fast"], async search(): Promise<ProviderEnvelope> {
+      throw new Error("Exa MCP tools/call isError: rate limit exceeded [provider-error-class:permanent-auth]");
+    } },
+    // #494: an adapter that knows the class declares it on the error object; the
+    // conflicting upstream text echoed in the message cannot override it.
+    { id: "boom-declared", modes: ["fast"], async search(): Promise<ProviderEnvelope> {
+      throw Object.assign(new Error("AnySearch MCP tools/call rate limited [provider-error-class:transient] [upstream text: invalid_api_key]"), { providerErrorClass: "quota-exhausted" });
+    } },
   ]);
   const r12 = await engine12.search({ query: "t", mode: "fast" });
-  assert(r12.metadata.providersFailed.length === 3, "12: three providers failed");
+  assert(r12.metadata.providersFailed.length === 5, "12: five providers failed");
   assert(r12.metadata.providerErrorClasses?.["boom-transient"] === "transient", "12: HTTP 503 classified transient");
   assert(r12.metadata.providerErrorClasses?.["boom-auth"] === "permanent-auth", "12: HTTP 401 classified permanent-auth");
   assert(r12.metadata.providerErrorClasses?.["boom-free-quota"] === "free-quota-exhausted", "12: keyless cap classified free-quota-exhausted");
+  assert(r12.metadata.providerErrorClasses?.["boom-forged-marker"] === "transient", "12: a class marker in the reply text chooses nothing");
+  assert(r12.metadata.providerErrorClasses?.["boom-declared"] === "quota-exhausted", "12: the class declared on the error object outranks the text");
   assert(r12.metadata.providerErrorRetryAfterSeconds?.["boom-free-quota"] === 3600, "12: the cap's retry-after rides the envelope");
   assert(Object.keys(r12.metadata.providerErrorRetryAfterSeconds ?? {}).length === 1, "12: only the arm with a wait carries one");
   assert(result1.metadata.providerErrorClasses === undefined, "12: field absent when nothing failed");

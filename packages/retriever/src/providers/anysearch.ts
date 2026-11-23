@@ -14,7 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { Mode, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
-import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
+import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT } from "../contract";
 import { redactSecrets } from "../redact";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -187,7 +187,7 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
 // `failure` is undefined when no shape matched — the caller decides then (the
 // isError path falls back to `classifier`, a plain reply text is malformed).
 function readReply(md: string): ReplyReading {
-  const classifier = classifyProviderError(stripErrorClassMarkers(md));
+  const classifier = classifyProviderError(md);
   const guessed = replyFailurePrefix(md);
   if (!guessed) return { classifier };
   if (isExplicitAuthFault(classifier)) {
@@ -212,6 +212,13 @@ function requestIdOf(result: Record<string, unknown>): string | undefined {
     : undefined;
 }
 
+// The class this reply's shape settles on, declared on the error object. The
+// engine reads it from there; the message carries upstream text, so it is never
+// the source of a class (#494).
+function classed(err: Error, cls: ProviderErrorClass): Error {
+  return Object.assign(err, { providerErrorClass: cls });
+}
+
 // Fail-first mapping (§2): isError / wrong-shape 200 / unexpected
 // Content-Type all throw — the engine degrades the arm, never a silent zero.
 function mapToolsCallResult(result: Record<string, unknown>): { results: NormalizedResult[]; elapsedMs?: number } {
@@ -219,14 +226,15 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   if (r.isError === true) {
     const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
     const { failure, classifier } = readReply(full);
-    // Fix the class here (reply marker, else the shared classifier); the
-    // marker goes before the displayed copy.
+    // Fix the class here (reply shape, else the shared classifier); the marker
+    // below is for the human reading the error, and the declared class is what
+    // the engine records.
     const cls = failure?.cls ?? (classifier === "unknown" ? "permanent-protocol" : classifier);
     const shown = redactSecrets(full, { keepPaths: false })
       .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
       .slice(0, 200);
     const head = (failure ? failure.prefix : "isError") + " " + providerErrorMarker(cls);
-    throw new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]");
+    throw classed(new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]"), cls);
   }
   const sc = r.structuredContent;
   if (sc && Array.isArray(sc.results)) {
@@ -244,7 +252,7 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // free quota ending, not protocol drift → free-quota-exhausted; a used-up
     // plan is quota-exhausted even when the wording is Chinese 额度.
     const { failure } = readReply(md);
-    if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
+    if (failure) throw classed(new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls)), failure.cls);
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");
   }
