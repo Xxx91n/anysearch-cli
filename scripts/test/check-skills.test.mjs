@@ -17,13 +17,15 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
  * Run the checker the way CI does: one plain node process, no build first.
  * `root` swaps in another checkout for the no-argument discovery mode.
  */
-function check(args = [], { cwd = ROOT, root } = {}) {
+function check(args = [], { cwd = ROOT, root, env: extra } = {}) {
   const env = { ...process.env };
   // A stray export on the developer's machine must not choose the tree, and the
-  // child has to do its own tsx re-entry.
+  // child has to do its own tsx re-entry. `extra` is for tests that hand the
+  // checker a poisoned environment on purpose.
   delete env.ANS_CHECK_SKILLS_TSX;
   if (root) env.ANS_CHECK_SKILLS_ROOT = root;
   else delete env.ANS_CHECK_SKILLS_ROOT;
+  Object.assign(env, extra ?? {});
   const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8", timeout: 120_000 });
   if (result.error || result.signal) {
     throw new Error(`check-skills did not finish: ${result.error ? result.error.message : result.signal}`);
@@ -44,8 +46,9 @@ function canStillRead(file) {
 /** Run a Git command in a fixture repository and insist it worked. */
 function git(cwd, args) {
   // gitEnv drops GIT_DIR, GIT_CONFIG_* and friends, so `-C` alone picks the repo.
-  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv() });
-  assert.equal(result.status, 0, `git ${args.join(" ")}: ${result.stderr}`);
+  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv(), timeout: 30_000 });
+  assert.equal(result.status, 0,
+    `git ${args.join(" ")}: ${result.error ? result.error.message : result.stderr}`);
 }
 
 /** Write one skill directory under a throwaway root and return its path. */
@@ -190,6 +193,29 @@ test("an unreadable SKILL.md is reported apart and exits 2", (t) => {
   assert.equal(result.code, 2, result.stdout + result.stderr);
   assert.match(result.stdout, /\[ERROR\] .*locked[/\\]SKILL\.md/);
   assert.match(result.stdout, /1 could not be read/);
+});
+
+// The push gate exports GIT_DIR in a linked worktree; a checker that honoured it
+// would read another repository and report every tracked SKILL.md as missing.
+test("an inherited GIT_DIR does not decide which repository is checked", (t) => {
+  const root = withRoot(t);
+  git(root, ["init", "--quiet"]);
+  skill(root, "alpha", "name: alpha\ndescription: Use when a test needs alpha.");
+  git(root, ["add", "--", "alpha", "alpha/SKILL.md"]);
+  // The decoy is a full repo with the bad skill staged, and the environment
+  // points git at it the way a push hook does: GIT_DIR plus GIT_WORK_TREE.
+  const decoy = withRoot(t);
+  git(decoy, ["init", "--quiet"]);
+  skill(decoy, "bad", 'name: bad\ndescription: ""');
+  git(decoy, ["add", "--", "bad", "bad/SKILL.md"]);
+  const result = check([], {
+    cwd: root,
+    root,
+    env: { GIT_DIR: path.join(decoy, ".git"), GIT_WORK_TREE: decoy },
+  });
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /alpha[/\\]SKILL\.md/);
+  assert.doesNotMatch(result.stdout, /bad/);
 });
 
 test("a checkout with no skill is refused instead of passing vacuously", (t) => {

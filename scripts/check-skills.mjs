@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Repo-wide Agent Skills check.
 //
-// Every SKILL.md Git can see goes through the same validation the product uses:
-// `ans skill validate` and this script call validateSkillDirectory, and both it
-// and `ans skill install` call validateSkillFile (apps/cli/src/skill-store.ts).
+// Every SKILL.md Git can see goes through the product's own validation
+// (apps/cli/src/skill-store.ts): `ans skill validate` and this script call
+// validateSkillDirectory — the file rules plus "name equals its directory" —
+// and `ans skill install` calls validateSkillFile, the same file rules without
+// the directory check.
 //
 // Usage:
 //   node scripts/check-skills.mjs                  # every SKILL.md Git can see
