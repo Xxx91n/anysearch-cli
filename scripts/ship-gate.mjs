@@ -915,11 +915,11 @@ function stepStaticAssertions() {
 function stepDocClaims() {
   report("info", "step 1c/9: engine request-deadline assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
-  // Strip comment lines before matching, so prose can never satisfy a guard.
-  const code = eng.replace(/^\s*\/\/[^\n]*$/gm, "");
+  // Strip line and block comments before matching, so prose can never satisfy a guard.
+  const code = eng.replace(/^\s*\/\/[^\n]*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   if (!/const DEFAULT_REQUEST_TIMEOUT_MS = 4000;/.test(code)) fail("engine request deadline drifted from 4000ms - update docs/limitations.md and this assertion");
   if (!/Promise\.race\([\s\S]{0,200}?\bdeadline\b[\s\S]{0,80}?\bcallerAborted\b/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
-  if (!/for \([^)]*<\s*controllers\.length\s*;[^)]*\)[\s\S]{0,80}abortArm\([^)]*reason/.test(code)) fail("engine.ts helper must abort every unsettled arm and pass the reason");
+  if (!/const abortAllUnsettled = \([\s\S]{0,40}for \([^)]*<\s*controllers\.length\s*;[^)]*\)[\s\S]{0,200}abortArm\([^)]*reason/.test(code)) fail("engine.ts helper must abort every unsettled arm and pass the reason");
   if (!/setTimeout\(\(\) => \{[\s\S]{0,80}abortAllUnsettled\([\s\S]{0,40}?\)[\s\S]{0,40}deadlineResolve\(\)[\s\S]{0,40}\}, this\.requestTimeoutMs\)/.test(code)) fail("engine deadline no longer aborts unsettled arms with this.requestTimeoutMs");
   if (!/this\.requestTimeoutMs = opts\?\.requestTimeoutMs \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
   if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
