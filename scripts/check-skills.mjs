@@ -78,6 +78,8 @@ function skillFileOf(target) {
  * every rule twice.
  */
 function gitVisibleSkillFiles() {
+  // Cleaned here as well as at the re-entry below: exporting ANS_CHECK_SKILLS_TSX
+  // skips that re-entry, and this call must still read ROOT and nothing else.
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000, env: gitEnv(),
   });
@@ -187,9 +189,7 @@ if (process.env[TSX_MARKER] !== "1") {
       fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
     }
     const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
-    // Design: this is the one place the environment crosses into the process
-    // that runs git — the push hook exports GIT_DIR in a linked worktree, and an
-    // inherited pointer would list another repository's files.
+    // The re-entry child gets the same cleaned environment: it runs git too.
     const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
       env: gitEnv({ ...process.env, [TSX_MARKER]: "1" }),
       stdio: "inherit",
