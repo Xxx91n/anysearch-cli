@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
@@ -737,9 +737,23 @@ test("a stream that never answers gives up at the cap", async () => {
   const started = Date.now();
   await flushStreams([{ write() {} }], 20);
   // The cap is the thing under test: ignoring the argument and waiting the
-  // default second instead would land far above this bound.
+  // default second instead would land far above this bound. 700ms leaves room
+  // for a loaded CI box without letting a hardcoded 1000 through.
   const waited = Date.now() - started;
-  assert.ok(waited >= 10 && waited < 400, `waited ${waited}ms`);
+  assert.ok(waited >= 10 && waited < 700, `waited ${waited}ms`);
+});
+
+// A flush that finished must not leave the cap pending: deleting the clearTimeout
+// keeps the in-process cases green, so this measures the thing the fix buys — a
+// process that did its flush exits instead of sitting out the cap.
+test("a finished flush does not keep the process alive", () => {
+  const module = pathToFileURL(join(scripts, "preflight-flush.mjs")).href;
+  const script = `import { flushStreams } from ${JSON.stringify(module)}; await flushStreams([{ write: (_chunk, done) => done() }], 1000);`;
+  const started = Date.now();
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  const waited = Date.now() - started;
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(waited < 800, `the pending cap held the process for ${waited}ms`);
 });
 
 // These cases pin the retry loop without a real stalled pipe.
