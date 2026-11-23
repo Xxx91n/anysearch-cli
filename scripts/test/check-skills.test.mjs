@@ -39,7 +39,8 @@ function denies(probe) {
     probe();
     return false;
   } catch (error) {
-    if (error.code === "EACCES" || error.code === "EPERM") return true;
+    const code = error?.code;
+    if (code === "EACCES" || code === "EPERM") return true;
     throw error;
   }
 }
