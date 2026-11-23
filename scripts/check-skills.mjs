@@ -78,8 +78,9 @@ function skillFileOf(target) {
  * every rule twice.
  */
 function gitVisibleSkillFiles() {
-  // Cleaned here as well as at the re-entry below: exporting ANS_CHECK_SKILLS_TSX
-  // skips that re-entry, and this call must still read ROOT and nothing else.
+  // Design: clean here as well as at the re-entry — exporting ANS_CHECK_SKILLS_TSX
+  // skips that re-entry, so this git call would inherit a GIT_DIR and list another
+  // repository.
   const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
     cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000, env: gitEnv(),
   });
@@ -189,7 +190,7 @@ if (process.env[TSX_MARKER] !== "1") {
       fail(2, `cannot find the workspace tsx package (${error.message}); run pnpm install first`);
     }
     const entry = path.relative(process.cwd(), SCRIPT).split(path.sep).join("/");
-    // The re-entry child gets the same cleaned environment: it runs git too.
+    // Design: the re-entry child gets a cleaned environment too — it runs git.
     const child = spawnSync(process.execPath, ["--import", pathToFileURL(loader).href, entry, ...process.argv.slice(2)], {
       env: gitEnv({ ...process.env, [TSX_MARKER]: "1" }),
       stdio: "inherit",
