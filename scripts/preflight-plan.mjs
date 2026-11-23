@@ -8,10 +8,10 @@
 // another package's files can sit upstream of the change that breaks it:
 // kernel's tests read apps/mcp/domains, which only an unfiltered full run
 // covers — the push gate's --full, CI's check-build lane, and the merge gate.
-// A change outside apps/ and packages/ runs the whole suite, because no rule
-// here names which packages read it. Root files change what every package runs
-// (the lockfile, turbo.json) and belong to no package, so they run the whole
-// suite too.
+// A change outside apps/ and packages/ that is not documentation runs the whole
+// suite, because no rule here names which packages read it. Root files change
+// what every package runs (the lockfile, turbo.json) and belong to no package,
+// so they run the whole suite too.
 //
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
@@ -61,8 +61,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   }
 
   const code = files.filter((file) => !isDocumentation(file));
-  const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
-  const outside = code.filter((file) => !owners.get(file));
+  const { owners, unowned: outside } = ownershipOf(code, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
@@ -85,9 +84,9 @@ const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANG
  * Whether a path counts as documentation. The push gate skips the suite on a
  * docs-only change and CI skips every lane, so both ask this one function.
  *
- * docs/eval/ is evaluation evidence and the host templates under apps/ are
- * product assets: tests read both, so neither counts. A bare "docs" names no
- * file a push could have changed, so it does not count either.
+ * docs/eval/ is evaluation evidence and `apps/plugin`'s markdown (its AGENTS.md
+ * and SKILL.md) is a product asset: tests read both, so neither counts. A bare
+ * "docs" names no file a push could have changed, so it does not count either.
  *
  * @param {string} file repo-relative path, either separator
  */
@@ -101,6 +100,19 @@ export function isDocumentation(file) {
 export function docsOnly(files) {
   const list = (files ?? []).map(normalizePath).filter(Boolean);
   return list.length > 0 && list.every(isDocumentation);
+}
+
+/**
+ * The owning package of each file, plus the files no package owns. Both
+ * planners ask this of the change set after removing docs, so a filter that
+ * moves cannot leave one of them looking at a different set of files.
+ *
+ * @param {string[]} files normalized paths, docs already removed
+ * @param {{ name: string, dir: string, deps: string[] }[]} packages
+ */
+export function ownershipOf(files, packages) {
+  const owners = new Map(files.map((file) => [file, packageForFile(file, packages)]));
+  return { owners, unowned: files.filter((file) => !owners.get(file)) };
 }
 
 /**

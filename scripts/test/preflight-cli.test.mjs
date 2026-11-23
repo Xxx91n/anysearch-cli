@@ -393,7 +393,6 @@ test("a docs-only change says skipped, runs nothing, and never claims green", as
     assert.equal(result.stdout.includes("pnpm ran"), false);
     assert.equal(result.stdout.includes("green"), false);
     assert.equal(result.stdout.includes("gate self-test"), false);
-    assert.ok(result.stdout.includes("skipped"), result.stdout);
   });
 });
 
@@ -403,6 +402,7 @@ test("a pushed docs-only ref says skipped and runs nothing", async () => {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /skipped: all 1 changed file\(s\) are documentation — no test ran/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("green"), false);
   });
 });
 

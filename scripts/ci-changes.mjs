@@ -19,7 +19,7 @@ import {
   docsOnly,
   isDocumentation,
   normalizePath,
-  packageForFile,
+  ownershipOf,
   readWorkspace,
   withDependents,
 } from "./preflight-plan.mjs";
@@ -74,8 +74,7 @@ export function planLanes(files, packages) {
   // A code+docs change selects on the code only. docs/eval/ is not
   // documentation, so it still reaches the unowned fallback.
   const code = list.filter((file) => !isDocumentation(file));
-  const owners = new Map(code.map((file) => [file, packageForFile(file, packages)]));
-  const unowned = code.filter((file) => !owners.get(file));
+  const { owners, unowned } = ownershipOf(code, packages);
   if (unowned.length > 0) {
     return { lanes: all, reason: `unowned path: ${safeList(unowned)}` };
   }
