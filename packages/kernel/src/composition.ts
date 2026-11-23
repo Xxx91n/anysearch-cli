@@ -5,7 +5,7 @@
 // decision 1A: returns RetrieverPort, not concrete RetroaererdEngine.
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
@@ -51,7 +51,7 @@ type CredentialSource = ResolvedSearchCredentials | undefined;
 
 const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
   tavily: (creds) => new TavilyProvider(creds?.tavily?.apiKey),
-  exa: (creds) => new ExaProvider(creds?.exa?.apiKey),
+  exa: (creds) => createExaProvider(creds?.exa?.apiKey),
   anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 

@@ -66,12 +66,16 @@
   is a change to the contract surface (R83 ticket).
 - **Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts
   cannot be cancelled through the SDK. The budget guard limits spend, not wall
-  time. The grace window only aborts stragglers once enough results arrive, so
-  a slow call can still overrun the budget.
-- **A cancelled arm is spare capacity, not a lost result** — the grace window
-  arms only after the fused pool already covers `maxResults` unique URLs, so it
-  can trim the pool but never empty it. That is why `providersCancelled` is not
-  an error class.
+  time. The engine now stops waiting at a request-level deadline (4s counted
+  from the moment the request fans out) and marks unfinished arms as
+  `providersCancelled` in its metadata, but it cannot stop a Tavily call that
+  ignores the signal; that call can keep running upstream after the search has
+  returned.
+- **A cancelled arm is spare capacity, not a lost result** — the request-level
+  deadline can return a short pool, so `providersCancelled` stays separate from
+  `providersFailed` and is not an error class. All arms cancelled with zero
+  results is still reported as an empty success; that classification is tracked
+  separately (#460).
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, macOS CI
   job restored (#183, after #16 / PR #174).** The family is **not**
   "better-sqlite3 leaks a handle". It is `process.exit()` running C++ static

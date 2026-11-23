@@ -151,9 +151,13 @@ search options ... SDK uses internal timeout"（注释在
 
 登记状态: registered — `docs/limitations.md` 里「Tavily does not forward
 `AbortSignal`」那条
-（"**Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts are not
-cancelable through the SDK. The budget guard limits spend, not wall time: the
-grace window only aborts stragglers once enough results arrive, so a slow call can still overrun the budget."）。不用新加条目；这张票留着，当盯着上游的把手。
+（"**Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts
+cannot be cancelled through the SDK. The budget guard limits spend, not wall
+time. The engine now stops waiting at a request-level deadline (4s counted
+from the moment the request fans out) and marks unfinished arms as
+`providersCancelled` in its metadata, but it cannot stop a Tavily call that
+ignores the signal; that call can keep running upstream after the search has
+returned."）。不用新加条目；这张票留着，当盯着上游的把手。
 
 ## #33 Tavily 的 usage() 永远是 undefined：只有每次调用的 credits，没有单独的用量接口
 

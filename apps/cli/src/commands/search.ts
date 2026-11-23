@@ -134,8 +134,7 @@ export async function runSearch(args: string[]): Promise<number> {
   const active = resolveActiveDomain();
   // draft: ANS_PROVIDERS env-gated provider subset filter —
   // eval channel for arm-isolated measurement (the paired delta runner runs
-  // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
-  // arms inside the engine grace window). Absent = full fanout, unchanged.
+  // ANS_PROVIDERS=anysearch to measure that arm alone). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
   const engine = createPersistentEngine(active.declaredName);
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;

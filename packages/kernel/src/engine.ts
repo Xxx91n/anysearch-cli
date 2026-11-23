@@ -1,13 +1,13 @@
 // Retrieval engine: bounded budget + serialized sufficiency-gate + fanout convergence + RRF fusion.
 // decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
-// atomcode research (paperfoot source-level): JoinSet completion-order collect, enough-results-then-collect,
-// 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
-// JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
+// atomcode research (paperfoot source-level): JoinSet completion-order collect,
+// request-level deadline + abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
+// JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
-import type { Budget, Query, RetrieverPort } from "./ports";
+import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 import type { AttributionCalibration } from "./calibrate";
@@ -30,20 +30,9 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Engine config: budget caps + sufficiency gate + grace window.
-export interface EngineConfig {
-  // EngineConfig.budget is a legacy field: search() never reads it. Budget
-  // enforcement is wired through the injected BudgetLedgerPort + sessionId —
-  // per-call reserve/settle (decision 2C) here, token/USD settle in
-  // PiAgentRuntime (#103, kernel level). Production composition entry point
-  // injection is #177 and PiAgentRuntime production wiring is #178.
-  // Token reserve design is settled in #186; #187 is the budget foundation, #188 the
-  // reserve itself. USD stays settle-only per #186 decision 6.
-  budget?: Budget;
-  gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
-  graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
-  deepMode?: boolean;                // if true, never cancel (wait all, paperfoot deep mode)
-}
+// Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
+// exists only so tests can shrink it.
+const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 
 // Normalize URL for dedup: strip scheme + leading www + tracking params.
 // atomcode research: normalize_url() in paperfoot strips utm_*, fbclid, gclid.
@@ -249,15 +238,22 @@ export class RetroaererdEngine {
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
+  // constructor-time knobs. `gate` used to ride on a per-search config object
+  // no caller could pass (#478); it lives here now. `requestTimeoutMs`
+  // exists only so tests can shrink the 4s deadline.
+  private gate: SufficiencyGate;
+  private requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.
   // decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; anchors?: ResumeAnchorsPort; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"] }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; anchors?: ResumeAnchorsPort; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"]; gate?: Partial<SufficiencyGate>; requestTimeoutMs?: number }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.anchors = opts?.anchors;
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
+    this.gate = { ...DEFAULT_GATE, ...opts?.gate };
+    this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
     const cal = opts?.attributionCalibration;
@@ -277,17 +273,12 @@ export class RetroaererdEngine {
     this.providers.set(provider.id, provider);
   }
 
-  // Fanout search: parallel provider queries, enough-results-then-collect, RRF fusion.
+  // Fanout search: parallel provider queries, one request-level deadline, RRF fusion.
   // decision 1A: implements RetrieverPort.
-  // decision 1B: accepts Query (superset with budget + provider filter).
-  async search(
-    q: Query,
-    config: EngineConfig = {},
-  ): Promise<FusedEnvelope> {
+  // decision 1B: accepts Query (superset with provider filter + kernel-side extras).
+  async search(q: Query): Promise<FusedEnvelope> {
     const start = Date.now();
-    const gate = { ...DEFAULT_GATE, ...config.gate };
-    const graceWindow = config.graceWindowMs ?? 1500;
-    const deepMode = config.deepMode ?? false;
+    const gate = this.gate;
     const retrievalTraceId = randomUUID().replace(/-/g, "");
 
     // Select providers: all registered, or subset via Query.providers filter.
@@ -355,7 +346,7 @@ export class RetroaererdEngine {
       });
     }
     // Provider-facing request carries only SearchRequest fields — kernel-side
-    // Query extras (budget/providers/span) never cross the provider boundary.
+    // Query extras (taskBudget/providers/span/sessionId/signal) never cross the provider boundary.
     const providerRequest = (p: SearchProvider): SearchRequest => {
       const req: SearchRequest = { query: q.query, mode: q.mode };
       if (q.maxResults !== undefined) req.maxResults = q.maxResults;
@@ -399,15 +390,16 @@ export class RetroaererdEngine {
       }
     }
 
-    // atomcode research: per-provider AbortController + shared abort for grace window.
+    // Per-provider AbortController. The caller's signal and the request deadline
+    // both abort an arm; each abort schedules the cancellation mark and then
+    // aborts, so settle handlers on either side land in the right bucket.
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
-    // graceWindowMs / deepMode are wired now (was / debt).
-    // Each provider outcome lands in out[i] on arrival. Once the fused pool covers
-    // q.maxResults unique URLs, stragglers get graceWindowMs, then their controllers
-    // abort and they surface as providersCancelled. deepMode never cancels (waits all).
-    // A rejected provider counts as arrived — failure is a completed fanout answer.
+    // Each provider outcome lands in out[i] on arrival; a slot left null at
+    // snapshot time is a cancelled arm (aborted at the deadline/caller, or it
+    // resolved only after that abort). A rejected provider counts as arrived —
+    // failure is a completed fanout answer.
     type ProviderOutcome =
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
       | { provider: string; status: "rejected"; error: string };
@@ -417,19 +409,31 @@ export class RetroaererdEngine {
     // provider work and releases the fanout wait below; it is read again after
     // the wait to suppress post-cancellation anchor writes.
     const callerSignal = q.signal;
-    // Arms we aborted ourselves, for either reason: the caller went away, or the
-    // grace window closed. Their rejection is a cancellation, not a failure, so
-    // any error such an arm was about to throw is dropped.
-    const cancelledArms = new Set<number>();
+    // Arms the engine aborted, either for the caller or at the deadline.
+    const abortedArms = new Set<number>();
+    // One abort attempt per arm, so the deadline cannot re-schedule a mark.
+    const abortingArms = new Set<number>();
+    // ES2022 libs (apps/mcp, apps/cli) have no Promise.withResolvers; keep the
+    // resolver-store shape so this shared source typechecks everywhere.
     let callerAbortResolve: () => void = () => { };
     const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
+    const abortArm = (i: number, reason?: unknown) => {
+      if (out[i] !== null || abortingArms.has(i)) return;
+      abortingArms.add(i);
+      // The mark is queued, not applied inline: an arm that already fulfilled
+      // has its settle handler queued first, so a landed envelope is kept. A
+      // pending arm settles inside abort() below, after this mark, so it stays
+      // cancelled.
+      queueMicrotask(() => abortedArms.add(i));
+      controllers[i].abort(reason);
+    };
+    // One implementation for "stop every arm that has not landed" — the deadline,
+    // a fan-out construction failure, and caller cancellation all use it.
+    const abortAllUnsettled = (reason?: unknown) => {
+      for (let i = 0; i < controllers.length; i++) abortArm(i, reason);
+    };
     const cancelProviders = () => {
-      for (let i = 0; i < controllers.length; i++) {
-        if (out[i] === null) {
-          cancelledArms.add(i);
-          controllers[i].abort(callerSignal?.reason);
-        }
-      }
+      abortAllUnsettled(callerSignal?.reason);
       callerAbortResolve();
     };
     if (callerSignal) {
@@ -440,63 +444,67 @@ export class RetroaererdEngine {
       else callerSignal.addEventListener("abort", cancelProviders, { once: true });
     }
 
-    const uniqueUrls = new Set<string>();
     // post-gate counters — gateIn = raw provider results that reached
     // the authoritative gate (post-pre-filter arrivals); gateDropped counts only
     // gate removals (dedup collapse must not inflate it); survivors = allResults.size.
     let gateIn = 0;
     let gateDropped = 0;
     let gateSurvivors = 0;
-    const needed = Math.max(1, q.maxResults ?? 10);
-    let graceResolve: () => void = () => { };
-    const graceExpired = new Promise<void>((r) => { graceResolve = r; });
-    let graceArmed = false;
-    const promises = allProviders.map((p, i) =>
-      p.search(providerRequest(p), controllers[i].signal)
-        .then((env) => {
-          out[i] = { provider: p.id, status: "fulfilled", envelope: env };
-          // Grace-window enough-results counts only what would survive the gate —
-          // otherwise an all-out-of-domain fanout could end the wait early.
-          for (const r of env.results ?? []) {
-            if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) continue;
-            uniqueUrls.add(normalizeUrl(r.url));
-          }
-          if (!deepMode && !graceArmed && uniqueUrls.size >= needed) {
-            graceArmed = true;
-            setTimeout(() => {
-              for (let j = 0; j < controllers.length; j++) {
-                if (out[j] !== null) continue;
-                // Record before aborting: the rejection this causes lands in the
-                // same microtask turn as the snapshot below, so the classification
-                // must not depend on the order.
-                cancelledArms.add(j);
-                controllers[j].abort();
-              }
-              graceResolve();
-            }, graceWindow).unref();
-          }
-        })
-        .catch((err) => {
-          // An arm we aborted is a cancellation whatever it threw, even a real
-          // 429: out[i] stays null and the snapshot counts it as cancelled. Only
-          // arms we did not abort keep the rejected status.
-          if (cancelledArms.has(i)) return;
-          // The capture seam: structured bits an SDK keeps on the Error
-          // object (capType, retryAfter) go back into the text here, or the
-          // classifier and the wait hint only ever see half the shape.
-          out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
-        }),
-    );
-
-    // Wait for every provider, for the grace window once enough unique results
-    // exist, or for the caller's abort (#209).
+    // Request-level deadline: the clock starts at fan-out, not when enough
+    // results arrive. Unsettled arms are aborted at the deadline; if every arm
+    // lands first, the race finishes without waiting it out.
+    let deadlineResolve: () => void = () => { };
+    const deadline = new Promise<void>((r) => { deadlineResolve = r; });
+    // The timer stays ref'd: the request itself waits on it.
+    const deadlineTimer = setTimeout(() => {
+      abortAllUnsettled();
+      deadlineResolve();
+    }, this.requestTimeoutMs);
+    // A non-async adapter may throw before returning a promise; turn that into
+    // a rejection so the fanout still settles. Request construction stays outside
+    // the try: a kernel-side bug there must not look like a provider failure.
+    const startArm = (p: SearchProvider, i: number): Promise<ProviderEnvelope> => {
+      const req = providerRequest(p);
+      try {
+        return Promise.resolve(p.search(req, controllers[i].signal));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
+    // A construction throw can interrupt the map; the catch below releases the
+    // reservation and the finally clears the timer and caller listener.
     try {
-      await Promise.race([Promise.all(promises).then(() => undefined), graceExpired, callerAborted]);
+      const promises = allProviders.map((p, i) =>
+        // One `.then` with both handlers: a `.catch` chain would delay the
+        // rejection handler by a microtask and let an abort mark overtake it.
+        startArm(p, i).then(
+          (env) => {
+            // An arm that settles only after our abort counts as cancelled, not answered.
+            if (abortedArms.has(i)) return;
+            out[i] = { provider: p.id, status: "fulfilled", envelope: env };
+          },
+          (err) => {
+            // An abort we issued is cancellation, not failure: leave the slot null.
+            if (abortedArms.has(i)) return;
+            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
+          },
+        ),
+      );
+
+      await Promise.race([Promise.all(promises).then(() => undefined), deadline, callerAborted]);
+    } catch (err) {
+      // Never reached by a provider outcome (both handlers return normally); a
+      // throw here is fan-out construction. Stop the arms already started, and
+      // release the reserve: a failed construction bills nothing.
+      abortAllUnsettled();
+      if (hasLedger) budgetLedger!.settleCalls(budgetScope!, perCallEstimate, 0);
+      throw err;
     } finally {
+      clearTimeout(deadlineTimer);
       callerSignal?.removeEventListener("abort", cancelProviders);
     }
     // Cancelled = queried but still unsettled when the wait ended. Caller
-    // cancellation and the grace window share this state (an aborted caller
+    // cancellation and the request deadline share this state (an aborted caller
     // never becomes providersFailed: it did not fail, it was cancelled).
     // Array.prototype.map skips sparse holes — fill(null) keeps every slot materialized.
     const collected: Array<ProviderOutcome | "cancelled"> = out.map((w) => w ?? "cancelled");
@@ -608,7 +616,7 @@ export class RetroaererdEngine {
       }
     }
 
-    // providersCancelled now populated by the grace window above (was always-empty debt).
+    // providersCancelled is populated by the deadline/caller abort above.
 
     // decision 2C: settle per-call budget — actual = successful providers.
     // #209: a cancelled caller still settles so the reservation cannot leak; the

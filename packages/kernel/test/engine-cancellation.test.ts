@@ -150,6 +150,7 @@ async function main() {
     const result = await search;
     assert(result.metadata.providersFailed.length === 0, "4: abort-induced rejection is not a provider failure");
     assert(result.metadata.providersCancelled.includes("rejects"), "4: abort-induced rejection is classified cancelled");
+    assert(recorder.signals[0].reason === "cancelled", "4: caller abort reason reaches the provider signal");
     assert(recorder.anchors.length === 0, "4: rejected-and-cancelled search writes no anchor");
   }
 

@@ -29,7 +29,9 @@ export class ExaProvider implements SearchProvider {
 
   constructor(apiKey?: string) {
     // atomcode research: new Exa(apiKey), key falls back to EXA_API_KEY env.
-    this.client = apiKey ? new Exa(apiKey) : new Exa();
+    // 没拿到 key（没传、空串、纯空格）时 exa-js 自己会去读环境变量，读不到就当场抛。
+    // 归一化放在这里，直接 new 这个类和走工厂拿到的东西才一致（类是导出的）。
+    this.client = new Exa(apiKey?.trim() || undefined);
   }
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
@@ -90,4 +92,12 @@ export class ExaProvider implements SearchProvider {
 
   // ponytail: Exa usage comes per-call in costDollars, no standalone API.
   // No standalone usage() method — contract's usage?() is optional.
+}
+
+/**
+ * Design: 装配方调这个工厂 — 换构造方式时只改这里，两张装配表不用跟着动。
+ * 归一化在构造器：空串、纯空格、没传都算没配 key，exa-js 自己去找环境变量，找不到就抛。
+ */
+export function createExaProvider(apiKey?: string): SearchProvider {
+  return new ExaProvider(apiKey);
 }

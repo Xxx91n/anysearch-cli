@@ -260,80 +260,260 @@ async function main() {
   }).search({ query: "health", mode: "answer" });
   assert(degraded.attribution?.claims[0]?.label === "uncertain", "degraded calibration falls back to legacy floor");
 
-  
-// --- wired grace window (was / dead-config debt) ---
+// --- request-level deadline (#478; replaces the old grace window) ---
+// async arm: resolves after delayMs unless aborted first.
 function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:boolean}): SearchProvider {
   return {
     id,
     modes: ["fast"],
     async search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
-      await new Promise<void>((res, rej) => {
-        const t = setTimeout(res, delayMs);
-        signal.addEventListener("abort", () => { aborted.v = true; clearTimeout(t); rej(new Error("aborted")); });
-      });
+      const waited = Promise.withResolvers<void>();
+      const t = setTimeout(waited.resolve, delayMs);
+      signal.addEventListener("abort", () => { aborted.v = true; clearTimeout(t); waited.reject(new Error("aborted")); });
+      await waited.promise;
       const results: NormalizedResult[] = urls.map((url, i) => ({ url, title: id + " r" + i, snippet: "s", source: id }));
       return { provider: id, results, answers: [], elapsedMs: delayMs };
     },
   };
 }
+// Non-async arm that rejects when aborted: the #454 classification bug shape.
+function abortRejectProvider(id: string, delayMs: number, urls: string[], aborted: {v:boolean}): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      const waited = Promise.withResolvers<ProviderEnvelope>();
+      const t = setTimeout(() => {
+        const results: NormalizedResult[] = urls.map((url, i) => ({ url, title: id + " r" + i, snippet: "s", source: id }));
+        waited.resolve({ provider: id, results, answers: [], elapsedMs: delayMs });
+      }, delayMs);
+      signal.addEventListener("abort", () => { aborted.v = true; clearTimeout(t); waited.reject(new Error("aborted")); });
+      return waited.promise;
+    },
+  };
+}
+// Arm that resolves with results when aborted (an adapter that answers a
+// cancel with a late envelope instead of rejecting).
+function resolveOnAbortProvider(id: string, aborted: {v:boolean}): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      const waited = Promise.withResolvers<ProviderEnvelope>();
+      signal.addEventListener("abort", () => {
+        aborted.v = true;
+        const results: NormalizedResult[] = [{ url: "https://" + id + ".com/x", title: id, snippet: "s", source: id }];
+        waited.resolve({ provider: id, results, answers: [], elapsedMs: 0 });
+      });
+      return waited.promise;
+    },
+  };
+}
+// Arm that resolves immediately from a cache (non-async, already-filled promise).
+function cachedProvider(id: string, url: string): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(): Promise<ProviderEnvelope> {
+      const results: NormalizedResult[] = [{ url, title: id, snippet: "s", source: id }];
+      return Promise.resolve({ provider: id, results, answers: [], elapsedMs: 0 });
+    },
+  };
+}
+// Arm that rejects immediately (a genuine pre-abort failure).
+function rejectedProvider(id: string): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(): Promise<ProviderEnvelope> {
+      return Promise.reject(new Error(id + " rejected"));
+    },
+  };
+}
+// Arm that never settles; only records whether the deadline reached its signal.
+function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      const never = Promise.withResolvers<ProviderEnvelope>();
+      signal.addEventListener("abort", () => { aborted.v = true; });
+      return never.promise;
+    },
+  };
+}
 {
-  // Fast provider alone covers maxResults -> slow straggler is aborted after grace.
+  // (a) Every arm lands before the deadline -> return with the slowest arm,
+  // not after the full 1s window.
   const aborted = { v: false };
   const eng = new RetroaererdEngine([
     mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
-    slowProvider("slow", 500, ["https://slow.com/x"], aborted),
-  ]);
-  const r = await eng.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30 });
-  assert(r.metadata.providersCancelled.includes("slow"), "grace window: straggler reported cancelled");
-  assert(aborted.v, "grace window: straggler AbortController fired");
-  assert(r.results.length >= 3, "grace window: fast provider results kept");
+    slowProvider("slow", 80, ["https://slow.com/x"], aborted),
+  ], { requestTimeoutMs: 1000 });
+  const t0 = Date.now();
+  const r = await eng.search({ query: "g", mode: "fast", maxResults: 3 });
+  assert(Date.now() - t0 < 700, "deadline: all arms landed, returned without waiting out the window");
+  assert(!aborted.v, "deadline: no abort when every arm lands in time");
+  assert(r.metadata.providersCancelled.length === 0, "deadline: nobody cancelled");
+  assert(r.results.some((x) => x.url.includes("slow.com")), "deadline: slow arm results kept");
 
-  // deepMode: never cancel — the same slow provider's results arrive.
+  // (b) An async arm over the deadline -> aborted, cancelled, not failed.
   const aborted2 = { v: false };
   const eng2 = new RetroaererdEngine([
     mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
-    slowProvider("slow", 200, ["https://slow.com/x"], aborted2),
-  ]);
-  const r2 = await eng2.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30, deepMode: true });
-  assert(r2.metadata.providersCancelled.length === 0, "deepMode: nobody cancelled");
-  assert(r2.metadata.providersQueried.includes("slow") && r2.results.some((x) => x.url.includes("slow.com")), "deepMode: slow provider results arrived");
-  assert(!aborted2.v, "deepMode: no abort fired");
+    slowProvider("slow", 400, ["https://slow.com/x"], aborted2),
+  ], { requestTimeoutMs: 40 });
+  const r2 = await eng2.search({ query: "g", mode: "fast", maxResults: 3 });
+  assert(aborted2.v, "deadline: straggler AbortController fired");
+  assert(r2.metadata.providersCancelled.includes("slow"), "deadline: straggler reported cancelled");
+  assert(!r2.metadata.providersFailed.includes("slow"), "deadline: straggler is not a failure");
+  assert(r2.results.length >= 3, "deadline: fast provider results kept");
 
-  // Under-limit: nobody meets maxResults -> everyone waited (no cancelled).
+  // (c) Non-async arm that rejects on abort -> same cancelled bucket.
+  const aborted3 = { v: false };
   const eng3 = new RetroaererdEngine([
-    mockProvider("p1", ["https://p1.com/a"]),
-    mockProvider("p2", ["https://p2.com/b"]),
-  ]);
-  const r3 = await eng3.search({ query: "g", mode: "fast", maxResults: 10 }, { graceWindowMs: 10 });
-  assert(r3.metadata.providersCancelled.length === 0, "under-limit: all providers awaited");
+    mockProvider("fast", ["https://a.com/1"]),
+    abortRejectProvider("slow", 400, ["https://slow.com/x"], aborted3),
+  ], { requestTimeoutMs: 40 });
+  const r3 = await eng3.search({ query: "g", mode: "fast" });
+  assert(aborted3.v, "deadline: non-async arm aborted");
+  assert(r3.metadata.providersCancelled.includes("slow"), "deadline: non-async abort stays cancelled");
+  assert(!r3.metadata.providersFailed.includes("slow"), "deadline: non-async abort not classified failed");
 
-  // #475: the same grace abort, but the arm is NOT async. Its rejection lands
-  // in the same microtask turn as the engine's snapshot, so who won that race
-  // used to decide whether the arm read as cancelled or as failed+unknown. The
-  // engine records the arm it aborted, so the answer no longer depends on it.
-  const abortedFlat = { v: false };
-  const flatSlow: SearchProvider = {
-    id: "slow-flat",
-    modes: ["fast"],
-    search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
-      return new Promise<ProviderEnvelope>((res, rej) => {
-        const t = setTimeout(() => {
-          const results: NormalizedResult[] = [{ url: "https://slow-flat.com/x", title: "slow-flat r0", snippet: "s", source: "slow-flat" }];
-          res({ provider: "slow-flat", results, answers: [], elapsedMs: 500 });
-        }, 500);
-        signal.addEventListener("abort", () => { abortedFlat.v = true; clearTimeout(t); rej(new Error("aborted")); }, { once: true });
-      });
-    },
-  };
+  // (d) Under maxResults with an arm that never returns -> the deadline still ends the request.
+  const aborted4 = { v: false };
   const eng4 = new RetroaererdEngine([
-    mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
-    flatSlow,
-  ]);
-  const r4 = await eng4.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30 });
-  assert(abortedFlat.v, "non-async straggler: AbortController fired");
-  assert(r4.metadata.providersCancelled.includes("slow-flat"), "non-async straggler reported cancelled");
-  assert(r4.metadata.providersFailed.length === 0, "a cancelled arm never becomes a failure");
-  assert(r4.metadata.providerErrorClasses === undefined, "no error class invented for a cancelled arm");
+    mockProvider("p1", ["https://p1.com/a"]),
+    hangingProvider("hang", aborted4),
+  ], { requestTimeoutMs: 60 });
+  const t4 = Date.now();
+  const r4 = await eng4.search({ query: "g", mode: "fast", maxResults: 10 });
+  assert(Date.now() - t4 < 1000, "deadline: never-returning arm could not hold the request open");
+  assert(aborted4.v, "deadline: never-returning arm aborted at the deadline");
+  assert(r4.metadata.providersCancelled.includes("hang"), "deadline: never-returning arm reported cancelled");
+  assert(r4.metadata.providersFailed.length === 0, "deadline: never-returning arm is not a failure");
+  assert(r4.results.length === 1, "deadline: partial results kept");
+
+  // (e) A non-async adapter that throws before returning a promise must not
+  // escape the fanout (that would skip the timer cleanup).
+  const eng5 = new RetroaererdEngine([
+    mockProvider("ok", ["https://ok.com/a"]),
+    { id: "sync-boom", modes: ["fast"], search(): Promise<ProviderEnvelope> { throw new Error("sync boom"); } },
+  ], { requestTimeoutMs: 2000 });
+  const t5 = Date.now();
+  const r5 = await eng5.search({ query: "g", mode: "fast" });
+  assert(Date.now() - t5 < 700, "sync throw: search settled instead of leaking the deadline timer");
+  assert(r5.metadata.providersFailed.includes("sync-boom"), "sync throw: classified as a failure");
+  assert(!r5.metadata.providersCancelled.includes("sync-boom"), "sync throw: not misread as cancelled");
+  assert(r5.results.length >= 1, "sync throw: the other arm's results kept");
+
+  // (f) An adapter that resolves with results when aborted must stay cancelled,
+  // not be counted as an answered arm just because its promise won the microtask race.
+  const aborted5 = { v: false };
+  const eng6 = new RetroaererdEngine([
+    mockProvider("fast", ["https://a.com/1", "https://a.com/2"]),
+    resolveOnAbortProvider("slow", aborted5),
+  ], { requestTimeoutMs: 40 });
+  const r6 = await eng6.search({ query: "g", mode: "fast" });
+  assert(aborted5.v, "resolve-on-abort: deadline reached the arm");
+  assert(r6.metadata.providersCancelled.includes("slow"), "resolve-on-abort: stays cancelled");
+  assert(!r6.metadata.providersFailed.includes("slow"), "resolve-on-abort: not a failure");
+  assert(r6.metadata.sufficiency?.volume.successfulProviders === 1, "resolve-on-abort: not counted as an answered provider");
+  assert(!r6.results.some((x) => x.url.includes("slow.com")), "resolve-on-abort: late results stay out of the fused pool");
+
+  // (g) Caller abort in the same tick as fan-out: an arm whose promise had
+  // already fulfilled keeps its envelope; only the pending arm is cancelled.
+  {
+    const ac = new AbortController();
+    const hangAbort = { v: false };
+    const eng7 = new RetroaererdEngine([
+      cachedProvider("cached", "https://cached.com/1"),
+      hangingProvider("hang", hangAbort),
+    ], { requestTimeoutMs: 2000 });
+    const sameTick = eng7.search({ query: "g", mode: "fast", signal: ac.signal });
+    ac.abort();
+    const r7 = await sameTick;
+    assert(r7.results.some((x) => x.url.includes("cached.com")), "same-tick abort: already-fulfilled arm keeps results");
+    assert(!r7.metadata.providersCancelled.includes("cached"), "same-tick abort: landed arm is not cancelled");
+    assert(r7.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm is cancelled");
+    assert(r7.metadata.sufficiency?.volume.successfulProviders === 1, "same-tick abort: landed arm still counts");
+
+    const ac2 = new AbortController();
+    const eng8 = new RetroaererdEngine([cachedProvider("cached", "https://cached.com/1")], { requestTimeoutMs: 2000 });
+    const sameTick2 = eng8.search({ query: "g", mode: "fast", signal: ac2.signal });
+    ac2.abort();
+    const r8 = await sameTick2;
+    assert(r8.results.length === 1, "same-tick abort, single arm: nothing was actually cancelled, result kept");
+    assert(r8.metadata.providersCancelled.length === 0, "same-tick abort, single arm: nobody reported cancelled");
+    assert(r8.metadata.providersFailed.length === 0, "same-tick abort, single arm: not a failure");
+
+    // A genuine rejection that settled before the abort keeps its failure class;
+    // only the still-pending arm is cancelled.
+    const ac3 = new AbortController();
+    const eng9 = new RetroaererdEngine([
+      rejectedProvider("boom"),
+      hangingProvider("hang", { v: false }),
+    ], { requestTimeoutMs: 2000 });
+    const sameTick3 = eng9.search({ query: "g", mode: "fast", signal: ac3.signal });
+    ac3.abort();
+    const r9 = await sameTick3;
+    assert(r9.metadata.providersFailed.includes("boom"), "same-tick abort: pre-abort rejection stays a failure");
+    assert(!r9.metadata.providersCancelled.includes("boom"), "same-tick abort: pre-abort rejection is not cancelled");
+    assert(r9.metadata.providersCancelled.includes("hang"), "same-tick abort: pending arm still cancelled");
+  }
+
+  // (i) A fan-out construction throw stops the arms already started and
+  // releases the per-call reservation instead of pinning the call cap.
+  {
+    let settled: [number, number] | null = null;
+    const ledger = {
+      reserveCalls: (_sessionId: string, _count: number) => true,
+      settleCalls: (_sessionId: string, reserved: number, actual: number) => { settled = [reserved, actual]; },
+      reserveTokens: () => true,
+      settleTokens: () => { },
+      reserveUsd: () => true,
+      settleUsd: () => { },
+    };
+    let reads = 0;
+    const throwingArm: SearchProvider = {
+      id: "throw-in-request",
+      modes: ["fast"],
+      get domainFilterSupported() {
+        reads += 1;
+        if (reads === 3) throw new Error("boom in providerRequest");
+        return false;
+      },
+      search(): Promise<ProviderEnvelope> {
+        throw new Error("provider must not be called");
+      },
+    };
+    const startedAbort = { v: false };
+    const eng9 = new RetroaererdEngine([hangingProvider("started", startedAbort), throwingArm], {
+      ledger,
+      sessionId: "construction-throw",
+      urlPolicy: () => ({ allow: ["example.com"], deny: [], policyVersion: "v1" }),
+      requestTimeoutMs: 2000,
+    });
+    let thrown = "";
+    try {
+      await eng9.search({ query: "g", mode: "fast" });
+    } catch (e) {
+      thrown = String(e instanceof Error ? e.message : e);
+    }
+    assert(thrown.includes("boom in providerRequest"), "construction throw: surfaces as a search error");
+    assert(startedAbort.v, "construction throw: arm started before the throw is aborted");
+    assert(settled !== null && settled![0] === 2 && settled![1] === 0, "construction throw: reservation released");
+  }
+
+  // (j) The sufficiency gate moved to constructor opts and is live again.
+  const relaxed = await new RetroaererdEngine(
+    [mockProvider("only", ["https://o.com/a"])],
+    { gate: { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false } },
+  ).search({ query: "g", mode: "fast" });
+  assert(relaxed.metadata.sufficiency?.verdict === "correct", "constructor gate: relaxed gate passes");
+  const strict = await new RetroaererdEngine([mockProvider("only", ["https://o.com/a"])])
+    .search({ query: "g", mode: "fast" });
+  assert(strict.metadata.sufficiency?.verdict === "ambiguous", "constructor gate: default gate still applies");
 }
 
   // 12.: rejected providers carry an error CLASS parallel to

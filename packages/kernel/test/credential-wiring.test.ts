@@ -269,9 +269,9 @@ test("a search arm with no stored key and no env is labelled none, never left ou
       searchCredentials: (e) => resolveSearchCredentials(e),
     });
     try {
-      // exa refuses to construct without a key, and that stays a named
-      // degradation instead of a silent skip.
-      assert.ok(engine.providerBuildErrors.exa, "the keyless exa arm reports a named failure");
+      // 「构造失败必须点名」这条契约的样本不在这里：它由 test「a search arm holding a
+      // key it cannot use degrades by name」拿一把用不了的 key 顶着（#499）。这个
+      // test 只管「没 key 的臂记成 none，不是被漏掉」。
       // #459: a keyless arm is labelled, not omitted. Before this the record
       // named only the arms that had a key, so "no key here" and "this arm was
       // never looked at" had the same shape.
@@ -287,6 +287,41 @@ test("a search arm with no stored key and no env is labelled none, never left ou
         ["anysearch", "exa", "status", "tavily"],
         "resolved names all three arms plus status",
       );
+    } finally {
+      (engine.store as { close?: () => void }).close?.();
+      engine.observation.close();
+    }
+  } finally {
+    scrub.restore();
+    cleanup();
+  }
+});
+
+test("a search arm holding a key it cannot use degrades by name, never pretending", () => {
+  const { home, cleanup } = tempHome();
+  // 值里带换行：exa-js 构造时往请求头里塞就当场抛。这是全仓剩下唯一一个「构造会抛」
+  // 的真实样本（#499）——tavily 没 key 也能建，anysearch 匿名也能建。
+  const unusable = "sk-unusable\nheader-fault";
+  const scrub = scrubEnv({ EXA_API_KEY: unusable });
+  try {
+    assert.deepEqual(readUserCredentials({ home }).bindings, []);
+    const env: NodeJS.ProcessEnv = { ...scrub.env, USERPROFILE: home, HOME: home };
+    const engine = createEngine(undefined, {
+      dbPath: ":memory:",
+      domainsDirs: [],
+      env,
+      searchCredentials: (e) => resolveSearchCredentials(e),
+    });
+    try {
+      assert.equal(
+        engine.providerBuildErrors.exa,
+        "permanent: missing/invalid credential — set the provider's API key env",
+        "a key that cannot be used is named, worded as the credential category",
+      );
+      // 标签说的是「key 从哪来」，不是「这一臂建没建起来」：配了但用不了，仍是 env。
+      const sources = engine.credentialSources;
+      assert.equal(sources?.status === "resolved" ? sources.exa : "unset", "env");
+      assert.equal(sources?.status === "resolved" ? sources.tavily : "unset", "none");
     } finally {
       (engine.store as { close?: () => void }).close?.();
       engine.observation.close();
