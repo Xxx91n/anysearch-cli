@@ -158,13 +158,16 @@ async function main() {
     "doctor and search share one source wording",
   );
   // doctor's own row adds the cap note, because it reports `unconfigured` and a
-  // reader would otherwise take "runs" for "stable".
+  // reader would otherwise take "runs" for "stable". It also says the free-quota
+  // path was not verified this run (#534): `--live` skips a source with no key.
   assert(
-    describeUnconfiguredSource("tavily") === "没配 key，用免费额度跑（有次数和速度上限）",
-    "doctor's keyless row says the free quota is capped",
+    describeUnconfiguredSource("tavily") ===
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+    "doctor's keyless row says the free quota is capped and unverified",
   );
   assert(
-    describeUnconfiguredSource("exa") === "没配 key，用免费额度跑（有次数和速度上限）",
+    describeUnconfiguredSource("exa") ===
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
     "every keyless arm gets the cap note, exa included",
   );
 

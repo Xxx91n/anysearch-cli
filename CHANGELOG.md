@@ -1,3 +1,18 @@
+## Unreleased — #534: `--live` 不探没配 key 的免费额度，裁决写进代码现场
+
+一句话说清：**没配 key 的信息源，`ans doctor --live` 一直是不探、直接报「未配置」，但帮助文本写成「只打三家信息源的免费面」，那一行的说明也只写「用免费额度跑」，读起来像已经验过。这张票把裁决钉下来——不探——并让「没验」三个字出现在输出和帮助里。**
+
+### Changed
+
+- **doctor 那行的 detail 补一句「免费额度这条路没验（--live 只验有 key 的）」**：`describeUnconfiguredSource` 只给 doctor 用，`ans search` 失败行读的 `describeCredentialSource` 一个字没动。
+- **`ans doctor` 的帮助与头注释写明范围**：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探。
+- **跳过分支补 `Design:` 注释**：探针的三种结论都在说这把 key，没 key 时只能给出假绿或假红（anysearch 的匿名额度墙会落进 `permanent-protocol` 或「auth 通过」，exa 没 key 打 REST 是 402 会报「额度用尽」）；免费额度按 IP、按天走，红了还会撑大 `--strict`，把别人的用量算成本机装坏。
+
+### Known limits
+
+- 没配 key 的机器跑 `--live` 仍然没有任何联网证据：DNS、代理、TLS 都没验。要验免费额度这条路能不能用，跑一次 `ans search`。出口连通性检查是另一件事，本票不做。
+- 有 key 的三条探针、`ProbeOutcome` 的三种结论、四种诊断状态、退出码都没动。
+
 ## Unreleased — #514: 零结果分成五档，CLI 和两个 MCP 工具读同一个结论
 
 一句话说清：**以前「零结果」只有一个说法，全臂失败（上游挂了）和域内被滤空（策略拒答）在退出码和输出里分不开。现在引擎在装配信封前算一次 outcome，五个值（answer / failed / cancelled / abstain / empty）写进 `metadata.outcome` 和审计 span，CLI 的 `--json` 与退出码、`search_web` / `research_web` 的 `structuredContent` 都读这一个值。**

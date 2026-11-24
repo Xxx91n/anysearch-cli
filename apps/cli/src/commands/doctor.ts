@@ -5,7 +5,8 @@
 // 每条还标 offline 或 live：离线检查只证明本机文件/解析/构造器没问题，不证明
 // 联网、模型、宿主真的能用。真实能力要在 live 里单独跑，doctor 不替它打包票。
 //
-// --live 是唯一联网的开关：只打三家信息源的免费面，不跑真搜索、不花额度；模型不验。
+// --live 是唯一联网的开关：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探；
+// 不跑真搜索、不花额度；模型不验。
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, isProbeProviderId, probeProviderAuth } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider } from "@anysearch-cli/retriever";
@@ -57,8 +58,9 @@ const HELP = `ans doctor [--json] [--strict] [--live]
   失败     查过，确实坏了
 
 每条还标着是离线检查还是真实调用。默认只读本机，不联网、不启动宿主。
---live 才联网：只打三家信息源的免费面，给每把 key 一个 auth 结论，一次真搜索
-都不跑、不花额度。模型那几家不验（真调一次要花钱，--live 不替它花）。
+--live 才联网：只打有 key 的那几家信息源的免费面，给每把 key 一个 auth 结论，一次
+真搜索都不跑、不花额度。没配 key 的源跳过不探——免费额度这条路能不能用不在这里验。
+模型那几家不验（真调一次要花钱，--live 不替它花）。
 --json 输出结构化结果。退出码：有失败是 1；加了 --strict 又有未检查是 5；
 其余是 0。`;
 
@@ -381,6 +383,11 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       await Promise.all(
         SEARCH_PROVIDER_IDS.map(async (provider) => {
           const entry = credentials[provider];
+          // Design: 没配 key 的源不探免费面（#534）—— ProbeOutcome 的三种结论都在说这把 key
+          // （好 / 被拒 / 没验成），没 key 时三句都不成立，只能给出假绿或假红：anysearch 的匿名
+          // 额度墙会被判成 permanent-protocol，或者直接落进「auth 通过」；exa 没 key 打 REST 是
+          // 402，会被说成额度用尽。免费额度按 IP、按天走，红了还会撑大 --strict，把别人的用量
+          // 算成本机装坏。这条免费额度能不能用，要验就真跑一次 ans search。
           if (!entry?.apiKey) return;
           const endpoint = opts.endpoints?.[provider]
             ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined);
