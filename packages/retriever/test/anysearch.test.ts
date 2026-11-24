@@ -639,6 +639,53 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // (#532) the live wall text, captured 2026-11-24 (raw probe --nokey, wall
+  // active; the record comment on the issue holds the full timeline). The
+  // wording is verbatim; the two secret lines carry §16b's live-key shape
+  // because the capture was redacted before storage. The username line is
+  // part of the captured shape (kept verbatim here for fidelity); it carries
+  // no secret, but the display seam still sweeps it — see §16m.
+  const LIVE_WALL_532 = "Your account and API key have been automatically generated. Use the API key below to continue.\nusername=as_auto_kHIe80XPcmQk\npassword=as_sk_live_abcdefghijklmnopqrstuvwxyz\napi_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
+
+  // 16l. (#532) the live wall in its captured shape: pure 200 — isError
+  // absent/null, no '## Search Results' header, in-band provisioning text with
+  // username/password/api_key lines. Same class as the §16 family fixture:
+  // free-quota-exhausted, declared on the error object (#494).
+  {
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: LIVE_WALL_532 }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      const msg = String(err);
+      assert(msg.includes("free quota exhausted"), "live wall (pure 200) -> free quota exhausted (got " + msg.slice(0, 80) + ")");
+      assert(providerErrorClassOf(err) === "free-quota-exhausted", "live wall (pure 200) declares free-quota-exhausted");
+    } finally { f.restore(); }
+  }
+
+  // 16m. (#532) the same live wall through isError:true — the payload wins the
+  // class (§16b's shape). The provisioning wording stays; every value-carrying
+  // line redacts — password and api_key by the key-prefix rule (the api_key
+  // run starts at `api` and swallows its `=` and value), and the non-secret
+  // username line by the 20-character bare-run rule. The message's own words
+  // classify free-quota-exhausted.
+  {
+    const key = "as_sk_live_abcdefghijklmnopqrstuvwxyz";
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: LIVE_WALL_532 }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("free quota exhausted"), "live wall (isError) -> free quota exhausted (got " + msg.slice(0, 80) + ")");
+      assert(msg.includes("[redacted]") && !msg.includes(key), "live wall (isError) redacts the issued key lines");
+      assert(msg.includes("automatically generated"), "live wall (isError) keeps the upstream wording");
+      assert(!msg.includes("as_auto_kHIe80XPcmQk"), "live wall (isError) redacts the username line too (bare-run rule)");
+      assert(classifyProviderError(msg) === "free-quota-exhausted", "live wall (isError) classifies free-quota-exhausted");
+    } finally { f.restore(); }
+  }
+
   // 17. r19 T2 (STOP-20 regression): a rate-limit notice in the body —
   // no provisioning or quota words — is a transient rate limit.
   for (const text of [

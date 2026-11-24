@@ -319,12 +319,24 @@
   and Tavily's keyless channel raises `TavilyKeylessLimitError`
   (`capType: "daily_cap_reached"`, plus a `retryAfter` when the envelope has
   one). Both classify `free-quota-exhausted` — never `permanent-auth` (no key
-  is wrong) and never `transient` (a throttle is not a used-up allowance). The
+  is wrong) and never `transient` (a throttle is not a used-up allowance).
+  AnySearch's wall was measured live 2026-11-24 (#532): the payload is a
+  fixed 153-character provisioning text (`username=` / `password=` /
+  `api_key=` lines, byte-identical on every hit), the HTTP layer carries no
+  quota or rate headers at all, only `tools/call search` is walled
+  (initialize and tools/list keep answering), and the allowance is cumulative
+  per IP/auto-account rather than a per-minute rate — 30 requests at ~18/min
+  did not trip it, 97 anonymous successes were followed by rejection on #98,
+  ~6 idle minutes did not reset it, no recovery was observed within 58.6
+  minutes (daily-window-shaped, not a rolling hour), client identity changes
+  do not cross it, and a valid key worked immediately (3/3) without lifting
+  the anonymous wall — the two channels are independent. The
   remedy sentence names both ways back: wait the retry-after the upstream gave
   (else `a moment`) and retry, or add a key for this provider. Tavily's
   `retry-after` slides forward with the wall, so waiting it out can land on the
   wall again; adding a key is the certain way back. Pinned by
-  `packages/retriever/test/provider-error-class.test.ts`.
+  `packages/retriever/test/provider-error-class.test.ts` and the live-text
+  fixtures in `packages/retriever/test/anysearch.test.ts` (§16l/§16m).
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.
