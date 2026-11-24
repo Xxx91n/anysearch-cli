@@ -15,6 +15,7 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialFileWarning,
   type CredentialFileContents,
+  CredentialWriteRefusal,
   type CredentialRepairResult,
   credentialProvider,
   displayEndpoint,
@@ -34,7 +35,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { REPAIR_HINT } from "../messages";
+import { NOTHING_CHANGED, PUBLISHED_BUT_UNVERIFIED, REPAIR_HINT } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -247,6 +248,16 @@ function rejectUnknownProvider(provider: string): number {
   return 2;
 }
 
+/** A refused write says whether it published; set, remove and repair all say it the same way. */
+function reportWriteFailure(e: unknown): void {
+  stderr((e as Error).message + "\n");
+  if (e instanceof CredentialWriteRefusal && e.published) {
+    stderr(PUBLISHED_BUT_UNVERIFIED + "\n");
+    return;
+  }
+  stderr(NOTHING_CHANGED + "\n");
+}
+
 export async function runAuth(args: string[]): Promise<number> {
   const sub = args[0];
   // ONE root for the whole run: status, list, set and remove all describe and
@@ -369,7 +380,7 @@ export async function runAuth(args: string[]): Promise<number> {
       }
       return 0;
     } catch (e) {
-      stderr((e as Error).message + "\n");
+      reportWriteFailure(e);
       return 1;
     }
   }
@@ -398,7 +409,7 @@ export async function runAuth(args: string[]): Promise<number> {
         " from " + userCredentialsPath(home) + ".");
       return 0;
     } catch (e) {
-      stderr((e as Error).message + "\n");
+      reportWriteFailure(e);
       return 1;
     }
   }
@@ -408,16 +419,14 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       result = repairUserCredentials({ home });
     } catch (e) {
-      // Only the lock can throw now; the write reports its own outcome.
+      // Only the lock throws now; the write reports its own outcome.
       stderr((e as Error).message + "\n");
-      stderr("Nothing was changed.\n");
+      stderr(NOTHING_CHANGED + "\n");
       return 1;
     }
     if (result.kind === "write-failed") {
       stderr(result.error + "\n");
-      stderr(result.published
-        ? "The write was published but failed its access check, so it may have been left in place or removed. Check the file, then store the keys again with `ans auth set`.\n"
-        : "The file is unchanged.\n");
+      stderr(result.published ? PUBLISHED_BUT_UNVERIFIED + "\n" : NOTHING_CHANGED + "\n");
       return 1;
     }
     if (result.kind === "absent") {
@@ -426,7 +435,7 @@ export async function runAuth(args: string[]): Promise<number> {
     }
     if (result.kind === "unrepairable") {
       stderr(result.error + "\n");
-      stderr("Nothing was changed.\n");
+      stderr(NOTHING_CHANGED + "\n");
       return 1;
     }
     if (result.kind === "healthy") {

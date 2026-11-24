@@ -313,9 +313,9 @@ function stripBom(text: string): string {
 }
 
 /**
- * What every fault in this file ends with. It names `ans auth repair` because
- * `ans chat` and the search resolvers print this sentence and never show the
- * `ans auth` help: unnamed, the reader's only move is to delete the file.
+ * What the parse faults end with: JSON that does not parse, and a record that
+ * does not. It names `ans auth repair` because `ans chat` and the search
+ * resolvers print this sentence and never show the `ans auth` help.
  */
 const FIX_ADVICE = "; fix or remove the file, or run `ans auth repair` to keep the keys it can still read";
 
@@ -771,6 +771,20 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
 }
 
 /**
+ * A refused credential write. `published` is true when the rename had already
+ * replaced the target and the later access check failed: the file then holds the
+ * new bytes, or the fail-closed removal took it away. False means nothing on disk
+ * changed. A caller cannot tell this from the filesystem afterwards, so the write
+ * says it.
+ */
+export class CredentialWriteRefusal extends Error {
+  constructor(message: string, readonly published: boolean) {
+    super(message);
+    this.name = "CredentialWriteRefusal";
+  }
+}
+
+/**
  * Write the file so that no unprotected copy of the secret ever lands on disk:
  * the empty temp file is protected and verified FIRST, the key is written into
  * that already-protected file, and the result is renamed into place.
@@ -804,15 +818,11 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    const refusal = new Error(
+    throw new CredentialWriteRefusal(
       "refusing to write the credential file " + path + ": " + reason +
       ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-    ) as Error & { published?: boolean };
-    // The caller cannot tell from the filesystem whether the target was replaced:
-    // the unlink above is best effort, so the file may still be the new one. Say
-    // what actually happened instead of letting a reader guess.
-    refusal.published = published;
-    throw refusal;
+      published,
+    );
   }
 }
 
@@ -954,10 +964,10 @@ export function repairUserCredentials(
     try {
       writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
     } catch (e) {
-      // Whatever the caller reports next depends on this flag, not on a guess
-      // made by looking at the filesystem afterwards.
-      const published = (e as { published?: boolean }).published === true;
-      return { kind: "write-failed", error: (e as Error).message, published };
+      if (e instanceof CredentialWriteRefusal) {
+        return { kind: "write-failed", error: e.message, published: e.published };
+      }
+      throw e;
     }
     return { kind: "repaired", path, kept: bytes.bindings.length, dropped: bytes.problems };
   });
