@@ -51,20 +51,11 @@ export function providerFailureMetadata(
 }
 
 /**
- * The envelope's own verdict, read instead of re-decided here: the kernel
- * classifies a search once and writes metadata.outcome, so this surface and the
- * audit trace cannot disagree about what happened. `failed` is the one outcome
- * that is an error: every queried arm failed and nothing came back. Zero
- * queried arms cannot be an outage, and a cancelled arm is a transport outcome,
- * so neither classifies as `failed`.
- *
- * Design: read the field, never re-derive it or default it — a second rule here
- * would drift from the classifier, and a fallback would report a producer that
- * forgot the field as a successful miss. The contract makes the field required,
- * so a missing one is a typing breach nobody ships.
+ * The engine's verdict, read here and never re-decided. Null when a hand-built
+ * envelope carries none; the kernel writes one on every search it assembles.
  */
-export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): SearchOutcome {
-  return envelope.metadata.outcome;
+export function outcomeOf(envelope: { metadata?: { outcome?: SearchOutcome } }): SearchOutcome | null {
+  return envelope.metadata?.outcome ?? null;
 }
 
 /**

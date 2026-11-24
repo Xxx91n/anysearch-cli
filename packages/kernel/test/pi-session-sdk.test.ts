@@ -140,7 +140,7 @@ class ProbeRetriever {
         score: 1 - i * 0.1,
       })),
       answers: [],
-      metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1 },
+      metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1, outcome: "empty" },
     } as any;
   }
 }

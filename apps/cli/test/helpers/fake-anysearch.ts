@@ -15,7 +15,14 @@ export async function startFakeAnySearch(
 ): Promise<{ endpoint: string; close: () => Promise<void> }> {
   const server = createServer(async (req, res) => {
     let body = "";
-    for await (const chunk of req) body += chunk;
+    try {
+      for await (const chunk of req) body += chunk;
+    } catch {
+      // The CLI was killed mid-request (test timeout): treat it as a call that
+      // never happened instead of an unhandled rejection in the test process.
+      res.destroy();
+      return;
+    }
     let parsed: { id?: number; method?: string } = {};
     try {
       parsed = JSON.parse(body);

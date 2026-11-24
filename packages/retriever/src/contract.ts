@@ -394,13 +394,10 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // five-value search outcome, written once by the kernel for every search
-    // that reaches envelope assembly: "answer" (results or answers),
-    // "failed" (every queried provider failed), "cancelled" (an arm was
-    // cancelled and not every arm failed), "abstain" (the marker below is
-    // present), "empty" (at least one provider answered and none of the above).
-    // The audit attribute anysearch.outcome carries the same value;
-    // outcome === "abstain" iff metadata.abstain is present.
+    // five-value search outcome, written by the kernel on every search it
+    // assembles; how each value is decided lives in outcome.ts and nowhere
+    // else. The audit attribute anysearch.outcome carries the same value, and
+    // outcome === "abstain" iff the abstain marker below is present.
     outcome: SearchOutcome;
     // abstain marker. Set by the kernel post-filter only when the domain
     // allowlist policy is the evidence-backed reason: a domain allowlist is

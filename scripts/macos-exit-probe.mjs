@@ -46,12 +46,11 @@ for (let i = 1; i <= RUNS; i++) {
   if (!sig.startsWith("clean")) crashes++;
   lines.push("| " + i + " | search | " + String(s.status) + (s.signal ? " (" + s.signal + ")" : "") + " | " + sig + " |");
 }
-// One labelled zero-result leg: ANS_DOMAIN=docs makes the out-of-domain ghost
-// query (bc0001's tokio question) run the domain gate on a machine with no
-// search key. It lands in abstain / empty / failed depending on what the arms
-// do here, so the marker is recorded, never asserted. classify() counts exit
-// 0 and 1 as clean on purpose: this probe reports crash signatures, and both
-// codes are legitimate for a zero-result run. Do not "fix" it to expect 0.
+// One labelled zero-result leg: ANS_DOMAIN=docs runs an out-of-domain query
+// through the domain gate on a machine with no search key. It can land in
+// abstain, empty or failed, so the marker is recorded, never asserted. classify()
+// counts exit 0 and 1 as clean on purpose — this probe reports crash signatures,
+// and both codes are legitimate here.
 {
   const a = spawnSync(process.execPath, [BIN, "search", "tokio JoinSet rust scheduler internals"], {
     encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs" },
@@ -60,7 +59,7 @@ for (let i = 1; i <= RUNS; i++) {
   const sig = classify(a.status, out + (a.signal ?? ""));
   const marker = /abstain/i.test(out) ? "abstain-line (advisory)" : "no-abstain-line (advisory; expected when arms fail)";
   if (!sig.startsWith("clean")) crashes++;
-  lines.push("| - | search --domain docs (zero-result leg) | " + String(a.status) + (a.signal ? " (" + a.signal + ")" : "") + " | " + sig + "; " + marker + " |");
+  lines.push("| - | search (ANS_DOMAIN=docs, zero-result leg) | " + String(a.status) + (a.signal ? " (" + a.signal + ")" : "") + " | " + sig + "; " + marker + " |");
 }
 
 {

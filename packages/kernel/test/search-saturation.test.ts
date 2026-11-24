@@ -45,7 +45,7 @@ test("agent loop: a model that keeps searching stale results is stopped and stil
       return { query: q.query, mode: "fast", results: [
         { url: "https://example.com/1", title: "R1", snippet: "S1", source: "tavily", score: 1 },
         { url: "https://example.com/2", title: "R2", snippet: "S2", source: "exa", score: 0.9 },
-      ], answers: [], metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1 } } as any;
+      ], answers: [], metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1, outcome: "empty" } } as any;
     },
   };
   const faux = createFauxCore({ provider: "faux", models: [{ id: "faux-1" }] });

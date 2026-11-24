@@ -65,11 +65,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             signal,
           });
 
-          // A zero-result search is successful only when an arm answered. The
-          // engine's verdict owns that call: `failed` means every queried arm
-          // failed, which is an outage — an error result, never a legitimate
-          // empty one. abstain / empty / cancelled stay successes with the
-          // verdict named in the output.
+          // Only `failed` is an error: every queried arm died. The other four
+          // verdicts are successes with their value named in the output; the
+          // engine decides which, this surface never re-judges.
           const outcome = outcomeOf(envelope);
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const cancelledProviders = envelope.metadata?.providersCancelled ?? [];

@@ -708,7 +708,14 @@ export class RetroaererdEngine {
       domainActive,
       gateDropped,
     });
-    q.span?.setAttributes?.({ "anysearch.outcome": outcome });
+    // Arm-state counts ride every search, not just domain ones: they are what
+    // separates a clean `empty` from one with a failed arm, and most searches
+    // never fire the domain event below.
+    const armCounts = {
+      "providers.failed_count": providersFailed.length,
+      "providers.cancelled_count": providersCancelled.length,
+    };
+    q.span?.setAttributes?.({ "anysearch.outcome": outcome, ...armCounts });
     if (domainActive) {
       q.span?.addEvent("retrieval.domain_filter.post", {
         "anysearch.domain": this.domainName ?? "",
@@ -719,11 +726,7 @@ export class RetroaererdEngine {
         "anysearch.domain_filter.post": gateSurvivors,
         "anysearch.domain_filter.dropped": gateDropped,
         "anysearch.outcome": outcome,
-        // Arm-state counts: without them a clean `empty` and an `empty` with
-        // one arm answering and another failing look identical, and the
-        // failure rate cannot be measured from the trace.
-        "providers.failed_count": providersFailed.length,
-        "providers.cancelled_count": providersCancelled.length,
+        ...armCounts,
       });
     }
 

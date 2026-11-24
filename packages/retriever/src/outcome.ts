@@ -5,19 +5,13 @@
 // (metadata.outcome) and the audit span (anysearch.outcome). The CLI, the two
 // MCP tools and the trace read that value; none of them decides again.
 //
-// Precedence is first match wins:
-//
-//   answer    something came back: results, or a provider-generated answer.
-//   failed    nothing came back and every queried arm failed — an outage.
-//   cancelled nothing came back, an arm was cut off, and it was not all-failed.
-//   abstain   the domain policy is the reason, and it can say why
-//             (shouldAbstain).
-//   empty     anything else: an arm answered with nothing, and that is all.
-//
-// Design: five outcomes, first match wins — a result is an answer even beside a
-// failed arm (degradation is a separate axis: interrupted, providersFailed),
-// and cancelled outranks abstain because "nothing in this domain" is a
-// conclusion that needs the whole fanout to have finished.
+// Design: five outcomes, first match wins — answer (results or a provider
+// answer), failed (nothing came back, every queried arm failed), cancelled (an
+// arm was cut off and it was not all-failed), abstain (the domain policy can say
+// why, see shouldAbstain), empty (an arm answered with nothing, and that is all).
+// A result is an answer even beside a failed arm — the failed arm is named in
+// providersFailed — and cancelled outranks abstain because "nothing in this
+// domain" needs the whole fanout to have finished.
 
 export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "empty"] as const;
 
@@ -63,15 +57,14 @@ function allQueriedArmsFailed(e: SearchOutcomeEvidence): boolean {
 export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
   if (!e.domainActive || e.resultCount > 0 || e.answerCount > 0) return false;
   if (e.providersCancelled.length > 0) return false;
-  // The earlier outcomes win here too, so the predicate and the classifier
-  // answer the same thing on every input, reachable or not: an all-failed
-  // search is an outage, never a refusal.
+  // Same order as the classifier, so both give one answer: an outage is never
+  // a refusal, even if the gate counters said arrivals were dropped.
   if (allQueriedArmsFailed(e)) return false;
   if (e.gateDropped > 0) return true;
   return answeredProviders(e).length > 0 && e.providersFailed.length === 0;
 }
 
-/** The five-value verdict, decided once. First match wins. */
+/** The verdict; the order is the one above. */
 export function classifySearchOutcome(e: SearchOutcomeEvidence): SearchOutcome {
   if (e.resultCount > 0 || e.answerCount > 0) return "answer";
   if (allQueriedArmsFailed(e)) return "failed";

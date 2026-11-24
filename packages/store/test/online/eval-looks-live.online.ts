@@ -186,6 +186,13 @@ function main() {
     assert(!j.__error, e.id + " ran (" + (j.__error ?? "ok") + ")");
     if (!j.__error) {
       if (e.expected.verdict === "abstain") {
+        // A live lane measures retrieval, not provider health: when the only arm
+        // is down the classifier says `failed`, and that is the environment, not
+        // a regression. Skip it the way a missing key skips, instead of reddening
+        // a lane nobody can fix from here.
+        if (j.outcome === "failed") {
+          console.log("SKIPPED " + e.id + " (provider outage: providersFailed " + JSON.stringify(j.providersFailed ?? []) + ")");
+        } else {
         assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
         assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");
         assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
@@ -194,6 +201,7 @@ function main() {
           // A refusal with a dead arm would be an `empty`, so an empty failed
           // list is what says the single arm really answered.
           assert((j.providersFailed ?? []).length === 0, e.id + " the single arm answered (providersFailed " + JSON.stringify(j.providersFailed) + ")");
+        }
         }
       } else {
         assert(!j.abstain, e.id + " answer verdict has no abstain marker");

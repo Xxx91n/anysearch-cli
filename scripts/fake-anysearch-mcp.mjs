@@ -1,18 +1,16 @@
 // Stand-in AnySearch MCP endpoint for install-smoke's refusal leg.
 //
-// Design: its own process, never an in-process server — install-smoke drives
-// the installed CLI with spawnSync, which blocks the parent's event loop, so an
-// in-process stub could never accept the request (#474 measured a 6s timeout
-// and zero requests that way; a separate process answers in under a second).
+// Its own process, never in-process: install-smoke drives the CLI with
+// spawnSync, which blocks the parent's event loop, so an in-process stub could
+// never accept the request. Start it, read the `PORT=<n>` line, point
+// ANYSEARCH_ENDPOINT at http://127.0.0.1:<n>/mcp, kill it when done.
 //
-// Usage: start it, read the single `PORT=<n>` line it prints, point
-// ANYSEARCH_ENDPOINT at http://127.0.0.1:<n>/mcp, then kill it.
+// Answers the handshake and one `tools/call` with two out-of-domain URLs, so the
+// allowlist gate throws both away. Every request gets a reply — a silent one
+// would resolve as cancelled arms, a different leg than this stub exists for.
 //
-// It answers the handshake and one `tools/call` with two out-of-domain URLs, so
-// the CLI's allowlist gate throws both away and the run is a refusal. Every
-// request gets a reply: the engine's 4s request-level deadline would turn a
-// silent endpoint into a cancelled-arm run, which is a different leg than the
-// one this stub exists to drive.
+// The in-process twin lives in apps/cli/test/helpers/fake-anysearch.ts; a shape
+// change belongs in both.
 
 import { createServer } from "node:http";
 

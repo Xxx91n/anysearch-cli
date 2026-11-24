@@ -143,8 +143,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           }
           const lastRound = allResults.slice(-10);
           // The last completed round's verdict and marker — the same round
-          // sufficiency describes, and never a union across rounds. A cancelled
-          // first round leaves no envelope, so both stay null.
+          // sufficiency describes, never a union across rounds. An interrupted
+          // round's envelope is not trusted, so a caller that aborts during the
+          // first round leaves both null.
           const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
           const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
           const summary = JSON.stringify(
