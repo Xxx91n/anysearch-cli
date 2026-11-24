@@ -206,7 +206,7 @@ test("a broken file is classified, and the classification survives a supplied pa
     writeFileSync(path, JSON.stringify({ keys: [] }), "utf8");
     assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "no bindings list");
     writeFileSync(path, JSON.stringify({ bindings: [{ provider: "exa" }] }), "utf8");
-    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "an entry with no key");
+    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-record", "an entry with no key");
 
     // Present but unreadable: a directory where the file should be makes
     // readFileSync throw on every platform, without depending on mode bits

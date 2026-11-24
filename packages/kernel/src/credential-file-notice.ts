@@ -8,6 +8,7 @@
 // No path, no parse message: the raw error from `readUserCredentials` quotes the
 // line/column and sometimes the value it found, so it stays on stderr.
 
+import { FIX_OR_REPLACE, KEEP_KEYS } from "@anysearch-cli/store";
 import type {
   CredentialFileFault,
   CredentialFileFaultErrno,
@@ -58,8 +59,6 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
  * the same refusal from `ans auth repair`, so promising it there would be advice
  * the user follows into the same error.
  */
-const REPAIR = ", or run ans auth repair to keep the keys it can still read";
-
 /**
  * Sentences per kind. `unreadable` is a template with `{errno}` and `{remedy}`
  * slots — read the final text from `credentialFileNotice`, not this table.
@@ -67,10 +66,13 @@ const REPAIR = ", or run ans auth repair to keep the keys it can still read";
 export const CREDENTIAL_FILE_HINTS: Record<CredentialFileNoticeKind, string> = {
   "not-json":
     "the user credential file is not valid JSON — the keys in it are not in use; " +
-    "fix or remove the file" + REPAIR + " (" + RESTART + ")",
+    FIX_OR_REPLACE + " (" + RESTART + ")",
   "invalid-structure":
     "the user credential file is not a valid key file — the keys in it are not in use; " +
-    "fix or remove the file" + REPAIR + " (" + RESTART + ")",
+    FIX_OR_REPLACE + " (" + RESTART + ")",
+  "invalid-record":
+    "one record in the user credential file could not be read — that key is not in use; " +
+    FIX_OR_REPLACE + ", " + KEEP_KEYS + " (" + RESTART + ")",
   unreadable:
     "the user credential file could not be read{errno} — the keys in it are not in use; " +
     "{remedy} (" + RESTART + ")",

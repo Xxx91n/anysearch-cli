@@ -160,7 +160,7 @@ export interface CredentialBinding {
  * machine-readable surface, so it never grows into free text (no file
  * contents, no key fragment).
  */
-export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure";
+export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure" | "invalid-record";
 
 /**
  * The errnos a read failure may report.
@@ -313,11 +313,14 @@ function stripBom(text: string): string {
 }
 
 /**
- * What the parse faults end with: JSON that does not parse, and a record that
- * does not. It names `ans auth repair` because `ans chat` and the search
- * resolvers print this sentence and never show the `ans auth` help.
+ * The two answers a fault has, shared with the kernel's notice so both surfaces
+ * say the same words. Only a fault inside a readable file can be repaired: a
+ * file that does not parse has nothing left to keep.
  */
-const FIX_ADVICE = "; fix or remove the file, or run ans auth repair to keep the keys it can still read";
+export const FIX_OR_REPLACE = "fix or remove the file";
+export const KEEP_KEYS = "or run ans auth repair to keep the keys it can still read";
+const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
+const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
 /** The one wording for "the file cannot be read at all"; the read and the repair share it. */
 function unreadableSentence(code: string): string {
@@ -383,14 +386,14 @@ export function readUserCredentials(
   }
   const bytes = parseCredentialBytes(raw);
   if (!("bindings" in bytes)) {
-    return unusableFile(path, bytes.detail + FIX_ADVICE, bytes.kind);
+    return unusableFile(path, bytes.detail + REMOVE_ADVICE, bytes.kind);
   }
   // A record that cannot be trusted makes the WHOLE file untrusted: returning
   // the readable ones would let the next write replace the file with a filtered
   // list and permanently erase the bad record (and whatever it held). Report it
   // instead, so the user fixes or removes the file knowingly.
   if (bytes.problems.length > 0) {
-    return unusableFile(path, bytes.problems[0]! + FIX_ADVICE, "invalid-structure");
+    return unusableFile(path, bytes.problems[0]! + REPAIR_ADVICE, "invalid-record");
   }
   return { bindings: bytes.bindings };
 }
@@ -888,7 +891,7 @@ export function writeUserCredential(
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
-      // 读回来的句子已经带了修法，写入口只说这次没做成什么，不再拼第二遍。
+      // The read already ended with the advice; say only what this write did not do.
       throw new CredentialWriteRefusal(
         existing.error + "; the key was not written - rewriting the file would drop the other keys",
         false,

@@ -11,6 +11,7 @@
 - **新增 `ans auth repair`**（`repairUserCredentials`）：在写锁里重读**原始字节**，保留过得了 `parseBinding` 的条目、丢掉过不了的，然后走 `writeProtectedFile` 写回。不能拿 `readUserCredentials` 已经筛空的 `bindings` 回写——那正是读路径一直拒绝的擦除。健康的文件是 no-op，一个字节都不动；不是 JSON 或没有 `bindings` 列表时不动文件，只说「删了重存」。
 - **报错句不再重复，并且点名修法**：`FIX_ADVICE` 一处拼出，两个写入口改成说「这次没写成什么」（`the key was not written - rewriting the file would drop the other keys` / `the key was not removed - the file was not changed`）。这句里现在带 `ans auth repair`——`ans chat` 和搜索路径的 warning 只往 stderr 说这一句，那里看不到 auth 的帮助，不点名的话用户唯一看得见的动作就是删掉整份文件。
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
+- **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
 ### Known limits
