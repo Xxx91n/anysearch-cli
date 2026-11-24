@@ -473,8 +473,11 @@ function writeConfigTemp(path: string, content: string): void {
 
 /** The errno code when the thrown value carries one, else its text. */
 function errnoOrText(e: unknown): string {
-  const code = typeof e === "object" && e !== null ? (e as NodeJS.ErrnoException).code : undefined;
-  return typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
+  // A thrown value may be anything, and ErrnoException only claims code is a
+  // string, so the runtime check below is the real guard, not the cast.
+  const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
+  if (typeof code === "string") return code;
+  return e instanceof Error ? e.message : String(e);
 }
 
 /**
