@@ -1,17 +1,10 @@
-// One plain sentence per credential-file fault kind, plus the record the engine
-// publishes.
+// The sentence for each credential-file fault kind, plus the record the engine
+// publishes. One table, because `ans search --json` and both MCP tools carry the
+// same sentence and copies would drift. The CLI's own text is Chinese and keeps
+// its label; only the fact and the classification are shared.
 //
-// Design: one sentence table in the kernel, not one per host — `ans search
-// --json` and both MCP tools carry this sentence verbatim, and a copy per host
-// is how those surfaces drift into three stories about the same file. (The CLI's
-// human-readable text is Chinese and keeps its own label; the fact and the
-// classification are shared, the wording is not.) Same reason
-// `PROVIDER_ERROR_HINTS` exists.
-//
-// No path and no parse message: the sentence from `readUserCredentials` quotes
-// the line/column and, for a bad entry, the provider value it found. This one
-// names the kind only, which is all a machine-readable surface may carry
-// (#533, spec S2).
+// No path, no parse message: the raw error from `readUserCredentials` quotes the
+// line/column and sometimes the value it found, so it stays on stderr.
 
 import type {
   CredentialFileFault,
@@ -21,27 +14,20 @@ import type {
 
 /** The engine's record: the classification plus the sentence built from it. */
 export interface CredentialFileNotice extends CredentialFileFault {
+  /** Wording for people. Branch on `kind`/`errno`, never on this string. */
   notice: string;
 }
 
-/**
- * Every sentence ends the same way.
- *
- * Design: state the restart as a fact, not as a second imperative — a search
- * command rereads the file on its next run, but an MCP server reads it once at
- * startup, and a host that keeps the stale read is how a user fixes the file and
- * sees no change. Stating it here keeps this sentence from arguing with the
- * "then retry" a CLI reader sees on stderr.
- */
+/** A search command rereads the file on its next run; an MCP server reads it once at startup. */
 const RESTART = "a running MCP server keeps the old read until it restarts";
 
 /**
- * What the user can do about a read failure, keyed by the errno the file
- * reported: "fix its permissions" is wrong advice for a path that turns out to
- * be a directory or a full disk, and the errno is the one thing that says which.
- * Codes without an entry fall back to the plain "fix it".
+ * What the user can do, by the errno the file reported: "fix its permissions"
+ * is wrong advice for a path that is a directory or a full disk. Total on
+ * purpose — adding a code to the closed set fails compilation until someone
+ * writes the remedy.
  */
-const READ_REMEDY: Partial<Record<CredentialFileFaultErrno, string>> = {
+const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EACCES: "fix its permissions",
   EPERM: "fix its permissions",
   EROFS: "fix its permissions",
@@ -55,7 +41,10 @@ const READ_REMEDY: Partial<Record<CredentialFileFaultErrno, string>> = {
   ETIMEDOUT: "retry once the file is reachable",
 };
 
-/** `{errno}` and `{remedy}` are filled from the fault; no errno leaves both plain. */
+/**
+ * Sentences per kind. `unreadable` is a template with `{errno}` and `{remedy}`
+ * slots — read the final text from `credentialFileNotice`, not this table.
+ */
 export const CREDENTIAL_FILE_HINTS: Record<CredentialFileFaultKind, string> = {
   "not-json":
     "the user credential file is not valid JSON — the keys in it are not in use; " +
@@ -71,6 +60,6 @@ export const CREDENTIAL_FILE_HINTS: Record<CredentialFileFaultKind, string> = {
 export function credentialFileNotice(fault: CredentialFileFault): CredentialFileNotice {
   const notice = CREDENTIAL_FILE_HINTS[fault.kind]
     .replace("{errno}", fault.errno ? " (" + fault.errno + ")" : "")
-    .replace("{remedy}", (fault.errno && READ_REMEDY[fault.errno]) ?? "fix it");
+    .replace("{remedy}", fault.errno ? READ_REMEDY[fault.errno] : "fix it");
   return { ...fault, notice };
 }

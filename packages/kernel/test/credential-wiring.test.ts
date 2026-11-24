@@ -30,7 +30,7 @@ import { createLlmSession } from "../src/llm-init";
 import { createEngine } from "../src/composition";
 import { CREDENTIAL_FILE_HINTS, credentialFileNotice } from "../src/credential-file-notice";
 import { redactSecrets } from "@anysearch-cli/retriever";
-import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
+import { CREDENTIAL_FILE_FAULT_ERRNOS, readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
 const STORED_ANYS_KEY = "as-stored-key-0123456789";
@@ -491,6 +491,11 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
     /\(\)/,
     "no empty parentheses when the read failure gave no known code",
   );
+  for (const errno of CREDENTIAL_FILE_FAULT_ERRNOS) {
+    const notice = credentialFileNotice({ kind: "unreadable", errno }).notice;
+    assert.ok(notice.includes("(" + errno + ")"), "the code is named: " + notice);
+    assert.doesNotMatch(notice, /fix it \(/, errno + " has its own remedy, not the fallback");
+  }
 });
 
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {

@@ -409,13 +409,16 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       }
       // 只有 endpoint、没有 key 也算没配：install-smoke 把 arm 指到死端口时就是这种现场。
       // 这里不套「用免费额度跑」——endpoint 已经不是厂商默认地址，那台有没有免费额度不归我们说了算。
+      // 文件坏了的时候 key 可能有，只是读不出来，不能说成「没配」。
       if (!entry.apiKey) {
         report.add({
           layer: "capability",
           name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: "endpoint 设了；没配 key",
+          detail: credentials.credentialFileFault
+            ? "endpoint 设了；凭据文件坏了，这条臂的 key 读不出来"
+            : "endpoint 设了；没配 key",
         });
         continue;
       }

@@ -106,11 +106,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // caller went away. Paired with providersQueried, so neither case
               // reads as an arm that never ran.
               providersCancelled: cancelledProviders,
-              // The same record structuredContent carries. Hosts split in two:
-              // some give the model only this text half (Cursor, the dsh bridge),
-              // so a fact that lives only in structuredContent is invisible to
-              // them. Which arm had which key, and whether the credential file is
-              // why one of them has none, belongs in both (#533).
+              // Some hosts give the model only this text half, so the credential
+              // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),

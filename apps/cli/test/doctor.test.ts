@@ -378,6 +378,50 @@ test("ans doctor：凭据文件读坏了只报一条失败", async () => {
   assert.equal(payload.summary.failed, 1, "失败数不能多算");
 });
 
+test("ans doctor：凭据文件坏了，信息源行说的是文件坏了，不是没配 key", async () => {
+  // describeUnconfiguredSource 本身有单测；这条钉的是 doctor 真的把坏文件传给了它。
+  const { entries } = await runInHome({
+    credentials: "not json",
+    env: {
+      TAVILY_API_KEY: undefined,
+      EXA_API_KEY: undefined,
+      ANYSEARCH_API_KEY: undefined,
+      ANS_LLM_API_KEY: undefined,
+      ANS_LLM_PROVIDER: undefined,
+      ANS_LLM_MODEL: undefined,
+    },
+  });
+
+  for (const provider of ["tavily", "exa", "anysearch"]) {
+    assert.equal(
+      entries.find((entry) => entry.name === "信息源 " + provider)?.detail,
+      "凭据文件坏了，用免费额度跑（有次数和速度上限）",
+      provider + " 不能把读不出的文件说成没配 key",
+    );
+  }
+});
+
+test("ans doctor：凭据文件坏了又有 endpoint 时，也不说没配 key", async () => {
+  // endpoint 设了、key 读不出来：原因仍然是文件，不是「从没配过」。
+  const { entries } = await runInHome({
+    credentials: "not json",
+    env: {
+      ANYSEARCH_ENDPOINT: "http://127.0.0.1:9",
+      ANYSEARCH_API_KEY: undefined,
+      TAVILY_API_KEY: undefined,
+      EXA_API_KEY: undefined,
+      ANS_LLM_API_KEY: undefined,
+      ANS_LLM_PROVIDER: undefined,
+      ANS_LLM_MODEL: undefined,
+    },
+  });
+
+  assert.equal(
+    entries.find((entry) => entry.name === "信息源 anysearch")?.detail,
+    "endpoint 设了；凭据文件坏了，这条臂的 key 读不出来",
+  );
+});
+
 test("ans doctor：凭据文件坏了，文字输出里只说一条", async () => {
   // 验收第二条的文字那一半：用户看到的就是这些行，所以直接数行。--json 那一半由
   // 上面那条守卫用例钉着，这里不再重复跑一遍 --json。
