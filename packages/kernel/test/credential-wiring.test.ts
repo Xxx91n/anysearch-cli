@@ -505,11 +505,20 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
 
   // The record can arrive through the public search seam, so a kind or code the
   // kernel does not know must degrade to plain wording, not throw.
-  const unknownKind = { kind: "future-kind" } as unknown as CredentialFileFault;
-  assert.match(credentialFileNotice(unknownKind).notice, /could not be used/);
-  assert.doesNotMatch(credentialFileNotice(unknownKind).notice, /\{errno\}|\{remedy\}/);
-  const unknownErrno = { kind: "unreadable", errno: "EWHATEVER" } as unknown as CredentialFileFault;
-  assert.match(credentialFileNotice(unknownErrno).notice, /; fix it \(/, "an unknown code gets the plain remedy");
+  for (const kind of ["future-kind", "toString", "constructor"]) {
+    const unknownKind = { kind } as unknown as CredentialFileFault;
+    const notice = credentialFileNotice(unknownKind).notice;
+    assert.match(notice, /could not be used/, kind + " degrades to the generic sentence");
+    assert.doesNotMatch(notice, /\{errno\}|\{remedy\}/);
+  }
+  for (const errno of ["EWHATEVER", "constructor"]) {
+    const unknownErrno = { kind: "unreadable", errno } as unknown as CredentialFileFault;
+    assert.match(
+      credentialFileNotice(unknownErrno).notice,
+      /; fix it \(/,
+      errno + " gets the plain remedy",
+    );
+  }
 });
 
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {

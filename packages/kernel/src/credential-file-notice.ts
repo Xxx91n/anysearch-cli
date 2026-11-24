@@ -62,13 +62,24 @@ export const CREDENTIAL_FILE_HINTS: Record<CredentialFileFaultKind, string> = {
     "{remedy} (" + RESTART + ")",
 };
 
-const UNKNOWN_KIND =
-  "the user credential file could not be used — the keys in it are not in use; " +
-  "fix or remove it (" + RESTART + ")";
+const UNKNOWN_KIND = "the user credential file could not be used; fix or remove it (" + RESTART + ")";
+
+/** Own-property lookup: a seam-supplied `"toString"` must not hit the prototype. */
+function hintFor(kind: string): string {
+  return Object.hasOwn(CREDENTIAL_FILE_HINTS, kind)
+    ? CREDENTIAL_FILE_HINTS[kind as CredentialFileFaultKind]
+    : UNKNOWN_KIND;
+}
+
+function remedyFor(errno: string): string {
+  return Object.hasOwn(READ_REMEDY, errno)
+    ? READ_REMEDY[errno as CredentialFileFaultErrno]
+    : "fix it";
+}
 
 export function credentialFileNotice(fault: CredentialFileFault): CredentialFileNotice {
-  const notice = (CREDENTIAL_FILE_HINTS[fault.kind] ?? UNKNOWN_KIND)
+  const notice = hintFor(fault.kind)
     .replace("{errno}", fault.errno ? " (" + fault.errno + ")" : "")
-    .replace("{remedy}", fault.errno ? READ_REMEDY[fault.errno] ?? "fix it" : "fix it");
+    .replace("{remedy}", fault.errno ? remedyFor(fault.errno) : "fix it");
   return { ...fault, notice };
 }

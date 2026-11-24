@@ -386,8 +386,8 @@ export function createEngine(
         tavily: creds?.tavily?.apiKey ? creds.tavily.source : "none",
         exa: creds?.exa?.apiKey ? creds.exa.source : "none",
         anysearch: creds?.anysearch?.apiKey ? creds.anysearch.source : "none",
-        // Omit the field rather than write null: a seam that never read a file
-        // must not claim the file is healthy.
+        // Design: omit the field rather than write null — a seam that never read
+        // a file must not claim the file is healthy.
         ...(creds?.credentialFileFault
           ? { credentialFileFault: credentialFileNotice(creds.credentialFileFault) }
           : {}),
