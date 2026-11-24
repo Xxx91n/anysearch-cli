@@ -5,7 +5,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { configWriteSeam, userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
@@ -138,6 +140,22 @@ test("the temp file sits beside the target and is unique per write", () => {
     assert.ok(file.endsWith(".tmp"));
   }
   assert.notEqual(seen[0], seen[1], "two writers cannot collide on one temp name");
+});
+
+test("a symlinked config file still writes through to its target", (context) => {
+  const { home, path } = fixture();
+  const real = join(home, "dotfiles-config.toml");
+  writeFileSync(real, GOOD);
+  try {
+    symlinkSync(real, path, "file");
+  } catch {
+    context.skip("this host does not allow creating symlinks");
+    return;
+  }
+  writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home);
+  assert.ok(lstatSync(path).isSymbolicLink(), "the link is still a link, not a regular file");
+  assert.ok(readFileSync(real, "utf8").includes('provider = "openai"'), "the real file got the new content");
+  assert.deepEqual(temps(home), [], "no temp file left behind");
 });
 
 test("the published file is owner-only even over an existing 0644 file", {

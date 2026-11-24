@@ -21,7 +21,8 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync,
+  closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync,
+  unlinkSync, writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
@@ -464,10 +465,27 @@ export const configWriteSeam: {
 function writeConfigTemp(path: string, content: string): void {
   const fd = openSync(path, "wx", 0o600);
   try {
-    writeSync(fd, content);
+    // writeFileSync loops until every byte lands. A bare writeSync can return
+    // short on a full disk without throwing, and the fsync + rename below would
+    // then publish a truncated file — the exact fault this write exists for.
+    writeFileSync(fd, content, "utf8");
     fsyncSync(fd);
   } finally {
     closeSync(fd);
+  }
+}
+
+/**
+ * Follow a symlinked config file to the file it points at. Renaming onto the
+ * link would replace the link with a regular file, silently cutting off anyone
+ * who keeps ~/.ans/config.toml symlinked into a dotfiles repo.
+ */
+function linkTarget(path: string): string {
+  try {
+    if (!lstatSync(path).isSymbolicLink()) return path;
+    return realpathSync(path);
+  } catch {
+    return path;
   }
 }
 
@@ -482,6 +500,7 @@ function writeConfigTemp(path: string, content: string): void {
  * rename inside one directory never fails with EXDEV.
  */
 function writeUserConfigFile(path: string, content: string): void {
+  path = linkTarget(path);
   const dir = dirname(path);
   const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   const write = configWriteSeam.write ?? writeConfigTemp;
