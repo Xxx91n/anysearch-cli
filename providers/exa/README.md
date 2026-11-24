@@ -71,6 +71,22 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 
 两条都要先知道的一件额度事实：三个工具烧同一份每日额度，见「## 已知异常」。
 
+**取证（2026-11-24，本机 IPv4，一次性探针，没留下脚本）**：
+
+- 不带 `?tools=` 的 `tools/list` 回两个工具：`web_search_exa` + `web_fetch_exa`。`web_fetch_exa` 的
+  inputSchema 是 `{urls: string[], maxCharacters?: number}`，required 只有 `urls`。带
+  `?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa` 时回三个，第三个多出
+  `includeDomains` / `excludeDomains` / `category` 等二十来个参数。
+- `web_fetch_exa` 抓 `https://example.com`（`maxCharacters: 500`），`content[0].text` 开头是
+  `# Example Domain` 加一行 `URL: https://example.com`，空行之后是正文。
+- 一次抓两个 URL：回包里是一段 text，两份文档首尾相接，每份都以 `# ` 标题行加 `URL:` 行开头。
+- 一次抓两个 URL、其中一个是坏域名：整批照样 200，`isError` 不出现，正文末尾多一行
+  `Error fetching https://<url>: CRAWL_UNKNOWN_ERROR`。
+- `web_search_advanced_exa`（走 `?tools=`）：`content[0].text` 是一段 JSON 字符串，顶层键是
+  `requestId` / `resolvedSearchType` / `results` / `searchTime`，`results[]` 每条是
+  `id` / `url` / `text` / `image` / `title`。
+- 4 个并发 `tools/call`（2 次搜索 + 2 次抓页）全部 200，响应头里没有任何 `x-ratelimit-*`。
+
 ## 回复形状
 
 **有 key**：
@@ -110,7 +126,7 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 - **429 的形状**：HTTP 429 + `application/json` + JSON-RPC 错误码 `-32000`。分类是 `transient`——这是短窗口
   限速，等一秒真能通，不归 `free-quota-exhausted`。适配器不重试；响应头里有 `retry-after`（秒数或 HTTP
   日期都认）就挂到错误对象上，引擎记进 `providerErrorRetryAfterSeconds`。`X-RateLimit-Reset` 不读。
-- **限速数字**：官方 changelog（2026-02-02）公布的是 **3 QPS / 每天 150 次每 IP**。开源实现
+- **限速数字**：官方 changelog（2026-02-02，<https://exa.ai/docs/changelog>）公布的是 **3 QPS / 每天 150 次每 IP**。开源实现
   `api/mcp.ts` 的 `initializeRateLimiters` 里那两个数是环境变量默认值（`RATE_LIMIT_QPS || "2"`、
   `RATE_LIMIT_DAILY || "50"`），线上由服务端配置覆盖——**别把 2 / 50 当实际值**，#447 当初记的就是
   这两个默认值。QPS 是滑动 1 秒窗口，每日额度是固定 1 天窗口，只有 `tools/call` 计数，
@@ -138,6 +154,8 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 又很低。#506 之后三条手工探针（anysearch 两条、tavily 一条）都和产品共用同一套凭据解析，但 exa 不在
 这三条里——`ans doctor --live` 会用空体 `POST /search` 验 Exa 的 key（没配 key 时跳过），那是免费面检查，
 只回答「这把 key 好不好」，回答不了「原文坏了还是适配器坏了」。
+
+#530 那一次是一次性探针，没留脚本，观测记录在「## 只借 search（#530 的裁决）」的取证块里。
 
 免费额度那条路另有一条在线测试：`packages/retriever/test/online/exa-mcp.online.ts` 用
 `createExaProvider("")` 真打一次 `mcp.exa.ai`，断言至少回 1 条结果、url / title 形状正常。它落在

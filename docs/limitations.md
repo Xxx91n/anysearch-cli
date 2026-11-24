@@ -400,12 +400,6 @@
   you to the REST arm where `includeDomains` is a first-class field. If you
   need a page's full text, fetch it yourself and hand the body to `ans_chat` —
   there is no supported way to have `ans` fetch it for you. Neither gap is the
-  endpoint's: both tools exist. Fetch is deferred because a page-read surface
-  is an architecture change (a new capability bit, a new engine entry, and its
-  own quota gate), not one more adapter method. Advanced search is deferred
-  because its reply is a JSON document rather than the `Title:` /
-  `Highlights:` text block `parseSearchText` reads, so wiring it means a second
-  parser that must fail loudly on drift instead of silently returning zero
-  results. The rate-limit facts behind both deferrals — three tools sharing one
-  daily bucket, one `tools/call` counted once however many URLs it carries —
-  are under `providers/exa/README.md`, section 「## 已知异常」.
+  endpoint's: both tools exist. Why each one is deferred, and the probe that
+  says how they behave, are under `providers/exa/README.md`, section
+  「## 只借 search（#530 的裁决）」.
