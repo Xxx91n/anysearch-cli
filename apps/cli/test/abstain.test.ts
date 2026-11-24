@@ -207,6 +207,8 @@ async function main() {
         ANS_DB_PATH: join(d, "anysearch.db"),
         ANYSEARCH_ENDPOINT: stub.endpoint,
         ANS_ALLOW_ENV_OVERRIDE: "0",
+        // "" means no filter; an ambient ANS_PROVIDERS=exa would cut the only arm.
+        ANS_PROVIDERS: "",
       };
       const run = (extra: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
         const p = spawn(process.execPath, [dist, "search", "tokio JoinSet rust", ...extra], { env, stdio: ["ignore", "pipe", "pipe"] });

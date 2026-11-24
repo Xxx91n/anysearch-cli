@@ -523,6 +523,15 @@ async function t(name: string, fn: () => Promise<void>) {
   // fixture's. The refusal half that used to live here is gone on purpose — a
   // refusal needs an arm that answered, and this fixture has none. That shape
   // is the gate-dropped fixture above (#476).
+  //
+  // One gap remains: nothing exercises the refusal branch's failed-arm remedy
+  // end to end. Only anysearch has an endpoint lever, so exa/tavily would reach
+  // their real endpoints and the error class — hence the remedy sentence —
+  // depends on network reachability; formatFailedArmLines pins the sentence
+  // itself, not the branch that prints it. Three fixes from #513, none chosen
+  // in #517: (1) give exa or tavily a test endpoint; (2) give the refusal branch
+  // a seam a unit test can drive — the sentence is tested, its call site is not;
+  // (3) accept the gap.
   await t("search failure path prints the failed arm's remedy", async () => {
     const fs = await import("node:fs");
     const os = await import("node:os");
