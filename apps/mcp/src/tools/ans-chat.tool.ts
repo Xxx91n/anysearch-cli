@@ -249,9 +249,8 @@ export function registerAnsChat(
       try {
         cfg = resolveConfig({ warn: (m) => {
           configWarnings.push(m);
-          // Warning text, not a count, is what the observation keeps; this
-          // line only carries it onward to stderr through the one redacting
-          // helper.
+          // The observation records only this warning's count; the text is
+          // forwarded to stderr through the one redacting helper.
           writeDiagnostic(m);
         } });
       } catch (e) {
