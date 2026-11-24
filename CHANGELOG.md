@@ -1,3 +1,30 @@
+## Unreleased — #503: Exa 的免费额度写进文档，四个读者面改口
+
+一句话说清：**代码早就能在没配 key 时用 Exa 的免费额度搜（#500），但四个读者面还在说「Exa 必须有 key」：`providers/exa/README.md` 五栏里没这条路，`docs/mcp-server.md` 说 AnySearch 是唯一的 MCP 上游、说不打算迁 MCP、说 exa 没 key 会拒，两个 README 和 CHANGELOG 跟着重复。现在四处都按现状说话，并补了一段带时间的没配 key 真跑记录。**
+
+### Docs
+
+- **`providers/exa/README.md`**：仍是七栏，端点、认证、协议版本、回复形状、已知异常五栏都补上免费额度那条路——端点写死 `https://mcp.exa.ai/mcp`、一个凭据都不发；协议是一次 `tools/call web_search_exa`、不握手、`Accept` 要带 SSE（少了 406）；回复是 `Title` / `URL` / `Published` / `Author` / `Highlights` 的文本块，`N/A` 算没有、没 `URL` 的记录丢掉；限速不单开一栏，按票的要求归进「已知异常」。`new Exa()` 那句旧话改成 `new Exa(apiKey)` 加工厂 `createExaProvider`，并写明「没有环境变量开关」这半句仍然成立。「探针」一栏补上那条在线测试，「最近一次真跑」补一段没配 key 的记录。
+- **`docs/mcp-server.md`**：上游传输矩阵的 exa 行改成「有 key 走 REST / 没 key 走 Exa 自己的 MCP 端点」，并标出 answer 和域名预筛只在 REST 臂；删掉「AnySearch 是这里唯一的 MCP 上游」和「不打算把 Exa / Tavily 迁到 MCP」两句，换成现状；`credentialSources` 那段里「exa 没 key 会拒」改成三家没 key 都用免费额度、构造失败现在只说明「配了 key 但用不了」；环境变量表里「Exa requires one」改成「不配就走免费额度」。顺手把 answer 能力和取消那两处跟着改准。
+- **`docs/limitations.md`**：新增两条。一条说没配 key 的 exa 是窄臂——没有 `answer`、没有上游域名预筛、只有速度上限；另一条说 IPv6 或代理出口回的 403 会被报成 `permanent-auth`，那句「key 不对」对没配 key 的人不准，并记下为什么不为它新开错误类。
+- **`README.md` / `README.zh-CN.md`**：`Exa needs a key` / `Exa 必须有 key` 换成免费额度的说法，别的字没动。
+- **`packages/retriever/src/providers/exa-mcp.ts`**：头注释里「文档还没这一节」那句删掉，改成指向 README。
+
+### 真跑
+
+2026-11-24 01:41（Asia/Singapore），本机 Windows，Node 24.22.1。三把 key 都从环境里拿掉（`env -u EXA_API_KEY -u TAVILY_API_KEY -u ANYSEARCH_API_KEY`），`HOME` / `USERPROFILE` 指到空目录，凭据文件那条路也断了。源码直跑，没打包：
+
+- `createExaProvider("")` 真打 `mcp.exa.ai`：3 条结果，`elapsedMs: 1737`，HTTP 200 + `text/event-stream`，第一帧就是 `Title: Overview · Cloudflare Workers docs` / `URL: https://developers.cloudflare.com/workers/` / `Published: N/A` / `Author: N/A`。
+- `pnpm -C apps/cli dev search "cloudflare workers" --json`：退出码 0，`providersQueried` 是 `["tavily","exa","anysearch"]`，`credentialSources` 三家 `none`，`providerBuildErrors` 是 `{}`，10 条结果里有 exa。
+- `pnpm -C apps/mcp dev` 起 MCP、调 `search_web`：`isError` 为 false，`structuredContent` 同一个形状，正文里有 `"source": "exa"` 的条目。
+- `pnpm -C apps/cli dev doctor`：三行「信息源」都是「没配 key，用免费额度跑（有次数和速度上限）」，退出码 0。
+
+### 边界
+
+- 只改文档和一处注释。有 key 的 REST 臂、免费额度臂的代码、`credentialSources` 的字段和取值都没动。
+- 上面那次真跑是源码直跑，没走打包后的安装包；打包链路由远端 CI 的 `install-smoke` 兜。
+- 本票是 #498 的最后一张，总验收在这张做完了，没有剩下的实现票。
+
 ## Unreleased — #387: skill 规范检查进 CI，规则和 `ans skill` 共用一份
 
 一句话说清：**agentskills.io 那套规范以前靠人肉对表，现在 `node scripts/check-skills.mjs` 一条命令查全仓的 `SKILL.md`，`check-build` 里也跑它；规则没有第二份，`ans skill install` / `ans skill validate` 走的就是它导入的那段代码。**
