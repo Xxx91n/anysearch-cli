@@ -142,19 +142,19 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             });
           }
           const lastRound = allResults.slice(-10);
-          // The last completed round's verdict and marker — the same round
+          // The last completed round's marker and arm state — the same round
           // sufficiency describes, never a union across rounds. An interrupted
           // round's envelope is not trusted, so a caller that aborts during the
-          // first round leaves both null.
+          // first round leaves the verdict null.
           const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
           const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
-          // `failed` belongs to the error channel, never to a successful call:
-          // the docs table lists answer/empty/abstain/cancelled there. A dead
-          // last round is this call's answer when results are in hand, and its
-          // `empty` when an arm answered earlier and brought nothing back. The
-          // dead arms still ride providersFailed.
-          const callOutcome =
-            lastOutcome === "failed" ? (allResults.length > 0 ? "answer" : "empty") : lastOutcome;
+          // This call's verdict. `failed` belongs to the error channel, never to
+          // a successful call, so a dead last round reads as the call's answer
+          // when results are in hand and as its `empty` when an arm answered
+          // earlier and brought nothing back. The dead arms still ride
+          // providersFailed.
+          let callOutcome = lastOutcome;
+          if (lastOutcome === "failed") callOutcome = allResults.length > 0 ? "answer" : "empty";
           const summary = JSON.stringify(
             {
               question,
@@ -170,9 +170,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastAbstain,
-              // This call's verdict: the last round's, except that a dead last
-              // round reads as this call's answer (results in hand) or empty (an
-              // arm answered earlier). Never a union across rounds.
+              // This call's verdict — see callOutcome above.
               outcome: callOutcome,
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,

@@ -354,7 +354,8 @@ try {
       rmSync(dir, { recursive: true, force: true });
     } catch (error) {
       // A surviving child on Windows can hold the temp prefix. Report it as a
-      // named failure instead of letting the throw replace the summary line.
+      // named failure so the summary line still prints — true whenever the probe
+      // itself did not throw; a throw from the probe body still wins, as it must.
       check("cleanup: temporary installation removed", false, String(error));
     }
   }

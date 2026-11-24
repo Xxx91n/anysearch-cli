@@ -411,8 +411,10 @@ export interface FusedEnvelope {
       webProviderLedger?: WebProviderLedger;
     };
     // five-value search outcome, written by the kernel on every search it
-    // assembles; how each value is decided lives in outcome.ts and nowhere
-    // else. The audit attribute anysearch.outcome carries the same value.
+    // assembles; how each value is decided lives in outcome.ts and nowhere else
+    // (research_web maps it once at its exit — that is the tool's call verdict,
+    // not a second classifier). The audit attribute anysearch.outcome carries
+    // the same value.
     outcome: SearchOutcome;
     // abstain marker. The kernel writes it only when the domain policy is the
     // evidence-backed reason — that rule is shouldAbstain in outcome.ts and

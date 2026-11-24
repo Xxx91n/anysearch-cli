@@ -40,7 +40,7 @@ lines.push("## macOS spillover probe (experiment — non-blocking)","");
 lines.push("| run | command | exit | signature |","|---|---|---|---|");
 
 for (let i = 1; i <= RUNS; i++) {
-  // The zero-result path exercises createPersistentEngine handles + teardown.
+  // The plain search exercises createPersistentEngine handles + teardown.
   const s = spawnSync(process.execPath, [BIN, "search", "macos exit probe query"], { encoding: "utf8" });
   const out = (s.stdout ?? "") + (s.stderr ?? "");
   const sig = classify(s.status, out + (s.signal ?? ""));

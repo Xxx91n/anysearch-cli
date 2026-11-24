@@ -176,9 +176,10 @@ function main() {
     if (e.watch === true) console.log("WATCH " + e.id + " (post-promote watch — a CI flip re-enters quarantine via the ratchet)");
     const p0 = passed, f0 = failed;
     let skippedThis = false;
-    // An ambient ANS_PROVIDERS (the eval channel sets one for single-arm runs)
-    // would narrow every live leg's fanout, and a leg missing a host would read
-    // as a retrieval regression instead of a shell leftover.
+    // A leftover ANS_PROVIDERS cuts arms from every live leg: the cold fixture
+    // then has zero arms and the engine throws before any verdict ("No providers
+    // registered"), and an answer leg can come back missing a host. Both would
+    // read as a retrieval regression instead of a shell leftover.
     const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain, ANS_PROVIDERS: "" };
     if (e.domain === "cold") {
       env.ANS_DOMAINS_DIR = coldDir;
