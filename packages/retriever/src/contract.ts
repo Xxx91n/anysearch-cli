@@ -260,8 +260,6 @@ export const ERROR_CLASSES = [
 export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 
 const ERROR_CLASS_MARKER = "provider-error-class:";
-// The declaration check reads the same list as the type, so a declared class
-// can only be one of them.
 const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 
 // Display only: nothing parses this back into a class, so a reply that happens
@@ -271,7 +269,8 @@ export function providerErrorMarker(cls: ProviderErrorClass): string {
 }
 
 // The declared class rides a symbol key, so a parsed upstream payload spread
-// onto an error object cannot bring one along.
+// onto an error object cannot bring one along. It is same-process only: a
+// cloned or serialized error drops it, and the words decide again.
 const PROVIDER_ERROR_CLASS = Symbol("anysearch.providerErrorClass");
 
 // Declare the class an adapter settled on, beside its message. The engine reads
@@ -301,12 +300,9 @@ export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
 // ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
 // matcher sees name and message at once.
 //
-// A class the adapter settled on arrives as `providerErrorClass` and wins here.
-// That reading is usually inferred from the reply's own words, so it is a
-// conclusion, not a trusted input; what it saves is the engine re-reading the
-// whole message. Without a declared class the words are the only signal, and
-// upstream text is part of those words: word matching is a heuristic, never a
-// boundary. Declaring "unknown" is not a settlement either — it falls through.
+// A declared class wins; with none, or a declared "unknown", the words in the
+// message decide. Upstream reply text is part of those words, so word matching
+// stays a guess rather than a boundary.
 export function classifyProviderError(errText: string, providerErrorClass?: ProviderErrorClass): ProviderErrorClass {
   if (providerErrorClass && providerErrorClass !== "unknown") return providerErrorClass;
   const t = String(errText);
