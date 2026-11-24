@@ -50,7 +50,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 已知异常
 
-- **匿名配额墙（2026-11-24 实测在案，#532）**：形状是 HTTP 200 + `result.isError:null` + 带内正文、无结果体——HTTP 层全沉默（两轮深扫十个头名的并集，无一配额/速率字段，连 `retry-after` 都没有）；墙只封 `tools/call search`，同会话 `initialize` / `tools/list` 照常 200。阈值一句话：**每 IP（服务端自动账户）的累计额度，量级 ≈100/日窗，不是每分钟速率墙**——约 18 次/分钟连打 30 次不触发，约 6 分钟空闲不清零；实测 97 次匿名成功后第 98 次起被拒，首墙后 8 个 +5 分钟检查点（≥58.6 分钟）未观察到恢复，换客户端身份（探针与产品适配器两种）绕不过。18 次命中的原文逐字节一致（153 字符，`<key>` 为脱敏占位）：
+- **匿名配额墙（2026-11-24 实测在案，#532）**：形状是 HTTP 200 + `result.isError:null` + 带内正文、无结果体——HTTP 层全沉默（两轮深扫十个头名的并集，无一配额/速率字段，连 `retry-after` 都没有）；墙只封 `tools/call search`，同会话 `initialize` / `tools/list` 照常 200。阈值一句话：**每 IP（服务端自动账户）的累计额度，量级 ≈100/日窗，不是每分钟速率墙，也不是滚动小时计数**——约 18 次/分钟连打 30 次不触发，约 6 分钟空闲不清零；实测 97 次匿名成功后第 98 次起被拒，首墙后 8 个 +5 分钟检查点（≥58.6 分钟）未观察到恢复，换客户端身份（探针与产品适配器两种）绕不过。18 次命中的原文逐字节一致（live 原文 153 字符；`password` / `api_key` 的值在这里遮成 `<key>`，块内长度随占位符而变）：
 
   ```text
   Your account and API key have been automatically generated. Use the API key below to continue.
@@ -59,7 +59,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
   api_key=<key>
   ```
 
-  判据实测接得住：真实 `PROVISIONING_REPLY_TEXT` 命中该原文，纯 200 墙路径和 isError 变体都归 `free-quota-exhausted`（live 夹具钉在 `packages/retriever/test/anysearch.test.ts` 的 §16l/§16m）。带有效 key 立即恢复通行（3/3），keyed 流量不影响匿名墙——两条通道独立；提示句给的两条路里，加 key 实测即刻有效，等窗口过去在观测期内没等到过。墙响应 `content-length:270` 定长、无 `transfer-encoding`（正常结果是 chunked），可当传输层旁路特征。
+  判据实测接得住：真实 `PROVISIONING_REPLY_TEXT` 命中该原文，纯 200 墙路径和 isError 变体都归 `free-quota-exhausted`（live 夹具钉在 `packages/retriever/test/anysearch.test.ts` 的 `LIVE_WALL_532`，§16l/§16m）。`username` 行不是密钥（raw 探针的遮罩表不遮它，所以实录里带着）；产品适配器的显示缝另有一层 20 字符裸串规则，会把这行也扫成 `[redacted]`——夹具 §16m 钉的就是这个。带有效 key 立即恢复通行（3/3），keyed 流量不影响匿名墙——两条通道独立；提示句给的两条路里，加 key 实测即刻有效，等窗口过去在观测期内没等到过。墙响应 `content-length:270` 定长、无 `transfer-encoding`（正常结果是 chunked），可当传输层旁路特征。
 - **不能预过滤**：MCP 的 `domain` 参数是垂域路由值（academic..travel），不是主机白名单，`includeDomains`
   只能在返回后本地筛。审计事件 `retrieval.domain_filter.pre` 会记下这条限制。
 - **`finance.fundamental` 校验比文档严**：tag 层强制要 `cn_code`，只给 `symbol` 会 `isError`。

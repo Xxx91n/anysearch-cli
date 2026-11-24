@@ -336,7 +336,8 @@
   `retry-after` slides forward with the wall, so waiting it out can land on the
   wall again; adding a key is the certain way back. Pinned by
   `packages/retriever/test/provider-error-class.test.ts` and the live-text
-  fixtures in `packages/retriever/test/anysearch.test.ts` (§16l/§16m).
+  fixture `LIVE_WALL_532` in `packages/retriever/test/anysearch.test.ts`
+  (§16l/§16m).
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
   `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per type,
   but the live validator demands `cn_code` at the tag level. So e.g.
