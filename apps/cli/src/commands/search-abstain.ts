@@ -76,7 +76,7 @@ export function formatProviderAbsentLine(buildErrors: Record<string, string>): s
 const FREE_QUOTA_LIMIT = "有次数和速度上限";
 
 /** doctor 那一行才带：没配 key 的源 `--live` 也不探，这句话说的是「没验」，不是「验过了」。 */
-const FREE_QUOTA_UNVERIFIED_NOTE = "免费额度这条路没验（--live 也只验有 key 的）";
+const FREE_QUOTA_UNVERIFIED_NOTE = "免费额度这条路没验";
 
 /** 没配 key 这一句只有一份：失败行和凭据措辞都从这儿取。 */
 const NO_KEY_LABEL = "没配 key";
