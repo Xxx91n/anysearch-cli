@@ -84,7 +84,8 @@ supports answer mode, `answersAvailable` is `false`.
 ### Result shape
 
 Every tool returns MCP `content: [{type:"text", ...}]`. Search results are a
-pretty-printed JSON document in that text block. For the search tools,
+pretty-printed JSON document in that text block; it carries `outcome` and, when
+set, the `abstain` marker, so a text-only reader gets the same verdict. For the search tools,
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
 cut off, and the provider-failure fields). It never carries
@@ -202,9 +203,9 @@ The server follows the MCP rule that an execution failure is an
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, and the failure rule below holds (`failed`) | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
-| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — the last round's, except that a last round which came back empty (`failed`/`cancelled`) reads `answer` when merged results are in hand, and `failed` reads `empty` when an arm answered earlier) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
-| Search returned zero hits, at least one provider answered, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`; no `abstain` marker |
-| Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome` (null on `research_web` when the caller aborted before any round finished), `providersQueried`, `providersCancelled`, `credentialSources`; `interrupted: true` when the caller aborted the call, never for an arm the engine's deadline cut off |
+| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — when merged results are in hand it is `answer` whatever the last round said; with none, the last round's verdict, except that `failed` reads `empty` when an arm answered earlier) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present; `interrupted: true` when the caller aborted |
+| Search returned zero hits, at least one provider answered, no arm was cancelled, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`; no `abstain` marker |
+| Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome` (null on `research_web` when the caller aborted before any round finished), `providersQueried`, `providersCancelled`, `credentialSources`, `interrupted: true` — nothing came back, whether the caller aborted or the engine's deadline cut the arms; plus `providersFailed` and the error-class fields when another arm also failed |
 | Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `credentialSources` |
 | Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
@@ -228,8 +229,8 @@ Rules behind the table:
     into it, so a client parsing that error sees the same shape as before.
 - **Empty is not error; an outage is.** For a search that actually queried
   providers, `search_web` returns an error when every queried provider is in
-  `providersFailed`. `research_web` returns an error when no provider answered
-  in any round and at least one failed. Every other zero-result result is a
+  `providersFailed`. `research_web` returns an error when the last completed
+  round's every queried arm failed and no provider answered in any round. Every other zero-result result is a
   success, and `structuredContent.outcome` names which one it is: `empty` (at
   least one provider answered and the abstain rule below does not hold),
   `abstain` (the rule below), or `cancelled` (nothing came back and an arm was
@@ -240,8 +241,9 @@ Rules behind the table:
   `providersCancelled` beside `providersQueried`, so an arm that was asked and
   then cut off cannot be read as an arm that never ran. Zero queried providers
   is not an outage, and a cancelled provider never counts as an answered one,
-  so a search with any cancelled arm cannot abstain: when nothing came back it
-  is `cancelled`, never a refusal.
+  so a search with any cancelled arm cannot abstain: when nothing came back the
+  verdict is `cancelled` — or `failed` when every queried arm failed — never a
+  refusal.
   `search_web` reports the pair for the one fanout it ran;
   `research_web` reports it for its last completed round and never unions
   rounds. Its failure fields keep the other scale on purpose:
@@ -250,10 +252,16 @@ Rules behind the table:
   answer different questions, so one arm can appear in both — failed in one
   round, cut off in another — and that is not a contradiction. A round the caller's cancellation cut short contributes nothing to
   either — that round's results are dropped too (#209: cancellation is not a
-  completed search), and `interrupted` is what says the call stopped early.
-  On `search_web` a caller cancellation can cut every arm off, and there
-  `providersCancelled === providersQueried` is the signal; the result is still
-  a success, never an outage.
+  completed search). When nothing came back and an arm was cut off, `search_web`
+  is `cancelled` — and `research_web` leaves `outcome` null when the caller
+  aborted before any round finished — with `interrupted: true` saying it
+  stopped with nothing to show, whether the caller aborted or the engine's own
+  deadline cut the arms. A caller abort also sets it while results are in hand.
+  On `research_web`, `interrupted` follows the call's verdict, like the arm
+  lists: an earlier round's cancellation is not carried across rounds.
+  On `search_web`, a caller cancellation that cuts every arm off leaves
+  `providersCancelled === providersQueried`; the result is still a success,
+  never an outage.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
@@ -298,11 +306,11 @@ Rules behind the table:
   arrivals (`gate: "post"`) or every queried arm answered with nothing and none
   failed (`gate: "pre"`). A search where every arm failed is `failed`, never
   `abstain`. For `research_web`, the marker describes the **last round only**.
-  Results merged from earlier rounds stay in the response, so a non-null marker
-  does not mean the whole result set is empty. `outcome` is this call's verdict:
-  the completed round's, except that a last round which came back empty
-  (`failed`/`cancelled`) reads `answer` when merged results are in hand, and
-  `failed` reads `empty` when an arm answered earlier. It is null only when the
+  Results merged from earlier rounds stay in the merged set, so a non-null
+  marker does not mean the whole result set is empty. `outcome` is this call's verdict:
+  when it holds merged results it is `answer` whatever the last round said; with
+  none, the completed round's verdict, except that `failed` reads `empty` when
+  an arm answered earlier. It is null only when the
   caller aborted before any round finished, where `interrupted: true` says why.
 - `query_knowledge` has no handler-level catch. Adapter resolution and
   retrieval are designed to keep going when something fails. But an
