@@ -700,8 +700,8 @@ async function t(name: string, fn: () => Promise<void>) {
       // field disappears instead of turning into a null.
       fs.rmSync(path.join(dir, ".ans", "credentials.json"));
       const second = await runSplit(["search", "q", "--json"], env);
-      const secondDoc = JSON.parse(second.stdout);
       assert.equal(second.code, 0, second.stderr + second.stdout);
+      const secondDoc = JSON.parse(second.stdout);
       assert.ok(
         !("credentialFileFault" in (secondDoc.credentialSources ?? {})),
         "a missing file is not a fault, and the key is absent rather than null",

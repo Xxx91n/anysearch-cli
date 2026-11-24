@@ -395,7 +395,7 @@ test("ans doctor：凭据文件坏了，信息源行说的是文件坏了，不�
   for (const provider of ["tavily", "exa", "anysearch"]) {
     assert.equal(
       entries.find((entry) => entry.name === "信息源 " + provider)?.detail,
-      "凭据文件坏了，用免费额度跑（有次数和速度上限）",
+      "凭据文件坏了，用免费额度跑（有次数和速度上限）；免费额度这条路没验",
       provider + " 不能把读不出的文件说成没配 key",
     );
   }
