@@ -4,20 +4,45 @@
 // Internal libraries and the old separate MCP/plugin apps are not installed.
 //
 // Online leg: only when EXA_API_KEY or TAVILY_API_KEY is set — one real search
-// on the shipped docs domain, which must return a result on its urlAllowlist.
+// on the shipped docs domain must return >=1 result and name one of the docs
+// hosts this lane watches (pnpm.io / typescriptlang.org /
+// modelcontextprotocol.io).
 //
-// Two zero-result legs always run, with or without keys (CI injects a key, so
-// an `if (online)` guard would skip them forever):
-// - Fault leg: the only arm points at a dead port, so the run is `failed`
-//   (exit 1, zero results, providersFailed naming the arm) — see 4a below.
-// - Refusal leg: the only arm is a local stub answering out-of-domain URLs, so
-//   the gate empties the pool and the run is `abstain` (exit 0) — see 4b below.
+// The two zero-result legs always run, keys or no keys. This repo's CI hands
+// the job provider secrets, so an `if (online) … else { legs }` shape would run
+// them only on the runs that have no keys — never on the runs that matter.
+// Their checks live in 4a and 4b; what they are for:
 //
-// Every CLI call goes through sh(), which carries a 30s bound and reports a
-// timeout as a named failure. The engine's own 4s deadline already covers a slow
-// arm; this bound covers a wedged shell. On Windows the bound kills the cmd.exe
-// wrapper, and a surviving node child can then make cleanup fail — that failure
-// is surfaced, not swallowed.
+// - Fault leg (4a): the probe domain's only arm (sources.enabled =
+//   ["anysearch"]) points at a dead port (127.0.0.1:9), gets queried and fails,
+//   so the run is `failed`, not `abstain`: exit 1, outcome "failed", no abstain
+//   marker, zero results, providersFailed naming the arm. A build whose search
+//   never queries an arm lands on `empty` instead, which this leg must reject.
+// - Refusal leg (4b): the same probe domain points at a local fake AnySearch
+//   MCP server (scripts/fake-anysearch-mcp.mjs) that answers two out-of-domain
+//   URLs. An arm answered and the domain gate threw all of it away: exit 0,
+//   outcome "abstain", gate "post", zero results, nobody failed, nothing cut
+//   off. The stub has to be its own process — this script drives the CLI with
+//   spawnSync, which blocks the event loop an in-process stub would need to
+//   accept requests.
+//
+// Both legs' exit codes are read through checkExitCode(): a Windows teardown
+// crash can rewrite the number, and it only warns when every structured check
+// passed.
+//
+// A zero-result run whose every queried arm failed is a fault — the arm is
+// down — and exits 1. Abstain means the domain really has nothing: the policy
+// is active, no arm was cut off mid-flight, no provider answered on its own,
+// and the emptiness has a reason — either the gate dropped results, or at least
+// one arm was queried and every queried arm answered with nothing, none of them
+// failing.
+//
+// Every CLI call this script drives goes through sh(), which carries a 30s
+// bound and reports a timeout as a named failure (verifyInstalledProduct()
+// carries its own 30s/90s bounds). The engine's own 4s deadline already covers
+// a slow arm; this bound covers a wedged shell. On Windows the bound kills the
+// cmd.exe wrapper, and a surviving node child can then make cleanup fail — that
+// failure is surfaced, not swallowed.
 //
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.

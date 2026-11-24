@@ -280,7 +280,7 @@ export class AnySearchProvider implements SearchProvider {
     // bare "Authorization: Bearer " header, worse than anonymous.
     this.apiKey = apiKey ?? (process.env.ANYSEARCH_API_KEY || undefined);
     // + §3: ANYSEARCH_ENDPOINT env override —
-    // dead-port fault injection keeps the install-smoke offline leg hermetic;
+    // dead-port fault injection keeps install-smoke's fault leg hermetic;
     // a /v1/search tail is normalized to base+/mcp (this adapter speaks
     // MCP only, so the rewrite is a compatibility shim). Explicit arg wins.
     // defer-r84 closure: POSIX empty-string env == unset — ""

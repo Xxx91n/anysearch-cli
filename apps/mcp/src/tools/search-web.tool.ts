@@ -15,6 +15,7 @@ import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.j
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
+  isInterrupted,
   outcomeOf,
   providerFailureMetadata,
   toolError,
@@ -143,10 +144,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // providersQueried、providersCancelled 恒有值；sufficiency /
           // attribution / provider failures 有值时才加。
           const structuredContent = {
-            // #304 review: the caller may have aborted mid-search. The engine
-            // returns whatever arrived instead of throwing, so without this the
-            // task wrapper would record a cancelled call as a clean finish.
-            ...(signal?.aborted ? { interrupted: true } : {}),
+            ...(isInterrupted(outcome, signal) ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),

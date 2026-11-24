@@ -56,6 +56,14 @@ export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): S
 }
 
 /**
+ * Pass the call's verdict — for `research_web` that is `callOutcome`, not one
+ * round's envelope outcome.
+ */
+export function isInterrupted(outcome: SearchOutcome | null, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || outcome === "cancelled";
+}
+
+/**
  * Actionable all-provider-outage text that names the failed arms and says what
  * to do about each class the reader can act on.
  */

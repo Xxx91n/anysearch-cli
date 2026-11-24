@@ -1,3 +1,12 @@
+## Unreleased — #515: 全取消的 MCP 结果带 `interrupted`
+
+一句话说清：**零结果、有臂被掐断时，`search_web` 和 `research_web` 现在都带 `structuredContent.interrupted: true`；以前只有调用方自己取消才带，引擎截止把臂掐光时宿主会把一次空结果当成干净完成。**
+
+### Changed
+
+- **`search_web`**：`outcome === "cancelled"` 时带 `interrupted: true`，不再只认调用方 abort。
+- **`research_web`**：整个调用判成 `cancelled` 时也带。
+
 ## Unreleased — #534: `--live` 不探没配 key 的免费额度，裁决写进代码现场
 
 一句话说清：**没配 key 的信息源，`ans doctor --live` 一直是不探、直接报「未配置」，但帮助文本写成「只打三家信息源的免费面」，那一行的说明也只写「用免费额度跑」，读起来像已经验过。这张票把裁决钉下来——不探——并让「没验」三个字出现在输出和帮助里。**
