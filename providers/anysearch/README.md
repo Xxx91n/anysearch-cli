@@ -50,7 +50,7 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
 
 ## 已知异常
 
-- **匿名配额墙（2026-11-24 实测在案，#532）**：形状是 HTTP 200 + `result.isError:null` + 带内正文、无结果体——HTTP 层全沉默（两轮深扫十个头名的并集，无一配额/速率字段，连 `retry-after` 都没有）；墙只封 `tools/call search`，同会话 `initialize` / `tools/list` 照常 200。阈值一句话：**每 IP（服务端自动账户）的累计额度，量级 ≈100/日窗，不是每分钟速率墙，也不是滚动小时计数**——约 18 次/分钟连打 30 次不触发，约 6 分钟空闲不清零；实测 97 次匿名成功后第 98 次起被拒，首墙后 8 个 +5 分钟检查点（≥58.6 分钟）未观察到恢复，换客户端身份（探针与产品适配器两种）绕不过。18 次命中的原文逐字节一致（live 原文 153 字符；`password` / `api_key` 的值在这里遮成 `<key>`，块内长度随占位符而变）：
+- **匿名配额墙（2026-11-24 实测在案，#532）**：形状是 HTTP 200 + `result.isError:null` + 带内正文、无结果体——HTTP 层全沉默（两轮深扫十个头名的并集，无一配额/速率字段，连 `retry-after` 都没有）；墙只封 `tools/call search`，同会话 `initialize` / `tools/list` 照常 200。阈值一句话：**每 IP（服务端自动账户）的累计额度，量级 ≈100/日窗，不是每分钟速率墙，也不是滚动小时计数**——约 18 次/分钟连打 30 次不触发，约 6 分钟空闲不清零；实测 97 次匿名成功后第 98 次起被拒，首墙后 8 个 +5 分钟检查点（≥58.6 分钟）未观察到恢复，换客户端身份（探针与产品适配器两种）绕不过。18 次命中的原文逐字节一致（脱敏后 153 字符，raw 探针 `textLen` 口径；`password` / `api_key` 的值在这里遮成 `<key>`，块内长度随占位符而变）：
 
   ```text
   Your account and API key have been automatically generated. Use the API key below to continue.
@@ -113,6 +113,11 @@ apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值�
 
 ## 最近一次真跑
 
+2026-11-24（墙的实测日，本机 Windows，Node 24.18.0，仓库根，匿名臂——本机没配 key）：
+
+- raw 探针 `--nokey` 在墙状态下退出 3——`httpStatus:200`、`isError:null`、`textLen:153`，`textHead` 即「## 已知异常」的墙原文；判别档端到端成立（这次跑的是墙的现场，不是 happy path）。
+- 同日驱动脚本实测（非本探针，一次性 `.temp/` 脚本，仓库零改动）：97 次匿名成功后第 98 次起被拒，约 59 分钟内 18 次观测全为同一墙文本；带 key 的请求 3/3 正常。完整时间线与阈值分析见 #532 的实测记录评论。
+
 2026-11-23（协议版本参数化之后，同机同 Node）：raw 探针默认 `protocolVersion:"2025-11-25"`、`ok:true`、
 `httpStatus:200`、`textLen:2622`、9 条；`--protocol-version 2025-03-26`、`--protocol-version=2025-03-26`、
 `ANS_PROBE_PROTOCOL_VERSION=2025-03-26` 三路各 `protocolVersion:"2025-03-26"`、`ok:true`（9 条）；三种坏参数
@@ -127,8 +132,3 @@ apps/cli）打开 `allowImportingTsExtensions`——为一个手跑夹具不值�
 
 三家一次跑的对照基线（含 exa、tavily，同一分钟、同一个查询词）：
 [`docs/research/real-baseline-2026-11-22.md`](../../docs/research/real-baseline-2026-11-22.md)。
-
-2026-11-24（墙的实测日，本机 Windows，Node 24.18.0，仓库根，匿名臂——本机没配 key）：
-
-- raw 探针 `--nokey` 在墙状态下退出 3——`httpStatus:200`、`isError:null`、`textLen:153`，`textHead` 即「## 已知异常」的墙原文；判别档端到端成立（这次跑的是墙的现场，不是 happy path）。
-- 同日驱动脚本实测（非本探针，一次性 `.temp/` 脚本，仓库零改动）：97 次匿名成功后第 98 次起被拒，约 59 分钟内 18 次观测全为同一墙文本；带 key 的请求 3/3 正常。完整时间线与阈值分析见 #532 的实测记录评论。

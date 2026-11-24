@@ -321,11 +321,12 @@
   one). Both classify `free-quota-exhausted` — never `permanent-auth` (no key
   is wrong) and never `transient` (a throttle is not a used-up allowance).
   AnySearch's wall was measured live 2026-11-24 (#532): the payload is a
-  fixed 153-character provisioning text (`username=` / `password=` /
-  `api_key=` lines, byte-identical on every hit), the HTTP layer carries no
-  quota or rate headers at all, only `tools/call search` is walled
-  (initialize and tools/list keep answering), and the allowance is cumulative
-  per IP/auto-account rather than a per-minute rate — 30 requests at ~18/min
+  fixed provisioning text — 153 characters once the probe redacts it —
+  (`username=` / `password=` / `api_key=` lines, byte-identical on every
+  hit), the HTTP layer carries no quota or rate headers at all, only
+  `tools/call search` is walled (initialize and tools/list keep answering),
+  and the allowance is an ≈100-class daily window, cumulative per
+  IP/auto-account rather than a per-minute rate — 30 requests at ~18/min
   did not trip it, 97 anonymous successes were followed by rejection on #98,
   ~6 idle minutes did not reset it, no recovery was observed within 58.6
   minutes (daily-window-shaped, not a rolling hour), client identity changes
