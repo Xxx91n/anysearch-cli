@@ -68,14 +68,33 @@ export interface PromptEntry {
   content: string;
 }
 
+// #493: upper bound of the bounded re-search (补搜) the sufficiency check may run
+// in one turn. Design: default 1, at most 3 via [compaction].sufficiencyMaxRerounds
+// — the loop had no clamp, so a TOML typo could bill an unbounded number of
+// searches. One constant shared by validate() and the evaluator's backstop.
+export const MAX_SUFFICIENCY_REROUNDS = 3;
+
+// #493: one predicate for "this value may drive the reround loop". validate()
+// uses it to fail a domain load; the evaluator uses it as its own backstop.
+export function isValidSufficiencyRerounds(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_SUFFICIENCY_REROUNDS;
+}
+
+// #493: the keys [compaction] accepts. Exported because the release-gate script
+// restates them (no TS dependency there); the sync test compares both lists.
+export const COMPACTION_CONFIG_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
+
 // compaction config for independent summary model.
 // threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
 // lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
 // reuseCap: consecutive REUSE cap before forcing COMPRESS.
+// sufficiencyMaxRerounds: how many bounded re-searches the sufficiency check runs
+// in one turn (#493). 0 turns it off; absent = 1.
 export interface CompactionConfig {
   model?: string; // summary model id (default: cheap model e.g. deepseek-v4-fast)
   lowWatermark?: number | { fraction: number };
   reuseCap?: number;
+  sufficiencyMaxRerounds?: number;
 }
 
 // Raw TOML shape (before resolution/inheritance)
@@ -309,9 +328,18 @@ export function validate(schema: DomainSchema): void {
         throw new Error("Domain schema: skills.toolRequires." + key + " entries must be non-empty tool names");
     }
   }
-  // compaction guards — fail-fast on out-of-range.
+  // compaction guards — fail-fast on out-of-range. Unknown keys are fail-fast
+  // for the same reason as [budget]: a silently dropped threshold is a policy
+  // that never takes effect, so a typo would read as "not set".
   const c = schema.compaction;
-  if (c) {
+  if (c !== undefined) {
+    if (typeof c !== "object" || c === null || Array.isArray(c))
+      throw new Error("Domain schema: compaction must be a table");
+    const unknownCompactionKeys = Object.keys(c as Record<string, unknown>).filter((k) => !COMPACTION_CONFIG_KEYS.includes(k));
+    if (unknownCompactionKeys.length > 0)
+      throw new Error("Domain schema: compaction unknown key(s) " + unknownCompactionKeys.map((k) => JSON.stringify(k)).join(", ") + " — supported keys: " + COMPACTION_CONFIG_KEYS.join(", "));
+    if (c.model !== undefined && typeof c.model !== "string")
+      throw new Error("Domain schema: compaction.model must be a string");
     if (c.lowWatermark !== undefined) {
       if (typeof c.lowWatermark === "number") {
         // #113/CodeRabbit #161: NaN/Infinity slipped through `< 50000` and were
@@ -327,8 +355,13 @@ export function validate(schema: DomainSchema): void {
           throw new Error("Domain schema: compaction.lowWatermark.fraction must be in (0,1)");
       }
     }
-    if (c.reuseCap !== undefined && (typeof c.reuseCap !== "number" || c.reuseCap < 1))
-      throw new Error("Domain schema: compaction.reuseCap must be >= 1");
+    if (c.reuseCap !== undefined && (typeof c.reuseCap !== "number" || !Number.isFinite(c.reuseCap) || c.reuseCap < 1))
+      throw new Error("Domain schema: compaction.reuseCap must be a finite number >= 1");
+    // #493: a string "3" used to be coerced by the loop bound, while NaN ran
+    // zero rounds after paying for the gap model call. Both are config faults,
+    // so they fail here where the operator can see the field name.
+    if (c.sufficiencyMaxRerounds !== undefined && !isValidSufficiencyRerounds(c.sufficiencyMaxRerounds))
+      throw new Error("Domain schema: compaction.sufficiencyMaxRerounds must be an integer in 0.." + MAX_SUFFICIENCY_REROUNDS + " (0 turns the reround off)");
   }
   // #187: [budget] shape. Unknown keys are fail-fast for the same reason as
   // sources.vertical: a silently dropped cap is a policy that never takes

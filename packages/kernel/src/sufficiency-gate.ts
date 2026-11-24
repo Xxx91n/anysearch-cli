@@ -9,7 +9,8 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
+import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest, type SourceTraceLabel } from "@anysearch-cli/retriever";
+import { MAX_SUFFICIENCY_REROUNDS, isValidSufficiencyRerounds } from "@anysearch-cli/store";
 
 export interface SufficiencyEvaluatorDeps {
   retriever: RetrieverPort;
@@ -51,6 +52,15 @@ export interface GateEnvelope {
   targetMessageIndex: number;         // index of the tool_result message to update
 }
 
+// The envelope is JSON.parse output, so tsc checks nothing read off it. This is
+// the shape this module reads: the engine writes `extra.trustLabel`
+// (a SourceTraceLabel) onto each sanitized result. A missing or renamed field
+// falls back to the placeholder trace id; the local type keeps that read in one
+// place.
+interface EnvelopeTrustShape {
+  results?: Array<{ extra?: { trustLabel?: SourceTraceLabel } }>;
+}
+
 /**
  * Text of a tool-result message in either supported transcript shape:
  * pi-agent-core 1.5.1's standalone `toolResult` message, or the legacy `user`
@@ -90,9 +100,16 @@ export class SufficiencyEvaluator {
 
     const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1, gapRequests: [] };
 
-    // D6: sufficiencyMaxRerounds from domain config.
-    const maxRerounds = (domain as any).compaction?.sufficiencyMaxRerounds ?? 1;
-    if (maxRerounds <= 0) return empty;
+    // D6: sufficiencyMaxRerounds from domain config. Design: loading validates it
+    // as an integer in 0..MAX, so the guards below exist only for a hand-built
+    // domain — without them a NaN pays for the gap model call and then reports a
+    // reround while running zero rounds (#493).
+    const maxRerounds = domain.compaction?.sufficiencyMaxRerounds ?? 1;
+    if (!isValidSufficiencyRerounds(maxRerounds)) {
+      process.stderr.write("[anysearch] compaction.sufficiencyMaxRerounds 不是 0.." + MAX_SUFFICIENCY_REROUNDS + " 的整数，本次跳过补搜。\n");
+      return empty;
+    }
+    if (maxRerounds === 0) return empty;
 
     // Find the last tool result that carries a fused envelope. pi-agent-core
     // 1.5.1 emits a standalone toolResult message; older shapes wrapped the
@@ -129,7 +146,7 @@ export class SufficiencyEvaluator {
         {
           text: gapPrompt[1]!.content,
           source: "retrieved",
-          traceId: (envelope.results?.[0] as any)?.label?.traceId ?? "sufficiency-gap",
+          traceId: (envelope as EnvelopeTrustShape).results?.[0]?.extra?.trustLabel?.traceId ?? "sufficiency-gap",
         },
         "sufficiency-judge",
       );

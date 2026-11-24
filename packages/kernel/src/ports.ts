@@ -3,7 +3,7 @@
 // Kernel only imports these interfaces; CLI wiring injects implementations.
 
 import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
-import type { SessionStore, Message, BudgetConfig, BudgetCaps } from "@anysearch-cli/store";
+import type { SessionStore, Message, BudgetConfig, BudgetCaps, CompactionConfig } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
 // per-call observation sink. The engine emits the dual audit
@@ -80,15 +80,10 @@ export interface DomainConfigPort {
   // and the output reserve from here; an absent section means unmetered.
   budget?: BudgetConfig;
   // compaction config for independent summary model.
-  // Same shape as store's CompactionConfig (single type defined in
-  // packages/store/src/domain-schema.ts) plus sufficiencyMaxRerounds, which only
-  // this port declares; referenced here to avoid drift.
-  compaction?: {
-    model?: string;
-    sufficiencyMaxRerounds?: number;
-    lowWatermark?: number | { fraction: number };
-    reuseCap?: number;
-  };
+  // Design: this is store's CompactionConfig (packages/store/src/domain-schema.ts),
+  // not a copy of its shape — restating the fields here is what let
+  // sufficiencyMaxRerounds drift (#493).
+  compaction?: CompactionConfig;
 }
 
 // BudgetLedgerPort: per-call reserve-then-settle interface.

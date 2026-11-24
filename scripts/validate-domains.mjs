@@ -2,15 +2,19 @@
 // scripts/validate-domains.mjs
 //
 // — Domain Schema Validation Acceptance step 1.5 (blocking).
-// Scans domains/*.toml, parses with smol-toml (already a store dep, resolved
-// via createRequire so no new dependency is introduced), applies compaction
-// guards from, exits 1 with file:line on any violation.
+// Scans domains/*.toml (or the directory passed as argv[2]), parses with
+// smol-toml (a root devDependency, so the static import below resolves it with
+// no extra dependency), applies the compaction guards from the domain schema,
+// exits 1 with file:line on any violation.
 //
 // Guards enforced:
 // - compaction.lowWatermark as absolute number must be >= 50000
 // (Anthropic 50K hard floor);
 // - compaction.lowWatermark as {fraction} must land in (0,1);
-// - compaction.reuseCap must be a number >= 1;
+// - compaction.reuseCap must be a finite number >= 1;
+// - compaction.sufficiencyMaxRerounds must be an integer in 0..3 (#493; 0 turns
+// the reround off);
+// - compaction unknown keys (a typo used to read as "not set", #493);
 // - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
 // each a finite number > 0 (config errors fail fast).
 // - unknown top-level sections beyond schema (fail-fast, voodoo avoidance).
@@ -24,10 +28,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DOMAINS_DIR = path.join(ROOT, "domains");
+// The directory is overridable so a test can point these rules at a fixture
+// tree and prove they still match the loader; the release gate calls it with no
+// argument and gets the repo's domains/.
+const ARG_DIR = process.argv[2];
+const DOMAINS_DIR = ARG_DIR ? path.resolve(ARG_DIR) : path.join(ROOT, "domains");
 
-// smol-toml declared in root devDependencies (atomcode review #3: avoid phantom
-// dependency via createRequire traversal into packages/store).
+// smol-toml is declared in the root devDependencies; the static import resolves
+// through the normal walk up to the repo root (no createRequire involved).
 import { parse as parseToml } from "smol-toml";
 
 const ANSI = process.stdout.isTTY
@@ -45,7 +53,20 @@ function info(msg) {
   process.stdout.write(`${ANSI.yellow}[info]${ANSI.reset} ${msg}\n`);
 }
 
-if (!fs.existsSync(DOMAINS_DIR)) {
+// An explicit directory that is wrong is a caller mistake, not an absent repo
+// domains/: falling through to the "skip" branch below would turn a typo green
+// on a blocking gate. Only the no-argument form may skip.
+if (ARG_DIR) {
+  let stat;
+  try {
+    stat = fs.statSync(DOMAINS_DIR);
+  } catch {
+    fail(`domains path not found: ${DOMAINS_DIR}`);
+  }
+  if (!stat.isDirectory()) {
+    fail(`domains path is not a directory: ${DOMAINS_DIR}`);
+  }
+} else if (!fs.existsSync(DOMAINS_DIR)) {
   info("domains/ not present — skip (allows absent)");
   process.exit(0);
 }
@@ -56,6 +77,10 @@ const files = fs
   .sort();
 
 if (files.length === 0) {
+  // An explicit directory must have something to check. A real-but-wrong path
+  // (docs/, providers/) would otherwise read as "nothing to do" and turn a
+  // blocking gate green — the same hole as a misspelled path.
+  if (ARG_DIR) fail(`no *.toml files in ${DOMAINS_DIR}`);
   info("no domains/*.toml — skip");
   process.exit(0);
 }
@@ -119,8 +144,20 @@ for (const file of files) {
 
   const c = doc.compaction;
   if (c !== undefined) {
-    if (typeof c !== "object" || c === null) {
+    if (typeof c !== "object" || c === null || Array.isArray(c)) {
       fail(`${file}:${lineOf(src, "[compaction]")} [compaction] must be a table`);
+    }
+    // #493: a misspelled key used to be indistinguishable from "not set".
+    // Mirrors packages/store/src/domain-schema.ts validate(); this script has no
+    // TS dependency, so the key list, the bound and the rule text live twice
+    // (keep both sides in sync).
+    const MAX_SUFFICIENCY_REROUNDS = 3;
+    const COMPACTION_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
+    // Collect every unknown key before failing: the message says "key(s)", and
+    // store's validate() reports them together, so both sides name the same set.
+    const unknownCompactionKeys = Object.keys(c).filter((k) => !COMPACTION_KEYS.includes(k));
+    if (unknownCompactionKeys.length > 0) {
+      fail(`${file}:${lineOf(src, unknownCompactionKeys[0])} compaction unknown key(s) ${unknownCompactionKeys.map((k) => JSON.stringify(k)).join(", ")} — supported keys: ${COMPACTION_KEYS.join(", ")}`);
     }
     if (c.lowWatermark !== undefined) {
       const ln = lineOf(src, "lowWatermark");
@@ -144,11 +181,22 @@ for (const file of files) {
     if (c.reuseCap !== undefined) {
       const ln = lineOf(src, "reuseCap");
       if (typeof c.reuseCap !== "number" || !Number.isFinite(c.reuseCap) || c.reuseCap < 1) {
-        fail(`${file}:${ln} compaction.reuseCap=${String(c.reuseCap)} must be >= 1`);
+        fail(`${file}:${ln} compaction.reuseCap=${String(c.reuseCap)} must be a finite number >= 1`);
       }
     }
     if (c.model !== undefined && typeof c.model !== "string") {
       fail(`${file}:${lineOf(src, "model")} compaction.model must be a string`);
+    }
+    // #493: "3" used to be coerced by the loop bound, and NaN ran zero rounds
+    // after paying for the gap model call. Design: default 1, at most 3 — every
+    // round is a real internal search, so the count stays small.
+    if (c.sufficiencyMaxRerounds !== undefined) {
+      const v = c.sufficiencyMaxRerounds;
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_SUFFICIENCY_REROUNDS) {
+        // Echo strings quoted: a bare 3 reads as the valid number being rejected.
+        const shown = typeof v === "string" ? JSON.stringify(v) : String(v);
+        fail(`${file}:${lineOf(src, "sufficiencyMaxRerounds")} compaction.sufficiencyMaxRerounds=${shown} must be an integer in 0..${MAX_SUFFICIENCY_REROUNDS} (0 turns the reround off)`);
+      }
     }
   }
 

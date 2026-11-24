@@ -320,5 +320,44 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   assert("outputReserveTokens 0 is accepted", zeroReserveOk);
 }
 
+// #493: [compaction] gained sufficiencyMaxRerounds, and the section now fails
+// fast on unknown keys. A typo used to read as "not set" (silently the default),
+// and a "3" string / NaN reached the gate's loop bound unchecked.
+{
+  const head = 'name = "cmp"\n[rag]\nadapter = "x"\n[compaction]\n';
+  const err = (toml: string): string => {
+    try { loadDomainFromString(toml); return ""; } catch (e) { return (e as Error).message; }
+  };
+
+  const badString = err(head + 'sufficiencyMaxRerounds = "3"\n');
+  assert("sufficiencyMaxRerounds string rejected naming field",
+    badString.startsWith("Domain schema: compaction.sufficiencyMaxRerounds"));
+  for (const bad of ["-1", "2.5", "4", "nan", "inf", "true"]) {
+    const msg = err(head + "sufficiencyMaxRerounds = " + bad + "\n");
+    assert("sufficiencyMaxRerounds " + bad + " rejected", msg.includes("compaction.sufficiencyMaxRerounds"));
+  }
+  for (const ok of ["0", "1", "3"]) {
+    let accepted = true;
+    try { loadDomainFromString(head + "sufficiencyMaxRerounds = " + ok + "\n"); } catch { accepted = false; }
+    assert("sufficiencyMaxRerounds " + ok + " accepted", accepted);
+  }
+
+  const typo = err(head + "sufficiencyMaxReround = 3\n");
+  // The supported-keys tail names the real field, so a loose `includes` would
+  // pass even if the typo itself were never named. Match the quoted key.
+  assert("unknown compaction key rejected naming the key",
+    typo.includes('unknown key(s) "sufficiencyMaxReround"'));
+  assert("unknown compaction key lists the supported keys",
+    typo.includes("supported keys: model, lowWatermark, reuseCap, sufficiencyMaxRerounds"));
+  assert("compaction.model must be a string", err(head + "model = 3\n").includes("compaction.model"));
+  assert("compaction.reuseCap NaN rejected", err(head + "reuseCap = nan\n").includes("compaction.reuseCap"));
+  let arrayRejected = false;
+  // Top-level key: it must sit before [rag] to stay outside that table.
+  try { loadDomainFromString('name = "cmp"\ncompaction = [1, 2]\n[rag]\nadapter = "x"\n'); } catch (e) {
+    arrayRejected = (e as Error).message.includes("compaction must be a table");
+  }
+  assert("compaction as an array rejected", arrayRejected);
+}
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
