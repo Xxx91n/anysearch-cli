@@ -4,10 +4,11 @@
 // separating the two signature families:
 // - better-sqlite3 registration segfault (SIGSEGV / exit 139 at require/load)
 // - exit-time libc++abi mutex abort ( / onnxruntime issue family)
-// This script drives a zero-result search through the real bundled ans bin
-// (store+observation handles opened then closed at exit — the crash fired at
-// libuv/native teardown), classifies each run's signature into
-// $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
+// This script drives the real bundled ans bin through a few searches, one of
+// them a forced zero-result leg (store+observation handles opened then closed at
+// exit — the crash fired at libuv/native teardown), classifies each run's
+// signature into $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature
+// is seen.
 // NOTE (#183): this minimal repro drives the CLI wiring only — the
 // path fd249d41 fixed — so its greens have never been allowed to promote the
 // lane (the PR #174 promotion trusted 7 consecutive greens and crashed 5/76

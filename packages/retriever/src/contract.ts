@@ -414,13 +414,11 @@ export interface FusedEnvelope {
     // assembles; how each value is decided lives in outcome.ts and nowhere
     // else. The audit attribute anysearch.outcome carries the same value.
     outcome: SearchOutcome;
-    // abstain marker. Set by the kernel post-filter only when the domain
-    // allowlist policy is the evidence-backed reason: a domain allowlist is
-    // active, zero results survive, at least one provider answered, no arm was
-    // cancelled, and either the gate dropped arrivals or every queried arm
-    // answered with nothing and none failed. An all-failed or all-cancelled
-    // search writes no marker (outcome: "failed" / "cancelled"). A successful
-    // policy execution, never an error. preFiltered = provider results that
+    // abstain marker. The kernel writes it only when the domain policy is the
+    // evidence-backed reason — that rule is shouldAbstain in outcome.ts and
+    // nowhere else. Present iff outcome === "abstain": an all-failed or
+    // all-cancelled search writes none. A successful policy execution, never an
+    // error. preFiltered = provider results that
     // reached the authoritative gate; postFiltered = survivors (0 whenever
     // abstain is set). gate: "post" = the gate dropped arrivals; "pre" = every
     // queried arm answered with nothing, none failed. Consumed by the CLI

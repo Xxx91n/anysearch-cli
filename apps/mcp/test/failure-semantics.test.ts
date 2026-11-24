@@ -472,6 +472,28 @@ async function main() {
       assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["exa", "tavily"]), "research cancel: the last round's asked arms win");
     }
 
+    // ---- 8d. research_web: a dead last round after a zero-hit arm answered is `empty` ----
+    {
+      let round = 0;
+      const eng = makeEngine(async () => {
+        round++;
+        // Round 1: an arm answered and brought nothing back (`empty`). Round 2:
+        // every arm died. The call brought nothing back but an arm did answer,
+        // so it is a successful `empty` — a host that read `failed` here would
+        // treat a successful call as an outage.
+        return round === 1 ? emptyEnvelope(["exa", "tavily"]) : allFailedEnvelope(["exa", "tavily"]);
+      });
+      const res = await captureHandlers(eng).research_web({ question: "x", depth: "standard" });
+      assert(res?.isError !== true, "research zero-hit then outage: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.outcome === "empty", "research zero-hit then outage: content says outcome=empty (got " + doc.outcome + ")");
+      assert(res?.structuredContent?.outcome === "empty", "research zero-hit then outage: structuredContent agrees");
+      assert(
+        Array.isArray(doc.providersFailed) && doc.providersFailed.includes("exa"),
+        "research zero-hit then outage: the dead arms are still named",
+      );
+    }
+
     // ---- 9. Abstain keeps its successful policy-result contract ----
     {
       const abstainEnvelope = {

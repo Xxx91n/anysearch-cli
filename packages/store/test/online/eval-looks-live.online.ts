@@ -176,12 +176,12 @@ function main() {
     if (e.watch === true) console.log("WATCH " + e.id + " (post-promote watch — a CI flip re-enters quarantine via the ratchet)");
     const p0 = passed, f0 = failed;
     let skippedThis = false;
-    const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
+    // An ambient ANS_PROVIDERS (the eval channel sets one for single-arm runs)
+    // would narrow every live leg's fanout, and a leg missing a host would read
+    // as a retrieval regression instead of a shell leftover.
+    const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain, ANS_PROVIDERS: "" };
     if (e.domain === "cold") {
       env.ANS_DOMAINS_DIR = coldDir;
-      // An ambient ANS_PROVIDERS would filter the cold fixture's only arm out
-      // and fail the run before any verdict exists.
-      env.ANS_PROVIDERS = "";
       // The TOML allowlist is the only authority: an ambient ANS_URL_ALLOWLIST
       // would let a result survive and turn this abstain into an answer.
       env.ANS_ALLOW_ENV_OVERRIDE = "0";

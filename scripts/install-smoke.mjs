@@ -349,7 +349,15 @@ try {
   }
   throw error;
 } finally {
-  if (!preserveInstall) rmSync(dir, { recursive: true, force: true });
+  if (!preserveInstall) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      // A surviving child on Windows can hold the temp prefix. Report it as a
+      // named failure instead of letting the throw replace the summary line.
+      check("cleanup: temporary installation removed", false, String(error));
+    }
+  }
 }
 
 console.log("install-smoke: " + passed + " passed, " + failed + " failed" + (warned ? ", " + warned + " warning(s)" : ""));
