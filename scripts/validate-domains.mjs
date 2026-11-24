@@ -3,9 +3,9 @@
 //
 // — Domain Schema Validation Acceptance step 1.5 (blocking).
 // Scans domains/*.toml (or the directory passed as argv[2]), parses with
-// smol-toml (already a store dep, resolved
-// via createRequire so no new dependency is introduced), applies compaction
-// guards from, exits 1 with file:line on any violation.
+// smol-toml (a root devDependency, so the static import below resolves it with
+// no extra dependency), applies the compaction guards from the domain schema,
+// exits 1 with file:line on any violation.
 //
 // Guards enforced:
 // - compaction.lowWatermark as absolute number must be >= 50000
@@ -31,10 +31,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // The directory is overridable so a test can point these rules at a fixture
 // tree and prove they still match the loader; the release gate calls it with no
 // argument and gets the repo's domains/.
-const DOMAINS_DIR = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, "domains");
+const ARG_DIR = process.argv[2];
+const DOMAINS_DIR = ARG_DIR ? path.resolve(ARG_DIR) : path.join(ROOT, "domains");
 
-// smol-toml declared in root devDependencies (atomcode review #3: avoid phantom
-// dependency via createRequire traversal into packages/store).
+// smol-toml is declared in the root devDependencies; the static import resolves
+// through the normal walk up to the repo root (no createRequire involved).
 import { parse as parseToml } from "smol-toml";
 
 const ANSI = process.stdout.isTTY
@@ -52,7 +53,20 @@ function info(msg) {
   process.stdout.write(`${ANSI.yellow}[info]${ANSI.reset} ${msg}\n`);
 }
 
-if (!fs.existsSync(DOMAINS_DIR)) {
+// An explicit directory that is wrong is a caller mistake, not an absent repo
+// domains/: falling through to the "skip" branch below would turn a typo green
+// on a blocking gate. Only the no-argument form may skip.
+if (ARG_DIR) {
+  let stat;
+  try {
+    stat = fs.statSync(DOMAINS_DIR);
+  } catch {
+    fail(`domains path not found: ${DOMAINS_DIR}`);
+  }
+  if (!stat.isDirectory()) {
+    fail(`domains path is not a directory: ${DOMAINS_DIR}`);
+  }
+} else if (!fs.existsSync(DOMAINS_DIR)) {
   info("domains/ not present — skip (allows absent)");
   process.exit(0);
 }
@@ -135,10 +149,11 @@ for (const file of files) {
     // (keep both sides in sync).
     const MAX_SUFFICIENCY_REROUNDS = 3;
     const COMPACTION_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
-    for (const k of Object.keys(c)) {
-      if (!COMPACTION_KEYS.includes(k)) {
-        fail(`${file}:${lineOf(src, k)} compaction unknown key(s) "${k}" — supported keys: ${COMPACTION_KEYS.join(", ")}`);
-      }
+    // Collect every unknown key before failing: the message says "key(s)", and
+    // store's validate() reports them together, so both sides name the same set.
+    const unknownCompactionKeys = Object.keys(c).filter((k) => !COMPACTION_KEYS.includes(k));
+    if (unknownCompactionKeys.length > 0) {
+      fail(`${file}:${lineOf(src, unknownCompactionKeys[0])} compaction unknown key(s) ${unknownCompactionKeys.map((k) => JSON.stringify(k)).join(", ")} — supported keys: ${COMPACTION_KEYS.join(", ")}`);
     }
     if (c.lowWatermark !== undefined) {
       const ln = lineOf(src, "lowWatermark");

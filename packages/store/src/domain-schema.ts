@@ -80,6 +80,10 @@ export function isValidSufficiencyRerounds(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_SUFFICIENCY_REROUNDS;
 }
 
+// #493: the keys [compaction] accepts. Exported because the release-gate script
+// restates them (no TS dependency there); the sync test compares both lists.
+export const COMPACTION_CONFIG_KEYS = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
+
 // compaction config for independent summary model.
 // threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
 // lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
@@ -331,10 +335,9 @@ export function validate(schema: DomainSchema): void {
   if (c !== undefined) {
     if (typeof c !== "object" || c === null || Array.isArray(c))
       throw new Error("Domain schema: compaction must be a table");
-    const compactionKeys = ["model", "lowWatermark", "reuseCap", "sufficiencyMaxRerounds"];
-    const unknownCompactionKeys = Object.keys(c as Record<string, unknown>).filter((k) => !compactionKeys.includes(k));
+    const unknownCompactionKeys = Object.keys(c as Record<string, unknown>).filter((k) => !COMPACTION_CONFIG_KEYS.includes(k));
     if (unknownCompactionKeys.length > 0)
-      throw new Error("Domain schema: compaction unknown key(s) " + unknownCompactionKeys.map((k) => JSON.stringify(k)).join(", ") + " — supported keys: " + compactionKeys.join(", "));
+      throw new Error("Domain schema: compaction unknown key(s) " + unknownCompactionKeys.map((k) => JSON.stringify(k)).join(", ") + " — supported keys: " + COMPACTION_CONFIG_KEYS.join(", "));
     if (c.model !== undefined && typeof c.model !== "string")
       throw new Error("Domain schema: compaction.model must be a string");
     if (c.lowWatermark !== undefined) {

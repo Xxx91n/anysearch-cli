@@ -9,7 +9,7 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
+import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import { MAX_SUFFICIENCY_REROUNDS, isValidSufficiencyRerounds } from "@anysearch-cli/store";
 
 export interface SufficiencyEvaluatorDeps {
@@ -50,6 +50,16 @@ export interface GateEnvelope {
   enrichedEnvelope: any | null;       // merged search results (or null if no sufficiency work done)
   hasRetrievalEvidence: boolean;      // true if gate did re-search (signals pipeline to consolidate)
   targetMessageIndex: number;         // index of the tool_result message to update
+}
+
+// The envelope arrives as JSON.parse output, so tsc checks nothing read off it.
+// This is the one shape this module depends on: the engine writes
+// `extra.trustLabel` (a SourceTraceLabel) onto every sanitized result, and the
+// judgment-input trace id is read back from there. Typing it here means a
+// rename inside `extra` is edited in one visible place instead of silently
+// falling back to the placeholder id.
+interface EnvelopeTrustShape {
+  results?: Array<{ extra?: { trustLabel?: SourceTraceLabel } }>;
 }
 
 /**
@@ -137,7 +147,7 @@ export class SufficiencyEvaluator {
         {
           text: gapPrompt[1]!.content,
           source: "retrieved",
-          traceId: envelope.results?.[0]?.extra?.trustLabel?.traceId ?? "sufficiency-gap",
+          traceId: (envelope as EnvelopeTrustShape).results?.[0]?.extra?.trustLabel?.traceId ?? "sufficiency-gap",
         },
         "sufficiency-judge",
       );
