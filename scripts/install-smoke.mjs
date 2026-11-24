@@ -8,25 +8,21 @@
 // hosts this lane watches (pnpm.io / typescriptlang.org /
 // modelcontextprotocol.io).
 //
-// Two zero-result legs always run, with or without keys. CI injects a provider
-// key into this job, so an `if (online)` guard would skip them forever, and an
-// assertion that never runs is not coverage.
+// The two zero-result legs always run, keys or no keys: CI injects a provider
+// key into this job, so an `if (online)` guard would skip them every time.
+// Their checks live in 4a and 4b; what they are for:
 //
-// - Fault leg: ANYSEARCH_ENDPOINT is a dead port (127.0.0.1:9). The probe
-//   domain's only arm (sources.enabled = ["anysearch"]) constructs, is queried,
-//   and fails at runtime, so the run is `failed`, not `abstain`: exit 1,
-//   outcome "failed", abstain null, providersQueried ["anysearch"],
-//   providersFailed naming anysearch, zero results. The outcome assertion is
-//   what separates an outage from a build whose search never queries an arm:
-//   that run classifies as `empty`. The full list is in 4a.
-// - Refusal leg: the same probe domain points ANYSEARCH_ENDPOINT at a local
-//   fake AnySearch MCP server (scripts/fake-anysearch-mcp.mjs) that answers two
-//   out-of-domain URLs. An arm answered and the domain gate threw all of it
-//   away, so the run is `abstain`: exit 0, outcome "abstain", abstain.gate
-//   "post", preFiltered >= 1, postFiltered 0, providersFailed empty, zero
-//   results. The stub runs in its own process: this script drives the CLI with
-//   spawnSync, which blocks the event loop an in-process stub would need to
-//   accept requests. The full list is in 4b.
+// - Fault leg (4a): the probe domain's only arm (sources.enabled =
+//   ["anysearch"]) points at a dead port (127.0.0.1:9), gets queried and fails,
+//   so the run is `failed`, not `abstain`: exit 1, outcome "failed", no abstain
+//   marker, zero results, providersFailed naming the arm. A build whose search
+//   never queries an arm lands on `empty` instead, which this leg must reject.
+// - Refusal leg (4b): the same probe domain points at a local fake AnySearch
+//   MCP server (scripts/fake-anysearch-mcp.mjs) that answers two out-of-domain
+//   URLs. An arm answered and the domain gate threw all of it away: exit 0,
+//   outcome "abstain", gate "post", zero results, nobody failed. The stub has to
+//   be its own process — this script drives the CLI with spawnSync, which blocks
+//   the event loop an in-process stub would need to accept requests.
 //
 // A zero-result run whose every queried arm failed is a fault and exits 1.
 // Abstain needs an active domain policy and a reason it can name: the gate
