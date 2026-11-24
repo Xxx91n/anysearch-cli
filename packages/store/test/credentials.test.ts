@@ -306,6 +306,7 @@ test("a TOML parse failure never quotes the offending line", () => {
     const warnings: string[] = [];
     resolveLlmConfig({ home, cwd: home, env: {}, warn: (m) => warnings.push(m) });
     assert.ok(warnings.some((w) => w.includes("TOML parse failed")), "the fault is still reported");
+    assert.ok(warnings.some((w) => w.includes("at line 1")), "the line number survives: " + warnings.join("\n"));
     assert.ok(!warnings.join("\n").includes("SECRET"), "the warning must not quote the line: " + warnings.join("\n"));
     assert.ok(!warnings.join("\n").includes("sk-live"), "not even the key prefix");
 

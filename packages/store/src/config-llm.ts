@@ -170,14 +170,18 @@ interface LoadedLlmFile {
 }
 
 /**
- * Design: only the diagnostic head of a TOML parse error is ever shown —
- * smol-toml appends the numbered offending line, which can be
+ * Design: only the diagnostic head of a TOML parse error is shown, plus the
+ * line number — smol-toml appends the numbered offending line, which can be
  * `api_key = "sk-…"`. Every surface that prints or forwards this text (CLI
  * warnings, MCP stderr, a write refusal) must keep the source line out.
  */
 function tomlParseDetail(error: unknown): string {
-  const head = String((error as Error).message ?? "").split("\n")[0].trim();
-  return head || "invalid TOML";
+  const message = error instanceof Error ? error.message : String(error);
+  const head = message.split("\n")[0].trim() || "invalid TOML";
+  // The snippet starts with a bare line number (`\n\n1:  …`); the caret line
+  // and the source text stay out.
+  const line = /\n\n(\d+):/.exec(message)?.[1];
+  return line ? head + " at line " + line : head;
 }
 
 function parseLlmTomlResult(

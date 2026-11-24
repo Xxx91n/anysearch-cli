@@ -275,37 +275,31 @@ export function buildAnsChatResult(
 }
 
 /**
- * Design: #538 — attach the credential-file fault to a result. The fact goes
- * into both halves: the kernel's `notice` sentence in the model-visible text
- * (content-only hosts read nothing else), and the same `{ kind, notice }`
- * record the search tools publish under
- * `credentialSources.credentialFileFault`. Keeping one shape means a host
- * learns one vocabulary, not one per tool.
- *
- * A success answer leads with the sentence. An error result does not: #264
- * keeps the `ans_chat error: ` prefix first, so the sentence follows the
- * reason, and a recovery note stays its own later block. When both a fault and
- * a `recoveryNotice` are present on a success, the fault comes first — it is
- * about the configuration the call ran with, while the recovery note is about
- * the conversation it resumed.
- *
- * A bare `isError` result stays bare (#204): it carries no structuredContent to
- * merge into, and turning an error into a structured one would change the
- * documented error shape. The sentence still reaches the text.
+ * Design: #538 — put the `CredentialFileNotice` in both halves. A success
+ * answer leads with the sentence; an error or a cancellation keeps its own
+ * first line, so the sentence follows the reason. A result with no
+ * `structuredContent` stays text-only (#204).
  */
 export function withCredentialFileFault(
   result: AnsChatToolResult,
   fault?: CredentialFileNotice,
 ): AnsChatToolResult {
   if (!fault) return result;
-  const head = result.content[0];
+  // The SDK types the handler result as an open object, and the tool casts it
+  // in; a result without a text array must not become a TypeError here.
+  const blocks = Array.isArray(result.content) ? result.content : [];
+  const head = blocks[0];
+  // `ans_chat: cancelled — no answer was produced` is the whole point of that
+  // result: it must stay first for a content-only host. It carries no
+  // `isError`, so `interrupted` is what identifies it.
+  const followsReason = result.isError === true || result.structuredContent?.["interrupted"] === true;
   const content = head
     ? [{
         ...head,
-        text: result.isError
+        text: followsReason
           ? head.text + "\n\n" + fault.notice
           : fault.notice + "\n\n" + head.text,
-      }, ...result.content.slice(1)]
+      }, ...blocks.slice(1)]
     : [{ type: "text" as const, text: fault.notice }];
   return {
     ...result,

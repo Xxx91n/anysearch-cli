@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
-import type { AnsChatToolResult } from "../src/ans-chat-session.js";
+import { buildAnsChatCancelledResult, withCredentialFileFault, type AnsChatToolResult } from "../src/ans-chat-session.js";
 
 const ENV_KEYS = [
   "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API",
@@ -212,6 +212,24 @@ test("a runtime error keeps its prefix and still names the file", async () => {
   assert.ok(text.includes("ANS_LLM_API"), "the actionable reason is kept: " + text);
   assert.ok(text.includes(NOT_JSON.notice), "the file fault follows the reason: " + text);
   assert.equal(res?.structuredContent, undefined, "a bare error stays bare (#204)");
+});
+
+test("a cancelled result still leads with the cancellation", () => {
+  // `buildAnsChatCancelledResult` exists so a content-only host sees "no answer
+  // was produced" first. The fault sentence must not displace it.
+  const res = withCredentialFileFault(buildAnsChatCancelledResult(), NOT_JSON);
+  const text = textOf(res);
+  assert.ok(text.startsWith("ans_chat: cancelled"), "the cancellation stays first: " + text);
+  assert.ok(text.includes(NOT_JSON.notice), "the file fault still travels: " + text);
+  const record = res.structuredContent?.["credentialFileFault"];
+  assert.equal((record as { kind?: string } | undefined)?.kind, "not-json");
+});
+
+test("a result with no text block degrades to the sentence, never a TypeError", () => {
+  // The tool casts the SDK's open result type in; a missing content array must
+  // not turn a successful call into a thrown exception.
+  const res = withCredentialFileFault({ content: [] } as unknown as AnsChatToolResult, NOT_JSON);
+  assert.equal(textOf(res), NOT_JSON.notice);
 });
 
 test("an invalid entry is classified without quoting what it held", async () => {

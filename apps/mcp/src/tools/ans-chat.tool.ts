@@ -88,13 +88,14 @@ export function resetAnsChatDegradedWarnings(): void {
 }
 
 /**
- * Design: #538 — every stderr line this tool writes goes through one helper,
- * which redacts. The resolver's warnings, budget degradation and consolidation
- * metering can each echo a path or a value from config, and the search side's
- * provider diagnostics already take the same rule. A dead stderr never breaks
- * the call.
+ * Design: #538 — only lines that can echo config or provider text go through
+ * this helper. The resolver can quote a config file, and a provider
+ * constructor's message can carry the key; both are redacted here. Internal
+ * wiring lines (task ids, ledger state) stay unredacted — `redactSecrets`
+ * replaces long tokens, so a task id would become `[redacted]` and the log
+ * could no longer be tied to its task row.
  */
-function writeDiagnostic(message: string): void {
+function writeRedactedDiagnostic(message: string): void {
   try {
     process.stderr.write(redactSecrets(message) + "\n");
   } catch { /* fail-open */ }
@@ -104,7 +105,9 @@ function warnDegraded(message: string, key: string): void {
   if (warnedDegradations.has(key)) return;
   if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
   warnedDegradations.add(key);
-  writeDiagnostic("[anysearch] " + message);
+  try {
+    process.stderr.write("[anysearch] " + message + "\n");
+  } catch { /* a dead stderr must not break the call */ }
 }
 
 export function registerAnsChat(
@@ -251,7 +254,7 @@ export function registerAnsChat(
           configWarnings.push(m);
           // The observation records only this warning's count; the text is
           // forwarded to stderr through the one redacting helper.
-          writeDiagnostic(m);
+          writeRedactedDiagnostic(m);
         } });
       } catch (e) {
         // Design: a resolver fault must never escape as a raw handler rejection
@@ -392,7 +395,7 @@ export function registerAnsChat(
               toCaps: (b) => toBudgetCaps(b as BudgetConfig),
               domainLabel: "consolidate",
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
-              warn: (m) => writeDiagnostic("[anysearch] " + m),
+              warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
             });
           }
           // The awaits above open a window the earlier check cannot see: a
@@ -416,7 +419,7 @@ export function registerAnsChat(
             } catch (e) {
               // Fail-open: the store reports llmUnavailable per cluster, and the
               // usage block names the missing accounting instead of faking it.
-              writeDiagnostic(
+              writeRedactedDiagnostic(
                 "[anysearch] ans_chat consolidate LLM init failed (" +
                   (e instanceof Error ? e.message : String(e)) + ")",
               );
