@@ -147,13 +147,13 @@ jobs:
     # A wedged lane must fail instead of holding the job for the workflow
     # default (360). The build, install-smoke and three acceptance lanes all
     # live in this job; windows runs land around 9-11 minutes, so 20 covers a
-    # slow day. The unbounded parts are the build step, `pnpm pack` and the two
-    # npm installs — sh() takes a timeoutMs and they pass none — so if one of
-    # those wedges, this job bound is what ends it. The inner timeouts are
-    # smaller: recall-acceptance 480s per RPC, installed-acceptance 240s per
-    # call, install-smoke 30s per CLI call. If a lane's own bounds would not
-    # fire first, bound that step instead of raising this number — a job-level
-    # kill leaves no clue which lane died.
+    # slow day. What has no bound of its own is the build step plus the sh()
+    # calls that pass no timeoutMs: `pnpm pack`, the two npm installs, and the
+    # embedding import probe. The inner timeouts are smaller: recall-acceptance
+    # 480s per RPC, installed-acceptance 240s per call, install-smoke 30s per
+    # CLI call. Bound a step wherever a step-level bound can catch the hang;
+    # only move this number when none can — a job-level timeout leaves no clue
+    # which lane died.
     timeout-minutes: 20
     strategy:
       fail-fast: false
