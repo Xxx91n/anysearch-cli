@@ -73,7 +73,7 @@ const engine = {
   retriever: {
     search: async () => ({
       results: [], answers: [],
-      metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+      metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
     }),
   },
   observation: { recordOperation: async (_o: unknown, cb: (span: unknown) => unknown) => cb(fakeSpan) },

@@ -171,6 +171,7 @@ function makeEnvelope(overrides: Partial<FusedEnvelope> = {}): FusedEnvelope {
       providersFailed: [],
       providersCancelled: [],
       elapsedMs: 42,
+      outcome: "answer",
       providerAnswers: [
         { provider: "exa", text: "Exercise is good for health.", verified: false },
       ],

@@ -1,4 +1,5 @@
 import type { AttributionReport } from "./attribution";
+import type { SearchOutcome } from "./outcome";
 
 // SearchProvider contract: normalized interface for all search providers.
 // Split 1 from the atomcode kernel-split research.
@@ -409,11 +410,20 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // abstain marker. Set by the kernel post-filter
-    // when a domain allowlist policy is active and zero results survive (including
-    // the cold-domain zero-arrival case). A successful policy execution, never an
-    // error. preFiltered = provider results that reached the authoritative gate;
-    // postFiltered = survivors (0 whenever abstain is set). Consumed by the CLI
+    // five-value search outcome, written by the kernel on every search it
+    // assembles; how each value is decided lives in outcome.ts and nowhere else
+    // (research_web maps it once at its exit — that is the tool's call verdict,
+    // not a second classifier). The audit attribute anysearch.outcome carries
+    // the same value.
+    outcome: SearchOutcome;
+    // abstain marker. The kernel writes it only when the domain policy is the
+    // evidence-backed reason — that rule is shouldAbstain in outcome.ts and
+    // nowhere else. Present iff outcome === "abstain": an all-failed or
+    // all-cancelled search writes none. A successful policy execution, never an
+    // error. preFiltered = provider results that
+    // reached the authoritative gate; postFiltered = survivors (0 whenever
+    // abstain is set). gate: "post" = the gate dropped arrivals; "pre" = every
+    // queried arm answered with nothing, none failed. Consumed by the CLI
     // one-line message (exit 0) and MCP structuredContent.abstain (isError:false).
     abstain?: {
       abstain: true;

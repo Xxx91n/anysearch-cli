@@ -14,8 +14,8 @@ import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
 import { withMcpTask } from "../mcp-task.js";
 import {
-  allProvidersFailed,
   allProvidersFailedText,
+  outcomeOf,
   providerFailureMetadata,
   toolError,
   toolFailure,
@@ -65,15 +65,16 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             signal,
           });
 
-          // A zero-result search is successful only when an arm answered. If
-          // every queried arm is in providersFailed this is an outage: an error
-          // result, never a legitimate empty result.
+          // Only `failed` is an error: every queried arm died. The other four
+          // verdicts are successes with their value named in the output; the
+          // engine decides which, this surface never re-judges.
+          const outcome = outcomeOf(envelope);
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
-          if (envelope.results.length === 0 && allProvidersFailed(queriedProviders, failedProviders)) {
+          if (outcome === "failed") {
             return toolFailure(allProvidersFailedText("search_web", failedProviders, providerErrorClasses, providerErrorRetryAfter));
           }
           // Partial success: at least one arm answered, so isError stays false
@@ -107,6 +108,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.
               abstain: envelope.metadata?.abstain ?? null,
+              // How this run ended: answer / failed / cancelled / abstain / empty.
+              outcome,
               // resolved vertical routing (query-level args; repo-level
               // defaults surface via the retrieval.vertical.pre audit event).
               vertical: vertical ?? null,
@@ -135,10 +138,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
 
           const attribution = envelope.attribution;
           const abstain = envelope.metadata?.abstain;
-          // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources、providersQueried、
-          // providersCancelled 恒有值；sufficiency / attribution / provider
-          // failures 有值时才加。
+          // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
+          // 结果一定带 structuredContent：outcome、credentialSources、
+          // providersQueried、providersCancelled 恒有值；sufficiency /
+          // attribution / provider failures 有值时才加。
           const structuredContent = {
             // #304 review: the caller may have aborted mid-search. The engine
             // returns whatever arrived instead of throwing, so without this the
@@ -147,6 +150,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
+            outcome,
             ...(providerFailures ?? {}),
             // The same two fields the content JSON carries. Paired with
             // providersQueried, a cut-off arm is named outright instead of being

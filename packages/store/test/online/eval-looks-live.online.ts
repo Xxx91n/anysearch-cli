@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { readQuarantine, activeIds } from "../../src/eval/quarantine-ledger";
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return; }
   passed++;
@@ -153,12 +153,19 @@ function main() {
   const priorVerdicts = evidenceMode ? lastEvidenceVerdicts(evidenceLog) : new Map<string, EvidenceRecord>();
 
   // Cold-domain fixture dir for entries whose domain has no shipped toml.
+  // One arm on purpose. exa and tavily take the allowlist as includeDomains and
+  // can answer with zero arrivals; with several arms one failure next to a
+  // zero-hit arm classifies as `empty`, so the live lane would be a coin flip.
+  // One arm removes both the failure and the multi-arm interaction, and the
+  // gate stage stays unpinned — "pre" and "post" are both abstains here; the
+  // deterministic gate coverage lives in the stub golden
+  // (packages/kernel/test/eval-looks-stub.test.ts).
   const coldDir = mkdtempSync(join(tmpdir(), "ans-looks-cold-"));
   writeFileSync(join(coldDir, "cold.toml"), [
     'name = "cold"', 'description = "eval-looks live cold fixture (r61 narrow domain)"',
     '[settings]', 'language = "TypeScript"', 'depth = "docs"',
     '[skills]', 'active = ["search"]',
-    '[sources]', 'enabled = ["tavily", "exa", "anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
+    '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
     '[rag]', 'adapter = "none"',
   ].join("\n"));
 
@@ -168,14 +175,41 @@ function main() {
     if (isQuar) console.log("EVIDENCE-RUN " + e.id + " (quarantined — executing for evidence)");
     if (e.watch === true) console.log("WATCH " + e.id + " (post-promote watch — a CI flip re-enters quarantine via the ratchet)");
     const p0 = passed, f0 = failed;
-    const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
-    if (e.domain === "cold") env.ANS_DOMAINS_DIR = coldDir;
+    let skippedThis = false;
+    // A leftover ANS_PROVIDERS cuts arms from every live leg: the cold fixture
+    // then has zero arms and the engine throws before any verdict ("No providers
+    // registered"), and an answer leg can come back missing a host. Both would
+    // read as a retrieval regression instead of a shell leftover.
+    const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain, ANS_PROVIDERS: "" };
+    if (e.domain === "cold") {
+      env.ANS_DOMAINS_DIR = coldDir;
+      // The TOML allowlist is the only authority: an ambient ANS_URL_ALLOWLIST
+      // would let a result survive and turn this abstain into an answer.
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+    }
     const j = searchJson(e.question, env, e.vertical);
     assert(!j.__error, e.id + " ran (" + (j.__error ?? "ok") + ")");
     if (!j.__error) {
       if (e.expected.verdict === "abstain") {
-        assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
-        assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
+        // A live lane measures retrieval, not provider health: an arm that died
+        // (`failed`) or was cut off by the engine's deadline (`cancelled`) is the
+        // environment, not a regression. Skip it the way a missing key skips, and
+        // keep the skip out of the evidence log — a skip must never read as a pass.
+        if (j.outcome === "failed" || j.outcome === "cancelled") {
+          skipped++;
+          skippedThis = true;
+          console.log("SKIPPED " + e.id + " (" + (j.outcome === "failed" ? "provider outage" : "arm cut off by the deadline") + ": providersFailed " + JSON.stringify(j.providersFailed ?? []) + ", providersCancelled " + JSON.stringify(j.providersCancelled ?? []) + ")");
+        } else {
+          assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
+          assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");
+          assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
+          assert(j.outcome === "abstain", e.id + " outcome abstain (got " + j.outcome + ")");
+          if (e.domain === "cold") {
+            // A refusal with a dead arm would be an `empty`, so an empty failed
+            // list is what says the single arm really answered.
+            assert((j.providersFailed ?? []).length === 0, e.id + " the single arm answered (providersFailed " + JSON.stringify(j.providersFailed) + ")");
+          }
+        }
       } else {
         assert(!j.abstain, e.id + " answer verdict has no abstain marker");
         assert(j.results.length >= (e.expected.minResults ?? 1), e.id + " minResults " + (e.expected.minResults ?? 1) + " (got " + j.results.length + ")");
@@ -213,6 +247,7 @@ function main() {
         }
       }
     }
+    if (skippedThis) continue;
     const ePass = passed - p0, eFail = failed - f0;
     // iii: control entries' failures walk the degraded list,
     // never the red gate — existence is a first-class assertion, passing is
@@ -242,7 +277,7 @@ function main() {
   }
 
   rmSync(coldDir, { recursive: true, force: true });
-  console.log("--- eval-looks live executor: " + passed + " passed, " + failed + " failed ---");
+  console.log("--- eval-looks live executor: " + passed + " passed, " + failed + " failed" + (skipped ? ", " + skipped + " skipped" : "") + " ---");
   if (failed > 0) {
     if (evidenceMode && nonQuarFailed === 0) {
       console.log("EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0");

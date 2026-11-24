@@ -30,7 +30,7 @@ const mockRetriever: RetrieverPort = {
   search: async (_q: Query): Promise<FusedEnvelope> => ({
     results: [],
     answers: [],
-    metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+    metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
   }),
 };
 const mockStore: SessionStore = {

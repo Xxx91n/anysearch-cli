@@ -155,7 +155,7 @@ jobs:
       # Design: run from packages/store — better-sqlite3 is a direct dependency of
       # @anysearch-cli/store, and pnpm's strict layout exposes no root symlink; a
       # root-level require dies with MODULE_NOT_FOUND (split A) before the probe
-      # ever reaches split B. Build and abstain-path repro stay at repo root.
+      # ever reaches split B. Build and zero-result repro stay at repo root.
       - name: better-sqlite3 registration check
         if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         working-directory: packages/store
@@ -166,6 +166,6 @@ jobs:
         run: pnpm --filter @anysearch-cli/cli build
 
       # Signature split B: libc++abi/mutex abort on process exit = family.
-      - name: abstain-path repro + crash-signature summary
+      - name: zero-result repro + crash-signature summary
         if: ${{ steps.setup.outputs.run-macos-spillover-probe != 'false' }}
         run: node scripts/macos-exit-probe.mjs

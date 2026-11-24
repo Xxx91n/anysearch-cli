@@ -73,7 +73,7 @@ const ENV_KEYS = [
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
-  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
 };
 
 const fakeSpan: any = {

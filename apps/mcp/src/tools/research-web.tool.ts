@@ -15,6 +15,7 @@ import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.j
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
+  outcomeOf,
   providerFailureMetadata,
   toolError,
   toolFailure,
@@ -141,6 +142,21 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             });
           }
           const lastRound = allResults.slice(-10);
+          // The last completed round's marker and arm state — the same round
+          // sufficiency describes, never a union across rounds. An interrupted
+          // round's envelope is not trusted, so a caller that aborts during the
+          // first round leaves the verdict null.
+          const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
+          const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
+          // This call's verdict. `failed` and `cancelled` both describe a round
+          // that came back empty, and the docs table ties them to "nothing came
+          // back" — a call holding merged results ended with an answer, whatever
+          // the last round said. With nothing in hand, a dead last round is the
+          // call's `empty` when an arm answered earlier. The dead and cut-off
+          // arms still ride providersFailed / providersCancelled.
+          let callOutcome = lastOutcome;
+          if (allResults.length > 0) callOutcome = "answer";
+          else if (lastOutcome === "failed") callOutcome = "empty";
           const summary = JSON.stringify(
             {
               question,
@@ -155,7 +171,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // attribution from last round (claim-level evidence linkage).
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
-              abstain: lastEnvelope?.metadata?.abstain ?? null,
+              abstain: lastAbstain,
+              // This call's verdict — see callOutcome above.
+              outcome: callOutcome,
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
@@ -168,10 +186,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             2,
           );
 
-          // 弃答标记放在 structuredContent.abstain，isError 仍为 false。成功
-          // 结果一定带 structuredContent：credentialSources、providersQueried、
-          // providersCancelled 恒有值；其余字段有值时才加。
-          const lastAbstain = lastEnvelope?.metadata?.abstain;
+          // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
+          // 结果一定带 structuredContent：outcome、credentialSources、
+          // providersQueried、providersCancelled 恒有值；其余字段有值时才加。
           const structuredContent = {
             // #304 review: a cancelled research call stops after the aborted
             // round and then returns normally. Say so, or the task wrapper
@@ -180,6 +197,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
+            // Always present, null included: a host should not have to tell
+            // "no round finished" from "this build forgot the field".
+            outcome: callOutcome,
             ...(providerFailures ?? {}),
             // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,

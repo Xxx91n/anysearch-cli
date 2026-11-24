@@ -22,6 +22,7 @@ const abstainEnvelope: FusedEnvelope = {
     providersFailed: [],
     providersCancelled: [],
     elapsedMs: 5,
+    outcome: "abstain",
     abstain: {
       abstain: true,
       reason: "domain_filter_empty",
@@ -66,8 +67,10 @@ async function main() {
   assert(sc.abstain.preFiltered === 7 && sc.abstain.postFiltered === 0, "pre/post counts");
   assert(sc.abstain.gate === "post", "gate field");
   assert(Array.isArray(res.content) && typeof res.content[0]?.text === "string", "text content present");
+  assert(sc?.outcome === "abstain", "structuredContent.outcome names the verdict");
   const doc = JSON.parse(res.content[0].text);
   assert(doc.abstain?.abstain === true, "text summary also carries the abstain marker");
+  assert(doc.outcome === "abstain", "text summary names the same verdict");
 
   console.log("--- mcp abstain contract tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);

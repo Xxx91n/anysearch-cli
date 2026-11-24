@@ -31,7 +31,7 @@ function assertGuardFailure(res: any, tool: string, label: string) {
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
-  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1 },
+  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 1, outcome: "empty" },
 };
 
 const fakeSpan = {

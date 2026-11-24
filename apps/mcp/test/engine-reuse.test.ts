@@ -40,7 +40,7 @@ function assert(cond: boolean, msg: string) {
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
-  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
+  metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0, outcome: "empty" },
 };
 
 const fakeSpan: any = {

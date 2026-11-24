@@ -3,14 +3,22 @@
 // MCP and hook commands. Explicit embedding installation remains a second leg.
 // Internal libraries and the old separate MCP/plugin apps are not installed.
 //
-// Online leg: when EXA_API_KEY or TAVILY_API_KEY is set, the script hard-asserts
-// that a real search returns >=1 result AND that at least one result URL lands on
-// the docs-domain urlAllowlist (pnpm.io / typescriptlang.org / modelcontextprotocol.io).
-// Without keys it fault-injects a dead endpoint (ANYSEARCH_ENDPOINT=127.0.0.1:9)
-// and asserts the documented abstain contract on `search --json` stdout under a
-// probe domain whose sources.enabled is [anysearch] alone —
-// abstain:true && providersFailed∋anysearch && results.length===0 (
-// abstain exit 0 replaces the retired exit-1/Results:0 contract).
+// Online leg: only when EXA_API_KEY or TAVILY_API_KEY is set — one real search
+// on the shipped docs domain, which must return a result on its urlAllowlist.
+//
+// Two zero-result legs always run, with or without keys (CI injects a key, so
+// an `if (online)` guard would skip them forever):
+// - Fault leg: the only arm points at a dead port, so the run is `failed`
+//   (exit 1, zero results, providersFailed naming the arm) — see 4a below.
+// - Refusal leg: the only arm is a local stub answering out-of-domain URLs, so
+//   the gate empties the pool and the run is `abstain` (exit 0) — see 4b below.
+//
+// Every CLI call goes through sh(), which carries a 30s bound and reports a
+// timeout as a named failure. The engine's own 4s deadline already covers a slow
+// arm; this bound covers a wedged shell. On Windows the bound kills the cmd.exe
+// wrapper, and a surviving node child can then make cleanup fail — that failure
+// is surfaced, not swallowed.
+//
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.
 //
@@ -18,13 +26,12 @@
 // the better-sqlite3 prebuild; add macos-latest when a real mac issue lands.
 import { PROBE_CLEANUP_FAILED } from "./probe-process.mjs";
 import { verifyInstalledProduct } from "./verify-installed-product.mjs";
-import { execSync, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -53,9 +60,68 @@ function check(name, cond, detail) {
     console.error("[FAIL] " + name + (detail ? " — " + String(detail).slice(0, 300) : ""));
   }
 }
-function sh(cmd, opts) {
-  const r = spawnSync(cmd, { shell: true, encoding: "utf8", env: smokeEnv, ...opts });
+const CLI_TIMEOUT_MS = 30000;
+let warned = 0;
+
+// The exit code is part of the contract, but docs/limitations.md records that a
+// Windows teardown crash can rewrite it. Called after a leg's structured checks,
+// with legClean saying whether they all passed: a crash signature on a clean leg
+// is the teardown fault and only warns, while a crash beside a red check is a
+// real failure and stays red.
+function checkExitCode(name, expected, run, legClean) {
+  if (run.code === expected) return check(name, true);
+  const teardownCrash = /libc\+\+abi|Abort trap|SIGSEGV|Segmentation fault/i.test(run.out) || run.code === 134;
+  if (teardownCrash && legClean) {
+    warned++;
+    console.log("[WARN] " + name + " — teardown crash rewrote the exit code (got " + run.code + ")");
+    return;
+  }
+  check(name, false, "exit " + run.code + ", wanted " + expected + "; " + run.out.slice(-300));
+}
+
+// `timeoutMs` bounds a single call. CLI calls pass it: the engine's own 4s
+// deadline only covers the search itself, so this bound is what catches what
+// that deadline cannot — a wedged shell, a console that never drains. Pack and
+// install keep the platform default — they are not CLI calls, and a 30s cap
+// there would fail the lane on a slow npm mirror.
+function sh(cmd, opts = {}) {
+  const { timeoutMs, ...rest } = opts;
+  const r = spawnSync(cmd, {
+    shell: true,
+    encoding: "utf8",
+    env: smokeEnv,
+    ...(timeoutMs ? { timeout: timeoutMs } : {}),
+    ...rest,
+  });
+  if (r.error?.code === "ETIMEDOUT") {
+    return { code: 124, out: "timed out after " + timeoutMs + "ms: " + cmd, stdout: "" };
+  }
   return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
+}
+
+// Read the single PORT=<n> line the stub process prints, with a bound: a stub
+// that never starts must fail this lane in seconds, not park it.
+function readStubPort(child) {
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(() => reject(new Error("stub printed no PORT line within 5s; saw: " + buf.slice(-300))), 5000);
+    child.stdout.on("data", (chunk) => {
+      buf += chunk;
+      const found = buf.match(/^PORT=(\d+)$/m);
+      if (found) {
+        clearTimeout(timer);
+        resolve(Number(found[1]));
+      }
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error("stub exited before printing PORT (code " + code + ")"));
+    });
+  });
 }
 
 const dir = mkdtempSync(join(tmpdir(), "ans-install-smoke-"));
@@ -93,7 +159,7 @@ try {
   await verifyInstalledProduct(prefix, check);
   const bin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
   check("ans bin shim installed", existsSync(bin), bin);
-  const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix, env: smokeEnv });
+  const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix, env: smokeEnv, timeoutMs: CLI_TIMEOUT_MS });
 
   // 3. Installed-surface walkthrough.
   const v = ans("--version");
@@ -165,11 +231,12 @@ try {
     }
   }
   symlinkSync(join(nm, "@anysearch-cli", "embedding"), join(hashB, "@anysearch-cli", "embedding"), "junction");
-  const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix });
+  const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix, timeoutMs: CLI_TIMEOUT_MS });
   check("pnpm-layout: doctor runs under isolated roots", pd.code === 0, pd.out.slice(-500));
   check("pnpm-layout: sibling-root fallback reports vector arm present", /vector arm.*present/.test(pd.out), pd.out.slice(-500));
 
-  // 4. Search leg — online hard assertion or offline abstain contract.
+  // 4. Search legs. The online leg runs only when this machine holds a search
+  //    key; the two zero-result legs below always run.
   const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
   if (online) {
     const s = ans("search 'MCP Streamable HTTP transport session id'");
@@ -177,33 +244,103 @@ try {
     check("search returns results", /Results: [1-9]/.test(s.out), s.out.slice(-400));
     check("a result lands on the docs urlAllowlist", ALLOWLIST.some((h) => s.out.includes(h)), s.out.slice(-400));
   } else {
-    // hermetic abstain leg. tavily/exa construct keyless (their
-    // factories never throw), so "no keys" does NOT mean "only the anysearch
-    // arm" — a probe domain narrows sources.enabled to [anysearch] explicitly,
-    // and a dead port fault-injects that arm. Zero external network is touched,
-    // in any network condition. Assertions anchor structured --json fields, not
-    // the exit code (teardown rewrites it intermittently) — abstain
-    // is the contract; the exit-1/Results:0 shape is retired.
-    const probeDir = join(dir, "probe-domains");
-    mkdirSync(probeDir, { recursive: true });
-    writeFileSync(join(probeDir, "probe.toml"), [
-      'name = "probe"',
-      'description = "install-smoke offline leg — single-arm fault-injection domain"',
-      '[settings]', 'language = "TypeScript"', 'depth = "docs"',
-      '[skills]', 'active = ["search"]',
-      '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
-      '[rag]', 'adapter = "none"', ''
-    ].join("\n"), "utf8");
-    const s = sh(`\"${bin}\" search 'MCP Streamable HTTP transport session id' --json`, {
+    console.log("[SKIP] online search leg: no EXA_API_KEY / TAVILY_API_KEY");
+  }
+
+  // 4a/4b share one probe domain and differ only in the endpoint.
+  //    tavily/exa construct keyless, so "no keys" does NOT mean "only the
+  //    anysearch arm" — sources.enabled narrows the fanout explicitly, and the
+  //    TOML allowlist stays the only policy authority (an ambient
+  //    ANS_URL_ALLOWLIST could otherwise let a result survive and flip the
+  //    refusal leg).
+  const probeDir = join(dir, "probe-domains");
+  mkdirSync(probeDir, { recursive: true });
+  writeFileSync(join(probeDir, "probe.toml"), [
+    'name = "probe"',
+    'description = "install-smoke zero-result legs — single-arm fixture"',
+    '[settings]', 'language = "TypeScript"', 'depth = "docs"',
+    '[skills]', 'active = ["search"]',
+    '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
+    '[rag]', 'adapter = "none"', ''
+  ].join("\n"), "utf8");
+  const probeEnv = {
+    ...smokeEnv,
+    ANS_DOMAIN: "probe",
+    ANS_DOMAINS_DIR: probeDir,
+    ANS_ALLOW_ENV_OVERRIDE: "0",
+    // A shell-leftover ANS_PROVIDERS would filter the probe domain's one arm
+    // out of the fanout and turn both legs into `empty`. Explicit empty.
+    ANS_PROVIDERS: "",
+  };
+  const probeQuery = `\"${bin}\" search 'MCP Streamable HTTP transport session id' --json`;
+
+  // 4a. Fault leg: the only arm is a dead port. An outage, not a refusal —
+  //     asserting the outcome (not just providersFailed) is what stops a build
+  //     whose search never queries an arm from passing here.
+  {
+    const s = sh(probeQuery, {
       cwd: prefix,
-      env: { ...smokeEnv, ANS_DOMAIN: "probe", ANS_DOMAINS_DIR: probeDir, ANYSEARCH_ENDPOINT: "http://127.0.0.1:9" },
+      env: { ...probeEnv, ANYSEARCH_ENDPOINT: "http://127.0.0.1:9" },
+      timeoutMs: CLI_TIMEOUT_MS,
     });
     let j = null;
-    try { j = JSON.parse(s.stdout); } catch { /* null asserted below */ }
-    check("offline search --json stdout parses", j !== null, s.out.slice(-400));
-    check("offline abstain:true", j?.abstain?.abstain === true, s.out.slice(-400));
-    check("providersFailed includes anysearch", Array.isArray(j?.providersFailed) && j.providersFailed.includes("anysearch"), s.out.slice(-400));
-    check("offline results.length === 0", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
+    try { j = JSON.parse(s.stdout); } catch { /* asserted below */ }
+    const failedBefore = failed;
+    check("fault leg: search --json stdout parses", j !== null, s.out.slice(-400));
+    // A `cancelled` here means the engine's 4s deadline beat the dead port, not
+    // that the arm answered — a red run is still the right signal, and this note
+    // says where to look first.
+    check("fault leg: outcome === failed", j?.outcome === "failed", "a cancelled verdict here means the 4s deadline beat the dead port; " + s.out.slice(-400));
+    check("fault leg: no abstain marker", j?.abstain === null, s.out.slice(-400));
+    check("fault leg: zero results", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
+    check("fault leg: providersQueried is [anysearch]", JSON.stringify(j?.providersQueried) === JSON.stringify(["anysearch"]), s.out.slice(-400));
+    check("fault leg: providersFailed names anysearch", Array.isArray(j?.providersFailed) && j.providersFailed.includes("anysearch"), s.out.slice(-400));
+    checkExitCode("fault leg: exit 1", 1, s, failed === failedBefore);
+  }
+
+  // 4b. Refusal leg: a local fake MCP server answers two out-of-domain URLs, so
+  //     an arm answered and the gate threw it all away. gate "post" must hold:
+  //     a marker alone would also be written when the stub answers nothing.
+  {
+    const stub = spawn(process.execPath, [join(ROOT, "scripts", "fake-anysearch-mcp.mjs")], {
+      // stderr goes straight to this lane: nobody drains a pipe here, and a stub
+      // that dies must say why in the log instead of only "exited before PORT".
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    let port;
+    try {
+      port = await readStubPort(stub);
+    } catch (error) {
+      stub.kill();
+      check("refusal leg: stub starts", false, String(error));
+    }
+    if (port === undefined) {
+      // The named failure above already counted; there is nothing to drive.
+      console.log("[SKIP] refusal leg: stub did not start");
+    } else {
+      try {
+        const s = sh(probeQuery, {
+          cwd: prefix,
+          env: { ...probeEnv, ANYSEARCH_ENDPOINT: "http://127.0.0.1:" + port + "/mcp" },
+          timeoutMs: CLI_TIMEOUT_MS,
+        });
+        let j = null;
+        try { j = JSON.parse(s.stdout); } catch { /* asserted below */ }
+        const failedBefore = failed;
+        check("refusal leg: search --json stdout parses", j !== null, s.out.slice(-400));
+        check("refusal leg: outcome === abstain", j?.outcome === "abstain", s.out.slice(-400));
+        check("refusal leg: abstain marker set", j?.abstain?.abstain === true, s.out.slice(-400));
+        check("refusal leg: gate === post", j?.abstain?.gate === "post", s.out.slice(-400));
+        check("refusal leg: preFiltered >= 1", typeof j?.abstain?.preFiltered === "number" && j.abstain.preFiltered >= 1, s.out.slice(-400));
+        check("refusal leg: postFiltered === 0", j?.abstain?.postFiltered === 0, s.out.slice(-400));
+        check("refusal leg: zero results", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
+        check("refusal leg: providersQueried is [anysearch]", JSON.stringify(j?.providersQueried) === JSON.stringify(["anysearch"]), s.out.slice(-400));
+        check("refusal leg: no provider failed", JSON.stringify(j?.providersFailed) === JSON.stringify([]), s.out.slice(-400));
+        checkExitCode("refusal leg: exit 0", 0, s, failed === failedBefore);
+      } finally {
+        stub.kill();
+      }
+    }
   }
 } catch (error) {
   if (error.code === PROBE_CLEANUP_FAILED) {
@@ -212,8 +349,17 @@ try {
   }
   throw error;
 } finally {
-  if (!preserveInstall) rmSync(dir, { recursive: true, force: true });
+  if (!preserveInstall) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      // A surviving child on Windows can hold the temp prefix. Report it as a
+      // named failure so the summary line still prints — true whenever the probe
+      // itself did not throw; a throw from the probe body still wins, as it must.
+      check("cleanup: temporary installation removed", false, String(error));
+    }
+  }
 }
 
-console.log("install-smoke: " + passed + " passed, " + failed + " failed");
+console.log("install-smoke: " + passed + " passed, " + failed + " failed" + (warned ? ", " + warned + " warning(s)" : ""));
 process.exit(failed === 0 ? 0 : 1);
