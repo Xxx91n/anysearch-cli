@@ -213,18 +213,134 @@ async function main() {
         "bad TOML + env: source shows the value came from env, not the broken file");
     }
 
+    // 5a. #547: a broken config must not hide a healthy stored model key.
+    {
+      const fix = fixture("[llm\n");
+      const key = "sk-ant-547-mcp-test-000000";
+      writeUserCredential({ provider: "anthropic", apiKey: key }, { home: fix.home });
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + stored key: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + stored key: the config fault is named");
+      assert(textOf(res).includes("model API key is still stored"),
+        "bad TOML + stored key: the stored model key stays visible");
+      assert(!textOf(res).includes(key), "bad TOML + stored key: no key fragment reaches the tool result");
+      assert(!textOf(res).includes("anthropic"), "bad TOML + stored key: no provider value reaches the tool result");
+      assert(!textOf(res).includes(fix.home), "bad TOML + stored key: no file path reaches the tool result");
+      assert(res?.structuredContent === undefined, "bad TOML + stored key: the public result shape is unchanged");
+      assert(h.seen.length === 0, "bad TOML + stored key: no LLM session was built");
+    }
+
+    {
+      const fix = fixture();
+      writeUserCredential({ provider: "anthropic", apiKey: "sk-ant-547-missing-config" }, { home: fix.home });
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "missing config + stored key: isError true");
+      assert(textOf(res).includes("LLM not configured"), "missing config: existing message kept");
+      assert(!textOf(res).includes("LLM config file is broken"),
+        "missing config: a missing file is not called broken");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "missing config: no broken-config key notice is added");
+    }
+
+    {
+      const fix = fixture("[llm\n");
+      writeUserCredential({ provider: "exa", apiKey: "sk-exa-547-search-only" }, { home: fix.home });
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + search-only key: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + search-only key: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + search-only key: a search key is not called a model key");
+    }
+
+    {
+      const fix = fixture("[llm\n");
+      mkdirSync(join(fix.home, ".ans"), { recursive: true });
+      writeFileSync(join(fix.home, ".ans", "credentials.json"), "{ not json");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + broken credentials: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + broken credentials: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + broken credentials: no stored key is guessed");
+    }
+
+    {
+      const fix = fixture("[llm\n");
+      mkdirSync(join(fix.home, ".ans"), { recursive: true });
+      writeFileSync(join(fix.home, ".ans", "credentials.json"), JSON.stringify({ bindings: [] }));
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + empty credentials: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + empty credentials: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + empty credentials: no stored key is guessed");
+    }
+
+    {
+      const fix = fixture("[llm\n");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + missing credentials: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + missing credentials: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + missing credentials: no stored key is guessed");
+    }
+
+    {
+      const fix = fixture(undefined, "[llm\n");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad project TOML: isError true");
+      assert(textOf(res).includes("LLM not configured"),
+        "bad project TOML: missing user config keeps the existing message");
+      assert(!textOf(res).includes("LLM config file is broken"),
+        "bad project TOML: #547 does not expand to the project config");
+    }
+
+    {
+      const fix = fixture("[llm\n", '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n');
+      const h = harness(fix);
+      await h.call();
+      assert(h.seen.length === 1, "bad user TOML + valid project TOML: project model still runs");
+      assert(h.seen[0]?.provider === "openai" && h.seen[0]?.model === "gpt-5",
+        "bad user TOML + valid project TOML: project provider/model reach the session");
+    }
+
     // 5b. an unreadable config (config.toml is a directory) is reported, not a
     //     crash before observation (#300/greptile P2).
     {
       const fix = fixture();
       mkdirSync(join(fix.home, ".ans"), { recursive: true });
       mkdirSync(join(fix.home, ".ans", "config.toml")); // a directory, not a file
-      const h = harness(fix, { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" });
-      await h.call();
-      assert(h.seen.length === 1, "unreadable config: env model still runs, no crash");
-      assert(fix.warnings.some((w) => w.includes("could not read config file")),
+      const key = "sk-ant-547-unreadable-config";
+      writeUserCredential({ provider: "anthropic", apiKey: key }, { home: fix.home });
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "unreadable config + stored key: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "unreadable config + stored key: the config fault is named");
+      assert(textOf(res).includes("model API key is still stored"),
+        "unreadable config + stored key: the stored model key stays visible");
+      assert(!textOf(res).includes(key), "unreadable config + stored key: no key fragment reaches the tool result");
+      assert(h.seen.length === 0, "unreadable config + stored key: no LLM session was built");
+
+      const envFix = fixture();
+      mkdirSync(join(envFix.home, ".ans"), { recursive: true });
+      mkdirSync(join(envFix.home, ".ans", "config.toml"));
+      const envHarness = harness(envFix, { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" });
+      await envHarness.call();
+      assert(envHarness.seen.length === 1, "unreadable config: env model still runs, no crash");
+      assert(envFix.warnings.some((w) => w.includes("could not read config file")),
         "unreadable config: the read failure was reported as a warning");
-      assert((h.attrs[0]?.["anysearch.llm.configWarnings"] ?? 0) >= 1,
+      assert((envHarness.attrs[0]?.["anysearch.llm.configWarnings"] ?? 0) >= 1,
         "unreadable config: warning count visible in observation");
     }
 

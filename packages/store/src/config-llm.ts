@@ -24,6 +24,7 @@ import { dirname } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
+  credentialProvider,
   lookupModelCredential,
   displayEndpoint,
   modelEnvKeysFor,
@@ -72,6 +73,8 @@ export interface LlmFlags {
   api?: string;
 }
 
+export type LlmConfigFaultKind = "unreadable" | "invalid-toml";
+
 export interface ResolvedLlmConfig {
   provider?: string;
   model?: string;
@@ -84,6 +87,18 @@ export interface ResolvedLlmConfig {
   envKey?: string;
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
+  /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
+  configFault?: LlmConfigFaultKind;
+  /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
+  hasStoredModelCredential?: boolean;
+}
+
+export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
+  if (!cfg.configFault || (cfg.provider && cfg.model)) return undefined;
+  return "LLM config file is broken; provider/model could not be loaded. Fix the config file and try again." +
+    (cfg.hasStoredModelCredential
+      ? " A model API key is still stored in credentials.json, but it is not in use until the config is fixed."
+      : "");
 }
 
 export interface ResolveLlmOpts {
@@ -135,26 +150,29 @@ export function projectConfigPath(cwd: string = process.cwd()): string {
   return ansProjectConfigPath(cwd);
 }
 
-// Parse the [llm] section of a config.toml, applying the level's key policy.
-// Disallowed or mistyped keys are dropped with a warning, never silently honored.
-export function parseLlmToml(
+interface LoadedLlmFile {
+  config: LlmFileConfig;
+  fault?: LlmConfigFaultKind;
+}
+
+function parseLlmTomlResult(
   toml: string,
   level: "user" | "project",
   filePath: string,
   warn: (msg: string) => void,
-): LlmFileConfig {
+): LoadedLlmFile {
   let root: Record<string, unknown>;
   try {
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
     warn("[config] " + filePath + ": TOML parse failed (" + (e as Error).message + "); ignoring file");
-    return {};
+    return { config: {}, fault: "invalid-toml" };
   }
   const section = root["llm"];
-  if (section === undefined || section === null) return {};
+  if (section === undefined || section === null) return { config: {} };
   if (typeof section !== "object") {
     warn("[config] " + filePath + ": [llm] must be a table; ignoring section");
-    return {};
+    return { config: {} };
   }
   const allowed = level === "project" ? PROJECT_LLM_WHITELIST : USER_LLM_KEYS;
   const out: LlmFileConfig = {};
@@ -174,15 +192,26 @@ export function parseLlmToml(
     }
     (out as Record<string, string>)[key] = value;
   }
-  return out;
+  return { config: out };
+}
+
+// Parse the [llm] section of a config.toml, applying the level's key policy.
+// Disallowed or mistyped keys are dropped with a warning, never silently honored.
+export function parseLlmToml(
+  toml: string,
+  level: "user" | "project",
+  filePath: string,
+  warn: (msg: string) => void,
+): LlmFileConfig {
+  return parseLlmTomlResult(toml, level, filePath, warn).config;
 }
 
 function loadFile(
   path: string,
   level: "user" | "project",
   warn: (msg: string) => void,
-): LlmFileConfig {
-  if (!existsSync(path)) return {};
+): LoadedLlmFile {
+  if (!existsSync(path)) return { config: {} };
   // Design: an unreadable file (a directory at config.toml, a permission error)
   // is a config fault, not an absent config — report it and carry on with the
   // lower layers instead of throwing out of the composition root before the
@@ -193,9 +222,9 @@ function loadFile(
     raw = readFileSync(path, "utf8");
   } catch (e) {
     warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
-    return {};
+    return { config: {}, fault: "unreadable" };
   }
-  return parseLlmToml(raw, level, path, warn);
+  return parseLlmTomlResult(raw, level, path, warn);
 }
 
 /**
@@ -215,8 +244,10 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
-  const user = loadFile(userConfigPath(home), "user", warn);
-  const project = loadFile(projectConfigPath(cwd), "project", warn);
+  const userFile = loadFile(userConfigPath(home), "user", warn);
+  const projectFile = loadFile(projectConfigPath(cwd), "project", warn);
+  const user = userFile.config;
+  const project = projectFile.config;
   const flags = opts.flags ?? {};
 
   const envLayer: LlmFileConfig = {
@@ -233,6 +264,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   };
 
   const resolved: ResolvedLlmConfig = { sources: {} };
+  if (userFile.fault) resolved.configFault = userFile.fault;
   const pick = (
     field: "provider" | "model" | "base_url" | "api",
     outKey: "provider" | "model" | "baseUrl" | "api",
@@ -387,6 +419,11 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     if (!resolved.apiKey && opts.credentials !== false) {
       const credsPath = ansCredentialsPathFor(home);
       const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+      if (!file.error && !file.fault && file.bindings.some(
+        (binding) => credentialProvider(binding.provider)?.kind === "model",
+      )) {
+        resolved.hasStoredModelCredential = true;
+      }
       if (!opts.credentialsFile && file.error) {
         // A broken credential file must be visible, never treated as "no keys"
         // when it is the last remaining source. A caller that supplied the file
