@@ -9,7 +9,7 @@
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
-import { REPAIR_HINT } from "../messages";
+import { brokenFileHint } from "../messages";
 import {
   type CredentialFileContents,
   displayEndpoint,
@@ -22,6 +22,13 @@ import {
   projectConfigPath,
   writeUserLlmConfig,
 } from "../config-llm";
+
+/** Prints the way out of a broken file and says whether the command must fail. */
+function reportBrokenFile(file: CredentialFileContents): boolean {
+  if (!file.error) return false;
+  console.log(brokenFileHint(file));
+  return true;
+}
 
 /** The BROKEN line both listings below print; the same result also goes to the resolver. */
 function printCredentialFault(file: CredentialFileContents): void {
@@ -95,14 +102,9 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  ans auth set <provider>         Store the key once (plain text, owner-only)");
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
-    // A broken credential file is a failure, not a healthy listing: `ans auth`
-    // and `ans doctor` already say so with exit 1, and a script reading only the
-    // code must not see this command disagree (#537).
-    if (credentialFile.error) {
-      console.log(REPAIR_HINT);
-      return 1;
-    }
-    return 0;
+    // A broken credential file is a failure here too: `ans auth`, `ans doctor`,
+    // `set` and `remove` all say so with exit 1.
+    return reportBrokenFile(credentialFile) ? 1 : 0;
   }
 
   const subcommand = args[0];
@@ -176,11 +178,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("");
     console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
     console.log("Or set an env var: export OPENAI_API_KEY=...");
-    if (credentialFile.error) {
-      console.log(REPAIR_HINT);
-      return 1;
-    }
-    return 0;
+    return reportBrokenFile(credentialFile) ? 1 : 0;
   }
 
   if (subcommand === "models") {

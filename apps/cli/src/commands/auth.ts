@@ -35,7 +35,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { NOTHING_CHANGED, publishedButUnverified, REPAIR_HINT, WRITE_OUTCOME_UNKNOWN } from "../messages";
+import { brokenFileHint, canRepair, NOTHING_CHANGED, publishedButUnverified, WRITE_OUTCOME_UNKNOWN } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -267,7 +267,11 @@ function reportWriteOutcome(message: string, published: boolean | undefined, fac
 }
 
 function reportWriteFailure(e: unknown, fact: string): void {
-  reportWriteOutcome((e as Error).message, writePublished(e), fact);
+  const published = writePublished(e);
+  // An error from elsewhere (input validation, the endpoint guard) is not a write
+  // outcome, and adding one would describe a file it never touched.
+  if (published === undefined) stderr((e as Error).message + "\n");
+  else reportWriteOutcome((e as Error).message, published, fact);
 }
 
 export async function runAuth(args: string[]): Promise<number> {
@@ -303,9 +307,9 @@ export async function runAuth(args: string[]): Promise<number> {
     stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
     stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
     if (file.error) {
-      // Design: 坏文件退 1 —— 只读退出码的脚本分不出「坏文件」和「健康」，而 `ans doctor`
-      // 对同一份文件早就是 1，`set` / `remove` 也是 1。四个命令对同一份文件不能说法两样（#537）。
-      stdout(REPAIR_HINT);
+      // A script reading only the exit code cannot tell a broken file from a
+      // healthy one, and `ans doctor`, `set` and `remove` already exit 1 for it.
+      stdout(brokenFileHint(file));
       return 1;
     }
     return 0;
@@ -335,13 +339,13 @@ export async function runAuth(args: string[]): Promise<number> {
       return 2;
     }
 
-    // Refuse before the prompt. A broken file used to be discovered only after
-    // the key was typed and checked online, so a rejected key was blamed for a
-    // fault that belonged to the file (#537).
+    // Refuse before the prompt: otherwise a rejected key gets blamed for a fault
+    // that belongs to the file.
     const broken = readUserCredentials({ home });
     if (broken.error) {
       stderr(broken.error + "\n");
-      stderr("Nothing was typed and nothing was written. `ans auth repair` keeps the keys it can read.\n");
+      stderr("Nothing was typed and nothing was written. " +
+        (canRepair(broken) ? "Run ans auth repair to keep the keys it can read.\n" : "Fix or remove the file, then store the key again.\n"));
       return 1;
     }
 

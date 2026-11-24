@@ -265,10 +265,9 @@ function stripAuthorityAndQuery(value: string): string {
 }
 
 /**
- * What may be SHOWN for a provider id read out of the file. The fault sentence is
+ * What may be SHOWN for a provider id read out of the file: the fault sentence is
  * printed verbatim by `ans auth`, `auth list`, `ans llm` and doctor, so a value
- * someone pasted into that field must not arrive carrying control characters or
- * at arbitrary length (#537).
+ * pasted into that field must not arrive with control characters or at any length.
  */
 function showProvider(raw: string): string {
   // `\p{Cc}` is the control class and `\p{Cf}` the format class (zero-width
@@ -306,31 +305,58 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
 /**
  * A UTF-8 BOM is legal in a text file and fatal to `JSON.parse`. Notepad and
  * PowerShell's redirection both add one, so a file that looks healthy in an
- * editor would otherwise read as "not valid JSON" (#537).
+ * editor would otherwise read as "not valid JSON".
  */
 function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 /**
- * The two answers a fault has, shared with the kernel's notice so both surfaces
- * say the same words. Only a fault inside a readable file can be repaired: a
- * file that does not parse has nothing left to keep.
+ * The two halves of the advice the kernel's notice also quotes. Only a fault
+ * inside a readable file can be repaired: a file that does not parse has nothing
+ * left to keep. The CLI adds ", then retry" to the first; the notice ends it with
+ * what makes the fix take effect instead.
  */
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run ans auth repair to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
+/**
+ * What the user can do about a read failure, by the code that caused it. "Fix its
+ * permissions" is wrong advice for a full disk or a directory in the file's
+ * place, and "remove it" on a full disk would throw away keys that are fine.
+ */
+const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
+  EACCES: "fix its permissions",
+  EPERM: "fix its permissions",
+  EROFS: "fix its permissions",
+  EISDIR: "move the directory at that path aside",
+  ENOTDIR: "fix the path: a parent directory is a file",
+  ENAMETOOLONG: "shorten the path",
+  ENOSPC: "free some disk space",
+  EMFILE: "close some open files and run ans again",
+  ENFILE: "close some open files and run ans again",
+  EBUSY: "retry once nothing else is using the file",
+  ETIMEDOUT: "retry once the file is reachable",
+  EIO: "check the disk and retry the read",
+};
+
+/** The remedy for a code this build knows; a neutral sentence for anything else. */
+export function readFaultRemedy(errno?: string): string {
+  const known = CREDENTIAL_FILE_FAULT_ERRNOS.find((code) => code === errno);
+  return known ? READ_REMEDY[known] : "check the file and the folder it lives in";
+}
+
 /** The one wording for "the file cannot be read at all"; the read and the repair share it. */
 function unreadableSentence(code: string): string {
-  return "could not read it (" + code + "); check the file's permissions, or remove it";
+  return "could not read it (" + code + "); " + readFaultRemedy(code);
 }
 
 /**
  * Parse the file's bytes. One parser for the read and the repair path: they have
- * to agree on what a readable file is, and the BOM fix (#537) is exactly the kind
- * of change that would otherwise have to be made twice.
+ * to agree on what a readable file is, and a read fix (the BOM) would otherwise
+ * have to be made twice.
  *
  * `problems` names every record that failed, in file order, and `bindings` holds
  * the ones that passed. The read path reports the first problem as a whole-file
@@ -943,14 +969,11 @@ export type CredentialRepairResult =
   | { kind: "write-failed"; error: string; published: boolean };
 
 /**
- * Keep the records that can be trusted and drop the ones that cannot, so a
- * broken file stops holding the readable keys hostage (#537).
+ * Keep the records that can be trusted and drop the ones that cannot.
  *
- * Design: this reads the raw bytes under the lock instead of taking
- * `readUserCredentials`'s `bindings` — that list is empty on every fault, and
- * writing it back is exactly the erasure the read path refuses to risk. A
- * repair is the user asking for the drop, so it is the one place allowed to do
- * it. A healthy file is never rewritten.
+ * Design: read the raw bytes under the lock, never `readUserCredentials`'s
+ * `bindings` — that list is empty on every fault, and writing it back is the
+ * erasure the read path exists to prevent.
  */
 export function repairUserCredentials(
   opts: { home?: string; filePath?: string } = {},

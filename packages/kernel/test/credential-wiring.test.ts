@@ -500,7 +500,7 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   for (const errno of CREDENTIAL_FILE_FAULT_ERRNOS) {
     const notice = credentialFileNotice({ kind: "unreadable", errno }).notice;
     assert.ok(notice.includes("(" + errno + ")"), "the code is named: " + notice);
-    assert.doesNotMatch(notice, /fix it \(/, errno + " has its own remedy, not the fallback");
+    assert.doesNotMatch(notice, /check the file and the folder it lives in/, errno + " has its own remedy, not the fallback");
     assert.doesNotMatch(notice, /ans auth repair/, errno + ": repair reads the file the same way, so it cannot help");
   }
 
@@ -530,7 +530,7 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   for (const errno of ["EWHATEVER", "constructor"]) {
     const record = credentialFileNotice({ kind: "unreadable", errno } as unknown as CredentialFileFault);
     assert.equal("errno" in record, false, errno + " is not forwarded outside the closed set");
-    assert.match(record.notice, /; fix it \(/, errno + " gets the plain remedy");
+    assert.match(record.notice, /check the file and the folder it lives in/, errno + " gets the plain remedy");
     assert.doesNotMatch(record.notice, /ans auth repair/, "a read failure is not repaired by rewriting it");
   }
 });

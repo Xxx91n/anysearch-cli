@@ -824,3 +824,21 @@ test("only the repairable fault offers the repair path (#537)", () => {
     assert.equal(record.fault?.kind, "invalid-record");
   } finally { cleanup(); }
 });
+
+test("a read fault names the remedy for its own errno, not a generic one (#537)", () => {
+  // "check the file's permissions" is wrong advice for a directory in the file's
+  // place, and "remove it" on a full disk would throw away keys that are fine.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    mkdirSync(path); // readFileSync on a directory throws EISDIR
+
+    const file = readUserCredentials({ home });
+    assert.equal(file.fault?.kind, "unreadable");
+    assert.equal(file.fault?.errno, "EISDIR");
+    assert.match(file.error!, /EISDIR/);
+    assert.match(file.error!, /move the directory at that path aside/, file.error!);
+    assert.doesNotMatch(file.error!, /permissions/, "a directory is not a permissions problem: " + file.error!);
+  } finally { cleanup(); }
+});
