@@ -149,11 +149,9 @@ jobs:
     # live in this job; windows runs land around 9-11 minutes, so 20 covers a
     # slow day. The build step and the spawns that carry no timeout of their
     # own — such as pack, npm install, and the acceptance lanes' probes — fall
-    # back to this bound. The bounded steps can already sum past it:
-    # installed-acceptance allows 240s per call across many calls, and
-    # recall-acceptance 480s per RPC. A hang there therefore ends as a
-    # job-level kill that names no lane; per-step timeout-minutes on those
-    # lanes is what would name it.
+    # back to this bound. Each acceptance lane bounds its own single call, and
+    # those per-call bounds can sum past 20, so a hang there ends as a
+    # job-level kill that names no lane.
     timeout-minutes: 20
     strategy:
       fail-fast: false
