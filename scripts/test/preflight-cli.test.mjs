@@ -17,6 +17,7 @@ import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
+import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(scripts, "..");
@@ -369,6 +370,104 @@ test("an incremental run hands pnpm one filter per selected package", async () =
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
     assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+  });
+});
+
+// A root file with known readers is its own mode: the banner has to say why
+// these packages and no others, and it must not claim a dependency closure that
+// did not happen.
+test("a root file with readers runs those packages, says why, and runs no self-test", async () => {
+  await withWorkspace(
+    {
+      changed: "domains/docs.toml",
+      echoArgs: true,
+      extraPackages: {
+        "apps/cli": { name: "@anysearch-cli/cli" },
+        "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/mcp": { name: "@anysearch-cli/mcp" },
+        "apps/store": { name: "@anysearch-cli/store" },
+      },
+    },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, [], { selfTest: true });
+      assert.equal(result.status, 0, result.stderr);
+      const readers = EXPECTED_ROOT_READERS.domains.join(", ");
+      assert.ok(
+        result.stdout.includes(`run: ${readers} (the packages whose tests read these root files)`),
+        result.stdout,
+      );
+      for (const pkg of EXPECTED_ROOT_READERS.domains) {
+        assert.ok(result.stdout.includes(`--filter=${pkg}`), pkg);
+      }
+      assert.match(result.stdout, /green in \d+\.\ds \(readers\)/);
+      // The package the workspace also has does not join in: it does not read
+      // the file, and no closure is applied here.
+      assert.equal(result.stdout.includes("dsh-plugin"), false, result.stdout);
+      // Neither does mcp, which the fixture also has: its build copies the root
+      // domains, but turbo caches that build, so the copy can stay stale and
+      // the lane would run tests that cannot see the change.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
+      assert.equal(result.stdout.includes("running the gate's own tests"), false, result.stdout);
+    },
+  );
+});
+
+// The mixed case is the one with two reasons in the same banner: the changed
+// package plus its dependents, and the readers of a root file. It is also where
+// a reader could be wrongly amplified into its own dependents.
+test("a root file plus a package file runs both, and the readers do not bring theirs", async () => {
+  await withWorkspace(
+    {
+      changed: ["domains/docs.toml", "apps/dsh-plugin/src/index.ts"],
+      echoArgs: true,
+      extraPackages: {
+        "apps/cli": { name: "@anysearch-cli/cli" },
+        "apps/kernel": { name: "@anysearch-cli/kernel" },
+        "apps/mcp": { name: "@anysearch-cli/mcp" },
+        "apps/store": { name: "@anysearch-cli/store" },
+        "apps/consumer": {
+          name: "@anysearch-cli/consumer",
+          dependencies: { "@anysearch-cli/kernel": "workspace:*" },
+        },
+      },
+    },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      assert.equal(result.status, 0, result.stderr);
+      const ran = [...EXPECTED_ROOT_READERS.domains, "@anysearch-cli/dsh-plugin"].sort();
+      assert.ok(
+        result.stdout.includes(
+          `run: ${ran.join(", ")} (the change plus its dependents, plus the readers of root files)`,
+        ),
+        result.stdout,
+      );
+      for (const pkg of ran) {
+        assert.ok(result.stdout.includes(`--filter=${pkg}`), pkg);
+      }
+      assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
+      // mcp is in the workspace and untouched, and its build only copies the
+      // root domains when turbo runs it, so it is not a reader either.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
+      // consumer depends on kernel, a reader; it still does not run, because a
+      // reader's dependents cannot see the root file.
+      assert.equal(result.stdout.includes("--filter=@anysearch-cli/consumer"), false, result.stdout);
+    },
+  );
+});
+
+test("a root file whose reader is missing from the workspace runs the suite and says which", async () => {
+  await withWorkspace({ changed: "domains/docs.toml", echoArgs: true }, ({ root, bin }) => {
+    // The fixture workspace has only dsh-plugin, so every reader domains names
+    // is missing: a renamed package would otherwise filter turbo down to no
+    // task and still exit 0, which reads as green.
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      new RegExp(`full suite: no workspace package named: ${EXPECTED_ROOT_READERS.domains.join(", ")}`),
+    );
+    assert.match(result.stdout, /^test$/m, result.stdout);
+    assert.equal(result.stdout.includes("--filter="), false, result.stdout);
   });
 });
 

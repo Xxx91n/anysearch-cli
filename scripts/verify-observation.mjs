@@ -17,7 +17,13 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-observation-smoke-"
 const dbPath = path.join(dir, "trace.db");
 const cliPath = path.join(ROOT, "apps", "cli", "dist", "index.js");
 const mcpPath = path.join(ROOT, "apps", "mcp", "dist", "index.js");
-const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: "", ANYSEARCH_API_KEY: "" };
+// #500：exa 没配 key 时会换成免费额度臂并真发请求（有 key 的 REST 那条一样要网）。这个
+// 烟测不验任何一家真搜，所以给 exa 一把构造时就会抛的 key（值里带换行，exa-js 往请求头里
+// 塞就当场抛），让这一臂在装配阶段就缺席；tavily / anysearch 的免费额度臂照旧会出去，这里
+// 不管它们。下面读 --json 的 providerBuildErrors / providersQueried，钉住的是「exa 没参与」，
+// 不靠 exa-js 的行为碰巧不变。
+const UNUSABLE_EXA_KEY = "sk-unusable\nheader-fault";
+const scrubbed = { ...process.env, ANS_DB_PATH: dbPath, ANS_DOMAIN: "", TAVILY_API_KEY: "", EXA_API_KEY: UNUSABLE_EXA_KEY, ANYSEARCH_API_KEY: "" };
 
 function fail(message) {
   process.stderr.write("verify-observation: " + message + "\n");
@@ -73,6 +79,21 @@ async function main() {
   // install-smoke's abstain contract); the SIGNAL is the reliable marker.
   // (The MCP child is exempt: its bounded fallback kill is our own signal.)
   if (cli.signal) fail("CLI search terminated by signal " + cli.signal);
+
+  // #500：这里要钉住的是「exa 这一臂没建起来」，不能只靠「exa-js 会拒这把 key」——哪天它
+  // 不拒了，这个烟测会安静地打 api.exa.ai（拿 key）或 mcp.exa.ai（空串），自己还是绿的。
+  let searchPayload;
+  try {
+    searchPayload = JSON.parse(cli.stdout);
+  } catch {
+    fail("CLI --json stdout is not one JSON document");
+  }
+  if (!searchPayload.providerBuildErrors || !searchPayload.providerBuildErrors.exa) {
+    fail("exa built an arm despite the unusable key; this smoke pins that arm out of the fanout");
+  }
+  if ((searchPayload.providersQueried ?? []).includes("exa")) {
+    fail("exa was queried; this smoke pins that arm out of the fanout");
+  }
 
   const child = spawn(
     process.execPath,

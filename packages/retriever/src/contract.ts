@@ -246,8 +246,9 @@ const PROVISIONING_REPLY_RE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 // the cap kind on the error object (capType), never in the message body.
 const KEYLESS_CAP_RE = /TavilyKeylessLimitError|daily_cap_reached/i;
 
-// Class all providers share. The type and the marker parser read the same list,
-// so adding a class cannot silently fall back to word matching.
+// Class all providers share. The type and the declaration check in
+// providerErrorClassOf read the same list, so a declared class can only be one
+// of these.
 export const ERROR_CLASSES = [
   "transient",
   "permanent-auth",
@@ -259,21 +260,34 @@ export const ERROR_CLASSES = [
 ] as const;
 export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 
-// Classifies the String(err) seam form — Error names ride inside the string
-// ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
-// matcher sees name and message at once.
-//
-// An adapter that already knows the class marks it with providerErrorMarker();
-// the marker wins, so the upstream text echoed after it can never flip the
-// class. Without a marker the words of the message are the only signal.
 const ERROR_CLASS_MARKER = "provider-error-class:";
-const EXPLICIT_CLASS = new RegExp(ERROR_CLASS_MARKER + "(" + ERROR_CLASSES.join("|") + ")");
-const MARKER_TEXT = new RegExp(ERROR_CLASS_MARKER + "(" + ERROR_CLASSES.join("|") + ")", "gi");
+const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 
-// Drop class markers from upstream text, so a reply cannot choose its own
-// class before the adapter writes the real one.
-export function stripErrorClassMarkers(text: string): string {
-  return text.replace(MARKER_TEXT, "");
+// Display only: nothing parses this back into a class, so a reply that happens
+// to spell it changes no decision.
+export function providerErrorMarker(cls: ProviderErrorClass): string {
+  return "[" + ERROR_CLASS_MARKER + cls + "]";
+}
+
+// The declared class rides a symbol key, so a parsed upstream payload spread
+// onto an error object cannot bring one along. It is same-process only: a
+// cloned or serialized error drops it, and the words decide again.
+const PROVIDER_ERROR_CLASS = Symbol("anysearch.providerErrorClass");
+
+// Declare the class an adapter settled on, beside its message. The engine reads
+// it back with providerErrorClassOf instead of parsing the message again.
+export function withProviderErrorClass<T extends Error>(err: T, providerErrorClass: ProviderErrorClass): T {
+  return Object.assign(err, { [PROVIDER_ERROR_CLASS]: providerErrorClass });
+}
+
+// The class an adapter declared on its error object, if it declared one. The
+// value is checked against the class list, so a typo reads as "nothing
+// declared" instead of inventing a class.
+export function providerErrorClassOf(err: unknown): ProviderErrorClass | undefined {
+  const declared = (err as { [PROVIDER_ERROR_CLASS]?: unknown } | null)?.[PROVIDER_ERROR_CLASS];
+  return typeof declared === "string" && CLASS_SET.has(declared)
+    ? (declared as ProviderErrorClass)
+    : undefined;
 }
 
 // Classes that name a credential fault outright. An adapter that guessed a
@@ -283,14 +297,16 @@ export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
   return cls === "permanent-auth" || cls === "session-expired";
 }
 
-export function providerErrorMarker(cls: ProviderErrorClass): string {
-  return "[" + ERROR_CLASS_MARKER + cls + "]";
-}
-
-export function classifyProviderError(errText: string): ProviderErrorClass {
+// Classifies the String(err) seam form — Error names ride inside the string
+// ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
+// matcher sees name and message at once.
+//
+// A declared class wins; with none, or a declared "unknown", the words in the
+// message decide. Upstream reply text is part of those words, so word matching
+// stays a guess rather than a boundary.
+export function classifyProviderError(errText: string, providerErrorClass?: ProviderErrorClass): ProviderErrorClass {
+  if (providerErrorClass && providerErrorClass !== "unknown") return providerErrorClass;
   const t = String(errText);
-  const explicit = t.match(EXPLICIT_CLASS);
-  if (explicit) return explicit[1] as ProviderErrorClass;
   const http = (code: string) => t.includes("HTTP " + code);
   // An SDK keeps the status on the error object, so providerErrorText writes it
   // into the text as `status=<n>`; read that form too, not just "HTTP 403".

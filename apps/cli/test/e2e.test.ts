@@ -755,7 +755,7 @@ async function t(name: string, fn: () => Promise<void>) {
       git(["config", "user.name", "Skill E2E"]);
       git(["config", "user.email", "skill-e2e@example.invalid"]);
       git(["config", "commit.gpgsign", "false"]);
-      fs.writeFileSync(path.join(source, "SKILL.md"), "---\nname: e2e-skill\ndescription: Bundled CLI test\n---\nInstructions.\n");
+      fs.writeFileSync(path.join(source, "SKILL.md"), "---\nname: e2e-skill\ndescription: Use when the bundled CLI skill is under test\n---\nInstructions.\n");
       git(["add", "SKILL.md"]);
       git(["commit", "--quiet", "-m", "skill"]);
       git(["tag", "v1.0.0"]);

@@ -59,7 +59,7 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 - Node.js >= 22.19.0
 - pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
 - Searching needs at least one reachable provider (`ans recommend` only reads local domain configs and needs no key):
-  - `EXA_API_KEY`: Exa, supports domain filtering; Exa needs a key.
+  - `EXA_API_KEY`: Exa, supports domain filtering; without a key it also runs on the free quota.
   - `TAVILY_API_KEY`: Tavily, supports domain filtering; Tavily also runs on the free quota by default.
   - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the free quota works too, but cannot pre-filter by domain.
 
@@ -145,6 +145,8 @@ ans skill uninstall ans --project
 
 `ans skill` only copies a directory inside a local Git checkout (one that contains a `SKILL.md`) into `skills/synced/`,
 recording its source and commit. It is not a package manager and does not execute skill code. Locking, manifests, and cleanup live in `apps/cli/src/skill-store.ts`.
+
+`install` and `validate` check the [Agent Skills spec](https://agentskills.io/specification) rules this repo enforces, plus a few house rules: the frontmatter is a YAML mapping, `name` is 1–64 lowercase letters/digits with single hyphens (not a Windows device name), `description` is 1–1024 characters, and the body stays under 500 lines. A description that never says when to use the skill is not rejected: all three print a `note` and carry on. A source folder may carry any name (a cloned repo usually does); `ans skill validate` and `node scripts/check-skills.mjs` — which checks every `SKILL.md` in this repository — also require `name` to equal its directory.
 
 **Installed does not mean active.** These commands never touch domain TOML files:
 - **What `[skills].active` names**: skill keys declared in the domain TOML (shipped domains list runtime tags like `search`, `doctor`, `research`), not an auto-loader for `skills/synced/` directories.

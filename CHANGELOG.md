@@ -1,3 +1,69 @@
+## Unreleased — #494: 错误类不再从正文里读，改由适配器在错误对象上声明
+
+一句话说清：**`provider-error-class:` 以前写在错误串里、由分类器解析，而上游回复正文也拼在同一根串上，于是上游写一句标记就能选中类——探针那条路上 402「额度用尽」会被洗成「未检查 上游抽风」，`ans doctor --live` 的退出码从 1 变成 0。现在这个信道分开：适配器把类挂在错误对象的 `providerErrorClass` 上，分类器接一个可选参数，文本只给没有声明的适配器做兜底。**
+
+### Changed
+
+- **`classifyProviderError` 多一个可选的第二个参数**：传了就直接用它，不再去文本里找标记。没传的调用点（探针、exa-js、tavily 这些拿不到「已知类」的）照旧按词和 HTTP 形状判，行为不变。
+- **anysearch 把类声明在错误对象上**：`isError` 回复、以及「200 但不是结果信封」这两条路，类由适配器定完挂上去，engine 捕获时读出来传给分类器，不再回头解析消息。
+- **`providerErrorMarker` 只剩显示用途，`stripErrorClassMarkers` 删掉**：标记既然没人解析，洗它也就没有意义，而且它零调用方。
+- **声明的类走 Symbol 键**：适配器写的那个字段不是普通字符串属性，SDK 把解析出来的上游 JSON 摊到 error 对象上也带不进一个 —— 否则这个新信道又能被上游数据选中。分类器还把 `"unknown"` 当成「没定下来」，照样退回按词判。
+- **新增回归**：探针 402 正文带伪造标记仍判 `quota-exhausted`，`ans doctor --live` 仍判 `failed`；engine 侧伪造标记不生效，适配器声明的类压过正文。
+
+### Known limits
+
+- **正文里的词照旧参与判定**：没有声明类的路径（探针的其余 4xx、exa-js / tavily 的 SDK 报错、anysearch 的传输层）只能靠词匹配，一条 403 正文写着 `invalid_api_key` 本来就该判 auth。这次关掉的是「标记通道」，不是「正文不参与分类」。
+
+## Unreleased — #503: Exa 的免费额度写进文档，四个读者面改口
+
+一句话说清：**代码早就能在没配 key 时用 Exa 的免费额度搜（#500），但四个读者面还在说「Exa 必须有 key」：`providers/exa/README.md` 五栏里没这条路，`docs/mcp-server.md` 说 AnySearch 是唯一的 MCP 上游、说不打算迁 MCP、说 exa 没 key 会拒，两个 README 和 CHANGELOG 跟着重复。现在四处都按现状说话，并补了一段带时间的没配 key 真跑记录。**
+
+### Docs
+
+- **`providers/exa/README.md`**：仍是七栏，端点、认证、协议版本、回复形状、已知异常五栏都补上免费额度那条路——端点写死 `https://mcp.exa.ai/mcp`、一个凭据都不发；协议是一次 `tools/call web_search_exa`、不握手、`Accept` 要带 SSE（少了 406）；回复是 `Title` / `URL` / `Published` / `Author` / `Highlights` 的文本块，`N/A` 算没有、没 `URL` 的记录丢掉；限速不单开一栏，按票的要求归进「已知异常」。`new Exa()` 那句旧话改成 `new Exa(apiKey)` 加工厂 `createExaProvider`，并写明「没有环境变量开关」这半句仍然成立。「探针」一栏补上那条在线测试，「最近一次真跑」补一段没配 key 的记录。
+- **`docs/mcp-server.md`**：上游传输矩阵的 exa 行改成「有 key 走 REST / 没 key 走 Exa 自己的 MCP 端点」，并标出 answer 和域名预筛只在 REST 臂；删掉「AnySearch 是这里唯一的 MCP 上游」和「不打算把 Exa / Tavily 迁到 MCP」两句，换成现状；`credentialSources` 那段里「exa 没 key 会拒」改成三家没 key 都用免费额度、构造失败现在只说明「配了 key 但用不了」；环境变量表里「Exa requires one」改成「不配就走免费额度」。顺手把 answer 能力和取消那两处跟着改准。
+- **`docs/limitations.md`**：新增两条。一条说没配 key 的 exa 是窄臂——没有 `answer`、没有上游域名预筛、只有速度上限；另一条说 IPv6 或代理出口回的 403 会被报成 `permanent-auth`，那句「key 不对」对没配 key 的人不准，并记下为什么不为它新开错误类。
+- **`README.md` / `README.zh-CN.md`**：`Exa needs a key` / `Exa 必须有 key` 换成免费额度的说法，别的字没动。
+- **`packages/retriever/src/providers/exa-mcp.ts`**：头注释里「文档还没这一节」那句删掉，改成指向 README。
+
+### 真跑
+
+2026-11-24 01:41（Asia/Singapore），本机 Windows，Node 24.22.1。三把 key 都从环境里拿掉（`env -u EXA_API_KEY -u TAVILY_API_KEY -u ANYSEARCH_API_KEY`），`HOME` / `USERPROFILE` 指到空目录，凭据文件那条路也断了。源码直跑，没打包：
+
+- `createExaProvider("")` 真打 `mcp.exa.ai`：3 条结果，`elapsedMs: 1737`，HTTP 200 + `text/event-stream`，第一帧就是 `Title: Overview · Cloudflare Workers docs` / `URL: https://developers.cloudflare.com/workers/` / `Published: N/A` / `Author: N/A`。
+- `pnpm -C apps/cli dev search "cloudflare workers" --json`：退出码 0，`providersQueried` 是 `["tavily","exa","anysearch"]`，`credentialSources` 三家 `none`，`providerBuildErrors` 是 `{}`，10 条结果里有 exa。
+- `pnpm -C apps/mcp dev` 起 MCP、调 `search_web`：`isError` 为 false，`structuredContent` 同一个形状，正文里有 `"source": "exa"` 的条目。
+- `pnpm -C apps/cli dev doctor`：三行「信息源」都是「没配 key，用免费额度跑（有次数和速度上限）」，退出码 0。
+
+### 边界
+
+- 只改文档和一处注释。有 key 的 REST 臂、免费额度臂的代码、`credentialSources` 的字段和取值都没动。
+- 上面那次真跑是源码直跑，没走打包后的安装包；打包链路由远端 CI 的 `install-smoke` 兜。
+- 本票是 #498 的最后一张，总验收在这张做完了，没有剩下的实现票。
+
+## Unreleased — #387: skill 规范检查进 CI，规则和 `ans skill` 共用一份
+
+一句话说清：**agentskills.io 那套规范以前靠人肉对表，现在 `node scripts/check-skills.mjs` 一条命令查全仓的 `SKILL.md`，`check-build` 里也跑它；规则没有第二份，`ans skill install` / `ans skill validate` 走的就是它导入的那段代码。**
+
+### Added
+
+- **`scripts/check-skills.mjs`**：默认用 `git ls-files` 找出 Git 看得见的所有 `SKILL.md` 逐个查（已跟踪的，加上还没被忽略的新文件；构建产物和 `node_modules` 里的副本不算），也可以直接指定目录或文件。每条结果都带文件、字段和期望，比如 `[FAIL] …/SKILL.md: SKILL.md description must be 1–1024 characters, got 0`，不是只说「不合法」。有红的退出码 1；文件读不了算「没查成」，退出码 2，不混进「这个 skill 不合格」。
+- **一个 `SKILL.md` 都找不到也报红**：宁可退出码 1 也不假装查过了——仓库本来就该带着这份 skill。
+- **`check-build` 多了两步**：跑这个检查，再跑它自己的测试（大写名字、清空 `description`、正文到 500 行，三种改坏都会红）。
+
+### Changed
+
+- **`validateSkillFile` 查的从「frontmatter + name」变成整套要查的东西**：frontmatter 是 YAML mapping、`name` 合不合规之外，还要 `description` 1–1024 字、正文少于 500 行。规范里标 Must 的那几条照旧，另外两条是本仓库自己加的：正文 500 行、名字不能是 Windows 保留设备名；`license` / `compatibility` / `metadata` 这些可选字段不查。
+- **新增 `validateSkillDirectory`**：在文件检查之外加上「`name` 必须等于所在目录名」，`ans skill validate` 和仓库检查都走它。安装仍然只查文件——clone 下来的仓库文件夹名不一定等于 skill 名，装进 `skills/synced/<name>` 之后这条规则自然成立。
+- **装 skill 的门槛跟着变了**：`ans skill install` 以前收只写了 `name` 的 frontmatter，现在收不了——缺 `description`、正文到 500 行、名字不合规都会被挡下来。已经装好但不合规的，`ans skill validate` 会报红。
+- **报错和通过的话都跟着改了**：`ans skill validate` 通过时打 `[OK] … SKILL.md name, description and body follow the spec`；`SKILL.md` 不存在时说「is missing」，不再说成「must be a regular file」；缺字段时说「has no name field / has no description」，不再把 YAML 空值（`name:`、`description:`）念成 `undefined` / `null` / `object`。
+
+### Known limits
+
+- **「说了什么时候用」只是提醒，不拦**：`description` 里认一批词（`when`、`的时候` / `什么时候用`、`何时`、`使用时` 和繁体的对应写法、日文 `とき`），没认到就在 install / `ans skill validate` / 仓库检查里打一句 `note`，退出码不变。这个词表必然挡漏不挡错：换个说法、用别的语言写，或者只是碰巧带这些词（「同时使用」），都可能被判成有或没有。之前把它当硬门试过，正常描述被误拒，所以改成提醒。
+- **规则清单**：frontmatter 必须是 mapping；`name` 1–64 位、等于目录名、不是 Windows 保留设备名；`description` 1–1024 字；正文少于 500 行。规范里的 `license`、`compatibility`、`metadata`、`allowed-tools` 和引用文件不查。
+- **正文行数不算前后空行**：frontmatter 后面那行空行、正文末尾的空行都不计入 500 行，数的是实际内容行。
+
 ## Unreleased — #506: 三条手工探针共用凭据解析，输出 `keySource`
 
 一句话说清：**anysearch 的两条探针和 tavily 那条以前各读各的环境变量，key 只存在 `~/.ans/credentials.json` 的人跑探针会静默变成不带 key 的调用（#422）。现在三条都走 store 的 `resolveSearchCredentials`：环境变量优先、再读凭据文件，输出用 `keySource: env | user | none` 说来源，key 只在文件里时也带 `Authorization`，key 和 endpoint 的值一个都不打印。**

@@ -148,8 +148,8 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
     },
     ["--json"],
   );
-  // 没配 key 的三家行为不一样：tavily 和 anysearch 照常用免费额度跑（有上限，
-  // 所以仍报 unconfigured），只有 exa 的适配器（REST + exa-js）不建臂。
+  // 没配 key 的三家现在都能用免费额度跑（有上限，所以仍报 unconfigured）。
+  // 三家同一句：exa 的免费额度臂也是「能跑，但不是稳定可用」，跟 tavily / anysearch 一个说法。
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 tavily")?.detail,
     "没配 key，用免费额度跑（有次数和速度上限）",
@@ -160,7 +160,7 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 exa")?.detail,
-    "没配 key，这个源不参与（适配器只走 REST；Exa 自己的 MCP 端点不用 key，那是另一条路）",
+    "没配 key，用免费额度跑（有次数和速度上限）",
   );
   for (const provider of ["tavily", "exa", "anysearch"]) {
     assert.equal(
@@ -170,8 +170,8 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
     );
   }
 
-  // provider 行不再拿恒真式冒充检查：tavily / anysearch 的构造器不带 key 也能建，
-  // exa 的构造器会拒——两种都按“构造器能不能建”如实报。
+  // provider 行只按「构造器能不能建」如实报：三家不带 key 现在都建得起来（exa 走免费
+  // 额度臂，#500），所以三行都是 ready。这一行从不联网，也不验 key 好不好。
   assert.equal(
     empty.entries.find((entry) => entry.name === "provider tavily")?.state,
     "ready",
@@ -182,7 +182,8 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "provider exa")?.state,
-    "unconfigured",
+    "ready",
+    "exa 没配 key 也能建起来（免费额度臂）",
   );
 
   const keyed = await doctorInHome(

@@ -5,12 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Design: step if-conditions cannot read the secrets context (it resolves
+    # empty there, so the upload would skip forever); expose a boolean via env.
+    env:
+      CODECOV_HAS_TOKEN: ${{ secrets.CODECOV_TOKEN != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       # Design: use the shared setup template while keeping --frozen-lockfile.
@@ -20,14 +29,29 @@ jobs:
           install-args: --frozen-lockfile
           dep-age-override: true
       # Design: lane flag; see scripts/ci-changes.mjs. A missing flag runs.
+      # Design: c8 wraps the whole suite here (not per-package test scripts):
+      # only this lane pays the V8 overhead, and it re-runs the suite on
+      # purpose — check-build's run is uninstrumented and produces no lcov.
+      # Not --experimental-test-coverage: stdout table only, no cross-process
+      # merge, cannot feed Codecov. No --all: under tsx a src file no run
+      # loads has no runtime source map for c8.
       - name: Run tests with coverage
         if: ${{ steps.setup.outputs.run-coverage != 'false' }}
-        run: pnpm test
+        run: pnpm exec c8 --reporter=lcov --report-dir=coverage --src "packages/*/src/**" --src "apps/*/src/**" -- pnpm test
 
-      - name: Upload coverage to Codecov
+      # Design: a missing or empty report is a broken lane; the assert
+      # guarantees "no file => red" — fail_ci_if_error alone does not.
+      - name: Assert lcov was produced
         if: ${{ steps.setup.outputs.run-coverage != 'false' }}
+        run: test -s coverage/lcov.info && grep -q '^SF:' coverage/lcov.info
+
+      # Design: fail_ci_if_error: true — an upload failure (no file, auth,
+      # network) now fails the check instead of exiting 0. Skipped when the
+      # token is absent (fork PRs): "no token" must not read as "coverage broke".
+      - name: Upload coverage to Codecov
+        if: ${{ steps.setup.outputs.run-coverage != 'false' && env.CODECOV_HAS_TOKEN == 'true' }}
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
-          files: "**/coverage/lcov.info"
-          fail_ci_if_error: false
+          files: "coverage/lcov.info"
+          fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}

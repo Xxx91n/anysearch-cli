@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test, { after, before } from "node:test";
-import { codeOwnership, docsOnly, isDocumentation, planPreflight, readWorkspace } from "../preflight-plan.mjs";
+import {
+  codeOwnership,
+  docsOnly,
+  isDocumentation,
+  planPreflight,
+  readWorkspace,
+  ROOT_READERS,
+} from "../preflight-plan.mjs";
+import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
 
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
@@ -114,9 +122,85 @@ test("windows separators name the same package", () => {
   assert.equal(plan.packages.length, 7);
 });
 
-test("a root file falls back to the full suite", () => {
-  for (const file of ["turbo.json", "pnpm-workspace.yaml", "scripts/preflight-test.mjs", ".github/workflows/ci.yml"]) {
-    assert.equal(planPreflight(root, [file]).mode, "full", file);
+// The reader table names a root file's readers instead of the whole suite.
+test("a root file runs the packages whose tests read it, and stops there", () => {
+  // kernel depends on store, and this file is read by store's tests alone: a
+  // dependent cannot see it through the reader's tests, so it does not run.
+  const coverage = planPreflight(root, ["eval-looks.coverage.json"]);
+  assert.equal(coverage.mode, "readers");
+  assert.deepEqual(coverage.packages, ["@anysearch-cli/store"]);
+
+  for (const [files, rows] of [
+    [["domains/docs.toml"], ["domains"]],
+    [["domains/research.toml", "domains/default.toml"], ["domains"]],
+    [["eval-looks.json"], ["eval-looks.json"]],
+    [["eval-badcases.json"], ["eval-badcases.json"]],
+    [["eval-looks.json", "eval-looks.coverage.json"], ["eval-looks.json", "eval-looks.coverage.json"]],
+    // Store's docs-golden test asserts this one resolves on disk; nothing reads
+    // the prose, so store is the whole run.
+    [["AGENTS.md"], ["AGENTS.md"]],
+  ]) {
+    const plan = planPreflight(root, files);
+    const readers = [...new Set(rows.flatMap((row) => EXPECTED_ROOT_READERS[row]))].sort();
+    assert.equal(plan.mode, "readers", files.join(","));
+    assert.deepEqual(plan.packages, readers, files.join(","));
+  }
+});
+
+// Everything the table does not name keeps the unowned fallback: the lockfile,
+// the build config, CI's own files, scripts/, .gitignore (it changes what git
+// sees for every package) and a domains file that is not a TOML the loader reads.
+test("a root file outside the reader table still runs the full suite", () => {
+  for (const file of [
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "package.json",
+    "turbo.json",
+    "codecov.yml",
+    ".npmrc",
+    ".gitignore",
+    "LICENSE",
+    "scripts/preflight-test.mjs",
+    ".github/workflows/ci.yml",
+    // hypothetical: domains/ holds only TOML today, so a non-TOML file dropped
+    // there is outside the row's ext and keeps the fallback.
+    "domains/schema.json",
+  ]) {
+    const plan = planPreflight(root, [file]);
+    assert.equal(plan.mode, "full", file);
+    assert.deepEqual(plan.outside, [file], file);
+  }
+});
+
+test("a root file change next to a package change runs both", () => {
+  const plan = planPreflight(root, ["domains/docs.toml", "apps/dsh-plugin/src/index.ts"]);
+  assert.equal(plan.mode, "incremental");
+  assert.deepEqual(plan.readers, EXPECTED_ROOT_READERS.domains);
+  assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
+  assert.deepEqual(
+    plan.packages,
+    [...EXPECTED_ROOT_READERS.domains, "@anysearch-cli/dsh-plugin"].sort(),
+  );
+});
+
+test("docs next to a root file run the readers, not the suite", () => {
+  const plan = planPreflight(root, ["eval-looks.json", "README.md"]);
+  assert.equal(plan.mode, "readers");
+  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
+});
+
+test("a root file whose reader is gone runs the full suite, never nothing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-missing-reader-"));
+  try {
+    write(dir, "pnpm-workspace.yaml", 'packages:\n  - "packages/*"\n');
+    write(dir, "packages/store/package.json", JSON.stringify({ name: "@anysearch-cli/store" }));
+    // A renamed package would filter turbo down to no task and still exit 0,
+    // which reads as green: say which name is missing and run everything.
+    const plan = planPreflight(dir, ["eval-looks.json"]);
+    assert.equal(plan.mode, "full");
+    assert.equal(plan.reason, "no workspace package named: @anysearch-cli/kernel");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -201,7 +285,7 @@ test("docs next to a package change run that package, not the whole suite", () =
   assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
 });
 
-test("docs next to a root file still run the whole suite, and the docs are not the reason", () => {
+test("docs next to a root file outside the table still run the whole suite, and the docs are not the reason", () => {
   const plan = planPreflight(root, ["README.md", "turbo.json"]);
   assert.equal(plan.mode, "full");
   assert.deepEqual(plan.outside, ["turbo.json"]);
@@ -220,7 +304,8 @@ test("a product asset runs its readers, and docs/eval/ still runs the suite", ()
     "@anysearch-cli/mcp",
     "@anysearch-cli/plugin",
   ]);
-  assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "full");
+  // domains/ is not documentation either: it is the reader table's file (#489).
+  assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "readers");
   assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "full");
 });
 
@@ -253,6 +338,42 @@ test("the real workspace: an mcp change runs cli, which bundles mcp source", () 
   const plan = planPreflight(repo, ["apps/mcp/src/index.ts"]);
   assert.equal(plan.mode, "incremental");
   assert.ok(plan.packages.includes("@anysearch-cli/cli"));
+});
+
+// The table is hand-written, so this is what keeps it honest: every reader it
+// names is a package the workspace still has, every path is a file that still
+// exists, every row's list is exact, and the one non-obvious claim (store reads
+// AGENTS.md) still has its anchor in the data it reads. The exact lists pin
+// today's answers, so widening the table means touching this test on purpose.
+test("the real workspace: every reader in the table exists, and domains runs only them", () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const names = new Set(readWorkspace(repo).map((pkg) => pkg.name));
+  for (const entry of ROOT_READERS) {
+    assert.ok(existsSync(join(repo, entry.path)), `the table names a root file that is gone: ${entry.path}`);
+    for (const reader of entry.readers) {
+      assert.ok(names.has(reader), `${entry.path} names ${reader}, which is not a workspace package`);
+    }
+  }
+  // The table's own order is not a contract, so it is sorted here: the constant
+  // on the right is already sorted when it is exported.
+  assert.deepEqual(
+    Object.fromEntries(ROOT_READERS.map((entry) => [entry.path, [...entry.readers].sort()])),
+    EXPECTED_ROOT_READERS,
+    "ROOT_READERS and scripts/test/preflight-root-readers.mjs disagree",
+  );
+  const plan = planPreflight(repo, ["domains/docs.toml"]);
+  assert.equal(plan.mode, "readers");
+  // cli's doctor test resolves the default domain through the repo-root
+  // fallback and asserts the [skills] active list it finds there.
+  assert.deepEqual(plan.packages, EXPECTED_ROOT_READERS.domains);
+  assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, EXPECTED_ROOT_READERS["AGENTS.md"]);
+  // That row rests on a golden entry anchoring on the file: without the anchor,
+  // store would have no reason to run and the row should go with it.
+  const looks = JSON.parse(readFileSync(join(repo, "eval-looks.json"), "utf8"));
+  assert.ok(
+    looks.golden.entries.some((entry) => entry.provenance?.ref === "AGENTS.md"),
+    "no golden entry anchors on AGENTS.md any more; drop that row from ROOT_READERS",
+  );
 });
 
 test("the workspace reader picks up both directions of the dependency graph", () => {

@@ -145,10 +145,13 @@ async function main() {
   );
   assert(
     formatProvidersFailedLine(["exa"], { status: "resolved", tavily: "none", exa: "none", anysearch: "none" }) ===
-      "Providers failed: exa（没配 key）",
-    "a failed arm names only its key state; 'does not participate' belongs to doctor",
+      "Providers failed: exa（没配 key，用免费额度跑）",
+    "exa's failed line promises the free quota, same as tavily",
   );
-  assert(describeCredentialSource("none", "exa").includes("这个源不参与"), "exa's keyless arm does not join the fanout");
+  assert(
+    describeCredentialSource("none", "exa") === "没配 key，用免费额度跑",
+    "exa's keyless arm runs on the free quota too",
+  );
   assert(
     describeCredentialSource("env", "tavily") === "key 来自环境变量" &&
       describeCredentialSource("none", "tavily") === "没配 key，用免费额度跑",
@@ -161,8 +164,8 @@ async function main() {
     "doctor's keyless row says the free quota is capped",
   );
   assert(
-    describeUnconfiguredSource("exa") === describeCredentialSource("none", "exa"),
-    "an arm that does not run gets no cap note",
+    describeUnconfiguredSource("exa") === "没配 key，用免费额度跑（有次数和速度上限）",
+    "every keyless arm gets the cap note, exa included",
   );
 
   // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named

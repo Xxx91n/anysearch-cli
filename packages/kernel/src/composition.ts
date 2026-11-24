@@ -34,9 +34,10 @@ import {
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — a provider whose constructor throws is skipped, not crashed.
-// Only exa throws, and on a missing OR unusable key (a header-invalid value does it
-// too); tavily builds a keyless client and anysearch goes anonymous, so their missing
-// key surfaces at call time instead.
+// Exa is the only arm that can throw, and only on a key it cannot use (a
+// header-invalid value does it). A missing key gets its free-quota arm instead
+// (#500); tavily builds a client without a key and anysearch goes anonymous, so their
+// missing key surfaces at call time.
 // T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
@@ -45,8 +46,9 @@ import {
 //
 // #301: the credential passed in comes from the shared resolver (explicit env
 // first, then the user credential file), so a GUI host with no shell env still
-// authenticates. The constructors keep their own env fallback as a last resort;
-// an argument always wins over it.
+// authenticates. Tavily and anysearch keep their own env fallback as a last
+// resort; exa's factory takes the argument as the whole answer (#500) — a
+// missing one is the free-quota arm, never a second env read.
 type CredentialSource = ResolvedSearchCredentials | undefined;
 
 const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchProvider> = {
@@ -313,8 +315,9 @@ export function createEngine(
     /**
      * #301: where the search arms' keys come from. Pass the shared resolution
      * (env first, then the user credential file) so a host without a shell env
-     * still authenticates; omit it and each SDK falls back to its own env var,
-     * which is the pre-#301 behaviour and keeps tests/embedders unchanged.
+     * still authenticates; omit it and tavily/anysearch keep their own env
+     * fallback (the pre-#301 behaviour) while exa takes the free-quota arm
+     * (#500) — an embedder that wants a configured key must pass the seam.
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
     /**
@@ -348,8 +351,8 @@ export function createEngine(
   // and never carries a key value.
   //
   // The resolution is fail-open like every other arm of this build: a throwing
-  // resolver (an unreadable file, a permission fault) must degrade to "each SDK
-  // reads its own env", not kill the MCP process at startup.
+  // resolver (an unreadable file, a permission fault) must degrade to "the
+  // environment decides", not kill the MCP process at startup.
   let creds: CredentialSource = undefined;
   // undefined, not a status value: a consumer that asks "was resolution even
   // configured?" still gets a falsy answer, which is what it got before #301.
@@ -370,7 +373,22 @@ export function createEngine(
       };
       credentialSources = resolved;
     } catch (e) {
-      creds = undefined;
+      // Design: resolution failed (an unreadable or unparsable credential file), so
+      // the arms fall back to the environment. Resolve the env explicitly instead
+      // of leaving `creds` undefined — exa's factory is a pure function of its
+      // argument (#500), and an undefined one there means the free-quota arm even
+      // on a machine that has EXA_API_KEY set. The file itself is not read again.
+      //
+      // The second call walks part of the same failure surface (home resolution,
+      // env reads), so it is guarded too: fail-open means "no keys", never a
+      // process that refuses to start.
+      let fromEnvironment = false;
+      try {
+        creds = trimResolvedKeys(resolveSearchCredentials(env, { credentialsFile: { bindings: [] } }));
+        fromEnvironment = true;
+      } catch {
+        creds = undefined;
+      }
       // Classified, never forwarded: this text reaches stderr and the engine
       // result, and it comes from a module that reads a key file (CWE-532, same
       // rule as buildProvider above).
@@ -378,7 +396,9 @@ export function createEngine(
       credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
-        " — falling back to each SDK's own env var\n",
+        (fromEnvironment
+          ? " — falling back to environment variables only\n"
+          : " — the second read failed too; exa falls back to its free-quota arm, tavily / anysearch to their own env reads\n"),
       );
     }
   }

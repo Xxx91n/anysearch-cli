@@ -57,7 +57,7 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 - Node.js >= 22.19.0
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
 - 搜索至少要有一个能连上的信息源（`ans recommend` 只读本地域配置，不需要 key）：
-  - `EXA_API_KEY`：Exa，支持按域名筛；Exa 必须有 key
+  - `EXA_API_KEY`：Exa，支持按域名筛；没配 key 也能用免费额度跑
   - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认用免费额度也能跑
   - `ANYSEARCH_API_KEY`：anysearch MCP，可选；免费额度也能用，但不能在搜之前按域名筛
 
@@ -155,6 +155,12 @@ ans skill uninstall ans --project
 `ans skill` 只把本地 Git 仓库里带 `SKILL.md` 的目录拷到 `skills/synced/`，
 并记下来源和 commit。它不是包管理器，也不会执行 skill 里的代码。锁、清单、
 残留清理这些细节看 `apps/cli/src/skill-store.ts`。
+
+`install` 和 `validate` 查的是 [Agent Skills 规范](https://agentskills.io/specification) 里这个仓库认的几条，外加几条自己的规矩：
+frontmatter 是 YAML mapping，`name` 是 1–64 位小写字母数字加单连字符（不能是 Windows 保留设备名），
+`description` 1–1024 字，正文少于 500 行。`description` 没写「什么时候用」不会被拒，三个入口都打一句 `note` 提醒。
+源目录叫什么名字都行（clone 下来的仓库一般不是 skill 名）；`ans skill validate` 和
+`node scripts/check-skills.mjs`（查本仓库所有 `SKILL.md`）另外要求 `name` 和所在目录同名。
 
 **装了不等于打开。** 这些命令不会改 domain TOML：
 - **`[skills].active` 里的名字是什么**：域 TOML 里声明的技能键名（出厂域写的是 `search`、`doctor`、`research` 这类运行时能力名），不是去 `skills/synced/` 自动加载目录的开关。
