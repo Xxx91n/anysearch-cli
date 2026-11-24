@@ -413,6 +413,66 @@ test("a broken credential file is a classified fault, not a missing key", () => 
     (engine.store as { close?: () => void }).close?.();
     engine.observation.close();
   }
+
+  // A healthy seam writes no field at all: absent beats a null that claims health
+  // on behalf of a writer that never read a file.
+  const healthy = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({ warnings: [] }),
+  });
+  try {
+    const sources = healthy.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    assert.equal(
+      sources && "credentialFileFault" in sources,
+      false,
+      "no fault means no field, so nobody has to read a null as good news",
+    );
+  } finally {
+    (healthy.store as { close?: () => void }).close?.();
+    healthy.observation.close();
+  }
+});
+
+test("the chat path carries the fault, and not the value its raw sentence quotes", () => {
+  // `ans chat` parses the file itself, so the resolver suppresses its warning
+  // (one report per parse, #357). The classification still has to reach the
+  // engine, or a GUI host sees three `none` labels and nothing else.
+  const { home, cleanup } = tempHome();
+  try {
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    // A bad ENTRY, not a bad parse: its sentence quotes the provider value it
+    // found, and that value can be key-shaped. The record must not carry it.
+    writeFileSync(
+      join(home, ".ans", "credentials.json"),
+      JSON.stringify({ bindings: [{ provider: "sk-live-0123456789abcdef", apiKey: "" }] }),
+      "utf8",
+    );
+    const file = readUserCredentials({ home });
+    assert.ok(file.error?.includes("sk-live"), "the raw sentence does quote the file — which is why it stays out of the record");
+
+    const engine = createEngine(undefined, {
+      dbPath: ":memory:",
+      domainsDirs: [],
+      env: {},
+      searchCredentials: (env) =>
+        resolveSearchCredentials({ ...env, HOME: home, USERPROFILE: home }, { credentialsFile: file }),
+    });
+    try {
+      const sources = engine.credentialSources;
+      assert.equal(sources?.status, "resolved");
+      if (sources?.status !== "resolved") return;
+      assert.equal(sources.credentialFileFault?.kind, "invalid-structure");
+      const record = JSON.stringify(sources);
+      assert.ok(!record.includes("sk-live"), "the record never carries the value the sentence quoted: " + record);
+      assert.ok(!record.includes(home), "nor the path");
+    } finally {
+      (engine.store as { close?: () => void }).close?.();
+      engine.observation.close();
+    }
+  } finally { cleanup(); }
 });
 
 test("the fault sentences are one table, and the errno is filled into it", () => {
@@ -431,29 +491,6 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
     /\(\)/,
     "no empty parentheses when the read failure gave no known code",
   );
-});
-
-test("a healthy credential seam writes no fault field at all", () => {
-  // Absent, not null: a hand-built seam that never read a file must not have a
-  // claim of health written on its behalf.
-  const engine = createEngine(undefined, {
-    dbPath: ":memory:",
-    domainsDirs: [],
-    env: {},
-    searchCredentials: () => ({ warnings: [] }),
-  });
-  try {
-    const sources = engine.credentialSources;
-    assert.equal(sources?.status, "resolved");
-    assert.equal(
-      sources && "credentialFileFault" in sources,
-      false,
-      "no fault means no field, so nobody has to read a null as good news",
-    );
-  } finally {
-    (engine.store as { close?: () => void }).close?.();
-    engine.observation.close();
-  }
 });
 
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {

@@ -304,7 +304,11 @@ Rules behind the table:
   broken file never makes an arm fail construction, so `none` plus an empty
   build record used to read exactly like "never configured". The record is a
   snapshot of the engine's construction — a running MCP server keeps reporting
-  the old answer until it restarts, which is why the notice says so.
+  the old answer until it restarts, which is why the notice says so. The raw
+  sentence for the same fault (path, line/column) is written to stderr when the
+  engine is built; `stderr` is outside the protocol, and a client may capture,
+  forward or drop it, so a host cannot be expected to read it — which is why the
+  record carries the fact itself.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in

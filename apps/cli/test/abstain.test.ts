@@ -182,12 +182,12 @@ async function main() {
   };
   assert(
     formatProvidersFailedLine(["exa"], brokenFileRecord) ===
-      "Providers failed: exa（凭据文件坏了，没配上 key，用免费额度跑）",
+      "Providers failed: exa（凭据文件坏了，用免费额度跑）",
     "a broken file is named as the cause, not read as 'never configured'",
   );
   assert(
     formatProvidersFailedLine(["anysearch"], brokenFileRecord) ===
-      "Providers failed: anysearch（凭据文件坏了，没配上 key）",
+      "Providers failed: anysearch（凭据文件坏了）",
     "anysearch still states only its key state, now with the real cause",
   );
   assert(

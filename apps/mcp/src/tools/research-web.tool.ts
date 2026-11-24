@@ -181,11 +181,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
-              // The same record structuredContent carries. Hosts split in two:
-              // some give the model only this text half (Cursor, the dsh bridge),
-              // so a fact that lives only in structuredContent is invisible to
-              // them. Which arm had which key, and whether the credential file is
-              // why one of them has none, belongs in both (#533).
+              // Same record as structuredContent, same reason as search_web:
+              // some hosts hand the model only this text half (#533).
               credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,

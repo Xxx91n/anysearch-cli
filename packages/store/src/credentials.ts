@@ -192,9 +192,9 @@ export interface CredentialFileContents {
 }
 
 /**
- * One failure return: the sentence (`ans auth`, `ans doctor`, the resolver's
- * warning) and the classification (the engine's record) are written together,
- * so no branch can tell the printer there is a fault and the engine good health.
+ * Design: write the sentence and the classification in one return — a branch
+ * that set only one of them would tell the reader there is a fault and the
+ * engine good health, and nothing would catch it.
  */
 function unusableFile(
   path: string,

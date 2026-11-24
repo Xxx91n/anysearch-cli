@@ -262,9 +262,11 @@ export type CredentialSources =
       /**
        * Present only when the user credential file exists but could not be used:
        * the file's classification plus one sentence built from it. Absent means
-       * "nobody reported a fault" - a healthy file, no file at all, or a seam
-       * that never read one. Never carries the path or the raw error sentence,
-       * which can quote the file (spec S2).
+       * "nobody reported a fault" — a healthy file, no file at all, or a seam
+       * that never read one. It is a snapshot of this build: a long-running host
+       * keeps reporting it until it restarts, exactly like the arm labels beside
+       * it. Never carries the path or the raw error sentence, which can quote the
+       * file (spec S2).
        */
       credentialFileFault?: CredentialFileNotice;
     }
@@ -384,10 +386,10 @@ export function createEngine(
         tavily: creds?.tavily?.apiKey ? creds.tavily.source : "none",
         exa: creds?.exa?.apiKey ? creds.exa.source : "none",
         anysearch: creds?.anysearch?.apiKey ? creds.anysearch.source : "none",
-        // Absent, not null: `searchCredentials` is a public seam, and a test or
-        // embedder can hand back its own object without ever reading a file. A
-        // written `null` would claim "the file is healthy" on behalf of a writer
-        // that does not know (#533).
+        // Design: omit the field rather than write null — `searchCredentials` is
+        // a public seam, and a test or embedder can hand back its own object
+        // without ever reading a file, so a written null would claim "the file is
+        // healthy" on behalf of a writer that does not know (#533).
         ...(creds?.credentialFileFault
           ? { credentialFileFault: credentialFileNotice(creds.credentialFileFault) }
           : {}),

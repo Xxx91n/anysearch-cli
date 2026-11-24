@@ -33,7 +33,7 @@
 - **`ResolvedSearchCredentials.credentialFileFault`**：不管调用方有没有自己解析过文件都带出来——`ans chat` 那条路故意压掉 warning，引擎仍然要说文件不能用。
 - **`CredentialSources` 的 resolved 分支多一个可选 `credentialFileFault`**：分类加一句由 `CREDENTIAL_FILE_HINTS` 生成的 `notice`，不含路径、不含原始错误句。文件健康、文件不存在、或这个接缝根本没读过文件时，这个键不出现。
 - **两个 MCP 工具的正文也带 `credentialSources`**：宿主是劈开的，有的只读正文（Cursor、dsh 桥），有的只读 `structuredContent`（Claude Code），只放一半等于另一半人看不见。
-- **`Providers failed` 行的来源标注**：文件坏了时写「凭据文件坏了，没配上 key」，不再说「没配 key」；有环境变量的那一臂照旧写「key 来自环境变量」。
+- **`Providers failed` 行的来源标注**：文件坏了时写「凭据文件坏了」，再说这一臂「用免费额度跑」，不再说「没配 key」；有环境变量的那一臂照旧写「key 来自环境变量」。
 - **提示句改成「重启」**：引擎只在启动时读一次凭据文件，旧的「修好后重试」在 MCP 里不成立。
 
 ### Docs
