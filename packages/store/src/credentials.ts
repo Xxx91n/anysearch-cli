@@ -313,13 +313,9 @@ function stripBom(text: string): string {
 }
 
 /**
- * The sentence every fault in this file ends with. It lives in one place so the
- * two writers can add their own reason without repeating it (#537).
- *
- * It names `ans auth repair` on purpose: this text is what `ans chat` and the
- * search resolvers print on stderr, and neither of them ever shows the `ans auth`
- * help - without the command named here the reader's only visible move is to
- * delete the file and lose every other key.
+ * What every fault in this file ends with. It names `ans auth repair` because
+ * `ans chat` and the search resolvers print this sentence and never show the
+ * `ans auth` help: unnamed, the reader's only move is to delete the file.
  */
 const FIX_ADVICE = "; fix or remove the file, or run `ans auth repair` to keep the keys it can still read";
 
@@ -808,10 +804,15 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    throw new Error(
+    const refusal = new Error(
       "refusing to write the credential file " + path + ": " + reason +
       ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-    );
+    ) as Error & { published?: boolean };
+    // The caller cannot tell from the filesystem whether the target was replaced:
+    // the unlink above is best effort, so the file may still be the new one. Say
+    // what actually happened instead of letting a reader guess.
+    refusal.published = published;
+    throw refusal;
   }
 }
 
@@ -912,7 +913,9 @@ export type CredentialRepairResult =
   | { kind: "absent" }
   | { kind: "unrepairable"; error: string }
   | { kind: "healthy"; path: string; kept: number }
-  | { kind: "repaired"; path: string; kept: number; dropped: string[] };
+  | { kind: "repaired"; path: string; kept: number; dropped: string[] }
+  /** The rewrite was refused. `published` says whether the target may hold the new bytes. */
+  | { kind: "write-failed"; error: string; published: boolean };
 
 /**
  * Keep the records that can be trusted and drop the ones that cannot, so a
@@ -948,7 +951,14 @@ export function repairUserCredentials(
       };
     }
     if (bytes.problems.length === 0) return { kind: "healthy", path, kept: bytes.bindings.length };
-    writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
+    try {
+      writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
+    } catch (e) {
+      // Whatever the caller reports next depends on this flag, not on a guess
+      // made by looking at the filesystem afterwards.
+      const published = (e as { published?: boolean }).published === true;
+      return { kind: "write-failed", error: (e as Error).message, published };
+    }
     return { kind: "repaired", path, kept: bytes.bindings.length, dropped: bytes.problems };
   });
 }

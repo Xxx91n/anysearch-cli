@@ -758,3 +758,44 @@ test("a provider value read out of the file is shown without control characters 
     assert.match(readFileSync(path, "utf8"), /x{100}/);
   } finally { cleanup(); }
 });
+
+test("a repair whose rewrite fails reports whether the file was published (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  const previousVerify = credentialProtectionSeam.verify;
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+
+    // Fail only the check that runs after the rename, so the write reaches the
+    // published state: that is the case the caller cannot infer by looking at the
+    // filesystem afterwards.
+    let calls = 0;
+    credentialProtectionSeam.verify = () => {
+      calls++;
+      if (calls > 1) throw new Error("it is group-readable");
+    };
+    const failed = repairUserCredentials({ home });
+    assert.equal(failed.kind, "write-failed");
+    assert.equal(failed.kind === "write-failed" && failed.published, true,
+      "the rename had landed before the check failed");
+    assert.match(failed.kind === "write-failed" ? failed.error : "", /refusing to write the credential file/);
+    assert.equal(existsSync(path), false, "fail closed removed the published file");
+
+    // And a refusal before the rename says published: false, so the caller can
+    // still promise the file is unchanged.
+    credentialProtectionSeam.verify = () => { throw new Error("no ACL tool"); };
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+    const refused = repairUserCredentials({ home });
+    assert.equal(refused.kind, "write-failed");
+    assert.equal(refused.kind === "write-failed" && refused.published, false);
+    assert.match(readFileSync(path, "utf8"), /anthropic/, "the original bytes are still there");
+  } finally {
+    credentialProtectionSeam.verify = previousVerify;
+    cleanup();
+  }
+});

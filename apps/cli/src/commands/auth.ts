@@ -11,8 +11,6 @@
 // shows only whether an entry exists and which provider/endpoint it is bound
 // to — not the value, and not any prefix or suffix of it.
 
-import { existsSync } from "node:fs";
-
 import {
   CREDENTIAL_PROVIDERS,
   credentialFileWarning,
@@ -35,7 +33,8 @@ import {
   type ProbeOutcome,
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
-import { KEY_SOURCE_LABELS, REPAIR_HINT, type LlmLayer } from "../config-llm";
+import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
+import { REPAIR_HINT } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -257,7 +256,7 @@ export async function runAuth(args: string[]): Promise<number> {
 
   if (sub === undefined || sub === "status" || sub === "list") {
     // Design: status 和 list 只读一次凭据文件，来源表和模型解析器共用这一份；读坏了 status 说一次，
-    // list 只在文件块里说一次。set 和 remove 自己再读两次：一次在提示输入之前、一次在写锁里。
+    // list 只在文件块里说一次。set 在提示输入之前另读一次，remove 只在写锁里读一次。
     const file = readUserCredentials({ home });
     stdout("ans auth - provider API keys");
     stdout("---");
@@ -409,14 +408,16 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       result = repairUserCredentials({ home });
     } catch (e) {
-      // A refused write throws from the store. The wording has to branch: a write
-      // refused before it published leaves the file alone, but a check that fails
-      // AFTER the rename makes `writeProtectedFile` delete the file (it fails
-      // closed), so "nothing was changed" would be a lie there (#537).
+      // Only the lock can throw now; the write reports its own outcome.
       stderr((e as Error).message + "\n");
-      stderr(existsSync(userCredentialsPath(home))
-        ? "The file is unchanged.\n"
-        : "The credential file is gone now; store the keys again with `ans auth set`, or set them in the environment.\n");
+      stderr("Nothing was changed.\n");
+      return 1;
+    }
+    if (result.kind === "write-failed") {
+      stderr(result.error + "\n");
+      stderr(result.published
+        ? "The write was published but failed its access check, so it may have been left in place or removed. Check the file, then store the keys again with `ans auth set`.\n"
+        : "The file is unchanged.\n");
       return 1;
     }
     if (result.kind === "absent") {

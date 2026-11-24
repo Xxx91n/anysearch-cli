@@ -21,13 +21,6 @@ export {
   writeUserLlmConfig,
 } from "@anysearch-cli/store";
 
-/**
- * The one line `ans auth` and `ans llm` print when they exit non-zero over a
- * broken credential file. It lives here so neither command has to import the
- * other, and so the exit-1 advice cannot drift between them (#537).
- */
-export const REPAIR_HINT = "Fix the file: ans auth repair   (keeps the keys it can read)";
-
 export type {
   CredentialBinding,
   CredentialFileContents,

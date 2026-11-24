@@ -9,12 +9,12 @@
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
+import { REPAIR_HINT } from "../messages";
 import {
   type CredentialFileContents,
   displayEndpoint,
   KEY_SOURCE_LABELS,
   readUserCredentials,
-  REPAIR_HINT,
   resolveConfigHome,
   userCredentialsPath as credentialsPath,
   resolveLlmConfig,
