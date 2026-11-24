@@ -50,7 +50,7 @@ jobs:
       # token is absent (fork PRs): "no token" must not read as "coverage broke".
       - name: Upload coverage to Codecov
         if: ${{ steps.setup.outputs.run-coverage != 'false' && env.CODECOV_HAS_TOKEN == 'true' }}
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: "coverage/lcov.info"
           fail_ci_if_error: true
