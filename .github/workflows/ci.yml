@@ -148,10 +148,8 @@ jobs:
     # default (360). The build, install-smoke and three acceptance lanes all
     # live in this job; windows runs land around 9-11 minutes, so 20 covers a
     # slow day. The build step and the spawns that carry no timeout of their
-    # own — such as pack, npm install, and the acceptance lanes' probes — fall
-    # back to this bound. Each acceptance lane bounds its own single call, and
-    # those per-call bounds can sum past 20, so a hang there ends as a
-    # job-level kill that names no lane.
+    # own — such as pack, npm install, and the acceptance lanes' probes — are
+    # what this bound is here for.
     timeout-minutes: 20
     strategy:
       fail-fast: false
