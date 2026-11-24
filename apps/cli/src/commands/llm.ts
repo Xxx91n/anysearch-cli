@@ -8,6 +8,7 @@
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
+import { REPAIR_HINT } from "./auth";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
 import {
   type CredentialFileContents,
@@ -98,7 +99,7 @@ export async function runLlm(args: string[]): Promise<number> {
     // and `ans doctor` already say so with exit 1, and a script reading only the
     // code must not see this command disagree (#537).
     if (credentialFile.error) {
-      console.log("Fix the file: ans auth repair   (keeps the keys it can read)");
+      console.log(REPAIR_HINT);
       return 1;
     }
     return 0;
@@ -176,7 +177,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
     console.log("Or set an env var: export OPENAI_API_KEY=...");
     if (credentialFile.error) {
-      console.log("Fix the file: ans auth repair   (keeps the keys it can read)");
+      console.log(REPAIR_HINT);
       return 1;
     }
     return 0;

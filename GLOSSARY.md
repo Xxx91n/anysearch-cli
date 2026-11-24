@@ -241,7 +241,7 @@
 - **安装令牌**:同一安装、同一用户共用的服务令牌，放在配置根；长驻 server 和所有项目的钩子读同一个文件，不再每个目录各生成一份（代码里叫 server-token）。
   _Avoid_: Server Token、服务密钥
 
-- **用户凭据文件**:用户把某家的 API key 存一次的地方，放在配置根，本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主。内容明文，文件自己写明不是加密、也不是系统钥匙串；每条绑定到具体 provider，模型的 key 还绑定到录入时的端点，换了目标就不发出去。写之前按平台自己的口径建访问保护并核对（代码里叫 credentials.json）。文件读不出来、不是 JSON、或结构不对时，它是「坏了」而不是「没配」：记录里另有一个故障说明坏在哪（代码里叫 CredentialFileFault / CredentialFileNotice，记录里的键是 `credentialFileFault`），别把各臂的 `none` 读成这台机器从没配过 key。`ans_chat`（MCP 那个）不解析搜索臂，也没有 `credentialSources` 可挂，同一个 `credentialFileFault` 就放在它的 `structuredContent` 顶层；正文里也有同一句 `notice`，成功回答放最前，错误回答排在原因后面。坏文件不回写；`ans auth` 用 BROKEN 标出这一档，`ans auth repair` 只丢读不了的那几条。
+- **用户凭据文件**:用户把某家的 API key 存一次的地方，放在配置根，本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主。内容明文，文件自己写明不是加密、也不是系统钥匙串；每条绑定到具体 provider，模型的 key 还绑定到录入时的端点，换了目标就不发出去。写之前按平台自己的口径建访问保护并核对（代码里叫 credentials.json）。文件读不出来、不是 JSON、或结构不对时，它是「坏了」而不是「没配」：记录里另有一个故障说明坏在哪（代码里叫 CredentialFileFault / CredentialFileNotice，记录里的键是 `credentialFileFault`），别把各臂的 `none` 读成这台机器从没配过 key。`ans_chat`（MCP 那个）不解析搜索臂，也没有 `credentialSources` 可挂，同一个 `credentialFileFault` 就放在它的 `structuredContent` 顶层；正文里也有同一句 `notice`，成功回答放最前，错误回答排在原因后面。读和写都拒绝动一个坏文件；唯一的例外是 `ans auth repair`，它只丢读不了的那几条，其余原样留下。`ans auth` 用 BROKEN 标出这一档。
   _Avoid_: 密钥库、钥匙串、加密存储
 
 - **探针的 keySource**:手工探针输出里那格「这一跑用的 key 从哪来」，三档 `env`（环境变量）、`user`（用户凭据文件）、`none`（这一跑没发 key：两处都没有，或者传了 `--nokey`）。它说的是这一跑，不是这台机器配了什么；产品侧的 `credentialSources` 是另一回事。

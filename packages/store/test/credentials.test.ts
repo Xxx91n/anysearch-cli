@@ -733,3 +733,28 @@ test("removeUserCredential refuses a broken file without repeating the read's ad
     assert.match(readFileSync(path, "utf8"), /good-key/, "the other key survives");
   } finally { cleanup(); }
 });
+
+test("a provider value read out of the file is shown without control characters and bounded (#537)", () => {
+  // The fault sentence is printed verbatim by `ans auth`, `auth list`, `ans llm`
+  // and doctor. Someone pasting a key into the provider field must not get it
+  // back with a newline that rewrites the terminal, or at arbitrary length.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    const esc = String.fromCharCode(27);
+    const newline = String.fromCharCode(10);
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "exa" + esc + "[2K" + newline + "x".repeat(200) }],
+    }), "utf8");
+
+    const file = readUserCredentials({ home });
+    assert.ok(file.error, "the record is still reported");
+    const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
+    assert.ok(!control.test(file.error!), "no control characters: " + JSON.stringify(file.error));
+    const shown = /entry 1 \((.*)\) has no apiKey/.exec(file.error!)?.[1] ?? "";
+    assert.ok(shown.length <= 41, "the label is bounded, got " + shown.length + ": " + shown);
+    // The stored value is untouched: only the display form changes.
+    assert.match(readFileSync(path, "utf8"), /x{100}/);
+  } finally { cleanup(); }
+});

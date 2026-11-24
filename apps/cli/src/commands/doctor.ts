@@ -364,7 +364,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "user credential file",
         state: "failed",
         mode: "offline",
-        detail: `${credentialFile.error} — 或跑 ans auth repair，保住能读的 key`,
+        detail: `${credentialFile.error} — 想保住别的 key 就跑 ans auth repair`,
       });
     } else {
       report.add({

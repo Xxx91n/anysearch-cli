@@ -15,6 +15,7 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialFileWarning,
   type CredentialFileContents,
+  type CredentialRepairResult,
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
@@ -61,6 +62,13 @@ function stderr(text: string): void {
   if (AUTH_IO.stderr) AUTH_IO.stderr(text);
   else process.stderr.write(text);
 }
+
+/**
+ * The one line a command prints when it exits non-zero over a broken credential
+ * file. Shared with `ans llm` so the exit-1 advice cannot drift between the two
+ * commands that read the same file (#537).
+ */
+export const REPAIR_HINT = 'Fix the file: ans auth repair   (keeps the keys it can read)';
 
 /** Show whether an entry exists, bound where — and it must never show the value. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
@@ -244,8 +252,8 @@ export async function runAuth(args: string[]): Promise<number> {
   const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
-    // Design: 整条命令读一次凭据文件，来源表和模型解析器共用；读坏了 status 说一次，
-    // list 只在文件块里说一次。
+    // Design: status 和 list 只读一次凭据文件，来源表和模型解析器共用这一份；读坏了 status 说一次，
+    // list 只在文件块里说一次。set 和 remove 另读一次，那一次是为了在提示输入之前就拒绝坏文件。
     const file = readUserCredentials({ home });
     stdout("ans auth - provider API keys");
     stdout("---");
@@ -269,10 +277,9 @@ export async function runAuth(args: string[]): Promise<number> {
     stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
     stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
     if (file.error) {
-      // A script reading only the exit code could not tell a broken file from a
-      // healthy one. `ans doctor` already exits 1 for this same file, so this
-      // command stops being the outlier (#537).
-      stdout("Fix the file: ans auth repair   (keeps the keys it can read)");
+      // Design: 坏文件退 1 —— 只读退出码的脚本分不出「坏文件」和「健康」，而 `ans doctor`
+      // 对同一份文件早就是 1，`set` / `remove` 也是 1。四个命令对同一份文件不能说法两样（#537）。
+      stdout(REPAIR_HINT);
       return 1;
     }
     return 0;
@@ -400,14 +407,24 @@ export async function runAuth(args: string[]): Promise<number> {
   }
 
   if (sub === "repair") {
-    const result = repairUserCredentials({ home });
+    let result: CredentialRepairResult;
+    try {
+      result = repairUserCredentials({ home });
+    } catch (e) {
+      // A refused write (an unusable ACL tool, a folder that will not take the
+      // temp file) throws from the store; say what this command did not do
+      // instead of letting it surface as a bare top-level failure (#537).
+      stderr((e as Error).message + "\n");
+      stderr("Nothing was changed.\n");
+      return 1;
+    }
     if (result.kind === "absent") {
       stdout("No credential file at " + userCredentialsPath(home) + "; nothing to repair.");
       return 0;
     }
     if (result.kind === "unrepairable") {
       stderr(result.error + "\n");
-      stderr("Nothing was changed. Remove the file and store the keys again.\n");
+      stderr("Nothing was changed.\n");
       return 1;
     }
     if (result.kind === "healthy") {
