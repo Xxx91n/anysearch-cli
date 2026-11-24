@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { runAuth, AUTH_INTERNALS, AUTH_IO } from "../src/commands/auth";
 import { readUserCredentials, resolveLlmConfig, userCredentialsPath } from "../src/config-llm";
+import { credentialProtectionSeam } from "@anysearch-cli/store";
 
 const KEY = "sk-cli-entered-key-0123456789abcdef";
 
@@ -719,4 +720,56 @@ test("ans auth set：好 key 存进去，并说一句验过了 (#442)", async ()
       assert.ok(!out.includes("ans-good-key"), "key 不回显");
     });
   });
+});
+
+test("ans auth set：写进去但没通过访问保护核对时，说的是这件事，不是「没变」（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const previous = credentialProtectionSeam.verify;
+      // The check that runs AFTER the rename is the one that fails: the file is
+      // already replaced, so "nothing was changed" would be a lie.
+      let calls = 0;
+      credentialProtectionSeam.verify = () => {
+        calls++;
+        if (calls > 1) throw new Error("it is group-readable");
+      };
+      try {
+        const { code, out } = await capture(() => runAuth(["set", "openai"]), KEY + "\n");
+        assert.equal(code, 1, out);
+        assert.match(out, /failed its access check/, out);
+        assert.match(out, /hold the new key/, "说的是这把 key 的去向：" + out);
+        assert.doesNotMatch(out, /Nothing was changed/, "写已经落地，不能再这么说：" + out);
+      } finally {
+        credentialProtectionSeam.verify = previous;
+      }
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth repair：写回失败时说的是修好的条目在不在（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      writeCredentials(home, MIXED_FILE);
+      const previous = credentialProtectionSeam.verify;
+      let calls = 0;
+      credentialProtectionSeam.verify = () => {
+        calls++;
+        if (calls > 1) throw new Error("it is group-readable");
+      };
+      try {
+        const { code, out } = await capture(() => runAuth(["repair"]));
+        assert.equal(code, 1, out);
+        assert.match(out, /hold the repaired entries/, "repair 没有「新 key」这回事：" + out);
+        assert.doesNotMatch(out, /new key/, out);
+      } finally {
+        credentialProtectionSeam.verify = previous;
+      }
+    });
+  } finally {
+    cleanup();
+  }
 });

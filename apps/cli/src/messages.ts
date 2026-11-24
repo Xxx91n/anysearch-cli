@@ -6,7 +6,14 @@ export const REPAIR_HINT = "Fix the file: ans auth repair   (keeps the keys it c
 /** A command that gave up before touching the file. */
 export const NOTHING_CHANGED = "Nothing was changed.";
 
-/** A write that landed but failed its access check: the file may be new, or gone. */
-export const PUBLISHED_BUT_UNVERIFIED =
-  "The write went through but failed its access check, so the file may hold the new key or have been removed. " +
-  "Check it with `ans auth list`, then store the key again if needed.";
+/** A write that landed but failed its access check, said for one command's own subject. */
+export function publishedButUnverified(fact: string): string {
+  return "The write went through but failed its access check, so the file may " + fact +
+    ", or may have been removed taking every other provider's key with it. " +
+    "Check it with `ans auth list` before storing anything again.";
+}
+
+/** The same case when the caller cannot tell whether the write landed. */
+export const WRITE_OUTCOME_UNKNOWN =
+  "The write was refused and it is not clear whether the file was replaced or removed. " +
+  "Check it with `ans auth list` before storing anything again.";

@@ -35,7 +35,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { NOTHING_CHANGED, PUBLISHED_BUT_UNVERIFIED, REPAIR_HINT } from "../messages";
+import { NOTHING_CHANGED, publishedButUnverified, REPAIR_HINT, WRITE_OUTCOME_UNKNOWN } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -248,14 +248,26 @@ function rejectUnknownProvider(provider: string): number {
   return 2;
 }
 
-/** A refused write says whether it published; set, remove and repair all say it the same way. */
-function reportWriteFailure(e: unknown): void {
-  stderr((e as Error).message + "\n");
-  if (e instanceof CredentialWriteRefusal && e.published) {
-    stderr(PUBLISHED_BUT_UNVERIFIED + "\n");
-    return;
-  }
-  stderr(NOTHING_CHANGED + "\n");
+/**
+ * Whether a refused write had already replaced the file. `undefined` is "cannot tell":
+ * the store module can be loaded twice (dist and src), and then `instanceof` misses.
+ */
+function writePublished(e: unknown): boolean | undefined {
+  if (e instanceof CredentialWriteRefusal) return e.published;
+  const flagged = (e as { published?: unknown } | null)?.published;
+  return typeof flagged === "boolean" ? flagged : undefined;
+}
+
+/** One wording for every refused write; `fact` is what this command was changing. */
+function reportWriteOutcome(message: string, published: boolean | undefined, fact: string): void {
+  stderr(message + "\n");
+  if (published === undefined) stderr(WRITE_OUTCOME_UNKNOWN + "\n");
+  else if (published) stderr(publishedButUnverified(fact) + "\n");
+  else stderr(NOTHING_CHANGED + "\n");
+}
+
+function reportWriteFailure(e: unknown, fact: string): void {
+  reportWriteOutcome((e as Error).message, writePublished(e), fact);
 }
 
 export async function runAuth(args: string[]): Promise<number> {
@@ -380,7 +392,7 @@ export async function runAuth(args: string[]): Promise<number> {
       }
       return 0;
     } catch (e) {
-      reportWriteFailure(e);
+      reportWriteFailure(e, "hold the new key");
       return 1;
     }
   }
@@ -409,7 +421,7 @@ export async function runAuth(args: string[]): Promise<number> {
         " from " + userCredentialsPath(home) + ".");
       return 0;
     } catch (e) {
-      reportWriteFailure(e);
+      reportWriteFailure(e, "still hold the key this removed");
       return 1;
     }
   }
@@ -425,8 +437,7 @@ export async function runAuth(args: string[]): Promise<number> {
       return 1;
     }
     if (result.kind === "write-failed") {
-      stderr(result.error + "\n");
-      stderr(result.published ? PUBLISHED_BUT_UNVERIFIED + "\n" : NOTHING_CHANGED + "\n");
+      reportWriteOutcome(result.error, result.published, "hold the repaired entries");
       return 1;
     }
     if (result.kind === "absent") {

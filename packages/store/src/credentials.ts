@@ -559,10 +559,7 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
   // escape as a bare EACCES from the lock file (found by the installed-product
   // lane in CI: a read-only config directory must fail with this message, not
   // with an errno).
-  const refused = (reason: string): Error => new Error(
-    "refusing to write the credential file " + path + ": " + reason +
-    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-  );
+  const refused = (reason: string): Error => new Error(refusalSentence(path, reason));
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -777,6 +774,15 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
  * changed. A caller cannot tell this from the filesystem afterwards, so the write
  * says it.
  */
+/**
+ * The sentence every refused write uses. `classifyCredentialFault` matches on
+ * "refusing to write", so it has to be built here and nowhere else.
+ */
+function refusalSentence(path: string, reason: string): string {
+  return "refusing to write the credential file " + path + ": " + reason +
+    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
+}
+
 export class CredentialWriteRefusal extends Error {
   // Assigning in the body, not a parameter property: the manual probes load this
   // module through Node's strip-only TypeScript loader, which refuses that syntax.
@@ -822,11 +828,7 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    throw new CredentialWriteRefusal(
-      "refusing to write the credential file " + path + ": " + reason +
-      ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-      published,
-    );
+    throw new CredentialWriteRefusal(refusalSentence(path, reason), published);
   }
 }
 
