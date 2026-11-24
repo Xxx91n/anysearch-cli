@@ -14,8 +14,15 @@ import type {
   CredentialFileFaultKind,
 } from "@anysearch-cli/store";
 
+/**
+ * The published classification: the reader's kinds, plus `unknown` when a
+ * public seam reported a kind this build does not recognize.
+ */
+export type CredentialFileNoticeKind = CredentialFileFaultKind | "unknown";
+
 /** The engine's record: the classification plus the sentence built from it. */
-export interface CredentialFileNotice extends CredentialFileFault {
+export interface CredentialFileNotice extends Omit<CredentialFileFault, "kind"> {
+  kind: CredentialFileNoticeKind;
   /** Wording for people. Branch on `kind`/`errno`, never on this string. */
   notice: string;
 }
@@ -50,7 +57,7 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
  * Sentences per kind. `unreadable` is a template with `{errno}` and `{remedy}`
  * slots — read the final text from `credentialFileNotice`, not this table.
  */
-export const CREDENTIAL_FILE_HINTS: Record<CredentialFileFaultKind, string> = {
+export const CREDENTIAL_FILE_HINTS: Record<CredentialFileNoticeKind, string> = {
   "not-json":
     "the user credential file is not valid JSON — the keys in it are not in use; " +
     "fix or remove it (" + RESTART + ")",
@@ -68,7 +75,7 @@ export function credentialFileNotice(fault: CredentialFileFault): CredentialFile
   // The record can arrive through the public `searchCredentials` seam, so a kind
   // or code this build does not know is mapped into the closed sets, not
   // forwarded. Own-property lookups keep `"toString"` off the prototype.
-  const kind: CredentialFileFaultKind = Object.hasOwn(CREDENTIAL_FILE_HINTS, fault.kind)
+  const kind: CredentialFileNoticeKind = Object.hasOwn(CREDENTIAL_FILE_HINTS, fault.kind)
     ? fault.kind
     : "unknown";
   const errno = kind === "unreadable" && fault.errno && Object.hasOwn(READ_REMEDY, fault.errno)

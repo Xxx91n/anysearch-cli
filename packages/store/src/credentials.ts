@@ -158,10 +158,9 @@ export interface CredentialBinding {
  *
  * Design: a closed set — this is the only thing about the file that reaches a
  * machine-readable surface, so it never grows into free text (no file
- * contents, no key fragment). `unknown` is for a public seam that reported a
- * kind this build does not recognize; `readUserCredentials` never writes it.
+ * contents, no key fragment).
  */
-export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure" | "unknown";
+export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure";
 
 /**
  * The errnos a read failure may report.
