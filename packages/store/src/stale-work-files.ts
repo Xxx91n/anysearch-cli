@@ -36,7 +36,7 @@ export function sweepStaleWorkFiles(
     if (!name.startsWith(prefix) || !name.endsWith(options.suffix)) continue;
     const file = join(dir, name);
     try {
-      if (lastWriteAt(file, recursive) < cutoff) {
+      if (!hasRecentWrite(file, recursive, cutoff)) {
         rmSync(file, { force: true, recursive });
       }
     } catch { /* leave it */ }
@@ -44,16 +44,18 @@ export function sweepStaleWorkFiles(
 }
 
 /**
- * Newest write anywhere in the entry. A copy in progress updates its children,
- * never the staging directory's own mtime, so that one alone would make a live
- * copy look abandoned.
+ * Whether anything in the entry was written since `cutoff`. A directory's own
+ * mtime does not move while children are written, so a staged copy is judged by
+ * its newest child; the first fresh hit returns.
  */
-function lastWriteAt(entry: string, recursive: boolean): number {
+function hasRecentWrite(entry: string, recursive: boolean, cutoff: number): boolean {
   const entryStat = statSync(entry);
-  let newest = entryStat.mtimeMs;
-  if (!recursive || !entryStat.isDirectory()) return newest;
+  if (!recursive || !entryStat.isDirectory()) return entryStat.mtimeMs >= cutoff;
+  if (entryStat.mtimeMs >= cutoff) return true;
   for (const name of readdirSync(entry, { recursive: true, encoding: "utf8" })) {
-    try { newest = Math.max(newest, statSync(join(entry, name)).mtimeMs); } catch { /* raced */ }
+    try {
+      if (statSync(join(entry, name)).mtimeMs >= cutoff) return true;
+    } catch { /* raced */ }
   }
-  return newest;
+  return false;
 }

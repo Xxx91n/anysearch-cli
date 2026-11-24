@@ -139,8 +139,8 @@ function writtenSince(path: string, since: number): boolean {
 
 /**
  * Clear what a killed cross-volume copy left beside `to`. The staging entry is
- * a directory, so this is the one caller that sweeps recursively; the same
- * call runs before starting a new copy.
+ * a directory, so it is removed recursively; the same sweep runs before a new
+ * copy starts.
  */
 export function sweepCopyStaging(to: string): void {
   sweepStaleWorkFiles(to, { suffix: ".copying", recursive: true });
