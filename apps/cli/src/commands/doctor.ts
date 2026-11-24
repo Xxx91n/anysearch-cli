@@ -33,7 +33,7 @@ import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } fr
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveLlmConfig } from "../config-llm";
-import { canRepair } from "../messages";
+import { faultAdvice, type FaultAdvice } from "../messages";
 import { DiagReport } from "../diagnostics";
 import { describeIdentity, installedProduct } from "../build-identity";
 import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/hosts";
@@ -126,6 +126,13 @@ function meetsFloor(running: string, floor: string): boolean | null {
   }
   return true;
 }
+
+/** What doctor tells the user to do, by the advice every command shares. */
+const BROKEN_FILE_ADVICE: Record<FaultAdvice, string> = {
+  repair: "跑 ans auth repair 保住能读的 key",
+  read: "先解决读不出来的问题，再按需跑 ans auth set <provider>",
+  replace: "修好或删掉它，再按需跑 ans auth set <provider>",
+};
 
 export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): Promise<number> {
   const write = opts.stdout ?? ((line: string) => process.stdout.write(line + "\n"));
@@ -365,11 +372,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "user credential file",
         state: "failed",
         mode: "offline",
-        detail: `${credentialFile.error} — ` + (canRepair(credentialFile)
-          ? "跑 ans auth repair 保住能读的 key"
-          : credentialFile.fault?.kind === "unreadable"
-            ? "先按上面那句把读的问题解决，再按需跑 ans auth set <provider>"
-            : "修好或删掉它，再按需跑 ans auth set <provider>"),
+        detail: `${credentialFile.error} — ` + BROKEN_FILE_ADVICE[faultAdvice(credentialFile)],
       });
     } else {
       report.add({

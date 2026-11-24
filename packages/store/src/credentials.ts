@@ -204,11 +204,10 @@ function unusableFile(
   kind: CredentialFileFaultKind,
   errno?: string,
 ): CredentialFileContents {
-  const known = CREDENTIAL_FILE_FAULT_ERRNOS.find((code) => code === errno);
   return {
     bindings: [],
     error: path + ": " + detail,
-    fault: known ? { kind, errno: known } : { kind },
+    fault: isCredentialFaultErrno(errno) ? { kind, errno } : { kind },
   };
 }
 
@@ -317,8 +316,9 @@ function stripBom(text: string): string {
  * left to keep. The read path ends the first with ", then retry"; the kernel's
  * notice ends it with what makes the fix take effect instead.
  */
+export const REPAIR_COMMAND = "ans auth repair";
 export const FIX_OR_REPLACE = "fix or remove the file";
-export const KEEP_KEYS = "or run ans auth repair to keep the keys it can still read";
+export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
