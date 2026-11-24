@@ -383,8 +383,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       await Promise.all(
         SEARCH_PROVIDER_IDS.map(async (provider) => {
           const entry = credentials[provider];
-          // Design: 没配 key 的源不探免费面（#534）—— 探针的 ok / rejected / unverified 都只在说
-          // 这把 key，没 key 时只会给假绿或假红；要验免费额度这条路，真跑一次 ans search。
+          // Design: 没配 key 的源不探免费面（#534）—— 探针的 ok / rejected / unverified 都只在
+          // 说这把 key，没 key 时它要么误报通过、要么误报被拒；要验这条路，真跑一次 ans search。
           if (!entry?.apiKey) return;
           const endpoint = opts.endpoints?.[provider]
             ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined);

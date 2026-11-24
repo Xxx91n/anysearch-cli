@@ -7,7 +7,7 @@
 - **doctor 那行的 detail 补一句「免费额度这条路没验」**：`describeUnconfiguredSource` 只给 doctor 用，`ans search` 失败行读的 `describeCredentialSource` 一个字没动。「为什么验、验到什么」留在帮助和 README 里说，行里只留这半句。
 - **`ans doctor` 的帮助与头注释写明范围**：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探。
 - **两个 README 的 `--live` 那一行跟上**：不再说「每家搜索源」，并在下面补一句「没配 key 的信息源不探，doctor 不验免费额度这条路」，指到 `runDoctor` 里跳过没配 key 那段旁边的 `Design:` 注释和 `probes.ts` 的 `PROBES`。
-- **跳过分支补 `Design:` 注释**：`ProbeAuth` 的三种值都在说这把 key，没 key 时只能给出假绿或假红（anysearch 的匿名额度墙会落进 `permanent-protocol` 或「auth 通过」，exa 没 key 打 REST 是 402 会报「额度用尽」）；免费额度按 IP、按天走，不管落成失败（退出码 1）还是未检查（`--strict` 下整体算不过），都等于把别人的用量算成本机装坏。
+- **跳过分支补 `Design:` 注释**：`ProbeAuth` 的三种值都在说这把 key，没 key 时探针要么误报通过、要么误报被拒（anysearch 的匿名额度墙会落进 `permanent-protocol` 或「auth 通过」，exa 没 key 打 REST 是 402 会报「额度用尽」）；免费额度按 IP、按天走，不管落成失败（退出码 1）还是未检查（`--strict` 下整体算不过），都等于把别人的用量算成本机装坏。
 
 ### Known limits
 

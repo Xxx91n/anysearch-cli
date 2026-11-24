@@ -106,7 +106,7 @@ export function describeCredentialSource(label: CredentialSourceLabel, provider:
  * 额度的上限说明和一句「没验」。这一行报 `unconfigured`，得说清「能跑」不等于
  * 「稳定可用」，报 `ready` 会骗人。
  *
- * Design: 「用免费额度跑」说的是运行时会怎么跑，不是 doctor 验过；所以尾巴必须带「没验」。
+ * Design: 「用免费额度跑」说的是运行时会怎么跑，不是 doctor 验过。
  */
 export function describeUnconfiguredSource(provider: SearchProviderId): string {
   return describeCredentialSource("none", provider) + "（" + KEYLESS_BEHAVIOR[provider].limit + "）；" + FREE_QUOTA_UNVERIFIED_NOTE;
