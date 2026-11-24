@@ -79,7 +79,6 @@ import {
   linkSync,
   openSync,
   readFileSync,
-  readdirSync,
   readSync,
   renameSync,
   rmSync,
@@ -87,9 +86,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { basename, dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
+import { sweepStaleWorkFiles } from "./stale-work-files.js";
 
 /** Layout marker table name; presence (with the marker row) means "written by build line ≥ #310". */
 export const STORE_META_TABLE = "store_meta";
@@ -438,37 +438,6 @@ export function setAsideUnreadable(path: string): string {
     try { renameSync(path + suffix, aside + suffix); } catch { /* not there */ }
   }
   return aside;
-}
-
-/**
- * Drop work files a killed run left next to `target`.
- *
- * Every run names its own staging file, so nothing else clears them and an
- * interrupted copy leaves a whole file's (or directory's) worth of bytes behind.
- * `suffix` is the caller's own marker: `.adopting` here, `.copying` for the
- * cross-volume directory move. Only files old enough that no live run can still
- * be writing them are removed.
- *
- * `prefix` defaults to the target's own name plus a dot. A caller whose staging
- * name puts anything else in front of that — the config write prefixes a dot —
- * passes its exact prefix, so a sweep never widens beyond its own files.
- */
-export function sweepStaleWorkFiles(
-  target: string,
-  suffix: string,
-  prefix: string = basename(target) + ".",
-): void {
-  const dir = dirname(target);
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  let names: string[];
-  try { names = readdirSync(dir); } catch { return; }
-  for (const name of names) {
-    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
-    const file = join(dir, name);
-    try {
-      if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
-    } catch { /* leave it */ }
-  }
 }
 
 /**

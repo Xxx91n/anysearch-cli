@@ -54,8 +54,8 @@ import {
   opensAsDatabase,
   setAsideUnreadable,
   SQLITE_SIDECAR_SUFFIXES,
-  sweepStaleWorkFiles,
 } from "./migration-backup.js";
+import { sweepStaleWorkFiles } from "./stale-work-files.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";

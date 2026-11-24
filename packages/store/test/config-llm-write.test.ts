@@ -194,17 +194,27 @@ test("the published file is owner-only even over an existing 0644 file", {
 test("a write sweeps its own stale temp files and leaves every other .tmp", () => {
   const { home, path } = fixture();
   const dir = dirname(path);
-  const stale = join(dir, ".config.toml.999.deadbeef1234.tmp");
-  const fresh = join(dir, ".config.toml." + process.pid + ".0badc0ffee00.tmp");
+  // Take the name from the writer itself: a hand-written literal would keep
+  // matching after the writer's shape changes only by accident.
+  let ownTemp = "";
+  withSeam({
+    write: (file, body) => {
+      ownTemp = file;
+      writeFileSync(file, body);
+    },
+  }, () => writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home));
+  // The first write published that temp away; put an abandoned copy back under
+  // the same name, and a younger sibling of the same shape.
+  writeFileSync(ownTemp, "stale");
+  const fresh = ownTemp.slice(0, -".tmp".length) + ".fresh.tmp";
   const unrelated = join(dir, "notes.tmp");
-  writeFileSync(stale, "stale");
   writeFileSync(fresh, "fresh");
   writeFileSync(unrelated, "unrelated");
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  utimesSync(ownTemp, twoHoursAgo, twoHoursAgo);
   utimesSync(unrelated, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ provider: "openai" }, home);
-  assert.ok(!existsSync(stale), "an abandoned temp of this file is swept");
+  assert.ok(!existsSync(ownTemp), "an abandoned temp of this file is swept");
   assert.ok(existsSync(fresh), "a fresh temp may belong to another running write");
   assert.ok(existsSync(unrelated), "a .tmp of another name is not ours to delete");
 });
@@ -220,4 +230,19 @@ test("a stale temp that cannot be deleted does not stop the write", () => {
   assert.equal(written, path);
   assert.ok(readFileSync(path, "utf8").includes('provider = "openai"'), "the write went through");
   assert.ok(existsSync(stuck), "the file the sweep could not remove stays where it was");
+});
+
+test("a write through the legacy config home sweeps there too", () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-config-write-legacy-"));
+  const legacy = join(home, ".anysearch-cli");
+  mkdirSync(legacy, { recursive: true });
+  const path = join(legacy, "config.toml");
+  writeFileSync(path, GOOD);
+  assert.equal(userConfigPath(home), path, "the fixture starts on the legacy file");
+  const stale = join(legacy, ".config.toml.999.deadbeef1234.tmp");
+  writeFileSync(stale, "stale");
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ model: "gpt-5" }, home);
+  assert.ok(!existsSync(stale), "the sweep follows the path the writer actually uses");
 });

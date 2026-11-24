@@ -27,7 +27,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
-import { sweepStaleWorkFiles } from "./migration-backup.js";
+import { sweepStaleWorkFiles } from "./stale-work-files.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
@@ -578,13 +578,15 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
-  // A run killed between writing its temp file and the rename leaves it behind,
-  // and only that run ever cleans up its own file. Sweep the abandoned older
-  // ones first; the leading dot is part of the temp name, so the prefix is
-  // spelled out rather than left to the target's bare name. The sweep swallows
-  // its own failures: a config that can be written is still worth writing.
-  sweepStaleWorkFiles(path, ".tmp", "." + basename(path) + ".");
-  const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
+  // Design: sweep abandoned temps before the write, only ones older than an
+  // hour, and ignore failures — a run killed between writing its temp and the
+  // rename leaves it behind and nothing else clears it; a younger temp may
+  // belong to a concurrent write, and a failed sweep must not stop the real
+  // write. The temp name starts with a dot, so the prefix is spelled out
+  // instead of left to the target's bare name.
+  const tempPrefix = "." + basename(path) + ".";
+  sweepStaleWorkFiles(path, ".tmp", { prefix: tempPrefix });
+  const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a
   // minute on a Windows sharing error, and a hanging config command is worse
