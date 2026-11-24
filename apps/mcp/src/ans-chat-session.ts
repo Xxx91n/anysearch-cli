@@ -284,9 +284,10 @@ export function buildAnsChatResult(
  *
  * A success answer leads with the sentence. An error result does not: #264
  * keeps the `ans_chat error: ` prefix first, so the sentence follows the
- * reason instead. When both a fault and a `recoveryNotice` are present on a
- * success, the fault comes first — it is about the configuration the call ran
- * with, while the recovery note is about the conversation it resumed.
+ * reason, and a recovery note stays its own later block. When both a fault and
+ * a `recoveryNotice` are present on a success, the fault comes first — it is
+ * about the configuration the call ran with, while the recovery note is about
+ * the conversation it resumed.
  *
  * A bare `isError` result stays bare (#204): it carries no structuredContent to
  * merge into, and turning an error into a structured one would change the

@@ -1,4 +1,4 @@
-// #538 acceptance — ans_chat's configuration alert reaches the tool return.
+// #538 acceptance — ans_chat's CredentialFileNotice reaches the tool return.
 //
 // The case that motivated the ticket: a broken `~/.ans/credentials.json` left
 // the model key unresolved, and the only report was one stderr line plus a
@@ -12,6 +12,7 @@
 //   - broken file + no provider/model at all → the error text carries the
 //     sentence, and `structuredContent` stays ABSENT (#204 keeps bare errors
 //     bare; the existing failure-semantics suite pins that shape).
+//   - a runtime error keeps its `ans_chat error: ` prefix first (#264).
 //   - no fault → every key and byte of the previous shape stays put.
 //
 // Run: pnpm --filter @anysearch-cli/mcp test
@@ -196,6 +197,20 @@ test("no model configured still names the broken file, and stays a bare error", 
   assert.ok(text.startsWith("ans_chat: "), "the reason stays first (#264): " + text);
   assert.ok(text.includes("LLM not configured"), "the configuration report is kept: " + text);
   assert.ok(text.includes(NOT_JSON.notice), "the file fault is part of the same answer: " + text);
+  assert.equal(res?.structuredContent, undefined, "a bare error stays bare (#204)");
+});
+
+test("a runtime error keeps its prefix and still names the file", async () => {
+  // The `ans_chat error: ` results are the ones #264's rule governs. A fault
+  // must not push the reason off the first line.
+  const fix = fixture({ userToml: USER_TOML, credentials: "{ not json" });
+  const res = await harness(fix, { ANS_LLM_BASE_URL: "http://127.0.0.1:1/v1" }).call();
+
+  assert.equal(res?.isError, true, "a custom endpoint without its api fails the call");
+  const text = textOf(res);
+  assert.ok(text.startsWith("ans_chat error: "), "the reason stays first (#264): " + text);
+  assert.ok(text.includes("ANS_LLM_API"), "the actionable reason is kept: " + text);
+  assert.ok(text.includes(NOT_JSON.notice), "the file fault follows the reason: " + text);
   assert.equal(res?.structuredContent, undefined, "a bare error stays bare (#204)");
 });
 

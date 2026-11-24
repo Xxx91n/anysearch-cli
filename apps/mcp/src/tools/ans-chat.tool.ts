@@ -49,6 +49,7 @@ import {
   type BudgetConfig,
   type ResolvedLlmConfig,
 } from "@anysearch-cli/store";
+import { redactSecrets } from "@anysearch-cli/retriever";
 import { createHash } from "node:crypto";
 import {
   buildAnsChatBudgetResult,
@@ -62,7 +63,6 @@ import {
   classifyContinuation,
   type AnsChatToolResult,
 } from "../ans-chat-session.js";
-import { redactSecrets } from "@anysearch-cli/retriever";
 import { currentMcpTask, withMcpTask } from "../mcp-task.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
@@ -87,16 +87,24 @@ export function resetAnsChatDegradedWarnings(): void {
   warnedDegradations.clear();
 }
 
+/**
+ * Design: #538 — every stderr line this tool writes goes through one helper,
+ * which redacts. The resolver's warnings, budget degradation and consolidation
+ * metering can each echo a path or a value from config, and the search side's
+ * provider diagnostics already take the same rule. A dead stderr never breaks
+ * the call.
+ */
+function writeDiagnostic(message: string): void {
+  try {
+    process.stderr.write(redactSecrets(message) + "\n");
+  } catch { /* fail-open */ }
+}
+
 function warnDegraded(message: string, key: string): void {
   if (warnedDegradations.has(key)) return;
   if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
   warnedDegradations.add(key);
-  try {
-    // Design: every stderr line this tool writes goes through `redactSecrets` —
-    // the search side's provider diagnostics already do, and a degraded
-    // accounting message can echo a path or a value from config.
-    process.stderr.write("[anysearch] " + redactSecrets(message) + "\n");
-  } catch { /* a dead stderr must not break the call */ }
+  writeDiagnostic("[anysearch] " + message);
 }
 
 export function registerAnsChat(
@@ -238,19 +246,13 @@ export function registerAnsChat(
       // an otherwise-valid env config must not make a bad file read as "fine".
       const configWarnings: string[] = [];
       let cfg: ResolvedLlmConfig;
-      // Design: #538 — resolve the credential file's fault once, then let the
-      // single exit below put it in the result. One wiring site means no branch
-      // can forget it, and store words the classification while the kernel's
-      // one table words the sentence.
-      let credentialFault: CredentialFileNotice | undefined;
       try {
         cfg = resolveConfig({ warn: (m) => {
           configWarnings.push(m);
-          // The resolver's sentences can quote a file's text (a TOML error,
-          // an env_key value); this is the same redaction the search side
-          // applies to its provider diagnostics. Warning count, not text,
-          // is what the observation records.
-          process.stderr.write(redactSecrets(m) + "\n");
+          // Warning text, not a count, is what the observation keeps; this
+          // line only carries it onward to stderr through the one redacting
+          // helper.
+          writeDiagnostic(m);
         } });
       } catch (e) {
         // Design: a resolver fault must never escape as a raw handler rejection
@@ -270,7 +272,11 @@ export function registerAnsChat(
       }
       const providerName = cfg.provider;
       const modelName = cfg.model;
-      credentialFault = cfg.credentialFileFault
+      // Design: #538 — resolve the credential file's fault once, then let the
+      // single exit below put it in the result. One wiring site means no branch
+      // can forget it; the store writes the classification, and the kernel's
+      // one table words the sentence.
+      const credentialFault: CredentialFileNotice | undefined = cfg.credentialFileFault
         ? credentialFileNotice(cfg.credentialFileFault)
         : undefined;
       // #211: the same seam as the search tools (#209) — the SDK context
@@ -281,10 +287,10 @@ export function registerAnsChat(
       // The task row is ended only after the handler resolves, i.e. after the
       // late settlement (flushMemory) and the observation write, so a cancelled
       // request never leaves a finished-looking task with work still in flight.
-      // #538: one exit for every branch — the result is post-processed here
-      // rather than at each `return` inside, so no path can forget the fault.
-      // The SDK types a callback result as an open object; every branch below
-      // returns this module's own text-block shape.
+      // Design: #538 — one exit for every branch. The result is post-processed
+      // here rather than at each `return` inside, so no path can forget the
+      // fault. The SDK types a callback result as an open object; every branch
+      // below returns this module's own text-block shape.
       const result = (await withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
         // A caller that already cancelled does no run-side work here — no
         // budget row, no session mint, no provider call. The task row itself is
@@ -387,7 +393,7 @@ export function registerAnsChat(
               toCaps: (b) => toBudgetCaps(b as BudgetConfig),
               domainLabel: "consolidate",
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
-              warn: (m) => process.stderr.write("[anysearch] " + redactSecrets(m) + "\n"),
+              warn: (m) => writeDiagnostic("[anysearch] " + m),
             });
           }
           // The awaits above open a window the earlier check cannot see: a
@@ -411,9 +417,9 @@ export function registerAnsChat(
             } catch (e) {
               // Fail-open: the store reports llmUnavailable per cluster, and the
               // usage block names the missing accounting instead of faking it.
-              process.stderr.write(
+              writeDiagnostic(
                 "[anysearch] ans_chat consolidate LLM init failed (" +
-                  redactSecrets(e instanceof Error ? e.message : String(e)) + ")\n",
+                  (e instanceof Error ? e.message : String(e)) + ")",
               );
             }
           }

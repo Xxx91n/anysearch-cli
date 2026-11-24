@@ -110,7 +110,7 @@ spent:
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 
 A broken user credential file is reported here too (#538): the same
-`{kind, notice}` record as the search tools, in
+`{kind, errno?, notice}` record as the search tools, in
 `structuredContent.credentialFileFault`, and the same sentence in the text
 block (leading a success answer, after the reason on an error). It sits at the
 top level because `ans_chat` never resolves search arms and so has no
@@ -118,8 +118,11 @@ top level because `ans_chat` never resolves search arms and so has no
 supplied the model key: `ANS_LLM_API_KEY` keeping the call working does not
 prove the file is healthy. With no fault neither half changes. Missing
 `provider`/`model` stays a bare error result (#204), with the sentence appended
-to its text. The credential rules below describe the classification, the
-no-path rule and the snapshot semantics.
+to its text. The same wrapper covers every branch that returns a result, so a
+usage error, a budget stop or a cancellation carries the record too. For the
+classification, the no-path rule and the snapshot semantics see
+"A credential file that exists but cannot be used says so" under Rules behind
+the table.
 
 ### Consolidation
 
