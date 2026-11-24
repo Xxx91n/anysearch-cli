@@ -179,6 +179,9 @@ function main() {
     const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
     if (e.domain === "cold") {
       env.ANS_DOMAINS_DIR = coldDir;
+      // An ambient ANS_PROVIDERS would filter the cold fixture's only arm out
+      // and fail the run before any verdict exists.
+      env.ANS_PROVIDERS = "";
       // The TOML allowlist is the only authority: an ambient ANS_URL_ALLOWLIST
       // would let a result survive and turn this abstain into an answer.
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
@@ -187,14 +190,14 @@ function main() {
     assert(!j.__error, e.id + " ran (" + (j.__error ?? "ok") + ")");
     if (!j.__error) {
       if (e.expected.verdict === "abstain") {
-        // A live lane measures retrieval, not provider health: when the only arm
-        // is down the classifier says `failed`, and that is the environment, not
-        // a regression. Skip it the way a missing key skips, and keep the skip
-        // out of the evidence log — a skipped case must never read as a pass.
-        if (j.outcome === "failed") {
+        // A live lane measures retrieval, not provider health: an arm that died
+        // (`failed`) or was cut off by the engine's deadline (`cancelled`) is the
+        // environment, not a regression. Skip it the way a missing key skips, and
+        // keep the skip out of the evidence log — a skip must never read as a pass.
+        if (j.outcome === "failed" || j.outcome === "cancelled") {
           skipped++;
           skippedThis = true;
-          console.log("SKIPPED " + e.id + " (provider outage: providersFailed " + JSON.stringify(j.providersFailed ?? []) + ")");
+          console.log("SKIPPED " + e.id + " (" + (j.outcome === "failed" ? "provider outage" : "arm cut off by the deadline") + ": providersFailed " + JSON.stringify(j.providersFailed ?? []) + ", providersCancelled " + JSON.stringify(j.providersCancelled ?? []) + ")");
         } else {
           assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
           assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");

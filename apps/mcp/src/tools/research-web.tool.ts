@@ -148,6 +148,11 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // first round leaves both null.
           const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
           const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
+          // The docs table lists empty/abstain/cancelled for a successful call
+          // with results — `failed` belongs to the error channel. When the last
+          // round died but earlier rounds' results are in hand, this call ended
+          // with an answer; the dead arms still ride providersFailed.
+          const callOutcome = lastOutcome === "failed" && allResults.length > 0 ? "answer" : lastOutcome;
           const summary = JSON.stringify(
             {
               question,
@@ -166,7 +171,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // The last completed round's verdict, the same round abstain and
               // sufficiency describe. Never a union across rounds: an earlier
               // `empty` does not describe a later `answer`.
-              outcome: lastOutcome,
+              outcome: callOutcome,
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
@@ -190,10 +195,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
-            // Always present, null included: `outcome` is the round's verdict,
-            // not optional metadata, and a host should not have to tell "no
-            // round finished" from "this build forgot the field".
-            outcome: lastOutcome,
+            // Always present, null included: a host should not have to tell
+            // "no round finished" from "this build forgot the field".
+            outcome: callOutcome,
             ...(providerFailures ?? {}),
             // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,

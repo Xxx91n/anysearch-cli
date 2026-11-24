@@ -1,16 +1,11 @@
-// How a search ended — one judgment, read by every surface.
+// How a search ended — the one judgment.
 //
-// A search can end five ways. The engine classifies it once, from evidence the
-// search already produced, and writes the answer into the envelope
-// (metadata.outcome) and the audit span (anysearch.outcome). The CLI, the two
-// MCP tools and the trace read that value; none of them decides again.
-//
-// Design: five outcomes, first match wins — answer (results or a provider
-// answer), failed (nothing came back, every queried arm failed), cancelled (an
-// arm was cut off and it was not all-failed), abstain (the domain policy can say
-// why, see shouldAbstain), empty (nothing above holds).
-// A result is an answer even beside a failed arm — the failed arm is named in
-// providersFailed — and cancelled outranks abstain because "nothing in this
+// The engine classifies a search once and writes the answer into the envelope
+// (metadata.outcome) and the audit span (anysearch.outcome); the CLI, the two
+// MCP tools and the trace read that value and never decide again. The five
+// values are first match wins — classifySearchOutcome below says which one
+// fires when. A result is an answer even beside a failed arm (the arm is named
+// in providersFailed), and cancelled outranks abstain because "nothing in this
 // domain" needs the whole fanout to have finished.
 
 export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "empty"] as const;

@@ -412,8 +412,7 @@ export interface FusedEnvelope {
     };
     // five-value search outcome, written by the kernel on every search it
     // assembles; how each value is decided lives in outcome.ts and nowhere
-    // else. The audit attribute anysearch.outcome carries the same value, and
-    // outcome === "abstain" iff the abstain marker below is present.
+    // else. The audit attribute anysearch.outcome carries the same value.
     outcome: SearchOutcome;
     // abstain marker. Set by the kernel post-filter only when the domain
     // allowlist policy is the evidence-backed reason: a domain allowlist is

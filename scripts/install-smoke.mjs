@@ -4,34 +4,20 @@
 // Internal libraries and the old separate MCP/plugin apps are not installed.
 //
 // Online leg: only when EXA_API_KEY or TAVILY_API_KEY is set — one real search
-// on the shipped docs domain must return >=1 result and land at least one URL
-// on the docs-domain urlAllowlist (pnpm.io / typescriptlang.org /
-// modelcontextprotocol.io).
+// on the shipped docs domain, which must return a result on its urlAllowlist.
 //
-// Two zero-result legs always run, with or without keys. CI injects
-// TAVILY_API_KEY into this job, so an `if (online)` guard would skip them
-// forever, and an assertion that never runs is not coverage.
+// Two zero-result legs always run, with or without keys (CI injects a key, so
+// an `if (online)` guard would skip them forever):
+// - Fault leg: the only arm points at a dead port, so the run is `failed`
+//   (exit 1, zero results, providersFailed naming the arm) — see 4a below.
+// - Refusal leg: the only arm is a local stub answering out-of-domain URLs, so
+//   the gate empties the pool and the run is `abstain` (exit 0) — see 4b below.
 //
-// - Fault leg: ANYSEARCH_ENDPOINT is a dead port (127.0.0.1:9). The probe
-//   domain's only arm (sources.enabled = ["anysearch"]) constructs, is queried,
-//   and fails at runtime, so the run is `failed`, not `abstain`: exit 1,
-//   outcome "failed", abstain null, providersQueried ["anysearch"],
-//   providersFailed naming anysearch, zero results. Asserting the outcome, not
-//   just providersFailed, is what stops a build whose search never queries an
-//   arm from passing here: that run classifies as `empty`.
-// - Refusal leg: the same probe domain points ANYSEARCH_ENDPOINT at a local
-//   fake AnySearch MCP server that answers two out-of-domain URLs. An arm
-//   answered and the domain gate threw all of it away, so the run is `abstain`:
-//   exit 0, outcome "abstain", abstain.gate "post", preFiltered >= 1,
-//   postFiltered 0, providersFailed empty, zero results. The stub runs in its
-//   own process: this script drives the CLI with spawnSync, which blocks the
-//   event loop an in-process stub would need to accept requests.
-//
-// Every CLI call goes through sh(), which carries a 30s bound. The engine
-// already stops a search at its own 4s request-level deadline, so an arm that
-// never answers resolves as cancelled arms instead of parking the lane; the
-// bound here catches what hangs outside that deadline (a wedged child, a slow
-// console), and a timeout is reported as a named failure.
+// Every CLI call goes through sh(), which carries a 30s bound and reports a
+// timeout as a named failure. The engine's own 4s deadline already covers a slow
+// arm; this bound covers a wedged shell. On Windows the bound kills the cmd.exe
+// wrapper, and a surviving node child can then make cleanup fail — that failure
+// is surfaced, not swallowed.
 //
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.
@@ -95,7 +81,7 @@ function checkExitCode(name, expected, run, legClean) {
 
 // `timeoutMs` bounds a single call. CLI calls pass it: the engine's own 4s
 // deadline only covers the search itself, so this bound is what catches what
-// that deadline cannot — a wedged child, a console that never drains. Pack and
+// that deadline cannot — a wedged shell, a console that never drains. Pack and
 // install keep the platform default — they are not CLI calls, and a 30s cap
 // there would fail the lane on a slow npm mirror.
 function sh(cmd, opts = {}) {
@@ -317,7 +303,9 @@ try {
   //     a marker alone would also be written when the stub answers nothing.
   {
     const stub = spawn(process.execPath, [join(ROOT, "scripts", "fake-anysearch-mcp.mjs")], {
-      stdio: ["ignore", "pipe", "pipe"],
+      // stderr goes straight to this lane: nobody drains a pipe here, and a stub
+      // that dies must say why in the log instead of only "exited before PORT".
+      stdio: ["ignore", "pipe", "inherit"],
     });
     let port;
     try {

@@ -1,3 +1,18 @@
+## Unreleased — #514: 零结果分成五档，CLI 和两个 MCP 工具读同一个结论
+
+一句话说清：**以前「零结果」只有一个说法，全臂失败（上游挂了）和域内被滤空（策略拒答）在退出码和输出里分不开。现在引擎在装配信封前算一次 outcome，五个值（answer / failed / cancelled / abstain / empty）写进 `metadata.outcome` 和审计 span，CLI 的 `--json` 与退出码、`search_web` / `research_web` 的 `structuredContent` 都读这一个值。**
+
+### Changed
+
+- **`metadata.outcome` 成为必填字段**（`packages/retriever/src/contract.ts`）：五个值的判据只有一份，在 `packages/retriever/src/outcome.ts`。
+- **CLI**：`--json` 每次搜索都带 `outcome`；退出码按同一个值给——`answer` / `abstain` 为 0（带 `--fail-on-abstain` 时 abstain 为 3），`failed` / `cancelled` / `empty` 为 1。
+- **MCP**：`search_web` 只有 `failed` 走错误通道，其余四个值都是成功并带 `outcome`；`research_web` 报最后一轮判定，前几轮已经有结果时报 `answer`。
+- **审计**：span 写 `anysearch.outcome`，并补 `anysearch.providers.failed_count` / `anysearch.providers.cancelled_count`。
+
+### Known limits
+
+- `research_web` 的 `outcome` 只形容最后一轮，不是跨轮并集；调用方在跑完一轮前中断时是 `null`。
+
 ## Unreleased — #494: 错误类不再从正文里读，改由适配器在错误对象上声明
 
 一句话说清：**`provider-error-class:` 以前写在错误串里、由分类器解析，而上游回复正文也拼在同一根串上，于是上游写一句标记就能选中类——探针那条路上 402「额度用尽」会被洗成「未检查 上游抽风」，`ans doctor --live` 的退出码从 1 变成 0。现在这个信道分开：适配器把类挂在错误对象的 `providerErrorClass` 上，分类器接一个可选参数，文本只给没有声明的适配器做兜底。**

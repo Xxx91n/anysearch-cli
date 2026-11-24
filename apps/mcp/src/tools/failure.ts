@@ -50,11 +50,7 @@ export function providerFailureMetadata(
   };
 }
 
-/**
- * The engine's verdict, read here and never re-decided. The kernel writes one on
- * every search it assembles, so the field is required; a hand-built envelope
- * without it is a typing breach, and the test doubles carry one.
- */
+/** The engine's verdict: read here, never re-decided. */
 export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): SearchOutcome {
   return envelope.metadata.outcome;
 }

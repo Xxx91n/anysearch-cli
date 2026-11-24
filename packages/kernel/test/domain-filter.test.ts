@@ -156,8 +156,8 @@ async function main() {
     assert(s10.attrs["anysearch.outcome"] === "failed", "10: span records outcome=failed");
     const post10 = s10.events.find((e) => e.name === "retrieval.domain_filter.post");
     assert(post10?.attributes?.["anysearch.outcome"] === "failed", "10: post event carries the same verdict");
-    assert(post10?.attributes?.["providers.failed_count"] === 1, "10: post event counts the failed arm");
-    assert(post10?.attributes?.["providers.cancelled_count"] === 0, "10: post event counts cancelled arms (0)");
+    assert(post10?.attributes?.["anysearch.providers.failed_count"] === 1, "10: post event counts the failed arm");
+    assert(post10?.attributes?.["anysearch.providers.cancelled_count"] === 0, "10: post event counts cancelled arms (0)");
   }
 
   // 11. All arms cut off. Two ways an arm is cancelled: it never settles, or it
@@ -220,7 +220,7 @@ async function main() {
     assert(r12.metadata.abstain === undefined, "12: empty + failed writes no abstain marker");
     assert(r12.metadata.providersFailed.includes("dead"), "12: the failed arm is still named");
     const post12 = s12.events.find((e) => e.name === "retrieval.domain_filter.post");
-    assert(post12?.attributes?.["providers.failed_count"] === 1, "12: the event separates this empty from a clean one");
+    assert(post12?.attributes?.["anysearch.providers.failed_count"] === 1, "12: the event separates this empty from a clean one");
   }
 
   // 13. A provider answer with zero results is an answer, not an abstain.

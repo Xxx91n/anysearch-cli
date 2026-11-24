@@ -714,8 +714,8 @@ export class RetroaererdEngine {
     // separates a clean `empty` from one with a failed arm, and most searches
     // never fire the domain event below.
     const armCounts = {
-      "providers.failed_count": providersFailed.length,
-      "providers.cancelled_count": providersCancelled.length,
+      "anysearch.providers.failed_count": providersFailed.length,
+      "anysearch.providers.cancelled_count": providersCancelled.length,
     };
     q.span?.setAttributes?.({ "anysearch.outcome": outcome, ...armCounts });
     if (domainActive) {

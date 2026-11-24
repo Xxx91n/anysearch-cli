@@ -47,13 +47,14 @@ for (let i = 1; i <= RUNS; i++) {
   lines.push("| " + i + " | search | " + String(s.status) + (s.signal ? " (" + s.signal + ")" : "") + " | " + sig + " |");
 }
 // One labelled zero-result leg: ANS_DOMAIN=docs runs an out-of-domain query
-// through the domain gate on a machine with no search key. It can land in
-// abstain, empty or failed, so the marker is recorded, never asserted. classify()
-// counts exit 0 and 1 as clean on purpose — this probe reports crash signatures,
-// and both codes are legitimate here.
+// through the domain gate. With a key in the environment it is a real search;
+// either way it lands in abstain, empty or failed, so the marker is recorded,
+// never asserted. classify() counts exit 0 and 1 as clean on purpose — this
+// probe reports crash signatures, and both codes are legitimate here. The
+// explicit ANS_PROVIDERS stops a shell leftover from narrowing the fanout.
 {
   const a = spawnSync(process.execPath, [BIN, "search", "tokio JoinSet rust scheduler internals"], {
-    encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs" },
+    encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs", ANS_PROVIDERS: "" },
   });
   const out = (a.stdout ?? "") + (a.stderr ?? "");
   const sig = classify(a.status, out + (a.signal ?? ""));
