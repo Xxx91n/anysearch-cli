@@ -455,8 +455,9 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
 /**
  * Temp file, forced to disk before the rename; otherwise a power cut can publish
  * an empty file.
- * SECURITY: the temp file is 0600 and the rename publishes it, so an existing
- * 0644 config is tightened too (CWE-312).
+ * SECURITY: on POSIX the temp file is 0600 and the rename publishes that mode,
+ * so an existing 0644 config is tightened too (CWE-312). Windows has no POSIX
+ * mode here; the folder ACL decides who can read the file.
  */
 function writeConfigTemp(path: string, content: string): void {
   const fd = openSync(path, "wx", 0o600);
@@ -485,8 +486,9 @@ function linkTarget(path: string): string {
     return realpathSync(path);
   } catch (e) {
     throw new Error(
-      "refusing to write " + path + ": it is a symlink and its target cannot be resolved (" +
-      ((e as NodeJS.ErrnoException).code ?? String(e)) + "). Fix or remove the link, then retry.",
+      "could not write " + path + ": it is a symlink and its target cannot be resolved (" +
+      ((e as NodeJS.ErrnoException).code ?? String(e)) +
+      "). This write did not touch the existing config; fix or remove the link, then retry.",
       { cause: e },
     );
   }
