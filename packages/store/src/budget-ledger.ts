@@ -5,6 +5,7 @@
 
 import type Database from "better-sqlite3";
 import { hostname } from "node:os";
+import { pidIsAlive } from "./process-liveness.js";
 import type { BudgetConfig } from "./domain-schema";
 
 // #187: sentinel persisted for a dimension that has no configured cap. A row
@@ -60,34 +61,9 @@ export interface ReservationOwner {
   host: string;
 }
 
-/**
- * Whether a pid is still running.
- *
- * Design: only ESRCH is proof of death — every other outcome counts as
- * "cannot confirm", so the reservation is kept. The earlier rule was "any
- * error except EPERM means dead", and that released a reservation on errors
- * that say nothing about liveness: a malformed pid raises
- * ERR_INVALID_ARG_TYPE, and Windows has other probe failures of its own.
- * Releasing an unconfirmed reservation loosens a session's cap under a run
- * that may still be going, which is the harm this file exists to prevent.
- * Keeping one only costs headroom until a later run can confirm the owner is
- * gone.
- *
- * Exported since #302: task_records carries the same owner pair and needs the
- * same "only a provably dead owner is dead" rule for its open-task
- * diagnostics; two copies of this judgment would drift exactly where honesty
- * matters.
- */
-export function pidIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    // ESRCH: no such process. Anything else (EPERM, a malformed pid, an
-    // unexpected probe failure) is unconfirmed and treated as still holding.
-    return (e as NodeJS.ErrnoException)?.code !== "ESRCH";
-  }
-}
+// Exported since #302: task_records carries the same owner pair and needs the
+// same "only a provably dead owner is dead" rule for its open-task diagnostics.
+export { pidIsAlive };
 
 // #275: the owner of every reservation this process makes. Defaults to this
 // process; a test (or a probe) can stand in for another one.

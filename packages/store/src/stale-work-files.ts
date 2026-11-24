@@ -1,13 +1,13 @@
 // Best-effort removal of work files a killed run left next to a file it was
 // publishing.
 //
-// Design: no database binding — node:fs/node:path plus budget-ledger's pid
+// Design: no database binding — node:fs/node:path plus the dependency-free pid
 // check, kept out of migration-backup.ts so config writes never load
 // better-sqlite3.
 
 import { readdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { pidIsAlive } from "./budget-ledger.js";
+import { pidIsAlive } from "./process-liveness.js";
 
 /** How old a work file must be before it cannot belong to a live run. */
 export const STALE_WORK_FILE_AGE_MS = 60 * 60 * 1000;
