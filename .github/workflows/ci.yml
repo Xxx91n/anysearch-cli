@@ -145,15 +145,15 @@ jobs:
   install-smoke:
     name: "install-smoke (B2: pack -> clean install -> doctor -> domain -> search)"
     # A wedged lane must fail instead of holding the job for the workflow
-    # default (360): a stub that never answers would otherwise park it for
-    # hours. The build, install-smoke and three acceptance lanes all live in
-    # this job; windows runs land around 9-11 minutes, so 20 leaves room for a
-    # slow day without becoming a second, coarser way to fail.
-    # The inner timeouts have to stay under this bound: recall-acceptance caps
-    # one RPC at 480s, installed-acceptance 240s per call across several calls,
-    # and install-smoke bounds each CLI call at 30s. A job-level kill hides
-    # which lane died, so if those inner bounds start adding up near this, raise
-    # this number — never let the backstop be the red.
+    # default (360). The build, install-smoke and three acceptance lanes all
+    # live in this job; windows runs land around 9-11 minutes, so 20 covers a
+    # slow day. Pack and npm install run with no timeout of their own, and the
+    # build step has none either, so this number is the only thing that stops a
+    # wedged one from holding the job for hours. The inner timeouts have to stay
+    # under it: recall-acceptance caps one RPC at 480s, installed-acceptance
+    # 240s per call across several calls, and install-smoke bounds each CLI call
+    # at 30s. If those start adding up near 20, raise this number — a job-level
+    # kill leaves no clue which lane died.
     timeout-minutes: 20
     strategy:
       fail-fast: false

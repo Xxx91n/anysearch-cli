@@ -8,8 +8,9 @@
 // hosts this lane watches (pnpm.io / typescriptlang.org /
 // modelcontextprotocol.io).
 //
-// The two zero-result legs always run, keys or no keys: CI injects a provider
-// key into this job, so an `if (online)` guard would skip them every time.
+// The two zero-result legs always run, keys or no keys. This repo's CI hands
+// the job provider secrets, so an `if (online) … else { legs }` shape would run
+// them only on the runs that have no keys — never on the runs that matter.
 // Their checks live in 4a and 4b; what they are for:
 //
 // - Fault leg (4a): the probe domain's only arm (sources.enabled =
@@ -20,14 +21,19 @@
 // - Refusal leg (4b): the same probe domain points at a local fake AnySearch
 //   MCP server (scripts/fake-anysearch-mcp.mjs) that answers two out-of-domain
 //   URLs. An arm answered and the domain gate threw all of it away: exit 0,
-//   outcome "abstain", gate "post", zero results, nobody failed. The stub has to
-//   be its own process — this script drives the CLI with spawnSync, which blocks
-//   the event loop an in-process stub would need to accept requests.
+//   outcome "abstain", gate "post", zero results, nobody failed, nothing cut
+//   off. The stub has to be its own process — this script drives the CLI with
+//   spawnSync, which blocks the event loop an in-process stub would need to
+//   accept requests.
+//
+// Both exit codes are read through checkExitCode(): a Windows teardown crash can
+// rewrite the number, and it only warns when every structured check passed.
 //
 // A zero-result run whose every queried arm failed is a fault — the arm is
 // down — and exits 1. Abstain means the domain really has nothing: the policy
-// is active and the emptiness has a reason, either the gate dropped results or
-// every queried arm answered and none failed.
+// is active, no arm was cut off mid-flight, and the emptiness has a reason —
+// either the gate dropped results, or every queried arm answered and none
+// failed.
 //
 // Every CLI call this script drives goes through sh(), which carries a 30s
 // bound and reports a timeout as a named failure (verifyInstalledProduct()
