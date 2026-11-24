@@ -452,7 +452,12 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
   return { flags, argv: rest };
 }
 
-/** Temp file, forced to disk before the rename; otherwise a power cut can publish an empty file. */
+/**
+ * Temp file, forced to disk before the rename; otherwise a power cut can publish
+ * an empty file.
+ * SECURITY: the temp file is 0600 and the rename publishes it, so an existing
+ * 0644 config is tightened too (CWE-312).
+ */
 function writeConfigTemp(path: string, content: string): void {
   const fd = openSync(path, "wx", 0o600);
   try {
@@ -472,13 +477,10 @@ function writeConfigTemp(path: string, content: string): void {
  * instead of quietly becoming a regular file.
  */
 function linkTarget(path: string): string {
-  let entry;
-  try {
-    entry = lstatSync(path);
-  } catch {
-    return path;
-  }
-  if (!entry.isSymbolicLink()) return path;
+  // Only "no file yet" means "write as usual". Every other lstat failure
+  // (ELOOP, EACCES, ENOTDIR) must surface as itself, not become a rename error.
+  const entry = lstatSync(path, { throwIfNoEntry: false });
+  if (entry === undefined || !entry.isSymbolicLink()) return path;
   try {
     return realpathSync(path);
   } catch (e) {
