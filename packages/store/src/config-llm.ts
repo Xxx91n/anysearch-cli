@@ -19,8 +19,9 @@
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
@@ -448,12 +449,69 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
 }
 
 /**
+ * Test seam for the two filesystem calls the config write makes. A fault
+ * between "the temp file holds bytes" and "the rename published it" is the
+ * branch this whole write exists for, and no host produces it on demand, so
+ * each call is injectable. Production leaves both unset.
+ */
+export const configWriteSeam: {
+  write?: (path: string, content: string) => void;
+  rename?: (from: string, to: string) => void;
+} = {};
+
+/** Owner-only from creation (CWE-312); the rename publishes this mode. */
+function writeConfigTemp(path: string, content: string): void {
+  writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
+}
+
+/**
+ * Publish `content` at `path` in one step: write a temp file beside the target,
+ * then rename onto it. A fault mid-write leaves the previous file untouched
+ * instead of half-rewritten — `writeFileSync` truncates before it writes, so a
+ * full disk or a killed process used to leave a partial config where a
+ * complete one was (#539; same rule as config.env and credentials.json).
+ *
+ * Design: temp name carries pid + random bytes, not a fixed `.tmp` — two
+ * concurrent `ans llm set` runs cannot publish each other's half-finished file,
+ * and one run's cleanup cannot delete the other's temp.
+ */
+function writeUserConfigFile(path: string, content: string): void {
+  // Design: the temp file sits in the target's own directory — the resolver can
+  // pick the legacy home, and a rename across directories fails with EXDEV.
+  const dir = dirname(path);
+  const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
+  const write = configWriteSeam.write ?? writeConfigTemp;
+  // Design: plain rename, no fs-atomic backoff — that policy waits up to a
+  // minute on a Windows sharing error, and a config command that hangs is worse
+  // than one that fails and keeps the old file (same call as config.env, #306).
+  const rename = configWriteSeam.rename ?? renameSync;
+  try {
+    mkdirSync(dir, { recursive: true });
+    write(temp, content);
+    rename(temp, path);
+  } catch (e) {
+    try { unlinkSync(temp); } catch { /* never created, or already renamed */ }
+    // Name the file the user knows. A raw rename error names the temp path,
+    // which reads like an unrelated failure, so the code alone is carried.
+    const code = (e as NodeJS.ErrnoException).code;
+    const reason = typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
+    throw new Error(
+      "could not write " + path + ": " + reason +
+      ". The previous config is unchanged; check that the file and its folder are writable, then retry.",
+      { cause: e },
+    );
+  }
+}
+
+/**
  * Persist provider/model to the user-level config.toml (fixes the original #38
  * gap: `ans llm set` previously only printed export hints). Other [llm] keys
  * (base_url, api) and non-llm sections are preserved. env_key is dropped when
  * the provider changes: it names the previous provider's secret, and the
  * resolver's project-layer guard cannot detect that binding being rewritten in
- * place (CodeRabbit #120). Never writes secrets.
+ * place (CodeRabbit #120). Never writes secrets. A write that fails leaves the
+ * previous file byte-for-byte unchanged: the new content is published by a
+ * rename, never by rewriting the target in place (#539).
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },
@@ -498,8 +556,6 @@ export function writeUserLlmConfig(
   }
   if (patch.model !== undefined) llm["model"] = patch.model;
   root["llm"] = llm;
-  mkdirSync(dirname(path), { recursive: true });
-  // SECURITY: owner-only permissions, same convention as config.env (CWE-312).
-  writeFileSync(path, tomlStringify(root), { encoding: "utf8", mode: 0o600 });
+  writeUserConfigFile(path, tomlStringify(root));
   return path;
 }

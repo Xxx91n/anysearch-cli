@@ -1,3 +1,20 @@
+## Unreleased — #539: `config.toml` 改成原子写，写一半不再留下半截配置
+
+一句话说清：**`ans llm set` 以前直接往 `~/.ans/config.toml` 里覆盖写，中途出事（盘满、进程被杀、断电）会留下半截文件，而读那边把解析不了的文件整份忽略，用户的自定义配置就这么没了。现在跟 `config.env`、`credentials.json` 一样：先写同目录的临时文件，再 rename 顶上去。失败时旧文件一个字节都不动。**
+
+### Changed
+
+- **写入走临时文件 + rename**（`packages/store/src/config-llm.ts` 的 `writeUserConfigFile`）：临时文件名带 pid 和随机后缀，放在目标文件自己的目录里——两个 `ans llm set` 同时跑不会把对方写了一半的文件发布出去，清理也不会删掉对方的临时文件；跨目录 rename 会 EXDEV，所以不能写死 `~/.ans`。
+- **权限这次才真正生效**：`writeFileSync` 的 `mode` 只对新建文件生效，已经存在的 0644 一直是 0644，Windows 上 0600 从来没用。改成把 0600 设在临时文件上、由 rename 发布，POSIX 上每次写都是 0600。
+- **失败文案说人话**：原来直接把 errno 原样打出来，改完会带临时文件路径。现在统一成「could not write <config.toml>: EPERM. The previous config is unchanged; ...」，只说错误码，不带临时路径。
+- **加了一个写入 seam**（`configWriteSeam`）：写、rename、清理三个调用都能注入，测试才能在「字节已经写进临时文件」之后制造失败。
+
+### Known limits
+
+- **Windows 上有一类持有者会让写入从成功变失败**：别的进程拿读写共享打开着 `config.toml`（编辑器、索引器、备份工具常见这个模式），就地写今天能过，rename 会 EPERM。`config.env` 和 `credentials.json` 早就接受了同一个代价；失败时旧文件保得住。
+- **软链会被替换成普通文件**：今天写会穿透 `~/.ans/config.toml` 的软链改到目标文件，改完软链本身没了。前两个配置文件已经是这个行为。
+- **临时文件没人清**：进程在 rename 之前被杀，会留一个 `.config.toml.<pid>.<hex>.tmp`。没有任何代码读它，`sweepStaleWorkFiles` 也不认 `.tmp`，所以是惰性垃圾。
+- **读侧一个字没动**：坏文件仍然只 warn 一句就整份忽略。截断正好停在合法 TOML 边界时零告警、`ans doctor` 报 0 失败，那是 #546。
 ## Unreleased — #515: 全取消的 MCP 结果带 `interrupted`
 
 一句话说清：**零结果、有臂被掐断时，`search_web` 和 `research_web` 现在都带 `structuredContent.interrupted: true`；以前只有调用方自己取消才带，引擎截止把臂掐光时宿主会把一次空结果当成干净完成。**
