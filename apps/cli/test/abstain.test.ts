@@ -170,6 +170,31 @@ async function main() {
       "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验",
     "every keyless arm gets the cap note, exa included",
   );
+  // #533: when the credential file is why an arm has no key, "not configured"
+  // names the wrong cause. The line says the file is broken instead, and keeps
+  // the free-quota fact (the arm really does run on it).
+  const brokenFileRecord = {
+    status: "resolved" as const,
+    tavily: "none" as const,
+    exa: "none" as const,
+    anysearch: "none" as const,
+    credentialFileFault: { kind: "not-json" as const, notice: "not valid JSON" },
+  };
+  assert(
+    formatProvidersFailedLine(["exa"], brokenFileRecord) ===
+      "Providers failed: exa（凭据文件坏了，没配上 key，用免费额度跑）",
+    "a broken file is named as the cause, not read as 'never configured'",
+  );
+  assert(
+    formatProvidersFailedLine(["anysearch"], brokenFileRecord) ===
+      "Providers failed: anysearch（凭据文件坏了，没配上 key）",
+    "anysearch still states only its key state, now with the real cause",
+  );
+  assert(
+    formatProvidersFailedLine(["exa"], { ...brokenFileRecord, exa: "env" }) ===
+      "Providers failed: exa（key 来自环境变量）",
+    "an env key is still used when the file is broken, and the line says so",
+  );
 
   // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named
   //     on its own line — it was asked, just not waited for. An empty list

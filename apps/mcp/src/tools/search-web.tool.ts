@@ -93,9 +93,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
               // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled are unconditional here; structuredContent
-              // is a different shape (credentialSources and the two arm lists always,
-              // sufficiency / attribution / abstain / interrupted / failures when present).
+              // providersQueried / providersCancelled / credentialSources are
+              // unconditional here; structuredContent is a different shape (the two
+              // arm lists and the credential record always, sufficiency /
+              // attribution / abstain / interrupted / failures when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
@@ -105,6 +106,12 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // caller went away. Paired with providersQueried, so neither case
               // reads as an arm that never ran.
               providersCancelled: cancelledProviders,
+              // The same record structuredContent carries. Hosts split in two:
+              // some give the model only this text half (Cursor, the dsh bridge),
+              // so a fact that lives only in structuredContent is invisible to
+              // them. Which arm had which key, and whether the credential file is
+              // why one of them has none, belongs in both (#533).
+              credentialSources: eng.credentialSources ?? null,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.
@@ -142,7 +149,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
           // providersQueried、providersCancelled 恒有值；sufficiency /
-          // attribution / provider failures 有值时才加。
+          // attribution / provider failures 有值时才加。credentialSources
+          // 同样进正文（#533）：只读正文的宿主看不到 structuredContent。
           const structuredContent = {
             ...(isInterrupted(outcome, signal) ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),

@@ -28,6 +28,7 @@ import { join } from "node:path";
 
 import { createLlmSession } from "../src/llm-init";
 import { createEngine } from "../src/composition";
+import { CREDENTIAL_FILE_HINTS, credentialFileNotice } from "../src/credential-file-notice";
 import { redactSecrets } from "@anysearch-cli/retriever";
 import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
 
@@ -382,6 +383,76 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
     (engine.store as { close?: () => void }).close?.();
     engine.observation.close();
     scrub.restore();
+  }
+});
+
+test("a broken credential file is a classified fault, not a missing key", () => {
+  // #533: when the file it could not read is the reason an arm has no key, the
+  // record may not say "not configured". It carries the classification plus one
+  // sentence built from it - never the path, never the raw error text, which can
+  // quote the file (spec S2).
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({ warnings: [], credentialFileFault: { kind: "not-json" } }),
+  });
+  try {
+    const sources = engine.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    if (sources?.status !== "resolved") return;
+    assert.equal(sources.tavily, "none");
+    assert.equal(sources.exa, "none");
+    assert.equal(sources.anysearch, "none");
+    assert.equal(sources.credentialFileFault?.kind, "not-json", "the kind travels");
+    assert.match(sources.credentialFileFault?.notice ?? "", /restart ans/,
+      "the sentence says a restart is what makes the fix take effect");
+    assert.doesNotMatch(JSON.stringify(sources), /credentials\.json/,
+      "the path stays out of the machine-readable record");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+});
+
+test("the fault sentences are one table, and the errno is filled into it", () => {
+  const sentences = Object.values(CREDENTIAL_FILE_HINTS);
+  assert.equal(new Set(sentences).size, sentences.length, "one sentence per kind, no duplicates");
+  for (const sentence of sentences) {
+    assert.match(sentence, /restart ans/, "every sentence says what makes the fix take effect");
+  }
+  assert.match(
+    credentialFileNotice({ kind: "unreadable", errno: "EACCES" }).notice,
+    /could not be read \(EACCES\)/,
+    "the errno is filled in where the sentence asks for it",
+  );
+  assert.doesNotMatch(
+    credentialFileNotice({ kind: "unreadable" }).notice,
+    /\(\)/,
+    "no empty parentheses when the read failure gave no known code",
+  );
+});
+
+test("a healthy credential seam writes no fault field at all", () => {
+  // Absent, not null: a hand-built seam that never read a file must not have a
+  // claim of health written on its behalf.
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({ warnings: [] }),
+  });
+  try {
+    const sources = engine.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    assert.equal(
+      sources && "credentialFileFault" in sources,
+      false,
+      "no fault means no field, so nobody has to read a null as good news",
+    );
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
   }
 });
 

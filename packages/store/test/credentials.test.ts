@@ -185,6 +185,51 @@ test("a supplied parse result wins: the broken file on disk is never consulted a
   } finally { cleanup(); }
 });
 
+test("a broken file is classified, and the classification survives a supplied parse", () => {
+  // #533: a machine-readable surface may not carry the sentence (it can quote
+  // the file), so the reader records what kind of fault it was. The
+  // classification travels even when the warning does not: a caller that parses
+  // the file itself reports the sentence in its own shape, and its engine still
+  // has to say the file is unusable.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+
+    writeFileSync(path, "{ not json", "utf8");
+    const notJson = readUserCredentials({ home });
+    assert.equal(notJson.fault?.kind, "not-json");
+    assert.equal(notJson.fault?.errno, undefined, "a parse fault carries no errno");
+
+    writeFileSync(path, JSON.stringify({ keys: [] }), "utf8");
+    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "no bindings list");
+    writeFileSync(path, JSON.stringify({ bindings: [{ provider: "exa" }] }), "utf8");
+    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "an entry with no key");
+
+    // Present but unreadable: a directory where the file should be makes
+    // readFileSync throw on every platform, without depending on mode bits
+    // (which root ignores and Windows does not track).
+    rmSync(path, { force: true });
+    mkdirSync(path);
+    assert.equal(readUserCredentials({ home }).fault?.kind, "unreadable");
+    rmSync(path, { recursive: true, force: true });
+
+    // The supplied-parse path (#357): no warning, but the fault still rides out.
+    writeFileSync(path, "{ not json", "utf8");
+    const supplied = readUserCredentials({ home });
+    const resolved = resolveSearchCredentials({}, { home, credentialsFile: supplied });
+    assert.deepEqual(resolved.warnings, [], "the caller reports the sentence once");
+    assert.equal(resolved.credentialFileFault?.kind, "not-json", "the classification still travels");
+
+    // A healthy file reports no fault at all, and neither does a missing one.
+    writeFileSync(path, JSON.stringify({ bindings: [] }), "utf8");
+    assert.equal(readUserCredentials({ home }).fault, undefined);
+    assert.equal(resolveSearchCredentials({}, { home }).credentialFileFault, undefined);
+    rmSync(path, { force: true });
+    assert.equal(readUserCredentials({ home }).fault, undefined, "a missing file is not a fault");
+  } finally { cleanup(); }
+});
+
 test("the parse error never quotes the file's contents", () => {
   // SECURITY (spec S2: 秘密不出现在...错误详情). JSON.parse's own message
   // quotes ~10 characters around the error, and in this file those characters

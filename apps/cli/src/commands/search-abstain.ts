@@ -82,6 +82,12 @@ const FREE_QUOTA_UNVERIFIED_NOTE = "免费额度这条路没验";
 const NO_KEY_LABEL = "没配 key";
 
 /**
+ * 文件坏掉时不能说「没配 key」：用户配过，只是文件读不出来。这句和
+ * `NO_KEY_LABEL` 并列，失败行按记录里有没有 fault 二选一（#533）。
+ */
+const BROKEN_FILE_LABEL = "凭据文件坏了，没配上 key";
+
+/**
  * 没配 key 时这一臂实际怎么跑：doctor 读 `runs` + `limit`，失败行里 tavily / exa 也读
  * `runs`（anysearch 只说 key 状态，见 sourceNote）。三家都能不带 key 发请求：tavily /
  * anysearch 走各自的免费额度，exa 走它自己的 MCP 端点。
@@ -117,13 +123,21 @@ export function describeUnconfiguredSource(provider: SearchProviderId): string {
  * 没这个臂，就什么都不写（不编来源）。
  */
 function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
+  // #533: a fault in the credential file means no arm can have a stored key, so
+  // "not configured" would name the wrong cause for every keyless arm.
+  const keyless = sources.credentialFileFault ? BROKEN_FILE_LABEL : NO_KEY_LABEL;
   // tavily / exa 的端点是固定的，没配 key 就走默认服务上的免费额度，失败行可以说全。
-  if (id === "tavily" || id === "exa") return describeCredentialSource(sources[id], id);
+  if (id === "tavily" || id === "exa") {
+    const label = sources[id];
+    return label === "none"
+      ? keyless + "，" + KEYLESS_BEHAVIOR[id].runs
+      : describeCredentialSource(label, id);
+  }
   if (id === "anysearch") {
     // anysearch 的端点能被环境变量改掉，失败行没法承诺「默认服务上的免费额度」，
     // 只说 key 状态，免得和 doctor 那行打架。
     const label = sources.anysearch;
-    return label === "env" || label === "user" ? describeCredentialSource(label, "anysearch") : NO_KEY_LABEL;
+    return label === "env" || label === "user" ? describeCredentialSource(label, "anysearch") : keyless;
   }
   // Unknown ids get no note: the kernel record only names the three search arms,
   // and inventing a key state for anything else would be a lie.

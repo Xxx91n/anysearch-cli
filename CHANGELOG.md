@@ -23,6 +23,29 @@
 - 没配 key 的机器跑 `--live` 仍然没有任何联网证据：DNS、代理、TLS 都没验。要验免费额度这条路能不能用，跑一次 `ans search`。出口连通性检查是另一件事，本票不做。
 - 有 key 的三条探针、`ProbeAuth` 的三种值、四种诊断状态、退出码都没动。
 
+## Unreleased — #533: 凭据文件坏了，机器和人都看得见
+
+一句话说清：**以前用户凭据文件读不出来时，程序当作「没配过 key」，三个搜索臂都记 `none`，和从没配过 key 一模一样；唯一的提示走 stderr，只读工具返回的宿主一个字都看不到。现在引擎那条记录里多一个 `credentialFileFault`（分类 + 一句人话），`ans search --json`、`search_web`、`research_web` 的正文和 `structuredContent` 都带它；`Providers failed` 那行也不再在文件坏了的时候说「没配 key」。**
+
+### Changed
+
+- **`CredentialFileContents` 多一个 `fault`**：`readUserCredentials` 的四个失败出口一起写下句子和分类（`unreadable` / `not-json` / `invalid-structure`，读失败带闭合的 errno）；`error` 的措辞原样不动，`ans auth` / `ans doctor` / `ans llm` 照旧读它。
+- **`ResolvedSearchCredentials.credentialFileFault`**：不管调用方有没有自己解析过文件都带出来——`ans chat` 那条路故意压掉 warning，引擎仍然要说文件不能用。
+- **`CredentialSources` 的 resolved 分支多一个可选 `credentialFileFault`**：分类加一句由 `CREDENTIAL_FILE_HINTS` 生成的 `notice`，不含路径、不含原始错误句。文件健康、文件不存在、或这个接缝根本没读过文件时，这个键不出现。
+- **两个 MCP 工具的正文也带 `credentialSources`**：宿主是劈开的，有的只读正文（Cursor、dsh 桥），有的只读 `structuredContent`（Claude Code），只放一半等于另一半人看不见。
+- **`Providers failed` 行的来源标注**：文件坏了时写「凭据文件坏了，没配上 key」，不再说「没配 key」；有环境变量的那一臂照旧写「key 来自环境变量」。
+- **提示句改成「重启」**：引擎只在启动时读一次凭据文件，旧的「修好后重试」在 MCP 里不成立。
+
+### Docs
+
+- `docs/mcp-server.md`：凭证那段改成两半都送，并补 `credentialFileFault` 的形状、缺席的含义和快照语义。
+- `GLOSSARY.md`：免费额度那条补一句——`none` 不代表这台机器没配过 key。
+
+### Known limits
+
+- 这个字段只形容「文件能不能用」，说不了「你本来存了几个 key」：解析失败时 `bindings` 已经是空数组。
+- 长跑的 MCP 进程在用户修好文件之后仍会报旧结论，直到重启。
+
 ## Unreleased — #514: 零结果分成五档，CLI 和两个 MCP 工具读同一个结论
 
 一句话说清：**以前「零结果」只有一个说法，全臂失败（上游挂了）和域内被滤空（策略拒答）在退出码和输出里分不开。现在引擎在装配信封前算一次 outcome，五个值（answer / failed / cancelled / abstain / empty）写进 `metadata.outcome` 和审计 span，CLI 的 `--json` 与退出码、`search_web` / `research_web` 的 `structuredContent` 都读这一个值。**

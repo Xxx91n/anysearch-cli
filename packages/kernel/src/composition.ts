@@ -24,6 +24,7 @@ import {
 } from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
+import { credentialFileNotice, type CredentialFileNotice } from "./credential-file-notice";
 import {
   describeDomainFallback,
   domainConstraintFailure,
@@ -253,7 +254,20 @@ export type CredentialSources =
    * Design: require all three and label the keyless arm - an omitted field and a
    * missing key used to look the same, and only the writer knows which it is.
    */
-  | { status: "resolved"; tavily: CredentialSourceLabel; exa: CredentialSourceLabel; anysearch: CredentialSourceLabel }
+  | {
+      status: "resolved";
+      tavily: CredentialSourceLabel;
+      exa: CredentialSourceLabel;
+      anysearch: CredentialSourceLabel;
+      /**
+       * Present only when the user credential file exists but could not be used:
+       * the file's classification plus one sentence built from it. Absent means
+       * "nobody reported a fault" - a healthy file, no file at all, or a seam
+       * that never read one. Never carries the path or the raw error sentence,
+       * which can quote the file (spec S2).
+       */
+      credentialFileFault?: CredentialFileNotice;
+    }
   /** Resolution threw. The arms fell back to their own env; `error` explains why. */
   | { status: "failed"; error: string };
 
@@ -370,6 +384,13 @@ export function createEngine(
         tavily: creds?.tavily?.apiKey ? creds.tavily.source : "none",
         exa: creds?.exa?.apiKey ? creds.exa.source : "none",
         anysearch: creds?.anysearch?.apiKey ? creds.anysearch.source : "none",
+        // Absent, not null: `searchCredentials` is a public seam, and a test or
+        // embedder can hand back its own object without ever reading a file. A
+        // written `null` would claim "the file is healthy" on behalf of a writer
+        // that does not know (#533).
+        ...(creds?.credentialFileFault
+          ? { credentialFileFault: credentialFileNotice(creds.credentialFileFault) }
+          : {}),
       };
       credentialSources = resolved;
     } catch (e) {

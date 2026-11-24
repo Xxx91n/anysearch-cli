@@ -181,6 +181,12 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
+              // The same record structuredContent carries. Hosts split in two:
+              // some give the model only this text half (Cursor, the dsh bridge),
+              // so a fact that lives only in structuredContent is invisible to
+              // them. Which arm had which key, and whether the credential file is
+              // why one of them has none, belongs in both (#533).
+              credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
               // Partial-failure metadata rides the successful result.
@@ -193,6 +199,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
           // providersQueried、providersCancelled 恒有值；其余字段有值时才加。
+          // credentialSources 同样进正文（#533）：只读正文的宿主看不到
+          // structuredContent，两半都得有。
           const structuredContent = {
             // interrupted follows only the call verdict (`callOutcome`): the
             // last completed round, or a caller abort. Earlier-round cut-off

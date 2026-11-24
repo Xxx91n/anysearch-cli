@@ -153,10 +153,61 @@ export interface CredentialBinding {
   apiKey: string;
 }
 
+/**
+ * What kind of fault made the credential file unusable. A closed set on
+ * purpose: this is the only thing about the file that reaches a
+ * machine-readable surface, so it never grows into free text (spec S2 - no
+ * file contents, no key fragment).
+ */
+export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure";
+
+/**
+ * The errnos a read failure may report. Closed for the same reason: `e.code` is
+ * typed `string`, and only these say something the user can act on.
+ */
+export const CREDENTIAL_FILE_FAULT_ERRNOS = [
+  "EACCES", "EPERM", "EROFS", "EISDIR", "ENOTDIR", "ENAMETOOLONG",
+  "EMFILE", "ENFILE", "EBUSY", "ETIMEDOUT", "ENOSPC",
+] as const;
+
+export type CredentialFileFaultErrno = (typeof CREDENTIAL_FILE_FAULT_ERRNOS)[number];
+
+/** The classification alone: what kind of fault, plus the errno when there was one. */
+export interface CredentialFileFault {
+  kind: CredentialFileFaultKind;
+  errno?: CredentialFileFaultErrno;
+}
+
 export interface CredentialFileContents {
   bindings: CredentialBinding[];
   /** Set when the file exists but could not be read or parsed. Never silently treated as empty on write. */
   error?: string;
+  /**
+   * The same fact as `error`, classified. A machine-readable surface carries
+   * this instead of the sentence: `error` can quote the file (a bad entry names
+   * the provider it found), and a reader acting on the fault does not need the
+   * wording.
+   */
+  fault?: CredentialFileFault;
+}
+
+/**
+ * One failure return: the sentence (`ans auth`, `ans doctor`, the resolver's
+ * warning) and the classification (the engine's record) are written together,
+ * so no branch can tell the printer there is a fault and the engine good health.
+ */
+function unusableFile(
+  path: string,
+  detail: string,
+  kind: CredentialFileFaultKind,
+  errno?: string,
+): CredentialFileContents {
+  const known = CREDENTIAL_FILE_FAULT_ERRNOS.find((code) => code === errno);
+  return {
+    bindings: [],
+    error: path + ": " + detail,
+    fault: known ? { kind, errno: known } : { kind },
+  };
 }
 
 /**
@@ -249,7 +300,12 @@ export function readUserCredentials(
     raw = readFileSync(path, "utf8");
   } catch (e) {
     // Same rule as the parse error: the file's contents never reach the output.
-    return { bindings: [], error: path + ": could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")" };
+    return unusableFile(
+      path,
+      "could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")",
+      "unreadable",
+      (e as NodeJS.ErrnoException).code,
+    );
   }
   let parsed: unknown;
   try {
@@ -261,15 +317,16 @@ export function readUserCredentials(
     // S2 forbids a secret in error details. Node's message carries "(line N
     // column M)" for a syntax error; keep that and drop the rest.
     const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
-    return {
-      bindings: [],
-      error: path + ": not valid JSON" + (position ? " (" + position + ")" : "") +
+    return unusableFile(
+      path,
+      "not valid JSON" + (position ? " (" + position + ")" : "") +
         "; fix or remove the file, then retry",
-    };
+      "not-json",
+    );
   }
   const list = (parsed as Record<string, unknown> | null)?.["bindings"];
   if (!Array.isArray(list)) {
-    return { bindings: [], error: path + ": missing the \"bindings\" list" };
+    return unusableFile(path, "missing the \"bindings\" list", "invalid-structure");
   }
   // A record that cannot be trusted makes the WHOLE file untrusted: returning
   // the readable ones would let the next write replace the file with a filtered
@@ -279,10 +336,11 @@ export function readUserCredentials(
   for (let i = 0; i < list.length; i++) {
     const parsedEntry = parseBinding(list[i], i);
     if ("problem" in parsedEntry) {
-      return {
-        bindings: [],
-        error: path + ": " + parsedEntry.problem + "; fix or remove the file, then retry",
-      };
+      return unusableFile(
+        path,
+        parsedEntry.problem + "; fix or remove the file, then retry",
+        "invalid-structure",
+      );
     }
     bindings.push(parsedEntry.binding);
   }
@@ -311,6 +369,13 @@ export interface ResolvedSearchCredentials {
    * `error` and reports it once (see `credentialFileWarning`).
    */
   warnings: string[];
+  /**
+   * Classified fault of the user credential file: present only when the file
+   * exists but could not be read or parsed. Copied regardless of `warnings`,
+   * because a caller that parsed the file itself suppresses the warning (that is
+   * `ans chat`) and its engine still has to report the fault (#533).
+   */
+  credentialFileFault?: CredentialFileFault;
 }
 
 /**
@@ -341,6 +406,11 @@ export function resolveSearchCredentials(
   const fault = credentialFileWarning(file);
   if (!opts.credentialsFile && fault) warnings.push(fault);
   const out: ResolvedSearchCredentials = { warnings };
+  // The classification travels even when the warning does not: a caller that
+  // parsed the file itself reports the sentence in its own shape, and the
+  // engine still has to say on a machine-readable surface that the file is
+  // unusable (#533).
+  if (file.fault) out.credentialFileFault = file.fault;
 
   // One rule for all three arms: an explicit env value wins over the stored
   // entry, and a missing key means the arm simply is not supplied (its SDK
