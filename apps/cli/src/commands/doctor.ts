@@ -383,10 +383,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
       await Promise.all(
         SEARCH_PROVIDER_IDS.map(async (provider) => {
           const entry = credentials[provider];
-          // Design: 没配 key 的源不探免费面（#534）—— 探针的三种值都在说这把 key，没 key 时
-          // 只会得到假绿或假红（anysearch 的匿名额度墙会被判成永久协议错、或者干脆「auth 通过」；
-          // exa 没 key 打 REST 是 402，会被说成额度用尽）。免费额度按 IP 按天走，落成失败或未检查，
-          // 都等于把别人的用量算成本机装坏；要验这条路，真跑一次 ans search。
+          // Design: 没配 key 的源不探免费面（#534）—— 探针的 ok / rejected / unverified 都只在说
+          // 这把 key，没 key 时只会给假绿或假红；要验免费额度这条路，真跑一次 ans search。
           if (!entry?.apiKey) return;
           const endpoint = opts.endpoints?.[provider]
             ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined);
