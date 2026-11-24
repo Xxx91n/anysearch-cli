@@ -15,11 +15,14 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialFileWarning,
   type CredentialFileContents,
+  CredentialWriteRefusal,
+  type CredentialRepairResult,
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
   readUserCredentials,
   removeUserCredential,
+  repairUserCredentials,
   resolveConfigHome,
   resolveLlmConfig,
   userCredentialsPath,
@@ -32,6 +35,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
+import { brokenFileHint, NOTHING_CHANGED, publishedButUnverified } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -75,6 +79,7 @@ function usage(): number {
   stderr("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
   stderr("      [--no-verify]            Do not check a search key upstream before storing it (offline machines)\n");
   stderr("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
+  stderr("  ans auth repair              Keep the keys a broken file can still give up, drop the rest\n");
   stderr("\n");
   stderr("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
   stderr("The store is plain text, owner-only, and shared by the CLI and GUI entries of this account.\n");
@@ -120,6 +125,13 @@ function describeSource(layer: LlmLayer | undefined): string {
   return layer ? KEY_SOURCE_LABELS[layer] : "set";
 }
 
+/** The three marks the source table can print, keyed by the state it decided. */
+const MARK: Record<"set" | "empty" | "broken", string> = {
+  set: "[SET]",
+  empty: "[EMPTY]",
+  broken: "[BROKEN]",
+};
+
 function statusLines(
   env: NodeJS.ProcessEnv,
   home: string,
@@ -133,6 +145,7 @@ function statusLines(
     const envValue = env[info.envKey]?.trim();
     const binding = file.bindings.find((b) => b.provider === info.id);
     let where: string;
+    let state: "set" | "empty" | "broken";
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
       // Report where the EFFECTIVE model key came from. `env` covers two
       // variables, so name the one actually set: a cross-config override
@@ -143,15 +156,27 @@ function statusLines(
       } else {
         where = describeSource(llm.sources.apiKey);
       }
+      state = "set";
     } else if (envValue) {
       where = "env " + info.envKey;
+      state = "set";
+    } else if (file.error) {
+      // The file is broken, so this command cannot tell whether the provider had
+      // an entry. "not set" would be a lie about a key that is still in the file
+      // (#537).
+      where = "unknown - the credential file could not be read";
+      state = "broken";
     } else if (binding) {
       where = "stored file" + (binding.endpoint ? " (" + displayEndpoint(binding.endpoint) + ")" : "");
+      state = "set";
     } else {
       where = "not set";
+      state = "empty";
     }
-    const mark = where === "not set" ? "[EMPTY]" : "[SET]  ";
-    lines.push(mark + " " + info.id.padEnd(10) + " " + where);
+    // The mark column holds `[SET]` (5), `[EMPTY]` (7) and `[BROKEN]` (8), pads to
+    // 8, and one separator space follows, so the provider id starts at column 10.
+    // Nothing parses the column.
+    lines.push(MARK[state].padEnd(8) + " " + info.id.padEnd(10) + " " + where);
   }
   return lines;
 }
@@ -223,6 +248,31 @@ function rejectUnknownProvider(provider: string): number {
   return 2;
 }
 
+/**
+ * Whether a refused write had already replaced the file. `undefined` means the error
+ * is not a write refusal at all (an input check, say), which is a different thing to
+ * report. The field read covers a store module loaded twice, where `instanceof` misses.
+ */
+function writePublished(e: unknown): boolean | undefined {
+  if (e instanceof CredentialWriteRefusal) return e.published;
+  const flagged = (e as { published?: unknown } | null)?.published;
+  return typeof flagged === "boolean" ? flagged : undefined;
+}
+
+/** One wording for every refused write; `fact` is what this command was changing. */
+function reportWriteOutcome(message: string, published: boolean, fact: string): void {
+  stderr(message + "\n");
+  stderr(published ? publishedButUnverified(fact) + "\n" : NOTHING_CHANGED + "\n");
+}
+
+function reportWriteFailure(e: unknown, fact: string): void {
+  const published = writePublished(e);
+  // An error from elsewhere (input validation, the endpoint guard) is not a write
+  // outcome, and adding one would describe a file it never touched.
+  if (published === undefined) stderr((e as Error).message + "\n");
+  else reportWriteOutcome((e as Error).message, published, fact);
+}
+
 export async function runAuth(args: string[]): Promise<number> {
   const sub = args[0];
   // ONE root for the whole run: status, list, set and remove all describe and
@@ -231,8 +281,8 @@ export async function runAuth(args: string[]): Promise<number> {
   const home = resolveConfigHome(undefined, env);
 
   if (sub === undefined || sub === "status" || sub === "list") {
-    // Design: 整条命令读一次凭据文件，来源表和模型解析器共用；读坏了 status 说一次，
-    // list 只在文件块里说一次。
+    // Design: status 和 list 只读一次凭据文件，来源表和模型解析器共用这一份；读坏了 status 说一次，
+    // list 只在文件块里说一次。set 在提示输入之前另读一次，remove 只在写锁里读一次。
     const file = readUserCredentials({ home });
     stdout("ans auth - provider API keys");
     stdout("---");
@@ -255,6 +305,12 @@ export async function runAuth(args: string[]): Promise<number> {
     }
     stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
     stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
+    if (file.error) {
+      // A script reading only the exit code cannot tell a broken file from a
+      // healthy one, and `ans doctor`, `set` and `remove` already exit 1 for it.
+      stdout(brokenFileHint(file));
+      return 1;
+    }
     return 0;
   }
 
@@ -280,6 +336,16 @@ export async function runAuth(args: string[]): Promise<number> {
         "(the anysearch arm takes its endpoint from ANYSEARCH_ENDPOINT).\n",
       );
       return 2;
+    }
+
+    // Refuse before the prompt: otherwise a rejected key gets blamed for a fault
+    // that belongs to the file.
+    const broken = readUserCredentials({ home });
+    if (broken.error) {
+      stderr(broken.error + "\n");
+      stderr("Nothing was typed and nothing was written.\n");
+      stderr(brokenFileHint(broken) + "\n");
+      return 1;
     }
 
     const target = endpoint !== null
@@ -329,7 +395,7 @@ export async function runAuth(args: string[]): Promise<number> {
       }
       return 0;
     } catch (e) {
-      stderr((e as Error).message + "\n");
+      reportWriteFailure(e, "hold the new key");
       return 1;
     }
   }
@@ -358,9 +424,43 @@ export async function runAuth(args: string[]): Promise<number> {
         " from " + userCredentialsPath(home) + ".");
       return 0;
     } catch (e) {
-      stderr((e as Error).message + "\n");
+      reportWriteFailure(e, "still hold the key this removed");
       return 1;
     }
+  }
+
+  if (sub === "repair") {
+    let result: CredentialRepairResult;
+    try {
+      result = repairUserCredentials({ home });
+    } catch (e) {
+      // Only the lock throws now; the write reports its own outcome.
+      stderr((e as Error).message + "\n");
+      stderr(NOTHING_CHANGED + "\n");
+      return 1;
+    }
+    if (result.kind === "write-failed") {
+      reportWriteOutcome(result.error, result.published, "hold the repaired entries");
+      return 1;
+    }
+    if (result.kind === "absent") {
+      stdout("No credential file at " + userCredentialsPath(home) + "; nothing to repair.");
+      return 0;
+    }
+    if (result.kind === "unrepairable") {
+      stderr(result.error + "\n");
+      stderr(NOTHING_CHANGED + "\n");
+      return 1;
+    }
+    if (result.kind === "healthy") {
+      stdout("The credential file at " + result.path + " is readable; nothing to repair (" +
+        result.kept + " key(s)).");
+      return 0;
+    }
+    stdout("Repaired " + result.path + ": kept " + result.kept + " key(s), dropped " +
+      result.dropped.length + ".");
+    for (const reason of result.dropped) stdout("  dropped: " + reason);
+    return 0;
   }
 
   stderr("Unknown subcommand: " + sub + "\n");

@@ -315,7 +315,8 @@ Rules behind the table:
   Error results do not carry it.
 - **A credential file that exists but cannot be used says so.**
   `credentialSources.credentialFileFault` is present only in that case, and it
-  carries `kind` (`unreadable` / `not-json` / `invalid-structure` / `unknown`),
+  carries `kind` (`unreadable` / `not-json` / `invalid-structure` / `invalid-record` /
+  `unknown`),
   an `errno` when it was a read failure, and one `notice` sentence built from
   the kind by `CREDENTIAL_FILE_HINTS` in
   `packages/kernel/src/credential-file-notice.ts` — the same "one table, not

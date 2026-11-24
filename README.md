@@ -74,12 +74,14 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 ans auth set openai            # typing is hidden; stored once
 ans auth list                  # what is stored, and which provider/endpoint each key is bound to
 ans auth remove openai         # drop that entry
+ans auth repair                # a broken file: keep the keys it can still give up, drop only the bad record
 ```
 
 - Stored in `~/.ans/credentials.json`. It is **plain text** — not encrypted, not a system keychain — and the file says so itself.
 - Every entry on this machine and account reads it, including a GUI host that inherits no shell environment. That is why one entry is enough.
 - An explicit env value still wins: `ANS_LLM_API_KEY`, or the provider's own `*_API_KEY`.
 - Each entry is bound to one provider; a model key is also bound to the endpoint it was entered for. Change the endpoint or the provider and the key is not sent — enter it again.
+- A broken file (not JSON, wrong shape, one unreadable record) is never rewritten by `set` or `remove`: both refuse and name the file, and `ans auth` marks every provider it cannot see as `[BROKEN]` instead of `not set`, exiting 1. `ans auth repair` is the way out: it keeps the records it can read and drops only the ones it cannot.
 - Access protection is established and then checked on the platform's own terms: mode 600 on POSIX, a parsed Windows DACL on Windows (a POSIX mode is never accepted as a stand-in). If protection cannot be established, the write fails instead of landing a readable copy.
 
 ## Domains & Abstain

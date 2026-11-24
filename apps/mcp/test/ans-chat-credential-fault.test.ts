@@ -243,8 +243,10 @@ test("an invalid entry is classified without quoting what it held", async () => 
   });
   const res = await harness(fix).call();
   const record = res?.structuredContent?.["credentialFileFault"];
-  assert.equal((record as { kind?: string } | undefined)?.kind, "invalid-structure");
-  assert.deepEqual(record, credentialFileNotice({ kind: "invalid-structure" }));
+  // A record that cannot be read is its own kind: it is the one fault `ans auth
+  // repair` can keep the other keys out of (#537).
+  assert.equal((record as { kind?: string } | undefined)?.kind, "invalid-record");
+  assert.deepEqual(record, credentialFileNotice({ kind: "invalid-record" }));
   assert.ok(!JSON.stringify(res).includes("SECRET"), "the file's provider value never reaches the result");
 });
 

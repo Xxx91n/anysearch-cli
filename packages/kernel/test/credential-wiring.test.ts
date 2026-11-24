@@ -465,7 +465,7 @@ test("a pre-parsed credential file still carries its fault, without the value th
       const sources = engine.credentialSources;
       assert.equal(sources?.status, "resolved");
       if (sources?.status !== "resolved") return;
-      assert.equal(sources.credentialFileFault?.kind, "invalid-structure");
+      assert.equal(sources.credentialFileFault?.kind, "invalid-record");
       // A real broken file with no key in the environment: all three arms are
       // keyless, and the fault is what says why.
       assert.equal(sources.tavily, "none");
@@ -500,8 +500,24 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   for (const errno of CREDENTIAL_FILE_FAULT_ERRNOS) {
     const notice = credentialFileNotice({ kind: "unreadable", errno }).notice;
     assert.ok(notice.includes("(" + errno + ")"), "the code is named: " + notice);
-    assert.doesNotMatch(notice, /fix it \(/, errno + " has its own remedy, not the fallback");
+    assert.doesNotMatch(notice, /check the file and the folder it lives in/, errno + " has its own remedy, not the fallback");
+    assert.doesNotMatch(notice, /ans auth repair/, errno + ": repair reads the file the same way, so it cannot help");
   }
+
+  // Repair keeps the records it can read, so it is promised only where a record is
+  // what failed. A file that does not parse has nothing left for it to keep.
+  for (const kind of ["not-json", "invalid-structure", "unreadable"] as const) {
+    assert.doesNotMatch(
+      credentialFileNotice({ kind }).notice,
+      /ans auth repair/,
+      kind + " has nothing for repair to keep",
+    );
+  }
+  assert.match(
+    credentialFileNotice({ kind: "invalid-record" }).notice,
+    /ans auth repair to keep the keys it can still read/,
+    "a bad record is the one case repair fixes",
+  );
 
   // The record can arrive through the public search seam, so a kind or code the
   // kernel does not know must degrade to plain wording, not throw.
@@ -514,7 +530,8 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   for (const errno of ["EWHATEVER", "constructor"]) {
     const record = credentialFileNotice({ kind: "unreadable", errno } as unknown as CredentialFileFault);
     assert.equal("errno" in record, false, errno + " is not forwarded outside the closed set");
-    assert.match(record.notice, /; fix it \(/, errno + " gets the plain remedy");
+    assert.match(record.notice, /check the file and the folder it lives in/, errno + " gets the plain remedy");
+    assert.doesNotMatch(record.notice, /ans auth repair/, "a read failure is not repaired by rewriting it");
   }
 });
 

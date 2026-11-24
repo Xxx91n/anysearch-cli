@@ -22,6 +22,7 @@ import {
   normalizeBindingEndpoint,
   readUserCredentials,
   removeUserCredential,
+  repairUserCredentials,
   resolveSearchCredentials,
   SEARCH_PROVIDER_ENV_KEYS,
   SEARCH_PROVIDER_IDS,
@@ -205,7 +206,7 @@ test("a broken file is classified, and the classification survives a supplied pa
     writeFileSync(path, JSON.stringify({ keys: [] }), "utf8");
     assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "no bindings list");
     writeFileSync(path, JSON.stringify({ bindings: [{ provider: "exa" }] }), "utf8");
-    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-structure", "an entry with no key");
+    assert.equal(readUserCredentials({ home }).fault?.kind, "invalid-record", "an entry with no key");
 
     // Present but unreadable: a directory where the file should be makes
     // readFileSync throw on every platform, without depending on mode bits
@@ -632,4 +633,212 @@ test("a read-only config directory fails with the actionable sentence, not a bar
     try { chmodSync(dir, 0o700); } catch { /* already restored */ }
     cleanup();
   }
+});
+
+test("repairUserCredentials keeps the readable keys and drops only the broken record (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, JSON.stringify({
+      bindings: [
+        { provider: "openai", apiKey: "good-key" },
+        { provider: "anthropic" },
+        { provider: "exa", apiKey: "exa-key" },
+      ],
+    }), "utf8");
+
+    // The read stays all-or-nothing: repair is the caller asking for the drop.
+    assert.deepEqual(readUserCredentials({ home }).bindings, []);
+
+    const result = repairUserCredentials({ home });
+    assert.equal(result.kind, "repaired");
+    assert.equal(result.kind === "repaired" && result.kept, 2);
+    assert.equal(result.kind === "repaired" && result.dropped.length, 1);
+    assert.match(result.kind === "repaired" ? result.dropped[0]! : "", /entry 2 \(anthropic\) has no apiKey/);
+    assert.ok(!JSON.stringify(result).includes("good-key"), "the result never carries a key");
+
+    const repaired = readUserCredentials({ home });
+    assert.equal(repaired.error, undefined);
+    assert.deepEqual(repaired.bindings.map((b) => b.provider).sort(), ["exa", "openai"]);
+    assert.equal(repaired.bindings.find((b) => b.provider === "openai")?.apiKey, "good-key");
+  } finally { cleanup(); }
+});
+
+test("repairUserCredentials never rewrites a healthy file and refuses what it cannot parse (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    writeUserCredential({ provider: "openai", apiKey: KEY }, { home });
+    const path = userCredentialsPath(home);
+    const before = readFileSync(path, "utf8");
+    const stat = statSync(path);
+    const healthy = repairUserCredentials({ home });
+    assert.equal(healthy.kind, "healthy");
+    assert.equal(readFileSync(path, "utf8"), before, "a good file is not churned");
+    assert.equal(statSync(path).mtimeMs, stat.mtimeMs);
+
+    // Not JSON: nothing in the file can be kept, so a repair would be a delete.
+    writeFileSync(path, "{ not json", "utf8");
+    const broken = repairUserCredentials({ home });
+    assert.equal(broken.kind, "unrepairable");
+    assert.match(broken.kind === "unrepairable" ? broken.error : "", /not valid JSON/);
+    assert.equal(readFileSync(path, "utf8"), "{ not json", "the bytes survive for the user to inspect");
+
+    // No bindings list: same answer, never a rewrite.
+    writeFileSync(path, JSON.stringify({ exa: "not-an-object" }), "utf8");
+    const wrongShape = repairUserCredentials({ home });
+    assert.equal(wrongShape.kind, "unrepairable");
+    assert.match(wrongShape.kind === "unrepairable" ? wrongShape.error : "", /missing the "bindings" list/);
+
+    assert.equal(repairUserCredentials({ home: join(home, "nowhere") }).kind, "absent");
+  } finally { cleanup(); }
+});
+
+test("a UTF-8 BOM does not make a healthy file unreadable (#537)", () => {
+  // Notepad and PowerShell redirection add one; JSON.parse rejects it, so a file
+  // that looks fine in an editor used to read as "not valid JSON".
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, "﻿" + JSON.stringify({ bindings: [{ provider: "exa", apiKey: "exa-key" }] }), "utf8");
+
+    const file = readUserCredentials({ home });
+    assert.equal(file.error, undefined);
+    assert.equal(file.bindings[0]?.provider, "exa");
+    // And a write on top of it succeeds instead of refusing the file.
+    writeUserCredential({ provider: "tavily", apiKey: "tvly-key" }, { home });
+    assert.equal(readUserCredentials({ home }).bindings.length, 2);
+  } finally { cleanup(); }
+});
+
+test("removeUserCredential refuses a broken file without repeating the read's advice (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "exa" }],
+    }), "utf8");
+
+    let message = "";
+    try {
+      removeUserCredential({ provider: "exa" }, { home });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    assert.match(message, /entry 2 \(exa\) has no apiKey/);
+    assert.equal(message.split("fix or remove").length - 1, 1, "同一句只说一次：" + message);
+    assert.match(message, /the key was not removed/);
+    assert.match(readFileSync(path, "utf8"), /good-key/, "the other key survives");
+  } finally { cleanup(); }
+});
+
+test("a provider value read out of the file is shown without control characters and bounded (#537)", () => {
+  // The fault sentence is printed verbatim by `ans auth`, `auth list`, `ans llm`
+  // and doctor. Someone pasting a key into the provider field must not get it
+  // back with a newline that rewrites the terminal, or at arbitrary length.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    const esc = String.fromCharCode(27);
+    const newline = String.fromCharCode(10);
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "exa" + esc + "[2K" + newline + "x".repeat(200) }],
+    }), "utf8");
+
+    const file = readUserCredentials({ home });
+    assert.ok(file.error, "the record is still reported");
+    const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
+    assert.ok(!control.test(file.error!), "no control characters: " + JSON.stringify(file.error));
+    const shown = /entry 1 \((.*)\) has no apiKey/.exec(file.error!)?.[1] ?? "";
+    assert.ok(shown.length <= 41, "the label is bounded, got " + shown.length + ": " + shown);
+    // The stored value is untouched: only the display form changes.
+    assert.match(readFileSync(path, "utf8"), /x{100}/);
+  } finally { cleanup(); }
+});
+
+test("a repair whose rewrite fails reports whether the file was published (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  const previousVerify = credentialProtectionSeam.verify;
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+
+    // Fail only the check that runs after the rename, so the write reaches the
+    // published state: that is the case the caller cannot infer by looking at the
+    // filesystem afterwards.
+    let calls = 0;
+    credentialProtectionSeam.verify = () => {
+      calls++;
+      if (calls > 1) throw new Error("it is group-readable");
+    };
+    const failed = repairUserCredentials({ home });
+    assert.equal(failed.kind, "write-failed");
+    assert.equal(failed.kind === "write-failed" && failed.published, true,
+      "the rename had landed before the check failed");
+    assert.match(failed.kind === "write-failed" ? failed.error : "", /refusing to write the credential file/);
+    assert.equal(existsSync(path), false, "fail closed removed the published file");
+
+    // And a refusal before the rename says published: false, so the caller can
+    // still promise the file is unchanged.
+    credentialProtectionSeam.verify = () => { throw new Error("no ACL tool"); };
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+    const refused = repairUserCredentials({ home });
+    assert.equal(refused.kind, "write-failed");
+    assert.equal(refused.kind === "write-failed" && refused.published, false);
+    assert.match(readFileSync(path, "utf8"), /anthropic/, "the original bytes are still there");
+  } finally {
+    credentialProtectionSeam.verify = previousVerify;
+    cleanup();
+  }
+});
+
+test("only the repairable fault offers the repair path (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+
+    // Nothing survives a parse fault, so the sentence must not promise repair.
+    writeFileSync(path, "{ not json", "utf8");
+    const notJson = readUserCredentials({ home });
+    assert.doesNotMatch(notJson.error!, /ans auth repair/, notJson.error!);
+
+    writeFileSync(path, JSON.stringify({ keys: [] }), "utf8");
+    const noList = readUserCredentials({ home });
+    assert.doesNotMatch(noList.error!, /ans auth repair/, noList.error!);
+
+    // A record inside a readable file is the one case repair fixes.
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+    const record = readUserCredentials({ home });
+    assert.match(record.error!, /ans auth repair to keep the keys it can still read/, record.error!);
+    assert.equal(record.fault?.kind, "invalid-record");
+  } finally { cleanup(); }
+});
+
+test("a read fault names the remedy for its own errno, not a generic one (#537)", () => {
+  // "check the file's permissions" is wrong advice for a directory in the file's
+  // place, and "remove it" on a full disk would throw away keys that are fine.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    mkdirSync(path); // readFileSync on a directory throws EISDIR
+
+    const file = readUserCredentials({ home });
+    assert.equal(file.fault?.kind, "unreadable");
+    assert.equal(file.fault?.errno, "EISDIR");
+    assert.match(file.error!, /EISDIR/);
+    assert.match(file.error!, /move the directory at that path aside/, file.error!);
+    assert.doesNotMatch(file.error!, /permissions/, "a directory is not a permissions problem: " + file.error!);
+  } finally { cleanup(); }
 });

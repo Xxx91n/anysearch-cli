@@ -160,7 +160,7 @@ export interface CredentialBinding {
  * machine-readable surface, so it never grows into free text (no file
  * contents, no key fragment).
  */
-export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure";
+export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure" | "invalid-record";
 
 /**
  * The errnos a read failure may report.
@@ -204,11 +204,10 @@ function unusableFile(
   kind: CredentialFileFaultKind,
   errno?: string,
 ): CredentialFileContents {
-  const known = CREDENTIAL_FILE_FAULT_ERRNOS.find((code) => code === errno);
   return {
     bindings: [],
     error: path + ": " + detail,
-    fault: known ? { kind, errno: known } : { kind },
+    fault: isCredentialFaultErrno(errno) ? { kind, errno } : { kind },
   };
 }
 
@@ -265,6 +264,19 @@ function stripAuthorityAndQuery(value: string): string {
 }
 
 /**
+ * What may be SHOWN for a provider id read out of the file: the fault sentence is
+ * printed verbatim by `ans auth`, `auth list`, `ans llm` and doctor, so a value
+ * pasted into that field must not arrive with control characters or at any length.
+ */
+function showProvider(raw: string): string {
+  // `\p{Cc}` is the control class and `\p{Cf}` the format class (zero-width
+  // joiners, bidi overrides): both can rewrite or hide what a terminal shows. A
+  // space in their place keeps two tokens from fusing into one word.
+  const cleaned = raw.replace(/[\p{Cc}\p{Cf}]+/gu, " ").trim();
+  return cleaned.length > 40 ? cleaned.slice(0, 40) + "…" : cleaned;
+}
+
+/**
  * Validate one stored record. Returns the binding, or a reason it cannot be
  * trusted. A record is never silently dropped: writing back a filtered list
  * would permanently erase whatever it held.
@@ -277,16 +289,109 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
   const provider = typeof rec["provider"] === "string" ? rec["provider"].trim().toLowerCase() : "";
   if (!provider) return { problem: "entry " + (index + 1) + " has no provider" };
   const apiKey = typeof rec["apiKey"] === "string" ? rec["apiKey"].trim() : "";
-  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + provider + ") has no apiKey" };
+  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has no apiKey" };
   // An endpoint that is present but not a string cannot be silently reshaped
   // into "the provider default" - that would change which host the key is sent
   // to, which is exactly what the binding is supposed to prevent.
   const rawEndpoint = rec["endpoint"];
   if (rawEndpoint !== undefined && rawEndpoint !== null && typeof rawEndpoint !== "string") {
-    return { problem: "entry " + (index + 1) + " (" + provider + ") has a non-string endpoint" };
+    return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has a non-string endpoint" };
   }
   const endpoint = typeof rawEndpoint === "string" ? normalizeBindingEndpoint(rawEndpoint) : null;
   return { binding: { provider, endpoint, apiKey } };
+}
+
+/**
+ * A UTF-8 BOM is legal in a text file and fatal to `JSON.parse`. Notepad and
+ * PowerShell's redirection both add one, so a file that looks healthy in an
+ * editor would otherwise read as "not valid JSON".
+ */
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
+ * The pieces every surface builds its advice from: the two command names, and the
+ * two halves of the sentence. Only a fault inside a readable file can be repaired,
+ * so `KEEP_KEYS` belongs to that case alone.
+ */
+export const REPAIR_COMMAND = "ans auth repair";
+export const STORE_KEY_COMMAND = "ans auth set <provider>";
+export const FIX_OR_REPLACE = "fix or remove the file";
+export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
+const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
+const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
+/**
+ * What the user can do about a read failure, by the code that caused it. "Fix its
+ * permissions" is wrong advice for a full disk or a directory in the file's
+ * place, and "remove it" on a full disk would throw away keys that are fine.
+ */
+const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
+  EACCES: "fix its permissions",
+  EPERM: "fix its permissions",
+  EROFS: "fix its permissions",
+  EISDIR: "move the directory at that path aside",
+  ENOTDIR: "fix the path: a parent directory is a file",
+  ENAMETOOLONG: "shorten the path",
+  ENOSPC: "free some disk space",
+  EMFILE: "close some open files and run ans again",
+  ENFILE: "close some open files and run ans again",
+  EBUSY: "retry once nothing else is using the file",
+  ETIMEDOUT: "retry once the file is reachable",
+  EIO: "check the disk and retry the read",
+};
+
+/** True for a code in the closed set: the only kind worth publishing. */
+export function isCredentialFaultErrno(value: unknown): value is CredentialFileFaultErrno {
+  return CREDENTIAL_FILE_FAULT_ERRNOS.some((code) => code === value);
+}
+
+/** The remedy for a code this build knows; a neutral sentence for anything else. */
+export function readFaultRemedy(errno?: string): string {
+  return isCredentialFaultErrno(errno) ? READ_REMEDY[errno] : "check the file and the folder it lives in";
+}
+
+/** The one wording for "the file cannot be read at all"; the read and the repair share it. */
+function unreadableSentence(code: string): string {
+  return "could not read it (" + code + "); " + readFaultRemedy(code);
+}
+
+/**
+ * Parse the file's bytes. One parser for the read and the repair path: they have
+ * to agree on what a readable file is, and a read fix (the BOM) would otherwise
+ * have to be made twice.
+ *
+ * `problems` names every record that failed, in file order, and `bindings` holds
+ * the ones that passed. The read path reports the first problem as a whole-file
+ * fault (a partial view must never be written back); repair is the one caller
+ * allowed to act on the split.
+ */
+function parseCredentialBytes(
+  raw: string,
+): { bindings: CredentialBinding[]; problems: string[] } | { detail: string; kind: CredentialFileFaultKind } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripBom(raw));
+  } catch (e) {
+    // SECURITY: a JSON.parse message quotes the text around the error, which in
+    // this file is usually a key. Report only the position - the reader
+    // (`ans auth list`, doctor, the resolver's warning) goes to stderr, and spec
+    // S2 forbids a secret in error details. Node's message carries "(line N
+    // column M)" for a syntax error; keep that and drop the rest.
+    const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
+    return { detail: "not valid JSON" + (position ? " (" + position + ")" : ""), kind: "not-json" };
+  }
+  const list = (parsed as Record<string, unknown> | null)?.["bindings"];
+  if (!Array.isArray(list)) return { detail: "missing the \"bindings\" list", kind: "invalid-structure" };
+  const bindings: CredentialBinding[] = [];
+  const problems: string[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const parsedEntry = parseBinding(list[i], i);
+    if ("problem" in parsedEntry) problems.push(parsedEntry.problem);
+    else bindings.push(parsedEntry.binding);
+  }
+  return { bindings, problems };
 }
 
 /** Read the credential file. A missing file is simply "no keys"; a broken one reports why. */
@@ -304,49 +409,23 @@ export function readUserCredentials(
     // Same rule as the parse error: the file's contents never reach the output.
     return unusableFile(
       path,
-      "could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")",
+      unreadableSentence((e as NodeJS.ErrnoException).code ?? "I/O error"),
       "unreadable",
       (e as NodeJS.ErrnoException).code,
     );
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    // SECURITY: a JSON.parse message quotes the text around the error, which in
-    // this file is usually a key. Report only the position - the reader
-    // (`ans auth list`, doctor, the resolver's warning) goes to stderr, and spec
-    // S2 forbids a secret in error details. Node's message carries "(line N
-    // column M)" for a syntax error; keep that and drop the rest.
-    const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
-    return unusableFile(
-      path,
-      "not valid JSON" + (position ? " (" + position + ")" : "") +
-        "; fix or remove the file, then retry",
-      "not-json",
-    );
-  }
-  const list = (parsed as Record<string, unknown> | null)?.["bindings"];
-  if (!Array.isArray(list)) {
-    return unusableFile(path, "missing the \"bindings\" list", "invalid-structure");
+  const bytes = parseCredentialBytes(raw);
+  if (!("bindings" in bytes)) {
+    return unusableFile(path, bytes.detail + REMOVE_ADVICE, bytes.kind);
   }
   // A record that cannot be trusted makes the WHOLE file untrusted: returning
   // the readable ones would let the next write replace the file with a filtered
   // list and permanently erase the bad record (and whatever it held). Report it
   // instead, so the user fixes or removes the file knowingly.
-  const bindings: CredentialBinding[] = [];
-  for (let i = 0; i < list.length; i++) {
-    const parsedEntry = parseBinding(list[i], i);
-    if ("problem" in parsedEntry) {
-      return unusableFile(
-        path,
-        parsedEntry.problem + "; fix or remove the file, then retry",
-        "invalid-structure",
-      );
-    }
-    bindings.push(parsedEntry.binding);
+  if (bytes.problems.length > 0) {
+    return unusableFile(path, bytes.problems[0]! + REPAIR_ADVICE, "invalid-record");
   }
-  return { bindings };
+  return { bindings: bytes.bindings };
 }
 
 /**
@@ -513,10 +592,9 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
   // escape as a bare EACCES from the lock file (found by the installed-product
   // lane in CI: a read-only config directory must fail with this message, not
   // with an errno).
-  const refused = (reason: string): Error => new Error(
-    "refusing to write the credential file " + path + ": " + reason +
-    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-  );
+  // Never after a publish: this door is a refused lock or an unusable folder.
+  const refused = (reason: string): CredentialWriteRefusal =>
+    new CredentialWriteRefusal(refusalSentence(path, reason), false);
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -724,6 +802,30 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
   }
 }
 
+/** `classifyCredentialFault` matches on "refusing to write", so this sentence is built once. */
+function refusalSentence(path: string, reason: string): string {
+  return "refusing to write the credential file " + path + ": " + reason +
+    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
+}
+
+/**
+ * A refused credential write. `published` is true when the rename had already
+ * replaced the target and the later access check failed: the file then holds the
+ * new bytes, or the fail-closed removal took it away. False means nothing on disk
+ * changed. A caller cannot tell this from the filesystem afterwards, so the write
+ * says it.
+ */
+export class CredentialWriteRefusal extends Error {
+  // Assigning in the body, not a parameter property: the manual probes load this
+  // module through Node's strip-only TypeScript loader, which refuses that syntax.
+  readonly published: boolean;
+  constructor(message: string, published: boolean) {
+    super(message);
+    this.name = "CredentialWriteRefusal";
+    this.published = published;
+  }
+}
+
 /**
  * Write the file so that no unprotected copy of the secret ever lands on disk:
  * the empty temp file is protected and verified FIRST, the key is written into
@@ -758,10 +860,7 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    throw new Error(
-      "refusing to write the credential file " + path + ": " + reason +
-      ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.",
-    );
+    throw new CredentialWriteRefusal(refusalSentence(path, reason), published);
   }
 }
 
@@ -822,7 +921,11 @@ export function writeUserCredential(
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
-      throw new Error(existing.error + "; fix or remove that file, then retry - rewriting it would drop the other keys");
+      // The read already ended with the advice; say only what this write did not do.
+      throw new CredentialWriteRefusal(
+        existing.error + "; the key was not written - rewriting the file would drop the other keys",
+        false,
+      );
     }
     const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
     kept.push({ provider: info.id, endpoint, apiKey });
@@ -842,7 +945,12 @@ export function removeUserCredential(
   // key that was just deleted, or delete one that was just added.
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
-    if (existing.error) throw new Error(existing.error + "; fix or remove that file, then retry");
+    if (existing.error) {
+      throw new CredentialWriteRefusal(
+        existing.error + "; the key was not removed - the file was not changed",
+        false,
+      );
+    }
     const kept = existing.bindings.filter(
       (b) => !(b.provider === input.provider && b.endpoint === endpoint),
     );
@@ -853,6 +961,57 @@ export function removeUserCredential(
     }
     writeProtectedFile(path, serialize(kept), activePlatform());
     return true;
+  });
+}
+
+export type CredentialRepairResult =
+  | { kind: "absent" }
+  | { kind: "unrepairable"; error: string }
+  | { kind: "healthy"; path: string; kept: number }
+  | { kind: "repaired"; path: string; kept: number; dropped: string[] }
+  /** The rewrite was refused. `published` says whether the target may hold the new bytes. */
+  | { kind: "write-failed"; error: string; published: boolean };
+
+/**
+ * Keep the records that can be trusted and drop the ones that cannot.
+ *
+ * Design: read the raw bytes under the lock, never `readUserCredentials`'s
+ * `bindings` — that list is empty on every fault, and writing it back is the
+ * erasure the read path exists to prevent.
+ */
+export function repairUserCredentials(
+  opts: { home?: string; filePath?: string } = {},
+): CredentialRepairResult {
+  const path = opts.filePath ?? userCredentialsPath(opts.home);
+  if (!existsSync(path)) return { kind: "absent" };
+  return withCredentialLock(path, () => {
+    let raw: string;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch (e) {
+      return {
+        kind: "unrepairable",
+        error: path + ": " + unreadableSentence((e as NodeJS.ErrnoException).code ?? "I/O error"),
+      };
+    }
+    const bytes = parseCredentialBytes(raw);
+    if (!("bindings" in bytes)) {
+      return {
+        kind: "unrepairable",
+        error: path + ": " + bytes.detail +
+          "; nothing in it can be kept, so remove the file and store the keys again",
+      };
+    }
+    if (bytes.problems.length === 0) return { kind: "healthy", path, kept: bytes.bindings.length };
+    try {
+      writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
+    } catch (e) {
+      if (e instanceof CredentialWriteRefusal) {
+        return { kind: "write-failed", error: e.message, published: e.published };
+      }
+      throw e;
+    }
+    return { kind: "repaired", path, kept: bytes.bindings.length, dropped: bytes.problems };
   });
 }
 
