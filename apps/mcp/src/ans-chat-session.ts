@@ -275,11 +275,9 @@ export function buildAnsChatResult(
 }
 
 /**
- * Design: #538 — the fault goes into both halves: the sentence in the text and
- * the `{kind, errno?, notice}` record in
- * `structuredContent.credentialFileFault`. A success answer leads with it; an
- * error or a cancellation keeps its own first line, so the sentence follows the
- * reason. A result with no `structuredContent` stays text-only (#204).
+ * Design: the fault goes into both halves; a success answer leads with it; an
+ * error or a cancellation keeps its own first line, with the sentence after the
+ * reason; a result with no `structuredContent` stays text-only.
  */
 export function withCredentialFileFault(
   result: AnsChatToolResult,

@@ -87,7 +87,6 @@ export function resetAnsChatDegradedWarnings(): void {
   warnedDegradations.clear();
 }
 
-// Design: #538 — a dead stderr must never break the call.
 function writeStderr(line: string): void {
   try {
     process.stderr.write(line + "\n");
@@ -95,8 +94,9 @@ function writeStderr(line: string): void {
 }
 
 /**
- * Design: #538 — redact only lines that can echo config or provider text.
- * `redactSecrets` replaces long tokens, so a task id must not pass through it.
+ * Design: only strings that can carry config or provider text are redacted.
+ * A task or ledger id must use `writeStderr` directly — `redactSecrets`
+ * replaces long tokens, and `[redacted]` no longer matches its row.
  */
 function writeRedactedDiagnostic(message: string): void {
   writeStderr(redactSecrets(message));
@@ -394,7 +394,7 @@ export function registerAnsChat(
               toCaps: (b) => toBudgetCaps(b as BudgetConfig),
               domainLabel: "consolidate",
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
-              warn: (m) => writeRedactedDiagnostic("[anysearch] " + m),
+              warn: (m) => writeStderr("[anysearch] " + m),
             });
           }
           // The awaits above open a window the earlier check cannot see: a
