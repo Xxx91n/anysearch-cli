@@ -354,11 +354,11 @@ test("the real workspace: every reader in the table exists, and domains runs onl
       assert.ok(names.has(reader), `${entry.path} names ${reader}, which is not a workspace package`);
     }
   }
-  const sortedRows = (rows) =>
-    Object.fromEntries(Object.entries(rows).map(([path, list]) => [path, [...list].sort()]));
+  // Both sides are order-insensitive: the table's literal order is irrelevant,
+  // because the plan sorts what it prints.
   assert.deepEqual(
-    sortedRows(Object.fromEntries(ROOT_READERS.map((entry) => [entry.path, entry.readers]))),
-    sortedRows(EXPECTED_ROOT_READERS),
+    Object.fromEntries(ROOT_READERS.map((entry) => [entry.path, [...entry.readers].sort()])),
+    EXPECTED_ROOT_READERS,
     "ROOT_READERS and scripts/test/preflight-root-readers.mjs disagree",
   );
   const plan = planPreflight(repo, ["domains/docs.toml"]);
