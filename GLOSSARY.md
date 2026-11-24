@@ -13,7 +13,7 @@
 - **信息源**:一个对外的搜索入口，比如 Exa、Tavily 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
   _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
-- **免费额度**:没配 key 时信息源自己给的免费档，照样能发请求，但有次数和速度上限，不像有 key 那样稳。`credentialSources` 里这一臂记 `none`，那只说明没配 key，不说这一臂不干活，也不说它建没建起来（代码里叫 CredentialSourceLabel 的 `"none"`）。
+- **免费额度**:没配 key 时信息源自己给的免费档，照样能发请求，但有次数和速度上限，不像有 key 那样稳。`credentialSources` 里这一臂记 `none`，那只说明没配 key，不说这一臂不干活，也不说它建没建起来（代码里叫 CredentialSourceLabel 的 `"none"`）。用户凭据文件本身坏了的时候这一臂也会记 `none`——那不代表这台机器没配过 key，看同一记录里的 `credentialFileFault`。
   _Avoid_: keyless、匿名调用、匿名层、无 key
 
 - **领域检索适配器**:把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
