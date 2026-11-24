@@ -119,8 +119,9 @@ supplied the model key: `ANS_LLM_API_KEY` keeping the call working does not
 prove the file is healthy. With no fault neither half changes. Missing
 `provider`/`model` stays a bare error result (#204), with the sentence appended
 to its text. The same wrapper covers every branch that returns a result, so a
-usage error, a budget stop or a cancellation carries the record too. For the
-classification, the no-path rule and the snapshot semantics see
+usage error, a budget stop or a cancellation carries the sentence; where the
+result has a structured half, the record rides it too. For the classification,
+the no-path rule and the snapshot semantics see
 "A credential file that exists but cannot be used says so" under Rules behind
 the table.
 
