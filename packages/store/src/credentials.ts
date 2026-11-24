@@ -195,9 +195,8 @@ export interface CredentialFileContents {
 }
 
 /**
- * Design: write the sentence and the classification in one return — a branch
- * that set only one of them would tell the reader there is a fault and the
- * engine good health, and nothing would catch it.
+ * Design: one return writes both — the sentence for stderr, the classification
+ * for machine-readable surfaces; every failure exit goes through this helper.
  */
 function unusableFile(
   path: string,

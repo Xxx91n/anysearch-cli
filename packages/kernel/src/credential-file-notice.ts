@@ -28,7 +28,8 @@ const RESTART = "a running MCP server keeps the old read until it restarts";
  * is wrong advice for a path that is a directory or a full disk.
  *
  * Design: a total map — adding a code to the closed set fails compilation
- * until someone writes the remedy.
+ * until someone writes the remedy. The runtime lookup still falls back, because
+ * this record can arrive through the public `searchCredentials` seam.
  */
 const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EACCES: "fix its permissions",
@@ -61,9 +62,13 @@ export const CREDENTIAL_FILE_HINTS: Record<CredentialFileFaultKind, string> = {
     "{remedy} (" + RESTART + ")",
 };
 
+const UNKNOWN_KIND =
+  "the user credential file could not be used — the keys in it are not in use; " +
+  "fix or remove it (" + RESTART + ")";
+
 export function credentialFileNotice(fault: CredentialFileFault): CredentialFileNotice {
-  const notice = CREDENTIAL_FILE_HINTS[fault.kind]
+  const notice = (CREDENTIAL_FILE_HINTS[fault.kind] ?? UNKNOWN_KIND)
     .replace("{errno}", fault.errno ? " (" + fault.errno + ")" : "")
-    .replace("{remedy}", fault.errno ? READ_REMEDY[fault.errno] : "fix it");
+    .replace("{remedy}", fault.errno ? READ_REMEDY[fault.errno] ?? "fix it" : "fix it");
   return { ...fault, notice };
 }

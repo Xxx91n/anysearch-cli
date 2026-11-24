@@ -43,7 +43,7 @@ import { MANAGED_SKILLS_REL_PATH, managedSkillsRoot, readInstalledSkillsReadOnly
 import { probeDetail, probeState } from "../probe-report";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { describeCredentialSource, describeUnconfiguredSource } from "./search-abstain";
+import { BROKEN_FILE_LABEL, describeCredentialSource, describeUnconfiguredSource } from "./search-abstain";
 
 declare const __PACKAGE_VERSION__: string | undefined;
 const PKG_VERSION: string =
@@ -417,7 +417,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           state: "unconfigured",
           mode: "offline",
           detail: credentials.credentialFileFault
-            ? "endpoint 设了；凭据文件坏了，这条臂的 key 读不出来"
+            ? "endpoint 设了；" + BROKEN_FILE_LABEL + "，这条臂的 key 读不出来"
             : "endpoint 设了；没配 key",
         });
         continue;

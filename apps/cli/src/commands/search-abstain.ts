@@ -85,7 +85,7 @@ const NO_KEY_LABEL = "没配 key";
  * 文件坏掉时不能说「没配 key」：用户配过，只是文件读不出来。只说原因，
  * 不说结果——结果那句（用免费额度跑）由下面按 provider 拼（#533）。
  */
-const BROKEN_FILE_LABEL = "凭据文件坏了";
+export const BROKEN_FILE_LABEL = "凭据文件坏了";
 
 /**
  * 没配 key 时这一臂实际怎么跑：doctor 读 `runs` + `limit`，失败行里 tavily / exa 也读

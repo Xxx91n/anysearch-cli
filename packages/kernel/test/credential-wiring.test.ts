@@ -31,6 +31,7 @@ import { createEngine } from "../src/composition";
 import { CREDENTIAL_FILE_HINTS, credentialFileNotice } from "../src/credential-file-notice";
 import { redactSecrets } from "@anysearch-cli/retriever";
 import { CREDENTIAL_FILE_FAULT_ERRNOS, readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
+import type { CredentialFileFault } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
 const STORED_ANYS_KEY = "as-stored-key-0123456789";
@@ -501,6 +502,14 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
     assert.ok(notice.includes("(" + errno + ")"), "the code is named: " + notice);
     assert.doesNotMatch(notice, /fix it \(/, errno + " has its own remedy, not the fallback");
   }
+
+  // The record can arrive through the public search seam, so a kind or code the
+  // kernel does not know must degrade to plain wording, not throw.
+  const unknownKind = { kind: "future-kind" } as unknown as CredentialFileFault;
+  assert.match(credentialFileNotice(unknownKind).notice, /could not be used/);
+  assert.doesNotMatch(credentialFileNotice(unknownKind).notice, /\{errno\}|\{remedy\}/);
+  const unknownErrno = { kind: "unreadable", errno: "EWHATEVER" } as unknown as CredentialFileFault;
+  assert.match(credentialFileNotice(unknownErrno).notice, /; fix it \(/, "an unknown code gets the plain remedy");
 });
 
 test("a throwing credential resolver degrades to env, it does not kill the engine", () => {
