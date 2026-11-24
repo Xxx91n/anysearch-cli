@@ -7,11 +7,15 @@ on:
       - 'scripts/compare-knowledge-ranking.mjs'
       - '.github/workflows/knowledge-ranking.yml'
   workflow_dispatch:
+concurrency:
+  group: knowledge-ranking-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   offline-comparison:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,9 +25,13 @@ jobs:
           path: baseline
           # #283 starting point; do not move this to the latest main.
           ref: 51a9ec9c9c95c6a9a1bee0966843ca2a150d0086
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      # Neither checkout sits at the repo root, so there is no root package.json:
+      # point the action at candidate/ to read its packageManager.
+      # `install: false`: the installs belong to the step below.
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2
         with:
-          package_json_file: candidate/package.json
+          working-directory: candidate
+          install: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
