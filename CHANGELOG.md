@@ -4,8 +4,8 @@
 
 ### Changed
 
-- **doctor 那行的 detail 补一句「免费额度这条路没验（--live 只验有 key 的）」**：`describeUnconfiguredSource` 只给 doctor 用，`ans search` 失败行读的 `describeCredentialSource` 一个字没动。
-- **`ans doctor` 的帮助与头注释写明范围**：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探。
+- **doctor 那行的 detail 补一句「免费额度这条路没验（--live 也只验有 key 的）」**：`describeUnconfiguredSource` 只给 doctor 用，`ans search` 失败行读的 `describeCredentialSource` 一个字没动。
+- **`ans doctor` 的帮助与头注释写明范围**：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探。两个 README 的 `--live` 那一行跟着改口径，不再说「每家搜索源」。
 - **跳过分支补 `Design:` 注释**：探针的三种结论都在说这把 key，没 key 时只能给出假绿或假红（anysearch 的匿名额度墙会落进 `permanent-protocol` 或「auth 通过」，exa 没 key 打 REST 是 402 会报「额度用尽」）；免费额度按 IP、按天走，红了还会撑大 `--strict`，把别人的用量算成本机装坏。
 
 ### Known limits

@@ -25,7 +25,7 @@
 ```bash
 npm i -g @anysearch-cli/cli
 ans doctor                                          # 分层自检：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败
-ans doctor --live                                   # 同上，外加每家搜索源打一次免费面：这把 key 还能不能用（不跑搜索、不花额度）
+ans doctor --live                                   # 同上，外加有 key 的那几家各打一次免费面：这把 key 还能不能用（不跑搜索、不花额度）
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # 只在 docs 域里搜
 

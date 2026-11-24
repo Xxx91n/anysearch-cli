@@ -162,12 +162,12 @@ async function main() {
   // path was not verified this run (#534): `--live` skips a source with no key.
   assert(
     describeUnconfiguredSource("tavily") ===
-      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 也只验有 key 的）",
     "doctor's keyless row says the free quota is capped and unverified",
   );
   assert(
     describeUnconfiguredSource("exa") ===
-      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 也只验有 key 的）",
     "every keyless arm gets the cap note, exa included",
   );
 

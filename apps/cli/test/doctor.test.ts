@@ -153,15 +153,15 @@ test("ans doctor：信息源按各家没配 key 时的真实行为写，provider
   // 后半句明写「没验」：没 key 的源 --live 也不探（#534），「用免费额度跑」不是「验过」。
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 tavily")?.detail,
-    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 也只验有 key 的）",
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 anysearch")?.detail,
-    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 也只验有 key 的）",
   );
   assert.equal(
     empty.entries.find((entry) => entry.name === "信息源 exa")?.detail,
-    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 只验有 key 的）",
+    "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验（--live 也只验有 key 的）",
   );
   for (const provider of ["tavily", "exa", "anysearch"]) {
     assert.equal(
