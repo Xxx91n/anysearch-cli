@@ -26,14 +26,16 @@
 //   spawnSync, which blocks the event loop an in-process stub would need to
 //   accept requests.
 //
-// Both exit codes are read through checkExitCode(): a Windows teardown crash can
-// rewrite the number, and it only warns when every structured check passed.
+// Both legs' exit codes are read through checkExitCode(): a Windows teardown
+// crash can rewrite the number, and it only warns when every structured check
+// passed.
 //
 // A zero-result run whose every queried arm failed is a fault — the arm is
 // down — and exits 1. Abstain means the domain really has nothing: the policy
-// is active, no arm was cut off mid-flight, and the emptiness has a reason —
-// either the gate dropped results, or every queried arm answered and none
-// failed.
+// is active, no arm was cut off mid-flight, no provider answered on its own,
+// and the emptiness has a reason — either the gate dropped results, or at least
+// one arm was queried and every queried arm answered with nothing, none of them
+// failing.
 //
 // Every CLI call this script drives goes through sh(), which carries a 30s
 // bound and reports a timeout as a named failure (verifyInstalledProduct()
