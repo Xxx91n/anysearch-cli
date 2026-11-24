@@ -24,7 +24,7 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import { createMcpToolState } from "../src/tool-state.js";
-import { PROVIDER_ERROR_HINTS } from "@anysearch-cli/kernel";
+import { credentialFileNotice, PROVIDER_ERROR_HINTS } from "@anysearch-cli/kernel";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
 import type { FusedEnvelope, AttributionReport, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { resolveLlmConfig, type SessionStore } from "@anysearch-cli/store";
@@ -438,6 +438,38 @@ async function main() {
           sc?.credentialSources?.anysearch === "none",
         "research_web partial failure: credential labels are unchanged from the engine, all three arms",
       );
+    }
+
+    // ---- 7b. A broken credential file rides both halves (#533) ----
+    // The hosts split in two: some give the model only `content` (Cursor, the
+    // dsh bridge), some only `structuredContent`. A fault that lives in one half
+    // is invisible to the other, so this pins both.
+    {
+      const eng = makeEngine(async () => partialEnvelope(), {
+        credentialSources: {
+          status: "resolved",
+          tavily: "none",
+          exa: "none",
+          anysearch: "none",
+          credentialFileFault: credentialFileNotice({ kind: "not-json" }),
+        },
+      });
+      const h = captureHandlers(eng);
+      const search = await h.search_web({ query: "x" });
+      const content = JSON.parse(String(search?.content?.[0]?.text));
+      assert(content.credentialSources?.credentialFileFault?.kind === "not-json",
+        "search_web content names the broken credential file: the text half must carry it");
+      assert(search?.structuredContent?.credentialSources?.credentialFileFault?.kind === "not-json",
+        "search_web structuredContent carries the same record");
+
+      const research = await h.research_web({ question: "x", depth: "brief" });
+      const researchContent = JSON.parse(String(research?.content?.[0]?.text));
+      assert(researchContent.credentialSources?.credentialFileFault?.kind === "not-json",
+        "research_web content names it too");
+      assert(research?.structuredContent?.credentialSources?.credentialFileFault?.kind === "not-json",
+        "research_web structuredContent carries it");
+      assert(String(content.credentialSources?.credentialFileFault?.notice ?? "").includes("restart"),
+        "the sentence says what makes the fix take effect");
     }
 
     // ---- 8. Zero results with an answering arm stays a success ----

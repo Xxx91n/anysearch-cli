@@ -643,6 +643,75 @@ async function t(name: string, fn: () => Promise<void>) {
     }
   });
 
+  // #533: a credential file that exists but cannot be parsed is not the same
+  // fact as "this machine never configured a key". Both used to leave the same
+  // three `none` labels; the record now names the fault and says a restart is
+  // what makes a fix take effect. The raw sentence (which carries the path)
+  // stays on stderr.
+  await t("search --json names a broken credential file instead of calling it unset", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-cred533-"));
+    const stub = await startFakeAnySearch([
+      "## Search Results (1 results, 9ms)",
+      "",
+      "### 1. The only result",
+      "- **URL**: https://outside.example/one",
+      "- a result the domain gate lets through",
+      "",
+    ].join("\n"));
+    try {
+      fs.mkdirSync(path.join(dir, ".ans"), { recursive: true });
+      fs.writeFileSync(path.join(dir, ".ans", "credentials.json"), "{ not json", "utf8");
+      fs.writeFileSync(path.join(dir, "cred.toml"), [
+        'name = "cred"',
+        "[sources]",
+        'enabled = ["anysearch"]',
+        'urlAllowlist = ["outside.example"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "cred", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.HOME = dir;
+      env.USERPROFILE = dir;
+      env.TAVILY_API_KEY = "";
+      env.EXA_API_KEY = "";
+      env.ANYSEARCH_API_KEY = "";
+      env.ANS_PROVIDERS = "";
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      env.ANYSEARCH_ENDPOINT = stub.endpoint;
+      const r = await runSplit(["search", "q", "--json"], env);
+      assert.equal(r.code, 0, r.stderr + r.stdout);
+      const doc = JSON.parse(r.stdout);
+      assert.equal(doc.outcome, "answer", "the stub answered: the fixture is a successful search");
+      assert.equal(doc.credentialSources?.status, "resolved", "the record still says resolution ran");
+      assert.equal(doc.credentialSources?.anysearch, "none", "the keyless arm is still labelled");
+      assert.equal(doc.credentialSources?.credentialFileFault?.kind, "not-json", "the fault is classified");
+      assert.match(doc.credentialSources?.credentialFileFault?.notice ?? "", /restart/,
+        "the sentence says a restart is what makes the fix take effect");
+      assert.ok(
+        !JSON.stringify(doc.credentialSources).includes("credentials.json"),
+        "the machine-readable record names the fault, never the path",
+      );
+      assert.match(r.stderr, /not valid JSON/, "the path-and-position sentence still rides stderr");
+
+      // Deleting the file is not a fault: nobody reported a broken file, so the
+      // field disappears instead of turning into a null.
+      fs.rmSync(path.join(dir, ".ans", "credentials.json"));
+      const second = await runSplit(["search", "q", "--json"], env);
+      assert.equal(second.code, 0, second.stderr + second.stdout);
+      const secondDoc = JSON.parse(second.stdout);
+      assert.ok(
+        !("credentialFileFault" in (secondDoc.credentialSources ?? {})),
+        "a missing file is not a fault, and the key is absent rather than null",
+      );
+    } finally {
+      await stub.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // Error-path --json purity (the sibling of the success-path test above):
   // with every arm absent the engine throws before any envelope exists, so
   // stdout must stay empty — the error line AND the absence note ride stderr.

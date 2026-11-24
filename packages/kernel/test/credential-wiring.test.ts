@@ -28,8 +28,10 @@ import { join } from "node:path";
 
 import { createLlmSession } from "../src/llm-init";
 import { createEngine } from "../src/composition";
+import { CREDENTIAL_FILE_HINTS, credentialFileNotice } from "../src/credential-file-notice";
 import { redactSecrets } from "@anysearch-cli/retriever";
-import { readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
+import { CREDENTIAL_FILE_FAULT_ERRNOS, readUserCredentials, resolveLlmConfig, resolveSearchCredentials, writeUserCredential } from "@anysearch-cli/store";
+import type { CredentialFileFault } from "@anysearch-cli/store";
 
 const STORED_MODEL_KEY = "sk-stored-model-key-0123456789";
 const STORED_ANYS_KEY = "as-stored-key-0123456789";
@@ -382,6 +384,137 @@ test("a blank key from a hand-built seam is labelled none, not env", () => {
     (engine.store as { close?: () => void }).close?.();
     engine.observation.close();
     scrub.restore();
+  }
+});
+
+test("a broken credential file is a classified fault, not a missing key", () => {
+  // #533: when the file it could not read is the reason an arm has no key, the
+  // record may not say "not configured". It carries the classification plus one
+  // sentence built from it - never the path, never the raw error text, which can
+  // quote the file (spec S2).
+  const engine = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({ warnings: [], credentialFileFault: { kind: "not-json" } }),
+  });
+  try {
+    const sources = engine.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    if (sources?.status !== "resolved") return;
+    assert.equal(sources.tavily, "none");
+    assert.equal(sources.exa, "none");
+    assert.equal(sources.anysearch, "none");
+    assert.equal(sources.credentialFileFault?.kind, "not-json", "the kind travels");
+    assert.match(sources.credentialFileFault?.notice ?? "", /restart/,
+      "the sentence says a restart is what makes the fix take effect");
+    assert.doesNotMatch(JSON.stringify(sources), /credentials\.json/,
+      "the path stays out of the machine-readable record");
+  } finally {
+    (engine.store as { close?: () => void }).close?.();
+    engine.observation.close();
+  }
+
+  // A healthy seam writes no field at all: absent beats a null that claims health
+  // on behalf of a writer that never read a file.
+  const healthy = createEngine(undefined, {
+    dbPath: ":memory:",
+    domainsDirs: [],
+    env: {},
+    searchCredentials: () => ({ warnings: [] }),
+  });
+  try {
+    const sources = healthy.credentialSources;
+    assert.equal(sources?.status, "resolved");
+    assert.equal(
+      sources && "credentialFileFault" in sources,
+      false,
+      "no fault means no field, so nobody has to read a null as good news",
+    );
+  } finally {
+    (healthy.store as { close?: () => void }).close?.();
+    healthy.observation.close();
+  }
+});
+
+test("a pre-parsed credential file still carries its fault, without the value the sentence quotes", () => {
+  // `ans chat` parses the file itself, so the resolver suppresses its warning
+  // (one report per parse, #357). The classification still has to reach the
+  // engine, or a GUI host sees three `none` labels and nothing else.
+  const { home, cleanup } = tempHome();
+  try {
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    // A bad ENTRY, not a bad parse: its sentence quotes the provider value it
+    // found, and that value can be key-shaped. The record must not carry it.
+    writeFileSync(
+      join(home, ".ans", "credentials.json"),
+      JSON.stringify({ bindings: [{ provider: "sk-live-0123456789abcdef", apiKey: "" }] }),
+      "utf8",
+    );
+    const file = readUserCredentials({ home });
+    assert.ok(file.error?.includes("sk-live"), "the raw sentence does quote the file — which is why it stays out of the record");
+
+    const engine = createEngine(undefined, {
+      dbPath: ":memory:",
+      domainsDirs: [],
+      env: {},
+      searchCredentials: (env) =>
+        resolveSearchCredentials({ ...env, HOME: home, USERPROFILE: home }, { credentialsFile: file }),
+    });
+    try {
+      const sources = engine.credentialSources;
+      assert.equal(sources?.status, "resolved");
+      if (sources?.status !== "resolved") return;
+      assert.equal(sources.credentialFileFault?.kind, "invalid-structure");
+      // A real broken file with no key in the environment: all three arms are
+      // keyless, and the fault is what says why.
+      assert.equal(sources.tavily, "none");
+      assert.equal(sources.exa, "none");
+      assert.equal(sources.anysearch, "none");
+      const record = JSON.stringify(sources);
+      assert.ok(!record.includes("sk-live"), "the record never carries the value the sentence quoted: " + record);
+      assert.ok(!record.includes(home), "nor the path");
+    } finally {
+      (engine.store as { close?: () => void }).close?.();
+      engine.observation.close();
+    }
+  } finally { cleanup(); }
+});
+
+test("the fault sentences are one table, and the errno is filled into it", () => {
+  const sentences = Object.values(CREDENTIAL_FILE_HINTS);
+  assert.equal(new Set(sentences).size, sentences.length, "one sentence per kind, no duplicates");
+  for (const sentence of sentences) {
+    assert.match(sentence, /restart/, "every sentence says what makes the fix take effect");
+  }
+  assert.match(
+    credentialFileNotice({ kind: "unreadable", errno: "EACCES" }).notice,
+    /could not be read \(EACCES\)/,
+    "the errno is filled in where the sentence asks for it",
+  );
+  assert.doesNotMatch(
+    credentialFileNotice({ kind: "unreadable" }).notice,
+    /\(\)/,
+    "no empty parentheses when the read failure gave no known code",
+  );
+  for (const errno of CREDENTIAL_FILE_FAULT_ERRNOS) {
+    const notice = credentialFileNotice({ kind: "unreadable", errno }).notice;
+    assert.ok(notice.includes("(" + errno + ")"), "the code is named: " + notice);
+    assert.doesNotMatch(notice, /fix it \(/, errno + " has its own remedy, not the fallback");
+  }
+
+  // The record can arrive through the public search seam, so a kind or code the
+  // kernel does not know must degrade to plain wording, not throw.
+  for (const kind of ["future-kind", "toString", "constructor"]) {
+    const record = credentialFileNotice({ kind } as unknown as CredentialFileFault);
+    assert.equal(record.kind, "unknown", kind + " is mapped into the closed set");
+    assert.match(record.notice, /could not be used/, kind + " degrades to the generic sentence");
+    assert.doesNotMatch(record.notice, /\{errno\}|\{remedy\}/);
+  }
+  for (const errno of ["EWHATEVER", "constructor"]) {
+    const record = credentialFileNotice({ kind: "unreadable", errno } as unknown as CredentialFileFault);
+    assert.equal("errno" in record, false, errno + " is not forwarded outside the closed set");
+    assert.match(record.notice, /; fix it \(/, errno + " gets the plain remedy");
   }
 });
 

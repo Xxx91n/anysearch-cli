@@ -82,6 +82,12 @@ const FREE_QUOTA_UNVERIFIED_NOTE = "免费额度这条路没验";
 const NO_KEY_LABEL = "没配 key";
 
 /**
+ * 文件坏掉时不能说「没配 key」：用户配过，只是文件读不出来。只说原因，
+ * 不说结果——结果那句（用免费额度跑）由下面按 provider 拼（#533）。
+ */
+export const BROKEN_FILE_LABEL = "凭据文件坏了";
+
+/**
  * 没配 key 时这一臂实际怎么跑：doctor 读 `runs` + `limit`，失败行里 tavily / exa 也读
  * `runs`（anysearch 只说 key 状态，见 sourceNote）。三家都能不带 key 发请求：tavily /
  * anysearch 走各自的免费额度，exa 走它自己的 MCP 端点。
@@ -94,22 +100,29 @@ const KEYLESS_BEHAVIOR: Record<SearchProviderId, { runs: string; limit: string }
 
 /**
  * 一处 key 来源措辞，`ans search` 和 `ans doctor` 共用，避免两边说两套。
+ * `noKeyPhrase` 只给「没 key」这一档换说法：文件坏了的时候由调用方传
+ * `BROKEN_FILE_LABEL`，免得每个调用点自己拼后半句（#533）。
  */
-export function describeCredentialSource(label: CredentialSourceLabel, provider: SearchProviderId): string {
+export function describeCredentialSource(
+  label: CredentialSourceLabel,
+  provider: SearchProviderId,
+  noKeyPhrase: string = NO_KEY_LABEL,
+): string {
   if (label === "env") return "key 来自环境变量";
   if (label === "user") return "key 来自用户凭据文件";
-  return NO_KEY_LABEL + "，" + KEYLESS_BEHAVIOR[provider].runs;
+  return noKeyPhrase + "，" + KEYLESS_BEHAVIOR[provider].runs;
 }
 
 /**
  * doctor 的「信息源」行专用：就是 `describeCredentialSource("none", …)` 再加免费
  * 额度的上限说明和一句「没验」。这一行报 `unconfigured`，得说清「能跑」不等于
- * 「稳定可用」，报 `ready` 会骗人。
+ * 「稳定可用」，报 `ready` 会骗人。文件坏了的时候原因不是「没配」，由调用方传进来（#533）。
  *
  * Design: 「用免费额度跑」说的是运行时会怎么跑，不是 doctor 验过。
  */
-export function describeUnconfiguredSource(provider: SearchProviderId): string {
-  return describeCredentialSource("none", provider) + "（" + KEYLESS_BEHAVIOR[provider].limit + "）；" + FREE_QUOTA_UNVERIFIED_NOTE;
+export function describeUnconfiguredSource(provider: SearchProviderId, brokenFile = false): string {
+  return describeCredentialSource("none", provider, brokenFile ? BROKEN_FILE_LABEL : NO_KEY_LABEL) +
+    "（" + KEYLESS_BEHAVIOR[provider].limit + "）；" + FREE_QUOTA_UNVERIFIED_NOTE;
 }
 
 /**
@@ -117,13 +130,15 @@ export function describeUnconfiguredSource(provider: SearchProviderId): string {
  * 没这个臂，就什么都不写（不编来源）。
  */
 function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
+  // 文件坏了的时候，哪条臂都不可能有存着的 key，不能说成「没配」（#533）。
+  const noKeyPhrase = sources.credentialFileFault ? BROKEN_FILE_LABEL : NO_KEY_LABEL;
   // tavily / exa 的端点是固定的，没配 key 就走默认服务上的免费额度，失败行可以说全。
-  if (id === "tavily" || id === "exa") return describeCredentialSource(sources[id], id);
+  if (id === "tavily" || id === "exa") return describeCredentialSource(sources[id], id, noKeyPhrase);
   if (id === "anysearch") {
     // anysearch 的端点能被环境变量改掉，失败行没法承诺「默认服务上的免费额度」，
     // 只说 key 状态，免得和 doctor 那行打架。
     const label = sources.anysearch;
-    return label === "env" || label === "user" ? describeCredentialSource(label, "anysearch") : NO_KEY_LABEL;
+    return label === "env" || label === "user" ? describeCredentialSource(label, "anysearch") : noKeyPhrase;
   }
   // Unknown ids get no note: the kernel record only names the three search arms,
   // and inventing a key state for anything else would be a lie.

@@ -89,7 +89,12 @@ set, the `abstain` marker, so a text-only reader gets the same verdict. For the 
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
 cut off, and the provider-failure fields). It never carries
-the result list itself. When a task was registered, `search_web` and
+the result list itself. The credential record (`credentialSources`) is
+deliberately written into both halves, because hosts split on
+which half reaches the model — a fact placed in only one of them is invisible to
+the other (see "Credential sources travel with every successful result — in both
+halves" below). When a
+task was registered, `search_web` and
 `research_web` also put `closeout` here (see
 [Search and research tasks](#search-and-research-tasks-304)). `ans_chat`
 returns the answer text plus, when
@@ -211,6 +216,10 @@ The server follows the MCP rule that an execution failure is an
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
+Every `credentialSources` in the success rows above may itself carry
+`credentialFileFault` when the user credential file exists but cannot be used;
+the credential rules below describe it.
+
 Rules behind the table:
 
 - **Error results carry no `structuredContent`.** The error channel and the
@@ -268,23 +277,51 @@ Rules behind the table:
   `session-expired` / `unknown`),
   `providerErrorHints` and construction-time `providerBuildErrors` appear in
   both the content JSON and `structuredContent`.
-- **Credential sources travel with every successful result.**
-  `structuredContent.credentialSources` is the engine's own record of where
-  each search arm's key came from — `env`, `user`, or `none` — never a key
-  value. The engine writes every search arm on every result, keyless or not:
-  `none` means no key is configured for that arm (absent, empty, and
-  whitespace-only all read as none), so a reader never has to infer a missing
-  key from a missing field. `status: "resolved"` says the resolution ran, never that a key
-  was found, and `none` is not a claim that the arm sits idle — all three
-  search on the provider's free quota without a key (Exa switches to its own
-  MCP endpoint). Whether an arm was *built* is a different question, answered
-  by `providerBuildErrors`: a key that cannot be used fails construction there,
+- **Credential sources travel with every successful result — in both halves.**
+  `credentialSources` is the engine's own record of where each search arm's key
+  came from — `env`, `user`, or `none` — never a key value. It rides the
+  content JSON and `structuredContent` alike, because hosts split on which half
+  reaches the model (some read only the text block, some only the structured
+  one), so a field in one half is invisible to the other. The engine writes
+  every search arm on every result, keyless or not: `none` means no key is
+  configured for that arm (absent, empty, and whitespace-only all read as
+  none), so a reader never has to infer a missing key from a missing field.
+  `status: "resolved"` says the resolution ran, never that a key was found, and
+  `none` is not a claim that the arm sits idle — all three search on the
+  provider's free quota without a key (Exa switches to its own MCP endpoint).
+  Whether an arm was *built* is a different question, answered by
+  `providerBuildErrors`: a key that cannot be used fails construction there,
   and the record calls it a credential fault without quoting the key. A
   missing key never shows up as a build failure — that arm runs on the free
-  quota. It is the same object `ans search --json` emits, so the two surfaces
+  quota. It is the same object `ans search --json` emits, so the surfaces
   cannot disagree.
-  An engine built without a credential seam reports `null` in both surfaces.
+  An engine built without a credential seam reports `null` in both halves.
   Error results do not carry it.
+- **A credential file that exists but cannot be used says so.**
+  `credentialSources.credentialFileFault` is present only in that case, and it
+  carries `kind` (`unreadable` / `not-json` / `invalid-structure` / `unknown`),
+  an `errno` when it was a read failure, and one `notice` sentence built from
+  the kind by `CREDENTIAL_FILE_HINTS` in
+  `packages/kernel/src/credential-file-notice.ts` — the same "one table, not
+  one per host" rule as the error hints. `unknown` means a public
+  `searchCredentials` seam reported a kind this build does not recognize; the
+  record then carries the generic sentence. A code outside the errno set is
+  dropped rather than forwarded, so the record stays inside both closed sets.
+  `kind` and `errno` are the machine contract; `notice` is wording for people,
+  so a host must not branch on its text. The table holds templates
+  (`unreadable` fills `{errno}` and `{remedy}`); `credentialFileNotice()`
+  produces the final sentence. Absent means
+  nobody reported a fault: a healthy file, no file at all, or a seam that never
+  read one. It never carries the path or a copy of the raw error sentence,
+  which can quote the file. `providerBuildErrors` does not cover this case: a
+  broken file never makes an arm fail construction, so `none` plus an empty
+  build record used to read exactly like "never configured". The record is a
+  snapshot of the engine's construction — a running MCP server keeps reporting
+  the old answer until it restarts, which is why the notice says so. The raw
+  sentence for the same fault (path, line/column) is written to stderr when the
+  engine is built; `stderr` is outside the protocol, and a client may capture,
+  forward or drop it, so a host cannot be expected to read it — which is why the
+  record carries the fact itself.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in

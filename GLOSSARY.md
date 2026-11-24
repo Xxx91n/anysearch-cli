@@ -13,7 +13,7 @@
 - **信息源**:一个对外的搜索入口，比如 Exa、Tavily 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
   _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
-- **免费额度**:没配 key 时信息源自己给的免费档，照样能发请求，但有次数和速度上限，不像有 key 那样稳。`credentialSources` 里这一臂记 `none`，那只说明没配 key，不说这一臂不干活，也不说它建没建起来（代码里叫 CredentialSourceLabel 的 `"none"`）。
+- **免费额度**:没配 key 时信息源自己给的免费档，照样能发请求，但有次数和速度上限，不像有 key 那样稳。`credentialSources` 里这一臂记 `none`，那只说明没配 key，不说这一臂不干活，也不说它建没建起来（代码里叫 CredentialSourceLabel 的 `"none"`）。用户凭据文件本身坏了的时候这一臂也会记 `none`——那不代表这台机器没配过 key，看同一记录里的 `credentialFileFault`。
   _Avoid_: keyless、匿名调用、匿名层、无 key
 
 - **领域检索适配器**:把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
@@ -241,7 +241,7 @@
 - **安装令牌**:同一安装、同一用户共用的服务令牌，放在配置根；长驻 server 和所有项目的钩子读同一个文件，不再每个目录各生成一份（代码里叫 server-token）。
   _Avoid_: Server Token、服务密钥
 
-- **用户凭据文件**:用户把某家的 API key 存一次的地方，放在配置根，本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主。内容明文，文件自己写明不是加密、也不是系统钥匙串；每条绑定到具体 provider，模型的 key 还绑定到录入时的端点，换了目标就不发出去。写之前按平台自己的口径建访问保护并核对（代码里叫 credentials.json）。
+- **用户凭据文件**:用户把某家的 API key 存一次的地方，放在配置根，本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主。内容明文，文件自己写明不是加密、也不是系统钥匙串；每条绑定到具体 provider，模型的 key 还绑定到录入时的端点，换了目标就不发出去。写之前按平台自己的口径建访问保护并核对（代码里叫 credentials.json）。文件读不出来、不是 JSON、或结构不对时，它是「坏了」而不是「没配」：记录里另有一个故障说明坏在哪（代码里叫 CredentialFileFault / CredentialFileNotice，记录里的键是 `credentialFileFault`），别把各臂的 `none` 读成这台机器从没配过 key。
   _Avoid_: 密钥库、钥匙串、加密存储
 
 - **探针的 keySource**:手工探针输出里那格「这一跑用的 key 从哪来」，三档 `env`（环境变量）、`user`（用户凭据文件）、`none`（这一跑没发 key：两处都没有，或者传了 `--nokey`）。它说的是这一跑，不是这台机器配了什么；产品侧的 `credentialSources` 是另一回事。

@@ -93,9 +93,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
               // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled are unconditional here; structuredContent
-              // is a different shape (credentialSources and the two arm lists always,
-              // sufficiency / attribution / abstain / interrupted / failures when present).
+              // providersQueried / providersCancelled / credentialSources are
+              // unconditional here; structuredContent is a different shape (the two
+              // arm lists and the credential record always, sufficiency /
+              // attribution / abstain / interrupted / failures when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
@@ -105,6 +106,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // caller went away. Paired with providersQueried, so neither case
               // reads as an arm that never ran.
               providersCancelled: cancelledProviders,
+              // Some hosts give the model only this text half, so the credential
+              // record goes in both halves.
+              credentialSources: eng.credentialSources ?? null,
               // attribution = claim-level evidence linkage report (present iff search ran).
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.

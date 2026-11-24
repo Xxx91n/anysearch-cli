@@ -4,6 +4,8 @@ export * from "./runtime";
 export * from "./engine";
 // One remedy sentence per provider error class, printed by both hosts.
 export * from "./provider-error-hints";
+// #533: what is wrong with the user credential file, said once for every surface.
+export * from "./credential-file-notice";
 // #304: the typed budget refusal the retrieval path throws, so the CLI and the
 // MCP search tools can name it instead of matching the message text.
 export * from "./budget-error";

@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runChat } from "../src/commands/chat.js";
 import { createPersistentEngine } from "../src/db.js";
+import { readUserCredentials } from "@anysearch-cli/store";
 
 const dir = mkdtempSync(join(tmpdir(), "ans-370-chat-"));
 mkdirSync(join(dir, ".ans"), { recursive: true });
@@ -98,4 +99,21 @@ test("the engine's search arms use the caller's parse, not a second read", () =>
   assert.equal(engine.credentialSources?.exa, "user");
   assert.equal(err.split("not valid JSON").length - 1, 0, `引擎不该自己去读那份坏文件:
 ${err}`);
+});
+
+test("a pre-parsed broken file still reaches the engine record", () => {
+  // #533: chat hands the engine the parse it already made, so the resolver stays
+  // silent (which the test above pins). Silence must not extend to the record:
+  // the fault is the only thing that tells a host the three `none` labels are
+  // not "never configured".
+  const file = readUserCredentials({ home: dir });
+  assert.equal(file.fault?.kind, "not-json", "the fixture really is a broken file");
+  const engine = createPersistentEngine(undefined, { domainDeclared: false, credentialsFile: file });
+  const sources = engine.credentialSources;
+  assert.equal(sources?.status, "resolved");
+  assert.equal(
+    sources?.status === "resolved" ? sources.credentialFileFault?.kind : undefined,
+    "not-json",
+    "the pre-parsed path carries the classified fault",
+  );
 });
