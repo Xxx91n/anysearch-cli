@@ -275,23 +275,19 @@ export function buildAnsChatResult(
 }
 
 /**
- * Design: #538 — put the `CredentialFileNotice` in both halves. A success
- * answer leads with the sentence; an error or a cancellation keeps its own
- * first line, so the sentence follows the reason. A result with no
- * `structuredContent` stays text-only (#204).
+ * Design: #538 — the fault goes into both halves: the sentence in the text and
+ * the `{kind, errno?, notice}` record in
+ * `structuredContent.credentialFileFault`. A success answer leads with it; an
+ * error or a cancellation keeps its own first line, so the sentence follows the
+ * reason. A result with no `structuredContent` stays text-only (#204).
  */
 export function withCredentialFileFault(
   result: AnsChatToolResult,
   fault?: CredentialFileNotice,
 ): AnsChatToolResult {
   if (!fault) return result;
-  // The SDK types the handler result as an open object, and the tool casts it
-  // in; a result without a text array must not become a TypeError here.
   const blocks = Array.isArray(result.content) ? result.content : [];
   const head = blocks[0];
-  // `ans_chat: cancelled — no answer was produced` is the whole point of that
-  // result: it must stay first for a content-only host. It carries no
-  // `isError`, so `interrupted` is what identifies it.
   const followsReason = result.isError === true || result.structuredContent?.["interrupted"] === true;
   const content = head
     ? [{

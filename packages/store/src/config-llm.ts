@@ -25,7 +25,7 @@ import {
   unlinkSync, writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
@@ -171,17 +171,15 @@ interface LoadedLlmFile {
 
 /**
  * Design: only the diagnostic head of a TOML parse error is shown, plus the
- * line number — smol-toml appends the numbered offending line, which can be
+ * line and column `TomlError` records — never the snippet, which can be
  * `api_key = "sk-…"`. Every surface that prints or forwards this text (CLI
- * warnings, MCP stderr, a write refusal) must keep the source line out.
+ * warnings, MCP stderr, a write refusal) takes the same rule.
  */
 function tomlParseDetail(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   const head = message.split("\n")[0].trim() || "invalid TOML";
-  // The snippet starts with a bare line number (`\n\n1:  …`); the caret line
-  // and the source text stay out.
-  const line = /\n\n(\d+):/.exec(message)?.[1];
-  return line ? head + " at line " + line : head;
+  if (error instanceof TomlError) return head + " at line " + error.line + ", column " + error.column;
+  return head;
 }
 
 function parseLlmTomlResult(

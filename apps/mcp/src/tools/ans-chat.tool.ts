@@ -87,27 +87,26 @@ export function resetAnsChatDegradedWarnings(): void {
   warnedDegradations.clear();
 }
 
+// Design: #538 — a dead stderr must never break the call.
+function writeStderr(line: string): void {
+  try {
+    process.stderr.write(line + "\n");
+  } catch { /* fail-open */ }
+}
+
 /**
- * Design: #538 — only lines that can echo config or provider text go through
- * this helper. The resolver can quote a config file, and a provider
- * constructor's message can carry the key; both are redacted here. Internal
- * wiring lines (task ids, ledger state) stay unredacted — `redactSecrets`
- * replaces long tokens, so a task id would become `[redacted]` and the log
- * could no longer be tied to its task row.
+ * Design: #538 — redact only lines that can echo config or provider text.
+ * `redactSecrets` replaces long tokens, so a task id must not pass through it.
  */
 function writeRedactedDiagnostic(message: string): void {
-  try {
-    process.stderr.write(redactSecrets(message) + "\n");
-  } catch { /* fail-open */ }
+  writeStderr(redactSecrets(message));
 }
 
 function warnDegraded(message: string, key: string): void {
   if (warnedDegradations.has(key)) return;
   if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
   warnedDegradations.add(key);
-  try {
-    process.stderr.write("[anysearch] " + message + "\n");
-  } catch { /* a dead stderr must not break the call */ }
+  writeStderr("[anysearch] " + message);
 }
 
 export function registerAnsChat(
@@ -395,7 +394,7 @@ export function registerAnsChat(
               toCaps: (b) => toBudgetCaps(b as BudgetConfig),
               domainLabel: "consolidate",
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
-              warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+              warn: (m) => writeRedactedDiagnostic("[anysearch] " + m),
             });
           }
           // The awaits above open a window the earlier check cannot see: a
