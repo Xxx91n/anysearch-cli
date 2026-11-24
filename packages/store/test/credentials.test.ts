@@ -799,3 +799,28 @@ test("a repair whose rewrite fails reports whether the file was published (#537)
     cleanup();
   }
 });
+
+test("only the repairable fault offers the repair path (#537)", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+
+    // Nothing survives a parse fault, so the sentence must not promise repair.
+    writeFileSync(path, "{ not json", "utf8");
+    const notJson = readUserCredentials({ home });
+    assert.doesNotMatch(notJson.error!, /ans auth repair/, notJson.error!);
+
+    writeFileSync(path, JSON.stringify({ keys: [] }), "utf8");
+    const noList = readUserCredentials({ home });
+    assert.doesNotMatch(noList.error!, /ans auth repair/, noList.error!);
+
+    // A record inside a readable file is the one case repair fixes.
+    writeFileSync(path, JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "good-key" }, { provider: "anthropic" }],
+    }), "utf8");
+    const record = readUserCredentials({ home });
+    assert.match(record.error!, /ans auth repair to keep the keys it can still read/, record.error!);
+    assert.equal(record.fault?.kind, "invalid-record");
+  } finally { cleanup(); }
+});

@@ -55,13 +55,11 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
 };
 
 /**
- * Named for the parser's own faults only. A file that cannot be read at all gets
- * the same refusal from `ans auth repair`, so promising it there would be advice
- * the user follows into the same error.
- */
-/**
  * Sentences per kind. `unreadable` is a template with `{errno}` and `{remedy}`
  * slots — read the final text from `credentialFileNotice`, not this table.
+ *
+ * Repair is promised only for `invalid-record`: a file that does not parse, or
+ * cannot be read at all, has nothing left for it to keep.
  */
 export const CREDENTIAL_FILE_HINTS: Record<CredentialFileNoticeKind, string> = {
   "not-json":
@@ -71,7 +69,7 @@ export const CREDENTIAL_FILE_HINTS: Record<CredentialFileNoticeKind, string> = {
     "the user credential file is not a valid key file — the keys in it are not in use; " +
     FIX_OR_REPLACE + " (" + RESTART + ")",
   "invalid-record":
-    "one record in the user credential file could not be read — that key is not in use; " +
+    "one record in the user credential file cannot be read, so none of its keys are in use; " +
     FIX_OR_REPLACE + ", " + KEEP_KEYS + " (" + RESTART + ")",
   unreadable:
     "the user credential file could not be read{errno} — the keys in it are not in use; " +
