@@ -14,6 +14,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CREDENTIAL_FILE_FAULT_ERRNOS,
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
@@ -208,10 +209,18 @@ test("a broken file is classified, and the classification survives a supplied pa
 
     // Present but unreadable: a directory where the file should be makes
     // readFileSync throw on every platform, without depending on mode bits
-    // (which root ignores and Windows does not track).
+    // (which root ignores and Windows does not track). The errno it reports is
+    // platform-dependent, so assert the closed set rather than one value.
     rmSync(path, { force: true });
     mkdirSync(path);
-    assert.equal(readUserCredentials({ home }).fault?.kind, "unreadable");
+    const unreadable = readUserCredentials({ home });
+    assert.equal(unreadable.fault?.kind, "unreadable");
+    if (unreadable.fault?.errno) {
+      assert.ok(
+        (CREDENTIAL_FILE_FAULT_ERRNOS as readonly string[]).includes(unreadable.fault.errno),
+        "the errno comes from the closed set: " + unreadable.fault.errno,
+      );
+    }
     rmSync(path, { recursive: true, force: true });
 
     // The supplied-parse path (#357): no warning, but the fault still rides out.

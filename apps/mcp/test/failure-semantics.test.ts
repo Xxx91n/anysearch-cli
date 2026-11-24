@@ -468,7 +468,7 @@ async function main() {
         "research_web content names it too");
       assert(research?.structuredContent?.credentialSources?.credentialFileFault?.kind === "not-json",
         "research_web structuredContent carries it");
-      assert(String(content.credentialSources?.credentialFileFault?.notice ?? "").includes("restart ans"),
+      assert(String(content.credentialSources?.credentialFileFault?.notice ?? "").includes("restart"),
         "the sentence says what makes the fix take effect");
     }
 

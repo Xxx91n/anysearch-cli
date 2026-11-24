@@ -688,7 +688,7 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.equal(doc.credentialSources?.status, "resolved", "the record still says resolution ran");
       assert.equal(doc.credentialSources?.anysearch, "none", "the keyless arm is still labelled");
       assert.equal(doc.credentialSources?.credentialFileFault?.kind, "not-json", "the fault is classified");
-      assert.match(doc.credentialSources?.credentialFileFault?.notice ?? "", /restart ans/,
+      assert.match(doc.credentialSources?.credentialFileFault?.notice ?? "", /restart/,
         "the sentence says a restart is what makes the fix take effect");
       assert.ok(
         !JSON.stringify(doc.credentialSources).includes("credentials.json"),

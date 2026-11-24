@@ -39,7 +39,7 @@
 ### Docs
 
 - `docs/mcp-server.md`：凭证那段改成两半都送，并补 `credentialFileFault` 的形状、缺席的含义和快照语义。
-- `GLOSSARY.md`：免费额度那条补一句——`none` 不代表这台机器没配过 key。
+- `GLOSSARY.md`：用户凭据文件那条补一句——文件坏了是「坏了」，不是「没配」，别把各臂的 `none` 读成从没配过 key。
 
 ### Known limits
 

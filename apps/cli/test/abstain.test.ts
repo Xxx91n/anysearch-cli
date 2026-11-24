@@ -170,6 +170,10 @@ async function main() {
       "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验",
     "every keyless arm gets the cap note, exa included",
   );
+  assert(
+    describeUnconfiguredSource("exa", true) === "凭据文件坏了，用免费额度跑（有次数和速度上限）",
+    "doctor's keyless row names the file when that is the reason (#533)",
+  );
   // #533: when the credential file is why an arm has no key, "not configured"
   // names the wrong cause. The line says the file is broken instead, and keeps
   // the free-quota fact (the arm really does run on it).

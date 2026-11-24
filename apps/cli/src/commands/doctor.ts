@@ -403,7 +403,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           name: `信息源 ${provider}`,
           state: "unconfigured",
           mode: "offline",
-          detail: describeUnconfiguredSource(provider),
+          detail: describeUnconfiguredSource(provider, Boolean(credentials.credentialFileFault)),
         });
         continue;
       }

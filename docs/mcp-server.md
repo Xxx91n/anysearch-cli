@@ -89,10 +89,11 @@ set, the `abstain` marker, so a text-only reader gets the same verdict. For the 
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
 cut off, and the provider-failure fields). It never carries
-the result list itself. The credential record (`credentialSources`) is the one
-exception on purpose: it rides both halves, because hosts split on which half
-reaches the model — a fact placed in only one of them is invisible to the other
-(see "Credential sources travel with every successful result" below). When a
+the result list itself. The credential record (`credentialSources`) is
+deliberately written into both halves, because hosts split on
+which half reaches the model — a fact placed in only one of them is invisible to
+the other (see "Credential sources travel with every successful result — in both
+halves" below). When a
 task was registered, `search_web` and
 `research_web` also put `closeout` here (see
 [Search and research tasks](#search-and-research-tasks-304)). `ans_chat`
@@ -214,6 +215,10 @@ The server follows the MCP rule that an execution failure is an
 | Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
+
+Every `credentialSources` in the success rows above may itself carry
+`credentialFileFault` when the user credential file exists but cannot be used;
+the credential rules below describe it.
 
 Rules behind the table:
 

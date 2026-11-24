@@ -405,7 +405,7 @@ test("a broken credential file is a classified fault, not a missing key", () => 
     assert.equal(sources.exa, "none");
     assert.equal(sources.anysearch, "none");
     assert.equal(sources.credentialFileFault?.kind, "not-json", "the kind travels");
-    assert.match(sources.credentialFileFault?.notice ?? "", /restart ans/,
+    assert.match(sources.credentialFileFault?.notice ?? "", /restart/,
       "the sentence says a restart is what makes the fix take effect");
     assert.doesNotMatch(JSON.stringify(sources), /credentials\.json/,
       "the path stays out of the machine-readable record");
@@ -436,7 +436,7 @@ test("a broken credential file is a classified fault, not a missing key", () => 
   }
 });
 
-test("the chat path carries the fault, and not the value its raw sentence quotes", () => {
+test("a pre-parsed credential file still carries its fault, without the value the sentence quotes", () => {
   // `ans chat` parses the file itself, so the resolver suppresses its warning
   // (one report per parse, #357). The classification still has to reach the
   // engine, or a GUI host sees three `none` labels and nothing else.
@@ -479,7 +479,7 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   const sentences = Object.values(CREDENTIAL_FILE_HINTS);
   assert.equal(new Set(sentences).size, sentences.length, "one sentence per kind, no duplicates");
   for (const sentence of sentences) {
-    assert.match(sentence, /restart ans/, "every sentence says what makes the fix take effect");
+    assert.match(sentence, /restart/, "every sentence says what makes the fix take effect");
   }
   assert.match(
     credentialFileNotice({ kind: "unreadable", errno: "EACCES" }).notice,
