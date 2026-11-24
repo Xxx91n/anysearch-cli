@@ -13,8 +13,8 @@ import { basename, dirname, join } from "node:path";
  *
  * Every run names its own work file, so nothing else clears them and an
  * interrupted copy leaves a whole file's (or directory's) worth of bytes behind.
- * `options.suffix` is the caller's own marker and `options.prefix` is the name
- * it puts in front; both are named at the call site, not two bare strings.
+ * `options.suffix` is the caller's own marker; the one caller whose work-file
+ * name differs from the default spells out `options.prefix` as well.
  *
  * Design: one hour — far past the seconds a write holds its temp, and short
  * enough that leftovers do not pile up.
