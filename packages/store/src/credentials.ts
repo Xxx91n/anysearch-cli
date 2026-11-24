@@ -778,9 +778,13 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
  * says it.
  */
 export class CredentialWriteRefusal extends Error {
-  constructor(message: string, readonly published: boolean) {
+  // Assigning in the body, not a parameter property: the manual probes load this
+  // module through Node's strip-only TypeScript loader, which refuses that syntax.
+  readonly published: boolean;
+  constructor(message: string, published: boolean) {
     super(message);
     this.name = "CredentialWriteRefusal";
+    this.published = published;
   }
 }
 
