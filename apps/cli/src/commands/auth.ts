@@ -172,9 +172,9 @@ function statusLines(
       state = "empty";
     }
     const mark = state === "broken" ? "[BROKEN]" : state === "empty" ? "[EMPTY]" : "[SET]";
-    // `[SET]` / `[EMPTY]` are 7 characters and `[BROKEN]` is 8, so the mark pads to
-    // 8 with one separator space after it. The two 7-character marks therefore
-    // sit one column further right than they used to; nothing parses the column.
+    // The mark column is 8 wide plus one separator space, so `[SET]` (5),
+    // `[EMPTY]` (7) and `[BROKEN]` (8) all leave the provider id at column 9.
+    // Nothing parses the column.
     lines.push(mark.padEnd(8) + " " + info.id.padEnd(10) + " " + where);
   }
   return lines;
