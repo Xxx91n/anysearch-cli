@@ -51,11 +51,12 @@ export function providerFailureMetadata(
 }
 
 /**
- * The engine's verdict, read here and never re-decided. Null when a hand-built
- * envelope carries none; the kernel writes one on every search it assembles.
+ * The engine's verdict, read here and never re-decided. The kernel writes one on
+ * every search it assembles, so the field is required; a hand-built envelope
+ * without it is a typing breach, and the test doubles carry one.
  */
-export function outcomeOf(envelope: { metadata?: { outcome?: SearchOutcome } }): SearchOutcome | null {
-  return envelope.metadata?.outcome ?? null;
+export function outcomeOf(envelope: { metadata: { outcome: SearchOutcome } }): SearchOutcome {
+  return envelope.metadata.outcome;
 }
 
 /**

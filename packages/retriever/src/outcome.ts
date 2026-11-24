@@ -8,7 +8,7 @@
 // Design: five outcomes, first match wins — answer (results or a provider
 // answer), failed (nothing came back, every queried arm failed), cancelled (an
 // arm was cut off and it was not all-failed), abstain (the domain policy can say
-// why, see shouldAbstain), empty (an arm answered with nothing, and that is all).
+// why, see shouldAbstain), empty (nothing above holds).
 // A result is an answer even beside a failed arm — the failed arm is named in
 // providersFailed — and cancelled outranks abstain because "nothing in this
 // domain" needs the whole fanout to have finished.

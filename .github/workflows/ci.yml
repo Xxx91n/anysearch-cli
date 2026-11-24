@@ -133,10 +133,11 @@ jobs:
   # above (arm64 better-sqlite3 prebuild delta only).
   install-smoke:
     name: "install-smoke (B2: pack -> clean install -> doctor -> domain -> search)"
-    # A wedged lane must fail in a reasonable time instead of holding the job
-    # for the workflow default (360). This job also runs the build and three
-    # acceptance lanes after install-smoke — about 8 minutes on windows-latest —
-    # so the bound leaves room for a slow runner while still cutting a hang.
+    # A wedged lane must fail instead of holding the job for the workflow
+    # default (360). Measured on run 45238730116: windows-latest 8m14s,
+    # ubuntu-latest 2m46s, install-smoke plus the build and three acceptance
+    # lanes all in this job — 30 leaves about 3.5x headroom. Raise it if a lane's
+    # own timeout chain starts approaching this; never let the backstop be the red.
     timeout-minutes: 30
     strategy:
       fail-fast: false

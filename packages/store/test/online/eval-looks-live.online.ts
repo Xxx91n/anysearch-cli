@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { readQuarantine, activeIds } from "../../src/eval/quarantine-ledger";
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return; }
   passed++;
@@ -175,6 +175,7 @@ function main() {
     if (isQuar) console.log("EVIDENCE-RUN " + e.id + " (quarantined — executing for evidence)");
     if (e.watch === true) console.log("WATCH " + e.id + " (post-promote watch — a CI flip re-enters quarantine via the ratchet)");
     const p0 = passed, f0 = failed;
+    let skippedThis = false;
     const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
     if (e.domain === "cold") {
       env.ANS_DOMAINS_DIR = coldDir;
@@ -188,20 +189,22 @@ function main() {
       if (e.expected.verdict === "abstain") {
         // A live lane measures retrieval, not provider health: when the only arm
         // is down the classifier says `failed`, and that is the environment, not
-        // a regression. Skip it the way a missing key skips, instead of reddening
-        // a lane nobody can fix from here.
+        // a regression. Skip it the way a missing key skips, and keep the skip
+        // out of the evidence log — a skipped case must never read as a pass.
         if (j.outcome === "failed") {
+          skipped++;
+          skippedThis = true;
           console.log("SKIPPED " + e.id + " (provider outage: providersFailed " + JSON.stringify(j.providersFailed ?? []) + ")");
         } else {
-        assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
-        assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");
-        assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
-        assert(j.outcome === "abstain", e.id + " outcome abstain (got " + j.outcome + ")");
-        if (e.domain === "cold") {
-          // A refusal with a dead arm would be an `empty`, so an empty failed
-          // list is what says the single arm really answered.
-          assert((j.providersFailed ?? []).length === 0, e.id + " the single arm answered (providersFailed " + JSON.stringify(j.providersFailed) + ")");
-        }
+          assert(j.abstain?.abstain === true, e.id + " abstain marker (got " + JSON.stringify(j.abstain) + ")");
+          assert(j.abstain?.reason === "domain_filter_empty", e.id + " reason domain_filter_empty (got " + j.abstain?.reason + ")");
+          assert(j.results.length === 0, e.id + " zero results (got " + j.results.length + ")");
+          assert(j.outcome === "abstain", e.id + " outcome abstain (got " + j.outcome + ")");
+          if (e.domain === "cold") {
+            // A refusal with a dead arm would be an `empty`, so an empty failed
+            // list is what says the single arm really answered.
+            assert((j.providersFailed ?? []).length === 0, e.id + " the single arm answered (providersFailed " + JSON.stringify(j.providersFailed) + ")");
+          }
         }
       } else {
         assert(!j.abstain, e.id + " answer verdict has no abstain marker");
@@ -240,6 +243,7 @@ function main() {
         }
       }
     }
+    if (skippedThis) continue;
     const ePass = passed - p0, eFail = failed - f0;
     // iii: control entries' failures walk the degraded list,
     // never the red gate — existence is a first-class assertion, passing is
@@ -269,7 +273,7 @@ function main() {
   }
 
   rmSync(coldDir, { recursive: true, force: true });
-  console.log("--- eval-looks live executor: " + passed + " passed, " + failed + " failed ---");
+  console.log("--- eval-looks live executor: " + passed + " passed, " + failed + " failed" + (skipped ? ", " + skipped + " skipped" : "") + " ---");
   if (failed > 0) {
     if (evidenceMode && nonQuarFailed === 0) {
       console.log("EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0");

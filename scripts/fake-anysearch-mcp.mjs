@@ -29,7 +29,14 @@ const RESULTS = [
 
 const server = createServer(async (req, res) => {
   let body = "";
-  for await (const chunk of req) body += chunk;
+  try {
+    for await (const chunk of req) body += chunk;
+  } catch {
+    // The CLI was killed mid-request (install-smoke caps each call): treat it as
+    // a call that never happened, not an unhandled rejection in this process.
+    res.destroy();
+    return;
+  }
   let parsed = {};
   try {
     parsed = JSON.parse(body);

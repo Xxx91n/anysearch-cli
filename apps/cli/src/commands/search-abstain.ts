@@ -19,7 +19,7 @@ import type { SearchOutcome } from "@anysearch-cli/retriever";
 // failed, or zero results that are not an abstain (empty), 2 = usage error,
 // 3 = abstain with --fail-on-abstain (dedicated nonzero so automation can
 // discriminate without scraping text). A cancelled search is zero results by
-// definition, so it exits 1 — 0 is only for an answer.
+// definition, so it exits 1; 0 is for an answer or an abstain.
 export function searchExitCode(input: { outcome: SearchOutcome; failOnAbstain: boolean }): number {
   if (input.outcome === "abstain") return input.failOnAbstain ? 3 : 0;
   return input.outcome === "answer" ? 0 : 1;

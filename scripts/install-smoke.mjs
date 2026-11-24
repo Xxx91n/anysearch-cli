@@ -78,13 +78,14 @@ const CLI_TIMEOUT_MS = 30000;
 let warned = 0;
 
 // The exit code is part of the contract, but docs/limitations.md records that a
-// Windows teardown crash can rewrite it. When the structured fields above this
-// check all passed and the run shows that crash signature, say so and warn —
-// the JSON is the authority, and a teardown fault is not a verdict failure.
-function checkExitCode(name, expected, run) {
+// Windows teardown crash can rewrite it. Called after a leg's structured checks,
+// with legClean saying whether they all passed: a crash signature on a clean leg
+// is the teardown fault and only warns, while a crash beside a red check is a
+// real failure and stays red.
+function checkExitCode(name, expected, run, legClean) {
   if (run.code === expected) return check(name, true);
   const teardownCrash = /libc\+\+abi|Abort trap|SIGSEGV|Segmentation fault/i.test(run.out) || run.code === 134;
-  if (teardownCrash) {
+  if (teardownCrash && legClean) {
     warned++;
     console.log("[WARN] " + name + " — teardown crash rewrote the exit code (got " + run.code + ")");
     return;
@@ -298,8 +299,8 @@ try {
     });
     let j = null;
     try { j = JSON.parse(s.stdout); } catch { /* asserted below */ }
+    const failedBefore = failed;
     check("fault leg: search --json stdout parses", j !== null, s.out.slice(-400));
-    checkExitCode("fault leg: exit 1", 1, s);
     // A `cancelled` here means the engine's 4s deadline beat the dead port, not
     // that the arm answered — a red run is still the right signal, and this note
     // says where to look first.
@@ -308,6 +309,7 @@ try {
     check("fault leg: zero results", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
     check("fault leg: providersQueried is [anysearch]", JSON.stringify(j?.providersQueried) === JSON.stringify(["anysearch"]), s.out.slice(-400));
     check("fault leg: providersFailed names anysearch", Array.isArray(j?.providersFailed) && j.providersFailed.includes("anysearch"), s.out.slice(-400));
+    checkExitCode("fault leg: exit 1", 1, s, failed === failedBefore);
   }
 
   // 4b. Refusal leg: a local fake MCP server answers two out-of-domain URLs, so
@@ -336,8 +338,8 @@ try {
         });
         let j = null;
         try { j = JSON.parse(s.stdout); } catch { /* asserted below */ }
+        const failedBefore = failed;
         check("refusal leg: search --json stdout parses", j !== null, s.out.slice(-400));
-        checkExitCode("refusal leg: exit 0", 0, s);
         check("refusal leg: outcome === abstain", j?.outcome === "abstain", s.out.slice(-400));
         check("refusal leg: abstain marker set", j?.abstain?.abstain === true, s.out.slice(-400));
         check("refusal leg: gate === post", j?.abstain?.gate === "post", s.out.slice(-400));
@@ -346,6 +348,7 @@ try {
         check("refusal leg: zero results", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
         check("refusal leg: providersQueried is [anysearch]", JSON.stringify(j?.providersQueried) === JSON.stringify(["anysearch"]), s.out.slice(-400));
         check("refusal leg: no provider failed", JSON.stringify(j?.providersFailed) === JSON.stringify([]), s.out.slice(-400));
+        checkExitCode("refusal leg: exit 0", 0, s, failed === failedBefore);
       } finally {
         stub.kill();
       }

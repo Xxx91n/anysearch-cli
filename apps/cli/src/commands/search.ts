@@ -239,10 +239,9 @@ export async function runSearch(args: string[]): Promise<number> {
         // first-class abstain marker is part of the --json contract.
         abstain: envelope.metadata.abstain ?? null,
         // How this run ended: answer / failed / cancelled / abstain / empty.
-        // Written once by the engine, so this field and the exit code below
-        // can never disagree. Null rather than absent, so a --json reader never
-        // has to guess whether the key was dropped.
-        outcome: envelope.metadata.outcome ?? null,
+        // Written once by the engine and required by the contract, so this field
+        // and the exit code below can never disagree.
+        outcome: envelope.metadata.outcome,
         // resolved query-level vertical spec (repo defaults ride on the
         // retrieval.vertical.pre audit event).
         vertical: vertical ?? null,

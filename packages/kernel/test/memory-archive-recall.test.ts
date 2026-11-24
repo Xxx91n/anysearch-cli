@@ -131,7 +131,7 @@ class ArchiveRetriever {
       query: String(q.query), mode: q.mode ?? "fast",
       results: [{ url: this.url, title: "Archive probe source", snippet: this.snippet, source: "tavily", score: 1 }],
       answers: [],
-      metadata: { providersQueried: ["tavily"], providersFailed: [], providersCancelled: [], elapsedMs: 1 },
+      metadata: { providersQueried: ["tavily"], providersFailed: [], providersCancelled: [], elapsedMs: 1, outcome: "answer" },
     } as any;
   }
 }
