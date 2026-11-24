@@ -245,8 +245,9 @@ const PROVISIONING_REPLY_RE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 // the cap kind on the error object (capType), never in the message body.
 const KEYLESS_CAP_RE = /TavilyKeylessLimitError|daily_cap_reached/i;
 
-// Class all providers share. The type and the marker parser read the same list,
-// so adding a class cannot silently fall back to word matching.
+// Class all providers share. The type and the declaration check in
+// providerErrorClassOf read the same list, so a declared class can only be one
+// of these.
 export const ERROR_CLASSES = [
   "transient",
   "permanent-auth",
@@ -262,11 +263,12 @@ export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 // ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
 // matcher sees name and message at once.
 //
-// The class an adapter already knows arrives as `providerErrorClass`, declared
-// on the error object beside its message; it is never read back out of the text.
-// That text also carries upstream reply bodies, so anything read out of it can
-// be chosen by the upstream — a marker in a reply used to override the real
-// class (#494). Without a declared class the words are the only signal.
+// A class the adapter settled on arrives as `providerErrorClass` and wins here.
+// It records the adapter's own reading rather than a second parse of the
+// message: that message carries upstream reply text, and a marker inside it used
+// to pick the class (#494). Without a declared class the words are the only
+// signal — and upstream text is part of those words, so word matching stays a
+// heuristic, never a boundary.
 const ERROR_CLASS_MARKER = "provider-error-class:";
 const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 
@@ -276,8 +278,8 @@ export function providerErrorMarker(cls: ProviderErrorClass): string {
   return "[" + ERROR_CLASS_MARKER + cls + "]";
 }
 
-// Declare the class an adapter already knows, beside its message. The engine
-// reads it back with providerErrorClassOf; the message text is never the source.
+// Declare the class an adapter settled on, beside its message. The engine reads
+// it back with providerErrorClassOf instead of parsing the message again.
 export function withProviderErrorClass<T extends Error>(err: T, providerErrorClass: ProviderErrorClass): T {
   return Object.assign(err, { providerErrorClass });
 }

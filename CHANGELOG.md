@@ -1,3 +1,18 @@
+## Unreleased — #494: 错误类不再从正文里读，改由适配器在错误对象上声明
+
+一句话说清：**`provider-error-class:` 以前写在错误串里、由分类器解析，而上游回复正文也拼在同一根串上，于是上游写一句标记就能选中类——探针那条路上 402「额度用尽」会被洗成「未检查 上游抽风」，`ans doctor --live` 的退出码从 1 变成 0。现在这个信道分开：适配器把类挂在错误对象的 `providerErrorClass` 上，分类器接一个可选参数，文本只给没有声明的适配器做兜底。**
+
+### Changed
+
+- **`classifyProviderError` 多一个可选的第二个参数**：传了就直接用它，不再去文本里找标记。没传的调用点（探针、exa-js、tavily 这些拿不到「已知类」的）照旧按词和 HTTP 形状判，行为不变。
+- **anysearch 把类声明在错误对象上**：`isError` 回复、以及「200 但不是结果信封」这两条路，类由适配器定完挂上去，engine 捕获时读出来传给分类器，不再回头解析消息。
+- **`providerErrorMarker` 只剩显示用途，`stripErrorClassMarkers` 删掉**：标记既然没人解析，洗它也就没有意义，而且它零调用方。
+- **新增回归**：探针 402 正文带伪造标记仍判 `quota-exhausted`，`ans doctor --live` 仍判 `failed`；engine 侧伪造标记不生效，适配器声明的类压过正文。
+
+### Known limits
+
+- **正文里的词照旧参与判定**：没有声明类的路径（探针的其余 4xx、exa-js / tavily 的 SDK 报错、anysearch 的传输层）只能靠词匹配，一条 403 正文写着 `invalid_api_key` 本来就该判 auth。这次关掉的是「标记通道」，不是「正文不参与分类」。
+
 ## Unreleased — #387: skill 规范检查进 CI，规则和 `ans skill` 共用一份
 
 一句话说清：**agentskills.io 那套规范以前靠人肉对表，现在 `node scripts/check-skills.mjs` 一条命令查全仓的 `SKILL.md`，`check-build` 里也跑它；规则没有第二份，`ans skill install` / `ans skill validate` 走的就是它导入的那段代码。**
