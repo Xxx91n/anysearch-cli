@@ -6,15 +6,16 @@
 
 - **写入走临时文件 + rename**（`packages/store/src/config-llm.ts` 的 `writeUserConfigFile`）：临时文件名带 pid 和随机后缀，放在目标文件自己的目录里——两个 `ans llm set` 同时跑不会把对方写了一半的文件发布出去，清理也不会删掉对方的临时文件；跨目录 rename 会 EXDEV，所以不能写死 `~/.ans`。
 - **权限这次才真正生效**：`writeFileSync` 的 `mode` 只对新建文件生效，已经存在的 0644 一直是 0644，Windows 上 0600 从来没用。改成把 0600 设在临时文件上、由 rename 发布，POSIX 上每次写都是 0600。
-- **失败文案说人话**：原来直接把 errno 原样打出来，改完会带临时文件路径。现在统一成「could not write <config.toml>: EPERM. The previous config is unchanged; ...」，只说错误码，不带临时路径。
+- **失败文案说人话**：原来直接把 errno 原样打出来，改完会带临时文件路径。现在统一成「could not write <config.toml>: EPERM. This write did not touch the existing config; ...」，只说错误码，不带临时路径。
 - **临时文件落盘后才 rename**：写完 fsync 一次，断电那一下才真的不会把「新名字 + 空内容」发布出去。只 rename 不 fsync 的话，「写一半不留半截」对进程被杀成立，对掉电不成立。
 - **整份写完才算写完**：临时文件用 `writeFileSync(fd)` 写，它会把短写循环补到字节齐为止。裸 `writeSync` 在盘满时可能只写进去一部分、还不报错，接着 fsync + rename 就把截断的文件发布出去了——正是这票要消灭的那个形状。
-- **加了一个写入 seam**（`configWriteSeam`）：写和 rename 两个调用都能注入，测试才能在「字节已经写进临时文件」之后制造失败。
+- **加了一个写入 seam**（`configWriteSeam`）：写和 rename 两个调用都能注入，测试才能在「字节已经写进临时文件」之后制造失败。它单独放在 `config-llm-seam.ts`，不进包的公共导出——`index.ts` 是 `export *`，放在主模块里等于让任何调用方都能接管配置写盘。
 
 ### Known limits
 
 - **Windows 上有一类持有者会让写入从成功变失败**：别的进程拿读写共享打开着 `config.toml`（编辑器、索引器、备份工具常见这个模式），就地写今天能过，rename 会 EPERM。`config.env` 和 `credentials.json` 早就接受了同一个代价；失败时旧文件保得住。
 - **软链照旧穿透**：写之前 `lstat` 一次，`~/.ans/config.toml` 是软链就写到它指向的真实文件，链接本身留着。把配置软链进 dotfiles 仓库的人不会在升级后发现链接被换成普通文件。
+- **解不开的软链直接拒绝写**：软链悬空、成环、或者目标没权限时，不再静默回落成「按普通路径写」，那样等于把链接顶掉。报错点名这个链接，让人去修。
 - **临时文件没人清**：进程在 rename 之前被杀，会留一个 `.config.toml.<pid>.<hex>.tmp`。没有任何代码读它，`sweepStaleWorkFiles` 也不认 `.tmp`，所以是惰性垃圾。
 - **读侧一个字没动**：坏文件仍然只 warn 一句就整份忽略。截断正好停在合法 TOML 边界时零告警、`ans doctor` 报 0 失败，那是 #546。
 ## Unreleased — #515: 全取消的 MCP 结果带 `interrupted`

@@ -26,6 +26,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { configWriteSeam } from "./config-llm-seam.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   lookupModelCredential,
@@ -451,23 +452,12 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
   return { flags, argv: rest };
 }
 
-/** Test seam: injectable write/rename, unset in production (like credentialProtectionSeam). */
-export const configWriteSeam: {
-  write?: (path: string, content: string) => void;
-  rename?: (from: string, to: string) => void;
-} = {};
-
-/**
- * Write the temp file, then force it to disk. fsync is what makes "a power cut
- * leaves the old file alone" true: without it the rename can publish a new
- * name over empty content.
- */
+/** Temp file, forced to disk before the rename; otherwise a power cut can publish an empty file. */
 function writeConfigTemp(path: string, content: string): void {
   const fd = openSync(path, "wx", 0o600);
   try {
-    // writeFileSync loops until every byte lands. A bare writeSync can return
-    // short on a full disk without throwing, and the fsync + rename below would
-    // then publish a truncated file — the exact fault this write exists for.
+    // writeFileSync loops until every byte lands; a bare writeSync can return
+    // short on a full disk without throwing.
     writeFileSync(fd, content, "utf8");
     fsyncSync(fd);
   } finally {
@@ -476,16 +466,27 @@ function writeConfigTemp(path: string, content: string): void {
 }
 
 /**
- * Follow a symlinked config file to the file it points at. Renaming onto the
- * link would replace the link with a regular file, silently cutting off anyone
- * who keeps ~/.ans/config.toml symlinked into a dotfiles repo.
+ * Follow a symlinked config file to the file it points at: renaming onto the
+ * link would replace it with a regular file and cut off a dotfiles setup. A
+ * link that cannot be resolved (dangling, looping, unreadable) stops the write
+ * instead of quietly becoming a regular file.
  */
 function linkTarget(path: string): string {
+  let entry;
   try {
-    if (!lstatSync(path).isSymbolicLink()) return path;
-    return realpathSync(path);
+    entry = lstatSync(path);
   } catch {
     return path;
+  }
+  if (!entry.isSymbolicLink()) return path;
+  try {
+    return realpathSync(path);
+  } catch (e) {
+    throw new Error(
+      "refusing to write " + path + ": it is a symlink and its target cannot be resolved (" +
+      ((e as NodeJS.ErrnoException).code ?? String(e)) + "). Fix or remove the link, then retry.",
+      { cause: e },
+    );
   }
 }
 
@@ -520,7 +521,7 @@ function writeUserConfigFile(path: string, content: string): void {
     const reason = typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
     throw new Error(
       "could not write " + path + ": " + reason +
-      ". The previous config is unchanged; check that the file and its folder are writable, then retry.",
+      ". This write did not touch the existing config; check that the file and its folder are writable, then retry.",
       { cause: e },
     );
   }
@@ -532,9 +533,9 @@ function writeUserConfigFile(path: string, content: string): void {
  * (base_url, api) and non-llm sections are preserved. env_key is dropped when
  * the provider changes: it names the previous provider's secret, and the
  * resolver's project-layer guard cannot detect that binding being rewritten in
- * place (CodeRabbit #120). Never writes secrets. A write that fails leaves the
- * previous file byte-for-byte unchanged: the new content is published by a
- * rename, never by rewriting the target in place (#539).
+ * place (CodeRabbit #120). Never writes secrets. A write that fails does not
+ * touch the existing file: the new content is published by a rename, never by
+ * rewriting the target in place.
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },

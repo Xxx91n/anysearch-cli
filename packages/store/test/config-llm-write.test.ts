@@ -6,11 +6,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync,
+  chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { configWriteSeam, userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
+import { userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
+import { configWriteSeam } from "../src/config-llm-seam.js";
 
 const GOOD = '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\nbase_url = "https://example.test"\n';
 
@@ -155,6 +157,26 @@ test("a symlinked config file still writes through to its target", (context) => 
   writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home);
   assert.ok(lstatSync(path).isSymbolicLink(), "the link is still a link, not a regular file");
   assert.ok(readFileSync(real, "utf8").includes('provider = "openai"'), "the real file got the new content");
+  assert.deepEqual(temps(home), [], "no temp file left behind");
+});
+
+test("a symlink that cannot be resolved stops the write instead of being replaced", (context) => {
+  const { home, path } = fixture();
+  writeFileSync(join(home, "dotfiles-config.toml"), GOOD);
+  try {
+    symlinkSync(join(home, "dotfiles-config.toml"), path, "file");
+  } catch {
+    context.skip("this host does not allow creating symlinks");
+    return;
+  }
+  // Point the link at something that no longer exists: the write must not fall
+  // back to replacing the link with a regular file.
+  unlinkSync(join(home, "dotfiles-config.toml"));
+  assert.throws(
+    () => writeUserLlmConfig({ provider: "openai" }, home),
+    /it is a symlink and its target cannot be resolved/,
+  );
+  assert.ok(lstatSync(path).isSymbolicLink(), "the link is still a link");
   assert.deepEqual(temps(home), [], "no temp file left behind");
 });
 
