@@ -20,6 +20,7 @@ import {
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
+  providerLabel,
   readUserCredentials,
   removeUserCredential,
   repairUserCredentials,
@@ -35,7 +36,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { brokenFileHint, NOTHING_CHANGED, publishedButUnverified } from "../messages";
+import { NOTHING_CHANGED, publishedButUnverified } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -65,9 +66,12 @@ function stderr(text: string): void {
   else process.stderr.write(text);
 }
 
-/** Show whether an entry exists, bound where — and it must never show the value. */
+/** Show whether an entry exists, bound where — and it must never show the value.
+ * The provider id also comes out of the file, so it is cleaned the same way the
+ * fault sentence cleans it: an escape sequence or a 4 KB "provider" would
+ * otherwise reach the terminal through this line. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
-  return binding.provider + "  " + displayEndpoint(binding.endpoint);
+  return providerLabel(binding.provider) + "  " + displayEndpoint(binding.endpoint);
 }
 
 function usage(): number {
@@ -162,8 +166,7 @@ function statusLines(
       state = "set";
     } else if (file.error) {
       // The file is broken, so this command cannot tell whether the provider had
-      // an entry. "not set" would be a lie about a key that is still in the file
-      // (#537).
+      // an entry. "not set" would be a lie about a key that is still in the file.
       where = "unknown - the credential file could not be read";
       state = "broken";
     } else if (binding) {
@@ -308,7 +311,6 @@ export async function runAuth(args: string[]): Promise<number> {
     if (file.error) {
       // A script reading only the exit code cannot tell a broken file from a
       // healthy one, and `ans doctor`, `set` and `remove` already exit 1 for it.
-      stdout(brokenFileHint(file));
       return 1;
     }
     return 0;
@@ -344,7 +346,6 @@ export async function runAuth(args: string[]): Promise<number> {
     if (broken.error) {
       stderr(broken.error + "\n");
       stderr("Nothing was typed and nothing was written.\n");
-      stderr(brokenFileHint(broken) + "\n");
       return 1;
     }
 

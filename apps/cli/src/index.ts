@@ -23,7 +23,7 @@ import { runHitl } from "./commands/hitl";
 import { runHost } from "./commands/host";
 import { describeAdmissionRefusal, runUpgrade } from "./commands/upgrade";
 import { rehydrateConfigEnv } from "./config-env";
-import { ensureAnsLayoutOrExit } from "@anysearch-cli/store";
+import { ensureAnsLayoutOrExit, REPAIR_COMMAND, STORE_KEY_COMMAND } from "@anysearch-cli/store";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 import { trackCliCommand } from "./cli-task-tracking";
 
@@ -43,8 +43,8 @@ const help = [
   "Commands:",
   "  doctor    分层诊断：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败",
   "            options: --json（结构化输出）· --strict（没失败但有未检查时退 5）",
-  "  auth      Provider API keys: status, store one once, or repair a broken file",
-  "            (ans auth set <provider> · ans auth repair keeps the keys it can read)",
+  "  auth      Provider API keys: status, store one once, or drop a record it cannot read",
+  "            " + STORE_KEY_COMMAND + " · " + REPAIR_COMMAND + " keeps the records it can still read",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",

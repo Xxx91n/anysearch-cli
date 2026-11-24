@@ -268,7 +268,7 @@ function stripAuthorityAndQuery(value: string): string {
  * printed verbatim by `ans auth`, `auth list`, `ans llm` and doctor, so a value
  * pasted into that field must not arrive with control characters or at any length.
  */
-function showProvider(raw: string): string {
+export function providerLabel(raw: string): string {
   // `\p{Cc}` is the control class and `\p{Cf}` the format class (zero-width
   // joiners, bidi overrides): both can rewrite or hide what a terminal shows. A
   // space in their place keeps two tokens from fusing into one word.
@@ -289,13 +289,13 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
   const provider = typeof rec["provider"] === "string" ? rec["provider"].trim().toLowerCase() : "";
   if (!provider) return { problem: "entry " + (index + 1) + " has no provider" };
   const apiKey = typeof rec["apiKey"] === "string" ? rec["apiKey"].trim() : "";
-  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has no apiKey" };
+  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + providerLabel(provider) + ") has no apiKey" };
   // An endpoint that is present but not a string cannot be silently reshaped
   // into "the provider default" - that would change which host the key is sent
   // to, which is exactly what the binding is supposed to prevent.
   const rawEndpoint = rec["endpoint"];
   if (rawEndpoint !== undefined && rawEndpoint !== null && typeof rawEndpoint !== "string") {
-    return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has a non-string endpoint" };
+    return { problem: "entry " + (index + 1) + " (" + providerLabel(provider) + ") has a non-string endpoint" };
   }
   const endpoint = typeof rawEndpoint === "string" ? normalizeBindingEndpoint(rawEndpoint) : null;
   return { binding: { provider, endpoint, apiKey } };
@@ -330,7 +330,7 @@ const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EACCES: "fix its permissions",
   EPERM: "fix its permissions",
-  EROFS: "fix its permissions",
+  EROFS: "move the file to a writable disk",
   EISDIR: "move the directory at that path aside",
   ENOTDIR: "fix the path: a parent directory is a file",
   ENAMETOOLONG: "shorten the path",
@@ -923,7 +923,7 @@ export function writeUserCredential(
     if (existing.error) {
       // The read already ended with the advice; say only what this write did not do.
       throw new CredentialWriteRefusal(
-        existing.error + "; the key was not written - rewriting the file would drop the other keys",
+        existing.error + "; writing it now would rebuild the file and drop the record it cannot read",
         false,
       );
     }
@@ -947,7 +947,7 @@ export function removeUserCredential(
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
       throw new CredentialWriteRefusal(
-        existing.error + "; the key was not removed - the file was not changed",
+        existing.error + "; removing it now would rebuild the file and drop the record it cannot read",
         false,
       );
     }

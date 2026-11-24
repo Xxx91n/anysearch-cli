@@ -20,6 +20,7 @@ import {
   displayEndpoint,
   lookupModelCredential,
   normalizeBindingEndpoint,
+  readFaultRemedy,
   readUserCredentials,
   removeUserCredential,
   repairUserCredentials,
@@ -728,10 +729,22 @@ test("removeUserCredential refuses a broken file without repeating the read's ad
       message = (e as Error).message;
     }
     assert.match(message, /entry 2 \(exa\) has no apiKey/);
-    assert.equal(message.split("fix or remove").length - 1, 1, "同一句只说一次：" + message);
-    assert.match(message, /the key was not removed/);
+    assert.equal((message.match(/fix or remove/gi) ?? []).length, 1, "同一句只说一次：" + message);
+    // The tail says why the write was refused, not that the file did not change:
+    // the caller gets that from `published`, and the CLI prints it once (#550).
+    assert.match(message, /removing it now would rebuild the file and drop the record it cannot read/);
+    assert.doesNotMatch(message, /would drop the other keys/, "repair keeps the readable keys：" + message);
+    assert.doesNotMatch(message, /the file was not changed/);
     assert.match(readFileSync(path, "utf8"), /good-key/, "the other key survives");
   } finally { cleanup(); }
+});
+
+test("每一种 errno 说自己那一条修法，只读挂载不是权限问题（#550）", () => {
+  // A read-only mount is not fixed by chmod, and the closed set exists so each
+  // code can say the thing that actually works.
+  assert.equal(readFaultRemedy("EROFS"), "move the file to a writable disk");
+  assert.equal(readFaultRemedy("EACCES"), "fix its permissions");
+  assert.match(readFaultRemedy("ELOOP"), /check the file and the folder it lives in/);
 });
 
 test("a provider value read out of the file is shown without control characters and bounded (#537)", () => {

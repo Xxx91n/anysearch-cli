@@ -763,7 +763,10 @@ test("ans doctor：坏文件给的建议跟着故障档走，repair 只出现在
   const parseRow = parseFault.entries.find((entry) => entry.name === "user credential file")!;
   assert.equal(parseRow.state, "failed");
   assert.doesNotMatch(parseRow.detail ?? "", /ans auth repair/, parseRow.detail);
-  assert.match(parseRow.detail ?? "", /ans auth set/, parseRow.detail);
+  // The fault sentence store built already ends with the fix, so doctor adds
+  // nothing beside it and the row says it once (#550).
+  assert.match(parseRow.detail ?? "", /fix or remove the file, then retry/, parseRow.detail);
+  assert.equal(((parseRow.detail ?? "").match(/fix or remove/gi) ?? []).length, 1, parseRow.detail);
 
   // A record inside a readable file is the one case it fixes.
   const recordFault = await runInHome({
@@ -785,7 +788,9 @@ test("ans doctor：凭据文件读不出来时，建议只解决读的问题，�
   const row = entries.find((entry) => entry.name === "user credential file")!;
   assert.equal(row.state, "failed");
   assert.match(row.detail ?? "", /EISDIR/, row.detail);
-  assert.match(row.detail ?? "", /ans auth set/, row.detail);
+  // The advice is the errno's own remedy, not a generic "fix or remove": a
+  // directory where the file should be is moved aside, not deleted.
+  assert.match(row.detail ?? "", /move the directory at that path aside/, row.detail);
   assert.doesNotMatch(row.detail ?? "", /ans auth repair/, "repair reads the same file：" + row.detail);
-  assert.doesNotMatch(row.detail ?? "", /修好或删掉它/, "on a full disk the file is fine：" + row.detail);
+  assert.doesNotMatch(row.detail ?? "", /fix or remove/i, "on a read fault the file is fine：" + row.detail);
 });

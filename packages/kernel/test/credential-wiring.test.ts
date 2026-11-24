@@ -667,6 +667,9 @@ test("a credential fault is classified by cause, not flattened into one sentence
     ["refusing to write the credential file /x: cannot take the write lock /x.lock (EACCES)", /folder refused access \(EACCES\)/],
     ["refusing to write the credential file /x: its Windows DACL still allows BA", /could not be locked to your account/],
     ["/x: not valid JSON (line 3 column 5); fix or remove the file", /not readable as stored keys/],
+    // A record inside a readable file can be repaired; the MCP-side sentence says
+    // so instead of dropping the way out.
+    ["/x: entry 2 (anthropic) has no apiKey; fix or remove the file, or run ans auth repair to keep the keys it can still read", /ans auth repair/],
   ];
   for (const [raw, want] of cases) {
     const engine = createEngine(undefined, {

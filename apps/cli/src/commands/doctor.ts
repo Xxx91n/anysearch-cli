@@ -25,17 +25,14 @@ import {
   readMigrationStatus,
   type MigrationLayoutStatus,
   readUserCredentials,
-  REPAIR_COMMAND,
   resolveConfigHome,
   resolveSearchCredentials,
-  STORE_KEY_COMMAND,
   userCredentialsPath,
 } from "@anysearch-cli/store";
 import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveLlmConfig } from "../config-llm";
-import { faultAdvice, type FaultAdvice } from "../messages";
 import { DiagReport } from "../diagnostics";
 import { describeIdentity, installedProduct } from "../build-identity";
 import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/hosts";
@@ -128,13 +125,6 @@ function meetsFloor(running: string, floor: string): boolean | null {
   }
   return true;
 }
-
-/** What doctor tells the user to do, by the advice every command shares. */
-const BROKEN_FILE_ADVICE: Record<FaultAdvice, string> = {
-  repair: "跑 " + REPAIR_COMMAND + " 保住能读的 key",
-  read: "先解决读不出来的问题，再按需跑 " + STORE_KEY_COMMAND,
-  replace: "修好或删掉它，再按需跑 " + STORE_KEY_COMMAND,
-};
 
 export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): Promise<number> {
   const write = opts.stdout ?? ((line: string) => process.stdout.write(line + "\n"));
@@ -374,7 +364,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "user credential file",
         state: "failed",
         mode: "offline",
-        detail: `${credentialFile.error} — ` + BROKEN_FILE_ADVICE[faultAdvice(credentialFile)],
+        detail: credentialFile.error,
       });
     } else {
       report.add({

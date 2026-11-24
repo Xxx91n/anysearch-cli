@@ -159,6 +159,11 @@ function classifyCredentialFault(error: unknown): string {
   // a permissions problem would destroy the user's other keys for nothing.
   const permission = code === "EACCES" || code === "EPERM" || code === "EROFS";
 
+  // A record inside a readable file is the one fault `ans auth repair` fixes. It
+  // is reported with the published notice's own sentence, so the MCP side keeps
+  // the repair half instead of flattening it into "fix or remove it".
+  if (!permission && /\bentry \d+\b/i.test(raw)) return credentialFileNotice({ kind: "invalid-record" }).notice;
+
   if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
     return permission
       ? "the user credential file could not be read (" + code + "); check its permissions"

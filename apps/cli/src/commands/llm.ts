@@ -9,7 +9,6 @@
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
-import { brokenFileHint } from "../messages";
 import {
   type CredentialFileContents,
   displayEndpoint,
@@ -22,13 +21,6 @@ import {
   projectConfigPath,
   writeUserLlmConfig,
 } from "../config-llm";
-
-/** Prints the way out of a broken file and says whether the command must fail. */
-function reportBrokenFile(file: CredentialFileContents): boolean {
-  if (!file.error) return false;
-  console.log(brokenFileHint(file));
-  return true;
-}
 
 /** The BROKEN line both listings below print; the same result also goes to the resolver. */
 function printCredentialFault(file: CredentialFileContents): void {
@@ -103,8 +95,9 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
     // A broken credential file is a failure here too: `ans auth`, `ans doctor`,
-    // `set` and `remove` all say so with exit 1.
-    return reportBrokenFile(credentialFile) ? 1 : 0;
+    // `set` and `remove` all say so with exit 1. The `Credentials file: BROKEN`
+    // line above already ends with the way out, so only the exit code is added.
+    return credentialFile.error ? 1 : 0;
   }
 
   const subcommand = args[0];
@@ -178,7 +171,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("");
     console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
     console.log("Or set an env var: export OPENAI_API_KEY=...");
-    return reportBrokenFile(credentialFile) ? 1 : 0;
+    return credentialFile.error ? 1 : 0;
   }
 
   if (subcommand === "models") {
