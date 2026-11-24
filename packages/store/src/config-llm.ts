@@ -264,8 +264,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   };
 
   const resolved: ResolvedLlmConfig = { sources: {} };
-  const configFault = userFile.fault ?? projectFile.fault;
-  if (configFault) resolved.configFault = configFault;
+  if (userFile.fault) resolved.configFault = userFile.fault;
   const pick = (
     field: "provider" | "model" | "base_url" | "api",
     outKey: "provider" | "model" | "baseUrl" | "api",

@@ -270,6 +270,50 @@ async function main() {
         "bad TOML + broken credentials: no stored key is guessed");
     }
 
+    {
+      const fix = fixture("[llm\n");
+      mkdirSync(join(fix.home, ".ans"), { recursive: true });
+      writeFileSync(join(fix.home, ".ans", "credentials.json"), JSON.stringify({ bindings: [] }));
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + empty credentials: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + empty credentials: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + empty credentials: no stored key is guessed");
+    }
+
+    {
+      const fix = fixture("[llm\n");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad TOML + missing credentials: isError true");
+      assert(textOf(res).includes("LLM config file is broken"),
+        "bad TOML + missing credentials: the config fault is named");
+      assert(!textOf(res).includes("model API key is still stored"),
+        "bad TOML + missing credentials: no stored key is guessed");
+    }
+
+    {
+      const fix = fixture(undefined, "[llm\n");
+      const h = harness(fix);
+      const res = await h.call();
+      assert(res?.isError === true, "bad project TOML: isError true");
+      assert(textOf(res).includes("LLM not configured"),
+        "bad project TOML: missing user config keeps the existing message");
+      assert(!textOf(res).includes("LLM config file is broken"),
+        "bad project TOML: #547 does not expand to the project config");
+    }
+
+    {
+      const fix = fixture("[llm\n", '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n');
+      const h = harness(fix);
+      await h.call();
+      assert(h.seen.length === 1, "bad user TOML + valid project TOML: project model still runs");
+      assert(h.seen[0]?.provider === "openai" && h.seen[0]?.model === "gpt-5",
+        "bad user TOML + valid project TOML: project provider/model reach the session");
+    }
+
     // 5b. an unreadable config (config.toml is a directory) is reported, not a
     //     crash before observation (#300/greptile P2).
     {

@@ -15,12 +15,23 @@ const ENV_KEYS = [
 
 type Binding = { provider: string; endpoint: null; apiKey: string };
 
-async function runChatFixture(opts: { configToml?: string; configDirectory?: boolean; credentials?: string; bindings?: Binding[] }) {
+async function runChatFixture(opts: {
+  configToml?: string;
+  configDirectory?: boolean;
+  projectToml?: string;
+  credentials?: string;
+  bindings?: Binding[];
+  argv?: string[];
+}) {
   const home = mkdtempSync(join(tmpdir(), "ans-547-chat-home-"));
   const cwd = mkdtempSync(join(tmpdir(), "ans-547-chat-cwd-"));
   mkdirSync(join(home, ".ans"), { recursive: true });
   if (opts.configDirectory) mkdirSync(join(home, ".ans", "config.toml"));
   else if (opts.configToml !== undefined) writeFileSync(join(home, ".ans", "config.toml"), opts.configToml);
+  if (opts.projectToml !== undefined) {
+    mkdirSync(join(cwd, ".ans"), { recursive: true });
+    writeFileSync(join(cwd, ".ans", "config.toml"), opts.projectToml);
+  }
   if (opts.credentials !== undefined) writeFileSync(join(home, ".ans", "credentials.json"), opts.credentials);
   if (opts.bindings !== undefined) {
     writeFileSync(join(home, ".ans", "credentials.json"), JSON.stringify({ bindings: opts.bindings }));
@@ -41,7 +52,7 @@ async function runChatFixture(opts: { configToml?: string; configDirectory?: boo
   process.chdir(cwd);
   (process.stderr as any).write = (chunk: any) => { stderr += String(chunk); return true; };
   try {
-    code = await runChat(["-p", "hello"]);
+    code = await runChat(opts.argv ?? ["-p", "hello"]);
   } finally {
     (process.stderr as any).write = realWrite;
     process.chdir(previousCwd);
@@ -101,4 +112,35 @@ test("unreadable config names the fault and keeps a stored model key visible", a
   assert.match(result.stderr, /LLM config file is broken/);
   assert.match(result.stderr, /model API key is still stored/);
   assert.doesNotMatch(result.stderr, /sk-ant-547-test-000000/);
+});
+
+test("broken config with an empty credential file does not claim a model key remains", async () => {
+  const result = await runChatFixture({ configToml: "[llm\n", credentials: JSON.stringify({ bindings: [] }) });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /LLM config file is broken/);
+  assert.doesNotMatch(result.stderr, /model API key is still stored/);
+});
+
+test("broken config with no credential file does not claim a model key remains", async () => {
+  const result = await runChatFixture({ configToml: "[llm\n" });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /LLM config file is broken/);
+  assert.doesNotMatch(result.stderr, /model API key is still stored/);
+});
+
+test("a broken project config does not replace the missing user config message", async () => {
+  const result = await runChatFixture({ projectToml: "[llm\n" });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /LLM provider not configured/);
+  assert.doesNotMatch(result.stderr, /LLM config file is broken/);
+});
+
+test("flags still pass the config gate when the user config is broken", async () => {
+  const result = await runChatFixture({
+    configToml: "[llm\n",
+    argv: ["-p", "hello", "--llm.provider", "openai", "--llm.model", "gpt-5"],
+  });
+  assert.equal(result.code, 1, result.stderr);
+  assert.doesNotMatch(result.stderr, /LLM config file is broken/);
+  assert.match(result.stderr, /Task budget not established/);
 });
