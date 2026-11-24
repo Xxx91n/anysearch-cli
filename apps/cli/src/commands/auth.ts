@@ -172,6 +172,9 @@ function statusLines(
       state = "empty";
     }
     const mark = state === "broken" ? "[BROKEN]" : state === "empty" ? "[EMPTY]" : "[SET]";
+    // `[SET]` / `[EMPTY]` are 7 characters and `[BROKEN]` is 8, so the mark pads to
+    // 8 with one separator space after it. The two 7-character marks therefore
+    // sit one column further right than they used to; nothing parses the column.
     lines.push(mark.padEnd(8) + " " + info.id.padEnd(10) + " " + where);
   }
   return lines;
@@ -253,7 +256,7 @@ export async function runAuth(args: string[]): Promise<number> {
 
   if (sub === undefined || sub === "status" || sub === "list") {
     // Design: status 和 list 只读一次凭据文件，来源表和模型解析器共用这一份；读坏了 status 说一次，
-    // list 只在文件块里说一次。set 和 remove 另读一次，那一次是为了在提示输入之前就拒绝坏文件。
+    // list 只在文件块里说一次。set 和 remove 自己再读两次：一次在提示输入之前、一次在写锁里。
     const file = readUserCredentials({ home });
     stdout("ans auth - provider API keys");
     stdout("---");

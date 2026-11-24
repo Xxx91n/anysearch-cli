@@ -271,7 +271,10 @@ function stripAuthorityAndQuery(value: string): string {
  * at arbitrary length (#537).
  */
 function showProvider(raw: string): string {
-  const cleaned = raw.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  // `\p{Cc}` is the control class and `\p{Cf}` the format class (zero-width
+  // joiners, bidi overrides): both can rewrite or hide what a terminal shows. A
+  // space in their place keeps two tokens from fusing into one word.
+  const cleaned = raw.replace(/[\p{Cc}\p{Cf}]+/gu, " ").trim();
   return cleaned.length > 40 ? cleaned.slice(0, 40) + "…" : cleaned;
 }
 
@@ -327,7 +330,7 @@ const FIX_ADVICE = "; fix or remove the file, then retry";
  */
 function parseCredentialBytes(
   raw: string,
-): { bindings: CredentialBinding[]; problems: string[] } | { detail: string; kind: CredentialFileFaultKind; errno?: string } {
+): { bindings: CredentialBinding[]; problems: string[] } | { detail: string; kind: CredentialFileFaultKind } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripBom(raw));
@@ -375,7 +378,7 @@ export function readUserCredentials(
   }
   const bytes = parseCredentialBytes(raw);
   if (!("bindings" in bytes)) {
-    return unusableFile(path, bytes.detail + FIX_ADVICE, bytes.kind, bytes.errno);
+    return unusableFile(path, bytes.detail + FIX_ADVICE, bytes.kind);
   }
   // A record that cannot be trusted makes the WHOLE file untrusted: returning
   // the readable ones would let the next write replace the file with a filtered
