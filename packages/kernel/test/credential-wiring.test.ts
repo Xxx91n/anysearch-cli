@@ -506,18 +506,15 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   // The record can arrive through the public search seam, so a kind or code the
   // kernel does not know must degrade to plain wording, not throw.
   for (const kind of ["future-kind", "toString", "constructor"]) {
-    const unknownKind = { kind } as unknown as CredentialFileFault;
-    const notice = credentialFileNotice(unknownKind).notice;
-    assert.match(notice, /could not be used/, kind + " degrades to the generic sentence");
-    assert.doesNotMatch(notice, /\{errno\}|\{remedy\}/);
+    const record = credentialFileNotice({ kind } as unknown as CredentialFileFault);
+    assert.equal(record.kind, "unknown", kind + " is mapped into the closed set");
+    assert.match(record.notice, /could not be used/, kind + " degrades to the generic sentence");
+    assert.doesNotMatch(record.notice, /\{errno\}|\{remedy\}/);
   }
   for (const errno of ["EWHATEVER", "constructor"]) {
-    const unknownErrno = { kind: "unreadable", errno } as unknown as CredentialFileFault;
-    assert.match(
-      credentialFileNotice(unknownErrno).notice,
-      /; fix it \(/,
-      errno + " gets the plain remedy",
-    );
+    const record = credentialFileNotice({ kind: "unreadable", errno } as unknown as CredentialFileFault);
+    assert.equal("errno" in record, false, errno + " is not forwarded outside the closed set");
+    assert.match(record.notice, /; fix it \(/, errno + " gets the plain remedy");
   }
 });
 

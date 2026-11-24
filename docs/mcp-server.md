@@ -299,14 +299,18 @@ Rules behind the table:
   Error results do not carry it.
 - **A credential file that exists but cannot be used says so.**
   `credentialSources.credentialFileFault` is present only in that case, and it
-  carries `kind` (`unreadable` / `not-json` / `invalid-structure`), an `errno`
-  when it was a read failure, and one `notice` sentence built from the kind by
-  `CREDENTIAL_FILE_HINTS` in `packages/kernel/src/credential-file-notice.ts` —
-  the same "one table, not one per host" rule as the error hints. `kind` and
-  `errno` are the machine contract; `notice` is wording for people, so a host
-  must not branch on its text. The table holds templates (`unreadable` fills
-  `{errno}` and `{remedy}`); `credentialFileNotice()` produces the final
-  sentence. Absent means
+  carries `kind` (`unreadable` / `not-json` / `invalid-structure` / `unknown`),
+  an `errno` when it was a read failure, and one `notice` sentence built from
+  the kind by `CREDENTIAL_FILE_HINTS` in
+  `packages/kernel/src/credential-file-notice.ts` — the same "one table, not
+  one per host" rule as the error hints. `unknown` means a public
+  `searchCredentials` seam reported a kind this build does not recognize; the
+  record then carries the generic sentence. A code outside the errno set is
+  dropped rather than forwarded, so the record stays inside both closed sets.
+  `kind` and `errno` are the machine contract; `notice` is wording for people,
+  so a host must not branch on its text. The table holds templates
+  (`unreadable` fills `{errno}` and `{remedy}`); `credentialFileNotice()`
+  produces the final sentence. Absent means
   nobody reported a fault: a healthy file, no file at all, or a seam that never
   read one. It never carries the path or a copy of the raw error sentence,
   which can quote the file. `providerBuildErrors` does not cover this case: a
