@@ -35,7 +35,7 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { brokenFileHint, canRepair, NOTHING_CHANGED, publishedButUnverified, WRITE_OUTCOME_UNKNOWN } from "../messages";
+import { brokenFileHint, NOTHING_CHANGED, publishedButUnverified } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -249,8 +249,9 @@ function rejectUnknownProvider(provider: string): number {
 }
 
 /**
- * Whether a refused write had already replaced the file. `undefined` is "cannot tell":
- * the store module can be loaded twice (dist and src), and then `instanceof` misses.
+ * Whether a refused write had already replaced the file. `undefined` means the error
+ * is not a write refusal at all (an input check, say), which is a different thing to
+ * report. The field read covers a store module loaded twice, where `instanceof` misses.
  */
 function writePublished(e: unknown): boolean | undefined {
   if (e instanceof CredentialWriteRefusal) return e.published;
@@ -259,11 +260,9 @@ function writePublished(e: unknown): boolean | undefined {
 }
 
 /** One wording for every refused write; `fact` is what this command was changing. */
-function reportWriteOutcome(message: string, published: boolean | undefined, fact: string): void {
+function reportWriteOutcome(message: string, published: boolean, fact: string): void {
   stderr(message + "\n");
-  if (published === undefined) stderr(WRITE_OUTCOME_UNKNOWN + "\n");
-  else if (published) stderr(publishedButUnverified(fact) + "\n");
-  else stderr(NOTHING_CHANGED + "\n");
+  stderr(published ? publishedButUnverified(fact) + "\n" : NOTHING_CHANGED + "\n");
 }
 
 function reportWriteFailure(e: unknown, fact: string): void {
@@ -344,8 +343,8 @@ export async function runAuth(args: string[]): Promise<number> {
     const broken = readUserCredentials({ home });
     if (broken.error) {
       stderr(broken.error + "\n");
-      stderr("Nothing was typed and nothing was written. " +
-        (canRepair(broken) ? "Run ans auth repair to keep the keys it can read.\n" : "Fix or remove the file, then store the key again.\n"));
+      stderr("Nothing was typed and nothing was written.\n");
+      stderr(brokenFileHint(broken) + "\n");
       return 1;
     }
 

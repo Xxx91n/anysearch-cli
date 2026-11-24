@@ -61,7 +61,7 @@ test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
       // #537: the same file makes `ans auth` and `ans doctor` fail, so this
       // command cannot keep reporting success for it.
       assert.equal(code, 1, out);
-      assert.match(out, /Fix or remove the file, then store the keys again/, "exit 1 comes with the way out：" + out);
+      assert.match(out, /Fix or remove the file, then store the key again/, "exit 1 comes with the way out：" + out);
       assert.doesNotMatch(out, /ans auth repair/, "repair cannot keep anything from a file that will not parse：" + out);
       const faultLines = out.split("\n").filter((line) => line.includes("not valid JSON"));
       assert.equal(faultLines.length, 1, "args " + JSON.stringify(args) + " 只能说一次：\n" + out);

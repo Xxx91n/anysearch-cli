@@ -33,6 +33,7 @@ import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } fr
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveLlmConfig } from "../config-llm";
+import { canRepair } from "../messages";
 import { DiagReport } from "../diagnostics";
 import { describeIdentity, installedProduct } from "../build-identity";
 import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/hosts";
@@ -364,9 +365,11 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
         name: "user credential file",
         state: "failed",
         mode: "offline",
-        detail: `${credentialFile.error} — ` + (credentialFile.fault?.kind === "invalid-record"
+        detail: `${credentialFile.error} — ` + (canRepair(credentialFile)
           ? "跑 ans auth repair 保住能读的 key"
-          : "修好或删掉它，再按需跑 ans auth set <provider>"),
+          : credentialFile.fault?.kind === "unreadable"
+            ? "先按上面那句把读的问题解决，再按需跑 ans auth set <provider>"
+            : "修好或删掉它，再按需跑 ans auth set <provider>"),
       });
     } else {
       report.add({

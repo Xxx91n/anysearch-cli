@@ -434,7 +434,7 @@ test("ans auth repair 遇到不是 JSON 的文件不猜，只说删了重存（#
       // nothing left for repair to keep.
       const status = await capture(() => runAuth([]));
       assert.equal(status.code, 1, status.out);
-      assert.match(status.out, /store the keys again: ans auth set/, status.out);
+      assert.match(status.out, /store the key again: ans auth set/, status.out);
       assert.doesNotMatch(status.out, /Fix the file: ans auth repair/, status.out);
       assert.equal(readFileSync(path, "utf8"), "{ not json", "文件原样不动");
     });

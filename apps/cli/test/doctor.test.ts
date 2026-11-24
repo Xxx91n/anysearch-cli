@@ -752,4 +752,24 @@ test("ans doctor：域 TOML 配了 [skills.toolRequires] 时，解释「域里�
   }
 });
 
+test("ans doctor：坏文件给的建议跟着故障档走，repair 只出现在能修的那档", async () => {
+  const env = { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined };
 
+  // A file that does not parse has nothing for repair to keep.
+  const parseFault = await runInHome({ credentials: "not json", env });
+  const parseRow = parseFault.entries.find((entry) => entry.name === "user credential file")!;
+  assert.equal(parseRow.state, "failed");
+  assert.doesNotMatch(parseRow.detail ?? "", /ans auth repair/, parseRow.detail);
+  assert.match(parseRow.detail ?? "", /ans auth set/, parseRow.detail);
+
+  // A record inside a readable file is the one case it fixes.
+  const recordFault = await runInHome({
+    credentials: JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "[redacted]" }, { provider: "anthropic" }],
+    }),
+    env,
+  });
+  const recordRow = recordFault.entries.find((entry) => entry.name === "user credential file")!;
+  assert.equal(recordRow.state, "failed");
+  assert.match(recordRow.detail ?? "", /ans auth repair/, recordRow.detail);
+});

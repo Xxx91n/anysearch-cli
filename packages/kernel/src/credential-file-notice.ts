@@ -8,7 +8,7 @@
 // No path, no parse message: the raw error from `readUserCredentials` quotes the
 // line/column and sometimes the value it found, so it stays on stderr.
 
-import { CREDENTIAL_FILE_FAULT_ERRNOS, FIX_OR_REPLACE, KEEP_KEYS, readFaultRemedy } from "@anysearch-cli/store";
+import { FIX_OR_REPLACE, isCredentialFaultErrno, KEEP_KEYS, readFaultRemedy } from "@anysearch-cli/store";
 import type { CredentialFileFault, CredentialFileFaultKind } from "@anysearch-cli/store";
 
 /**
@@ -58,11 +58,9 @@ export function credentialFileNotice(fault: CredentialFileFault): CredentialFile
   const kind: CredentialFileNoticeKind = Object.hasOwn(CREDENTIAL_FILE_HINTS, fault.kind)
     ? fault.kind
     : "unknown";
-  const errno = kind === "unreadable" && fault.errno && CREDENTIAL_FILE_FAULT_ERRNOS.includes(fault.errno)
-    ? fault.errno
-    : undefined;
+  const errno = kind === "unreadable" && isCredentialFaultErrno(fault.errno) ? fault.errno : undefined;
   const notice = CREDENTIAL_FILE_HINTS[kind]
     .replace("{errno}", errno ? " (" + errno + ")" : "")
-    .replace("{remedy}", errno ? readFaultRemedy(errno) : "check the file and the folder it lives in");
+    .replace("{remedy}", readFaultRemedy(errno));
   return errno ? { kind, errno, notice } : { kind, notice };
 }

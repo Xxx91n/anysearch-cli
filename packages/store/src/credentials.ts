@@ -314,8 +314,8 @@ function stripBom(text: string): string {
 /**
  * The two halves of the advice the kernel's notice also quotes. Only a fault
  * inside a readable file can be repaired: a file that does not parse has nothing
- * left to keep. The CLI adds ", then retry" to the first; the notice ends it with
- * what makes the fix take effect instead.
+ * left to keep. The read path ends the first with ", then retry"; the kernel's
+ * notice ends it with what makes the fix take effect instead.
  */
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run ans auth repair to keep the keys it can still read";
@@ -342,10 +342,14 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EIO: "check the disk and retry the read",
 };
 
+/** True for a code in the closed set: the only kind worth publishing. */
+export function isCredentialFaultErrno(value: unknown): value is CredentialFileFaultErrno {
+  return CREDENTIAL_FILE_FAULT_ERRNOS.some((code) => code === value);
+}
+
 /** The remedy for a code this build knows; a neutral sentence for anything else. */
 export function readFaultRemedy(errno?: string): string {
-  const known = CREDENTIAL_FILE_FAULT_ERRNOS.find((code) => code === errno);
-  return known ? READ_REMEDY[known] : "check the file and the folder it lives in";
+  return isCredentialFaultErrno(errno) ? READ_REMEDY[errno] : "check the file and the folder it lives in";
 }
 
 /** The one wording for "the file cannot be read at all"; the read and the repair share it. */
