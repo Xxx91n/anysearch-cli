@@ -20,7 +20,9 @@
 // so callers can say where a value came from instead of guessing.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
@@ -448,42 +450,44 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
   return { flags, argv: rest };
 }
 
-/**
- * Test seam for the two filesystem calls the config write makes. A fault
- * between "the temp file holds bytes" and "the rename published it" is the
- * branch this whole write exists for, and no host produces it on demand, so
- * each call is injectable. Production leaves both unset.
- */
+/** Test seam: injectable write/rename, unset in production (like credentialProtectionSeam). */
 export const configWriteSeam: {
   write?: (path: string, content: string) => void;
   rename?: (from: string, to: string) => void;
 } = {};
 
-/** Owner-only from creation (CWE-312); the rename publishes this mode. */
+/**
+ * Write the temp file, then force it to disk. fsync is what makes "a power cut
+ * leaves the old file alone" true: without it the rename can publish a new
+ * name over empty content.
+ */
 function writeConfigTemp(path: string, content: string): void {
-  writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
+  const fd = openSync(path, "wx", 0o600);
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
- * Publish `content` at `path` in one step: write a temp file beside the target,
- * then rename onto it. A fault mid-write leaves the previous file untouched
- * instead of half-rewritten — `writeFileSync` truncates before it writes, so a
- * full disk or a killed process used to leave a partial config where a
- * complete one was (#539; same rule as config.env and credentials.json).
+ * Write a temp file beside the target, then rename onto it, so a fault mid-write
+ * leaves the previous file untouched instead of half-rewritten. Same rule as
+ * config.env and credentials.json.
  *
- * Design: temp name carries pid + random bytes, not a fixed `.tmp` — two
- * concurrent `ans llm set` runs cannot publish each other's half-finished file,
- * and one run's cleanup cannot delete the other's temp.
+ * Design: temp name carries pid + random bytes and lives in the target's own
+ * directory — two concurrent `ans llm set` runs cannot publish each other's
+ * half-finished file, one run's cleanup cannot delete the other's temp, and a
+ * rename inside one directory never fails with EXDEV.
  */
 function writeUserConfigFile(path: string, content: string): void {
-  // Design: the temp file sits in the target's own directory — the resolver can
-  // pick the legacy home, and a rename across directories fails with EXDEV.
   const dir = dirname(path);
   const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a
-  // minute on a Windows sharing error, and a config command that hangs is worse
-  // than one that fails and keeps the old file (same call as config.env, #306).
+  // minute on a Windows sharing error, and a hanging config command is worse
+  // than one that fails and keeps the old file (same call as config.env).
   const rename = configWriteSeam.rename ?? renameSync;
   try {
     mkdirSync(dir, { recursive: true });
@@ -491,9 +495,9 @@ function writeUserConfigFile(path: string, content: string): void {
     rename(temp, path);
   } catch (e) {
     try { unlinkSync(temp); } catch { /* never created, or already renamed */ }
-    // Name the file the user knows. A raw rename error names the temp path,
-    // which reads like an unrelated failure, so the code alone is carried.
-    const code = (e as NodeJS.ErrnoException).code;
+    // Carry the errno alone: a raw rename message names the temp path, which
+    // reads like an unrelated failure.
+    const code = typeof e === "object" && e !== null ? (e as NodeJS.ErrnoException).code : undefined;
     const reason = typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
     throw new Error(
       "could not write " + path + ": " + reason +

@@ -101,6 +101,25 @@ test("a failed write names the config file, never the temp path", () => {
   });
 });
 
+test("a thrown non-Error still names the config file", () => {
+  const { home, path } = fixture();
+  withSeam({
+    rename: () => {
+      // Not everything thrown is an Error; reading .code off null used to crash
+      // here before the message could be built.
+      throw "boom";
+    },
+  }, () => {
+    assert.throws(
+      () => writeUserLlmConfig({ provider: "openai" }, home),
+      (error: Error) => {
+        assert.ok(error.message.startsWith("could not write " + path + ": boom"), error.message);
+        return true;
+      },
+    );
+  });
+});
+
 test("the temp file sits beside the target and is unique per write", () => {
   const { home, path } = fixture();
   const seen: string[] = [];

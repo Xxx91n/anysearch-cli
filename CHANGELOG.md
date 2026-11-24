@@ -7,7 +7,8 @@
 - **写入走临时文件 + rename**（`packages/store/src/config-llm.ts` 的 `writeUserConfigFile`）：临时文件名带 pid 和随机后缀，放在目标文件自己的目录里——两个 `ans llm set` 同时跑不会把对方写了一半的文件发布出去，清理也不会删掉对方的临时文件；跨目录 rename 会 EXDEV，所以不能写死 `~/.ans`。
 - **权限这次才真正生效**：`writeFileSync` 的 `mode` 只对新建文件生效，已经存在的 0644 一直是 0644，Windows 上 0600 从来没用。改成把 0600 设在临时文件上、由 rename 发布，POSIX 上每次写都是 0600。
 - **失败文案说人话**：原来直接把 errno 原样打出来，改完会带临时文件路径。现在统一成「could not write <config.toml>: EPERM. The previous config is unchanged; ...」，只说错误码，不带临时路径。
-- **加了一个写入 seam**（`configWriteSeam`）：写、rename、清理三个调用都能注入，测试才能在「字节已经写进临时文件」之后制造失败。
+- **临时文件落盘后才 rename**：写完 fsync 一次，断电那一下才真的不会把「新名字 + 空内容」发布出去。只 rename 不 fsync 的话，「写一半不留半截」对进程被杀成立，对掉电不成立。
+- **加了一个写入 seam**（`configWriteSeam`）：写和 rename 两个调用都能注入，测试才能在「字节已经写进临时文件」之后制造失败。
 
 ### Known limits
 
