@@ -390,3 +390,16 @@
   keeps `fast` / `index` / `deep`, but all three send the same request —
   there is no depth parameter to turn up. Shape and limits:
   `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.
+- **Two more Exa free-quota tools are deliberately not wired (#530)** — the
+  endpoint offers `web_fetch_exa` in its default tool list and
+  `web_search_advanced_exa` behind `?tools=`, and this adapter calls neither.
+  So "ans cannot read a page" and "ans cannot push the domain allowlist
+  upstream on the keyless arm" are both true today. What to do instead:
+  `search_web` already returns a 500-character highlight per result, which is
+  enough to decide whether a URL is worth opening, and adding a key switches
+  you to the REST arm where `includeDomains` is a first-class field. If you
+  need a page's full text, fetch it yourself and hand the body to `ans_chat` —
+  there is no supported way to have `ans` fetch it for you. Neither gap is the
+  endpoint's: both tools exist. Why each one is deferred, and the probe that
+  says how they behave, are under `providers/exa/README.md`, section
+  「## 只借 search（#530 的裁决）」.
