@@ -3,6 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 
 import { RetroaererdEngine, DEFAULT_GATE, computeSufficiency } from "../src/engine";
+import { withProviderErrorClass } from "@anysearch-cli/retriever";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
@@ -534,7 +535,7 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     // #494: an adapter that knows the class declares it on the error object; the
     // conflicting upstream text echoed in the message cannot override it.
     { id: "boom-declared", modes: ["fast"], async search(): Promise<ProviderEnvelope> {
-      throw Object.assign(new Error("AnySearch MCP tools/call rate limited [provider-error-class:transient] [upstream text: invalid_api_key]"), { providerErrorClass: "quota-exhausted" });
+      throw withProviderErrorClass(new Error("AnySearch MCP tools/call rate limited [provider-error-class:transient] [upstream text: invalid_api_key]"), "quota-exhausted");
     } },
   ]);
   const r12 = await engine12.search({ query: "t", mode: "fast" });

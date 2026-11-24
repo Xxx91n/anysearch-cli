@@ -259,17 +259,9 @@ export const ERROR_CLASSES = [
 ] as const;
 export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 
-// Classifies the String(err) seam form — Error names ride inside the string
-// ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
-// matcher sees name and message at once.
-//
-// A class the adapter settled on arrives as `providerErrorClass` and wins here.
-// That reading is usually inferred from the reply's own words, so it is a
-// conclusion, not a trusted input; what it saves is the engine re-reading the
-// whole message. Without a declared class the words are the only signal, and
-// upstream text is part of those words: word matching is a heuristic, never a
-// boundary.
 const ERROR_CLASS_MARKER = "provider-error-class:";
+// The declaration check reads the same list as the type, so a declared class
+// can only be one of them.
 const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 
 // Display only: nothing parses this back into a class, so a reply that happens
@@ -278,17 +270,21 @@ export function providerErrorMarker(cls: ProviderErrorClass): string {
   return "[" + ERROR_CLASS_MARKER + cls + "]";
 }
 
+// The declared class rides a symbol key, so a parsed upstream payload spread
+// onto an error object cannot bring one along.
+const PROVIDER_ERROR_CLASS = Symbol("anysearch.providerErrorClass");
+
 // Declare the class an adapter settled on, beside its message. The engine reads
 // it back with providerErrorClassOf instead of parsing the message again.
 export function withProviderErrorClass<T extends Error>(err: T, providerErrorClass: ProviderErrorClass): T {
-  return Object.assign(err, { providerErrorClass });
+  return Object.assign(err, { [PROVIDER_ERROR_CLASS]: providerErrorClass });
 }
 
 // The class an adapter declared on its error object, if it declared one. The
 // value is checked against the class list, so a typo reads as "nothing
 // declared" instead of inventing a class.
 export function providerErrorClassOf(err: unknown): ProviderErrorClass | undefined {
-  const declared = (err as { providerErrorClass?: unknown } | null)?.providerErrorClass;
+  const declared = (err as { [PROVIDER_ERROR_CLASS]?: unknown } | null)?.[PROVIDER_ERROR_CLASS];
   return typeof declared === "string" && CLASS_SET.has(declared)
     ? (declared as ProviderErrorClass)
     : undefined;
@@ -301,8 +297,18 @@ export function isExplicitAuthFault(cls: ProviderErrorClass): boolean {
   return cls === "permanent-auth" || cls === "session-expired";
 }
 
+// Classifies the String(err) seam form — Error names ride inside the string
+// ("SessionExpiredError: AnySearch MCP tools/call HTTP 404 ..."), so the
+// matcher sees name and message at once.
+//
+// A class the adapter settled on arrives as `providerErrorClass` and wins here.
+// That reading is usually inferred from the reply's own words, so it is a
+// conclusion, not a trusted input; what it saves is the engine re-reading the
+// whole message. Without a declared class the words are the only signal, and
+// upstream text is part of those words: word matching is a heuristic, never a
+// boundary. Declaring "unknown" is not a settlement either — it falls through.
 export function classifyProviderError(errText: string, providerErrorClass?: ProviderErrorClass): ProviderErrorClass {
-  if (providerErrorClass) return providerErrorClass;
+  if (providerErrorClass && providerErrorClass !== "unknown") return providerErrorClass;
   const t = String(errText);
   const http = (code: string) => t.includes("HTTP " + code);
   // An SDK keeps the status on the error object, so providerErrorText writes it

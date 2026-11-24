@@ -1,7 +1,7 @@
 // provider-error-class taxonomy — eval artifacts record an
 // error CATEGORY beside the failed flag, never the flag alone. Table-driven
 // over the String(err) seam form ("Name: message").
-import { classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds } from "../src/contract";
+import { classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, withProviderErrorClass } from "../src/contract";
 import { keylessLimitErrorFromEnvelope } from "@tavily/core";
 
 let passed = 0, failed = 0;
@@ -153,17 +153,23 @@ function expectValue<T>(got: T, want: T, label: string) {
     "a declared class outranks an auth-sounding upstream body",
   );
   expectValue(
-    providerErrorClassOf(Object.assign(new Error("boom"), { providerErrorClass: "quota-exhausted" })),
+    providerErrorClassOf(withProviderErrorClass(new Error("boom"), "quota-exhausted")),
     "quota-exhausted",
     "a declared class reads off the error object",
   );
   expectValue(
-    providerErrorClassOf(Object.assign(new Error("boom"), { providerErrorClass: "made-up-class" })),
+    providerErrorClassOf(withProviderErrorClass(new Error("boom"), "made-up-class" as never)),
     undefined,
     "a class name outside the list reads as nothing declared",
   );
   expectValue(providerErrorClassOf(new Error("boom")), undefined, "a plain error declares nothing");
-  expectValue(providerErrorClassOf({ providerErrorClass: 7 }), undefined, "a non-string declaration is ignored");
+  expectValue(
+    providerErrorClassOf(Object.assign(new Error("boom"), { providerErrorClass: "quota-exhausted" })),
+    undefined,
+    "a plain string field cannot declare a class — only the symbol the adapter writes does",
+  );
+  // "unknown" means nothing was settled: the words still decide.
+  expectValue(classifyProviderError("Error: HTTP 503 Service Unavailable", "unknown"), "transient", "a declared unknown falls through to the words");
 }
 
 console.log("--- provider-error-class: " + passed + " passed, " + failed + " failed ---");

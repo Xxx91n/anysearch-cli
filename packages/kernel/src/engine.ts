@@ -402,8 +402,8 @@ export class RetroaererdEngine {
     // failure is a completed fanout answer.
     type ProviderOutcome =
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
-      // providerErrorClass: the class the adapter declared (#494); absent means
-      // the text decides.
+      // providerErrorClass: the class the adapter declared; absent means the
+      // text decides.
       | { provider: string; status: "rejected"; error: string; providerErrorClass?: ProviderErrorClass };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     // #209: the caller's request signal (MCP tools/call cancellation) is combined
