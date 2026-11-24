@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
 import { configWriteSeam } from "../src/config-llm-seam.js";
+import { STALE_WORK_FILE_AGE_MS, sweepStaleWorkFiles } from "../src/stale-work-files.js";
 
 const GOOD = '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\nbase_url = "https://example.test"\n';
 
@@ -210,7 +211,7 @@ test("a write sweeps its own stale temp files and leaves every other .tmp", () =
   const unrelated = join(dir, "notes.tmp");
   writeFileSync(fresh, "fresh");
   writeFileSync(unrelated, "unrelated");
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(ownTemp, twoHoursAgo, twoHoursAgo);
   utimesSync(unrelated, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ provider: "openai" }, home);
@@ -222,17 +223,32 @@ test("a write sweeps its own stale temp files and leaves every other .tmp", () =
   );
 });
 
-test("a stale temp that cannot be deleted does not stop the write", () => {
+test("a stale copy staging directory is removed, not left forever", () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-stale-copying-"));
+  const target = join(home, "domains");
+  const stale = target + ".999.copying";
+  mkdirSync(stale);
+  writeFileSync(join(stale, "payload"), "left by a killed copy");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  sweepStaleWorkFiles(target, { suffix: ".copying" });
+  assert.ok(!existsSync(stale), "the directory the killed copy staged is gone");
+});
+
+test("a stale work file the sweep cannot remove does not stop the write", {
+  skip: process.platform === "win32" ? "the POSIX mode is not enforceable on Windows" : false,
+}, () => {
   const { home, path } = fixture();
   const stuck = join(dirname(path), ".config.toml.999.deadbeef1234.tmp");
-  // A directory wearing the temp name: stat succeeds, removal without recursion fails.
   mkdirSync(stuck);
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  writeFileSync(join(stuck, "payload"), "held");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(stuck, twoHoursAgo, twoHoursAgo);
+  chmodSync(stuck, 0o555); // no write bit: the child cannot be unlinked
   const written = writeUserLlmConfig({ provider: "openai" }, home);
   assert.equal(written, path);
   assert.ok(readFileSync(path, "utf8").includes('provider = "openai"'), "the write went through");
-  assert.ok(existsSync(stuck), "the file the sweep could not remove stays where it was");
+  assert.ok(existsSync(stuck), "what the sweep could not remove stays where it was");
 });
 
 test("a write through the legacy config home sweeps there too", () => {
@@ -244,7 +260,7 @@ test("a write through the legacy config home sweeps there too", () => {
   assert.equal(userConfigPath(home), path, "the fixture starts on the legacy file");
   const stale = join(legacy, ".config.toml.999.deadbeef1234.tmp");
   writeFileSync(stale, "stale");
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(stale, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ model: "gpt-5" }, home);
   assert.ok(!existsSync(stale), "the sweep follows the path the writer actually uses");
@@ -264,7 +280,7 @@ test("a symlinked config is swept beside the real file, not the link", (context)
   }
   const stale = join(realDir, ".config.toml.999.deadbeef1234.tmp");
   writeFileSync(stale, "stale");
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(stale, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ model: "gpt-5" }, home);
   assert.ok(!existsSync(stale), "the sweep follows the link to the file that was written");

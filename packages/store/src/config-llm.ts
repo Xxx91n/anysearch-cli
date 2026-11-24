@@ -578,14 +578,14 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
-  // Design: sweep abandoned temps before publishing — a run killed between
-  // writing its temp and the rename leaves it behind and nothing else clears
-  // it. The helper owns the age cutoff and the best-effort failure rule; a
-  // younger temp may belong to a concurrent write. The temp name starts with
-  // a dot, so the prefix is spelled out instead of left to the target's name.
+  // The temp name starts with a dot; both the sweep and the write use these
+  // two pieces, so a renamed shape cannot leave the sweep matching the old one.
   const tempPrefix = "." + basename(path) + ".";
-  sweepStaleWorkFiles(path, { suffix: ".tmp", prefix: tempPrefix });
-  const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
+  const tempSuffix = ".tmp";
+  // Design: sweep abandoned temps before publishing — a killed run's temp has
+  // no other cleaner. The helper owns the age cutoff and best-effort failures.
+  sweepStaleWorkFiles(path, { suffix: tempSuffix, prefix: tempPrefix });
+  const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + tempSuffix);
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a
   // minute on a Windows sharing error, and a hanging config command is worse
