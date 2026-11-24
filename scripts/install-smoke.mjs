@@ -24,10 +24,10 @@
 //   be its own process — this script drives the CLI with spawnSync, which blocks
 //   the event loop an in-process stub would need to accept requests.
 //
-// A zero-result run whose every queried arm failed is a fault and exits 1.
-// Abstain needs an active domain policy and a reason it can name: the gate
-// dropped results, or every queried arm answered and none failed. They are
-// separate outcomes, not one contract replacing another.
+// A zero-result run whose every queried arm failed is a fault — the arm is
+// down — and exits 1. Abstain means the domain really has nothing: the policy
+// is active and the emptiness has a reason, either the gate dropped results or
+// every queried arm answered and none failed.
 //
 // Every CLI call this script drives goes through sh(), which carries a 30s
 // bound and reports a timeout as a named failure (verifyInstalledProduct()
