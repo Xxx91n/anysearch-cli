@@ -64,7 +64,7 @@ import {
   type AnsChatToolResult,
 } from "../ans-chat-session.js";
 import { currentMcpTask, withMcpTask } from "../mcp-task.js";
-import { writeRedactedDiagnostic, writeStderr } from "../stderr.js";
+import { createWarnOnce, writeRedactedDiagnostic, writeStderr } from "../stderr.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -80,19 +80,11 @@ const INTERRUPTED_RUN_MISSING = ["run usage: interrupted before the provider rep
 // A resident MCP server would print the wiring's degradation line on EVERY call
 // while the store stays broken, so dedupe by the corner the wiring names (not by
 // the message text, which carries a per-call task id).
-const WARNED_DEGRADATIONS_MAX = 16;
-const warnedDegradations = new Set<string>();
+const warnOnce = createWarnOnce("[anysearch] ", 16);
 
 /** Test hook: forget which wiring degradations were already announced. */
 export function resetAnsChatDegradedWarnings(): void {
-  warnedDegradations.clear();
-}
-
-function warnDegraded(message: string, key: string): void {
-  if (warnedDegradations.has(key)) return;
-  if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
-  warnedDegradations.add(key);
-  writeStderr("[anysearch] " + message);
+  warnOnce.reset();
 }
 
 export function registerAnsChat(
@@ -237,9 +229,11 @@ export function registerAnsChat(
       try {
         cfg = resolveConfig({ warn: (m) => {
           configWarnings.push(m);
-          // The observation records only this warning's count; the text is
-          // forwarded to stderr through the one redacting helper.
-          writeRedactedDiagnostic(m);
+          // The observation records only this warning's count. The resolver's
+          // texts are already sanitized at the source (`tomlParseDetail`; the
+          // credential reader never quotes a key), and redacting them here
+          // would also erase env var names the user needs to act on.
+          writeStderr(m);
         } });
       } catch (e) {
         // Design: a resolver fault must never escape as a raw handler rejection
@@ -274,10 +268,6 @@ export function registerAnsChat(
       // The task row is ended only after the handler resolves, i.e. after the
       // late settlement (flushMemory) and the observation write, so a cancelled
       // request never leaves a finished-looking task with work still in flight.
-      // Design: one exit for every branch. The result is post-processed here
-      // rather than at each `return` inside, so no path can forget the fault.
-      // The SDK types a callback result as an open object; every branch below
-      // returns this module's own text-block shape.
       const result = (await withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
         // A caller that already cancelled does no run-side work here — no
         // budget row, no session mint, no provider call. The task row itself is
@@ -302,7 +292,7 @@ export function registerAnsChat(
             // A degraded corner (no ledger to bill) must not look like a
             // healthy unmetered run; the wiring warns here and the run keeps
             // the session form. Deduped: this process is long-lived.
-            warn: warnDegraded,
+            warn: (message, key) => warnOnce(key, message),
             fallbackText: "this run falls back to the session account",
           }));
         const {
@@ -848,6 +838,8 @@ export function registerAnsChat(
         // cancelled or budget-stopped call's trace can be tied back to the task
         // record instead of living as an unattributed MCP span.
         "anysearch.task.id": currentMcpTask()?.taskId ?? "",
+      // The SDK types a callback result as an open object; every branch above
+      // returns this module's own text-block shape.
       }))) as AnsChatToolResult;
       return withCredentialFileFault(result, credentialFault);
     }

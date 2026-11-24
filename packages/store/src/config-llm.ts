@@ -97,12 +97,9 @@ export interface ResolvedLlmConfig {
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
   /**
-   * Design: #538 — the user credential file exists but cannot be used. Set
-   * whether or not another layer supplied the key: an env key must not hide a
-   * broken file, or the only report is stderr, which a host does not read.
-   * The classification only; the caller builds the sentence through the
-   * kernel's `credentialFileNotice` table. Absent when the file is healthy,
-   * missing, or `credentials: false` turned the file off.
+   * The classification of a credential file that exists but cannot be used;
+   * set whether or not another layer supplied the key. The caller builds the
+   * sentence through the kernel's `credentialFileNotice` table.
    */
   credentialFileFault?: CredentialFileFault;
 }
@@ -444,12 +441,8 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     }
   }
 
-  // Design: #538 — read the credential file even when a higher layer already
-  // supplied the key. A run that quietly used `ANS_LLM_API_KEY` while the
-  // stored file is broken used to be silent everywhere, because the key lookup
-  // below is what read the file. The classification rides the result instead:
-  // an env key must not hide a broken file from a host that only reads the
-  // tool return.
+  // Design: read the file on every resolve, even when a key came from above —
+  // the fault then rides the result instead of staying on stderr.
   if (opts.credentials !== false) {
     const credsPath = ansCredentialsPathFor(home);
     const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });

@@ -28,26 +28,19 @@ import {
 } from "@anysearch-cli/kernel";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { currentMcpTask } from "../mcp-task.js";
-import { writeStderr } from "../stderr.js";
+import { createWarnOnce } from "../stderr.js";
 
 // A resident MCP server would print the degradation line on every call while
 // the store stays broken, so dedupe by corner: the key omits the per-call task
 // id even though the message text names it.
-const WARNED_MAX = 16;
-const warned = new Set<string>();
+const warnOnce = createWarnOnce("[anysearch] ", 16);
 
 /** Test hook: forget which budget degradations were already announced. */
 export function resetToolBudgetWarnings(): void {
-  warned.clear();
+  warnOnce.reset();
 }
 
-function warnDegraded(message: string, key: string): void {
-  if (warned.has(key)) return;
-  if (warned.size >= WARNED_MAX) warned.clear();
-  warned.add(key);
-  // stdout stays protocol-pure for MCP.
-  writeStderr("[anysearch] " + message);
-}
+const warnDegraded = (message: string, key: string): void => warnOnce(key, message);
 
 /** Establish this call's task budget from the Active Domain's [budget]. */
 export function establishToolBudget(eng: CompositionResult): TaskBudgetWiring {

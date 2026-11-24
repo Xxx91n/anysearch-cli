@@ -3,7 +3,8 @@
 // stdout carries the protocol; diagnostics go to stderr. A parent that closes
 // the pipe reports the failure as an asynchronous 'error' event, which a
 // try/catch around `write` cannot see — without a listener it takes the whole
-// MCP process down. This is the one implementation for the package.
+// MCP process down. This module is the shared sink for the diagnostics it owns;
+// a few older call sites still write directly and have not been moved yet.
 
 import { redactSecrets } from "@anysearch-cli/retriever";
 
@@ -34,4 +35,22 @@ export function writeStderr(line: string, sink: DiagnosticSink = process.stderr)
  */
 export function writeRedactedDiagnostic(message: string): void {
   writeStderr(redactSecrets(message));
+}
+
+/** A deduped warning sink: repeated keys are said once, and the set is bounded. */
+export interface WarnOnce {
+  (key: string, detail: string): void;
+  reset(): void;
+}
+
+export function createWarnOnce(prefix: string, max: number): WarnOnce {
+  const warned = new Set<string>();
+  const warn = ((key: string, detail: string): void => {
+    if (warned.has(key)) return;
+    if (warned.size >= max) warned.clear();
+    warned.add(key);
+    writeStderr(prefix + detail);
+  }) as WarnOnce;
+  warn.reset = () => warned.clear();
+  return warn;
 }

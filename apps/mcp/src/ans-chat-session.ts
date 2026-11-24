@@ -38,7 +38,7 @@ import {
   type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
-import { writeStderr } from "./stderr.js";
+import { createWarnOnce } from "./stderr.js";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -99,20 +99,11 @@ export function classifyContinuation(
 // in pi-runtime.ts (module scope, test hook resets it).
 // Design: the set is bounded — keys include error messages, so a long-lived
 // server with rotating failure text must not grow this without limit.
-const WARNED_MAX = 64;
-const warned = new Set<string>();
+const warnOnce = createWarnOnce("[anysearch] ans_chat memory wiring: ", 64);
 
 /** Test hook: forget which ans_chat wiring failures were already announced. */
 export function resetAnsChatSessionWarnings(): void {
-  warned.clear();
-}
-
-function warnOnce(key: string, detail: string): void {
-  if (warned.has(key)) return;
-  if (warned.size >= WARNED_MAX) warned.clear();
-  warned.add(key);
-  // stdout stays protocol-pure for MCP.
-  writeStderr("[anysearch] ans_chat memory wiring: " + detail);
+  warnOnce.reset();
 }
 
 /**
