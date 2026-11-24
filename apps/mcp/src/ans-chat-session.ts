@@ -275,13 +275,18 @@ export function buildAnsChatResult(
 }
 
 /**
- * #538: attach the credential-file fault to a result.
+ * Design: #538 — attach the credential-file fault to a result. The fact goes
+ * into both halves: the kernel's `notice` sentence in the model-visible text
+ * (content-only hosts read nothing else), and the same `{ kind, notice }`
+ * record the search tools publish under
+ * `credentialSources.credentialFileFault`. Keeping one shape means a host
+ * learns one vocabulary, not one per tool.
  *
- * Design: the fact goes into both halves — the `notice` sentence at the top of
- * the model-visible text (content-only hosts read nothing else) and the same
- * `{ kind, notice }` record the search tools publish under
- * `credentialSources.credentialFileFault`. The shape is reused verbatim so a
- * host learns one vocabulary, not one per tool.
+ * A success answer leads with the sentence. An error result does not: #264
+ * keeps the `ans_chat error: ` prefix first, so the sentence follows the
+ * reason instead. When both a fault and a `recoveryNotice` are present on a
+ * success, the fault comes first — it is about the configuration the call ran
+ * with, while the recovery note is about the conversation it resumed.
  *
  * A bare `isError` result stays bare (#204): it carries no structuredContent to
  * merge into, and turning an error into a structured one would change the
@@ -294,7 +299,12 @@ export function withCredentialFileFault(
   if (!fault) return result;
   const head = result.content[0];
   const content = head
-    ? [{ ...head, text: fault.notice + "\n\n" + head.text }, ...result.content.slice(1)]
+    ? [{
+        ...head,
+        text: result.isError
+          ? head.text + "\n\n" + fault.notice
+          : fault.notice + "\n\n" + head.text,
+      }, ...result.content.slice(1)]
     : [{ type: "text" as const, text: fault.notice }];
   return {
     ...result,

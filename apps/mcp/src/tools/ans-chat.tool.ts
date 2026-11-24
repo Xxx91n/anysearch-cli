@@ -92,7 +92,10 @@ function warnDegraded(message: string, key: string): void {
   if (warnedDegradations.size >= WARNED_DEGRADATIONS_MAX) warnedDegradations.clear();
   warnedDegradations.add(key);
   try {
-    process.stderr.write("[anysearch] " + message + "\n");
+    // Design: every stderr line this tool writes goes through `redactSecrets` —
+    // the search side's provider diagnostics already do, and a degraded
+    // accounting message can echo a path or a value from config.
+    process.stderr.write("[anysearch] " + redactSecrets(message) + "\n");
   } catch { /* a dead stderr must not break the call */ }
 }
 
@@ -235,9 +238,10 @@ export function registerAnsChat(
       // an otherwise-valid env config must not make a bad file read as "fine".
       const configWarnings: string[] = [];
       let cfg: ResolvedLlmConfig;
-      // #538: the credential file's fault, classified by the store and worded
-      // by the kernel's one table. Read once here; the single exit below puts
-      // it in the result, so every branch reports it the same way.
+      // Design: #538 — resolve the credential file's fault once, then let the
+      // single exit below put it in the result. One wiring site means no branch
+      // can forget it, and store words the classification while the kernel's
+      // one table words the sentence.
       let credentialFault: CredentialFileNotice | undefined;
       try {
         cfg = resolveConfig({ warn: (m) => {
@@ -253,7 +257,7 @@ export function registerAnsChat(
         // — that skips observation and returns no isError result. Record it as
         // an observation and return a structured tool error, carrying whatever
         // warnings were collected before the fault (#300 review).
-        const detail = e instanceof Error ? e.message : String(e);
+        const detail = redactSecrets(e instanceof Error ? e.message : String(e));
         // #303: even a call that never reaches the model is one task — it ran,
         // it ends. Wrapped here rather than around the whole handler so the
         // registration covers the observation too (see mcp-task.ts).
@@ -383,7 +387,7 @@ export function registerAnsChat(
               toCaps: (b) => toBudgetCaps(b as BudgetConfig),
               domainLabel: "consolidate",
               ...(eng.ledger ? { ledger: eng.ledger } : {}),
-              warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
+              warn: (m) => process.stderr.write("[anysearch] " + redactSecrets(m) + "\n"),
             });
           }
           // The awaits above open a window the earlier check cannot see: a

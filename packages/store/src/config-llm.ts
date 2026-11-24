@@ -97,12 +97,12 @@ export interface ResolvedLlmConfig {
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
   /**
-   * #538: the user credential file exists but cannot be used. Set whether or
-   * not another layer supplied the key — an env key must not hide a broken
-   * file, or the only report is stderr, which a host does not read. The
-   * classification only: the caller builds the sentence through the kernel's
-   * `credentialFileNotice` table. Absent when the file is healthy, missing, or
-   * `credentials: false` turned the file off.
+   * Design: #538 — the user credential file exists but cannot be used. Set
+   * whether or not another layer supplied the key: an env key must not hide a
+   * broken file, or the only report is stderr, which a host does not read.
+   * The classification only; the caller builds the sentence through the
+   * kernel's `credentialFileNotice` table. Absent when the file is healthy,
+   * missing, or `credentials: false` turned the file off.
    */
   credentialFileFault?: CredentialFileFault;
 }
@@ -169,6 +169,17 @@ interface LoadedLlmFile {
   fault?: LlmConfigFaultKind;
 }
 
+/**
+ * Design: only the diagnostic head of a TOML parse error is ever shown —
+ * smol-toml appends the numbered offending line, which can be
+ * `api_key = "sk-…"`. Every surface that prints or forwards this text (CLI
+ * warnings, MCP stderr, a write refusal) must keep the source line out.
+ */
+function tomlParseDetail(error: unknown): string {
+  const head = String((error as Error).message ?? "").split("\n")[0].trim();
+  return head || "invalid TOML";
+}
+
 function parseLlmTomlResult(
   toml: string,
   level: "user" | "project",
@@ -179,12 +190,7 @@ function parseLlmTomlResult(
   try {
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
-    // smol-toml's message appends the numbered offending line, which can be
-    // `api_key = "sk-…"`; every caller of `warn` may print or forward this, so
-    // keep the diagnostic head only. The categories callers act on are already
-    // fixed wording ("TOML parse failed"), and the file path is not a secret.
-    const cause = String((e as Error).message ?? "").split("\n")[0].trim();
-    warn("[config] " + filePath + ": TOML parse failed (" + (cause || "invalid TOML") + "); ignoring file");
+    warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
     return { config: {}, fault: "invalid-toml" };
   }
   const section = root["llm"];
@@ -436,11 +442,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     }
   }
 
-  // #538: read the credential file even when a higher layer already supplied the
-  // key. A run that quietly used `ANS_LLM_API_KEY` while the stored file is
-  // broken used to be silent everywhere, because the key lookup below is what
-  // read the file. The classification rides the result instead: ANS_LLM_API_KEY
-  // must not hide a broken file from a host that only reads the tool return.
+  // Design: #538 — read the credential file even when a higher layer already
+  // supplied the key. A run that quietly used `ANS_LLM_API_KEY` while the
+  // stored file is broken used to be silent everywhere, because the key lookup
+  // below is what read the file. The classification rides the result instead:
+  // an env key must not hide a broken file from a host that only reads the
+  // tool return.
   if (opts.credentials !== false) {
     const credsPath = ansCredentialsPathFor(home);
     const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
@@ -621,7 +628,7 @@ export function writeUserLlmConfig(
     } catch (e) {
       // never silently rewrite a malformed file — that would drop env_key and
       // every unrelated section (CodeRabbit #120).
-      throw new Error(path + ": TOML parse failed (" + (e as Error).message + "); fix or remove the file, then retry");
+      throw new Error(path + ": TOML parse failed (" + tomlParseDetail(e) + "); fix or remove the file, then retry");
     }
   }
   const llm = (typeof root["llm"] === "object" && root["llm"] !== null

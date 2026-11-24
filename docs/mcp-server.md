@@ -109,17 +109,17 @@ spent:
 | `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 
-A broken user credential file is reported here too (#538). When
-`credentialSources.credentialFileFault` would exist for a search tool, `ans_chat`
-puts the same `{kind, notice}` record in
-`structuredContent.credentialFileFault`, and the same sentence opens the first
-text block — same table, same values, no second copy of the wording. It is
-reported whether or not another source supplied the model key: an exported
-`ANS_LLM_API_KEY` keeps the call working, but it does not prove the file is
-healthy, and a successful call is exactly when nobody would look. When no
-`provider`/`model` is configured at all, the call is still a bare error result
-(#204): the sentence joins the error text, and `structuredContent` stays absent.
-With no fault, neither half changes.
+A broken user credential file is reported here too (#538): the same
+`{kind, notice}` record as the search tools, in
+`structuredContent.credentialFileFault`, and the same sentence in the text
+block (leading a success answer, after the reason on an error). It sits at the
+top level because `ans_chat` never resolves search arms and so has no
+`credentialSources` to nest under. It is present whether or not another source
+supplied the model key: `ANS_LLM_API_KEY` keeping the call working does not
+prove the file is healthy. With no fault neither half changes. Missing
+`provider`/`model` stays a bare error result (#204), with the sentence appended
+to its text. The credential rules below describe the classification, the
+no-path rule and the snapshot semantics.
 
 ### Consolidation
 

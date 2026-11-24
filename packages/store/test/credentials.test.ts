@@ -29,7 +29,7 @@ import {
   verifyFileProtection,
   writeUserCredential,
 } from "../src/credentials";
-import { resolveLlmConfig } from "../src/config-llm";
+import { resolveLlmConfig, writeUserLlmConfig } from "../src/config-llm";
 
 function tempRoot(): { home: string; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), "ans-cred-"));
@@ -294,10 +294,11 @@ test("the model resolver reports a broken file even when an env key supplied the
   } finally { cleanup(); }
 });
 
-test("a TOML parse warning never quotes the offending line", () => {
-  // #538: smol-toml appends the numbered source line to its message, and a
-  // config.toml line can be `api_key = "sk-…"`. The warning is printed or
-  // forwarded by every entry point, so only the diagnostic head may survive.
+test("a TOML parse failure never quotes the offending line", () => {
+  // Design: #538 — smol-toml appends the numbered source line to its message,
+  // and a config.toml line can be `api_key = "sk-…"`. Both the read warning and
+  // the write refusal can print or forward that text, so only the diagnostic
+  // head may survive.
   const { home, cleanup } = tempRoot();
   try {
     mkdirSync(join(home, ".ans"), { recursive: true });
@@ -307,6 +308,18 @@ test("a TOML parse warning never quotes the offending line", () => {
     assert.ok(warnings.some((w) => w.includes("TOML parse failed")), "the fault is still reported");
     assert.ok(!warnings.join("\n").includes("SECRET"), "the warning must not quote the line: " + warnings.join("\n"));
     assert.ok(!warnings.join("\n").includes("sk-live"), "not even the key prefix");
+
+    // `ans llm set` refuses to rewrite a malformed file; its sentence is shown
+    // to the user too, so it takes the same rule.
+    assert.throws(
+      () => writeUserLlmConfig({ provider: "openai" }, home),
+      (error: unknown) => {
+        assert.ok(error instanceof Error, "the refusal is an Error");
+        assert.match(error.message, /TOML parse failed/);
+        assert.ok(!error.message.includes("SECRET"), "the refusal must not quote the line: " + error.message);
+        return !error.message.includes("sk-live");
+      },
+    );
   } finally { cleanup(); }
 });
 

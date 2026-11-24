@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
+import type { AnsChatToolResult } from "../src/ans-chat-session.js";
 
 const ENV_KEYS = [
   "ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_LLM_BASE_URL", "ANS_LLM_API",
@@ -58,13 +59,6 @@ const fakeSpan = {
 
 const USER_TOML = '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n';
 
-/** The MCP result shape this suite reads; the SDK types the handler result as opaque. */
-interface ToolResult {
-  isError?: boolean;
-  content?: Array<{ type: string; text: string }>;
-  structuredContent?: Record<string, unknown>;
-}
-
 interface Fixture {
   home: string;
   cwd: string;
@@ -85,8 +79,12 @@ function fixture(opts: { userToml?: string; credentials?: string } = {}): Fixtur
   return { home, cwd, warnings: [] };
 }
 
-function harness(fix: Fixture, env: NodeJS.ProcessEnv = {}): {
-  call: () => Promise<ToolResult>;
+function harness(
+  fix: Fixture,
+  env: NodeJS.ProcessEnv = {},
+  extraEngine: Partial<CompositionResult> = {},
+): {
+  call: (args?: unknown) => Promise<AnsChatToolResult>;
 } {
   const factory: AnsChatSessionFactory = async (opts) => {
     const core = createFauxCore({ provider: opts.provider, models: [{ id: opts.model }] });
@@ -115,6 +113,7 @@ function harness(fix: Fixture, env: NodeJS.ProcessEnv = {}): {
   const engine = {
     retriever: { search: async () => ({ results: [], answers: [], metadata: {} }) },
     observation: { recordOperation: async (_op: unknown, cb: (span: typeof fakeSpan) => unknown) => cb(fakeSpan) },
+    ...extraEngine,
   } as unknown as CompositionResult;
   const handlers: Record<string, (args: unknown) => Promise<unknown>> = {};
   const server = {
@@ -125,10 +124,10 @@ function harness(fix: Fixture, env: NodeJS.ProcessEnv = {}): {
   registerAnsChat(server, engine, state);
   const handler = handlers["ans_chat"];
   if (!handler) throw new Error("ans_chat handler not registered");
-  return { call: () => handler({ message: "hi" }) as Promise<ToolResult> };
+  return { call: (args: unknown = { message: "hi" }) => handler(args) as Promise<AnsChatToolResult> };
 }
 
-function textOf(result: ToolResult | undefined): string {
+function textOf(result: AnsChatToolResult | undefined): string {
   return (result?.content ?? []).map((b) => b.text).join("\n");
 }
 
@@ -194,6 +193,7 @@ test("no model configured still names the broken file, and stays a bare error", 
 
   assert.equal(res?.isError, true, "missing model config is still an error");
   const text = textOf(res);
+  assert.ok(text.startsWith("ans_chat: "), "the reason stays first (#264): " + text);
   assert.ok(text.includes("LLM not configured"), "the configuration report is kept: " + text);
   assert.ok(text.includes(NOT_JSON.notice), "the file fault is part of the same answer: " + text);
   assert.equal(res?.structuredContent, undefined, "a bare error stays bare (#204)");
@@ -240,33 +240,15 @@ test("the fault notice also reaches the consolidate result", async () => {
   // `operation: "consolidate"` returns through the same single exit, so it gets
   // the same two halves without a second wiring site.
   const fix = fixture({ userToml: USER_TOML, credentials: "{ not json" });
-  const engine = {
-    retriever: { search: async () => ({ results: [], answers: [], metadata: {} }) },
-    observation: { recordOperation: async (_op: unknown, cb: (span: typeof fakeSpan) => unknown) => cb(fakeSpan) },
-    store: {
-      consolidateMemory: async () => ({
-        dryRun: false, add: 0, update: 0, noop: 0, gateRejected: 0, llmUnavailable: 0,
-        clustersScanned: 0, clustersTriggered: 0, verifyRejected: 0, correctionsIncomplete: 0,
-        summariesSuspended: 0, conflicts: 0, budgetRejected: 0,
-        scope: { kind: "session", sessionId: "s-538" },
-      }),
-    },
-  } as unknown as CompositionResult;
-  const handlers: Record<string, (args: unknown) => Promise<unknown>> = {};
-  const server = {
-    registerTool: (name: string, _cfg: unknown, fn: (args: unknown) => Promise<unknown>) => {
-      handlers[name] = fn;
-    },
-  } as unknown as McpServer;
-  const state = createMcpToolState({
-    resolveLlmConfig: (opts = {}) => resolveLlmConfig({
-      ...opts, home: fix.home, cwd: fix.cwd, env: {}, warn: (m) => fix.warnings.push(m),
+  const store = {
+    consolidateMemory: async () => ({
+      dryRun: false, add: 0, update: 0, noop: 0, gateRejected: 0, llmUnavailable: 0,
+      clustersScanned: 0, clustersTriggered: 0, verifyRejected: 0, correctionsIncomplete: 0,
+      summariesSuspended: 0, conflicts: 0, budgetRejected: 0,
+      scope: { kind: "session", sessionId: "s-538" },
     }),
-  });
-  registerAnsChat(server, engine, state);
-  const handler = handlers["ans_chat"];
-  if (!handler) throw new Error("ans_chat handler not registered");
-  const res = await handler({ operation: "consolidate", sessionId: "s-538" }) as ToolResult;
+  } as unknown as CompositionResult["store"];
+  const res = await harness(fix, {}, { store }).call({ operation: "consolidate", sessionId: "s-538" });
   assert.ok(textOf(res).includes(NOT_JSON.notice), "the text half carries the sentence");
   const record = res?.structuredContent?.["credentialFileFault"];
   assert.equal((record as { kind?: string } | undefined)?.kind, "not-json",
