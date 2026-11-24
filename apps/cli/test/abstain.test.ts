@@ -158,13 +158,16 @@ async function main() {
     "doctor and search share one source wording",
   );
   // doctor's own row adds the cap note, because it reports `unconfigured` and a
-  // reader would otherwise take "runs" for "stable".
+  // reader would otherwise take "runs" for "stable". It also says the free-quota
+  // path was not verified this run (#534): `--live` skips a source with no key.
   assert(
-    describeUnconfiguredSource("tavily") === "没配 key，用免费额度跑（有次数和速度上限）",
-    "doctor's keyless row says the free quota is capped",
+    describeUnconfiguredSource("tavily") ===
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验",
+    "doctor's keyless row says the free quota is capped and unverified",
   );
   assert(
-    describeUnconfiguredSource("exa") === "没配 key，用免费额度跑（有次数和速度上限）",
+    describeUnconfiguredSource("exa") ===
+      "没配 key，用免费额度跑（有次数和速度上限）；免费额度这条路没验",
     "every keyless arm gets the cap note, exa included",
   );
 
@@ -207,6 +210,8 @@ async function main() {
         ANS_DB_PATH: join(d, "anysearch.db"),
         ANYSEARCH_ENDPOINT: stub.endpoint,
         ANS_ALLOW_ENV_OVERRIDE: "0",
+        // "" means no filter; an ambient ANS_PROVIDERS=exa would cut the only arm.
+        ANS_PROVIDERS: "",
       };
       const run = (extra: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
         const p = spawn(process.execPath, [dist, "search", "tokio JoinSet rust", ...extra], { env, stdio: ["ignore", "pipe", "pipe"] });

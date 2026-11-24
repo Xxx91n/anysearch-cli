@@ -7,6 +7,22 @@
 - **`search_web`**：`outcome === "cancelled"` 时带 `interrupted: true`，不再只认调用方 abort。
 - **`research_web`**：整个调用判成 `cancelled` 时也带。
 
+## Unreleased — #534: `--live` 不探没配 key 的免费额度，裁决写进代码现场
+
+一句话说清：**没配 key 的信息源，`ans doctor --live` 一直是不探、直接报「未配置」，但帮助文本写成「只打三家信息源的免费面」，那一行的说明也只写「用免费额度跑」，读起来像已经验过。这张票把裁决钉下来——不探——并让「没验」三个字出现在输出和帮助里。**
+
+### Changed
+
+- **doctor 那行的 detail 补一句「免费额度这条路没验」**：`describeUnconfiguredSource` 只给 doctor 用，`ans search` 失败行读的 `describeCredentialSource` 一个字没动。「为什么验、验到什么」留在帮助和 README 里说，行里只留这半句。
+- **`ans doctor` 的帮助与头注释写明范围**：只打有 key 的那几家信息源的免费面，没配 key 的源跳过不探。
+- **两个 README 的 `--live` 那一行跟上**：不再说「每家搜索源」，并在下面补一句「没配 key 的信息源不探，doctor 不验免费额度这条路」，指到 `runDoctor` 里跳过没配 key 那段旁边的 `Design:` 注释和 `probes.ts` 的 `PROBES`。
+- **跳过分支补 `Design:` 注释**：`ProbeAuth` 的三种值各说各的——`ok` / `rejected` 判这把 key，`unverified` 说的是压根没验成。没 key 时探针只会误报：报通过、报额度用尽、报入口对不上。免费额度里只有 exa 那半是按 IP 算的（出处 `providers/exa/README.md`），共享出口上别人用光，本机看起来就是坏了。
+
+### Known limits
+
+- 没配 key 的机器跑 `--live` 仍然没有任何联网证据：DNS、代理、TLS 都没验。要验免费额度这条路能不能用，跑一次 `ans search`。出口连通性检查是另一件事，本票不做。
+- 有 key 的三条探针、`ProbeAuth` 的三种值、四种诊断状态、退出码都没动。
+
 ## Unreleased — #514: 零结果分成五档，CLI 和两个 MCP 工具读同一个结论
 
 一句话说清：**以前「零结果」只有一个说法，全臂失败（上游挂了）和域内被滤空（策略拒答）在退出码和输出里分不开。现在引擎在装配信封前算一次 outcome，五个值（answer / failed / cancelled / abstain / empty）写进 `metadata.outcome` 和审计 span，CLI 的 `--json` 与退出码、`search_web` / `research_web` 的 `structuredContent` 都读这一个值。**

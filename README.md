@@ -25,13 +25,18 @@ A vertical-domain information specialist CLI: put search, research, memory, and 
 ```bash
 npm i -g @anysearch-cli/cli
 ans doctor                                          # layered self-check: install / capability / host / data, each line ready·unconfigured·unchecked·failed
-ans doctor --live                                   # same, plus one free-surface call per search source: does this key still work? (no search runs, no quota spent)
+ans doctor --live                                   # same, plus one free-surface call for every provider that has a key: does this key still work? (no search runs, no quota spent)
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # search inside the docs domain only
 
 # optional: add vector search, never installed automatically
 npm i -g @anysearch-cli/embedding
 ```
+
+`ans doctor --live` probes only the providers that hold a key. A provider with no key stays
+`unconfigured` and is not probed: doctor does not verify the free-quota path. The reason is recorded
+as a `Design:` note beside the probe skip in `runDoctor` (`doctor.ts`), and the probe contract itself
+sits in `probes.ts` (`PROBES`).
 
 The complete product includes `ans`, `ans-mcp`, `ans-plugin-server`, and the
 `ans-hook-*` commands, plus domain and host configuration resources. Use

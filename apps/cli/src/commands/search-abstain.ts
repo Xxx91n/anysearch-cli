@@ -75,6 +75,9 @@ export function formatProviderAbsentLine(buildErrors: Record<string, string>): s
 
 const FREE_QUOTA_LIMIT = "有次数和速度上限";
 
+/** 只给 doctor 那一行用：说的是「没验」，不是「验过了」。 */
+const FREE_QUOTA_UNVERIFIED_NOTE = "免费额度这条路没验";
+
 /** 没配 key 这一句只有一份：失败行和凭据措辞都从这儿取。 */
 const NO_KEY_LABEL = "没配 key";
 
@@ -100,11 +103,13 @@ export function describeCredentialSource(label: CredentialSourceLabel, provider:
 
 /**
  * doctor 的「信息源」行专用：就是 `describeCredentialSource("none", …)` 再加免费
- * 额度的上限说明。这一行报 `unconfigured`，得说清「能跑」不等于「稳定可用」，
- * 报 `ready` 会骗人。
+ * 额度的上限说明和一句「没验」。这一行报 `unconfigured`，得说清「能跑」不等于
+ * 「稳定可用」，报 `ready` 会骗人。
+ *
+ * Design: 「用免费额度跑」说的是运行时会怎么跑，不是 doctor 验过。
  */
 export function describeUnconfiguredSource(provider: SearchProviderId): string {
-  return describeCredentialSource("none", provider) + "（" + KEYLESS_BEHAVIOR[provider].limit + "）";
+  return describeCredentialSource("none", provider) + "（" + KEYLESS_BEHAVIOR[provider].limit + "）；" + FREE_QUOTA_UNVERIFIED_NOTE;
 }
 
 /**

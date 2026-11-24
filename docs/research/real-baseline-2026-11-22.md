@@ -95,6 +95,10 @@ tavily 的取舍跟别家不一样，这次只记下来，不当结论。
 - 单次耗时别当趋势读：同一台机器、同一个查询词，仓库自带探针
   （`providers/anysearch/probe-anysearch-provider.ts`）刚跑的一次给 anysearch 是 5626 ms 客户端 /
   3253 ms 服务端，比上面那行的 2897 / 626 慢一倍左右。网络抖动，不是谁快谁慢。
+- 没补「三把 key 全清」的对照。那一次同机同查询词已经真跑过（2026-11-24 01:41，Asia/Singapore），
+  记在 `providers/exa/README.md` 的「## 最近一次真跑」：退出码 0，三家都在 `providersQueried`，
+  `credentialSources` 三家 `none`。不搬进这份文件，是因为它只记了汇总、没有各家条数，而且 exa
+  那条走的是免费臂（`mcp.exa.ai`，`snippet` 来自 `Highlights`），条数和延迟跟上面三行不能直接比。
 
 ## 这份记录放哪
 
