@@ -35,7 +35,7 @@ npm i -g @anysearch-cli/embedding
 
 `ans doctor --live` probes only the providers that hold a key. A provider with no key stays
 `unconfigured` and is not probed: doctor does not verify the free-quota path. The reason is recorded
-as a `Design:` note by the probe dispatch in `doctor.ts`, and the probe contract itself sits in
+as a `Design:` note inside `runDoctor` in `doctor.ts`, and the probe contract itself sits in
 `probes.ts` (`PROBES`).
 
 The complete product includes `ans`, `ans-mcp`, `ans-plugin-server`, and the

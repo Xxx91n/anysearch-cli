@@ -34,7 +34,7 @@ npm i -g @anysearch-cli/embedding
 ```
 
 `ans doctor --live` 只打有 key 的那几家。没配 key 的信息源仍是「未配置」，不探——doctor 不验
-免费额度这条路。理由写在 `doctor.ts` 派探针那段旁边的 `Design:` 注释里，探针本身的规矩在
+免费额度这条路。理由写在 `doctor.ts` 的 `runDoctor` 里那段 `Design:` 注释里，探针本身的规矩在
 `probes.ts`（`PROBES`）。
 
 完整产品包带上了 `ans`、`ans-mcp`、`ans-plugin-server`、`ans-hook-*`
