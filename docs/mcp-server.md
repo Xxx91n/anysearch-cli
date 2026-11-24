@@ -109,6 +109,18 @@ spent:
 | `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 
+A broken user credential file is reported here too (#538). When
+`credentialSources.credentialFileFault` would exist for a search tool, `ans_chat`
+puts the same `{kind, notice}` record in
+`structuredContent.credentialFileFault`, and the same sentence opens the first
+text block — same table, same values, no second copy of the wording. It is
+reported whether or not another source supplied the model key: an exported
+`ANS_LLM_API_KEY` keeps the call working, but it does not prove the file is
+healthy, and a successful call is exactly when nobody would look. When no
+`provider`/`model` is configured at all, the call is still a bare error result
+(#204): the sentence joins the error text, and `structuredContent` stays absent.
+With no fault, neither half changes.
+
 ### Consolidation
 
 `ans_chat` with `operation = "consolidate"` runs the same consolidation path as
@@ -321,7 +333,11 @@ Rules behind the table:
   sentence for the same fault (path, line/column) is written to stderr when the
   engine is built; `stderr` is outside the protocol, and a client may capture,
   forward or drop it, so a host cannot be expected to read it — which is why the
-  record carries the fact itself.
+  record carries the fact itself. `ans_chat` publishes the same record
+  top-level as `structuredContent.credentialFileFault` (#538); it also resolves
+  the file per call, so its answer can be fresher than the engine's one-time
+  snapshot, while the shared sentence still advises a restart because the
+  search engine on the same server keeps its snapshot.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in

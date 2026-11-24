@@ -26,6 +26,7 @@ import type {
   BudgetLedgerPort,
   CompositionResult,
   ConsolidationUsage,
+  CredentialFileNotice,
   RunUsage,
   BudgetStopReason,
   SessionStorePort,
@@ -270,6 +271,39 @@ export function buildAnsChatResult(
         : []),
     ],
     ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
+  };
+}
+
+/**
+ * #538: attach the credential-file fault to a result.
+ *
+ * Design: the fact goes into both halves — the `notice` sentence at the top of
+ * the model-visible text (content-only hosts read nothing else) and the same
+ * `{ kind, notice }` record the search tools publish under
+ * `credentialSources.credentialFileFault`. The shape is reused verbatim so a
+ * host learns one vocabulary, not one per tool.
+ *
+ * A bare `isError` result stays bare (#204): it carries no structuredContent to
+ * merge into, and turning an error into a structured one would change the
+ * documented error shape. The sentence still reaches the text.
+ */
+export function withCredentialFileFault(
+  result: AnsChatToolResult,
+  fault?: CredentialFileNotice,
+): AnsChatToolResult {
+  if (!fault) return result;
+  const head = result.content[0];
+  const content = head
+    ? [{ ...head, text: fault.notice + "\n\n" + head.text }, ...result.content.slice(1)]
+    : [{ type: "text" as const, text: fault.notice }];
+  return {
+    ...result,
+    content,
+    // Merge, never replace: the caller's own facts (`usage`, `budget`, …) must
+    // survive. Absent stays absent.
+    ...(result.structuredContent
+      ? { structuredContent: { ...result.structuredContent, credentialFileFault: fault } }
+      : {}),
   };
 }
 

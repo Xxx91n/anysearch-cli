@@ -19,7 +19,9 @@ import {
   resolvePiSessionDir,
   runChatAttempt,
   ChatAttemptBusyError,
+  credentialFileNotice,
   type ChatAttemptOutcome,
+  type CredentialFileNotice,
   emptyRunUsage,
   createConsolidationSeams,
   isConsolidationBudgetError,
@@ -54,10 +56,13 @@ import {
   buildAnsChatConsolidateResult,
   buildAnsChatErrorResult,
   buildAnsChatResult,
+  withCredentialFileFault,
   resolveAnsChatSession,
   isValidSessionHandle,
   classifyContinuation,
+  type AnsChatToolResult,
 } from "../ans-chat-session.js";
+import { redactSecrets } from "@anysearch-cli/retriever";
 import { currentMcpTask, withMcpTask } from "../mcp-task.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
@@ -230,10 +235,18 @@ export function registerAnsChat(
       // an otherwise-valid env config must not make a bad file read as "fine".
       const configWarnings: string[] = [];
       let cfg: ResolvedLlmConfig;
+      // #538: the credential file's fault, classified by the store and worded
+      // by the kernel's one table. Read once here; the single exit below puts
+      // it in the result, so every branch reports it the same way.
+      let credentialFault: CredentialFileNotice | undefined;
       try {
         cfg = resolveConfig({ warn: (m) => {
           configWarnings.push(m);
-          process.stderr.write(m + "\n");
+          // The resolver's sentences can quote a file's text (a TOML error,
+          // an env_key value); this is the same redaction the search side
+          // applies to its provider diagnostics. Warning count, not text,
+          // is what the observation records.
+          process.stderr.write(redactSecrets(m) + "\n");
         } });
       } catch (e) {
         // Design: a resolver fault must never escape as a raw handler rejection
@@ -253,6 +266,9 @@ export function registerAnsChat(
       }
       const providerName = cfg.provider;
       const modelName = cfg.model;
+      credentialFault = cfg.credentialFileFault
+        ? credentialFileNotice(cfg.credentialFileFault)
+        : undefined;
       // #211: the same seam as the search tools (#209) — the SDK context
       // signal (stdio notifications/cancelled) or the stateless-HTTP request
       // signal (response stream closed). The runtime aborts the agent loop.
@@ -261,7 +277,11 @@ export function registerAnsChat(
       // The task row is ended only after the handler resolves, i.e. after the
       // late settlement (flushMemory) and the observation write, so a cancelled
       // request never leaves a finished-looking task with work still in flight.
-      return withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
+      // #538: one exit for every branch — the result is post-processed here
+      // rather than at each `return` inside, so no path can forget the fault.
+      // The SDK types a callback result as an open object; every branch below
+      // returns this module's own text-block shape.
+      const result = (await withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
         // A caller that already cancelled does no run-side work here — no
         // budget row, no session mint, no provider call. The task row itself is
         // written either way by the wrapper: a cancelled call still happened,
@@ -389,7 +409,7 @@ export function registerAnsChat(
               // usage block names the missing accounting instead of faking it.
               process.stderr.write(
                 "[anysearch] ans_chat consolidate LLM init failed (" +
-                  (e instanceof Error ? e.message : String(e)) + ")\n",
+                  redactSecrets(e instanceof Error ? e.message : String(e)) + ")\n",
               );
             }
           }
@@ -831,7 +851,8 @@ export function registerAnsChat(
         // cancelled or budget-stopped call's trace can be tied back to the task
         // record instead of living as an unattributed MCP span.
         "anysearch.task.id": currentMcpTask()?.taskId ?? "",
-      }));
+      }))) as AnsChatToolResult;
+      return withCredentialFileFault(result, credentialFault);
     }
   );
 }

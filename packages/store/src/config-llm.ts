@@ -38,7 +38,7 @@ import {
   readUserCredentials,
   resolveConfigHome,
 } from "./credentials";
-import type { CredentialFileContents } from "./credentials";
+import type { CredentialFileContents, CredentialFileFault } from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
@@ -96,6 +96,15 @@ export interface ResolvedLlmConfig {
   configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
+  /**
+   * #538: the user credential file exists but cannot be used. Set whether or
+   * not another layer supplied the key — an env key must not hide a broken
+   * file, or the only report is stderr, which a host does not read. The
+   * classification only: the caller builds the sentence through the kernel's
+   * `credentialFileNotice` table. Absent when the file is healthy, missing, or
+   * `credentials: false` turned the file off.
+   */
+  credentialFileFault?: CredentialFileFault;
 }
 
 export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
@@ -170,7 +179,12 @@ function parseLlmTomlResult(
   try {
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
-    warn("[config] " + filePath + ": TOML parse failed (" + (e as Error).message + "); ignoring file");
+    // smol-toml's message appends the numbered offending line, which can be
+    // `api_key = "sk-…"`; every caller of `warn` may print or forward this, so
+    // keep the diagnostic head only. The categories callers act on are already
+    // fixed wording ("TOML parse failed"), and the file path is not a secret.
+    const cause = String((e as Error).message ?? "").split("\n")[0].trim();
+    warn("[config] " + filePath + ": TOML parse failed (" + (cause || "invalid TOML") + "); ignoring file");
     return { config: {}, fault: "invalid-toml" };
   }
   const section = root["llm"];
@@ -420,10 +434,18 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.sources.apiKey = "env";
       }
     }
+  }
 
-    if (!resolved.apiKey && opts.credentials !== false) {
-      const credsPath = ansCredentialsPathFor(home);
-      const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+  // #538: read the credential file even when a higher layer already supplied the
+  // key. A run that quietly used `ANS_LLM_API_KEY` while the stored file is
+  // broken used to be silent everywhere, because the key lookup below is what
+  // read the file. The classification rides the result instead: ANS_LLM_API_KEY
+  // must not hide a broken file from a host that only reads the tool return.
+  if (opts.credentials !== false) {
+    const credsPath = ansCredentialsPathFor(home);
+    const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+    if (file.fault) resolved.credentialFileFault = file.fault;
+    if (!resolved.apiKey) {
       if (!file.error && !file.fault && file.bindings.some(
         (binding) => credentialProvider(binding.provider)?.kind === "model",
       )) {

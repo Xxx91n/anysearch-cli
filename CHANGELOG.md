@@ -1,3 +1,24 @@
+## Unreleased — #538: `ans_chat` 的配置告警进返回，不再只在 stderr
+
+一句话说清：**以前 `~/.ans/credentials.json` 坏了，`ans_chat` 的返回里一个字都不提，告警只在 stderr 和一个宿主读不到的下标里；更糟的是别的来源一供上 key，解析器根本不去读文件，坏文件彻底静默，没配模型时那句修法也埋进日志。现在模型配置解析会带上 `credentialFileFault`，`ans_chat` 的正文开头一句共享表里的原话，`structuredContent.credentialFileFault` 里同一条记录——和 `search_web` / `research_web` / `ans search --json` 用的是同一张表、同一套分类。**
+
+### Changed
+
+- **`ResolvedLlmConfig.credentialFileFault`**（`packages/store/src/config-llm.ts`）：凭据文件现在每次都解析，不再是「找不到 key 才读」。别的来源供了 key 也照样带出分类——能用的是那把 env key，不是坏掉的文件的证据。
+- **`ans_chat` 两条出口都带**：正文开头是 `CREDENTIAL_FILE_HINTS` 生成的那句 `notice`；有 `structuredContent` 的结果里同一句进 `credentialFileFault: { kind, notice }`，键名和取值跟搜索三个面一致。不带路径、不带解析原文、不带文件里的值。
+- **两个静默变体的裁决**：别的来源有 key → 两半都报（成功调用时反而没人会去查）。完全没配模型 → 正文报（修法就在同一段文字里），`structuredContent` 仍然不出现——这是 #204 的「裸错误」规则，`failure-semantics.test.ts` 已钉住。没有告警时返回形状一个字节都不变。
+- **文案不另写**：句子从 kernel 的 `credentialFileNotice` 来，store 只管写事实。
+- **顺手收掉两处泄漏**：smol-toml 的解析错误会把出错那一行原样拼进 message（实测能带出 `api_key = "sk-…"`），`parseLlmToml` 现在只留诊断首行；`ans-chat.tool.ts` 写 stderr 的配置告警和 consolidate 的 LLM 初始化失败都过 `redactSecrets`，和检索侧 `composition.ts` 一样。
+
+### Docs
+
+- `docs/mcp-server.md`：`ans_chat` 的结果形状补 `credentialFileFault`、两个变体的取舍和「没故障就缺席」。
+
+### Known limits
+
+- 记录只形容「文件能不能用」，说不了「你本来存了几个 key」。
+- 提示句沿用 #533 的「重启这个 MCP 服务」：`ans_chat` 的解析器每次调用都重读文件，但同一台服务器上的搜索引擎仍是启动时的快照，重启是最稳的一句。
+
 ## Unreleased — #539: `config.toml` 改成原子写，写一半不再留下半截配置
 
 一句话说清：**`ans llm set` 以前直接往 `~/.ans/config.toml` 里覆盖写，中途出事（盘满、进程被杀、断电）会留下半截文件，而读那边把解析不了的文件整份忽略，用户的自定义配置就这么没了。现在跟 `config.env`、`credentials.json` 一样：先写同目录的临时文件，再 rename 顶上去。失败时旧文件一个字节都不动。**
