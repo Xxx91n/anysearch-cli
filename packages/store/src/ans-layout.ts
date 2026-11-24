@@ -136,6 +136,8 @@ function writtenSince(path: string, since: number): boolean {
   return false;
 }
 
+/** Suffix of the directory a cross-volume copy stages beside its target. */
+const COPY_STAGING_SUFFIX = ".copying";
 
 /**
  * Clear what a killed cross-volume copy left beside `to`. The staging entry is
@@ -143,7 +145,7 @@ function writtenSince(path: string, since: number): boolean {
  * copy starts.
  */
 export function sweepCopyStaging(to: string): void {
-  sweepStaleWorkFiles(to, { suffix: ".copying", recursive: true });
+  sweepStaleWorkFiles(to, { suffix: COPY_STAGING_SUFFIX, recursive: true });
 }
 
 /**
@@ -161,7 +163,7 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   // rename. Copying straight to `to` would leave a half-written entry under the
   // name the reader prefers when an interrupted run is retried, and the intact
   // source would then be ignored forever.
-  const staging = to + "." + process.pid + ".copying";
+  const staging = to + "." + process.pid + COPY_STAGING_SUFFIX;
   sweepCopyStaging(to);
   try {
     cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
