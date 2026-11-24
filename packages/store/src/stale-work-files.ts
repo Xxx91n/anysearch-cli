@@ -28,6 +28,7 @@ export function sweepStaleWorkFiles(
 ): void {
   const dir = dirname(target);
   const prefix = options.prefix ?? basename(target) + ".";
+  const recursive = options.recursive === true;
   const cutoff = Date.now() - STALE_WORK_FILE_AGE_MS;
   let names: string[];
   try { names = readdirSync(dir); } catch { return; }
@@ -35,10 +36,24 @@ export function sweepStaleWorkFiles(
     if (!name.startsWith(prefix) || !name.endsWith(options.suffix)) continue;
     const file = join(dir, name);
     try {
-      if (statSync(file).mtimeMs < cutoff) {
-        // Node rejects an explicit `recursive: undefined`; pin it to a boolean.
-        rmSync(file, { force: true, recursive: options.recursive === true });
+      if (lastWriteAt(file, recursive) < cutoff) {
+        rmSync(file, { force: true, recursive });
       }
     } catch { /* leave it */ }
   }
+}
+
+/**
+ * Newest write anywhere in the entry. A copy in progress updates its children,
+ * never the staging directory's own mtime, so that one alone would make a live
+ * copy look abandoned.
+ */
+function lastWriteAt(entry: string, recursive: boolean): number {
+  const entryStat = statSync(entry);
+  let newest = entryStat.mtimeMs;
+  if (!recursive || !entryStat.isDirectory()) return newest;
+  for (const name of readdirSync(entry, { recursive: true, encoding: "utf8" })) {
+    try { newest = Math.max(newest, statSync(join(entry, name)).mtimeMs); } catch { /* raced */ }
+  }
+  return newest;
 }

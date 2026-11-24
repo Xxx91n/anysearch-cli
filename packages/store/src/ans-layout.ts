@@ -138,6 +138,15 @@ function writtenSince(path: string, since: number): boolean {
 
 
 /**
+ * Clear what a killed cross-volume copy left beside `to`. The staging entry is
+ * a directory, so this is the one caller that sweeps recursively; the same
+ * call runs before starting a new copy.
+ */
+export function sweepCopyStaging(to: string): void {
+  sweepStaleWorkFiles(to, { suffix: ".copying", recursive: true });
+}
+
+/**
  * Rename one entry, falling back to a copy when the two roots are on different
  * volumes. A copy that cannot be completed leaves the source untouched.
  */
@@ -153,7 +162,7 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   // name the reader prefers when an interrupted run is retried, and the intact
   // source would then be ignored forever.
   const staging = to + "." + process.pid + ".copying";
-  sweepStaleWorkFiles(to, { suffix: ".copying", recursive: true });
+  sweepCopyStaging(to);
   try {
     cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
     renameSync(staging, to);

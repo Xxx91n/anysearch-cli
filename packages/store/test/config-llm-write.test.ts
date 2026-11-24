@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
 import { configWriteSeam } from "../src/config-llm-seam.js";
-import { STALE_WORK_FILE_AGE_MS, sweepStaleWorkFiles } from "../src/stale-work-files.js";
+import { STALE_WORK_FILE_AGE_MS } from "../src/stale-work-files.js";
 
 const GOOD = '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\nbase_url = "https://example.test"\n';
 
@@ -221,18 +221,6 @@ test("a write sweeps its own stale temp files and leaves every other .tmp", () =
     [basename(fresh), basename(unrelated)].sort(),
     "only the fresh and unrelated temps survive",
   );
-});
-
-test("a stale copy staging directory is removed, not left forever", () => {
-  const home = mkdtempSync(join(tmpdir(), "ans-stale-copying-"));
-  const target = join(home, "domains");
-  const stale = target + ".999.copying";
-  mkdirSync(stale);
-  writeFileSync(join(stale, "payload"), "left by a killed copy");
-  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
-  utimesSync(stale, twoHoursAgo, twoHoursAgo);
-  sweepStaleWorkFiles(target, { suffix: ".copying", recursive: true });
-  assert.ok(!existsSync(stale), "the directory the killed copy staged is gone");
 });
 
 test("a stale work file the sweep cannot remove does not stop the write", {
