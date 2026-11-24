@@ -1,7 +1,7 @@
 // provider-error-class taxonomy — eval artifacts record an
 // error CATEGORY beside the failed flag, never the flag alone. Table-driven
 // over the String(err) seam form ("Name: message").
-import { classifyProviderError, providerErrorText, retryAfterSeconds } from "../src/contract";
+import { classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, withProviderErrorClass } from "../src/contract";
 import { keylessLimitErrorFromEnvelope } from "@tavily/core";
 
 let passed = 0, failed = 0;
@@ -34,11 +34,12 @@ const cases: Array<[string, string]> = [
   ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit notice instead of results [provider-error-class:transient] [upstream text: too many requests]", "transient"],
   ["Error: set ANYSEARCH_API_KEY to continue", "unknown"],
   ["Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [provider-error-class:quota-exhausted] [upstream text: 今日额度已用完，请明天再试]", "quota-exhausted"],
-  // The marker wins over the words echoed after it: a quota wall that also says
-  // "rate limit", and a throttle whose text mentions a bad key, keep their real
-  // class.
-  ["Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [provider-error-class:quota-exhausted] [upstream text: daily quota reached, rate limit exceeded]", "quota-exhausted"],
-  ["Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later) [provider-error-class:transient] [upstream text: invalid_api_key]", "transient"],
+  // #494: a class marker in the text is inert — nobody reads it back. The words
+  // are the only signal for an adapter that declares nothing, so a reply body
+  // that spells one changes no decision.
+  ["Error: exa upstream said [provider-error-class:permanent-auth] and nothing else", "unknown"],
+  ["Error: Exa MCP tools/call isError: rate limit exceeded [provider-error-class:permanent-auth]", "transient"],
+  ["Error: AnySearch MCP tools/call isError [provider-error-class:transient] [upstream text: odd reply shape]", "permanent-protocol"],
   // #440 Exa: exa-js keeps the status on ExaError.statusCode and rethrows only
   // the envelope text, so a bad key arrives as the spaced sentence.
   ["ExaError: Invalid API key. Provide a valid key using 'Authorization: Bearer <key>' or 'x-api-key: <key>' (https://dashboard.exa.ai/api-keys)", "permanent-auth"],
@@ -129,6 +130,46 @@ function expectValue<T>(got: T, want: T, label: string) {
   // The seam appends the SDK's own value; a number the body mentioned first
   // must not win over it.
   expectValue(retryAfterSeconds("Error: body said retry after 2 seconds (retry-after=3600)"), 3600, "the appended SDK wait outranks the body text");
+}
+
+// #494: the class an adapter already knows is declared on the error object and
+// passed in as an argument. It outranks the words because those words also carry
+// upstream reply text, which the upstream writes.
+{
+  expectValue(
+    classifyProviderError(
+      "Error: AnySearch MCP tools/call quota exhausted: upstream says the account's quota is used up — top up or use a fresh key (retrying will not help) [upstream text: daily quota reached, rate limit exceeded]",
+      "quota-exhausted",
+    ),
+    "quota-exhausted",
+    "a declared class outranks the retry words echoed after it",
+  );
+  expectValue(
+    classifyProviderError(
+      "Error: AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later) [upstream text: invalid_api_key]",
+      "transient",
+    ),
+    "transient",
+    "a declared class outranks an auth-sounding upstream body",
+  );
+  expectValue(
+    providerErrorClassOf(withProviderErrorClass(new Error("boom"), "quota-exhausted")),
+    "quota-exhausted",
+    "a declared class reads off the error object",
+  );
+  expectValue(
+    providerErrorClassOf(withProviderErrorClass(new Error("boom"), "made-up-class" as never)),
+    undefined,
+    "a class name outside the list reads as nothing declared",
+  );
+  expectValue(providerErrorClassOf(new Error("boom")), undefined, "a plain error declares nothing");
+  expectValue(
+    providerErrorClassOf(Object.assign(new Error("boom"), { providerErrorClass: "quota-exhausted" })),
+    undefined,
+    "a plain string field cannot declare a class — only the symbol the adapter writes does",
+  );
+  // "unknown" means nothing was settled: the words still decide.
+  expectValue(classifyProviderError("Error: HTTP 503 Service Unavailable", "unknown"), "transient", "a declared unknown falls through to the words");
 }
 
 console.log("--- provider-error-class: " + passed + " passed, " + failed + " failed ---");

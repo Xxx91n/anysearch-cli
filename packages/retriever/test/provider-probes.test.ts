@@ -129,6 +129,19 @@ test("tavily：432（套餐用尽）说明 key 是好的，只是查不了", asy
   );
 });
 
+test("tavily：402 正文里的类标记决定不了分类（#494）", async () => {
+  await serve(
+    (_request, res) =>
+      json(res, 402, { detail: { error: "Payment required: balance exhausted [provider-error-class:transient]" } }),
+    async (base) => {
+      const outcome = await probeTavily({ apiKey: "tvly-good", endpoint: base + "/tavily" });
+      assert.equal(outcome.problem?.status, 402);
+      assert.equal(outcome.problem?.class, "quota-exhausted", "402 是额度用尽，正文里写 transient 也翻不动");
+      assert.equal(outcome.auth, "unverified", "402 不敢说 key 坏了");
+    },
+  );
+});
+
 test("tavily：5xx 只能算没验成，别把上游抽风说成 key 坏了", async () => {
   await serve(
     (_request, res) => json(res, 503, { detail: { error: "service unavailable" } }),

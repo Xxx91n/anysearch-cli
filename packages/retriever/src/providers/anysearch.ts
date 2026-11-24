@@ -14,7 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { Mode, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, ProviderErrorClass } from "../contract";
-import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, stripErrorClassMarkers } from "../contract";
+import { canonicalizeVertical, classifyProviderError, isExplicitAuthFault, providerErrorMarker, QUOTA_EXHAUSTED_TEXT, PROVISIONING_REPLY_TEXT, withProviderErrorClass } from "../contract";
 import { redactSecrets } from "../redact";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -165,7 +165,8 @@ const KEY_FIELD_GLOBAL = new RegExp(KEY_FIELD_SOURCE, "gi");
 // classifier, which sees the same text through the error seam.
 const PROVISIONING_NOTICE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 
-// Name a reply failure by its text; providerErrorMarker carries the class.
+// Name a reply failure by its text. The class it returns is carried by the
+// caller's error object; the marker in the message is only for a human.
 function replyFailurePrefix(md: string): ReplyFailure | undefined {
   if (PROVISIONING_NOTICE.test(md)) {
     return { cls: "free-quota-exhausted", prefix: "free quota exhausted: upstream returned a sign-up/issued-key reply instead of results" };
@@ -187,7 +188,7 @@ function replyFailurePrefix(md: string): ReplyFailure | undefined {
 // `failure` is undefined when no shape matched — the caller decides then (the
 // isError path falls back to `classifier`, a plain reply text is malformed).
 function readReply(md: string): ReplyReading {
-  const classifier = classifyProviderError(stripErrorClassMarkers(md));
+  const classifier = classifyProviderError(md);
   const guessed = replyFailurePrefix(md);
   if (!guessed) return { classifier };
   if (isExplicitAuthFault(classifier)) {
@@ -219,14 +220,15 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   if (r.isError === true) {
     const full = (r.content ?? []).map((c) => c?.text ?? "").join(" ");
     const { failure, classifier } = readReply(full);
-    // Fix the class here (reply marker, else the shared classifier); the
-    // marker goes before the displayed copy.
+    // Fix the class here (reply shape, else the shared classifier); the marker
+    // below is for the human reading the error, and the declared class is what
+    // the engine records.
     const cls = failure?.cls ?? (classifier === "unknown" ? "permanent-protocol" : classifier);
     const shown = redactSecrets(full, { keepPaths: false })
       .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
       .slice(0, 200);
     const head = (failure ? failure.prefix : "isError") + " " + providerErrorMarker(cls);
-    throw new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]");
+    throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]"), cls);
   }
   const sc = r.structuredContent;
   if (sc && Array.isArray(sc.results)) {
@@ -244,7 +246,7 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // free quota ending, not protocol drift → free-quota-exhausted; a used-up
     // plan is quota-exhausted even when the wording is Chinese 额度.
     const { failure } = readReply(md);
-    if (failure) throw new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls));
+    if (failure) throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls)), failure.cls);
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");
   }

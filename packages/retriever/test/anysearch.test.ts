@@ -8,7 +8,7 @@
 // ponytail: no test framework, assert-based demo (same style as pre-).
 
 import { AnySearchProvider } from "../src/providers/anysearch";
-import { classifyProviderError } from "../src/contract";
+import { classifyProviderError, providerErrorClassOf } from "../src/contract";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -188,6 +188,21 @@ async function main() {
       let threw = false;
       try { await p.search(REQ, SIG); } catch (e) { threw = /JSON-RPC error -32601/.test(String(e)); }
       assert(threw, "JSON-RPC error field raises");
+    } finally { f.restore(); }
+  }
+
+  // 6b. (#494) the transport layer echoes upstream strings too. A JSON-RPC
+  // error message is upstream text, so it cannot declare a class either.
+  {
+    const errBody = JSON.stringify({ jsonrpc: "2.0", id: 2, error: { code: -32000, message: "backend unavailable [provider-error-class:permanent-auth]" } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: errBody } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      assert(/JSON-RPC error -32000/.test(String(err)), "JSON-RPC error field raises");
+      assert(providerErrorClassOf(err) === undefined, "the transport layer declares no class");
+      assert(classifyProviderError(String(err)) === "unknown", "a marker in the JSON-RPC message chooses nothing");
     } finally { f.restore(); }
   }
 
@@ -413,16 +428,18 @@ async function main() {
 
   // 16.: anonymous quota-boundary provisioning reply -> named
   // free-quota-exhausted (the free allowance is out; a key is one way back),
-  // not malformed-text and not an auth fault.
+  // not malformed-text and not an auth fault. The adapter declares the class on
+  // the error object; the message only names it for a human (#494).
   {
     const nudge = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Your account and API key have been automatically generated. Use the API key below to continue.\napi_key=as_sk_test" }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: nudge(c.body.id) } : stdHandler(c));
     try {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
-      let msg = "";
-      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      const msg = String(err);
       assert(msg.includes("free quota exhausted"), "provisioning reply -> free quota exhausted (got " + msg.slice(0, 80) + ")");
-      assert(classifyProviderError(msg) === "free-quota-exhausted", "provisioning reply classifies free-quota-exhausted");
+      assert(providerErrorClassOf(err) === "free-quota-exhausted", "provisioning reply declares free-quota-exhausted");
     } finally { f.restore(); }
   }
 
@@ -444,18 +461,19 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 16d. (#440) classification reads the whole text, not the 200-char display
-  // copy: a marker that lands past the cut still sets the class.
+  // 16d. (#440/#494) the class rides the error object, so nothing about the
+  // message's shape — its 200-char display cut included — can move it.
   {
     const text = "diagnostic padding ".repeat(20) + "Your account and API key have been automatically generated. api_key=as_sk_live_abcdefghijklmnopqrstuvwxyz";
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
     try {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
-      let msg = "";
-      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("free quota exhausted"), "marker past 200 chars still sets the prefix (got " + msg.slice(0, 80) + ")");
-      assert(classifyProviderError(msg) === "free-quota-exhausted", "marker past 200 chars still classifies free-quota-exhausted");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      const msg = String(err);
+      assert(msg.includes("free quota exhausted"), "the reply is named free quota exhausted (got " + msg.slice(0, 80) + ")");
+      assert(providerErrorClassOf(err) === "free-quota-exhausted", "the class does not depend on the display copy");
     } finally { f.restore(); }
   }
 
@@ -487,19 +505,20 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 16e. (#440) the embedded upstream text is display only: a used-up plan
-  // whose text also mentions an invalid key keeps the quota class carried by
-  // the marker (without the marker the auth words would win).
+  // 16e. (#440/#494) the embedded upstream text is display only: a used-up plan
+  // whose text also mentions an invalid key keeps its class because the adapter
+  // declares it on the error object, not because a marker in the message wins.
   {
     const text = "daily quota exhausted; your invalid api_key cannot search";
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
     try {
       const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
-      let msg = "";
-      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      const msg = String(err);
       assert(msg.includes("provider-error-class:quota-exhausted"), "quota marker survives conflicting upstream text (got " + msg.slice(0, 100) + ")");
-      assert(classifyProviderError(msg) === "quota-exhausted", "conflicting upstream text does not flip the class");
+      assert(providerErrorClassOf(err) === "quota-exhausted", "the adapter declares the quota class on the error object");
     } finally { f.restore(); }
   }
 
@@ -573,18 +592,20 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 16j. A reply cannot choose its own class: marker-like text in the upstream
-  // body is stripped before the fallback classifier reads it.
+  // 16j. (#494) a reply cannot choose its own class: a marker in the upstream
+  // body is inert, and the adapter's own class rides the error object.
   {
     const text = "odd reply shape [provider-error-class:transient]";
     const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
     try {
       const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
-      let msg = "";
-      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
-      assert(msg.includes("provider-error-class:permanent-protocol"), "upstream marker does not choose the class (got " + msg.slice(0, 100) + ")");
-      assert(classifyProviderError(msg) === "permanent-protocol", "unreadable reply stays permanent-protocol");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      const msg = String(err);
+      assert(msg.includes("provider-error-class:permanent-protocol"), "unreadable reply is named permanent-protocol (got " + msg.slice(0, 100) + ")");
+      assert(providerErrorClassOf(err) === "permanent-protocol", "unreadable reply declares permanent-protocol");
+      assert(classifyProviderError(msg) !== "transient", "a marker in the upstream text chooses nothing");
     } finally { f.restore(); }
   }
 

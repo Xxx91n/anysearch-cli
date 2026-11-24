@@ -5,7 +5,7 @@
 // JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
@@ -402,7 +402,9 @@ export class RetroaererdEngine {
     // failure is a completed fanout answer.
     type ProviderOutcome =
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
-      | { provider: string; status: "rejected"; error: string };
+      // providerErrorClass: the class the adapter declared; absent means the
+      // text decides.
+      | { provider: string; status: "rejected"; error: string; providerErrorClass?: ProviderErrorClass };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     // #209: the caller's request signal (MCP tools/call cancellation) is combined
     // with the engine's per-provider controllers. Aborting it stops in-flight
@@ -486,7 +488,7 @@ export class RetroaererdEngine {
           (err) => {
             // An abort we issued is cancellation, not failure: leave the slot null.
             if (abortedArms.has(i)) return;
-            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err) };
+            out[i] = { provider: p.id, status: "rejected", error: providerErrorText(err), providerErrorClass: providerErrorClassOf(err) };
           },
         ),
       );
@@ -607,7 +609,7 @@ export class RetroaererdEngine {
           // keep the captured error's CLASS beside the flag —
           // the "flag without error text" generic-wrapping defect ends here
           // (enum only; forensic name+message stays with the probe channel).
-          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error);
+          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error, inner.providerErrorClass);
           // Recorded whenever the arm said one: whether any sentence uses it is
           // the hint table's business, not this engine's.
           const wait = retryAfterSeconds(inner.error);
