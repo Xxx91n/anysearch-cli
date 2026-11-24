@@ -471,6 +471,12 @@ function writeConfigTemp(path: string, content: string): void {
   }
 }
 
+/** The errno code when the thrown value carries one, else its text. */
+function errnoOrText(e: unknown): string {
+  const code = typeof e === "object" && e !== null ? (e as NodeJS.ErrnoException).code : undefined;
+  return typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
+}
+
 /**
  * Follow a symlinked config file to the file it points at: renaming onto the
  * link would replace it with a regular file and cut off a dotfiles setup. A
@@ -487,7 +493,7 @@ function linkTarget(path: string): string {
   } catch (e) {
     throw new Error(
       "could not write " + path + ": it is a symlink and its target cannot be resolved (" +
-      ((e as NodeJS.ErrnoException).code ?? String(e)) +
+      errnoOrText(e) +
       "). This write did not touch the existing config; fix or remove the link, then retry.",
       { cause: e },
     );
@@ -521,8 +527,7 @@ function writeUserConfigFile(path: string, content: string): void {
     try { unlinkSync(temp); } catch { /* never created, or already renamed */ }
     // Carry the errno alone: a raw rename message names the temp path, which
     // reads like an unrelated failure.
-    const code = typeof e === "object" && e !== null ? (e as NodeJS.ErrnoException).code : undefined;
-    const reason = typeof code === "string" ? code : e instanceof Error ? e.message : String(e);
+    const reason = errnoOrText(e);
     throw new Error(
       "could not write " + path + ": " + reason +
       ". This write did not touch the existing config; check that the file and its folder are writable, then retry.",
