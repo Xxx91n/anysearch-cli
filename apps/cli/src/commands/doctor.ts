@@ -386,9 +386,9 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           // Design: 没配 key 的源不探免费面（#534）—— ProbeAuth 的三种值都在说这把 key
           // （好 / 被拒 / 没验成），没 key 时三句都不成立，只能给出假绿或假红：anysearch 的匿名
           // 额度墙会被判成 permanent-protocol，或者直接落进「auth 通过」；exa 没 key 打 REST 是
-          // 402，会被说成额度用尽。免费额度按 IP、按天走：被拒那类直接判失败（退出码 1），限流
-          // 那类落「未检查」（--strict 下整体算不过），等于把别人的用量算成本机装坏。要验这条
-          // 路，真跑一次 ans search。
+          // 402，会被说成额度用尽。免费额度按 IP、按天走：不管落成失败（退出码 1）还是未检查
+          // （--strict 下整体算不过），都等于把别人的用量算成本机装坏。要验这条路，真跑一次
+          // ans search。
           if (!entry?.apiKey) return;
           const endpoint = opts.endpoints?.[provider]
             ?? (provider === "anysearch" ? credentials.anysearch?.endpoint : undefined);
