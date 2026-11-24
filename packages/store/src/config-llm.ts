@@ -19,9 +19,14 @@
 // (LlmSession contract). Every resolved field carries its source in `sources`,
 // so callers can say where a value came from instead of guessing.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { randomBytes } from "node:crypto";
+import {
+  closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync,
+  unlinkSync, writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { configWriteSeam } from "./config-llm-seam.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
@@ -485,12 +490,101 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
 }
 
 /**
+ * Temp file, forced to disk before the rename; otherwise a power cut can publish
+ * an empty file.
+ * SECURITY: on POSIX the temp file is 0600 and the rename publishes that mode,
+ * so an existing 0644 config is tightened too (CWE-312). Windows has no POSIX
+ * mode here; the folder ACL decides who can read the file.
+ */
+function writeConfigTemp(path: string, content: string): void {
+  const fd = openSync(path, "wx", 0o600);
+  try {
+    // writeFileSync loops until every byte lands; a bare writeSync can return
+    // short on a full disk without throwing.
+    writeFileSync(fd, content, "utf8");
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** The errno code when the thrown value carries one, else its text. */
+function errnoOrText(e: unknown): string {
+  // A thrown value may be anything, and ErrnoException only claims code is a
+  // string, so the runtime check below is the real guard, not the cast.
+  const code = typeof e === "object" && e !== null ? (e as { code?: unknown }).code : undefined;
+  if (typeof code === "string") return code;
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Follow a symlinked config file to the file it points at: renaming onto the
+ * link would replace it with a regular file and cut off a dotfiles setup. A
+ * link that cannot be resolved (dangling, looping, unreadable) stops the write
+ * instead of quietly becoming a regular file.
+ */
+function linkTarget(path: string): string {
+  // Only "no file yet" means "write as usual". Every other lstat failure
+  // (ELOOP, EACCES, ENOTDIR) must surface as itself, not become a rename error.
+  const entry = lstatSync(path, { throwIfNoEntry: false });
+  if (entry === undefined || !entry.isSymbolicLink()) return path;
+  try {
+    return realpathSync(path);
+  } catch (e) {
+    throw new Error(
+      "could not write " + path + ": it is a symlink and its target cannot be resolved (" +
+      errnoOrText(e) +
+      "). This write did not touch the existing config; fix or remove the link, then retry.",
+      { cause: e },
+    );
+  }
+}
+
+/**
+ * Write a temp file beside the target, then rename onto it, so a fault mid-write
+ * leaves the previous file untouched instead of half-rewritten. Same rule as
+ * config.env and credentials.json.
+ *
+ * Design: temp name carries pid + random bytes and lives in the target's own
+ * directory — two concurrent `ans llm set` runs cannot publish each other's
+ * half-finished file, one run's cleanup cannot delete the other's temp, and a
+ * rename inside one directory never fails with EXDEV.
+ */
+function writeUserConfigFile(path: string, content: string): void {
+  path = linkTarget(path);
+  const dir = dirname(path);
+  const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
+  const write = configWriteSeam.write ?? writeConfigTemp;
+  // Design: plain rename, no fs-atomic backoff — that policy waits up to a
+  // minute on a Windows sharing error, and a hanging config command is worse
+  // than one that fails and keeps the old file (same call as config.env).
+  const rename = configWriteSeam.rename ?? renameSync;
+  try {
+    mkdirSync(dir, { recursive: true });
+    write(temp, content);
+    rename(temp, path);
+  } catch (e) {
+    try { unlinkSync(temp); } catch { /* never created, or already renamed */ }
+    // Carry the errno alone: a raw rename message names the temp path, which
+    // reads like an unrelated failure.
+    const reason = errnoOrText(e);
+    throw new Error(
+      "could not write " + path + ": " + reason +
+      ". This write did not touch the existing config; check that the file and its folder are writable, then retry.",
+      { cause: e },
+    );
+  }
+}
+
+/**
  * Persist provider/model to the user-level config.toml (fixes the original #38
  * gap: `ans llm set` previously only printed export hints). Other [llm] keys
  * (base_url, api) and non-llm sections are preserved. env_key is dropped when
  * the provider changes: it names the previous provider's secret, and the
  * resolver's project-layer guard cannot detect that binding being rewritten in
- * place (CodeRabbit #120). Never writes secrets.
+ * place (CodeRabbit #120). Never writes secrets. A write that fails does not
+ * touch the existing file: the new content is published by a rename, never by
+ * rewriting the target in place.
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },
@@ -535,8 +629,6 @@ export function writeUserLlmConfig(
   }
   if (patch.model !== undefined) llm["model"] = patch.model;
   root["llm"] = llm;
-  mkdirSync(dirname(path), { recursive: true });
-  // SECURITY: owner-only permissions, same convention as config.env (CWE-312).
-  writeFileSync(path, tomlStringify(root), { encoding: "utf8", mode: 0o600 });
+  writeUserConfigFile(path, tomlStringify(root));
   return path;
 }
