@@ -153,7 +153,7 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   // name the reader prefers when an interrupted run is retried, and the intact
   // source would then be ignored forever.
   const staging = to + "." + process.pid + ".copying";
-  sweepStaleWorkFiles(to, ".copying");
+  sweepStaleWorkFiles(to, { suffix: ".copying" });
   try {
     cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
     renameSync(staging, to);

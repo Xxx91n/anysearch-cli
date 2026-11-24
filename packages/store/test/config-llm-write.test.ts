@@ -10,7 +10,7 @@ import {
   unlinkSync, utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
 import { configWriteSeam } from "../src/config-llm-seam.js";
 
@@ -194,8 +194,8 @@ test("the published file is owner-only even over an existing 0644 file", {
 test("a write sweeps its own stale temp files and leaves every other .tmp", () => {
   const { home, path } = fixture();
   const dir = dirname(path);
-  // Take the name from the writer itself: a hand-written literal would keep
-  // matching after the writer's shape changes only by accident.
+  // Take the name from the writer itself, so this test follows its shape
+  // instead of pinning a literal.
   let ownTemp = "";
   withSeam({
     write: (file, body) => {
@@ -215,8 +215,11 @@ test("a write sweeps its own stale temp files and leaves every other .tmp", () =
   utimesSync(unrelated, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ provider: "openai" }, home);
   assert.ok(!existsSync(ownTemp), "an abandoned temp of this file is swept");
-  assert.ok(existsSync(fresh), "a fresh temp may belong to another running write");
-  assert.ok(existsSync(unrelated), "a .tmp of another name is not ours to delete");
+  assert.deepEqual(
+    temps(home).sort(),
+    [basename(fresh), basename(unrelated)].sort(),
+    "only the fresh and unrelated temps survive",
+  );
 });
 
 test("a stale temp that cannot be deleted does not stop the write", () => {
@@ -245,4 +248,24 @@ test("a write through the legacy config home sweeps there too", () => {
   utimesSync(stale, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ model: "gpt-5" }, home);
   assert.ok(!existsSync(stale), "the sweep follows the path the writer actually uses");
+});
+
+test("a symlinked config is swept beside the real file, not the link", (context) => {
+  const { home, path } = fixture();
+  const realDir = join(home, "dotfiles");
+  mkdirSync(realDir, { recursive: true });
+  const real = join(realDir, "config.toml");
+  writeFileSync(real, GOOD);
+  try {
+    symlinkSync(real, path, "file");
+  } catch {
+    context.skip("this host does not allow creating symlinks");
+    return;
+  }
+  const stale = join(realDir, ".config.toml.999.deadbeef1234.tmp");
+  writeFileSync(stale, "stale");
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ model: "gpt-5" }, home);
+  assert.ok(!existsSync(stale), "the sweep follows the link to the file that was written");
 });

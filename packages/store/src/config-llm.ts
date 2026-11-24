@@ -578,14 +578,13 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
-  // Design: sweep abandoned temps before the write, only ones older than an
-  // hour, and ignore failures — a run killed between writing its temp and the
-  // rename leaves it behind and nothing else clears it; a younger temp may
-  // belong to a concurrent write, and a failed sweep must not stop the real
-  // write. The temp name starts with a dot, so the prefix is spelled out
-  // instead of left to the target's bare name.
+  // Design: sweep abandoned temps before publishing — a run killed between
+  // writing its temp and the rename leaves it behind and nothing else clears
+  // it. The helper owns the age cutoff and the best-effort failure rule; a
+  // younger temp may belong to a concurrent write. The temp name starts with
+  // a dot, so the prefix is spelled out instead of left to the target's name.
   const tempPrefix = "." + basename(path) + ".";
-  sweepStaleWorkFiles(path, ".tmp", { prefix: tempPrefix });
+  sweepStaleWorkFiles(path, { suffix: ".tmp", prefix: tempPrefix });
   const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a

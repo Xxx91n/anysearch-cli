@@ -460,7 +460,7 @@ export function setAsideUnreadable(path: string): string {
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  sweepStaleWorkFiles(to, ".adopting");
+  sweepStaleWorkFiles(to, { suffix: ".adopting" });
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);
