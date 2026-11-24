@@ -89,7 +89,7 @@ export interface ResolvedLlmConfig {
   sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
   /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
   configFault?: LlmConfigFaultKind;
-  /** A healthy model binding, when credentials are enabled and no other API key was resolved. */
+  /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
 }
 
