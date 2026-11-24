@@ -582,8 +582,6 @@ function writeUserConfigFile(path: string, content: string): void {
   // two pieces, so a renamed shape cannot leave the sweep matching the old one.
   const tempPrefix = "." + basename(path) + ".";
   const tempSuffix = ".tmp";
-  // Design: sweep abandoned temps before publishing — a killed run's temp has
-  // no other cleaner. The helper owns the age cutoff and best-effort failures.
   sweepStaleWorkFiles(path, { suffix: tempSuffix, prefix: tempPrefix });
   const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + tempSuffix);
   const write = configWriteSeam.write ?? writeConfigTemp;

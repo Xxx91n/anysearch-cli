@@ -231,7 +231,7 @@ test("a stale copy staging directory is removed, not left forever", () => {
   writeFileSync(join(stale, "payload"), "left by a killed copy");
   const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(stale, twoHoursAgo, twoHoursAgo);
-  sweepStaleWorkFiles(target, { suffix: ".copying" });
+  sweepStaleWorkFiles(target, { suffix: ".copying", recursive: true });
   assert.ok(!existsSync(stale), "the directory the killed copy staged is gone");
 });
 

@@ -11,20 +11,20 @@ import { basename, dirname, join } from "node:path";
 export const STALE_WORK_FILE_AGE_MS = 60 * 60 * 1000;
 
 /**
- * Drop work files a killed run left next to `target`.
+ * Drop work files — files or staged directories — a killed run left next to
+ * `target`.
  *
  * `options.suffix` is the caller's marker; `options.prefix` defaults to the
  * target's name plus a dot and is spelled out by a caller whose name differs.
- *
- * Design: one hour — far past the seconds a write holds its work file, and
- * short enough that leftovers do not pile up.
+ * `options.recursive` is off unless the caller stages a directory: a plain
+ * `rmSync` must not turn a name match into a whole tree deletion.
  *
  * Every failure is swallowed: cleanup must never decide whether the real write
  * happens.
  */
 export function sweepStaleWorkFiles(
   target: string,
-  options: { suffix: string; prefix?: string },
+  options: { suffix: string; prefix?: string; recursive?: boolean },
 ): void {
   const dir = dirname(target);
   const prefix = options.prefix ?? basename(target) + ".";
@@ -36,9 +36,8 @@ export function sweepStaleWorkFiles(
     const file = join(dir, name);
     try {
       if (statSync(file).mtimeMs < cutoff) {
-        // recursive: the cross-volume copy stages a directory, and a plain
-        // rmSync refuses directories — swallowing that would leave it forever.
-        rmSync(file, { force: true, recursive: true });
+        // Node rejects an explicit `recursive: undefined`; pin it to a boolean.
+        rmSync(file, { force: true, recursive: options.recursive === true });
       }
     } catch { /* leave it */ }
   }
