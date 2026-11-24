@@ -26,6 +26,7 @@ import type {
   BudgetLedgerPort,
   CompositionResult,
   ConsolidationUsage,
+  CredentialFileNotice,
   RunUsage,
   BudgetStopReason,
   SessionStorePort,
@@ -37,6 +38,7 @@ import {
   type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
+import { createWarnOnce } from "./stderr.js";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -97,24 +99,11 @@ export function classifyContinuation(
 // in pi-runtime.ts (module scope, test hook resets it).
 // Design: the set is bounded — keys include error messages, so a long-lived
 // server with rotating failure text must not grow this without limit.
-const WARNED_MAX = 64;
-const warned = new Set<string>();
+const warnOnce = createWarnOnce("[anysearch] ans_chat memory wiring: ", 64);
 
 /** Test hook: forget which ans_chat wiring failures were already announced. */
 export function resetAnsChatSessionWarnings(): void {
-  warned.clear();
-}
-
-function warnOnce(key: string, detail: string): void {
-  if (warned.has(key)) return;
-  if (warned.size >= WARNED_MAX) warned.clear();
-  warned.add(key);
-  // stdout stays protocol-pure for MCP; a dead stderr must not break the call.
-  try {
-    process.stderr.write("[anysearch] ans_chat memory wiring: " + detail + "\n");
-  } catch {
-    /* fail-open */
-  }
+  warnOnce.reset();
 }
 
 /**
@@ -270,6 +259,38 @@ export function buildAnsChatResult(
         : []),
     ],
     ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
+  };
+}
+
+/**
+ * Design: the fault goes into both halves; a success answer leads with it; an
+ * error or a cancellation keeps its own first line, with the sentence after the
+ * reason; a result with no `structuredContent` stays text-only.
+ */
+export function withCredentialFileFault(
+  result: AnsChatToolResult,
+  fault?: CredentialFileNotice,
+): AnsChatToolResult {
+  if (!fault) return result;
+  const blocks = Array.isArray(result.content) ? result.content : [];
+  const head = blocks[0];
+  const followsReason = result.isError === true || result.structuredContent?.["interrupted"] === true;
+  const content = head
+    ? [{
+        ...head,
+        text: followsReason
+          ? head.text + "\n\n" + fault.notice
+          : fault.notice + "\n\n" + head.text,
+      }, ...blocks.slice(1)]
+    : [{ type: "text" as const, text: fault.notice }];
+  return {
+    ...result,
+    content,
+    // Merge, never replace: the caller's own facts (`usage`, `budget`, …) must
+    // survive. Absent stays absent.
+    ...(result.structuredContent
+      ? { structuredContent: { ...result.structuredContent, credentialFileFault: fault } }
+      : {}),
   };
 }
 

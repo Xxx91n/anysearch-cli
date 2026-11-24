@@ -109,6 +109,22 @@ spent:
 | `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 
+A broken user credential file is reported here too (#538): the same
+`{kind, errno?, notice}` record as the search tools, in
+`structuredContent.credentialFileFault`, and the same sentence in the text
+block (leading a success answer, after the reason on an error). It sits at the
+top level because `ans_chat` never resolves search arms and so has no
+`credentialSources` to nest under. It is present whether or not another source
+supplied the model key: `ANS_LLM_API_KEY` keeping the call working does not
+prove the file is healthy. With no fault neither half changes. Missing
+`provider`/`model` stays a bare error result (#204), with the sentence appended
+to its text. The same wrapper covers every branch that returns a result, so a
+usage error, a budget stop or a cancellation carries the sentence; where the
+result has a structured half, the record rides it too. For the classification,
+the no-path rule and the snapshot semantics see
+"A credential file that exists but cannot be used says so" under Rules behind
+the table.
+
 ### Consolidation
 
 `ans_chat` with `operation = "consolidate"` runs the same consolidation path as
@@ -203,7 +219,7 @@ The server follows the MCP rule that an execution failure is an
 | Case | `isError` | `structuredContent` |
 |------|-----------|---------------------|
 | Handler exception (the SDK turns an uncaught throw into an `isError` result); vertical-guard rejection (`verticalSubDomain`/`verticalParams` without `verticalDomain`); `ans_chat` runtime error or missing LLM configuration | `true` | absent — text content only |
-| `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `operation`, `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
+| `ans_chat` stopped by its own task budget (refused, or declared but not established) | `true` | `operation`, `errorKind` (`budget-rejected` / `budget-not-established`), `budget`, optional `taskId`, `usage`; plus `closeout` when a task was registered, and `credentialFileFault` when the user credential file is broken — see [Budget stops in `ans_chat`](#budget-stops-in-ans_chat-303) |
 | `search_web` / `research_web` stopped by their task budget (refused, or declared but not established) | `true` | `operation` (the tool name), `errorKind`, `budget`, optional `taskId`, plus `closeout` when a task was registered — see [Search and research tasks](#search-and-research-tasks-304) |
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
@@ -321,7 +337,11 @@ Rules behind the table:
   sentence for the same fault (path, line/column) is written to stderr when the
   engine is built; `stderr` is outside the protocol, and a client may capture,
   forward or drop it, so a host cannot be expected to read it — which is why the
-  record carries the fact itself.
+  record carries the fact itself. `ans_chat` publishes the same record
+  top-level as `structuredContent.credentialFileFault` (#538); it also resolves
+  the file per call, so its answer can be fresher than the engine's one-time
+  snapshot, while the shared sentence still advises a restart because the
+  search engine on the same server keeps its snapshot.
 - **An error class carries its remedy.** The class is a machine tag; a reader
   cannot tell from `quota-exhausted` what to do about it. Each class has at
   most one plain sentence, and `PROVIDER_ERROR_HINTS` in

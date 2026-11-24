@@ -11,6 +11,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isBudgetStopReason, type CompositionResult } from "@anysearch-cli/kernel";
 import { AdmissionClosedError, type RegisteredTask, type TaskRegistry } from "@anysearch-cli/store";
+import { createWarnOnce } from "./stderr.js";
 
 /** The task this MCP tool call runs under. Read via `currentMcpTask()`. */
 export interface McpTaskIdentity {
@@ -62,28 +63,15 @@ export function currentMcpTask(): McpTaskIdentity | undefined {
 // Dedupe per failure reason, same discipline (and bound) as the ans_chat
 // session wiring: a long-lived stateless host calls this per request, and a
 // broken registry must not print one line per call.
-const WARNED_MAX = 32;
-const warned = new Set<string>();
+const warnOnce = createWarnOnce("[anysearch] mcp task registration: ", 32);
 
 /** Test hook: forget which task-registration failures were already announced. */
 export function resetMcpTaskWarnings(): void {
-  warned.clear();
+  warnOnce.reset();
 }
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-function warnOnce(key: string, detail: string): void {
-  if (warned.has(key)) return;
-  if (warned.size >= WARNED_MAX) warned.clear();
-  warned.add(key);
-  // stdout stays protocol-pure for MCP; a dead stderr must not break the call.
-  try {
-    process.stderr.write("[anysearch] mcp task registration: " + detail + "\n");
-  } catch {
-    /* fail-open */
-  }
 }
 
 /**

@@ -29,7 +29,7 @@ import {
   verifyFileProtection,
   writeUserCredential,
 } from "../src/credentials";
-import { resolveLlmConfig } from "../src/config-llm";
+import { resolveLlmConfig, writeUserLlmConfig } from "../src/config-llm";
 
 function tempRoot(): { home: string; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), "ans-cred-"));
@@ -262,6 +262,65 @@ test("the parse error never quotes the file's contents", () => {
     const warnings: string[] = [];
     resolveLlmConfig({ home, cwd: home, env: {}, warn: (m) => warnings.push(m) });
     assert.ok(!warnings.join("\n").includes("SECRET"), "the resolver warning must not quote the key");
+  } finally { cleanup(); }
+});
+
+test("the model resolver reports a broken file even when an env key supplied the key", () => {
+  // #538: the credential file used to be read only as the LAST key source, so
+  // `ANS_LLM_API_KEY` hid a broken file completely — no stderr line, no
+  // record. A host reading the tool return saw a healthy call and nothing else.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path, "{ not json", "utf8");
+
+    const warnings: string[] = [];
+    const cfg = resolveLlmConfig({
+      home, cwd: home,
+      env: { ANS_LLM_API_KEY: "sk-env-supplied", ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" },
+      warn: (m) => warnings.push(m),
+    });
+    assert.equal(cfg.apiKey, "sk-env-supplied", "the env key still wins");
+    assert.equal(cfg.credentialFileFault?.kind, "not-json", "the fault travels anyway");
+    assert.equal(cfg.credentialFileFault?.errno, undefined);
+    assert.deepEqual(warnings, [], "stderr stays quiet when the key worked; the record is the report");
+
+    // Healthy and missing files still carry nothing.
+    writeFileSync(path, JSON.stringify({ bindings: [] }), "utf8");
+    assert.equal(resolveLlmConfig({ home, cwd: home, env: {} }).credentialFileFault, undefined);
+    rmSync(path, { force: true });
+    assert.equal(resolveLlmConfig({ home, cwd: home, env: {} }).credentialFileFault, undefined);
+  } finally { cleanup(); }
+});
+
+test("a TOML parse failure never quotes the offending line", () => {
+  // Design: #538 — smol-toml appends the numbered source line to its message,
+  // and a config.toml line can be `api_key = "sk-…"`. Both the read warning and
+  // the write refusal can print or forward that text, so only the diagnostic
+  // head may survive.
+  const { home, cleanup } = tempRoot();
+  try {
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(join(home, ".ans", "config.toml"), "[llm\napi_key = \"sk-live-SECRET-DO-NOT-PRINT\"\n", "utf8");
+    const warnings: string[] = [];
+    resolveLlmConfig({ home, cwd: home, env: {}, warn: (m) => warnings.push(m) });
+    assert.ok(warnings.some((w) => w.includes("TOML parse failed")), "the fault is still reported");
+    assert.ok(warnings.some((w) => /at line 1, column 2/.test(w)), "line and column survive: " + warnings.join("\n"));
+    assert.ok(!warnings.join("\n").includes("SECRET"), "the warning must not quote the line: " + warnings.join("\n"));
+    assert.ok(!warnings.join("\n").includes("sk-live"), "not even the key prefix");
+
+    // `ans llm set` refuses to rewrite a malformed file; its sentence is shown
+    // to the user too, so it takes the same rule.
+    assert.throws(
+      () => writeUserLlmConfig({ provider: "openai" }, home),
+      (error: unknown) => {
+        assert.ok(error instanceof Error, "the refusal is an Error");
+        assert.match(error.message, /TOML parse failed/);
+        assert.ok(!error.message.includes("SECRET"), "the refusal must not quote the line: " + error.message);
+        return !error.message.includes("sk-live");
+      },
+    );
   } finally { cleanup(); }
 });
 

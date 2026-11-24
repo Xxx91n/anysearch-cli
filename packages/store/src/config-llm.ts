@@ -25,7 +25,7 @@ import {
   unlinkSync, writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { parse as tomlParse, stringify as tomlStringify } from "smol-toml";
+import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
@@ -38,7 +38,7 @@ import {
   readUserCredentials,
   resolveConfigHome,
 } from "./credentials";
-import type { CredentialFileContents } from "./credentials";
+import type { CredentialFileContents, CredentialFileFault } from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
@@ -96,6 +96,12 @@ export interface ResolvedLlmConfig {
   configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
+  /**
+   * The classification of a credential file that exists but cannot be used;
+   * set whether or not another layer supplied the key. The caller builds the
+   * sentence through the kernel's `credentialFileNotice` table.
+   */
+  credentialFileFault?: CredentialFileFault;
 }
 
 export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
@@ -160,6 +166,19 @@ interface LoadedLlmFile {
   fault?: LlmConfigFaultKind;
 }
 
+/**
+ * Design: only the diagnostic head of a TOML parse error is shown, plus the
+ * line and column `TomlError` records — never the snippet, which can be
+ * `api_key = "sk-…"`. Every surface that prints or forwards this text (CLI
+ * warnings, MCP stderr, a write refusal) takes the same rule.
+ */
+function tomlParseDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const head = message.split("\n")[0].trim() || "invalid TOML";
+  if (error instanceof TomlError) return head + " at line " + error.line + ", column " + error.column;
+  return head;
+}
+
 function parseLlmTomlResult(
   toml: string,
   level: "user" | "project",
@@ -170,7 +189,7 @@ function parseLlmTomlResult(
   try {
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
-    warn("[config] " + filePath + ": TOML parse failed (" + (e as Error).message + "); ignoring file");
+    warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
     return { config: {}, fault: "invalid-toml" };
   }
   const section = root["llm"];
@@ -420,10 +439,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.sources.apiKey = "env";
       }
     }
+  }
 
-    if (!resolved.apiKey && opts.credentials !== false) {
-      const credsPath = ansCredentialsPathFor(home);
-      const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+  // Design: read the file on every resolve, even when a key came from above —
+  // the fault then rides the result instead of staying on stderr.
+  if (opts.credentials !== false) {
+    const credsPath = ansCredentialsPathFor(home);
+    const file = opts.credentialsFile ?? readUserCredentials({ filePath: credsPath });
+    if (file.fault) resolved.credentialFileFault = file.fault;
+    if (!resolved.apiKey) {
       if (!file.error && !file.fault && file.bindings.some(
         (binding) => credentialProvider(binding.provider)?.kind === "model",
       )) {
@@ -599,7 +623,7 @@ export function writeUserLlmConfig(
     } catch (e) {
       // never silently rewrite a malformed file — that would drop env_key and
       // every unrelated section (CodeRabbit #120).
-      throw new Error(path + ": TOML parse failed (" + (e as Error).message + "); fix or remove the file, then retry");
+      throw new Error(path + ": TOML parse failed (" + tomlParseDetail(e) + "); fix or remove the file, then retry");
     }
   }
   const llm = (typeof root["llm"] === "object" && root["llm"] !== null
