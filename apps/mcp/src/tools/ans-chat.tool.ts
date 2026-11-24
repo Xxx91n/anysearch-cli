@@ -64,6 +64,7 @@ import {
   type AnsChatToolResult,
 } from "../ans-chat-session.js";
 import { currentMcpTask, withMcpTask } from "../mcp-task.js";
+import { writeRedactedDiagnostic, writeStderr } from "../stderr.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -85,35 +86,6 @@ const warnedDegradations = new Set<string>();
 /** Test hook: forget which wiring degradations were already announced. */
 export function resetAnsChatDegradedWarnings(): void {
   warnedDegradations.clear();
-}
-
-function writeStderr(line: string): void {
-  // A pipe closed by the parent emits an asynchronous 'error' event; a
-  // try/catch around `write` cannot see it. The listener is what makes a dead
-  // stderr fail-open instead of crashing the MCP process (same shape as
-  // `composition.ts`'s writeProviderDiagnostic).
-  const stderr = process.stderr;
-  const swallow = () => {};
-  stderr.once("error", swallow);
-  try {
-    // Node calls the callback with the error BEFORE emitting 'error', so the
-    // listener must survive until the event fires; it self-removes on the
-    // swallowed event.
-    stderr.write(line + "\n", (error) => {
-      if (!error) stderr.off("error", swallow);
-    });
-  } catch {
-    stderr.off("error", swallow);
-  }
-}
-
-/**
- * Design: only strings that can carry config or provider text are redacted.
- * Task ids and ledger ids use `writeStderr` directly: `redactSecrets` would
- * turn them into `[redacted]`, and the log could no longer be tied to its row.
- */
-function writeRedactedDiagnostic(message: string): void {
-  writeStderr(redactSecrets(message));
 }
 
 function warnDegraded(message: string, key: string): void {

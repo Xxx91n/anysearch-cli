@@ -28,6 +28,7 @@ import {
 } from "@anysearch-cli/kernel";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { currentMcpTask } from "../mcp-task.js";
+import { writeStderr } from "../stderr.js";
 
 // A resident MCP server would print the degradation line on every call while
 // the store stays broken, so dedupe by corner: the key omits the per-call task
@@ -44,10 +45,8 @@ function warnDegraded(message: string, key: string): void {
   if (warned.has(key)) return;
   if (warned.size >= WARNED_MAX) warned.clear();
   warned.add(key);
-  // stdout stays protocol-pure for MCP; a dead stderr must not break the call.
-  try {
-    process.stderr.write("[anysearch] " + message + "\n");
-  } catch { /* fail-open */ }
+  // stdout stays protocol-pure for MCP.
+  writeStderr("[anysearch] " + message);
 }
 
 /** Establish this call's task budget from the Active Domain's [budget]. */

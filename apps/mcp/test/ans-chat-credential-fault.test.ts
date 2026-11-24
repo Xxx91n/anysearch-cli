@@ -27,8 +27,10 @@ import { resolveLlmConfig } from "@anysearch-cli/store";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { createMcpToolState, type AnsChatSessionFactory } from "../src/tool-state.js";
+import { writeStderr } from "../src/stderr.js";
 import { buildAnsChatCancelledResult, withCredentialFileFault, type AnsChatToolResult } from "../src/ans-chat-session.js";
 
 const ENV_KEYS = [
@@ -255,8 +257,10 @@ test("the TOML parse warning keeps its line out of stderr too", async () => {
   const env = { ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5", ANS_LLM_API_KEY: "sk-env-key" };
   const realErr = process.stderr.write.bind(process.stderr);
   let err = "";
-  const captured = process.stderr as unknown as { write: (chunk: unknown) => boolean };
-  captured.write = (chunk: unknown) => { err += String(chunk); return true; };
+  const captured = process.stderr as unknown as {
+    write: (chunk: unknown, callback?: (error?: Error | null) => void) => boolean;
+  };
+  captured.write = (chunk, callback) => { err += String(chunk); callback?.(); return true; };
   try {
     const res = await harness(fix, env).call();
     assert.equal(res?.isError, undefined, "env still supplies a usable model");
@@ -267,6 +271,30 @@ test("the TOML parse warning keeps its line out of stderr too", async () => {
   } finally {
     captured.write = realErr;
   }
+});
+
+test("a dead stderr pipe is swallowed, not fatal", async () => {
+  // A parent that closes the pipe sends an asynchronous 'error' event; a
+  // try/catch cannot see it. A real Writable reproduces both the success path
+  // (listener removed) and the EPIPE path (event swallowed).
+  const tick = () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setImmediate(resolve);
+    return promise;
+  };
+
+  const healthy = new Writable({ write(_chunk, _enc, callback) { callback(); } });
+  writeStderr("ok", healthy);
+  await tick();
+  assert.equal(healthy.listenerCount("error"), 0, "a successful write removes its listener");
+
+  const broken = new Writable({ write(_chunk, _enc, callback) { callback(new Error("EPIPE")); } });
+  assert.doesNotThrow(() => writeStderr("boom", broken));
+  await tick();
+  assert.equal(broken.listenerCount("error"), 0, "the async error is swallowed and the listener is gone");
+
+  const syncThrow = { once: () => {}, off: () => {}, write: () => { throw new Error("sync EPIPE"); } };
+  assert.doesNotThrow(() => writeStderr("sync", syncThrow));
 });
 
 test("the fault notice also reaches the consolidate result", async () => {

@@ -38,6 +38,7 @@ import {
   type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
+import { writeStderr } from "./stderr.js";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -110,12 +111,8 @@ function warnOnce(key: string, detail: string): void {
   if (warned.has(key)) return;
   if (warned.size >= WARNED_MAX) warned.clear();
   warned.add(key);
-  // stdout stays protocol-pure for MCP; a dead stderr must not break the call.
-  try {
-    process.stderr.write("[anysearch] ans_chat memory wiring: " + detail + "\n");
-  } catch {
-    /* fail-open */
-  }
+  // stdout stays protocol-pure for MCP.
+  writeStderr("[anysearch] ans_chat memory wiring: " + detail);
 }
 
 /**
