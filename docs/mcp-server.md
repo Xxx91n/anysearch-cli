@@ -202,7 +202,7 @@ The server follows the MCP rule that an execution failure is an
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, and the failure rule below holds (`failed`) | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
-| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — the last round's, except that a failed last round reads `answer` when merged results are still returned and `empty` when an arm answered earlier and brought nothing back) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
+| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — the last round's, except that a last round which came back empty (`failed`/`cancelled`) reads `answer` when merged results are in hand, and `failed` reads `empty` when an arm answered earlier) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `credentialSources`, plus sufficiency / attribution when present |
 | Search returned zero hits, at least one provider answered, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`; no `abstain` marker |
 | Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome` (null on `research_web` when the caller aborted before any round finished), `providersQueried`, `providersCancelled`, `credentialSources`; `interrupted: true` when the caller aborted the call, never for an arm the engine's deadline cut off |
 | Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `credentialSources` |
@@ -300,10 +300,10 @@ Rules behind the table:
   `abstain`. For `research_web`, the marker describes the **last round only**.
   Results merged from earlier rounds stay in the response, so a non-null marker
   does not mean the whole result set is empty. `outcome` is this call's verdict:
-  the completed round's, except that a failed last round reads `answer` when
-  merged results are in hand and `empty` when an arm answered earlier. It is
-  null only when the caller aborted before any round finished, where
-  `interrupted: true` says why.
+  the completed round's, except that a last round which came back empty
+  (`failed`/`cancelled`) reads `answer` when merged results are in hand, and
+  `failed` reads `empty` when an arm answered earlier. It is null only when the
+  caller aborted before any round finished, where `interrupted: true` says why.
 - `query_knowledge` has no handler-level catch. Adapter resolution and
   retrieval are designed to keep going when something fails. But an
   unexpected exception reaches the SDK, which returns it as an `isError`

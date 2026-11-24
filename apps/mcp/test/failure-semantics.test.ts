@@ -494,6 +494,27 @@ async function main() {
       );
     }
 
+    // ---- 8e. research_web: a cut-off last round with merged results is `answer` ----
+    {
+      let round = 0;
+      const eng = makeEngine(async () => {
+        round++;
+        // Round 1 answered with a result; round 2's only arm was cut off by the
+        // engine deadline. The call still returned results, so it is not
+        // `cancelled` — the docs table ties that word to "nothing came back".
+        return round === 1 ? partialEnvelope() : allCancelledEnvelope();
+      });
+      const res = await captureHandlers(eng).research_web({ question: "x", depth: "standard" });
+      assert(res?.isError !== true, "research result then cancel: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.outcome === "answer", "research result then cancel: content says outcome=answer (got " + doc.outcome + ")");
+      assert(res?.structuredContent?.outcome === "answer", "research result then cancel: structuredContent agrees");
+      assert(
+        JSON.stringify(doc.providersCancelled) === JSON.stringify(["anysearch"]),
+        "research result then cancel: the cut-off arm is still named (" + JSON.stringify(doc.providersCancelled) + ")",
+      );
+    }
+
     // ---- 9. Abstain keeps its successful policy-result contract ----
     {
       const abstainEnvelope = {

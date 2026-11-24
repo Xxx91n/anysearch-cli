@@ -3,12 +3,9 @@
 // The engine classifies a search once and writes the answer into the envelope
 // (metadata.outcome) and the audit span (anysearch.outcome); the CLI, search_web
 // and the trace read that value and never decide again. research_web makes one
-// mapping at its exit, because its verdict describes the call: a dead last round
-// reads as answer when results are in hand and as empty otherwise (see that
-// tool). The five values are first match wins; classifySearchOutcome below says
-// which one fires when. A result is an answer even beside a failed arm (the arm is named
-// in providersFailed), and cancelled outranks abstain because "nothing in this
-// domain" needs the whole fanout to have finished.
+// mapping at its exit, because its verdict describes the call rather than the
+// last round (see that tool). The five values are first match wins;
+// classifySearchOutcome below says which one fires when.
 
 export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "empty"] as const;
 

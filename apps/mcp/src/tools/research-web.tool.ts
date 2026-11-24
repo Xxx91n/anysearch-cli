@@ -148,13 +148,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // first round leaves the verdict null.
           const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
           const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
-          // This call's verdict. `failed` belongs to the error channel, never to
-          // a successful call, so a dead last round reads as the call's answer
-          // when results are in hand and as its `empty` when an arm answered
-          // earlier and brought nothing back. The dead arms still ride
-          // providersFailed.
+          // This call's verdict. `failed` and `cancelled` both describe a round
+          // that came back empty, and the docs table ties them to "nothing came
+          // back" — a call holding merged results ended with an answer, whatever
+          // the last round said. With nothing in hand, a dead last round is the
+          // call's `empty` when an arm answered earlier. The dead and cut-off
+          // arms still ride providersFailed / providersCancelled.
           let callOutcome = lastOutcome;
-          if (lastOutcome === "failed") callOutcome = allResults.length > 0 ? "answer" : "empty";
+          if (allResults.length > 0) callOutcome = "answer";
+          else if (lastOutcome === "failed") callOutcome = "empty";
           const summary = JSON.stringify(
             {
               question,
