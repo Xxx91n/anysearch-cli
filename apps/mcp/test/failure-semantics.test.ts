@@ -53,7 +53,7 @@ const fakeSpan = {
   finish: () => {},
 };
 
-type Handler = (args: unknown) => Promise<any>;
+type Handler = (args: unknown, ctx?: { mcpReq?: { signal?: AbortSignal } }) => Promise<any>;
 
 // Empty resolver roots created below, removed in main()'s finally.
 const failureRoots: string[] = [];
@@ -225,6 +225,36 @@ function allCancelledEnvelope(): FusedEnvelope {
       providersQueried: ["anysearch"],
       providersFailed: [],
       providersCancelled: ["anysearch"],
+      elapsedMs: 1,
+      outcome: "cancelled",
+    },
+  } as FusedEnvelope;
+}
+
+function abstainEnvelope(): FusedEnvelope {
+  return {
+    results: [],
+    answers: [],
+    metadata: {
+      providersQueried: ["exa"],
+      providersFailed: [],
+      providersCancelled: [],
+      elapsedMs: 1,
+      outcome: "abstain",
+      abstain: { abstain: true, reason: "domain_filter_empty", domain: "docs", preFiltered: 3, postFiltered: 0, gate: "post" },
+    },
+  } as FusedEnvelope;
+}
+
+function mixedFailedCancelledEnvelope(): FusedEnvelope {
+  return {
+    results: [],
+    answers: [],
+    metadata: {
+      providersQueried: ["exa", "anysearch"],
+      providersFailed: ["exa"],
+      providersCancelled: ["anysearch"],
+      providerErrorClasses: { exa: "transient" },
       elapsedMs: 1,
       outcome: "cancelled",
     },
@@ -438,13 +468,18 @@ async function main() {
         "partial cancel: structuredContent names the cut-off arm");
       assert(partial?.structuredContent?.outcome === "answer", "partial cancel: results still win, outcome=answer");
       assert(pDoc.outcome === "answer", "partial cancel: content agrees");
+      // A grace-window cutoff is a normal degradation; results in hand mean the
+      // call is not interrupted. Widening the flag to "any cancelled arm" fails here.
+      assert(partial?.structuredContent?.interrupted === undefined, "partial cancel: results in hand, so not interrupted");
 
       // Whole pool cut off: providersCancelled === providersQueried is the
       // signal. It stays a success — a cancelled arm did not fail — and there
       // is no new error branch for it.
       const all = await captureHandlers(makeEngine(async () => allCancelledEnvelope())).search_web({ query: "x" });
       assert(all?.isError !== true, "all cancel: isError is not true");
-      assert(all?.structuredContent?.interrupted === undefined, "all cancel: no caller abort, so no interrupted marker");
+      // Nothing came back. Whoever cut the arm — the caller or the engine's
+      // deadline — the task wrapper must not read this as a clean finish.
+      assert(all?.structuredContent?.interrupted === true, "all cancel: nothing came back, so the call is interrupted");
       const aDoc = JSON.parse(String(all?.content?.[0]?.text));
       assert(JSON.stringify(aDoc.providersQueried) === JSON.stringify(["anysearch"]), "all cancel: content names the asked arm");
       assert(JSON.stringify(aDoc.providersCancelled) === JSON.stringify(["anysearch"]), "all cancel: content names the cut-off arm");
@@ -453,6 +488,22 @@ async function main() {
       assert(all?.structuredContent?.outcome === "cancelled", "all cancel: structuredContent says outcome=cancelled");
       assert(aDoc.outcome === "cancelled", "all cancel: content says outcome=cancelled");
       assert(aDoc.abstain === null, "all cancel: no abstain marker");
+
+      // A mixed pool is `cancelled` too: one arm fell over, another was cut,
+      // and not every queried arm failed. The failure fields ride the success
+      // and the two arm lists are unequal — equality is not the signal here.
+      const mixed = await captureHandlers(makeEngine(async () => mixedFailedCancelledEnvelope())).search_web({ query: "x" });
+      assert(mixed?.isError !== true, "mixed failed+cancel: isError is not true");
+      assert(mixed?.structuredContent?.outcome === "cancelled", "mixed failed+cancel: structuredContent says outcome=cancelled");
+      assert(mixed?.structuredContent?.interrupted === true, "mixed failed+cancel: nothing came back, so the call is interrupted");
+      const mDoc = JSON.parse(String(mixed?.content?.[0]?.text));
+      assert(mDoc.outcome === "cancelled", "mixed failed+cancel: content says outcome=cancelled");
+      assert(JSON.stringify(mDoc.providersQueried) === JSON.stringify(["exa", "anysearch"]), "mixed failed+cancel: content names who was asked");
+      assert(JSON.stringify(mDoc.providersCancelled) === JSON.stringify(["anysearch"]), "mixed failed+cancel: content names the cut-off arm");
+      assert(JSON.stringify(mDoc.providersFailed) === JSON.stringify(["exa"]), "mixed failed+cancel: content names the failed arm");
+      assert(JSON.stringify(mixed?.structuredContent?.providersFailed) === JSON.stringify(["exa"]), "mixed failed+cancel: structuredContent names the failed arm");
+      assert(mixed?.structuredContent?.providerErrorClasses?.exa === "transient", "mixed failed+cancel: structuredContent carries the error class");
+      assert(mDoc.abstain === null, "mixed failed+cancel: no abstain marker");
     }
 
     // ---- 8c. research_web reports the LAST round's arm state, never a union (#475) ----
@@ -513,23 +564,142 @@ async function main() {
         JSON.stringify(doc.providersCancelled) === JSON.stringify(["anysearch"]),
         "research result then cancel: the cut-off arm is still named (" + JSON.stringify(doc.providersCancelled) + ")",
       );
+      // The last round came back `cancelled`, but merged results make the call
+      // `answer`; the flag follows the call verdict, not the round.
+      assert(
+        res?.structuredContent?.interrupted === undefined,
+        "research result then cancel: merged results in hand, so not interrupted",
+      );
+    }
+
+    // ---- 8f. research_web: every arm cut by the engine deadline is interrupted ----
+    {
+      const res = await captureHandlers(makeEngine(async () => allCancelledEnvelope())).research_web({
+        question: "x",
+        depth: "brief",
+      });
+      assert(res?.isError !== true, "research all cancel: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      // Nothing came back. The round finished with every arm cut, so the call
+      // must say it was interrupted rather than read as a clean zero-result run.
+      assert(res?.structuredContent?.interrupted === true, "research all cancel: nothing came back, so the call is interrupted");
+      assert(doc.outcome === "cancelled", "research all cancel: content says outcome=cancelled");
+      assert(res?.structuredContent?.outcome === "cancelled", "research all cancel: structuredContent agrees");
+      assert(
+        JSON.stringify(doc.providersQueried) === JSON.stringify(["anysearch"]),
+        "research all cancel: content names the asked arm",
+      );
+      assert(
+        JSON.stringify(doc.providersCancelled) === JSON.stringify(["anysearch"]),
+        "research all cancel: content names the cut-off arm",
+      );
+      assert(doc.abstain === null, "research all cancel: no abstain marker");
+    }
+
+    // ---- 8g. research_web: an abstain marker describes the last round only ----
+    {
+      let round = 0;
+      const eng = makeEngine(async () => {
+        round++;
+        // Round 1 answered with a result; round 2's gate emptied the pool. The
+        // merged result stays in the response, so a non-null marker must not be
+        // read as "the whole call is empty".
+        return round === 1 ? partialEnvelope() : abstainEnvelope();
+      });
+      const res = await captureHandlers(eng).research_web({ question: "x", depth: "standard" });
+      assert(res?.isError !== true, "research result then abstain: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.totalResults === 1, "research result then abstain: the merged result stays in the response");
+      assert(doc.outcome === "answer", "research result then abstain: content says outcome=answer (got " + doc.outcome + ")");
+      assert(res?.structuredContent?.outcome === "answer", "research result then abstain: structuredContent agrees");
+      assert(res?.structuredContent?.abstain?.gate === "post", "research result then abstain: the marker describes the last round");
+      assert(res?.structuredContent?.abstain?.preFiltered === 3, "research result then abstain: the gate count is readable");
+      assert(doc.abstain?.abstain === true, "research result then abstain: content carries the same marker");
+    }
+
+    // ---- 8h. research_web: a markerless last round does not erase an earlier abstain ----
+    {
+      let round = 0;
+      const eng = makeEngine(async () => {
+        round++;
+        // Round 1 abstained; round 2 answered with a result. The last round has
+        // no marker, so the response has none either — a union or a
+        // first-non-null implementation would keep the stale one.
+        return round === 1 ? abstainEnvelope() : partialEnvelope();
+      });
+      const res = await captureHandlers(eng).research_web({ question: "x", depth: "standard" });
+      assert(res?.isError !== true, "research abstain then result: isError is not true");
+      const doc = JSON.parse(String(res?.content?.[0]?.text));
+      assert(doc.totalResults === 1, "research abstain then result: the merged result stays in the response");
+      assert(doc.outcome === "answer", "research abstain then result: content says outcome=answer (got " + doc.outcome + ")");
+      assert(res?.structuredContent?.outcome === "answer", "research abstain then result: structuredContent agrees");
+      assert(res?.structuredContent?.abstain === undefined, "research abstain then result: the last round has no marker");
+      assert(doc.abstain === null, "research abstain then result: an empty marker does not mean the result set is empty");
+    }
+
+    // ---- 8i. A caller abort with results in hand stays `answer` + `interrupted` ----
+    {
+      const caller = new AbortController();
+      caller.abort("caller left");
+      const search = await captureHandlers(makeEngine(async () => partialEnvelope())).search_web(
+        { query: "x" },
+        { mcpReq: { signal: caller.signal } },
+      );
+      assert(search?.isError !== true, "answer + caller abort: isError is not true");
+      const sDoc = JSON.parse(String(search?.content?.[0]?.text));
+      assert(sDoc.totalResults === 1, "answer + caller abort: the result is kept");
+      assert(sDoc.outcome === "answer", "answer + caller abort: content says outcome=answer");
+      assert(search?.structuredContent?.outcome === "answer", "answer + caller abort: structuredContent agrees");
+      assert(search?.structuredContent?.interrupted === true, "answer + caller abort: the call says it was interrupted");
+
+      // Round 1 lands a result; the round-2 request aborts the caller mid-search,
+      // so round 2 is dropped and the call still holds round 1.
+      const researchCaller = new AbortController();
+      let researchRound = 0;
+      const researchEng = makeEngine(async () => {
+        researchRound++;
+        if (researchRound === 2) researchCaller.abort("caller left");
+        return partialEnvelope();
+      });
+      const research = await captureHandlers(researchEng).research_web(
+        { question: "x", depth: "standard" },
+        { mcpReq: { signal: researchCaller.signal } },
+      );
+      assert(research?.isError !== true, "research answer + caller abort: isError is not true");
+      const rDoc = JSON.parse(String(research?.content?.[0]?.text));
+      assert(rDoc.totalResults === 1, "research answer + caller abort: the first round's result is kept");
+      assert(rDoc.outcome === "answer", "research answer + caller abort: content says outcome=answer");
+      assert(research?.structuredContent?.outcome === "answer", "research answer + caller abort: structuredContent agrees");
+      assert(research?.structuredContent?.interrupted === true, "research answer + caller abort: the call says it was interrupted");
+    }
+
+    // ---- 8j. research_web: a mixed failed+cancelled pool is not an outage ----
+    {
+      const res = await captureHandlers(makeEngine(async () => mixedFailedCancelledEnvelope())).research_web({
+        question: "x",
+        depth: "brief",
+      });
+      assert(res?.isError !== true, "research mixed failed+cancel: isError is not true");
+      const text = String(res?.content?.[0]?.text);
+      assert(!text.includes("all providers failed"), "research mixed failed+cancel: not reported as an outage");
+      const doc = JSON.parse(text);
+      assert(doc.outcome === "cancelled", "research mixed failed+cancel: content says outcome=cancelled");
+      assert(res?.structuredContent?.outcome === "cancelled", "research mixed failed+cancel: structuredContent agrees");
+      assert(res?.structuredContent?.interrupted === true, "research mixed failed+cancel: the call is interrupted");
+      assert(
+        JSON.stringify(doc.providersFailed) === JSON.stringify(["exa"]),
+        "research mixed failed+cancel: the failed arm is named",
+      );
+      assert(
+        JSON.stringify(doc.providersCancelled) === JSON.stringify(["anysearch"]),
+        "research mixed failed+cancel: the cut-off arm is named",
+      );
+      assert(doc.abstain === null, "research mixed failed+cancel: no abstain marker");
     }
 
     // ---- 9. Abstain keeps its successful policy-result contract ----
     {
-      const abstainEnvelope = {
-        results: [],
-        answers: [],
-        metadata: {
-          providersQueried: ["exa"],
-          providersFailed: [],
-          providersCancelled: [],
-          elapsedMs: 1,
-          outcome: "abstain",
-          abstain: { abstain: true, reason: "domain_filter_empty", domain: "docs", preFiltered: 3, postFiltered: 0, gate: "post" },
-        },
-      } as FusedEnvelope;
-      const res = await captureHandlers(makeEngine(async () => abstainEnvelope)).search_web({ query: "x" });
+      const res = await captureHandlers(makeEngine(async () => abstainEnvelope())).search_web({ query: "x" });
       assert(res?.isError !== true, "abstain: isError is not true");
       assert(res?.structuredContent?.abstain?.abstain === true, "abstain: structured marker preserved");
       assert(res?.structuredContent?.outcome === "abstain", "abstain: structuredContent says outcome=abstain");

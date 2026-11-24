@@ -15,6 +15,7 @@ import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.j
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
+  isInterrupted,
   outcomeOf,
   providerFailureMetadata,
   toolError,
@@ -121,10 +122,14 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             if (envelope.metadata?.sufficiency?.verdict === "correct") break;
           }
 
-          // Zero results with no arm ever answering is an outage, not an
-          // empty research result. Name the failed arms; no structuredContent.
+          // An outage is the last completed round's every queried arm failing
+          // with no arm answering in any round. `failedProviders` is a union
+          // across rounds, so keying this on its length would make a mixed
+          // failed+cancelled pool an outage; the last round's `failed` verdict
+          // is the one that means "all of them".
           const failedProvidersList = [...failedProviders];
-          if (allResults.length === 0 && !anyProviderAnswered && failedProvidersList.length > 0) {
+          const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
+          if (allResults.length === 0 && !anyProviderAnswered && lastOutcome === "failed") {
             return toolFailure(allProvidersFailedText("research_web", failedProvidersList, providerErrorClasses, providerErrorRetryAfterSeconds));
           }
           // Partial success: at least one arm answered in some round.
@@ -147,7 +152,6 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // round's envelope is not trusted, so a caller that aborts during the
           // first round leaves the verdict null.
           const lastAbstain = lastEnvelope?.metadata?.abstain ?? null;
-          const lastOutcome = lastEnvelope ? outcomeOf(lastEnvelope) : null;
           // This call's verdict. `failed` and `cancelled` both describe a round
           // that came back empty, and the docs table ties them to "nothing came
           // back" — a call holding merged results ended with an answer, whatever
@@ -190,10 +194,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           // 结果一定带 structuredContent：outcome、credentialSources、
           // providersQueried、providersCancelled 恒有值；其余字段有值时才加。
           const structuredContent = {
-            // #304 review: a cancelled research call stops after the aborted
-            // round and then returns normally. Say so, or the task wrapper
-            // records the interrupted call as a clean finish.
-            ...(signal?.aborted ? { interrupted: true } : {}),
+            // interrupted follows only the call verdict (`callOutcome`): the
+            // last completed round, or a caller abort. Earlier-round cut-off
+            // arms do not carry over.
+            ...(isInterrupted(callOutcome, signal) ? { interrupted: true } : {}),
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),

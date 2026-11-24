@@ -1,3 +1,12 @@
+## Unreleased — #515: 全取消的 MCP 结果带 `interrupted`
+
+一句话说清：**零结果、有臂被掐断时，`search_web` 和 `research_web` 现在都带 `structuredContent.interrupted: true`；以前只有调用方自己取消才带，引擎截止把臂掐光时宿主会把一次空结果当成干净完成。**
+
+### Changed
+
+- **`search_web`**：`outcome === "cancelled"` 时带 `interrupted: true`，不再只认调用方 abort。
+- **`research_web`**：整个调用判成 `cancelled` 时也带。
+
 ## Unreleased — #514: 零结果分成五档，CLI 和两个 MCP 工具读同一个结论
 
 一句话说清：**以前「零结果」只有一个说法，全臂失败（上游挂了）和域内被滤空（策略拒答）在退出码和输出里分不开。现在引擎在装配信封前算一次 outcome，五个值（answer / failed / cancelled / abstain / empty）写进 `metadata.outcome` 和审计 span，CLI 的 `--json` 与退出码、`search_web` / `research_web` 的 `structuredContent` 都读这一个值。**
