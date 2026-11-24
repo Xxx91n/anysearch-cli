@@ -40,6 +40,7 @@ import {
 } from "@anysearch-cli/kernel";
 import {
   domainTomlPath,
+  formatLlmConfigFault,
   resolveConsolidateScope,
   ConsolidateScopeError,
   toBudgetCaps,
@@ -504,6 +505,8 @@ export function registerAnsChat(
           return toolFailure("ans_chat: message is required unless operation is \"consolidate\".");
         }
         if (!providerName || !modelName) {
+          const configFault = formatLlmConfigFault(cfg);
+          if (configFault) return toolFailure("ans_chat: " + configFault);
           // Missing configuration is an execution failure, not a successful
           // chat whose text happens to say "not configured". #300: name both
           // ways in — env OR a config file — so a host that wrote a TOML knows

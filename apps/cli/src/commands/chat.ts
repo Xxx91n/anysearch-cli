@@ -13,7 +13,7 @@ import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
 import { createEngine } from "../composition";
-import { resolveLlmConfig, userConfigPath } from "../config-llm";
+import { formatLlmConfigFault, resolveLlmConfig, userConfigPath } from "../config-llm";
 import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
@@ -142,6 +142,11 @@ export async function runChat(argv: string[]): Promise<number> {
   // Resolve LLM config: CLI flag > env > project > user > default.
   const cfg = resolveLlmConfig({ home: configHome, flags, credentialsFile: credentialFile });
   if (!cfg.provider || !cfg.model) {
+    const configFault = formatLlmConfigFault(cfg);
+    if (configFault) {
+      process.stderr.write(configFault + "\n");
+      return 3;
+    }
     process.stderr.write("LLM provider not configured.\n");
     process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes " + userConfigPath() + ")\n");
     process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
