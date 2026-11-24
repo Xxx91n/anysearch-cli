@@ -609,7 +609,6 @@ export class RetroaererdEngine {
           // keep the captured error's CLASS beside the flag —
           // the "flag without error text" generic-wrapping defect ends here
           // (enum only; forensic name+message stays with the probe channel).
-          // Declared class first, text as the fallback (#494).
           providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error, inner.providerErrorClass);
           // Recorded whenever the arm said one: whether any sentence uses it is
           // the hint table's business, not this engine's.

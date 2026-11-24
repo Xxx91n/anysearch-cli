@@ -264,11 +264,11 @@ export type ProviderErrorClass = (typeof ERROR_CLASSES)[number];
 // matcher sees name and message at once.
 //
 // A class the adapter settled on arrives as `providerErrorClass` and wins here.
-// It records the adapter's own reading rather than a second parse of the
-// message: that message carries upstream reply text, and a marker inside it used
-// to pick the class (#494). Without a declared class the words are the only
-// signal — and upstream text is part of those words, so word matching stays a
-// heuristic, never a boundary.
+// That reading is usually inferred from the reply's own words, so it is a
+// conclusion, not a trusted input; what it saves is the engine re-reading the
+// whole message. Without a declared class the words are the only signal, and
+// upstream text is part of those words: word matching is a heuristic, never a
+// boundary.
 const ERROR_CLASS_MARKER = "provider-error-class:";
 const CLASS_SET: ReadonlySet<string> = new Set(ERROR_CLASSES);
 

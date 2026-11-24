@@ -166,7 +166,7 @@ const KEY_FIELD_GLOBAL = new RegExp(KEY_FIELD_SOURCE, "gi");
 const PROVISIONING_NOTICE = new RegExp(PROVISIONING_REPLY_TEXT, "i");
 
 // Name a reply failure by its text. The class it returns is carried by the
-// caller's error object; the marker in the message is only for a human (#494).
+// caller's error object; the marker in the message is only for a human.
 function replyFailurePrefix(md: string): ReplyFailure | undefined {
   if (PROVISIONING_NOTICE.test(md)) {
     return { cls: "free-quota-exhausted", prefix: "free quota exhausted: upstream returned a sign-up/issued-key reply instead of results" };
