@@ -147,9 +147,10 @@ jobs:
     # A wedged lane must fail instead of holding the job for the workflow
     # default (360). The build, install-smoke and three acceptance lanes all
     # live in this job; windows runs land around 9-11 minutes, so 20 covers a
-    # slow day. The build step and the spawns that carry no timeout of their
-    # own — such as pack, npm install, and the acceptance lanes' probes — are
-    # what this bound is here for.
+    # slow day. The build step, `pnpm pack` and the npm installs pass no timeout
+    # of their own, so this bound is what ends a wedged one. Each lane bounds its
+    # own single calls; those bounds can sum past 20, and a hang that gets that
+    # far ends at the job level, where the log no longer names the lane.
     timeout-minutes: 20
     strategy:
       fail-fast: false
