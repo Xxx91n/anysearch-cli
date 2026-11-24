@@ -354,8 +354,8 @@ test("the real workspace: every reader in the table exists, and domains runs onl
       assert.ok(names.has(reader), `${entry.path} names ${reader}, which is not a workspace package`);
     }
   }
-  // Both sides are order-insensitive: the table's literal order is irrelevant,
-  // because the plan sorts what it prints.
+  // The table's own order is not a contract, so it is sorted here: the constant
+  // on the right is already sorted when it is exported.
   assert.deepEqual(
     Object.fromEntries(ROOT_READERS.map((entry) => [entry.path, [...entry.readers].sort()])),
     EXPECTED_ROOT_READERS,
