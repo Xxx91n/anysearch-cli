@@ -72,9 +72,65 @@ interface ProviderRequest { key: string; start: number; end: number | null; body
 // hanging run never reached the provider" while it plainly had.
 let requestLog: ProviderRequest[] = [];
 let openResponses = new Set<ServerResponse>();
+
+// C4's barrier. Two different sessions must reach the provider at the same
+// time, so the first of the pair is held until its peer arrives and then both
+// answer together. A shared lock makes the second request arrive only after
+// the first response (or never), which is what this observes — a busy machine
+// cannot turn the verdict red the way a wall-clock overlap test can.
+// 30 s: a loaded c8 runner has stretched a 60 ms wait into 6 s in this
+// repo's own tests, so the cap is what keeps a slow cold start from being
+// read as serialization. The green path releases long before it.
+const PARALLEL_BARRIER_MS = 30_000;
+interface ParallelBarrier {
+  firstKey: string | null;
+  firstArrivedAt: number | null;
+  secondKey: string | null;
+  secondArrivedAt: number | null;
+  timedOut: boolean;
+  release: (() => void) | null;
+  timer: NodeJS.Timeout | null;
+}
+function newParallelBarrier(): ParallelBarrier {
+  return {
+    firstKey: null, firstArrivedAt: null, secondKey: null, secondArrivedAt: null,
+    timedOut: false, release: null, timer: null,
+  };
+}
+let parallelBarrier = newParallelBarrier();
 function resetEndpointState(): void {
   requestLog = [];
   openResponses = new Set();
+  parallelBarrier = newParallelBarrier();
+}
+
+/**
+ * Hold one C4 provider request until the other session's request arrives.
+ * Returns once the pair is released: both arrived, or the wait hit
+ * PARALLEL_BARRIER_MS. On timeout the caller still answers, so both chats
+ * settle and C4 can fail with the "second request did not arrive" fact
+ * instead of leaving a response — and Promise.all — hanging forever.
+ */
+function holdParallelPair(key: string, arrivedAt: number): Promise<void> {
+  const barrier = parallelBarrier;
+  if (barrier.firstKey === null) {
+    barrier.firstKey = key;
+    barrier.firstArrivedAt = arrivedAt;
+    return new Promise<void>((resolve) => {
+      barrier.release = () => resolve();
+      barrier.timer = setTimeout(() => {
+        barrier.timedOut = true;
+        barrier.release = null;
+        resolve();
+      }, PARALLEL_BARRIER_MS);
+    });
+  }
+  barrier.secondKey = key;
+  barrier.secondArrivedAt = arrivedAt;
+  if (barrier.timer) { clearTimeout(barrier.timer); barrier.timer = null; }
+  barrier.release?.();
+  barrier.release = null;
+  return Promise.resolve();
 }
 
 function lastUserText(body: string): string {
@@ -114,6 +170,10 @@ const fake = createServer(async (req, res) => {
   requestLog.push(entry);
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   openResponses.add(res);
+  if (key === "LOCK-P-ONE" || key === "LOCK-P-TWO") {
+    // C4: do not answer until both different-session calls are here at once.
+    await holdParallelPair(key, entry.start);
+  }
   if (key === "LOCK-HANG") {
     // Hold the connection open after a partial chunk: the holder keeps the
     // session lock until the test kills it.
@@ -624,15 +684,32 @@ async function main() {
       const elapsed = Date.now() - started;
       const p1 = requestLog.find((r) => r.key === "LOCK-P-ONE");
       const p2 = requestLog.find((r) => r.key === "LOCK-P-TWO");
+      const barrier = parallelBarrier;
+      const arrivalGapMs = barrier.firstArrivedAt !== null && barrier.secondArrivedAt !== null
+        ? barrier.secondArrivedAt - barrier.firstArrivedAt : null;
+      const timing = {
+        p1: { start: p1?.start ?? null, end: p1?.end ?? null },
+        p2: { start: p2?.start ?? null, end: p2?.end ?? null },
+      };
 
       assert(r1.ok && r2.ok && r1.structured?.sessionId === "parallel-one-" + NONCE
         && r2.structured?.sessionId === "parallel-two-" + NONCE,
         "C4: both different-session calls complete with their own handle");
-      // Overlap is the proof, not wall-clock: engine cold start is on the
-      // clock too, so a serialized pair and a parallel pair can both be slow.
-      assert(p1 != null && p2 != null && p1.start < (p2.end ?? Infinity) && p2.start < (p1.end ?? Infinity),
-        "C4: the two sessions' provider calls overlap — different sessions are not serialized "
-        + JSON.stringify({ p1, p2: { start: p2?.start, end: p2?.end }, elapsed }));
+      // Overlap is not inferred from two wall-clock windows: the endpoint held
+      // the first request until the second arrived, so a pass means both were
+      // open at the provider at once and a shared lock fails with the wait.
+      assert(barrier.firstKey !== null && barrier.secondKey !== null && !barrier.timedOut,
+        "C4: different sessions run in parallel — waited " + PARALLEL_BARRIER_MS
+        + " ms for the second provider request and it "
+        + (barrier.secondArrivedAt === null ? "never arrived" : "arrived only after " + arrivalGapMs + " ms")
+        + " " + JSON.stringify({ ...timing, barrier: {
+          firstKey: barrier.firstKey, firstArrivedAt: barrier.firstArrivedAt,
+          secondKey: barrier.secondKey, secondArrivedAt: barrier.secondArrivedAt,
+          arrivalGapMs, timedOut: barrier.timedOut,
+        }, elapsed }));
+      if (arrivalGapMs !== null && !barrier.timedOut) {
+        console.log("C4 barrier: both provider requests arrived, gap " + arrivalGapMs + " ms (elapsed " + elapsed + " ms)");
+      }
 
       a.child.kill("SIGKILL"); b.child.kill("SIGKILL");
       await Promise.all([a.exited, b.exited]);
