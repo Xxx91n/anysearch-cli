@@ -578,8 +578,7 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
-  // The temp name starts with a dot; both the sweep and the write use these
-  // two pieces, so a renamed shape cannot leave the sweep matching the old one.
+  // The temp name starts with a dot; the sweep and the write share these two pieces.
   const tempPrefix = "." + basename(path) + ".";
   const tempSuffix = ".tmp";
   sweepStaleWorkFiles(path, { suffix: tempSuffix, prefix: tempPrefix });

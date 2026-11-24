@@ -18,13 +18,20 @@ export const STALE_WORK_FILE_AGE_MS = 60 * 60 * 1000;
  * target's name plus a dot and is spelled out by a caller whose name differs.
  * `options.recursive` is off unless the caller stages a directory: a plain
  * `rmSync` must not turn a name match into a whole tree deletion.
+ * `options.isLive` skips a name whose owner still runs, for work named after the
+ * pid that created it.
  *
  * Every failure is swallowed: cleanup must never decide whether the real write
  * happens.
  */
 export function sweepStaleWorkFiles(
   target: string,
-  options: { suffix: string; prefix?: string; recursive?: boolean },
+  options: {
+    suffix: string;
+    prefix?: string;
+    recursive?: boolean;
+    isLive?: (name: string) => boolean;
+  },
 ): void {
   const dir = dirname(target);
   const prefix = options.prefix ?? basename(target) + ".";
@@ -34,6 +41,7 @@ export function sweepStaleWorkFiles(
   try { names = readdirSync(dir); } catch { return; }
   for (const name of names) {
     if (!name.startsWith(prefix) || !name.endsWith(options.suffix)) continue;
+    if (options.isLive?.(name)) continue;
     const file = join(dir, name);
     try {
       if (!hasRecentWrite(file, recursive, cutoff)) {

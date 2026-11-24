@@ -139,13 +139,32 @@ function writtenSince(path: string, since: number): boolean {
 /** Suffix of the directory a cross-volume copy stages beside its target. */
 const COPY_STAGING_SUFFIX = ".copying";
 
+/** The staging name ends in the pid that owns the copy: `<target>.<pid>.copying`. */
+function copyStagingOwnerIsLive(name: string): boolean {
+  if (!name.endsWith(COPY_STAGING_SUFFIX)) return false;
+  const pid = Number(name.slice(0, -COPY_STAGING_SUFFIX.length).split(".").pop());
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 /**
  * Clear what a killed cross-volume copy left beside `to`. The staging entry is
- * a directory, so it is removed recursively; the same sweep runs before a new
- * copy starts.
+ * a directory, so it is removed recursively; an owner that still runs is left
+ * alone, because a copy can stall longer than the age window. The same sweep
+ * runs before a new copy starts.
  */
 export function sweepCopyStaging(to: string): void {
-  sweepStaleWorkFiles(to, { suffix: COPY_STAGING_SUFFIX, recursive: true });
+  sweepStaleWorkFiles(to, {
+    suffix: COPY_STAGING_SUFFIX,
+    recursive: true,
+    isLive: copyStagingOwnerIsLive,
+  });
 }
 
 /**

@@ -440,6 +440,9 @@ export function setAsideUnreadable(path: string): string {
   return aside;
 }
 
+/** Suffix of the database file a killed adoption staged beside its target. */
+const ADOPT_WORK_SUFFIX = ".adopting";
+
 /**
  * #323: publish a consistent copy of `from` at `to` for the directory rename.
  *
@@ -460,14 +463,14 @@ export function setAsideUnreadable(path: string): string {
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  sweepStaleWorkFiles(to, { suffix: ".adopting" });
+  sweepStaleWorkFiles(to, { suffix: ADOPT_WORK_SUFFIX });
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);
   }
   // A name of this call's own: a stray leftover from a killed run can never be
   // mistaken for a published copy, and two processes cannot collide on it.
-  const work = to + "." + process.pid + ".adopting";
+  const work = to + "." + process.pid + ADOPT_WORK_SUFFIX;
   let db: Database.Database | undefined;
   try {
     const conn = openDatabase(from, { timeout: 5000 });

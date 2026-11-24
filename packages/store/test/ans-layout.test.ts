@@ -497,7 +497,7 @@ test("the product's own checkout keeps its builtin domains where the build expec
 test("a stale copy staging directory is removed, not left forever", () => {
   const root = mkdtempSync(join(tmpdir(), "ans-copy-sweep-"));
   const target = join(root, "domains");
-  const stale = target + ".999.copying";
+  const stale = target + ".999999.copying";
   mkdirSync(stale);
   const payload = join(stale, "payload");
   writeFileSync(payload, "left by a killed copy");
@@ -511,7 +511,7 @@ test("a stale copy staging directory is removed, not left forever", () => {
 test("a copy staging directory still being written is not swept", () => {
   const root = mkdtempSync(join(tmpdir(), "ans-copy-live-"));
   const target = join(root, "domains");
-  const live = target + ".999.copying";
+  const live = target + ".999999.copying";
   mkdirSync(live);
   mkdirSync(join(live, "sub"));
   writeFileSync(join(live, "sub", "payload"), "still copying");
@@ -519,4 +519,18 @@ test("a copy staging directory still being written is not swept", () => {
   utimesSync(live, twoHoursAgo, twoHoursAgo); // the staging dir itself looks old
   sweepCopyStaging(target);
   assert.ok(existsSync(live), "a child written just now keeps the directory alive");
+});
+
+test("a staging directory owned by a live process is kept", () => {
+  const root = mkdtempSync(join(tmpdir(), "ans-copy-owner-"));
+  const target = join(root, "domains");
+  const owned = target + "." + process.pid + ".copying";
+  mkdirSync(owned);
+  const payload = join(owned, "payload");
+  writeFileSync(payload, "still copying");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(payload, twoHoursAgo, twoHoursAgo);
+  utimesSync(owned, twoHoursAgo, twoHoursAgo);
+  sweepCopyStaging(target);
+  assert.ok(existsSync(owned), "the process that owns the copy is still running");
 });
