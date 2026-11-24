@@ -87,9 +87,9 @@ export interface ResolvedLlmConfig {
   envKey?: string;
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
-  /** A config file existed but could not be read or parsed. Never carries file contents. */
+  /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
   configFault?: LlmConfigFaultKind;
-  /** A healthy user credential file contains at least one model-provider binding. */
+  /** Set only when no API key came from another source and a healthy user credential file has a model-provider binding. */
   hasStoredModelCredential?: boolean;
 }
 
