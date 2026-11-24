@@ -53,8 +53,23 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
   这个工具还认一个 `objective`，标了 required 但服务端不校验，适配器不发。
 
 免费额度臂声明的模式是 `fast` / `index` / `deep`，**没有 `answer`**：端点没有深度参数，三档打出去是同一条
-请求，`mode` 只改 REST 臂的 `type`。两个能力位也都是否——高级工具 `web_search_advanced_exa` 能带上游域名
-过滤，但它要用 `?tools=` 在 URL 上点名才出现，这一版没接（#447 记着）。
+请求，`mode` 只改 REST 臂的 `type`。两个能力位也都是否；为什么不接 `web_fetch_exa` 和
+`web_search_advanced_exa`，见「## 只借 search（#530 的裁决）」。
+
+## 只借 search（#530 的裁决）
+
+免费额度臂只用 `web_search_exa`，另外两个工具都**故意不接**。这不是端点给不出来，是这一版的选择：
+
+- **`web_fetch_exa`**：默认就在 `tools/list` 里，不用 `?tools=` 点名。入参 `{urls, maxCharacters}`，
+  一次能抓一批，回包是 markdown（`# 标题` 加一行 `URL:`，再是正文），跟搜索那套 `Title:` /
+  `Highlights:` 字段块不是一个形状。不接的理由是**「读一页」是一个新面，不是适配器多一个方法**：
+  要新的能力位、新的引擎入口，还有它自己的额度闸。裁决是押后，位置记在 #530。
+- **`web_search_advanced_exa`**：带 `includeDomains` / 日期区间 / `category`，但要用 `?tools=` 在
+  URL 上点名才出现，而且回包是一段 JSON（`{results:[{url,text,title}]}`）而不是文本块——现有
+  `parseSearchText` 在它上面会解析出 0 条**且不报错**。裁决也是押后：换来的是「窄白名单下少浪费
+  几个结果位」，不是正确性，因为 kernel 的事后过滤本来就是权威。
+
+两条都要先知道的一件额度事实：三个工具烧同一份每日额度，见「## 已知异常」。
 
 ## 回复形状
 
@@ -95,9 +110,19 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 - **429 的形状**：HTTP 429 + `application/json` + JSON-RPC 错误码 `-32000`。分类是 `transient`——这是短窗口
   限速，等一秒真能通，不归 `free-quota-exhausted`。适配器不重试；响应头里有 `retry-after`（秒数或 HTTP
   日期都认）就挂到错误对象上，引擎记进 `providerErrorRetryAfterSeconds`。`X-RateLimit-Reset` 不读。
-- **限速数字**：开源服务的默认是 2 QPS / 每天 50 次每 IP（#447 记的开源服务默认值）。2026-11-23 实测过的是
-  2 QPS 这一半：4 个并发里 1 个被拒，滑动窗口。同一次实测还确认只有 `tools/call` 计数，`initialize` /
-  `tools/list` 不算。
+- **限速数字**：官方 changelog（2026-02-02）公布的是 **3 QPS / 每天 150 次每 IP**。开源实现
+  `api/mcp.ts` 的 `initializeRateLimiters` 里那两个数是环境变量默认值（`RATE_LIMIT_QPS || "2"`、
+  `RATE_LIMIT_DAILY || "50"`），线上由服务端配置覆盖——**别把 2 / 50 当实际值**，#447 当初记的就是
+  这两个默认值。QPS 是滑动 1 秒窗口，每日额度是固定 1 天窗口，只有 `tools/call` 计数，
+  `initialize` / `tools/list` 不算。真实生效阈值只能靠撞 429 看 `retry-after` 实测：2026-11-23 那次
+  （4 个并发 1 个被拒）按当时的数字读作 2 QPS，2026-11-24 复测 4 个并发（2 次搜索 + 2 次抓页）全 200，
+  没复现——两次都只是一个样本，都不足以定值，规划按 50–150 次/天保守算。
+- **三个工具共用同一份额度**：`checkRateLimits` 按客户端 IP 记账，只有一个每日桶
+  （`prefix: "exa-mcp:daily"`），代码里没有工具这个维度。`web_search_exa`、`web_fetch_exa`、
+  `web_search_advanced_exa` 烧的是同一份 QPS 和每日额度，不存在各自独立的配额。
+- **一次 `tools/call` 算一次，不看它带几个 URL**：`countRateLimitedCalls` 数的是 body 里 `tools/call`
+  的条数，所以 `web_fetch_exa` 一次抓 N 个 URL 只记 1 次；反过来，把多条 `tools/call` 打包进一个
+  JSON-RPC 批量请求，每条各记 1 次。
 - **`x-ratelimit-limit` / `x-ratelimit-remaining` 被上游故意置 0**：别把这两个头读成「额度用完了」，
   要看得看 `retry-after`。
 - **IPv6 或代理出口回 403**：没配 key 时走这两个出口，Exa 的文档说会回 403（#447 记的，本机是 IPv4，
