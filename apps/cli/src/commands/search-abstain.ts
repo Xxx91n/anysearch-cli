@@ -130,8 +130,7 @@ export function describeUnconfiguredSource(provider: SearchProviderId, brokenFil
  * 没这个臂，就什么都不写（不编来源）。
  */
 function sourceNote(id: string, sources: Extract<CredentialSources, { status: "resolved" }>): string | undefined {
-  // #533: a fault in the credential file means no arm can have a stored key, so
-  // "not configured" would name the wrong cause for every keyless arm.
+  // 文件坏了的时候，哪条臂都不可能有存着的 key，不能说成「没配」（#533）。
   const noKeyPhrase = sources.credentialFileFault ? BROKEN_FILE_LABEL : NO_KEY_LABEL;
   // tavily / exa 的端点是固定的，没配 key 就走默认服务上的免费额度，失败行可以说全。
   if (id === "tavily" || id === "exa") return describeCredentialSource(sources[id], id, noKeyPhrase);

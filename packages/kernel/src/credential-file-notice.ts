@@ -1,7 +1,9 @@
 // The sentence for each credential-file fault kind, plus the record the engine
-// publishes. One table, because `ans search --json` and both MCP tools carry the
-// same sentence and copies would drift. The CLI's own text is Chinese and keeps
-// its label; only the fact and the classification are shared.
+// publishes.
+//
+// Design: one table for every surface — `ans search --json` and both MCP tools
+// carry the same sentence, and per-host copies drift. The CLI's own text is
+// Chinese and keeps its label; only the fact and the classification are shared.
 //
 // No path, no parse message: the raw error from `readUserCredentials` quotes the
 // line/column and sometimes the value it found, so it stays on stderr.
@@ -23,9 +25,10 @@ const RESTART = "a running MCP server keeps the old read until it restarts";
 
 /**
  * What the user can do, by the errno the file reported: "fix its permissions"
- * is wrong advice for a path that is a directory or a full disk. Total on
- * purpose — adding a code to the closed set fails compilation until someone
- * writes the remedy.
+ * is wrong advice for a path that is a directory or a full disk.
+ *
+ * Design: a total map — adding a code to the closed set fails compilation
+ * until someone writes the remedy.
  */
 const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EACCES: "fix its permissions",
@@ -39,6 +42,7 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   ENFILE: "close some open files and run ans again",
   EBUSY: "retry once nothing else is using the file",
   ETIMEDOUT: "retry once the file is reachable",
+  EIO: "check the disk and retry the read",
 };
 
 /**

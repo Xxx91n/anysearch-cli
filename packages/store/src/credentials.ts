@@ -154,20 +154,23 @@ export interface CredentialBinding {
 }
 
 /**
- * What kind of fault made the credential file unusable. A closed set on
- * purpose: this is the only thing about the file that reaches a
- * machine-readable surface, so it never grows into free text (spec S2 - no
- * file contents, no key fragment).
+ * What kind of fault made the credential file unusable.
+ *
+ * Design: a closed set — this is the only thing about the file that reaches a
+ * machine-readable surface, so it never grows into free text (no file
+ * contents, no key fragment).
  */
 export type CredentialFileFaultKind = "unreadable" | "not-json" | "invalid-structure";
 
 /**
- * The errnos a read failure may report. Closed for the same reason: `e.code` is
- * typed `string`, and only these say something the user can act on.
+ * The errnos a read failure may report.
+ *
+ * Design: a closed set — `e.code` is typed `string`, and only codes with a
+ * remedy the user can act on belong here.
  */
 export const CREDENTIAL_FILE_FAULT_ERRNOS = [
   "EACCES", "EPERM", "EROFS", "EISDIR", "ENOTDIR", "ENAMETOOLONG",
-  "EMFILE", "ENFILE", "EBUSY", "ETIMEDOUT", "ENOSPC",
+  "EMFILE", "ENFILE", "EBUSY", "ETIMEDOUT", "ENOSPC", "EIO",
 ] as const;
 
 export type CredentialFileFaultErrno = (typeof CREDENTIAL_FILE_FAULT_ERRNOS)[number];

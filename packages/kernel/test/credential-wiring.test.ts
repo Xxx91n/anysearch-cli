@@ -465,6 +465,11 @@ test("a pre-parsed credential file still carries its fault, without the value th
       assert.equal(sources?.status, "resolved");
       if (sources?.status !== "resolved") return;
       assert.equal(sources.credentialFileFault?.kind, "invalid-structure");
+      // A real broken file with no key in the environment: all three arms are
+      // keyless, and the fault is what says why.
+      assert.equal(sources.tavily, "none");
+      assert.equal(sources.exa, "none");
+      assert.equal(sources.anysearch, "none");
       const record = JSON.stringify(sources);
       assert.ok(!record.includes("sk-live"), "the record never carries the value the sentence quoted: " + record);
       assert.ok(!record.includes(home), "nor the path");
