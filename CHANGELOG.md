@@ -1,3 +1,24 @@
+## Unreleased — #537: 凭据文件坏了，`ans auth` 不再把存过的 key 说成没配，并给出一条修复路径
+
+一句话说清：**凭据文件是全有或全无地读的——只要有一条记录读不懂，整份文件判成不可信，交回一个空列表。于是 `ans auth` 把文件里明明还躺着的 key 报成 `not set`、退出码 0，脚本完全发现不了；`auth set` 先让用户输 key、再联网验，验完才在写文件那一步说文件坏了，key 被上游拒时用户会以为 key 本身有问题；`auth remove` 同样被拒；没有任何修复路径，唯一出路是删掉整份文件，连带丢掉另外几家的 key。现在坏文件单独一档 `[BROKEN]`、`ans auth` 和 `ans llm` 一起退 1，`set` / `remove` 在读文件那一步就停，新增 `ans auth repair` 只丢读不了的条目。**
+
+### Changed
+
+- **坏文件单独一档 `[BROKEN]`**：`statusLines` 以前只看 `file.bindings`，文件坏掉时拿到空列表就填 `not set`。现在文件有 `error` 时，没有 env key 的 provider 一律报 `[BROKEN]` + `unknown - the credential file could not be read`；靠环境变量拿到 key 的行保持 `[SET]`，因为那个事实不依赖文件。mark 列从 7 格放宽到 8 格，`[SET]` / `[EMPTY]` / `[BROKEN]` 对齐。
+- **退出码跟上**：`ans auth`、`ans auth list`、`ans llm`、`ans llm check` 在坏文件时退 1，健康或文件不存在仍退 0，用法错误仍退 2。`ans doctor` 对同一份文件早就退 1，`set` / `remove` 也退 1，`status` 退 0 是唯一的例外。
+- **`ans auth set` 在读文件那一步就失败**：读文件挪到提示输入之前，坏文件时既不问 key 也不联网验，报错点名文件，`--no-verify` 与否都一样。原来模型 provider 不联网验，所以那条误导只发生在 exa / tavily / anysearch 三家身上。
+- **`ans auth remove` 同样先读文件**，坏文件时报一次修法就停。
+- **新增 `ans auth repair`**（`repairUserCredentials`）：在写锁里重读**原始字节**，保留过得了 `parseBinding` 的条目、丢掉过不了的，然后走 `writeProtectedFile` 写回。不能拿 `readUserCredentials` 已经筛空的 `bindings` 回写——那正是读路径一直拒绝的擦除。健康的文件是 no-op，一个字节都不动；不是 JSON 或没有 `bindings` 列表时不动文件，只说「删了重存」。
+- **报错句不再重复**：`fix or remove the file, then retry` 由 `FIX_ADVICE` 一处拼出，两个写入口改成说「这次没写成什么」（`the key was not written - rewriting the file would drop the other keys` / `the key was not removed`）。
+- **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
+- **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
+
+### Known limits
+
+- **修复路径只修「结构里某条坏了」这一类**：不是 JSON 的文件没有任何能读的条目，`repair` 拒绝动它并让用户删掉重存；把原文件备份到旁边不做——旁路备份得自己再走一遍访问保护，多一份没人管的密钥副本，不划算。
+- **`parseBinding` 的错误句仍然拼文件里的 `provider` 原值**（只做了 trim + 小写），`ans auth` / `auth list` / `ans llm` 都原文打印，只有 kernel 那条 stderr 过了脱敏。修复路径打印「dropped: entry N (X)」沿用了同一个面，脱敏单独开票。
+- **机器可读面没动**：`credentialSources` 在坏文件时仍是三家 `none`，和「从没配过」分不开。那是 #533。
+
 ## Unreleased — #538: `ans_chat` 的凭据文件故障进正文和 `structuredContent`
 
 一句话说清：**以前 `~/.ans/credentials.json` 坏了，`ans_chat` 的返回里一个字都不提，唯一的报告走 stderr（外加一个宿主读不到的下标计数）；更糟的是别的来源一供上 key，解析器根本不去读文件，坏文件彻底静默，没配模型时那句修法也埋进日志。现在模型配置解析会带出 `CredentialFileFault` 的分类，`ans_chat` 用 kernel 的 `CredentialFileNotice` 在正文里说同一句话，`structuredContent` 顶层放同一条 `{kind, errno?, notice}` 记录——和 `search_web` / `research_web` / `ans search --json` 共用一张表、一套分类。**
@@ -48,7 +69,6 @@
 
 - **`search_web`**：`outcome === "cancelled"` 时带 `interrupted: true`，不再只认调用方 abort。
 - **`research_web`**：整个调用判成 `cancelled` 时也带。
-
 ## Unreleased — #534: `--live` 不探没配 key 的免费额度，裁决写进代码现场
 
 一句话说清：**没配 key 的信息源，`ans doctor --live` 一直是不探、直接报「未配置」，但帮助文本写成「只打三家信息源的免费面」，那一行的说明也只写「用免费额度跑」，读起来像已经验过。这张票把裁决钉下来——不探——并让「没验」三个字出现在输出和帮助里。**
