@@ -71,12 +71,14 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 ans auth set openai            # 输入时看不见，只存一次
 ans auth list                  # 看存了哪些、各自绑到哪个 provider 和端点
 ans auth remove openai         # 删掉这一条
+ans auth repair                # 文件坏了：能读的都留下，只丢掉坏掉的那几条
 ```
 
 - 存在 `~/.ans/credentials.json`，**是明文**，不是加密，也不是系统钥匙串。文件里自己写明了这点。
 - 本机同一账户的所有入口都读它，包括没有 shell 环境的 GUI 宿主；所以录一次就够了。
 - 环境变量仍然优先：`ANS_LLM_API_KEY`、或该 provider 自己的 `*_API_KEY`。
 - 每条绑定到具体的 provider；模型用的 key 还会绑定到当时的端点。换了端点或 provider 就不会发出去，要重新录。
+- 文件坏了（不是 JSON、结构不对、某条读不了）时，`set` 和 `remove` 都不会去改写它，只报错并点名文件；`ans auth` 把看不见的 provider 标成 `[BROKEN]` 而不是 `not set`，退出码 1。要修就 `ans auth repair`，能读的条目留下，只丢读不了的那几条。
 - 写之前按平台自己的方式建访问保护并核对：POSIX 看 600，Windows 看解析出来的 ACL（不是拿 POSIX mode 冒充）。建不起来就明确失败，不会宽松落盘。
 
 ## 域名与拒答

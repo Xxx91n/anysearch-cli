@@ -20,6 +20,7 @@ import {
   normalizeBindingEndpoint,
   readUserCredentials,
   removeUserCredential,
+  repairUserCredentials,
   resolveConfigHome,
   resolveLlmConfig,
   userCredentialsPath,
@@ -75,6 +76,7 @@ function usage(): number {
   stderr("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
   stderr("      [--no-verify]            Do not check a search key upstream before storing it (offline machines)\n");
   stderr("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
+  stderr("  ans auth repair              Keep the keys a broken file can still give up, drop the rest\n");
   stderr("\n");
   stderr("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
   stderr("The store is plain text, owner-only, and shared by the CLI and GUI entries of this account.\n");
@@ -133,6 +135,7 @@ function statusLines(
     const envValue = env[info.envKey]?.trim();
     const binding = file.bindings.find((b) => b.provider === info.id);
     let where: string;
+    let state: "set" | "empty" | "broken";
     if (info.kind === "model" && info.id === llm.provider && llm.apiKey) {
       // Report where the EFFECTIVE model key came from. `env` covers two
       // variables, so name the one actually set: a cross-config override
@@ -143,15 +146,25 @@ function statusLines(
       } else {
         where = describeSource(llm.sources.apiKey);
       }
+      state = "set";
     } else if (envValue) {
       where = "env " + info.envKey;
+      state = "set";
+    } else if (file.error) {
+      // The file is broken, so this command cannot tell whether the provider had
+      // an entry. "not set" would be a lie about a key that is still in the file
+      // (#537).
+      where = "unknown - the credential file could not be read";
+      state = "broken";
     } else if (binding) {
       where = "stored file" + (binding.endpoint ? " (" + displayEndpoint(binding.endpoint) + ")" : "");
+      state = "set";
     } else {
       where = "not set";
+      state = "empty";
     }
-    const mark = where === "not set" ? "[EMPTY]" : "[SET]  ";
-    lines.push(mark + " " + info.id.padEnd(10) + " " + where);
+    const mark = state === "broken" ? "[BROKEN]" : state === "empty" ? "[EMPTY]" : "[SET]";
+    lines.push(mark.padEnd(8) + " " + info.id.padEnd(10) + " " + where);
   }
   return lines;
 }
@@ -255,6 +268,13 @@ export async function runAuth(args: string[]): Promise<number> {
     }
     stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
     stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
+    if (file.error) {
+      // A script reading only the exit code could not tell a broken file from a
+      // healthy one. `ans doctor` already exits 1 for this same file, so this
+      // command stops being the outlier (#537).
+      stdout("Fix the file: ans auth repair   (keeps the keys it can read)");
+      return 1;
+    }
     return 0;
   }
 
@@ -280,6 +300,16 @@ export async function runAuth(args: string[]): Promise<number> {
         "(the anysearch arm takes its endpoint from ANYSEARCH_ENDPOINT).\n",
       );
       return 2;
+    }
+
+    // Refuse before the prompt. A broken file used to be discovered only after
+    // the key was typed and checked online, so a rejected key was blamed for a
+    // fault that belonged to the file (#537).
+    const broken = readUserCredentials({ home });
+    if (broken.error) {
+      stderr(broken.error + "\n");
+      stderr("Nothing was typed and nothing was written. `ans auth repair` keeps the keys it can read.\n");
+      return 1;
     }
 
     const target = endpoint !== null
@@ -346,6 +376,12 @@ export async function runAuth(args: string[]): Promise<number> {
     const provider = rest[0];
     if (!provider) return usage();
     if (!credentialProvider(provider)) return rejectUnknownProvider(provider);
+    const broken = readUserCredentials({ home });
+    if (broken.error) {
+      stderr(broken.error + "\n");
+      stderr("Nothing was removed. `ans auth repair` keeps the keys it can read.\n");
+      return 1;
+    }
     try {
       const removed = removeUserCredential({ provider, endpoint }, { home });
       if (!removed) {
@@ -361,6 +397,28 @@ export async function runAuth(args: string[]): Promise<number> {
       stderr((e as Error).message + "\n");
       return 1;
     }
+  }
+
+  if (sub === "repair") {
+    const result = repairUserCredentials({ home });
+    if (result.kind === "absent") {
+      stdout("No credential file at " + userCredentialsPath(home) + "; nothing to repair.");
+      return 0;
+    }
+    if (result.kind === "unrepairable") {
+      stderr(result.error + "\n");
+      stderr("Nothing was changed. Remove the file and store the keys again.\n");
+      return 1;
+    }
+    if (result.kind === "healthy") {
+      stdout("The credential file at " + result.path + " is readable; nothing to repair (" +
+        result.kept + " key(s)).");
+      return 0;
+    }
+    stdout("Repaired " + result.path + ": kept " + result.kept + " key(s), dropped " +
+      result.dropped.length + ".");
+    for (const reason of result.dropped) stdout("  dropped: " + reason);
+    return 0;
   }
 
   stderr("Unknown subcommand: " + sub + "\n");

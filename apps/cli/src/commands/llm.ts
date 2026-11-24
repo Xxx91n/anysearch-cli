@@ -94,6 +94,13 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  ans auth set <provider>         Store the key once (plain text, owner-only)");
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
+    // A broken credential file is a failure, not a healthy listing: `ans auth`
+    // and `ans doctor` already say so with exit 1, and a script reading only the
+    // code must not see this command disagree (#537).
+    if (credentialFile.error) {
+      console.log("Fix the file: ans auth repair   (keeps the keys it can read)");
+      return 1;
+    }
     return 0;
   }
 
@@ -168,6 +175,10 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("");
     console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
     console.log("Or set an env var: export OPENAI_API_KEY=...");
+    if (credentialFile.error) {
+      console.log("Fix the file: ans auth repair   (keeps the keys it can read)");
+      return 1;
+    }
     return 0;
   }
 

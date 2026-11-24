@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -250,7 +250,9 @@ test("a broken credential file is one line in `ans auth status`, not a [config] 
     writeFileSync(join(home, ".ans", "credentials.json"), "not json", "utf8");
 
     const { code, out } = await capture(() => runAuth([]));
-    assert.equal(code, 0, out);
+    // #537: a broken file is a failure. Exit 0 made a script unable to tell it
+    // from a healthy run, while `ans doctor` and `set`/`remove` already failed.
+    assert.equal(code, 1, out);
     const faultLines = out.split("\n").filter((line) => line.includes("not valid JSON"));
     assert.equal(faultLines.length, 1, "同一份文件故障只说一次：" + out);
     assert.match(faultLines[0]!, /^\[WARN\] /);
@@ -258,6 +260,7 @@ test("a broken credential file is one line in `ans auth status`, not a [config] 
     // `list` says it next to the file block instead of in the status block, and
     // still only once.
     const listed = await capture(() => runAuth(["list"]));
+    assert.equal(listed.code, 1, listed.out);
     assert.equal(
       listed.out.split("\n").filter((line) => line.includes("not valid JSON")).length,
       1,
@@ -267,6 +270,181 @@ test("a broken credential file is one line in `ans auth status`, not a [config] 
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
+    cleanup();
+  }
+});
+
+/**
+ * Every env name a provider key can arrive under. Sweeping all of them keeps the
+ * status table honest on a machine that happens to export one: a leaked
+ * `EXA_API_KEY` would turn an `[EMPTY]`/`[BROKEN]` row into `[SET] env …` and the
+ * assertion would be about the operator's shell, not about the file (#537).
+ */
+const CREDENTIAL_ENV_KEYS = [
+  "HOME", "USERPROFILE", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY",
+  "TAVILY_API_KEY", "EXA_API_KEY", "ANYSEARCH_API_KEY",
+  "ANS_LLM_API_KEY", "ANS_LLM_PROVIDER", "ANS_LLM_MODEL",
+];
+
+async function withoutCredentialEnv<T>(home: string, fn: () => Promise<T>): Promise<T> {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of CREDENTIAL_ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
+  // Set the config root AFTER the sweep: HOME is in the list above, so assigning
+  // it before the loop would delete the very override the test needs.
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+}
+
+/** A file that holds one usable key and one record that cannot be trusted. */
+const MIXED_FILE = JSON.stringify({
+  bindings: [
+    { provider: "openai", apiKey: KEY },
+    { provider: "anthropic" },
+  ],
+});
+
+function writeCredentials(home: string, content: string): string {
+  mkdirSync(join(home, ".ans"), { recursive: true });
+  const path = join(home, ".ans", "credentials.json");
+  writeFileSync(path, content, "utf8");
+  return path;
+}
+
+test("ans auth 坏文件时，文件里还有 key 的那家不再报 not set（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      writeCredentials(home, MIXED_FILE);
+
+      const { code, out } = await capture(() => runAuth([]));
+      assert.equal(code, 1, out);
+      // The lie this ticket is about: the openai key is still in the file, so
+      // "not set" describes a state nobody observed.
+      assert.doesNotMatch(out, /\[EMPTY\]/, "坏文件时不能说某家没配：" + out);
+      assert.match(out, /\[BROKEN\]\s+openai\s+unknown/, out);
+      // One sentence, one place: the read no longer repeats its own advice.
+      assert.equal(out.split("fix or remove").length - 1, 1, "同一句只说一次：" + out);
+
+      // An env key is a fact that does not depend on the file, so it survives.
+      process.env.EXA_API_KEY = "exa-from-env";
+      const withEnv = await capture(() => runAuth([]));
+      assert.equal(withEnv.code, 1, withEnv.out);
+      assert.match(withEnv.out, /\[SET\]\s+exa\s+env EXA_API_KEY/, withEnv.out);
+      assert.match(withEnv.out, /\[BROKEN\]\s+openai/, withEnv.out);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth set 在读文件那一步就失败，不提示输入、不联网验 key（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const path = writeCredentials(home, MIXED_FILE);
+
+      const { code, out } = await capture(() => runAuth(["set", "exa"]), "sk-should-never-be-read\n");
+      assert.equal(code, 1, out);
+      assert.match(out, /not valid JSON|has no apiKey/, "报错要点名文件：" + out);
+      assert.equal(out.includes("credentials.json"), true, out);
+      // Neither the prompt nor the free-surface probe happens: a rejected key
+      // would otherwise be blamed for a fault that belongs to the file.
+      assert.doesNotMatch(out, /typing is hidden/, "坏文件时不该先问 key：" + out);
+      assert.doesNotMatch(out, /against its free surface/, "坏文件时不该联网验 key：" + out);
+      assert.equal(readFileSync(path, "utf8"), MIXED_FILE, "nothing was written");
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth remove 在坏文件上说一次修法就停，不动文件（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const path = writeCredentials(home, MIXED_FILE);
+
+      const { code, out } = await capture(() => runAuth(["remove", "exa"]));
+      assert.equal(code, 1, out);
+      assert.equal(out.split("fix or remove").length - 1, 1, "同一句只出现一次：" + out);
+      assert.match(out, /Nothing was removed/, out);
+      assert.equal(readFileSync(path, "utf8"), MIXED_FILE, "nothing was removed");
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth repair 只丢坏条目，其他 key 一个不少，且不打印 key（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      writeCredentials(home, MIXED_FILE);
+
+      const { code, out } = await capture(() => runAuth(["repair"]));
+      assert.equal(code, 0, out);
+      assert.match(out, /kept 1 key\(s\), dropped 1/, out);
+      assert.match(out, /dropped: entry 2 \(anthropic\) has no apiKey/, out);
+      assert.equal(out.includes(KEY), false, "repair 从不回显 key：" + out);
+
+      const repaired = readUserCredentials({ home });
+      assert.equal(repaired.error, undefined, "修完就不该再有 error");
+      assert.equal(repaired.bindings.length, 1);
+      assert.equal(repaired.bindings[0]?.provider, "openai");
+      assert.equal(repaired.bindings[0]?.apiKey, KEY, "能读的 key 还在");
+
+      // Repair on a healthy file is a no-op, byte for byte.
+      const before = readFileSync(userCredentialsPath(home), "utf8");
+      const again = await capture(() => runAuth(["repair"]));
+      assert.equal(again.code, 0, again.out);
+      assert.match(again.out, /nothing to repair/, again.out);
+      assert.equal(readFileSync(userCredentialsPath(home), "utf8"), before);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth repair 遇到不是 JSON 的文件不猜，只说删了重存（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const path = writeCredentials(home, "{ not json");
+
+      const { code, out } = await capture(() => runAuth(["repair"]));
+      assert.equal(code, 1, out);
+      assert.match(out, /not valid JSON/, out);
+      assert.match(out, /remove the file and store the keys again/, out);
+      assert.equal(readFileSync(path, "utf8"), "{ not json", "文件原样不动");
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("带 BOM 的凭据文件照常读，不因为记事本加的那个字节判成坏文件（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      // Notepad and PowerShell redirection both add this; JSON.parse rejects it.
+      writeCredentials(home, "\uFEFF" + JSON.stringify({ bindings: [{ provider: "exa", apiKey: KEY }] }));
+
+      const { code, out } = await capture(() => runAuth([]));
+      assert.equal(code, 0, out);
+      assert.match(out, /\[SET\]\s+exa\s+stored file/, out);
+      assert.doesNotMatch(out, /BROKEN/, out);
+    });
+  } finally {
     cleanup();
   }
 });

@@ -289,6 +289,21 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
   return { binding: { provider, endpoint, apiKey } };
 }
 
+/**
+ * A UTF-8 BOM is legal in a text file and fatal to `JSON.parse`. Notepad and
+ * PowerShell's redirection both add one, so a file that looks healthy in an
+ * editor would otherwise read as "not valid JSON" (#537).
+ */
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
+ * The sentence every fault in this file ends with. It lives in one place so the
+ * two writers can add their own reason without repeating it (#537).
+ */
+const FIX_ADVICE = "; fix or remove the file, then retry";
+
 /** Read the credential file. A missing file is simply "no keys"; a broken one reports why. */
 export function readUserCredentials(
   opts: { home?: string; filePath?: string } = {},
@@ -304,14 +319,15 @@ export function readUserCredentials(
     // Same rule as the parse error: the file's contents never reach the output.
     return unusableFile(
       path,
-      "could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") + ")",
+      "could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") +
+        "); check the file's permissions, or remove it",
       "unreadable",
       (e as NodeJS.ErrnoException).code,
     );
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(stripBom(raw));
   } catch (e) {
     // SECURITY: a JSON.parse message quotes the text around the error, which in
     // this file is usually a key. Report only the position - the reader
@@ -321,14 +337,13 @@ export function readUserCredentials(
     const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
     return unusableFile(
       path,
-      "not valid JSON" + (position ? " (" + position + ")" : "") +
-        "; fix or remove the file, then retry",
+      "not valid JSON" + (position ? " (" + position + ")" : "") + FIX_ADVICE,
       "not-json",
     );
   }
   const list = (parsed as Record<string, unknown> | null)?.["bindings"];
   if (!Array.isArray(list)) {
-    return unusableFile(path, "missing the \"bindings\" list", "invalid-structure");
+    return unusableFile(path, "missing the \"bindings\" list" + FIX_ADVICE, "invalid-structure");
   }
   // A record that cannot be trusted makes the WHOLE file untrusted: returning
   // the readable ones would let the next write replace the file with a filtered
@@ -340,7 +355,7 @@ export function readUserCredentials(
     if ("problem" in parsedEntry) {
       return unusableFile(
         path,
-        parsedEntry.problem + "; fix or remove the file, then retry",
+        parsedEntry.problem + FIX_ADVICE,
         "invalid-structure",
       );
     }
@@ -822,7 +837,9 @@ export function writeUserCredential(
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
-      throw new Error(existing.error + "; fix or remove that file, then retry - rewriting it would drop the other keys");
+      // The read already ends with the fix advice; say what THIS write did not do
+      // instead of repeating the sentence (#537).
+      throw new Error(existing.error + "; the key was not written - rewriting the file would drop the other keys");
     }
     const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
     kept.push({ provider: info.id, endpoint, apiKey });
@@ -842,7 +859,7 @@ export function removeUserCredential(
   // key that was just deleted, or delete one that was just added.
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
-    if (existing.error) throw new Error(existing.error + "; fix or remove that file, then retry");
+    if (existing.error) throw new Error(existing.error + "; the key was not removed");
     const kept = existing.bindings.filter(
       (b) => !(b.provider === input.provider && b.endpoint === endpoint),
     );
@@ -853,6 +870,69 @@ export function removeUserCredential(
     }
     writeProtectedFile(path, serialize(kept), activePlatform());
     return true;
+  });
+}
+
+export type CredentialRepairResult =
+  | { kind: "absent" }
+  | { kind: "unrepairable"; error: string }
+  | { kind: "healthy"; path: string; kept: number }
+  | { kind: "repaired"; path: string; kept: number; dropped: string[] };
+
+/**
+ * Keep the records that can be trusted and drop the ones that cannot, so a
+ * broken file stops holding the readable keys hostage (#537).
+ *
+ * Design: this reads the raw bytes under the lock instead of taking
+ * `readUserCredentials`'s `bindings` — that list is empty on every fault, and
+ * writing it back is exactly the erasure the read path refuses to risk. A
+ * repair is the user asking for the drop, so it is the one place allowed to do
+ * it. A healthy file is never rewritten.
+ */
+export function repairUserCredentials(
+  opts: { home?: string; filePath?: string } = {},
+): CredentialRepairResult {
+  const path = opts.filePath ?? userCredentialsPath(opts.home);
+  if (!existsSync(path)) return { kind: "absent" };
+  return withCredentialLock(path, () => {
+    let raw: string;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch (e) {
+      return {
+        kind: "unrepairable",
+        error: path + ": could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") +
+          "); check the file's permissions, or remove it",
+      };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stripBom(raw));
+    } catch (e) {
+      const position = /line \d+ column \d+/.exec((e as Error).message)?.[0];
+      return {
+        kind: "unrepairable",
+        error: path + ": not valid JSON" + (position ? " (" + position + ")" : "") +
+          "; nothing in it can be kept, so remove the file and store the keys again",
+      };
+    }
+    const list = (parsed as Record<string, unknown> | null)?.["bindings"];
+    if (!Array.isArray(list)) {
+      return {
+        kind: "unrepairable",
+        error: path + ": missing the \"bindings\" list; nothing in it can be kept, so remove the file and store the keys again",
+      };
+    }
+    const kept: CredentialBinding[] = [];
+    const dropped: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const parsedEntry = parseBinding(list[i], i);
+      if ("problem" in parsedEntry) dropped.push(parsedEntry.problem);
+      else kept.push(parsedEntry.binding);
+    }
+    if (dropped.length === 0) return { kind: "healthy", path, kept: kept.length };
+    writeProtectedFile(path, serialize(kept), activePlatform());
+    return { kind: "repaired", path, kept: kept.length, dropped };
   });
 }
 
