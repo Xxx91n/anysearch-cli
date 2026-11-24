@@ -6,8 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, unlinkSync,
-  writeFileSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync,
+  unlinkSync, utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -189,4 +189,35 @@ test("the published file is owner-only even over an existing 0644 file", {
   assert.equal(statSync(path).mode & 0o777, 0o644, "the fixture starts world-readable");
   writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home);
   assert.equal(statSync(path).mode & 0o777, 0o600, "every write tightens the mode, not just the first");
+});
+
+test("a write sweeps its own stale temp files and leaves every other .tmp", () => {
+  const { home, path } = fixture();
+  const dir = dirname(path);
+  const stale = join(dir, ".config.toml.999.deadbeef1234.tmp");
+  const fresh = join(dir, ".config.toml." + process.pid + ".0badc0ffee00.tmp");
+  const unrelated = join(dir, "notes.tmp");
+  writeFileSync(stale, "stale");
+  writeFileSync(fresh, "fresh");
+  writeFileSync(unrelated, "unrelated");
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  utimesSync(unrelated, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ provider: "openai" }, home);
+  assert.ok(!existsSync(stale), "an abandoned temp of this file is swept");
+  assert.ok(existsSync(fresh), "a fresh temp may belong to another running write");
+  assert.ok(existsSync(unrelated), "a .tmp of another name is not ours to delete");
+});
+
+test("a stale temp that cannot be deleted does not stop the write", () => {
+  const { home, path } = fixture();
+  const stuck = join(dirname(path), ".config.toml.999.deadbeef1234.tmp");
+  // A directory wearing the temp name: stat succeeds, removal without recursion fails.
+  mkdirSync(stuck);
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(stuck, twoHoursAgo, twoHoursAgo);
+  const written = writeUserLlmConfig({ provider: "openai" }, home);
+  assert.equal(written, path);
+  assert.ok(readFileSync(path, "utf8").includes('provider = "openai"'), "the write went through");
+  assert.ok(existsSync(stuck), "the file the sweep could not remove stays where it was");
 });

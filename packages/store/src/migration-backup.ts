@@ -448,10 +448,17 @@ export function setAsideUnreadable(path: string): string {
  * `suffix` is the caller's own marker: `.adopting` here, `.copying` for the
  * cross-volume directory move. Only files old enough that no live run can still
  * be writing them are removed.
+ *
+ * `prefix` defaults to the target's own name plus a dot. A caller whose staging
+ * name puts anything else in front of that — the config write prefixes a dot —
+ * passes its exact prefix, so a sweep never widens beyond its own files.
  */
-export function sweepStaleWorkFiles(target: string, suffix: string): void {
+export function sweepStaleWorkFiles(
+  target: string,
+  suffix: string,
+  prefix: string = basename(target) + ".",
+): void {
   const dir = dirname(target);
-  const prefix = basename(target) + ".";
   const cutoff = Date.now() - 60 * 60 * 1000;
   let names: string[];
   try { names = readdirSync(dir); } catch { return; }

@@ -27,6 +27,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
+import { sweepStaleWorkFiles } from "./migration-backup.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
@@ -577,6 +578,12 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
+  // A run killed between writing its temp file and the rename leaves it behind,
+  // and only that run ever cleans up its own file. Sweep the abandoned older
+  // ones first; the leading dot is part of the temp name, so the prefix is
+  // spelled out rather than left to the target's bare name. The sweep swallows
+  // its own failures: a config that can be written is still worth writing.
+  sweepStaleWorkFiles(path, ".tmp", "." + basename(path) + ".");
   const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a
