@@ -311,12 +311,12 @@ function stripBom(text: string): string {
 }
 
 /**
- * The two halves of the advice the kernel's notice also quotes. Only a fault
- * inside a readable file can be repaired: a file that does not parse has nothing
- * left to keep. The read path ends the first with ", then retry"; the kernel's
- * notice ends it with what makes the fix take effect instead.
+ * The pieces every surface builds its advice from: the two command names, and the
+ * two halves of the sentence. Only a fault inside a readable file can be repaired,
+ * so `KEEP_KEYS` belongs to that case alone.
  */
 export const REPAIR_COMMAND = "ans auth repair";
+export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";

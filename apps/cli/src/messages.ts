@@ -1,7 +1,7 @@
 // Lines printed by more than one command, so they cannot drift apart.
-import { REPAIR_COMMAND, type CredentialFileContents } from "@anysearch-cli/store";
+import { REPAIR_COMMAND, STORE_KEY_COMMAND, type CredentialFileContents } from "@anysearch-cli/store";
 
-const STORE_AGAIN = "store the key again: ans auth set <provider>";
+const STORE_AGAIN = "store the key again: " + STORE_KEY_COMMAND;
 
 /** A command that gave up before touching the file. */
 export const NOTHING_CHANGED = "Nothing was changed.";
@@ -13,12 +13,8 @@ export function publishedButUnverified(fact: string): string {
     "Check it with `ans auth list` before storing anything again.";
 }
 
-/**
- * What a user can do about a broken file. One decision for every command: only a
- * bad record inside a readable file leaves anything to keep, and a file that
- * cannot be read at all gets its own advice, because on a full disk the file is
- * fine and removing it would take every other key with it.
- */
+/** Three answers: repair keeps something, a read fault only needs its own fix,
+ * everything else is fix-or-remove. The reasons are in the CHANGELOG. */
 export type FaultAdvice = "repair" | "read" | "replace";
 
 export function faultAdvice(file: CredentialFileContents): FaultAdvice {

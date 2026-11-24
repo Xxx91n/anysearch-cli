@@ -25,8 +25,10 @@ import {
   readMigrationStatus,
   type MigrationLayoutStatus,
   readUserCredentials,
+  REPAIR_COMMAND,
   resolveConfigHome,
   resolveSearchCredentials,
+  STORE_KEY_COMMAND,
   userCredentialsPath,
 } from "@anysearch-cli/store";
 import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } from "@anysearch-cli/kernel";
@@ -129,9 +131,9 @@ function meetsFloor(running: string, floor: string): boolean | null {
 
 /** What doctor tells the user to do, by the advice every command shares. */
 const BROKEN_FILE_ADVICE: Record<FaultAdvice, string> = {
-  repair: "跑 ans auth repair 保住能读的 key",
-  read: "先解决读不出来的问题，再按需跑 ans auth set <provider>",
-  replace: "修好或删掉它，再按需跑 ans auth set <provider>",
+  repair: "跑 " + REPAIR_COMMAND + " 保住能读的 key",
+  read: "先解决读不出来的问题，再按需跑 " + STORE_KEY_COMMAND,
+  replace: "修好或删掉它，再按需跑 " + STORE_KEY_COMMAND,
 };
 
 export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): Promise<number> {

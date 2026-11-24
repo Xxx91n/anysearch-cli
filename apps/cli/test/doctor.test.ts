@@ -314,7 +314,7 @@ type DoctorRun = {
 };
 
 async function doctorInHome(
-  config: { credentials?: string; configToml?: string; env: Record<string, string | undefined> },
+  config: { credentials?: string; credentialsAsDir?: boolean; configToml?: string; env: Record<string, string | undefined> },
   args: string[],
 ): Promise<DoctorRun> {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-cred-"));
@@ -324,7 +324,9 @@ async function doctorInHome(
   const lines: string[] = [];
   try {
     mkdirSync(join(home, ".ans"), { recursive: true });
-    if (config.credentials !== undefined) {
+    if (config.credentialsAsDir) {
+      mkdirSync(join(home, ".ans", "credentials.json"), { recursive: true });
+    } else if (config.credentials !== undefined) {
       writeFileSync(join(home, ".ans", "credentials.json"), config.credentials, "utf8");
     }
     if (config.configToml !== undefined) {
@@ -357,6 +359,7 @@ async function doctorInHome(
 
 async function runInHome(config: {
   credentials?: string;
+  credentialsAsDir?: boolean;
   configToml?: string;
   env: Record<string, string | undefined>;
 }): Promise<DoctorRun & { payload: DiagJson }> {
@@ -772,4 +775,17 @@ test("ans doctor：坏文件给的建议跟着故障档走，repair 只出现在
   const recordRow = recordFault.entries.find((entry) => entry.name === "user credential file")!;
   assert.equal(recordRow.state, "failed");
   assert.match(recordRow.detail ?? "", /ans auth repair/, recordRow.detail);
+});
+
+test("ans doctor：凭据文件读不出来时，建议只解决读的问题，不提 repair、不劝删（#537）", async () => {
+  const { entries } = await runInHome({
+    credentialsAsDir: true,
+    env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined },
+  });
+  const row = entries.find((entry) => entry.name === "user credential file")!;
+  assert.equal(row.state, "failed");
+  assert.match(row.detail ?? "", /EISDIR/, row.detail);
+  assert.match(row.detail ?? "", /ans auth set/, row.detail);
+  assert.doesNotMatch(row.detail ?? "", /ans auth repair/, "repair reads the same file：" + row.detail);
+  assert.doesNotMatch(row.detail ?? "", /修好或删掉它/, "on a full disk the file is fine：" + row.detail);
 });

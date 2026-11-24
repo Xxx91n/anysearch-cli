@@ -819,3 +819,23 @@ test("ans auth remove：坏文件被拒不报「不确定」，那句「file was
     cleanup();
   }
 });
+
+test("ans auth：凭据文件读不出来时，不劝人删文件，也不提 repair（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      // A directory where the file should be: readFileSync throws EISDIR on every
+      // platform, and the file itself may be perfectly fine (a full disk does this).
+      mkdirSync(join(home, ".ans", "credentials.json"), { recursive: true });
+
+      const { code, out } = await capture(() => runAuth([]));
+      assert.equal(code, 1, out);
+      assert.match(out, /EISDIR/, out);
+      assert.match(out, /ans auth set/, "the way forward is storing the key again：" + out);
+      assert.doesNotMatch(out, /ans auth repair/, "repair reads the same file, so it cannot help：" + out);
+      assert.doesNotMatch(out, /remove the file/, "on a full disk the file is fine：" + out);
+    });
+  } finally {
+    cleanup();
+  }
+});
