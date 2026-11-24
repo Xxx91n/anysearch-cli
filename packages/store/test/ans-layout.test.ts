@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -522,15 +523,37 @@ test("a copy staging directory still being written is not swept", () => {
 });
 
 test("a staging directory owned by a live process is kept", () => {
-  const root = mkdtempSync(join(tmpdir(), "ans-copy-owner-"));
+  // Keep a real second process alive without a timer: it lives until stdin closes.
+  const child = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  try {
+    const root = mkdtempSync(join(tmpdir(), "ans-copy-owner-"));
+    const target = join(root, "domains");
+    const owned = target + "." + child.pid + ".copying";
+    mkdirSync(owned);
+    const payload = join(owned, "payload");
+    writeFileSync(payload, "still copying");
+    const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+    utimesSync(payload, twoHoursAgo, twoHoursAgo);
+    utimesSync(owned, twoHoursAgo, twoHoursAgo);
+    sweepCopyStaging(target);
+    assert.ok(existsSync(owned), "the process that owns the copy is still running");
+  } finally {
+    child.kill();
+  }
+});
+
+test("a staging directory named after this process is swept", () => {
+  const root = mkdtempSync(join(tmpdir(), "ans-copy-self-"));
   const target = join(root, "domains");
-  const owned = target + "." + process.pid + ".copying";
-  mkdirSync(owned);
-  const payload = join(owned, "payload");
-  writeFileSync(payload, "still copying");
+  const own = target + "." + process.pid + ".copying";
+  mkdirSync(own);
+  const payload = join(own, "payload");
+  writeFileSync(payload, "left by an earlier crash");
   const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
   utimesSync(payload, twoHoursAgo, twoHoursAgo);
-  utimesSync(owned, twoHoursAgo, twoHoursAgo);
+  utimesSync(own, twoHoursAgo, twoHoursAgo);
   sweepCopyStaging(target);
-  assert.ok(existsSync(owned), "the process that owns the copy is still running");
+  assert.ok(!existsSync(own), "this process's own name is swept before a new copy starts");
 });

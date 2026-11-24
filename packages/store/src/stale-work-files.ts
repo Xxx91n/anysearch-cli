@@ -1,11 +1,13 @@
 // Best-effort removal of work files a killed run left next to a file it was
 // publishing.
 //
-// Design: dependency-free — node:fs/node:path only, kept out of
-// migration-backup.ts so the config resolver never loads better-sqlite3.
+// Design: no database binding — node:fs/node:path plus budget-ledger's pid
+// check, kept out of migration-backup.ts so config writes never load
+// better-sqlite3.
 
 import { readdirSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { pidIsAlive } from "./budget-ledger.js";
 
 /** How old a work file must be before it cannot belong to a live run. */
 export const STALE_WORK_FILE_AGE_MS = 60 * 60 * 1000;
@@ -19,7 +21,7 @@ export const STALE_WORK_FILE_AGE_MS = 60 * 60 * 1000;
  * `options.recursive` is off unless the caller stages a directory: a plain
  * `rmSync` must not turn a name match into a whole tree deletion.
  * `options.isLive` skips a name whose owner still runs, for work named after the
- * pid that created it.
+ * pid that created it; `workFileOwnerIsLive` builds that check.
  *
  * Every failure is swallowed: cleanup must never decide whether the real write
  * happens.
@@ -49,6 +51,20 @@ export function sweepStaleWorkFiles(
       }
     } catch { /* leave it */ }
   }
+}
+
+/**
+ * Live-owner check for a work name that ends in the pid that created it:
+ * `<target>.<pid><suffix>`. The current process does not protect its own name —
+ * its work is swept before it starts, and a pid reused after a crash must not
+ * leave a stale entry behind.
+ */
+export function workFileOwnerIsLive(suffix: string): (name: string) => boolean {
+  return (name) => {
+    if (!name.endsWith(suffix)) return false;
+    const pid = Number(name.slice(0, -suffix.length).split(".").pop());
+    return Number.isInteger(pid) && pid > 0 && pid !== process.pid && pidIsAlive(pid);
+  };
 }
 
 /**

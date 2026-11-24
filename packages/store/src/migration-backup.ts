@@ -89,7 +89,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
-import { sweepStaleWorkFiles } from "./stale-work-files.js";
+import { sweepStaleWorkFiles, workFileOwnerIsLive } from "./stale-work-files.js";
 
 /** Layout marker table name; presence (with the marker row) means "written by build line ≥ #310". */
 export const STORE_META_TABLE = "store_meta";
@@ -442,6 +442,7 @@ export function setAsideUnreadable(path: string): string {
 
 /** Suffix of the database file a killed adoption staged beside its target. */
 const ADOPT_WORK_SUFFIX = ".adopting";
+const ADOPT_WORK_OWNER = workFileOwnerIsLive(ADOPT_WORK_SUFFIX);
 
 /**
  * #323: publish a consistent copy of `from` at `to` for the directory rename.
@@ -463,7 +464,7 @@ const ADOPT_WORK_SUFFIX = ".adopting";
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  sweepStaleWorkFiles(to, { suffix: ADOPT_WORK_SUFFIX });
+  sweepStaleWorkFiles(to, { suffix: ADOPT_WORK_SUFFIX, isLive: ADOPT_WORK_OWNER });
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);
