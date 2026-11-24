@@ -740,6 +740,7 @@ test("ans auth set：写进去但没通过访问保护核对时，说的是这�
         assert.match(out, /failed its access check/, out);
         assert.match(out, /hold the new key/, "说的是这把 key 的去向：" + out);
         assert.doesNotMatch(out, /Nothing was changed/, "写已经落地，不能再这么说：" + out);
+        assert.doesNotMatch(out, /not clear whether/, "这里的事实是确定的：" + out);
       } finally {
         credentialProtectionSeam.verify = previous;
       }
@@ -765,9 +766,47 @@ test("ans auth repair：写回失败时说的是修好的条目在不在（#537�
         assert.equal(code, 1, out);
         assert.match(out, /hold the repaired entries/, "repair 没有「新 key」这回事：" + out);
         assert.doesNotMatch(out, /new key/, out);
+        assert.doesNotMatch(out, /not clear whether/, out);
       } finally {
         credentialProtectionSeam.verify = previous;
       }
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth set：写之前就被拒时，说「没变」，不说「不确定」（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const previous = credentialProtectionSeam.verify;
+      // The FIRST check runs before the secret is written, so nothing on disk
+      // moved - the refusal knows that, and the command must not hedge.
+      credentialProtectionSeam.verify = () => { throw new Error("no ACL tool"); };
+      try {
+        const { code, out } = await capture(() => runAuth(["set", "openai"]), KEY + "\n");
+        assert.equal(code, 1, out);
+        assert.match(out, /Nothing was changed/, out);
+        assert.doesNotMatch(out, /not clear whether/, "没有发生的事不能含糊：" + out);
+      } finally {
+        credentialProtectionSeam.verify = previous;
+      }
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("ans auth remove：坏文件被拒不报「不确定」，那句「file was not changed」就是答案（#537）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      writeCredentials(home, MIXED_FILE);
+      const { code, out } = await capture(() => runAuth(["remove", "exa"]));
+      assert.equal(code, 1, out);
+      assert.match(out, /the file was not changed/, out);
+      assert.doesNotMatch(out, /not clear whether/, "同一句里不能既说没变又说不确定：" + out);
     });
   } finally {
     cleanup();

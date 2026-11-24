@@ -56,19 +56,24 @@ const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
 /**
  * Sentences per kind. `unreadable` is a template with `{errno}` and `{remedy}`
  * slots — read the final text from `credentialFileNotice`, not this table.
+ *
+ * REPAIR names the CLI command on purpose: a host reads this sentence and an agent
+ * acts on it, and deleting the file takes every other provider's key with it.
  */
+const REPAIR = ", or run ans auth repair to keep the keys it can still read";
+
 export const CREDENTIAL_FILE_HINTS: Record<CredentialFileNoticeKind, string> = {
   "not-json":
     "the user credential file is not valid JSON — the keys in it are not in use; " +
-    "fix or remove it (" + RESTART + ")",
+    "fix or remove it" + REPAIR + " (" + RESTART + ")",
   "invalid-structure":
     "the user credential file is not a valid key file — the keys in it are not in use; " +
-    "fix or remove it (" + RESTART + ")",
+    "fix or remove it" + REPAIR + " (" + RESTART + ")",
   unreadable:
     "the user credential file could not be read{errno} — the keys in it are not in use; " +
-    "{remedy} (" + RESTART + ")",
+    "{remedy}" + REPAIR + " (" + RESTART + ")",
   unknown:
-    "the user credential file could not be used; fix or remove it (" + RESTART + ")",
+    "the user credential file could not be used; fix or remove it" + REPAIR + " (" + RESTART + ")",
 };
 
 export function credentialFileNotice(fault: CredentialFileFault): CredentialFileNotice {

@@ -559,7 +559,9 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
   // escape as a bare EACCES from the lock file (found by the installed-product
   // lane in CI: a read-only config directory must fail with this message, not
   // with an errno).
-  const refused = (reason: string): Error => new Error(refusalSentence(path, reason));
+  // Never after a publish: this door is a refused lock or an unusable folder.
+  const refused = (reason: string): CredentialWriteRefusal =>
+    new CredentialWriteRefusal(refusalSentence(path, reason), false);
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -767,6 +769,12 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
   }
 }
 
+/** `classifyCredentialFault` matches on "refusing to write", so this sentence is built once. */
+function refusalSentence(path: string, reason: string): string {
+  return "refusing to write the credential file " + path + ": " + reason +
+    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
+}
+
 /**
  * A refused credential write. `published` is true when the rename had already
  * replaced the target and the later access check failed: the file then holds the
@@ -774,15 +782,6 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
  * changed. A caller cannot tell this from the filesystem afterwards, so the write
  * says it.
  */
-/**
- * The sentence every refused write uses. `classifyCredentialFault` matches on
- * "refusing to write", so it has to be built here and nowhere else.
- */
-function refusalSentence(path: string, reason: string): string {
-  return "refusing to write the credential file " + path + ": " + reason +
-    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
-}
-
 export class CredentialWriteRefusal extends Error {
   // Assigning in the body, not a parameter property: the manual probes load this
   // module through Node's strip-only TypeScript loader, which refuses that syntax.
@@ -891,7 +890,10 @@ export function writeUserCredential(
     if (existing.error) {
       // Design: 读回来的错误句已经带「fix or remove the file, then retry」，写入口只说这次没做成什么
       // — 再拼一遍同一句会让用户在一条消息里读两遍相同的指示（#537）。
-      throw new Error(existing.error + "; the key was not written - rewriting the file would drop the other keys");
+      throw new CredentialWriteRefusal(
+        existing.error + "; the key was not written - rewriting the file would drop the other keys",
+        false,
+      );
     }
     const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
     kept.push({ provider: info.id, endpoint, apiKey });
@@ -911,7 +913,12 @@ export function removeUserCredential(
   // key that was just deleted, or delete one that was just added.
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
-    if (existing.error) throw new Error(existing.error + "; the key was not removed - the file was not changed");
+    if (existing.error) {
+      throw new CredentialWriteRefusal(
+        existing.error + "; the key was not removed - the file was not changed",
+        false,
+      );
+    }
     const kept = existing.bindings.filter(
       (b) => !(b.provider === input.provider && b.endpoint === endpoint),
     );
