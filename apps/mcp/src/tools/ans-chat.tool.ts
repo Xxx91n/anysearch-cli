@@ -88,15 +88,29 @@ export function resetAnsChatDegradedWarnings(): void {
 }
 
 function writeStderr(line: string): void {
+  // A pipe closed by the parent emits an asynchronous 'error' event; a
+  // try/catch around `write` cannot see it. The listener is what makes a dead
+  // stderr fail-open instead of crashing the MCP process (same shape as
+  // `composition.ts`'s writeProviderDiagnostic).
+  const stderr = process.stderr;
+  const swallow = () => {};
+  stderr.once("error", swallow);
   try {
-    process.stderr.write(line + "\n");
-  } catch { /* fail-open */ }
+    // Node calls the callback with the error BEFORE emitting 'error', so the
+    // listener must survive until the event fires; it self-removes on the
+    // swallowed event.
+    stderr.write(line + "\n", (error) => {
+      if (!error) stderr.off("error", swallow);
+    });
+  } catch {
+    stderr.off("error", swallow);
+  }
 }
 
 /**
  * Design: only strings that can carry config or provider text are redacted.
- * A task or ledger id must use `writeStderr` directly — `redactSecrets`
- * replaces long tokens, and `[redacted]` no longer matches its row.
+ * Task ids and ledger ids use `writeStderr` directly: `redactSecrets` would
+ * turn them into `[redacted]`, and the log could no longer be tied to its row.
  */
 function writeRedactedDiagnostic(message: string): void {
   writeStderr(redactSecrets(message));
@@ -273,10 +287,10 @@ export function registerAnsChat(
       }
       const providerName = cfg.provider;
       const modelName = cfg.model;
-      // Design: #538 — resolve the credential file's fault once, then let the
-      // single exit below put it in the result. One wiring site means no branch
-      // can forget it; the store writes the classification, and the kernel's
-      // one table words the sentence.
+      // Design: resolve the credential file's fault once, then let the single
+      // exit below put it in the result. One wiring site means no branch can
+      // forget it; the store writes the classification, and the kernel's one
+      // table words the sentence.
       const credentialFault: CredentialFileNotice | undefined = cfg.credentialFileFault
         ? credentialFileNotice(cfg.credentialFileFault)
         : undefined;
@@ -288,10 +302,10 @@ export function registerAnsChat(
       // The task row is ended only after the handler resolves, i.e. after the
       // late settlement (flushMemory) and the observation write, so a cancelled
       // request never leaves a finished-looking task with work still in flight.
-      // Design: #538 — one exit for every branch. The result is post-processed
-      // here rather than at each `return` inside, so no path can forget the
-      // fault. The SDK types a callback result as an open object; every branch
-      // below returns this module's own text-block shape.
+      // Design: one exit for every branch. The result is post-processed here
+      // rather than at each `return` inside, so no path can forget the fault.
+      // The SDK types a callback result as an open object; every branch below
+      // returns this module's own text-block shape.
       const result = (await withMcpTask(eng, "ans_chat", () => observeTool(eng, "ans_chat", ctx, async (span) => {
         // A caller that already cancelled does no run-side work here — no
         // budget row, no session mint, no provider call. The task row itself is
