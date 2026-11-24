@@ -76,7 +76,7 @@ async function main() {
   // the trace is written (exit-time libc++abi abort during teardown) leaves
   // cli.error unset and the trace read below still passes. The exit STATUS is
   // deliberately not gated — teardown rewrites it intermittently (see
-  // install-smoke's abstain contract); the SIGNAL is the reliable marker.
+  // install-smoke's checkExitCode); the SIGNAL is the reliable marker.
   // (The MCP child is exempt: its bounded fallback kill is our own signal.)
   if (cli.signal) fail("CLI search terminated by signal " + cli.signal);
 

@@ -215,8 +215,8 @@ export async function runSearch(args: string[]): Promise<number> {
         query: queryClean,
         mode,
         results: envelope.results,
-        // providersFailed exposed so the install-smoke offline
-        // leg anchors a structured field instead of exit codes/regexes.
+        // providersFailed exposed so install-smoke's fault leg names the failed
+        // arm from a structured field, not a string match on human output.
         providersFailed: envelope.metadata?.providersFailed ?? [],
         // Who was asked, and who we cut off — with providersFailed above, these
         // three answer "what happened to each arm". A source the domain config

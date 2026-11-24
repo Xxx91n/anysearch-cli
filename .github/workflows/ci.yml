@@ -131,20 +131,25 @@ jobs:
         run: pnpm -C "$SPACED/apps/plugin" test
 
   # B2/T2: install-to-use lane against the REAL packed artifacts —
-  # the historical gap that let 0.0.0 tarballs sit stale. Packs all seven
-  # packages, npm-installs them into a clean prefix, and drives the installed
-  # `ans` bin through doctor / domain / search. Online search assertions fire
-  # only when EXA_API_KEY / TAVILY_API_KEY secrets exist; offline asserts the
-  # documented no-results path. macOS stays excluded per the ponytail note
-  # above (arm64 better-sqlite3 prebuild delta only).
+  # the historical gap that let 0.0.0 tarballs sit stale. Packs the two packages
+  # this lane installs (the complete CLI product and its peer-optional
+  # embedding), npm-installs the product into a clean prefix, and drives the
+  # installed `ans` bin through doctor / domain / search. Online search
+  # assertions fire only when EXA_API_KEY / TAVILY_API_KEY secrets exist; the
+  # two zero-result legs (fault / refusal) always run. macOS stays excluded per
+  # the ponytail note above (arm64 better-sqlite3 prebuild delta only).
   install-smoke:
     name: "install-smoke (B2: pack -> clean install -> doctor -> domain -> search)"
     # A wedged lane must fail instead of holding the job for the workflow
-    # default (360). Measured on run 45238730116: windows-latest 8m14s,
-    # ubuntu-latest 2m46s, install-smoke plus the build and three acceptance
-    # lanes all in this job — 30 leaves about 3.5x headroom. Raise it if a lane's
-    # own timeout chain starts approaching this; never let the backstop be the red.
-    timeout-minutes: 30
+    # default (360). The build, install-smoke and three acceptance lanes all
+    # live in this job; the two zero-result legs add about a second to the
+    # install-smoke lane, and the installed-acceptance lane is what dominates
+    # the job's length. Run 45344246238 took 9m20s on windows-latest and 2m45s
+    # on ubuntu-latest; the slowest windows run carrying both legs measured so
+    # far (45334810792) took 11m23s, so 20 keeps about 1.75x on it — enough for
+    # a bound whose only job is to beat a wedged lane. Raise it if a lane's own
+    # timeout chain starts approaching this; never let the backstop be the red.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
