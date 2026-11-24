@@ -317,7 +317,7 @@ function stripBom(text: string): string {
  * does not. It names `ans auth repair` because `ans chat` and the search
  * resolvers print this sentence and never show the `ans auth` help.
  */
-const FIX_ADVICE = "; fix or remove the file, or run `ans auth repair` to keep the keys it can still read";
+const FIX_ADVICE = "; fix or remove the file, or run ans auth repair to keep the keys it can still read";
 
 /** The one wording for "the file cannot be read at all"; the read and the repair share it. */
 function unreadableSentence(code: string): string {
@@ -888,8 +888,7 @@ export function writeUserCredential(
   return withCredentialLock(path, () => {
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
-      // Design: 读回来的错误句已经带「fix or remove the file, then retry」，写入口只说这次没做成什么
-      // — 再拼一遍同一句会让用户在一条消息里读两遍相同的指示（#537）。
+      // 读回来的句子已经带了修法，写入口只说这次没做成什么，不再拼第二遍。
       throw new CredentialWriteRefusal(
         existing.error + "; the key was not written - rewriting the file would drop the other keys",
         false,

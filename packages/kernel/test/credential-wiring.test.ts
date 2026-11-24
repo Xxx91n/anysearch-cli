@@ -514,7 +514,8 @@ test("the fault sentences are one table, and the errno is filled into it", () =>
   for (const errno of ["EWHATEVER", "constructor"]) {
     const record = credentialFileNotice({ kind: "unreadable", errno } as unknown as CredentialFileFault);
     assert.equal("errno" in record, false, errno + " is not forwarded outside the closed set");
-    assert.match(record.notice, /; fix it, or run ans auth repair/, errno + " gets the plain remedy");
+    assert.match(record.notice, /; fix it \(/, errno + " gets the plain remedy");
+    assert.doesNotMatch(record.notice, /ans auth repair/, "a read failure is not repaired by rewriting it");
   }
 });
 
