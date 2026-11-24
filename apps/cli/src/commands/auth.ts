@@ -11,6 +11,8 @@
 // shows only whether an entry exists and which provider/endpoint it is bound
 // to — not the value, and not any prefix or suffix of it.
 
+import { existsSync } from "node:fs";
+
 import {
   CREDENTIAL_PROVIDERS,
   credentialFileWarning,
@@ -33,7 +35,7 @@ import {
   type ProbeOutcome,
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
-import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
+import { KEY_SOURCE_LABELS, REPAIR_HINT, type LlmLayer } from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -62,13 +64,6 @@ function stderr(text: string): void {
   if (AUTH_IO.stderr) AUTH_IO.stderr(text);
   else process.stderr.write(text);
 }
-
-/**
- * The one line a command prints when it exits non-zero over a broken credential
- * file. Shared with `ans llm` so the exit-1 advice cannot drift between the two
- * commands that read the same file (#537).
- */
-export const REPAIR_HINT = 'Fix the file: ans auth repair   (keeps the keys it can read)';
 
 /** Show whether an entry exists, bound where — and it must never show the value. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
@@ -130,6 +125,13 @@ function describeSource(layer: LlmLayer | undefined): string {
   return layer ? KEY_SOURCE_LABELS[layer] : "set";
 }
 
+/** The three marks the source table can print, keyed by the state it decided. */
+const MARK: Record<"set" | "empty" | "broken", string> = {
+  set: "[SET]",
+  empty: "[EMPTY]",
+  broken: "[BROKEN]",
+};
+
 function statusLines(
   env: NodeJS.ProcessEnv,
   home: string,
@@ -171,11 +173,10 @@ function statusLines(
       where = "not set";
       state = "empty";
     }
-    const mark = state === "broken" ? "[BROKEN]" : state === "empty" ? "[EMPTY]" : "[SET]";
-    // The mark column is 8 wide plus one separator space, so `[SET]` (5),
-    // `[EMPTY]` (7) and `[BROKEN]` (8) all leave the provider id at column 9.
+    // The mark column holds `[SET]` (5), `[EMPTY]` (7) and `[BROKEN]` (8), pads to
+    // 8, and one separator space follows, so the provider id starts at column 10.
     // Nothing parses the column.
-    lines.push(mark.padEnd(8) + " " + info.id.padEnd(10) + " " + where);
+    lines.push(MARK[state].padEnd(8) + " " + info.id.padEnd(10) + " " + where);
   }
   return lines;
 }
@@ -386,12 +387,6 @@ export async function runAuth(args: string[]): Promise<number> {
     const provider = rest[0];
     if (!provider) return usage();
     if (!credentialProvider(provider)) return rejectUnknownProvider(provider);
-    const broken = readUserCredentials({ home });
-    if (broken.error) {
-      stderr(broken.error + "\n");
-      stderr("Nothing was removed. `ans auth repair` keeps the keys it can read.\n");
-      return 1;
-    }
     try {
       const removed = removeUserCredential({ provider, endpoint }, { home });
       if (!removed) {
@@ -414,11 +409,14 @@ export async function runAuth(args: string[]): Promise<number> {
     try {
       result = repairUserCredentials({ home });
     } catch (e) {
-      // A refused write (an unusable ACL tool, a folder that will not take the
-      // temp file) throws from the store; say what this command did not do
-      // instead of letting it surface as a bare top-level failure (#537).
+      // A refused write throws from the store. The wording has to branch: a write
+      // refused before it published leaves the file alone, but a check that fails
+      // AFTER the rename makes `writeProtectedFile` delete the file (it fails
+      // closed), so "nothing was changed" would be a lie there (#537).
       stderr((e as Error).message + "\n");
-      stderr("Nothing was changed.\n");
+      stderr(existsSync(userCredentialsPath(home))
+        ? "The file is unchanged.\n"
+        : "The credential file is gone now; store the keys again with `ans auth set`, or set them in the environment.\n");
       return 1;
     }
     if (result.kind === "absent") {

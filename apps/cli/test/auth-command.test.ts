@@ -377,7 +377,10 @@ test("ans auth remove 在坏文件上说一次修法就停，不动文件（#537
       const { code, out } = await capture(() => runAuth(["remove", "exa"]));
       assert.equal(code, 1, out);
       assert.equal(out.split("fix or remove").length - 1, 1, "同一句只出现一次：" + out);
-      assert.match(out, /Nothing was removed/, out);
+      // The store's own sentence carries it; the command no longer reads the file
+      // a second time to add a second wording.
+      assert.match(out, /the key was not removed - the file was not changed/, out);
+      assert.match(out, /ans auth repair/, "the way out is named where the user reads it：" + out);
       assert.equal(readFileSync(path, "utf8"), MIXED_FILE, "nothing was removed");
     });
   } finally {

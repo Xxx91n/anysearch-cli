@@ -8,13 +8,13 @@
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
-import { REPAIR_HINT } from "./auth";
 import { modelEnvKeysFor } from "@anysearch-cli/store";
 import {
   type CredentialFileContents,
   displayEndpoint,
   KEY_SOURCE_LABELS,
   readUserCredentials,
+  REPAIR_HINT,
   resolveConfigHome,
   userCredentialsPath as credentialsPath,
   resolveLlmConfig,

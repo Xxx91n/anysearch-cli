@@ -9,7 +9,7 @@
 - **`ans auth set` 在读文件那一步就失败**：读文件挪到提示输入之前，坏文件时既不问 key 也不联网验，报错点名文件，`--no-verify` 与否都一样。原来模型 provider 不联网验，所以那条误导只发生在 exa / tavily / anysearch 三家身上。
 - **`ans auth remove` 同样先读文件**，坏文件时报一次修法就停。
 - **新增 `ans auth repair`**（`repairUserCredentials`）：在写锁里重读**原始字节**，保留过得了 `parseBinding` 的条目、丢掉过不了的，然后走 `writeProtectedFile` 写回。不能拿 `readUserCredentials` 已经筛空的 `bindings` 回写——那正是读路径一直拒绝的擦除。健康的文件是 no-op，一个字节都不动；不是 JSON 或没有 `bindings` 列表时不动文件，只说「删了重存」。
-- **报错句不再重复**：`fix or remove the file, then retry` 由 `FIX_ADVICE` 一处拼出，两个写入口改成说「这次没写成什么」（`the key was not written - rewriting the file would drop the other keys` / `the key was not removed`）。
+- **报错句不再重复，并且点名修法**：`FIX_ADVICE` 一处拼出，两个写入口改成说「这次没写成什么」（`the key was not written - rewriting the file would drop the other keys` / `the key was not removed - the file was not changed`）。这句里现在带 `ans auth repair`——`ans chat` 和搜索路径的 warning 只往 stderr 说这一句，那里看不到 auth 的帮助，不点名的话用户唯一看得见的动作就是删掉整份文件。
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
@@ -18,6 +18,7 @@
 - **修复路径只修「结构里某条坏了」这一类**：不是 JSON 的文件没有任何能读的条目，`repair` 拒绝动它并让用户删掉重存；把原文件备份到旁边不做——旁路备份得自己再走一遍访问保护，多一份没人管的密钥副本，不划算。
 - **`parseBinding` 的错误句带的是文件里 `provider` 的原值**：这次加了 `showProvider`，去掉控制字符、超过 40 字符截断，但它仍然是文件里的字面值。kernel 那条 stderr 另有 `redactSecrets`，`ans auth` / `auth list` / `ans llm` / doctor 只靠这一层。
 - **修复回写只重建 `note` + `bindings`**：手改进文件的其他顶层字段会在修复时消失（写路径从来如此），输出只说保留了几条、丢了几条。
+- **修复时写失败可能让文件消失**：`writeProtectedFile` 在 rename 之后核对失败会把文件删掉（fail closed，store 原有行为）。新建的 repair 把这条路暴露给了「本来只想保住 key」的人，所以在那个出口上它不再说「什么都没变」，而是看文件还在不在：还在就说原样没动，没了就直说重存。
 - **`ans chat` 没跟着改**：坏文件时它仍旧只 warn 一句 `[config] … continuing without the user credential file` 然后照常跑（env 里的 key 还能用），退出码 0。它不是只读状态命令，凭据文件坏了不该让整场会话起不来。
 - **机器可读面没动**：`credentialSources` 在坏文件时仍是三家 `none`，和「从没配过」分不开。那是 #533。
 

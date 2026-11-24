@@ -315,8 +315,18 @@ function stripBom(text: string): string {
 /**
  * The sentence every fault in this file ends with. It lives in one place so the
  * two writers can add their own reason without repeating it (#537).
+ *
+ * It names `ans auth repair` on purpose: this text is what `ans chat` and the
+ * search resolvers print on stderr, and neither of them ever shows the `ans auth`
+ * help - without the command named here the reader's only visible move is to
+ * delete the file and lose every other key.
  */
-const FIX_ADVICE = "; fix or remove the file, then retry";
+const FIX_ADVICE = "; fix or remove the file, or run `ans auth repair` to keep the keys it can still read";
+
+/** The one wording for "the file cannot be read at all"; the read and the repair share it. */
+function unreadableSentence(code: string): string {
+  return "could not read it (" + code + "); check the file's permissions, or remove it";
+}
 
 /**
  * Parse the file's bytes. One parser for the read and the repair path: they have
@@ -370,8 +380,7 @@ export function readUserCredentials(
     // Same rule as the parse error: the file's contents never reach the output.
     return unusableFile(
       path,
-      "could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") +
-        "); check the file's permissions, or remove it",
+      unreadableSentence((e as NodeJS.ErrnoException).code ?? "I/O error"),
       "unreadable",
       (e as NodeJS.ErrnoException).code,
     );
@@ -927,8 +936,7 @@ export function repairUserCredentials(
     } catch (e) {
       return {
         kind: "unrepairable",
-        error: path + ": could not read it (" + ((e as NodeJS.ErrnoException).code ?? "I/O error") +
-          "); check the file's permissions, or remove it",
+        error: path + ": " + unreadableSentence((e as NodeJS.ErrnoException).code ?? "I/O error"),
       };
     }
     const bytes = parseCredentialBytes(raw);
