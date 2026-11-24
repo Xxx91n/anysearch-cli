@@ -51,7 +51,7 @@ try {
   {
     const src = readFileSync(script, "utf8");
     const match = src.match(/const COMPACTION_KEYS = \[([^\]]*)\]/);
-    assert(match !== null, "script declares its compaction key list");
+    assert(match !== null, "script declares its compaction key list (a rewrite of that line means updating this test)");
     const scriptKeys = (match?.[1] ?? "")
       .split(",")
       .map((k) => k.trim().replace(/^"|"$/g, ""))
@@ -86,6 +86,21 @@ try {
     assert(run.status === 1, "missing directory exits 1 (got " + run.status + ")");
     assert(out.includes("domains path not found"), "missing directory names the problem");
     assert(out.includes(missing), "missing directory names the path");
+  }
+
+  // A real directory with nothing to check in it must fail for the same reason
+  // a misspelled path does: an explicit target that yields no work is a caller
+  // mistake, not a green gate.
+  {
+    const empty = mkdtempSync(join(tmpdir(), "ans-compaction-empty-"));
+    try {
+      const run = spawnSync(process.execPath, [script, empty], { encoding: "utf8" });
+      const out = String(run.stdout ?? "");
+      assert(run.status === 1, "empty directory exits 1 (got " + run.status + ")");
+      assert(out.includes("no *.toml files in"), "empty directory names the problem");
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   }
 
   // A file where a directory belongs must fail too, not throw a raw ENOTDIR.

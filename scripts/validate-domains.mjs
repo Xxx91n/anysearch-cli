@@ -77,6 +77,10 @@ const files = fs
   .sort();
 
 if (files.length === 0) {
+  // An explicit directory must have something to check. A real-but-wrong path
+  // (docs/, providers/) would otherwise read as "nothing to do" and turn a
+  // blocking gate green — the same hole as a misspelled path.
+  if (ARG_DIR) fail(`no *.toml files in ${DOMAINS_DIR}`);
   info("no domains/*.toml — skip");
   process.exit(0);
 }

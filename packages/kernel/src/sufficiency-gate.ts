@@ -52,12 +52,11 @@ export interface GateEnvelope {
   targetMessageIndex: number;         // index of the tool_result message to update
 }
 
-// The envelope arrives as JSON.parse output, so tsc checks nothing read off it.
-// This is the one shape this module depends on: the engine writes
-// `extra.trustLabel` (a SourceTraceLabel) onto every sanitized result, and the
-// judgment-input trace id is read back from there. Typing it here means a
-// rename inside `extra` is edited in one visible place instead of silently
-// falling back to the placeholder id.
+// The envelope is JSON.parse output, so tsc checks nothing read off it. This is
+// the shape this module reads: the engine writes `extra.trustLabel`
+// (a SourceTraceLabel) onto each sanitized result. A missing or renamed field
+// falls back to the placeholder trace id; the local type keeps that read in one
+// place.
 interface EnvelopeTrustShape {
   results?: Array<{ extra?: { trustLabel?: SourceTraceLabel } }>;
 }
