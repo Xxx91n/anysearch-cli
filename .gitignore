@@ -5,6 +5,9 @@ node_modules/
 dist/
 .turbo/
 
+# coverage reports — c8 output of the coverage lane (.github/workflows/coverage.yml)
+coverage/
+
 # ctx-mode temp (AGENTS.md policy)
 .codex-tmp/
 .codegraph/

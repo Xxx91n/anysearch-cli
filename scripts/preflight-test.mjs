@@ -3,7 +3,9 @@
 // scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
 // it into a package list. A change outside apps/ and packages/ has no clear
 // owner, so it falls back to the full suite — except documentation, which runs
-// nothing and says so.
+// nothing and says so, and the root files whose readers the plan's table names,
+// which run those readers — alone when the change is only root files, joined to
+// the incremental set when it also touches packages.
 //
 // Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
@@ -117,7 +119,7 @@ if (plan.mode === "full") {
   if (plan.outside?.length) console.log(`[preflight] outside the packages: ${listFirst(plan.outside)}`);
 } else {
   console.log(`[preflight] changed ${plan.files.length} file(s), running ${plan.packages.length} package(s)`);
-  console.log(`[preflight] run: ${plan.packages.join(", ")} (the change plus everything that depends on it)`);
+  console.log(`[preflight] run: ${plan.packages.join(", ")} (${runReason(plan)})`);
   console.log("[preflight] turbo runs tests in these packages only, not in the packages they depend on");
 }
 
@@ -249,6 +251,21 @@ function readStdin() {
 function listFirst(files) {
   const shown = files.slice(0, 5).join(", ");
   return files.length > 5 ? `${shown}, +${files.length - 5} more` : shown;
+}
+
+// Why these packages and no others. Each mode that exists says what it is; the
+// default is a guard for a mode this printer has not met yet, so it names the
+// packages without borrowing a closure claim that did not happen.
+function runReason(plan) {
+  switch (plan.mode) {
+    case "readers":
+      return "the packages whose tests read these root files";
+    case "incremental":
+      if (plan.readers) return "the change plus its dependents, plus the readers of root files";
+      return "the change plus everything that depends on it";
+    default:
+      return "the packages this change selected";
+  }
 }
 
 // The child's whole home is a fresh temp dir, so a test that writes to ~/.ans

@@ -75,10 +75,11 @@ event's degraded list. That is a lost hint, never an abstain. See
 
 `mode = "answer"` asks the provider for a generated answer. It is never
 synthesized locally. AnySearch degrades an `answer` request to a plain
-search. Exa and Tavily support it. Provider answers are real fields, not local
-synthesis: `answers` carries the text, and `providerAnswers` carries
-`{provider, text, verified: false, citations?}`. When no provider supports
-answer mode, `answersAvailable` is `false`.
+search. Exa and Tavily support it — Exa only on its keyed REST arm, since the
+free-quota arm has no answer capability. Provider answers are real fields,
+not local synthesis: `answers` carries the text, and `providerAnswers`
+carries `{provider, text, verified: false, citations?}`. When no provider
+supports answer mode, `answersAvailable` is `false`.
 
 ### Result shape
 
@@ -261,12 +262,14 @@ Rules behind the table:
   `none` means no key is configured for that arm (absent, empty, and
   whitespace-only all read as none), so a reader never has to infer a missing
   key from a missing field. `status: "resolved"` says the resolution ran, never that a key
-  was found, and `none` is not a claim that the arm sits idle — tavily and
-  anysearch search on the provider's free quota without a key. Whether an arm
-  was *built* is a different question, answered by `providerBuildErrors`: an
-  arm can record `none` and still fail to construct (exa's adapter refuses
-  without a key, so it records `none` and reports the build failure). It is the
-  same object `ans search --json` emits, so the two surfaces cannot disagree.
+  was found, and `none` is not a claim that the arm sits idle — all three
+  search on the provider's free quota without a key (Exa switches to its own
+  MCP endpoint). Whether an arm was *built* is a different question, answered
+  by `providerBuildErrors`: a key that cannot be used fails construction there,
+  and the record calls it a credential fault without quoting the key. A
+  missing key never shows up as a build failure — that arm runs on the free
+  quota. It is the same object `ans search --json` emits, so the two surfaces
+  cannot disagree.
   An engine built without a credential seam reports `null` in both surfaces.
   Error results do not carry it.
 - **An error class carries its remedy.** The class is a machine tag; a reader
@@ -319,7 +322,8 @@ Upstream cancellation differs per provider. AnySearch aborts each POST, but
 concurrent searches share one MCP handshake, so it follows the first caller's
 signal: later callers cannot cancel that wait, and if the first caller cancels,
 both searches may fail together. Exa forwards the signal as a trailing request
-option (#216). Tavily's SDK exposes none (#32).
+option (#216) on its REST arm, and passes it straight to `fetch` on the
+free-quota arm. Tavily's SDK exposes none (#32).
 
 ## Client identity
 
@@ -600,7 +604,7 @@ the file's definition and protection, `docs/ans-layout.md` its position.
 | `ANS_DOMAIN` | engine construction | Selects the current domain (TOML allowlist + provider set). Unset = search all providers. An unknown/unresolvable name also falls back to searching all providers **without the URL allowlist** — a typo silently turns off domain filtering, so check the TOML first. Snapshotted at startup. |
 | `ANS_DB_PATH` | engine construction | Store path; default `~/.ans/anysearch.db`. The directory and DB get owner-only permissions when created (best-effort). |
 | `ANS_DOMAINS_DIR` | engine construction | Extra directory of domain TOMLs, prepended to the default search chain. |
-| `EXA_API_KEY` / `TAVILY_API_KEY` / `ANYSEARCH_API_KEY` | provider adapters | Per-provider keys. Exa requires one. Tavily and AnySearch both run on the free quota. |
+| `EXA_API_KEY` / `TAVILY_API_KEY` / `ANYSEARCH_API_KEY` | provider adapters | Per-provider keys. All three search on the provider's free quota when one is absent; Exa then switches to its own MCP endpoint. |
 | `ANYSEARCH_ENDPOINT` | anysearch adapter | Upstream MCP endpoint override (default `https://api.anysearch.com/mcp`). A value ending in `/v1/search` is rewritten to `<base>/mcp` once per process with a stderr warning. |
 | `ANS_MCP_KEY` | HTTP transport only | When set, every HTTP request must send `Authorization: Bearer <key>`. Otherwise HTTP returns 401 with `{error:{code:-32001, message:"Unauthorized"}}` (an error object, not a full JSON-RPC response). Unset = no MCP-level auth; the listener is still bound to `127.0.0.1` (see Start the server). |
 | `ANS_SERVER_URL` / `ANS_SERVER_TOKEN` | `recall_memory` fallback | Address and bearer token of the local plugin server. When unset, MCP reads the address published in `~/.ans/server.json` and the token in `~/.ans/server-token` (`%USERPROFILE%` on Windows), then falls back to `http://127.0.0.1:33333`. No token means no server has run for this installation; the fallback then reports itself unavailable. |
@@ -627,19 +631,21 @@ uses** (below).
 | Provider | Upstream transport | Wired search surface | Answer mode | Domain pre-filter | Vertical routing | Cancellation | Usage endpoint (upstream / adapter) |
 |----------|-------------------|----------------------|-------------|-------------------|------------------|--------------|-------------------------------------|
 | anysearch | MCP Streamable HTTP (`POST /mcp`, hand-written JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes, per POST (shared-handshake caveat) | upstream none; adapter not wired |
-| exa | official `exa-js` SDK | `search` (fast / index / deep) + `answer` | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only) | no | yes (`signal` trailing option on `search()` / `answer()`) | upstream none; adapter not wired |
+| exa | official `exa-js` SDK with a key; Exa's own MCP endpoint without one (free quota) | `search` (fast / index / deep) + `answer` (REST arm only; the free arm has no `answer`) | yes (`answer()`, citations kept with `verified:false`; an answer failure degrades to results plus a stderr line) — REST arm only | yes (`includeDomains`, `search()` only) — REST arm only | no | yes (`signal` trailing option on `search()` / `answer()`; the free arm passes it to `fetch`) | upstream none; adapter not wired |
 | tavily | official `@tavily/core` SDK | `search` (fast / index / deep) + `answer` | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (SDK exposes no signal) | upstream `GET /usage`; adapter not wired |
 
 This table only lists what our adapters actually wire, not everything in the
-upstream catalogs. AnySearch is the only MCP upstream here.
+upstream catalogs. Two upstreams speak MCP here: AnySearch's own endpoint, and
+Exa's free-quota arm.
 
 Provider selection comes from the current domain's `sources.enabled`. A
 provider that cannot be constructed is skipped and recorded in
 `providerBuildErrors`. If no provider can register, the search is an error,
-not an abstain. Exa and Tavily run on their official SDKs. Their hosted MCP
-servers are agent-facing tool surfaces, not server-side provider APIs, so the
-adapter code does not use them. **We have no plans to migrate Exa or Tavily to
-MCP.**
+not an abstain. Exa and Tavily run on their official SDKs — Exa only when a
+key is configured. Exa's hosted MCP server is also wired, but only as the
+no-key arm: it is the one way to search Exa without a key, and it gives up
+`answer` and the upstream domain pre-filter to get there. Tavily's hosted MCP
+server is still not used.
 
 Exa's `includeDomains` applies only to `search()`. Its separate `answer()`
 call does not receive the allowlist, and the kernel does not URL-gate answer

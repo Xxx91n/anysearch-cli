@@ -4,8 +4,10 @@
 # anysearch pre-push: run the tests this push can break — the changed workspace
 # packages plus every package that depends on them — before anything leaves the
 # machine. `--pushed` makes the script read the refs git hands the hook on stdin.
-# A change outside apps/ and packages/ falls back to the full workspace suite; a
-# push that carries only documentation runs nothing and says it skipped.
+# A change outside apps/ and packages/ falls back to the full workspace suite,
+# except a root file the plan's reader table names, which runs only the packages
+# that read it; a push that carries only documentation runs nothing and says it
+# skipped.
 # Install and check it from the repo root: pnpm hooks:install / pnpm hooks:status
 # (pnpm -w … from a subdirectory). AGENTS.md has both, and what each exit code means.
 # Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default

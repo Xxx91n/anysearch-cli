@@ -9,9 +9,11 @@
 // kernel's tests read apps/mcp/domains, which only an unfiltered full run
 // covers — the push gate's --full, CI's check-build lane, and the merge gate.
 // A change outside apps/ and packages/ that is not documentation runs the whole
-// suite, because no rule here names which packages read it. Root files change
-// what every package runs (the lockfile, turbo.json) and belong to no package,
-// so they run the whole suite too.
+// suite, because no rule here names which packages read it. A root file the
+// reader table below names is the exception: it runs those packages and nothing
+// else (#489). The rest of the root still runs everything — the lockfile,
+// turbo.json, pnpm-workspace.yaml, .github/, and .gitignore, which changes what
+// git sees for every package.
 //
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
@@ -32,11 +34,15 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
 /**
  * Decide what a preflight run should do.
  *
+ * `readers` is set only when an incremental run carried a root file with known
+ * readers. It is absent on a `readers` run (whose `packages` are the readers)
+ * and on any run that carried none of those files.
+ *
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "docs" | "full" | "incremental", reason?: string, files: string[],
- *            packages: string[], touched?: string[], outside?: string[] }}
+ * @returns {{ mode: "none" | "docs" | "readers" | "full" | "incremental", reason?: string, files: string[],
+ *            packages: string[], readers?: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
@@ -59,20 +65,43 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     return { mode: "full", reason, files, packages: [] };
   }
 
-  const { touched, unowned: outside } = codeOwnership(files, packages);
+  // Design: a root file the reader table names runs those packages alone, and
+  // every other file goes through the package lookup — a reader the workspace no
+  // longer has would filter turbo down to no task while the gate printed green,
+  // so a miss reads as the full suite instead.
+  const readers = new Set();
+  const withoutReaders = [];
+  for (const file of files) {
+    const readBy = rootReaders(file);
+    if (readBy) for (const name of readBy) readers.add(name);
+    else withoutReaders.push(file);
+  }
+  const known = new Set(packages.map((pkg) => pkg.name));
+  const missing = [...readers].filter((name) => !known.has(name));
+  if (missing.length > 0) {
+    return { mode: "full", reason: `no workspace package named: ${missing.sort().join(", ")}`, files, packages: [] };
+  }
+
+  const { touched, unowned: outside } = codeOwnership(withoutReaders, packages);
   if (outside.length > 0) {
     // A path under apps/ that lost its package still has to say so: "outside
     // the workspace packages" reads as "not in apps/", which is not the case.
-    const underNameless = outside.every((file) =>
-      nameless.some((dir) => file === dir || file.startsWith(`${dir}/`)),
-    );
+    const underNameless = outside.every((file) => nameless.some((dir) => isWithin(file, dir)));
     const reason = underNameless
       ? "files under a directory whose package.json has no name"
       : "files outside the workspace packages";
     return { mode: "full", reason, files, outside, packages: [] };
   }
 
-  return { mode: "incremental", files, touched, packages: withDependents(touched, packages) };
+  const readerPackages = [...readers].sort();
+  if (touched.length === 0) return { mode: "readers", files, packages: readerPackages };
+  return {
+    mode: "incremental",
+    files,
+    touched,
+    ...(readerPackages.length > 0 ? { readers: readerPackages } : {}),
+    packages: [...new Set([...readerPackages, ...withDependents(touched, packages)])].sort(),
+  };
 }
 
 const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
@@ -104,6 +133,11 @@ export function docsOnly(files) {
  * the files no package owns. Docs are skipped here, so they never count as
  * unowned.
  *
+ * Root files with a known reader (#489) do not reach this from the push gate —
+ * the plan resolves them first. CI still calls this with them, and still counts
+ * them as unowned: a lane covers many packages, so "these read the file" buys no
+ * lane back, and `check-build` runs the full suite for a root file either way.
+ *
  * @param {string[]} files normalized paths, docs not removed yet
  * @param {{ name: string, dir: string, deps: string[] }[]} packages
  * @returns {{ touched: string[], unowned: string[] }}
@@ -118,6 +152,52 @@ export function codeOwnership(files, packages) {
     else unowned.push(file);
   }
   return { unowned, touched: [...new Set(touched)].sort() };
+}
+
+/**
+ * Root files with known readers: for each, the workspace packages a change to
+ * the file can break, because a test of theirs reads it.
+ *
+ * Design: the table is hand-written and deliberately short (#489) — a root file
+ * that is not here keeps the full-suite fallback, the safe direction to be wrong
+ * in, over guessing a reader from a directory name. `ext` narrows a row to the
+ * files a loader reads (`domains/*.toml`), so a file dropped beside them keeps
+ * the fallback. Readers do not bring their dependents: an app that depends on
+ * store never opens the file through store's tests, so a dependent that does
+ * read it is named in its own right, as cli is on the domains row.
+ *
+ * mcp's build copies the root domains into its committed `apps/mcp/domains`, and
+ * that is still not a reader: turbo caches `build`, a root-only change is not in
+ * that hash, so a warm cache skips the sync and the lane's mcp tests read the
+ * stale copy. A row there would claim coverage the gate does not have; it stays
+ * out until the copy has a check of its own.
+ *
+ * `scripts/test/preflight-root-readers.mjs` holds the answers both test files
+ * assert, and the plan test pins every row against the real workspace — each
+ * path on disk, each reader a package that still exists, each list exact — so
+ * the table carries no evidence prose of its own.
+ */
+export const ROOT_READERS = [
+  {
+    path: "domains",
+    ext: ".toml",
+    readers: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
+  },
+  { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
+  { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "eval-looks.coverage.json", readers: ["@anysearch-cli/store"] },
+  { path: "eval-looks.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+];
+
+/** The readers the table names for a root file, or null when it names none. */
+function rootReaders(file) {
+  const normalized = normalizePath(file);
+  for (const entry of ROOT_READERS) {
+    if (!isWithin(normalized, entry.path)) continue;
+    if (entry.ext && !normalized.endsWith(entry.ext)) continue;
+    return entry.readers;
+  }
+  return null;
 }
 
 /**
@@ -205,7 +285,7 @@ export function withDependents(touched, packages) {
 export function packageForFile(file, packages) {
   let owner = null;
   for (const pkg of packages) {
-    if (file === pkg.dir || file.startsWith(`${pkg.dir}/`)) {
+    if (isWithin(file, pkg.dir)) {
       if (!owner || pkg.dir.length > owner.dir.length) owner = pkg;
     }
   }
@@ -286,6 +366,11 @@ function workspaceDeps(manifest) {
 /** Repo-relative path with forward slashes, no `./` prefix, no trailing `/`. */
 export function normalizePath(file) {
   return String(file).replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+/** True when the file is the directory itself or sits inside it. */
+function isWithin(file, dir) {
+  return file === dir || file.startsWith(`${dir}/`);
 }
 
 function isDirectory(dir) {
