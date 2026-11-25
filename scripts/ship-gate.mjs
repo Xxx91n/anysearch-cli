@@ -1391,10 +1391,7 @@ async function stepMemoryEval() {
     if (!z || typeof z !== "object") failUnverifiable("memory-eval report missing metrics.observational zone (E3 fail-closed)");
     if (z.schema !== "anysearch/observational@1") failUnverifiable("observational zone schema drift: " + z.schema);
     for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures", "armDeltas", "maxLexicalOverlap", "exclusiveHits", "nativeScoresMissing"]) if (!(k in z)) failUnverifiable("observational zone missing" + k);
-    // Design: retire D7 3-streak escalation on the eval path (#591) — golden eval runs on ephemeral
-    // per-case DBs (structurally data-absent); real consumed-track PSI and human-review escalation
-    // live in switch-run against the durable DB. Rejected alternatives: fake PSI baseline, or
-    // warn-only streaks on data-absent. E3 presence stays fail-closed.
+    // Eval path is E3 report-only (D7 3-streak retired; durable-DB switch-run owns real PSI/escalation).
     report("pass", "memory-eval observational zone present (values never gated; D7 streak retired on eval path)");
     // impl-plan 8: ship-gate reads switch state through the ledger (informational;
     // exit-code semantics unchanged — S0 data-absent boots must pass on both db shapes).
@@ -1405,7 +1402,8 @@ async function stepMemoryEval() {
         const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
         report("info", "switch-state: phase" + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since" + st.since : "") + (st && st.transitionId ? " transitionId" + st.transitionId : ""));
       } catch (e) {
-        report("info", "switch-state: ledger unreadable (inspect or remove " + skipL + "): " + String(e && e.message ? e.message : e));
+        const qHint = skipL.replace(/\.json$/, ".quarantined.json");
+        report("info", "switch-state: ledger unreadable — move aside to preserve evidence (mv " + skipL + " " + qHint + "): " + String(e && e.message ? e.message : e));
       }
     } else {
       report("info", "switch-state: no ledger yet — phase S0 (boot)");

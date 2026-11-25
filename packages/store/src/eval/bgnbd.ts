@@ -28,7 +28,7 @@ export interface TauFitGateInput {
 // window; all of them quote an immature dataset, not a degraded pipeline) vs SUBSTANTIVE
 // hits (a numeric PSI drift vs an existing baseline, or the anti-peeking interval). The
 // consumed eval track surfaces the former as dataAbsent=true in the E3 observational report
-// (report-only; #591 retired eval-side skip-ledger accounting).
+// (report-only).
 export function isStructuralAbsence(failures: readonly string[]): boolean {
   if (failures.length === 0) return false;
   return failures.every((f) => f.startsWith("T1:") || f.includes("PSI unavailable") || f.startsWith("T3: observation window"));

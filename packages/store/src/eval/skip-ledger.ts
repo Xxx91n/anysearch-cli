@@ -5,14 +5,9 @@
 // (npm lockfile read-old/write-new pattern), closing r106.
 // (r42 impl): schema @3 — materialized state block {phase,since,transitionId,
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
-// readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
-// skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
-// Design: retire D7 3-streak escalation on the eval CLI path (#591) — golden eval runs on
-// ephemeral per-case DBs (consumed track is structurally data-absent), and real consumed-track
-// PSI + human-review escalation live in switch-run against the durable DB. Rejected alternatives:
-// synthesizing a PSI baseline for ephemeral DBs, or warn-only streaks on data-absent. This
-// module's @3 schema, lock, and atomic write remain active for switch-run / ans switch-state;
-// legacy skip-streak helpers and fields stay for backward-compatible parsing and unit contracts.
+// readiness events. Upcast @1/@2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
+// This module owns skip-ledger.json (@3) state, lock, atomic write, and quarantine for switch-run
+// and ans switch-state; the eval path no longer runs skip-streak accounting.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withLedgerLock } from "./ledger-lock";
@@ -21,7 +16,6 @@ import type { SwitchPhase } from "./switch-machine";
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
 export const SKIP_LEDGER_SCHEMA_V2 = "anysearch/gain-ledger@2";
 export const SKIP_LEDGER_SCHEMA_V1 = "anysearch/gain-ledger@1";
-export const SKIP_STREAK_LIMIT = 3;
 
 export type ObsTrack = "consumed" | "synthetic";
 // reasonCode is open and deprecate-only. Newer ledger versions may carry new
@@ -160,60 +154,8 @@ export function parseSkipLedger(text: string): SkipLedger {
   return j as unknown as SkipLedger;
 }
 
-// Legacy skip-streak helper (retired on the eval CLI path in #591; kept for backward-compatible
-// @1/@2/@3 schema contracts and unit tests). Consecutive identical key sets bump the streak;
-// zero skips or data-absent entries reset it to 0.
-export function recordSkips(
-  ledger: SkipLedger,
-  skipKeys: string[],
-  at: string,
-  meta: { track?: ObsTrack; reasonCode?: SkipReasonCode } = {},
-): number {
-  const track = meta.track ?? "consumed";
-  const reasonCode = meta.reasonCode ?? "gate-not-met";
-  const sorted = [...skipKeys].sort();
-  // synthetic drills are a separate plane. Their skip history is retained for
-  // provenance, but they never advance the consumed three-streak escalation budget.
-  if (track === "synthetic") {
-    if (sorted.length === 0) {
-      ledger.history = [...ledger.history, { at, tier: "green", look: "", track }].slice(-20);
-      return 0;
-    }
-    if (reasonCode === "data-absent") {
-      ledger.history = [...ledger.history, { at, tier: "data-absent", look: sorted.join("; ").slice(0, 200), track, reasonCode }].slice(-20);
-      return 0;
-    }
-    ledger.history = [...ledger.history, { at, tier: "warn", look: sorted.join("; ").slice(0, 200), track, reasonCode }].slice(-20);
-    return 0;
-  }
-  if (sorted.length === 0) {
-    ledger.consecutiveWarn = 0;
-    ledger.lastSkipKeys = [];
-    // evaluation cadence is the count of evaluation rounds, not access
-    // events. The orchestrator seeds evaluationCount from the ledger's readiness actions
-    // ring; advanceSwitch takes care of incrementing it elsewhere, so nothing to do here.
-    ledger.history = [...ledger.history, { at, tier: "green", look: "", track }].slice(-20);
-    return 0;
-  }
-  if (reasonCode === "data-absent") {
-    ledger.consecutiveWarn = 0;
-    ledger.lastSkipKeys = [];
-    ledger.history = [...ledger.history, { at, tier: "data-absent", look: sorted.join("; ").slice(0, 200), track, reasonCode }].slice(-20);
-    return 0;
-  }
-  const same = JSON.stringify(sorted) === JSON.stringify(ledger.lastSkipKeys ?? []);
-  ledger.consecutiveWarn = same ? ledger.consecutiveWarn + 1 : 1;
-  ledger.lastSkipKeys = sorted;
-  ledger.history = [...ledger.history, { at, tier: "warn", look: sorted.join("; ").slice(0, 200), track, reasonCode }].slice(-20);
-  return ledger.consecutiveWarn;
-}
-
-export function skipMustFail(ledger: SkipLedger): boolean {
-  return ledger.consecutiveWarn >= SKIP_STREAK_LIMIT;
-}
-
-// switch actions are ledgered separately from skip entries — an action is
-// never a skip and never touches consecutiveWarn. Capped ring, capped reason length.
+// switch actions are ledgered separately from legacy skip fields and never touch consecutiveWarn.
+// Capped ring, capped reason length.
 export function appendSwitchAction(ledger: SkipLedger, a: SwitchActionEntry): void {
   ledger.actions = [...ledger.actions, { at: a.at, kind: a.kind, from: a.from, to: a.to, reason: a.reason.slice(0, 400), ...(a.provenance ? { provenance: a.provenance } : {}) }].slice(-100);
 }
@@ -270,4 +212,33 @@ export function quarantineSkipLedger(outDir: string, at: string): QuarantineResu
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
   return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
+}
+
+// Run a skip-ledger writer (such as advanceSwitch) with narrow corrupt-ledger recovery:
+// only SkipLedgerError quarantines the unreadable file aside and retries once; lock contention
+// and filesystem errors leave the healthy ledger untouched (#577/#591).
+export function runWithSkipLedgerRecovery<T>(
+  outDir: string,
+  fn: () => T,
+  onNote?: (msg: string) => void,
+  at: string = new Date().toISOString(),
+): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (!(e instanceof SkipLedgerError)) throw e;
+    const detail = String(e.message ?? e);
+    const moved = quarantineSkipLedger(outDir, at);
+    if ("quarantined" in moved) {
+      onNote?.("skip-ledger fails its contract — quarantined to " + moved.quarantined + " and restarted empty (" + detail + ")");
+      return fn();
+    }
+    if ("absent" in moved) {
+      onNote?.("skip-ledger fails its contract — no file to quarantine (" + detail + ")");
+    } else {
+      const why = String((moved.failed as Error)?.message ?? moved.failed);
+      onNote?.("skip-ledger fails its contract and could not be quarantined — left in place (" + why + ")");
+    }
+    throw e;
+  }
 }

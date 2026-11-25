@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
+import { runWithSkipLedgerRecovery } from "./skip-ledger";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
@@ -321,13 +322,18 @@ async function main(): Promise<number> {
     // returned. Default the verdict to failed for decision-grade runs and to pass for
     // observational runs; advanceSwitch only ever flips a decision-grade verdict to
     // failed on its own failure paths.
-    const sw = advanceSwitch({
+    const swInput = {
       outDir,
       dbPath: swDb,
-      mode: "real",
+      mode: "real" as const,
       integrityFailed: probe && !probe.ok ? probe.detail : null,
       untrustworthyEvidence: gateBoundary && ob?.eventWriteFailures && ob.eventWriteFailures.count > 0,
-    });
+    };
+    const sw = runWithSkipLedgerRecovery(
+      outDir,
+      () => advanceSwitch(swInput),
+      (msg) => console.error("[switch] " + msg),
+    );
     // r116 fix: decision-grade runs default to failed and only flip to pass when BOTH
     // the chain probe succeeds AND advanceSwitch returns no integrity error. This closes
     // the S1 P0 finding that the verdict producer could default to pass without a
