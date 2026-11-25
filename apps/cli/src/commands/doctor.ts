@@ -24,16 +24,37 @@ import {
   preMigrationRecordPath,
   readMigrationStatus,
   type MigrationLayoutStatus,
-  readUserCredentials,
-  resolveConfigHome,
   resolveSearchCredentials,
-  userCredentialsPath,
 } from "@anysearch-cli/store";
 import { classifyProviderBuildError, resolveDbPath, resolveDomainConstraint } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
-import { resolveLlmConfig } from "../config-llm";
-import { DiagReport } from "../diagnostics";
+import {
+  BASE_URL_SOURCE,
+  bindingCommand,
+  bindingRetarget,
+  displayEndpoint,
+  LLM_API_VALUES,
+  llmKeyLabel,
+  normalizeBindingEndpoint,
+  providerLabel,
+  PROJECT_LLM_KEYS,
+  readUserCredentials,
+  REQUIRED_LLM_KEYS,
+  resolveConfigHome,
+  resolveLlmConfig,
+  userCredentialsPath,
+  type LlmConfigFileState,
+  type LlmConfigFileStatus,
+  type LlmFileDiagnostic,
+  type LlmFileDiagnosticKind,
+  type LlmFileFault,
+  type LlmLayer,
+  type LlmValueDiagnostic,
+  type LlmValueDiagnosticKind,
+  type ResolvedLlmConfig,
+} from "../config-llm";
+import { DiagReport, type DiagEntry, type DiagState } from "../diagnostics";
 import { describeIdentity, installedProduct } from "../build-identity";
 import { INSTALL_BINS, binOnPath, getHost, listHostIds } from "../host-wiring/hosts";
 import { computePlan } from "../host-wiring/plan";
@@ -76,6 +97,172 @@ export interface DoctorOptions {
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+// ── LLM 配置的固定两行 + 值级说明 ────────────────────────────────────
+//
+// 文件状态和值级诊断都来自解析器的结构化事实，这里只翻成 doctor 的四态和一句中文。
+
+/** 六种文件状态 → doctor 四态。只有读不出/TOML 坏算失败。 */
+const LLM_FILE_STATE: Record<LlmConfigFileStatus, DiagState> = {
+  missing: "unconfigured",
+  empty: "unconfigured",
+  "no-llm": "unconfigured",
+  half: "unconfigured",
+  ok: "ready",
+  broken: "failed",
+};
+
+const LLM_LAYER_TEXT: Record<LlmLayer, string> = {
+  cli: "命令行",
+  env: "环境变量",
+  project: "项目级配置文件",
+  user: "用户级配置文件",
+  credentials: "凭据文件",
+};
+
+/** 模型密钥的来源；`user` 层是从 env_key 指的环境变量读的，不是文件本身。 */
+const LLM_KEY_SOURCE_TEXT: Record<LlmLayer, string> = {
+  ...LLM_LAYER_TEXT,
+  user: "用户级配置里 env_key 指的环境变量",
+};
+
+/** 没有说明的 kind 留空，不挂在「忽略键」后面。 */
+const LLM_FILE_KIND_NOTE: Record<LlmFileDiagnosticKind, string | undefined> = {
+  unreadable: undefined,
+  "invalid-toml": undefined,
+  "llm-not-table": undefined,
+  "not-allowed-key": "项目级只认 " + PROJECT_LLM_KEYS.join("、"),
+  "secret-looking-key": "配置文件不存密钥",
+  "unknown-key": "不认识的键",
+  "invalid-type": "值必须是非空字符串",
+};
+
+function llmFileFaultDetail(file: LlmConfigFileState): string {
+  const fault: LlmFileFault | undefined = file.fault;
+  const displayPath = file.displayPath;
+  const kind = file.diagnostics.find((d) => d.kind === "unreadable" || d.kind === "invalid-toml")?.kind;
+  if (kind === "unreadable") {
+    const reason = fault?.code ? "（" + fault.code + "）" : "（原因未知）";
+    return "读不出来：" + displayPath + reason;
+  }
+  let position: string;
+  if (fault?.line !== undefined && fault.column !== undefined) {
+    position = "（第 " + fault.line + " 行第 " + fault.column + " 列）";
+  } else {
+    position = "（原因未知）";
+  }
+  return "TOML 坏了：" + displayPath + position;
+}
+
+/** 一份文件一行的主句。 */
+const LLM_FILE_MAIN_DETAIL: Record<
+  LlmConfigFileStatus,
+  (file: LlmConfigFileState) => string
+> = {
+  missing: (file) => "没有这个文件：" + file.displayPath,
+  empty: (file) => "文件在，里面是空的：" + file.displayPath,
+  "no-llm": (file) => {
+    const notTable = file.diagnostics.some((d) => d.kind === "llm-not-table");
+    return "文件在，但没有 [llm]：" + file.displayPath + (notTable ? "（[llm] 不是表，整段被忽略）" : "");
+  },
+  half: (file) => {
+    const missing = REQUIRED_LLM_KEYS.filter((name) => !file.present.includes(name));
+    return file.present.length === 0
+      ? "有 [llm]，但 " + REQUIRED_LLM_KEYS.join("、") + " 都没写：" + file.displayPath
+      : "有 [llm]，设了 " + file.present.join("、") + "，缺 " + missing.join("、") + "：" + file.displayPath;
+  },
+  ok: (file) => REQUIRED_LLM_KEYS.join("、") + " 都在：" + file.displayPath,
+  broken: (file) => llmFileFaultDetail(file),
+};
+
+/** 一份文件一行：状态和路径说清，被丢的键接在后面。 */
+function llmFileDetail(file: LlmConfigFileState): string {
+  let detail = LLM_FILE_MAIN_DETAIL[file.status](file);
+  const ignored = file.diagnostics
+    .filter((d): d is LlmFileDiagnostic & { key: string } => d.key !== undefined)
+    .map((d) => {
+      const note = LLM_FILE_KIND_NOTE[d.kind];
+      return note === undefined ? undefined : "忽略 [llm]." + d.key + "：" + note;
+    })
+    .filter((note): note is string => note !== undefined);
+  if (ignored.length > 0) detail += "；" + ignored.join("；");
+  return detail;
+}
+
+const LLM_API_LIST = LLM_API_VALUES.join(" / ");
+const LLM_ENDPOINT_PLACEHOLDER = "'<地址>'";
+const LLM_ENDPOINT_MISSING_API = "自定义地址没写 api（要 " + LLM_API_LIST + "）";
+const LLM_ENDPOINT_FAILURE = LLM_ENDPOINT_MISSING_API + "，模型起不来";
+const LLM_ENDPOINT_INVALID = "自定义地址的 api 值非法，模型起不来";
+
+/** 存着的模型 key 绑错 endpoint 的说明；两个地址都给，但只用安全显示版。 */
+function storedKeyEndpointText(provider: string, cfg: ResolvedLlmConfig): string {
+  const stored = cfg.storedModelKeyEndpoints ?? [];
+  const storedText = stored.length > 0 ? stored.join("、") : "provider 默认地址";
+  const effective = normalizeBindingEndpoint(cfg.baseUrl);
+  const effectiveText = effective === null ? "provider 默认地址" : displayEndpoint(effective);
+  const target = bindingRetarget(
+    provider,
+    effective,
+    cfg.baseUrl !== undefined && cfg.sources.baseUrl !== undefined
+      ? { value: cfg.baseUrl, layer: cfg.sources.baseUrl }
+      : {},
+  );
+  const command = bindingCommand(target, LLM_ENDPOINT_PLACEHOLDER);
+  let fix: string;
+  switch (target.kind) {
+    case "default":
+      fix = "用 `" + command + "` 重新存，绑到当前 provider 默认地址";
+      break;
+    case "endpoint":
+      fix = "用 `" + command + "` 按当前地址重新存一遍";
+      break;
+    case "unprintable": {
+      const source = target.source === "user"
+        ? "用户级配置文件里的 [llm].base_url"
+        : BASE_URL_SOURCE[target.source];
+      fix = "完整地址在 " + source + "；把 `" + command + "` 里的 " + LLM_ENDPOINT_PLACEHOLDER + " 换成完整地址再跑";
+      break;
+    }
+  }
+  return "存着的 " + providerLabel(provider) + " key 绑在 " + storedText +
+    "，当前生效的是 " + effectiveText + "；这把 key 没生效。" + fix;
+}
+
+/** 值级诊断里的 env_key 名字；credentials 那条没有这个字段。 */
+function envKeyLabelText(diag: LlmValueDiagnostic): string {
+  return "envKeyLabel" in diag ? diag.envKeyLabel : "那个变量";
+}
+const LLM_VALUE_DIAGNOSTIC: Record<
+  Exclude<LlmValueDiagnosticKind, "api-invalid">,
+  {
+    row: "model" | "key";
+    text: (diag: LlmValueDiagnostic, cfg: ResolvedLlmConfig) => string;
+  }
+> = {
+  "base-url-without-api": {
+    row: "model",
+    text: (diag) => LLM_ENDPOINT_MISSING_API + "，配好模型前用不了（base_url 来自" + LLM_LAYER_TEXT[diag.layer] + "）",
+  },
+  "env-key-provider-mismatch": {
+    row: "key",
+    text: (diag) =>
+      "[llm].env_key 指的 " + envKeyLabelText(diag) + " 绑的是别的 provider，当前 provider 不同，这把 key 没用",
+  },
+  "env-key-unset": {
+    row: "key",
+    text: (diag) => "[llm].env_key 指的 " + envKeyLabelText(diag) + " 没导出",
+  },
+  "key-endpoint-mismatch": {
+    row: "key",
+    text: (diag, cfg) => {
+      if (diag.kind === "key-endpoint-mismatch" && diag.layer === "credentials") {
+        return storedKeyEndpointText(diag.provider, cfg);
+      }
+      return "[llm].env_key 指的 " + envKeyLabelText(diag) + " 绑的 endpoint 和当前生效的不一样，这把 key 没用";
+    },
+  },
+};
 
 /**
  * 跑一条探针，并保证它不把异常带出去：探针自己承诺不抛，这里再兜一层，一条探针出
@@ -457,40 +644,109 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
   }
   {
     // 模型解析器拿同一份已解析结果：它不再读盘，也不再就这份文件报第二条。
-    const configWarnings: string[] = [];
+    // 原始 warning 不再进 doctor：每一类都由下面的行和 fact 说明，避免英文句子漏出来。
     const llm = resolveLlmConfig({
       cwd,
       home: configHome,
       env: process.env,
       credentialsFile: credentialFile,
-      warn: (msg) => configWarnings.push(msg),
+      warn: () => {},
     });
     const configured = Boolean(llm.provider && llm.model);
+    // 只有最终没有生效的 api 才值得说；某层写了非法值、下层又给了合法值时，
+    // 配置本身是可用的，不能提示成「当前值坏了」。
+    const invalidApiLayers = llm.api === undefined
+      ? llm.valueDiagnostics.filter((d) => d.kind === "api-invalid").map((d) => LLM_LAYER_TEXT[d.layer])
+      : [];
+    // 只有 provider/model 都在、base_url 也在、却没有合法 api 时，模型配置才失败。
+    const endpointBlocked = configured && Boolean(llm.baseUrl && !llm.api);
+    // 用户写了 api 只是值非法时，不能说「没写 api」。
+    const endpointFailure = invalidApiLayers.length > 0 ? LLM_ENDPOINT_INVALID : LLM_ENDPOINT_FAILURE;
+    // 只有 provider/model/apiKey 都直接来自环境变量，才说「值来自环境变量」；
+    // 用户级配置或 env_key 指来的值不算，避免让人去环境里找一个不存在的变量。
+    const envUsable = configured && !endpointBlocked && Boolean(llm.apiKey) &&
+      [llm.sources.provider, llm.sources.model, llm.sources.apiKey].every((source) => source === "env");
+    let envNoteAdded = false;
+    const fileRows: DiagEntry[] = [
+      { name: "配置文件（用户级）", file: llm.configFiles.user },
+      { name: "配置文件（项目级）", file: llm.configFiles.project },
+    ].map(({ name, file }) => {
+      const envNote = file.status === "broken" && envUsable && !envNoteAdded;
+      if (envNote) envNoteAdded = true;
+      return {
+        layer: "capability",
+        name,
+        state: LLM_FILE_STATE[file.status],
+        mode: "offline",
+        detail: llmFileDetail(file) + (envNote ? "；值来自环境变量，能用；env 没了就会坏" : ""),
+      };
+    });
+    for (const entry of fileRows) report.add(entry);
+
+    const modelNotes: Array<{ kind: LlmValueDiagnosticKind; text: string }> = [];
+    const keyNotes: string[] = [];
+    if (invalidApiLayers.length > 0) {
+      modelNotes.push({
+        kind: "api-invalid",
+        text: "api 值非法（来源：" + invalidApiLayers.join("、") + "），只认 " + LLM_API_VALUES.join("、"),
+      });
+    }
+    for (const diag of llm.valueDiagnostics) {
+      if (diag.kind === "api-invalid") continue;
+      const entry = LLM_VALUE_DIAGNOSTIC[diag.kind];
+      const text = entry.text(diag, llm);
+      if (entry.row === "model") modelNotes.push({ kind: diag.kind, text });
+      else keyNotes.push(text);
+    }
+
+    let modelState: DiagState;
+    let modelDetail: string;
+    if (endpointBlocked) {
+      modelState = "failed";
+      modelDetail = endpointFailure;
+    } else if (configured) {
+      const providerSource = llm.sources.provider ? LLM_LAYER_TEXT[llm.sources.provider] : "?";
+      const modelSource = llm.sources.model ? LLM_LAYER_TEXT[llm.sources.model] : "?";
+      modelState = "ready";
+      modelDetail = `${providerLabel(llm.provider ?? "?")}/${llmKeyLabel(llm.model ?? "?")}（来源：${providerSource} / ${modelSource}）`;
+    } else {
+      modelState = "unconfigured";
+      modelDetail = "没配模型；ans chat / consolidate 要用它（ans llm 配）";
+    }
+    // 「没写 api」或「api 值非法」已经在那行失败句里；其它值说明仍然要保留。
+    const notes = endpointBlocked
+      ? modelNotes.filter((note) => note.kind !== "base-url-without-api" && note.kind !== "api-invalid")
+      : modelNotes;
+    if (notes.length > 0) modelDetail += "；" + notes.map((note) => note.text).join("；");
     report.add({
       layer: "capability",
       name: "模型配置",
-      state: configured ? "ready" : "unconfigured",
+      state: modelState,
       mode: "offline",
-      detail: configured
-        ? `${llm.provider}/${llm.model}（来源：${llm.sources.provider ?? "?"} / ${llm.sources.model ?? "?"}）`
-        : "没配模型；ans chat / consolidate 要用它（ans llm 配）",
+      detail: modelDetail,
     });
+
+    let keyState: DiagState;
+    let keyDetail: string;
+    if (llm.apiKey) {
+      keyState = "ready";
+      keyDetail = "有（来源：" + (llm.sources.apiKey ? LLM_KEY_SOURCE_TEXT[llm.sources.apiKey] : "?") + "）";
+    } else {
+      keyState = "unconfigured";
+      keyDetail = "没配；模型调用会失败（ans auth 配）";
+    }
+    if (!llm.apiKey && llm.hasStoredModelCredential &&
+      !llm.valueDiagnostics.some((diag) => diag.kind === "key-endpoint-mismatch" && diag.layer === "credentials")) {
+      keyNotes.push("凭据文件 " + userCredentialsPath(configHome) + " 里存着模型 key，但没生效");
+    }
+    if (keyNotes.length > 0) keyDetail += "；" + keyNotes.join("；");
     report.add({
       layer: "capability",
       name: "模型密钥",
-      state: llm.apiKey ? "ready" : "unconfigured",
+      state: keyState,
       mode: "offline",
-      detail: llm.apiKey ? `有（来源：${llm.sources.apiKey ?? "?"}）` : "没配；模型调用会失败（ans auth 配）",
+      detail: keyDetail,
     });
-    for (const warning of configWarnings) {
-      report.add({
-        layer: "capability",
-        name: "配置文件",
-        state: "failed",
-        mode: "offline",
-        detail: warning,
-      });
-    }
     report.add({
       layer: "capability",
       name: "真实模型调用",

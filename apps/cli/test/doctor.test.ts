@@ -314,10 +314,20 @@ type DoctorRun = {
 };
 
 async function doctorInHome(
-  config: { credentials?: string; credentialsAsDir?: boolean; configToml?: string; env: Record<string, string | undefined> },
+  config: {
+    credentials?: string;
+    credentialsAsDir?: boolean;
+    configToml?: string;
+    configAsDir?: boolean;
+    projectToml?: string;
+    projectAsDir?: boolean;
+    env: Record<string, string | undefined>;
+  },
   args: string[],
 ): Promise<DoctorRun> {
   const home = mkdtempSync(join(tmpdir(), "ans-doctor-cred-"));
+  const projectDir = join(home, "project");
+  const originalCwd = process.cwd();
   const keys = ["HOME", "USERPROFILE", "ANS_DB_PATH", ...Object.keys(config.env)];
   const saved: Record<string, string | undefined> = {};
   for (const key of keys) saved[key] = process.env[key];
@@ -329,8 +339,21 @@ async function doctorInHome(
     } else if (config.credentials !== undefined) {
       writeFileSync(join(home, ".ans", "credentials.json"), config.credentials, "utf8");
     }
-    if (config.configToml !== undefined) {
+    if (config.configAsDir) {
+      mkdirSync(join(home, ".ans", "config.toml"), { recursive: true });
+    } else if (config.configToml !== undefined) {
       writeFileSync(join(home, ".ans", "config.toml"), config.configToml, "utf8");
+    }
+    if (config.projectAsDir || config.projectToml !== undefined) {
+      mkdirSync(join(projectDir, ".ans"), { recursive: true });
+      if (config.projectAsDir) {
+        mkdirSync(join(projectDir, ".ans", "config.toml"), { recursive: true });
+      } else {
+        writeFileSync(join(projectDir, ".ans", "config.toml"), config.projectToml!, "utf8");
+      }
+      // 项目级配置、领域目录和宿主计划都从 cwd 算；测试里就把进程挪过去，
+      // 免得只换了一半路径。
+      process.chdir(projectDir);
     }
     process.env.HOME = home;
     process.env.USERPROFILE = home;
@@ -349,6 +372,7 @@ async function doctorInHome(
       entries: payload ? payload.layers.flatMap((layer) => layer.entries) : [],
     };
   } finally {
+    process.chdir(originalCwd);
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -361,6 +385,9 @@ async function runInHome(config: {
   credentials?: string;
   credentialsAsDir?: boolean;
   configToml?: string;
+  configAsDir?: boolean;
+  projectToml?: string;
+  projectAsDir?: boolean;
   env: Record<string, string | undefined>;
 }): Promise<DoctorRun & { payload: DiagJson }> {
   const run = await doctorInHome(config, ["--json"]);
@@ -377,7 +404,13 @@ test("ans doctor：凭据文件读坏了只报一条失败", async () => {
   const credentialRows = entries.filter((entry) => entry.name === "user credential file");
   assert.equal(credentialRows.length, 1, "同一份文件只报一条");
   assert.equal(credentialRows[0]!.state, "failed");
-  assert.equal(entries.filter((entry) => entry.name === "配置文件").length, 0, "同一句故障不要再报一遍");
+  const fileRows = entries.filter((entry) => entry.name.startsWith("配置文件"));
+  assert.equal(fileRows.length, 2, "两份配置文件各一行，不因为凭据坏了少一行");
+  assert.equal(
+    fileRows.some((entry) => (entry.detail ?? "").includes("not valid JSON")),
+    false,
+    "同一句故障不要再挂到配置文件行",
+  );
   assert.equal(payload.summary.failed, 1, "失败数不能多算");
 });
 
@@ -439,21 +472,25 @@ test("ans doctor：凭据文件坏了，文字输出里只说一条", async () =
   const faultLines = printed.text.split("\n").filter((line) => line.includes("not valid JSON"));
   assert.equal(faultLines.length, 1, "文字输出里只出现一次：\n" + printed.text);
   assert.match(faultLines[0]!, /user credential file/);
+  const fileLines = printed.text.split("\n").filter((line) => line.includes("配置文件"));
+  assert.equal(fileLines.length, 2, "两份配置文件各一行：\n" + printed.text);
   assert.equal(
-    printed.text.split("\n").filter((line) => line.includes("配置文件")).length,
-    0,
-    "同一句故障没有再挂到「配置文件」名下",
+    fileLines.some((line) => line.includes("not valid JSON")),
+    false,
+    "同一句故障没有再挂到配置文件行",
   );
 });
 
 test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () => {
   const stored = "https://a.example/v1";
   const effective = "https://b.example/v1";
-  const { entries } = await runInHome({
+  const { entries, code, payload } = await runInHome({
     credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: "sk-not-a-real-key", endpoint: stored }] }),
     configToml: [
       "[llm]",
-      'provider = "openai"',
+      // Stored provider ids are lowercased by the store; the detail must still
+      // find this binding when the config spells the provider with a capital.
+      'provider = "OpenAI"',
       'model = "gpt-4o"',
       'api = "chat"',
       'base_url = "' + effective + '"',
@@ -462,12 +499,405 @@ test("ans doctor：模型 key 绑在别的 endpoint 上要报出来", async () =
     env: { ANS_LLM_API_KEY: undefined, ANS_LLM_PROVIDER: undefined, ANS_LLM_MODEL: undefined, ANS_LLM_BASE_URL: undefined },
   });
 
-  const configRow = entries.find((entry) => entry.name === "配置文件");
-  assert.ok(configRow, "绑定对不上要有一条「配置文件」");
-  assert.equal(configRow!.state, "failed");
-  assert.match(configRow!.detail ?? "", /endpoint/);
-  assert.ok((configRow!.detail ?? "").includes(stored), "要说清 key 绑在哪：" + configRow!.detail);
-  assert.ok((configRow!.detail ?? "").includes(effective), "要说清当前生效的是哪个：" + configRow!.detail);
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.ok(keyRow, "绑定对不上要挂在「模型密钥」行");
+  assert.equal(keyRow!.state, "unconfigured", "值没生效是没配，不是文件坏了");
+  assert.match(keyRow!.detail ?? "", /endpoint/);
+  assert.ok((keyRow!.detail ?? "").includes(stored), "要说清 key 绑在哪：" + keyRow!.detail);
+  assert.ok((keyRow!.detail ?? "").includes(effective), "要说清当前生效的是哪个：" + keyRow!.detail);
+  assert.equal(code, 0, "值问题不抬退出码");
+  assert.equal(payload.summary.failed, 0);
+});
+
+const LLM_ENV_CLEAR = {
+  ANS_LLM_API_KEY: undefined,
+  ANS_LLM_PROVIDER: undefined,
+  ANS_LLM_MODEL: undefined,
+  ANS_LLM_BASE_URL: undefined,
+  ANS_LLM_API: undefined,
+  OPENAI_API_KEY: undefined,
+  ANTHROPIC_API_KEY: undefined,
+  GOOGLE_API_KEY: undefined,
+  GEMINI_API_KEY: undefined,
+};
+
+const FILE_STATUS_CASES: Array<{
+  label: string;
+  config: { configToml?: string; configAsDir?: true; projectToml?: string; projectAsDir?: true };
+  state: "ready" | "unconfigured" | "failed";
+  detail: RegExp;
+}> = [
+  { label: "missing", config: {}, state: "unconfigured", detail: /^没有这个文件：/ },
+  { label: "empty", config: { configToml: "" }, state: "unconfigured", detail: /^文件在，里面是空的：/ },
+  {
+    label: "no-llm",
+    config: { configToml: '[other]\nx = "y"\n' },
+    state: "unconfigured",
+    detail: /^文件在，但没有 \[llm\]：/,
+  },
+  {
+    label: "half",
+    config: { configToml: '[llm]\nprovider = "openai"\n' },
+    state: "unconfigured",
+    detail: /^有 \[llm\]，设了 provider，缺 model：/,
+  },
+  {
+    label: "ok",
+    config: { configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' },
+    state: "ready",
+    detail: /^provider、model 都在：/,
+  },
+  {
+    label: "invalid TOML",
+    config: { configToml: '[llm\nprovider = "openai"\n' },
+    state: "failed",
+    detail: /^TOML 坏了：.*（第 \d+ 行第 \d+ 列）/,
+  },
+  { label: "unreadable", config: { configAsDir: true }, state: "failed", detail: /^读不出来：/ },
+];
+
+test("ans doctor：用户级 config.toml 六种状态各一行，坏的退 1", async () => {
+  for (const item of FILE_STATUS_CASES) {
+    const { entries, code } = await runInHome({ ...item.config, env: LLM_ENV_CLEAR });
+    const rows = entries.filter((entry) => entry.name === "配置文件（用户级）");
+    assert.equal(rows.length, 1, item.label + ": 每份文件最多一条");
+    assert.equal(rows[0]!.state, item.state, item.label);
+    assert.match(rows[0]!.detail ?? "", item.detail, item.label);
+    assert.ok((rows[0]!.detail ?? "").includes("~/.ans/config.toml"), item.label + ": 用户级路径用 ~");
+    assert.equal(entries.filter((entry) => entry.name.startsWith("配置文件")).length, 2, "固定两行");
+    assert.equal(code, item.state === "failed" ? 1 : 0, item.label + " 退出码");
+  }
+});
+
+test("ans doctor：项目级 config.toml 六种状态各一行，坏的退 1", async () => {
+  const cases: typeof FILE_STATUS_CASES = [
+    { label: "project missing", config: {}, state: "unconfigured", detail: /^没有这个文件：/ },
+    {
+      label: "project empty",
+      config: { projectToml: "" },
+      state: "unconfigured",
+      detail: /^文件在，里面是空的：/,
+    },
+    {
+      label: "project no-llm",
+      config: { projectToml: '[other]\nx = "y"\n' },
+      state: "unconfigured",
+      detail: /^文件在，但没有 \[llm\]：/,
+    },
+    {
+      label: "project half",
+      config: { projectToml: '[llm]\nprovider = "openai"\n' },
+      state: "unconfigured",
+      detail: /^有 \[llm\]，设了 provider，缺 model：/,
+    },
+    {
+      label: "project ok",
+      config: { projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' },
+      state: "ready",
+      detail: /^provider、model 都在：/,
+    },
+    {
+      label: "project invalid TOML",
+      config: { projectToml: '[llm\nprovider = "openai"\n' },
+      state: "failed",
+      detail: /^TOML 坏了：.*（第 \d+ 行第 \d+ 列）/,
+    },
+    { label: "project unreadable", config: { projectAsDir: true }, state: "failed", detail: /^读不出来：/ },
+  ];
+  for (const item of cases) {
+    const { entries, code } = await runInHome({ ...item.config, env: LLM_ENV_CLEAR });
+    const rows = entries.filter((entry) => entry.name === "配置文件（项目级）");
+    assert.equal(rows.length, 1, item.label + ": 每份文件最多一条");
+    assert.equal(rows[0]!.state, item.state, item.label);
+    assert.match(rows[0]!.detail ?? "", item.detail, item.label);
+    assert.ok((rows[0]!.detail ?? "").includes(".ans/config.toml"), item.label + ": 项目级路径用相对路径");
+    assert.equal(entries.filter((entry) => entry.name.startsWith("配置文件")).length, 2, "固定两行");
+    assert.equal(code, item.state === "failed" ? 1 : 0, item.label + " 退出码");
+  }
+});
+
+test("ans doctor：明文 key、未知键、项目白名单外键只在文件行说明，退 0", async () => {
+  const secret = "sk-FILE-SECRET-SENTINEL";
+  const cases = [
+    {
+      label: "user plaintext key",
+      config: { configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi_key = "' + secret + '"\n' },
+      row: "配置文件（用户级）",
+      note: /忽略 \[llm\]\.api_key：配置文件不存密钥/,
+    },
+    {
+      label: "user unknown key",
+      config: { configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nwho_knows = "x"\n' },
+      row: "配置文件（用户级）",
+      note: /忽略 \[llm\]\.who_knows：不认识的键/,
+    },
+    {
+      label: "project not allowed key",
+      config: { projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://project-SENTINEL.example/v1"\n' },
+      row: "配置文件（项目级）",
+      note: /忽略 \[llm\]\.base_url：项目级只认 provider、model/,
+    },
+  ] as const;
+  for (const item of cases) {
+    const { entries, code, text } = await runInHome({ ...item.config, env: LLM_ENV_CLEAR });
+    const row = entries.find((entry) => entry.name === item.row);
+    assert.equal(row?.state, "ready", item.label + ": 值问题不改文件状态");
+    assert.match(row?.detail ?? "", item.note, item.label);
+    assert.equal(code, 0, item.label + ": 值问题不抬退出码");
+    assert.equal(text.includes(secret), false, item.label + ": 不能打印 key 值");
+    assert.equal(text.includes("project-SENTINEL"), false, item.label + ": 不能打印被拒的地址");
+  }
+});
+
+test("ans doctor：env_key 没导出、绑错 provider 只挂模型密钥行，退 0", async () => {
+  const unset = await runInHome({
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "MISSING_MODEL_KEY"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const unsetRow = unset.entries.find((entry) => entry.name === "模型密钥");
+  assert.equal(unsetRow?.state, "unconfigured");
+  assert.match(unsetRow?.detail ?? "", /MISSING_MODEL_KEY 没导出/);
+  assert.equal(unset.code, 0);
+
+  const wrongProvider = await runInHome({
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "MY_MODEL_KEY"\n',
+    env: { ...LLM_ENV_CLEAR, ANS_LLM_PROVIDER: "anthropic" },
+  });
+  const keyRow = wrongProvider.entries.find((entry) => entry.name === "模型密钥");
+  assert.equal(keyRow?.state, "unconfigured");
+  assert.match(keyRow?.detail ?? "", /MY_MODEL_KEY 绑的是别的 provider/);
+  assert.equal(wrongProvider.code, 0, "绑定不对是没配，不是机器坏了");
+});
+
+test("ans doctor：api 值非法只说明，模型配置仍可用、退 0", async () => {
+  const { entries, code } = await runInHome({
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "grpc"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const modelRow = entries.find((entry) => entry.name === "模型配置");
+  assert.equal(modelRow?.state, "ready", "provider/model 都在，api 坏了不拦配置");
+  assert.match(modelRow?.detail ?? "", /api 值非法（来源：用户级配置文件）/);
+  assert.equal(code, 0);
+});
+
+test("ans doctor：base_url 缺合法 api，模型配置失败、退 1", async () => {
+  const { entries, code, payload } = await runInHome({
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://endpoint-SENTINEL.example/v1"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const modelRow = entries.find((entry) => entry.name === "模型配置");
+  assert.equal(modelRow?.state, "failed");
+  assert.equal(modelRow?.detail, "自定义地址没写 api（要 chat / messages / responses），模型起不来");
+  assert.equal(code, 1);
+  assert.equal(payload.exitCode, code, "JSON 里的退出码和返回值一致");
+  assert.equal(payload.summary.failed, 1, "只有模型配置这一条失败");
+});
+
+test("ans doctor：base_url 的 api 值非法时，失败句说 api 非法，不再说没写 api", async () => {
+  const { entries } = await runInHome({
+    configToml: [
+      "[llm]",
+      'provider = "openai"',
+      'model = "gpt-5"',
+      'base_url = "https://endpoint-SENTINEL.example/v1"',
+      'api = "grpc"',
+      "",
+    ].join("\n"),
+    env: LLM_ENV_CLEAR,
+  });
+  const modelRow = entries.find((entry) => entry.name === "模型配置");
+  assert.equal(modelRow?.state, "failed");
+  assert.equal(modelRow?.detail, "自定义地址的 api 值非法，模型起不来");
+  assert.equal((modelRow?.detail ?? "").includes("没写 api"), false, "不能把非法值说成没写");
+  assert.equal((modelRow?.detail ?? "").includes("api 值非法（来源"), false, "失败句已经说明，不再重复");
+});
+
+test("ans doctor：存着的 key 绑在自定义地址、当前是默认地址时，修法绑默认地址", async () => {
+  const stored = "https://stored-sentinel.example/v1";
+  const { entries } = await runInHome({
+    credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: "sk-not-a-real-key", endpoint: stored }] }),
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "chat"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.equal(keyRow?.state, "unconfigured");
+  assert.match(keyRow?.detail ?? "", /绑到当前 provider 默认地址/);
+  assert.ok((keyRow?.detail ?? "").includes(stored), "仍要说清 key 原来的绑定：" + (keyRow?.detail ?? ""));
+});
+
+test("ans doctor：存着的 key 在默认地址、当前是自定义地址时，默认地址用中文", async () => {
+  const effective = "https://effective.example/v1";
+  const { entries } = await runInHome({
+    credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: "sk-not-a-real-key", endpoint: null }] }),
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "chat"\nbase_url = "' + effective + '"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.match(keyRow?.detail ?? "", /绑在 provider 默认地址/);
+  assert.equal((keyRow?.detail ?? "").includes("provider default endpoint"), false, "不能中英混排");
+  assert.ok((keyRow?.detail ?? "").includes(effective));
+});
+
+test("ans doctor：生效地址不能打印时，修法给完整地址来源和占位符", async () => {
+  const effective = "https://user:pass@effective.example/v1";
+  const stored = "https://stored.example/v1";
+  const { entries, text } = await runInHome({
+    credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: "sk-not-a-real-key", endpoint: stored }] }),
+    configToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "chat"\nbase_url = "' + effective + '"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.match(keyRow?.detail ?? "", /完整地址在 用户级配置文件/);
+  assert.match(keyRow?.detail ?? "", /--endpoint '<地址>'/);
+  assert.equal((keyRow?.detail ?? "").includes("user:pass"), false, "不能打印地址里的凭据");
+  assert.equal(text.includes("user:pass"), false);
+});
+
+test("ans doctor：坏文件 + env 补齐但 base_url 缺 api 时，不说「能用」", async () => {
+  const { entries, code } = await runInHome({
+    configToml: '[llm\nprovider = "openai"\n',
+    env: {
+      ...LLM_ENV_CLEAR,
+      ANS_LLM_PROVIDER: "openai",
+      ANS_LLM_MODEL: "gpt-5",
+      ANS_LLM_BASE_URL: "https://endpoint-SENTINEL.example/v1",
+    },
+  });
+  const fileRow = entries.find((entry) => entry.name === "配置文件（用户级）");
+  assert.equal(fileRow?.state, "failed");
+  assert.equal((fileRow?.detail ?? "").includes("能用"), false, "模型起不来就不能说值能用");
+  const modelRow = entries.find((entry) => entry.name === "模型配置");
+  assert.equal(modelRow?.state, "failed");
+  assert.equal(code, 1);
+});
+
+test("ans doctor：坏文件 + 环境变量补齐，文件行仍失败退 1，模型配置可用", async () => {
+  const { entries, code, text } = await runInHome({
+    configToml: '[llm\nprovider = "openai"\nmodel = "gpt-5"\n',
+    env: { ...LLM_ENV_CLEAR, ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5", ANS_LLM_API_KEY: "test-key" },
+  });
+  const fileRow = entries.find((entry) => entry.name === "配置文件（用户级）");
+  assert.equal(fileRow?.state, "failed");
+  assert.match(fileRow?.detail ?? "", /值来自环境变量，能用；env 没了就会坏/);
+  const modelRow = entries.find((entry) => entry.name === "模型配置");
+  assert.equal(modelRow?.state, "ready");
+  assert.equal(code, 1, "文件坏了就退 1，env 能跑也不盖掉");
+  assert.equal(text.includes("gpt-5"), true, "模型名可以出现在来源里");
+});
+
+test("ans doctor：两份文件都坏 + 环境变量补齐时，那句话只说一次", async () => {
+  const { entries } = await runInHome({
+    configToml: '[llm\nprovider = "openai"\n',
+    projectToml: "[llm\nmodel = \"gpt-5\"\n",
+    env: { ...LLM_ENV_CLEAR, ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5", ANS_LLM_API_KEY: "test-key" },
+  });
+  const fileRows = entries.filter((entry) => entry.name.startsWith("配置文件"));
+  assert.equal(fileRows.filter((entry) => entry.state === "failed").length, 2);
+  const notes = fileRows.filter((entry) => (entry.detail ?? "").includes("值来自环境变量，能用"));
+  assert.equal(notes.length, 1, "同一句话只挂在一行");
+});
+
+test("ans doctor：坏文件只补 provider/model、没有 key 时，不说「能用」", async () => {
+  const { entries } = await runInHome({
+    configToml: '[llm\nprovider = "openai"\n',
+    env: { ...LLM_ENV_CLEAR, ANS_LLM_PROVIDER: "openai", ANS_LLM_MODEL: "gpt-5" },
+  });
+  const fileRow = entries.find((entry) => entry.name === "配置文件（用户级）");
+  assert.equal(fileRow?.state, "failed");
+  assert.equal((fileRow?.detail ?? "").includes("能用"), false, "没有 key 不能说模型能用");
+  assert.equal(entries.find((entry) => entry.name === "模型密钥")?.state, "unconfigured");
+});
+
+test("ans doctor：坏 TOML 不回显原文或 key，只给路径、类型和行列号", async () => {
+  const secret = "sk-TOML-SECRET-SENTINEL";
+  const { text } = await doctorInHome(
+    {
+      configToml: '[llm]\napi_key = "' + secret + '"\nprovider = "openai"\nbroken =',
+      env: LLM_ENV_CLEAR,
+    },
+    [],
+  );
+  assert.equal(text.includes(secret), false, "不能回显 key");
+  assert.equal(text.includes("broken ="), false, "不能回显 TOML 原文");
+  assert.match(text, /TOML 坏了：.*（第 \d+ 行第 \d+ 列）/);
+});
+
+test("ans doctor：项目级坏 TOML 同样不回显原文或 key", async () => {
+  const secret = "sk-PROJECT-TOML-SENTINEL";
+  const { text } = await doctorInHome(
+    {
+      projectToml: '[llm]\napi_key = "' + secret + '"\nprovider = "openai"\nbroken =',
+      env: LLM_ENV_CLEAR,
+    },
+    [],
+  );
+  assert.equal(text.includes(secret), false, "项目级坏文件也不能回显 key");
+  assert.equal(text.includes("broken ="), false, "项目级坏文件也不能回显 TOML 原文");
+  assert.match(text, /配置文件（项目级）.*TOML 坏了：.*（第 \d+ 行第 \d+ 列）/);
+});
+
+test("ans doctor：`[llm]` 不是表时按没有 [llm] 说清原因", async () => {
+  const { entries } = await runInHome({
+    configToml: 'llm = "not a table"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  const row = entries.find((entry) => entry.name === "配置文件（用户级）");
+  assert.equal(row?.state, "unconfigured");
+  assert.match(row?.detail ?? "", /文件在，但没有 \[llm\]：.*（\[llm\] 不是表，整段被忽略）/);
+});
+
+test("ans doctor：空表 [llm] 算半配置，说清两个字段都没写", async () => {
+  const { entries } = await runInHome({
+    configToml: "[llm]\n",
+    env: LLM_ENV_CLEAR,
+  });
+  const row = entries.find((entry) => entry.name === "配置文件（用户级）");
+  assert.equal(row?.state, "unconfigured");
+  assert.match(row?.detail ?? "", /^有 \[llm\]，但 provider、model 都没写：/);
+});
+
+test("ans doctor：env_key 绑错 endpoint 只挂模型密钥行，退 0", async () => {
+  const bound = "https://bound-SENTINEL.example/v1";
+  const effective = "https://effective-SENTINEL.example/v1";
+  const { entries, code } = await runInHome({
+    configToml: [
+      "[llm]",
+      'provider = "openai"',
+      'model = "gpt-5"',
+      'api = "chat"',
+      'base_url = "' + bound + '"',
+      'env_key = "CUSTOM_MODEL_KEY"',
+      "",
+    ].join("\n"),
+    env: { ...LLM_ENV_CLEAR, ANS_LLM_BASE_URL: effective },
+  });
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.equal(keyRow?.state, "unconfigured");
+  assert.match(keyRow?.detail ?? "", /CUSTOM_MODEL_KEY 绑的 endpoint 和当前生效的不一样/);
+  assert.equal(code, 0, "env_key 绑错 endpoint 不抬退出码");
+});
+
+test("ans doctor：存着模型 key 但没配模型时，模型密钥行说一句", async () => {
+  const secret = "sk-STORED-SENTINEL";
+  const { entries, code, text } = await runInHome({
+    credentials: JSON.stringify({ bindings: [{ provider: "openai", apiKey: secret, endpoint: null }] }),
+    env: LLM_ENV_CLEAR,
+  });
+  const keyRow = entries.find((entry) => entry.name === "模型密钥");
+  assert.equal(keyRow?.state, "unconfigured");
+  assert.match(keyRow?.detail ?? "", /凭据文件 .* 里存着模型 key，但没生效/);
+  assert.equal(code, 0);
+  assert.equal(text.includes(secret), false, "提示里不能出现 key 值");
+});
+
+test("ans doctor：provider/model 里的控制字符不进输出", async () => {
+  const { entries, text } = await runInHome({
+    configToml: '[llm]\nprovider = "openai\\u001b[2K"\nmodel = "gpt-5\\u001b[2K"\n',
+    env: LLM_ENV_CLEAR,
+  });
+  assert.equal(JSON.stringify(entries).includes("\u001b"), false, "事实和 JSON 都不能带 ESC");
+  assert.equal(text.includes("\u001b"), false, "终端输出不能带 ESC");
+  assert.match(entries.find((entry) => entry.name === "模型配置")?.detail ?? "", /openai \[2K/);
 });
 
 test("ans doctor：默认域（没配 toolRequires）不报 active 漏装，但报出已装却没在任何域里启用的 skill", async () => {

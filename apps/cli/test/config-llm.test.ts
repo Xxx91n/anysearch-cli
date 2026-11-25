@@ -474,7 +474,7 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   // The command is given, but its endpoint is a placeholder that has to be
   // replaced: the address shown above is redacted, so pasting it back would bind
   // something nobody meant. The full value is named where it lives.
-  assert.match(warning, /--endpoint <that address>/, warning);
+  assert.match(warning, /--endpoint <address>/, warning);
   assert.match(warning, /the full address is in ANS_LLM_BASE_URL/, warning);
   assert.match(warning, /It cannot be printed here \(redacted, too long, or contains control characters\)/, warning);
   // No "shown above": that pointer would send the user to the redacted copy.

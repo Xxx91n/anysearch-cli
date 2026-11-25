@@ -1,3 +1,17 @@
+## Unreleased — #580: doctor 每份 config.toml 一行，按文件状态判失败
+
+一句话说清：**以前 doctor 把配置解析器吐出的每条 warning 都记成一条「配置文件」失败，于是明文 key 被丢、项目文件写了不许写的键、`env_key` 没导出、存着的 key 绑错 endpoint，这些「还没配好」都会让整台机器退 1；而文件不存在、空文件、只写了半段 `[llm]`，又一条提示都没有。现在用户级、项目级各固定一行「配置文件（用户级）/（项目级）」：六种文件状态翻成 doctor 的四态，不存在、空、没有 `[llm]`、半配置都算未配置并用大白话说清是哪一种；只有读不出来、TOML 坏才算失败、退 1。值的问题只挂到相关行说明，不改退出码；只有 `base_url` 写了却没有合法 `api` 时，模型配置失败、退 1。**
+
+### Changed
+
+- **解析器补 5 条值级诊断 kind**（`packages/store/src/config-llm.ts`）：`api-invalid`、`env-key-provider-mismatch`、`env-key-unset`、`key-endpoint-mismatch`、`base-url-without-api`。结果上新增 `valueDiagnostics`，每条带层（`cli` / `env` / `user` / `credentials` 等），需要时再带一个非密名字（`env_key` 的变量名，存在 `envKeyLabel`，沿用 `llmKeyLabel` 清洗后再进事实和 stderr）；不带值、endpoint、provider 值、路径或解析原文。原有的 `warn` 人读句子一条没改（只给名字同样过清洗）。
+- **`configFault` 不再参与 doctor**：文件故障只从 `configFiles.*.fault` 读；#581 已把 `configFault` 字段和 `LlmConfigFaultKind` 类型一并删掉。
+- **文件故障的位置是结构化事实**：`configFiles.*.fault` 只在 `broken` 时出现，带 `invalid-toml` 的行列号或读失败的 errno 码，不带原文、路径或值；doctor 不再从英文 warning 字符串里刮行列号。
+- **doctor 固定两行文件行**：每份 `config.toml` 一行，文件不存在也打。状态到四态的映射表和状态/kind 到中文句子的映射表都在 CLI 侧，按类全填——新状态或新 kind 漏了会编译不过。文件行说明分别写：没有这个文件、文件在但里面是空的、文件在但没有 `[llm]`（不是表时补一句整段被忽略）、设了哪些字段缺哪些、读不出来或 TOML 坏（只给路径、错误类型和行列号，不回显原文）。
+- **值问题不再算失败**：文件里被丢的键（明文 key、未知键、项目白名单外键、类型不对）接在文件行后面说明；`env_key` 没导出、绑错 provider、绑错 endpoint 和 `api` 非法挂到「模型配置」或「模型密钥」行，状态仍是可用/未配置，退出码不动。`base_url` 缺合法 `api` 是例外：模型配置记失败、退 1，说明「自定义地址没写 api（要 chat / messages / responses），模型起不来」。
+- **坏文件 + 环境变量补齐**：文件行仍失败、退 1，detail 补一句「值来自环境变量，能用；env 没了就会坏」；模型配置行可以是可用。
+- **退出码和 JSON 形状不变**：有失败项 1；没有失败项时 `--strict` 且有未检查项 5；否则 0。`--json` 仍是单个完整文档，四层顺序和条目字段不变。原来随 warning 数量变化的 `[失败] 配置文件` 行不再出现，固定换成 `配置文件（用户级）`、`配置文件（项目级）` 两条。
+
 ## Unreleased — #607: 整页正文入库的列和顶号规则
 
 一句话说清：**资料库以前只有搜索给的一小段 `snippet`，抓回来的整页没地方放。现在 `retrieval_results` 多了一列 `content`，并新增 `savePage()` 一次写一页正文；顶号按「片段 < 正文」两档走——搜索命中碰到同 URL 的正文行只挂上去、返回正文行 id，片段永远顶不掉正文；正文补进已有片段行保持行 id 和 title/snippet 不变；同一页内容不同才开新行并让旧行失效。主表 FTS 仍然只索引 title/snippet，正文全文照存不截断。**
