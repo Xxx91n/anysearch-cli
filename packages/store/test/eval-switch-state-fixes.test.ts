@@ -318,7 +318,7 @@ try {
       const rebuilt = JSON.parse(readFileSync(join(recOut, "skip-ledger.json"), "utf8"));
       ok("F11 advanceSwitch restarts clean @3 ledger after quarantine", sw.state.phase === "S0" && rebuilt.schema === "anysearch/gain-ledger@3" && rebuilt.actions.length >= 1 && notes.some((n) => n.includes("quarantined")));
 
-      // Lock contention (non-SkipLedgerError) must NOT quarantine a healthy ledger.
+      // Lock contention and filesystem errors (non-SkipLedgerError) must NOT quarantine a healthy ledger.
       const healthyBefore = readFileSync(join(recOut, "skip-ledger.json"), "utf8");
       let lockErr: unknown = null;
       try {
@@ -326,16 +326,27 @@ try {
       } catch (e) { lockErr = e; }
       ok("F11 lock-busy is rethrown without quarantining healthy ledger", lockErr instanceof LedgerLockTimeoutError && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
 
-      // Absent file on SkipLedgerError does not retry and reports absent.
-      const absentOut = join(recDir, "absent-out");
-      mkdirSync(absentOut, { recursive: true });
-      const absentNotes: string[] = [];
-      let absentCalls = 0;
-      let absentErr: unknown = null;
+      let ioErr: unknown = null;
       try {
-        runWithSkipLedgerRecovery(absentOut, () => { absentCalls++; throw new SkipLedgerError("synthetic parse error"); }, (m) => absentNotes.push(m));
-      } catch (e) { absentErr = e; }
-      ok("F11 absent file on SkipLedgerError is not retried", absentErr instanceof SkipLedgerError && absentCalls === 1 && absentNotes.some((n) => n.includes("no file to quarantine")));
+        runWithSkipLedgerRecovery(recOut, () => { throw Object.assign(new Error("permission denied"), { code: "EACCES", errno: -13 }); });
+      } catch (e) { ioErr = e; }
+      ok("F11 filesystem errno is rethrown without quarantining healthy ledger", (ioErr as NodeJS.ErrnoException)?.code === "EACCES" && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
+
+      // Concurrent repair: if another process fixed the file before quarantine acquires the lock,
+      // the healthy ledger is preserved (not moved aside) and fn() is retried once.
+      const raceNotes: string[] = [];
+      let raceCalls = 0;
+      const raceResult = runWithSkipLedgerRecovery(
+        recOut,
+        () => {
+          raceCalls++;
+          if (raceCalls === 1) throw new SkipLedgerError("stale read before peer repaired file");
+          return "repaired-ok";
+        },
+        (m) => raceNotes.push(m),
+        "2026-01-02T03:04:05.012Z",
+      );
+      ok("F11 concurrently repaired healthy ledger is preserved and retried", raceResult === "repaired-ok" && raceCalls === 2 && raceNotes.length === 0 && !existsSync(join(recOut, "skip-ledger.quarantined-2026-01-02T03-04-05-012Z.json")) && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
 
       // Failed quarantine leaves the file in place and does not retry.
       const failOut = join(recDir, "fail-out");

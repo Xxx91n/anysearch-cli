@@ -215,8 +215,9 @@ export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) =
 }
 
 // Run a skip-ledger writer (such as advanceSwitch) with narrow corrupt-ledger recovery:
-// only SkipLedgerError quarantines the unreadable file aside and retries once; lock contention
-// and filesystem errors leave the healthy ledger untouched (#577/#591).
+// only SkipLedgerError quarantines an unreadable file aside (re-checked under the ledger lock so a
+// concurrently repaired ledger is never moved) and retries once; lock contention and filesystem
+// errors leave a healthy ledger untouched.
 export function runWithSkipLedgerRecovery<T>(
   outDir: string,
   fn: () => T,
@@ -228,15 +229,26 @@ export function runWithSkipLedgerRecovery<T>(
   } catch (e) {
     if (!(e instanceof SkipLedgerError)) throw e;
     const detail = String(e.message ?? e);
-    const moved = quarantineSkipLedger(outDir, at);
-    if ("quarantined" in moved) {
-      onNote?.("skip-ledger fails its contract — quarantined to " + moved.quarantined + " and restarted empty (" + detail + ")");
+    const outcome = withLedgerLock(lockPathFor(outDir), (): "healthy" | QuarantineResult => {
+      try {
+        readSkipLedger(outDir);
+        return "healthy";
+      } catch (recheck) {
+        if (!(recheck instanceof SkipLedgerError)) throw recheck;
+        return quarantineSkipLedger(outDir, at);
+      }
+    });
+    if (outcome === "healthy") {
       return fn();
     }
-    if ("absent" in moved) {
+    if ("quarantined" in outcome) {
+      onNote?.("skip-ledger fails its contract — quarantined to " + outcome.quarantined + " and restarted empty (" + detail + ")");
+      return fn();
+    }
+    if ("absent" in outcome) {
       onNote?.("skip-ledger fails its contract — no file to quarantine (" + detail + ")");
     } else {
-      const why = String((moved.failed as Error)?.message ?? moved.failed);
+      const why = String((outcome.failed as Error)?.message ?? outcome.failed);
       onNote?.("skip-ledger fails its contract and could not be quarantined — left in place (" + why + ")");
     }
     throw e;

@@ -303,11 +303,9 @@ async function main(): Promise<number> {
     console.error("[eval] observation write failed (fail-open): " + String((e as Error).message ?? e));
   }
 
-  // Design: retire D7 3-streak escalation on the eval path (#591) — golden eval runs on ephemeral
-  // per-case DBs (consumed track is structurally data-absent) with four fixed offline-deferred
-  // skips; real consumed-track PSI and human-review escalation live in advanceSwitch() against the
-  // durable DB below. Rejected alternatives: synthesizing a PSI baseline for ephemeral DBs, or
-  // warn-only streaks on data-absent.
+  // Design: eval observational skips are report-only — per-case eval DBs are ephemeral (consumed
+  // track is structurally data-absent) and real PSI/escalation lives in advanceSwitch() below;
+  // rejected faking a PSI baseline or warn-only streaks on data-absent.
   const ob = report.metrics.observational;
 
   // impl-plan 3/8: advance the consumed/synthetic switch state machine.

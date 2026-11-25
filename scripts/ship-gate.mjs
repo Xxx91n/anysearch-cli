@@ -1402,7 +1402,7 @@ async function stepMemoryEval() {
         const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
         report("info", "switch-state: phase" + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since" + st.since : "") + (st && st.transitionId ? " transitionId" + st.transitionId : ""));
       } catch (e) {
-        const qHint = skipL.replace(/\.json$/, ".quarantined.json");
+        const qHint = skipL.replace(/\.json$/, ".quarantined-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json");
         report("info", "switch-state: ledger unreadable — move aside to preserve evidence (mv " + skipL + " " + qHint + "): " + String(e && e.message ? e.message : e));
       }
     } else {
