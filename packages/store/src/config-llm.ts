@@ -478,7 +478,8 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " + displayEndpoint(effective) +
           " — refusing to send that secret to a different endpoint; " +
-          bindingAdvice(resolved.provider, effective) + " (see `ans auth list` for what is stored)",
+          bindingAdvice(resolved.provider, effective, resolved.sources.baseUrl) +
+          " (see `ans auth list` for what is stored)",
         );
       }
     }
@@ -487,12 +488,23 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   return resolved;
 }
 
-/** 能安全打印的地址才给可直接粘的命令；带凭据或过长的地址只说要做什么，不给命令——
- * 半截地址（脱敏版或占位符）粘回去会存成一个谁都不认的绑定。 */
-function bindingAdvice(provider: string, effective: string | null): string {
+/** Where a base URL set by each layer can be read back in full. */
+const BASE_URL_SOURCE: Partial<Record<LlmLayer, string>> = {
+  cli: "--llm.base-url",
+  env: "ANS_LLM_BASE_URL",
+  project: "the project config file",
+  user: "the user config file",
+};
+
+/** 能安全打印的地址才给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
+ * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。 */
+function bindingAdvice(provider: string, effective: string | null, source?: LlmLayer): string {
   if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
   if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  return "re-store the key for the endpoint above, it is not printed here because it carries credentials";
+  const where = BASE_URL_SOURCE[source ?? "user"] ?? "your config";
+  return "re-store it for that endpoint: its full value is in " + where +
+    ", which is not printed here (redacted, or too long for one line); run `" +
+    storeKeyCommand(provider) + " --endpoint <the endpoint from " + where + ">`";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

@@ -471,10 +471,13 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   assert.ok(warning, "the warning is printed");
   assert.doesNotMatch(warning, /pw@/, warning);
   assert.doesNotMatch(warning, /key=secret/, warning);
-  // No command at all in this branch: a truncated or redacted URL pasted back
-  // would store a binding nobody meant.
-  assert.doesNotMatch(warning, /--endpoint/, warning);
-  assert.match(warning, /re-store the key for the endpoint above/, warning);
+  // The command is given, but its endpoint is a placeholder that has to be
+  // replaced: the address shown above is redacted, so pasting it back would bind
+  // something nobody meant. The full value is named where it lives.
+  assert.match(warning, /--endpoint <the endpoint from ANS_LLM_BASE_URL>/, warning);
+  assert.match(warning, /its full value is in ANS_LLM_BASE_URL/, warning);
+  assert.doesNotMatch(warning, /carries credentials/, "no false reason：" + warning);
+  assert.doesNotMatch(warning, /user:pw@gw/, "the secret never printed：" + warning);
 });
 
 test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {
@@ -503,6 +506,20 @@ test("没凭据的地址照常给可粘的命令，哪怕大小写会被 URL 归
   const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
   assert.match(warning, /--endpoint https:\/\/MyGW\.example\/v1/, warning);
   assert.doesNotMatch(warning, /replacing the placeholder/, warning);
+});
+
+test("过长的地址也走「不打印」那一档，理由不能是「带凭据」（#573 审查）", () => {
+  // Truncation has nothing to do with credentials; the reason must not invent one.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  const longUrl = "https://gw.example/v1/" + "x".repeat(300);
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: longUrl } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /not printed here \(redacted, or too long for one line\)/, warning);
+  assert.doesNotMatch(warning, /carries credentials/, warning);
 });
 
 test("an unset env_key falls through to the stored key instead of stopping", () => {
