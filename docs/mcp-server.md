@@ -460,10 +460,12 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   confirmed dead the next waiter takes over at once. The 10-minute stale
   window governs the owners this machine cannot confirm — another host, a
   missing identity, or a pid the probe cannot classify — judging them on
-  the heartbeat alone. A busy answer names the lock directory it could not
-  take, plus the holder's pid and host whenever the lock names one, and
-  always states the one way out — worded for the case that applies, so a
-  running holder is told to clear the lock only if its pid was recycled. Different sessions still run in parallel. No evidence
+  the heartbeat alone. A busy answer names the lock directory, the holder's
+  pid, host and start time when the lock records them, and the one way out —
+  worded for what the probe found: a confirmed-alive holder is told to clear
+  the lock only if its pid was recycled (the start time is what lets a person
+  tell), a confirmed-dead one is told to delete it, and a lock with no
+  readable identity is asked about nobody in particular. Different sessions still run in parallel. No evidence
   exists for network-filesystem session directories; same machine only.
 - A chat **attempt** is the wider unit around that run: lease → record start →
   run → record result (#299). Its lease lives in a `leases/` folder beside

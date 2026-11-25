@@ -79,21 +79,26 @@ async function expectAcquired(lockDir: string, staleMs: number, waitMs: number):
 }
 
 /**
- * The busy answer for `lockDir`: the shared sentence, the directory the waiter
- * could not take, and the way out that matches the probe. A holder confirmed
- * alive is told to clear the lock only if its pid was recycled; anyone else is
- * told the owner may simply be gone.
+ * The busy answer for `lockDir`, worded for what the probe said: `alive` gets
+ * the recycled-pid way out, `gone` must not ask for a wait, `anonymous` has no
+ * "that process" to name, and `unconfirmed` is the shared sentence.
  */
 function busyAt(
   busy: string | undefined,
   lockDir: string,
-  kind: "alive" | "unconfirmable" = "unconfirmable",
+  kind: "alive" | "gone" | "anonymous" | "unconfirmed" = "unconfirmed",
 ): boolean {
-  if (busy === undefined) return false;
-  const base = busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes(lockDir);
-  return kind === "alive"
-    ? base && busy.includes("(still running)") && busy.includes("no longer belongs to that run")
-    : base && busy.includes("If you are sure that process is gone");
+  if (busy === undefined || !busy.includes(lockDir)) return false;
+  switch (kind) {
+    case "alive":
+      return busy.includes("(still running") && busy.includes("no longer belongs to that run");
+    case "gone":
+      return busy.includes("holder is gone") && busy.includes("Delete that lock directory");
+    case "anonymous":
+      return busy.includes("nobody is using it");
+    default:
+      return busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes("If you are sure that process is gone");
+  }
 }
 
 // ---------- runtime wiring helpers (same minimal shape as the #258 tests) ----------
@@ -248,7 +253,7 @@ async function main() {
       const anonymous = join(workDir, "l5b", "s.lock");
       mkdirSync(anonymous, { recursive: true });
       busy = await expectBusy(anonymous, 1_000, 300);
-      assert(busyAt(busy, anonymous),
+      assert(busyAt(busy, anonymous, "anonymous"),
         "L5: an identity-less lock younger than the stale window is not reclaimed (got " + JSON.stringify(busy) + ")");
       backdate(anonymous, 1_500);
       const release2 = await expectAcquired(anonymous, 1_000, 2_000);
@@ -306,7 +311,7 @@ async function main() {
         // further to assert — the important case is the one below.
         assert(true, "L7: the sweep succeeded and the acquisition was bounded");
       } else {
-        assert(busyAt(busy, lockDir),
+        assert(busyAt(busy, lockDir, "anonymous"),
           "L7: when the sweep cannot remove the lock, the wait ends as session busy (got "
           + JSON.stringify(busy) + ")");
         assert(existsSync(lockDir), "L7: a lock the sweep could not remove still exists for the next waiter");
@@ -405,6 +410,37 @@ async function main() {
         assert(!existsSync(lockDir), "L10: the reclaimed lock is released cleanly");
       } finally {
         process.kill = realKill;
+      }
+    }
+
+    // ---------- L11: a dead owner that could not be swept is not told to wait ----------
+    {
+      // The one path that carries a dead verdict into the busy message: the
+      // owner is gone, so the sweep is allowed, but the rename fails (a locked
+      // directory, permissions) and the waiter has to give up. "Retry after it
+      // finishes" would name a process that no longer exists.
+      const deadPid = await recentlyDeadPid();
+      if (deadPid !== null) {
+        const parent = join(workDir, "l11");
+        const lockDir = join(parent, "s.lock");
+        writeFakeOwner(lockDir, deadPid, hostname());
+        writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+        try { chmodSync(parent, 0o555); } catch { /* not enforced here */ }
+        let busy: string | undefined;
+        try {
+          busy = await expectBusy(lockDir, 50, 300);
+        } finally {
+          try { chmodSync(parent, 0o755); } catch { /* best effort */ }
+        }
+        if (!existsSync(lockDir)) {
+          // The sweep won on this filesystem; there is no busy message to read.
+          assert(true, "L11: the sweep succeeded, so no dead-owner message is produced");
+        } else {
+          assert(busyAt(busy, lockDir, "gone"),
+            "L11: a dead owner whose lock could not be swept is told to clear it, not to wait (got "
+            + JSON.stringify(busy) + ")");
+        }
+        try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* best effort */ }
       }
     }
 

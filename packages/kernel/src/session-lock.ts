@@ -100,7 +100,7 @@ export const SESSION_BUSY_MESSAGE =
 /** Who holds the lock, and what the probe said about it. Best effort: an
  *  identity that is missing or unreadable is simply not described. */
 export interface SessionBusyFacts {
-  holder?: LockOwner;
+  holder?: { pid: number; host: string; startedAt?: number };
   /** Only a same-host holder can be probed; absent means nobody to ask. */
   liveness?: PidLiveness;
 }
@@ -118,19 +118,42 @@ function readSessionBusyFacts(lockPath: string): SessionBusyFacts {
     : { holder };
 }
 
-/** The busy sentence: who holds the lock, where it lives, and the one way out.
- *  A confirmed-alive holder gets the recycled-pid wording instead, because
- *  telling a running run's owner to delete the lock invites a second writer. */
+/**
+ * The busy sentence: who holds the lock, where it lives, and the one way out.
+ *
+ * The way out is worded for what the probe actually said, because one sentence
+ * cannot be true for all four: a confirmed-alive holder must not be told to
+ * delete a running run's lock, a confirmed-dead one must not be told to wait
+ * for a process that is gone, and a lock with no readable identity has no
+ * "that process" to point at.
+ */
 function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
-  const alive = facts.liveness === "alive";
   const holder = facts.holder
-    ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host
-      + (alive ? " (still running)" : "") + "."
+    ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host + holderNote(facts) + "."
     : "";
-  const advice = alive
-    ? " If that pid no longer belongs to that run, delete that lock directory and retry."
-    : " If you are sure that process is gone, delete that lock directory and retry.";
+  if (facts.liveness === "dead") {
+    return "Session lock: the holder is gone, but its lock could not be cleared." + holder
+      + " Lock: " + lockPath + ". Delete that lock directory and retry.";
+  }
+  if (facts.liveness === "alive") {
+    return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath
+      + ". If that pid no longer belongs to that run, delete that lock directory and retry.";
+  }
+  const advice = facts.holder
+    ? " If you are sure that process is gone, delete that lock directory and retry."
+    : " If you are sure nobody is using it, delete that lock directory and retry.";
   return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath + "." + advice;
+}
+
+/** What the holder line adds: whether it is still running, and since when. The
+ *  start time is what lets a person tell a live holder from a recycled pid. */
+function holderNote(facts: SessionBusyFacts): string {
+  const startedAt = facts.holder?.startedAt;
+  const notes = [
+    facts.liveness === "alive" ? "still running" : "",
+    startedAt === undefined ? "" : "started " + new Date(startedAt).toISOString(),
+  ].filter(Boolean);
+  return notes.length > 0 ? " (" + notes.join(", ") + ")" : "";
 }
 
 /** What a host needs to word the collision itself. Undefined for any other
@@ -174,12 +197,13 @@ export function heartbeatIntervalMs(staleMs: number): number {
   return Math.min(HEARTBEAT_MAX_MS, Math.max(HEARTBEAT_MIN_MS, Math.floor(staleMs / 3)));
 }
 
-// The fields a rule reads. `startedAt` is also written into owner.json for
-// whoever inspects a stuck lock by hand; no decision uses it, so it is not
-// parsed back — a field no rule consumes would just invite one to.
+// The fields a rule reads, plus the start time the busy message shows: a person
+// comparing it with the run they remember is how a recycled pid is told apart
+// from a live holder. No reclaim decision reads it.
 interface LockOwner {
   pid: number;
   host: string;
+  startedAt?: number;
 }
 
 const OWNER_FILE = "owner.json";
@@ -227,7 +251,15 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
     if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
       throw new UnreadableOwnerError("owner.json has no usable identity");
     }
-    return { pid: raw.pid as number, host: raw.host };
+    // Best effort, unlike the identity above: a lock written before this field
+    // existed still names its holder, so a missing or unusable start time only
+    // costs the message that one detail.
+    const startedAt = typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt)
+      ? raw.startedAt
+      : undefined;
+    return startedAt === undefined
+      ? { pid: raw.pid as number, host: raw.host }
+      : { pid: raw.pid as number, host: raw.host, startedAt };
   } catch (e) {
     if (e instanceof UnreadableOwnerError) throw e;
     throw new UnreadableOwnerError("owner.json is not valid JSON");

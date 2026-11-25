@@ -70,14 +70,24 @@ export class ChatAttemptBusyError extends Error {
  */
 export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): string {
   const holder = error.facts?.holder;
-  const who = holder ? "持有者 pid " + holder.pid + "（主机 " + holder.host + "）" : undefined;
-  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。" + (who ? who + "。" : "");
+  const who = holder
+    ? "持有者 pid " + holder.pid + "（主机 " + holder.host
+      + (holder.startedAt === undefined ? "" : "，" + new Date(holder.startedAt).toISOString() + " 启动")
+      + "）"
+    : undefined;
   const where = "锁在 " + error.leasePath + "。";
+  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
+  if (error.facts?.liveness === "dead") {
+    return prefix + "这段会话的锁还占着（" + error.sessionId + "）。"
+      + (who ? who + "，但那个进程已经不在了。" : "持有它的进程已经不在了。")
+      + where + "删掉这个目录再试。";
+  }
   if (error.facts?.liveness === "alive") {
-    return head + "它还在跑，等它跑完再来。" + where
+    return head + (who ? who + "。" : "") + "它还在跑，等它跑完再来。" + where
       + "如果那个 pid 已经不是原来那个进程（被复用了），删掉这个目录再试。";
   }
-  return head + "等它结束后再试。" + where + "如果确认那个进程已经不在，删掉这个目录再试。";
+  return head + (who ? who + "。" : "") + "等它结束后再试。" + where
+    + (holder ? "如果确认那个进程已经不在，删掉这个目录再试。" : "如果确认没人在用，删掉这个目录再试。");
 }
 
 export type ChatCollisionChoice = "stop" | "wait" | { fork: string };
