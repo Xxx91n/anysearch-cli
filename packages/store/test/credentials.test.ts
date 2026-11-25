@@ -53,6 +53,16 @@ test("给具体 provider 的命令名也从同一个常量拼出来（#573）", 
   // A provider read from the config file is not validated: `$&` must be printed,
   // not expanded into the text it would match.
   assert.equal(storeKeyCommand("$&"), "ans auth set $&");
+  // An endpoint with shell metacharacters has to survive a copy-paste.
+  assert.equal(
+    storeKeyCommand("openai", "https://gw.example/v1?region=us&version=1"),
+    'ans auth set openai --endpoint "https://gw.example/v1?region=us&version=1"',
+  );
+  assert.equal(
+    storeKeyCommand("openai", "https://b.example/v1"),
+    "ans auth set openai --endpoint https://b.example/v1",
+    "a plain URL needs no quotes",
+  );
 });
 
 test("文件里的说明用命令常量拼，改名不会在用户文件里留下一个不存在的命令（#570）", () => {

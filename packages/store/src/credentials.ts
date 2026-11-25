@@ -55,6 +55,11 @@ export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
 
+export const FIX_OR_REPLACE = "fix or remove the file";
+export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
+const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
+const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
 /** The same command named for one provider, for a message about that provider:
  * `ans auth set openai`. Built from the constant, so a rename reaches both. With
  * an endpoint, the flag comes along: a binding is (provider, endpoint), so advice
@@ -64,12 +69,19 @@ export function storeKeyCommand(provider: string, endpoint?: string | null): str
   // A function replacement, not a string one: `$&`/`$1` in a provider read from
   // the config file would otherwise be expanded instead of printed.
   const command = STORE_KEY_COMMAND.replace("<provider>", () => provider);
-  return endpoint ? command + " --endpoint " + endpoint : command;
+  return endpoint ? command + " --endpoint " + shellArg(endpoint) : command;
 }
-export const FIX_OR_REPLACE = "fix or remove the file";
-export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
-const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
-const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
+/**
+ * One argument as a shell reads it back: bare when it holds nothing special, and
+ * double-quoted otherwise. An endpoint like `https://gw.example/v1?a=1&b=2` copied
+ * into a POSIX shell would otherwise be two commands, and the tool would receive a
+ * truncated URL - the advice is meant to be pasted, so it has to survive that.
+ */
+function shellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return '"' + value.replace(/[\\"$`]/g, (c) => "\\" + c) + '"';
+}
 
 /** Written into every file so its plaintext nature is obvious to a human who opens
  * it: this text outlives a rename inside the user's own file. */

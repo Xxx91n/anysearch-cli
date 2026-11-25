@@ -458,6 +458,21 @@ test("endpoint 冲突的告警连 --endpoint 一起给，照着跑不会回到�
   assert.match(warning, /ans auth set openai --endpoint https:\/\/b\.example\/v1/, warning);
 });
 
+test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）", () => {
+  // displayEndpoint strips userinfo and the query everywhere else in this warning;
+  // the part the user is told to paste must not put them back.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://user:pw@gw.example/v1?key=secret" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.ok(warning, "the warning is printed");
+  assert.doesNotMatch(warning, /pw@/, warning);
+  assert.doesNotMatch(warning, /key=secret/, warning);
+});
+
 test("an unset env_key falls through to the stored key instead of stopping", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',
