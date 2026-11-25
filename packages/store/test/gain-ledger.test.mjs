@@ -38,5 +38,37 @@ import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, 
   assert.equal(back.consecutiveWarn, 1);
   fs.rmSync(dir, { recursive: true, force: true });
 }
+// @3 skip-ledger survives human resolution: streak cleared, one resolution added,
+// history / state block / actions log preserved — nothing is wiped (#592).
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-@3-"));
+  const f = path.join(dir, "skip-ledger.json");
+  const at3 = {
+    schema: "anysearch/gain-ledger@3",
+    consecutiveWarn: 3,
+    history: [{ at: "2026-01-01T00:00:00Z", tier: "warn", look: "k1; k2", track: "consumed", reasonCode: "gate-not-met" }],
+    resolutions: [{ at: "2026-01-01T00:00:00Z", decision: "stay-warn", note: "first" }],
+    lastSkipKeys: ["k1", "k2"],
+    state: { phase: "S2", since: "2026-01-01T00:00:00Z", transitionId: "tx-1", evidenceHash: "eh-1" },
+    actions: [{ at: "2026-01-01T00:00:00Z", kind: "stage-transition", from: "S1", to: "S2", reason: "rollout" }],
+    revision: 9,
+  };
+  writeGainLedger(f, at3);
+  assert.equal(readGainLedger(f).schema, "anysearch/gain-ledger@3", "@3 schema survives round-trip");
+  assert.equal(readGainLedger(f).revision, 9, "@3 round-trip keeps revision");
+  const resolved = readGainLedger(f);
+  applyResolution(resolved, "stay-warn", "2026-01-02T00:00:00Z", "observational-skip confirmed");
+  writeGainLedger(f, resolved);
+  const again = readGainLedger(f);
+  assert.equal(again.consecutiveWarn, 0, "@3 resolve zeroes the streak");
+  assert.equal(again.resolutions.length, 2, "@3 resolve appends one resolution");
+  assert.equal(again.resolutions[1].note, "observational-skip confirmed");
+  assert.equal(again.history.length, 1, "@3 history untouched");
+  assert.deepStrictEqual(again.state, { phase: "S2", since: "2026-01-01T00:00:00Z", transitionId: "tx-1", evidenceHash: "eh-1" }, "@3 state block preserved");
+  assert.equal(again.actions.length, 1, "@3 actions preserved");
+  assert.equal(again.revision, 9, "@3 revision preserved");
+  assert.deepStrictEqual(again.lastSkipKeys, ["k1", "k2"], "@3 lastSkipKeys preserved");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
 console.log("gain-ledger.test.mjs: all checks passed");
 
