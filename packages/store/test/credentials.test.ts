@@ -15,6 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CREDENTIAL_FILE_FAULT_ERRNOS,
+  CREDENTIALS_NOTE,
+  REMOVE_KEY_COMMAND,
+  STORE_KEY_COMMAND,
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
@@ -40,6 +43,13 @@ function tempRoot(): { home: string; cleanup: () => void } {
 }
 
 const KEY = "sk-test-ABCDEFGHIJKLMNOP-zero-zero";
+
+test("文件里的说明用命令常量拼，改名不会在用户文件里留下一个不存在的命令（#570）", () => {
+  // This text is written into the user's own credentials file and outlives any
+  // rename, so it must follow the constants instead of spelling the commands out.
+  assert.ok(CREDENTIALS_NOTE.includes("`" + STORE_KEY_COMMAND + "`"), CREDENTIALS_NOTE);
+  assert.ok(CREDENTIALS_NOTE.includes("`" + REMOVE_KEY_COMMAND + "`"), CREDENTIALS_NOTE);
+});
 
 test("every search provider in the catalog is one this resolver actually fills", () => {
   // Adding a search provider to CREDENTIAL_PROVIDERS without adding it to

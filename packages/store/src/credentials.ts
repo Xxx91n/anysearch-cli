@@ -46,11 +46,26 @@ import { ansCredentialsPathFor, resolveConfigHome } from "./ans-paths.js";
 export { resolveConfigHome };
 
 
-/** Written into every file so its plaintext nature is obvious to a human who opens it. */
+/**
+ * The pieces every surface builds its advice from: the command names, and the two
+ * halves of the sentence. Only a fault inside a readable file can be repaired, so
+ * `KEEP_KEYS` belongs to that case alone.
+ */
+export const REPAIR_COMMAND = "ans auth repair";
+export const STORE_KEY_COMMAND = "ans auth set <provider>";
+export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
+export const FIX_OR_REPLACE = "fix or remove the file";
+export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
+const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
+const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
+/** Written into every file so its plaintext nature is obvious to a human who opens
+ * it: this text outlives a rename inside the user's own file. */
 export const CREDENTIALS_NOTE =
   "Plain text provider API keys. This file is NOT encrypted and is NOT a system keychain. " +
   "It is readable only by your OS account (checked when ans writes it). " +
-  "Written by `ans auth set`; remove one key with `ans auth remove <provider>` or delete this file.";
+  "Written by `" + STORE_KEY_COMMAND + "`; remove one key with `" + REMOVE_KEY_COMMAND +
+  "` or delete this file.";
 
 /** Where each provider's key normally comes from, and how it is used. */
 export interface CredentialProviderInfo {
@@ -353,19 +368,6 @@ function parseBinding(raw: unknown, index: number): { binding: CredentialBinding
 function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
-
-/**
- * The pieces every surface builds its advice from: the command names, and the two
- * halves of the sentence. Only a fault inside a readable file can be repaired, so
- * `KEEP_KEYS` belongs to that case alone.
- */
-export const REPAIR_COMMAND = "ans auth repair";
-export const STORE_KEY_COMMAND = "ans auth set <provider>";
-export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
-export const FIX_OR_REPLACE = "fix or remove the file";
-export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
-const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
-const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
 /**
  * What the user can do about a read failure, by the code that caused it. "Fix its
