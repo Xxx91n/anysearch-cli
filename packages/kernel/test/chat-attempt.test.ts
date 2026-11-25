@@ -173,12 +173,12 @@ async function main() {
       const busyError = busy as ChatAttemptBusyError;
       assert(busyError?.facts?.liveness === "alive" && busyError?.facts?.holder?.pid === process.pid,
         "A5: the collision reports the holder as this live process (got " + JSON.stringify(busyError?.facts) + ")");
-      // #587 review: the manual clear belongs only to an owner this machine
-      // cannot confirm alive — offering it while the holder is running invites
-      // the double writer the lease exists to prevent.
+      // #587 review: a live holder must not be told to delete the lock as if
+      // the owner were gone — only a recycled pid makes the lease the target.
       const busyText = chatAttemptBusyText(busyError);
-      assert(!busyText.includes("删掉"),
-        "A5: a live holder is not offered a manual clear (got " + JSON.stringify(busyText) + ")");
+      assert(busyText.includes("被复用") && !busyText.includes("如果确认那个进程已经不在"),
+        "A5: a live holder is offered the recycled-pid way out, not a blind delete (got "
+        + JSON.stringify(busyText) + ")");
       assert(busyText.includes(busyError.leasePath),
         "A5: the lease path is shown even for a live holder — a recycled pid leaves it the only thing to act on");
       assert(chatAttemptBusyText(busyError, "ans_chat: ").startsWith("ans_chat: "),

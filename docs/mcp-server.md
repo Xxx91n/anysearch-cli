@@ -461,9 +461,9 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   window governs the owners this machine cannot confirm — another host, a
   missing identity, or a pid the probe cannot classify — judging them on
   the heartbeat alone. A busy answer names the lock directory it could not
-  take, plus the holder's pid and host whenever the lock names one; the
-  "delete that directory" instructions appear only when the holder is not
-  confirmed alive, so a running run is never talked into a second writer. Different sessions still run in parallel. No evidence
+  take, plus the holder's pid and host whenever the lock names one, and
+  always states the one way out — worded for the case that applies, so a
+  running holder is told to clear the lock only if its pid was recycled. Different sessions still run in parallel. No evidence
   exists for network-filesystem session directories; same machine only.
 - A chat **attempt** is the wider unit around that run: lease → record start →
   run → record result (#299). Its lease lives in a `leases/` folder beside

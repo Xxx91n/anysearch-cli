@@ -482,8 +482,8 @@ async function main() {
       assert(/持有者 pid \d+/.test(bRes.text),
         "C1: the refusal names the holder's pid (#587 review) (got "
         + JSON.stringify(bRes.text.slice(0, 200)) + ")");
-      assert(!bRes.text.includes("删掉"),
-        "C1: a live holder is not offered a manual clear (#587 review)");
+      assert(bRes.text.includes("被复用") && !bRes.text.includes("如果确认那个进程已经不在"),
+        "C1: a live holder gets the recycled-pid way out, not a blind delete (#587 review)");
       assert(bRes.text.includes("leases"),
         "C1: the refusal still names the lease directory (#587 review)");
       assert(refusedMs < 1_500, "C1: the refusal is immediate, not a queue (took " + refusedMs + " ms)");

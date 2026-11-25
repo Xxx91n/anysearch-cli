@@ -118,15 +118,17 @@ function readSessionBusyFacts(lockPath: string): SessionBusyFacts {
     : { holder };
 }
 
-/** The busy sentence: who holds the lock, where it lives, and — only when the
- *  holder is not confirmed alive — how to clear it by hand. */
+/** The busy sentence: who holds the lock, where it lives, and the one way out.
+ *  A confirmed-alive holder gets the recycled-pid wording instead, because
+ *  telling a running run's owner to delete the lock invites a second writer. */
 function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
+  const alive = facts.liveness === "alive";
   const holder = facts.holder
     ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host
-      + (facts.liveness === "alive" ? " (still running)" : "") + "."
+      + (alive ? " (still running)" : "") + "."
     : "";
-  const advice = facts.liveness === "alive"
-    ? ""
+  const advice = alive
+    ? " If that pid no longer belongs to that run, delete that lock directory and retry."
     : " If you are sure that process is gone, delete that lock directory and retry.";
   return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath + "." + advice;
 }

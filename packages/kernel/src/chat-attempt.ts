@@ -72,11 +72,10 @@ export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): s
   const holder = error.facts?.holder;
   const who = holder ? "持有者 pid " + holder.pid + "（主机 " + holder.host + "）" : undefined;
   const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。" + (who ? who + "。" : "");
-  // The path is always shown, including for a live holder: a pid can be
-  // recycled, so the lease stays the only thing a person can act on.
   const where = "锁在 " + error.leasePath + "。";
   if (error.facts?.liveness === "alive") {
-    return head + "它还在跑，等它跑完再来。" + where;
+    return head + "它还在跑，等它跑完再来。" + where
+      + "如果那个 pid 已经不是原来那个进程（被复用了），删掉这个目录再试。";
   }
   return head + "等它结束后再试。" + where + "如果确认那个进程已经不在，删掉这个目录再试。";
 }

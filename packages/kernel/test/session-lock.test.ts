@@ -79,16 +79,21 @@ async function expectAcquired(lockDir: string, staleMs: number, waitMs: number):
 }
 
 /**
- * The busy answer for `lockDir`: the shared sentence and the directory the
- * waiter could not take. `advice` is whether the manual-clear instructions must
- * be there — they belong only to an owner this machine cannot confirm alive.
+ * The busy answer for `lockDir`: the shared sentence, the directory the waiter
+ * could not take, and the way out that matches the probe. A holder confirmed
+ * alive is told to clear the lock only if its pid was recycled; anyone else is
+ * told the owner may simply be gone.
  */
-function busyAt(busy: string | undefined, lockDir: string, advice = true): boolean {
+function busyAt(
+  busy: string | undefined,
+  lockDir: string,
+  kind: "alive" | "unconfirmable" = "unconfirmable",
+): boolean {
   if (busy === undefined) return false;
   const base = busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes(lockDir);
-  return advice
-    ? base && busy.includes("delete that lock directory")
-    : base && !busy.includes("delete that lock directory");
+  return kind === "alive"
+    ? base && busy.includes("(still running)") && busy.includes("no longer belongs to that run")
+    : base && busy.includes("If you are sure that process is gone");
 }
 
 // ---------- runtime wiring helpers (same minimal shape as the #258 tests) ----------
@@ -166,7 +171,7 @@ async function main() {
       assert(existsSync(heartbeatFile(lockDir)), "L2: the holder writes a heartbeat immediately");
 
       const busy = await expectBusy(lockDir, 200, 300);
-      assert(busyAt(busy, lockDir, false),
+      assert(busyAt(busy, lockDir, "alive"),
         "L2: a contender outliving the wait cap gets the session-busy error (got " + JSON.stringify(busy) + ")");
       assert(busy !== undefined && busy.includes("pid " + process.pid),
         "L2: the busy message names the holder's pid (got " + JSON.stringify(busy) + ")");
@@ -191,7 +196,7 @@ async function main() {
       backdate(lockDir, 60 * 60_000);
 
       const busy = await expectBusy(lockDir, 200, 300);
-      assert(busyAt(busy, lockDir, false),
+      assert(busyAt(busy, lockDir, "alive"),
         "L3: a live local owner keeps the lock however old the heartbeat is (got " + JSON.stringify(busy) + ")");
       assert(existsSync(ownerFile(lockDir)), "L3: the contender did not sweep the live owner's lock");
 
