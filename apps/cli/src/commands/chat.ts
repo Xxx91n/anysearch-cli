@@ -478,10 +478,12 @@ export async function runChat(argv: string[]): Promise<number> {
   } catch (error: any) {
     // One wording for "another attempt has this session right now". It is not a
     // crash and not a usage error: the same command works once the other run
-    // ends, so the message says exactly that and names the handle to try.
+    // ends, so the message says exactly that, names the handle to try, and
+    // names the lease directory a person can clear once that process is gone.
     if (error instanceof ChatAttemptBusyError) {
       process.stderr.write(
-        "这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。\n",
+        "这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。"
+        + "如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。\n",
       );
       return 1;
     }

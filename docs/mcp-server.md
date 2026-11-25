@@ -457,9 +457,12 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   in a `locks/` folder inside `ANS_PI_SESSION_DIR`: the holder records its
   pid/host and refreshes a heartbeat, a live local holder is never
   preempted, and once the holder's process is confirmed dead the next
-  waiter takes over at once instead of waiting the 10-minute stale window
-  (which only governs owners this machine cannot confirm, e.g. on another
-  host). Different sessions still run in parallel. No evidence exists for
+  waiter takes over at once. The 10-minute stale window governs the owners
+  this machine cannot confirm — another host, a missing identity, or a pid
+  the probe cannot classify — and a holder that is still running keeps its
+  heartbeat fresh, so it never ages out. A busy answer names the lock
+  directory it could not take, so a lock whose owner is gone can be cleared
+  by hand. Different sessions still run in parallel. No evidence exists for
   network-filesystem session directories; same machine only.
 - A chat **attempt** is the wider unit around that run: lease → record start →
   run → record result (#299). Its lease lives in a `leases/` folder beside

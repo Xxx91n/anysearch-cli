@@ -49,7 +49,15 @@ import {
  * English text.
  */
 export class ChatAttemptBusyError extends Error {
-  constructor(readonly sessionId: string) {
+  constructor(
+    readonly sessionId: string,
+    /**
+     * The lease directory that is still held. A host that words this collision
+     * itself needs it: a lease whose owner is gone is the one busy state a
+     * person can clear by hand, and they cannot clear a path nobody showed them.
+     */
+    readonly leasePath: string,
+  ) {
     super("Session is busy: another chat attempt holds it; this attempt was not started.");
     this.name = "ChatAttemptBusyError";
   }
@@ -120,23 +128,26 @@ export async function runChatAttempt(
   if (!piSessionDir || !sessionId) return runBody(body, store, sessionId, projectRoot);
 
   const windows = resolveSessionLockWindows(options.sessionLock);
+  // One path for every answer about this lease: the acquisition, the wait, and
+  // the collision error all name the same directory, so the host can show it.
+  const leasePath = sessionLeasePath(piSessionDir, sessionId);
   let release: (() => void) | undefined;
   try {
-    release = await acquireSessionLease(sessionLeasePath(piSessionDir, sessionId), windows);
+    release = await acquireSessionLease(leasePath, windows);
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
     const choice = await options.onBusy?.(sessionId) ?? "stop";
-    if (choice === "stop") throw new ChatAttemptBusyError(sessionId);
+    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath);
     if (choice === "wait") {
       // Design: #315/#317 replace #266's automatic two-minute queue — an
       // unattended caller must not hang without an explanation. Only a caller
       // who explicitly chooses wait gets a bounded wait on the lease.
       try {
-        release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
+        release = await acquireSessionLock(leasePath, {
           ...windows, waitMs: windows.waitMs || 120_000,
         });
       } catch (waitError) {
-        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId);
+        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath);
         throw waitError;
       }
     } else {

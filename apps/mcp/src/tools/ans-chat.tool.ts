@@ -718,7 +718,8 @@ export function registerAnsChat(
           } catch (error) {
             if (error instanceof ChatAttemptBusyError) {
               return toolFailure(
-                "ans_chat: 这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。",
+                "ans_chat: 这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。"
+                + "如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。",
               );
             }
             throw error;

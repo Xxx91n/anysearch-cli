@@ -11,8 +11,12 @@
 // A plain directory-mtime lock mistakes a long but healthy run for a dead
 // one and steals it. A waiter here reclaims only on real evidence:
 //
-//   same host + not proven dead  never reclaimed, however old the heartbeat is
 //   same host + confirmed dead   reclaimed at the next poll
+//   same host + confirmed alive  never reclaimed, however old the heartbeat is
+//   same host + probe unknown    reclaimed only once the stale window has
+//                                passed — the pid says nothing, so the
+//                                heartbeat is the only evidence left, and a
+//                                holder that is really running keeps it fresh
 //   other host / no identity     reclaimed only once the stale window has
 //                                passed — the conservative rule for an owner
 //                                this machine has no pid evidence about. A lock
@@ -54,15 +58,17 @@
 // keeps a dead owner's lock longer than necessary, and is accepted because the
 // alternative (guessing a start time) would be wrong more often.
 // Design: liveness is the store's one rule (#570) — only a same-host ESRCH
-// proves the owner is gone. EPERM proves the process exists for another user;
-// an unclassifiable probe error (Windows faults, ERR_INVALID_ARG_TYPE) says
-// nothing about it. Either way the waiter leaves the lock alone instead of
-// taking a running session away.
+// proves the owner is gone, and EPERM proves the process exists for another
+// user, so neither of those two is ever aged out. A probe that cannot classify
+// the pid proves nothing either way: that owner is judged by the same heartbeat
+// window as a foreign one (#576), so a run that died without a reclaimable pid
+// recovers on its own, while a holder that is still running keeps the window
+// fresh and is left alone.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { pidIsAlive } from "@anysearch-cli/store/process-liveness";
+import { probePid } from "@anysearch-cli/store/process-liveness";
 
 /**
  * Reclaim window for an owner this machine has no pid evidence about — another
@@ -88,6 +94,20 @@ const HEARTBEAT_MAX_MS = 5_000;
 
 export const SESSION_BUSY_MESSAGE =
   "Session is busy: another run still holds this session (possibly in another process); retry after it finishes.";
+
+/**
+ * The busy sentence a waiter raises, naming the lock directory it could not
+ * take.
+ *
+ * The path is the point: a lock whose owner left no pid this machine can
+ * confirm outlives its stale window, and clearing one by hand is the last
+ * resort. A sentence that only says "retry later" leaves the user waiting for
+ * a run that will never end.
+ */
+function sessionBusyMessage(lockPath: string): string {
+  return SESSION_BUSY_MESSAGE + " Lock: " + lockPath
+    + ". If you are sure that process is gone, delete that lock directory and retry.";
+}
 
 export interface SessionLockWindows {
   /** Override for SESSION_LOCK_STALE_MS. */
@@ -139,8 +159,17 @@ const HEARTBEAT_FILE = "heartbeat";
  * The directory already belongs to a reachable holder. Separate from other
  * failures so the waiting path can poll and the one-shot path can answer
  * "busy" instead of retrying: only this one means "someone else has it".
+ *
+ * Carries the lock directory so the message can name it: contention is the one
+ * failure a person can clear by hand, and they cannot clear a path they were
+ * never shown.
  */
-class LockHeldError extends Error {}
+class LockHeldError extends Error {
+  constructor(readonly lockPath: string) {
+    super(sessionBusyMessage(lockPath));
+    this.name = "LockHeldError";
+  }
+}
 
 /**
  * The holder's identity, or undefined when there is none to read.
@@ -187,11 +216,11 @@ function lockAgeMs(lockPath: string, now: number): number {
 
 /**
  * Whether the lock at `lockPath` may be reclaimed right now — see the module
- * comment for the rule table. The one-line version: a local owner that is not
- * proven dead (including a probe this machine cannot classify) is never
- * reclaimed; a confirmed-dead local owner is reclaimed at once; an owner with
- * no pid evidence here (another host, missing or unreadable identity) has to
- * outlive the stale window.
+ * comment for the rule table. The one-line version: a local owner that is
+ * confirmed alive is never reclaimed; a confirmed-dead local owner is reclaimed
+ * at once; an owner this machine has no usable pid evidence about — another
+ * host, a missing or unreadable identity, or a probe that cannot classify the
+ * pid — has to outlive the stale window.
  *
  * An owner.json that exists but cannot be read counts as "cannot confirm":
  * this waiter falls back to the age rule, and while the file stays unreadable
@@ -208,7 +237,9 @@ function reclaimableNow(lockPath: string, staleMs: number): boolean {
     return lockAgeMs(lockPath, Date.now()) > staleMs;
   }
   if (owner && owner.host === hostname()) {
-    return !pidIsAlive(owner.pid);
+    const liveness = probePid(owner.pid);
+    if (liveness === "dead") return true;
+    if (liveness === "alive") return false;
   }
   return lockAgeMs(lockPath, Date.now()) > staleMs;
 }
@@ -373,7 +404,7 @@ export async function acquireSessionLease(
 ): Promise<() => void> {
   mkdirSync(dirname(leasePath), { recursive: true });
   const release = takeLockDir(leasePath, windows.staleMs);
-  if (!release) throw new LockHeldError(SESSION_BUSY_MESSAGE);
+  if (!release) throw new LockHeldError(leasePath);
   return release;
 }
 
@@ -404,7 +435,7 @@ export async function acquireSessionLock(
     // contention, the cap bounds retries; zero never enters the polling path.
     const release = takeLockDir(lockPath, staleMs);
     if (release) return release;
-    if (Date.now() >= deadlineAt) throw new LockHeldError(SESSION_BUSY_MESSAGE);
+    if (Date.now() >= deadlineAt) throw new LockHeldError(lockPath);
     await sleep(POLL_MS);
   }
 }
