@@ -260,6 +260,20 @@ function loadFile(
  * var NAME, never the secret), else the provider's own env vars, else the user
  * credential file.
  */
+/**
+ * How to re-bind this provider to the endpoint in force. Only a URL safe to print
+ * becomes a command you can paste; one that carries credentials (or is long enough
+ * to be truncated) is not printed, and its placeholder stays unquoted on purpose -
+ * pasted verbatim it must fail loudly instead of storing a string that looks like
+ * an endpoint and binds nothing.
+ */
+function bindingAdvice(provider: string, effective: string | null): string {
+  if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
+  if (effective === displayEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
+  return "run `" + storeKeyCommand(provider) + " --endpoint <your endpoint>` for this endpoint, " +
+    "replacing the placeholder with the address from your config (it carries credentials, so it is not printed)";
+}
+
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
@@ -472,23 +486,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         const storedList = lookup.stored.length > 0
           ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
           : "(the provider default)";
-        // 地址带凭据时不打印，也不把脱敏后的地址当值交给用户；回到默认 endpoint
-        // 时根本没有要给的地址，命令就不带 --endpoint。
         const effective = normalizeBindingEndpoint(resolved.baseUrl);
-        const effectiveShown = displayEndpoint(effective);
-        const endpointArg = effective === null
-          ? null
-          : effective === effectiveShown
-            ? effectiveShown
-            : "<your endpoint>";
         warn(
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
-          storedList + " but the effective endpoint is " + effectiveShown +
-          " — refusing to send that secret to a different endpoint; run `" +
-          storeKeyCommand(resolved.provider, endpointArg) + "` " +
-          (endpointArg
-            ? "for this endpoint (see `ans auth list` for what is stored)"
-            : "to bind it to the provider default (see `ans auth list` for what is stored)"),
+          storedList + " but the effective endpoint is " + displayEndpoint(effective) +
+          " — refusing to send that secret to a different endpoint; " +
+          bindingAdvice(resolved.provider, effective) + " (see `ans auth list` for what is stored)",
         );
       }
     }
