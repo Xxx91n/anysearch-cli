@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withShipOverrideLedgerLock } from "../src/eval/override-ledger";
+import { LedgerLockTimeoutError } from "../src/eval/ledger-lock";
+import { withProbe } from "./helpers/probe-stub";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..");
@@ -132,27 +134,97 @@ try {
   const lockDir = mkdtempSync(join(tmpdir(), "ans-override-lock-"));
   const lock = join(lockDir, ".ship-override-ledger.lock");
   writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-  const realKill = process.kill;
-  const unconfirmable: typeof process.kill = (pid, signal) => {
-    if (pid === process.pid && signal === 0) {
-      throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
-    }
-    return realKill(pid, signal);
-  };
-  process.kill = unconfirmable;
-  let survived = false;
-  try {
+  const survived = withProbe(process.pid, "EPERM", () => {
     try {
       withShipOverrideLedgerLock(lockDir, () => {});
     } catch {
       // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
     }
-    survived = existsSync(lock);
-  } finally {
-    process.kill = realKill;
-    rmSync(lockDir, { recursive: true, force: true });
-  }
+    return existsSync(lock);
+  });
   assert(survived, "an unconfirmable probe keeps a live override writer's lock");
+  rmSync(lockDir, { recursive: true, force: true });
+}
+
+// #577: a live owner keeps the override lock however old the record is. Age is not proof of death,
+// and deleting a live lock is how two writers end up appending to the same ledger.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-age-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  const record = JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() });
+  writeFileSync(lock, record, "utf8");
+  let entered = false;
+  let timedOut = false;
+  try {
+    withShipOverrideLedgerLock(dir, () => { entered = true; return null; });
+  } catch (e) {
+    timedOut = e instanceof LedgerLockTimeoutError;
+  }
+  assert(!entered && timedOut && readFileSync(lock, "utf8") === record, "a live owner keeps the override lock however old its record");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: releasing removes only the record this call wrote, never a successor's lock.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-release-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  const successor = JSON.stringify({ pid: 4242, at: new Date().toISOString() });
+  withShipOverrideLedgerLock(dir, () => {
+    writeFileSync(lock, successor, "utf8");
+    return null;
+  });
+  assert(existsSync(lock) && readFileSync(lock, "utf8") === successor, "releasing leaves a lock this call no longer owns");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: the override ledger is wired to the same lock, so a proven-dead owner is still reaped at
+// once. This pins the wiring; the age rules themselves are covered once, where they live.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-dead-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  writeFileSync(lock, JSON.stringify({ pid: 999999, at: new Date().toISOString() }), "utf8");
+  let entered = false;
+  withProbe(999999, "ESRCH", () => { withShipOverrideLedgerLock(dir, () => { entered = true; return null; }); });
+  assert(entered && !existsSync(lock), "a proven-dead owner is reaped on the override lock");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: an owner the probe cannot classify falls to the age rule on the override ledger too —
+// kept while the record is fresh, reaped past the max age.
+{
+  const fresh = mkdtempSync(join(tmpdir(), "ans-override-lock-unknown-fresh-"));
+  const aged = mkdtempSync(join(tmpdir(), "ans-override-lock-unknown-aged-"));
+  writeFileSync(join(fresh, ".ship-override-ledger.lock"), JSON.stringify({ pid: 424242, at: new Date().toISOString() }), "utf8");
+  writeFileSync(join(aged, ".ship-override-ledger.lock"), JSON.stringify({ pid: 424242, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() }), "utf8");
+  let freshEntered = false;
+  let agedEntered = false;
+  withProbe(424242, "ERR_INVALID_ARG_TYPE", () => {
+    try { withShipOverrideLedgerLock(fresh, () => { freshEntered = true; return null; }); } catch { /* expected: kept */ }
+    withShipOverrideLedgerLock(aged, () => { agedEntered = true; return null; });
+  });
+  assert(!freshEntered && existsSync(join(fresh, ".ship-override-ledger.lock")), "an unclassifiable owner with a fresh record keeps the override lock");
+  assert(agedEntered && !existsSync(join(aged, ".ship-override-ledger.lock")), "an unclassifiable owner past the max age is reaped on the override lock");
+  rmSync(fresh, { recursive: true, force: true });
+  rmSync(aged, { recursive: true, force: true });
+}
+
+// #577: a held lock is exit 3 (contention, nothing changed), not exit 2 (corrupt ledger).
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-exit3-"));
+  writeFileSync(join(dir, ".ship-override-ledger.lock"), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), "utf8");
+  const gateReport = join(dir, "eval-report.json");
+  writeFileSync(gateReport, JSON.stringify({ gate: { verdict: "fail", exitCode: 1, failures: ["weakest-link RED arm-a"] } }), "utf8");
+  const res = verifierRun([
+    "record",
+    "--ledger", dir,
+    "--dataset-fingerprint", "ds",
+    "--holdout-fingerprint", "h",
+    "--reason-code", "provider-emergency",
+    "--gate-report", gateReport,
+  ]);
+  assert(res.code === 3, "lock contention exits 3, not 2");
+  assert(res.stderr.includes(".ship-override-ledger.lock") && res.stderr.includes("delete the lock file"), "the exit-3 message names the lock file and the way out");
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // Eval integrity contract accepts override only with a closed reasonCode.

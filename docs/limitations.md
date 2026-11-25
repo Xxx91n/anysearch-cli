@@ -145,6 +145,14 @@
   defect, not the F-16 family. Fixed by #121 (`working-directory:
   packages/store`). The promotion clock linked to it fired (PR #174) and was
   reversed by the first full-gate run. See the prune entry above.
+- **eval 账本的锁只认「人还活着」，认不出「人卡住了」(#577)** — 两个 eval 账本
+  （skip/gain、ship override）的 sidecar 锁先探 pid 死活：探活说活着就一直不回收，
+  只有探不出来才按 5 分钟年龄回收。代价是持锁进程被挂起、停在断点、或者 pid 被无关
+  进程复用时，锁会一直留着，后来者等满重试窗口后报 `ledger lock busy`；报错里带
+  pid、锁的 `at` 和完整路径，确认那个进程不在了就删掉锁文件重跑。这条取舍是有意的：
+  旧规则会在持锁进程还活着的时候按年龄把锁删掉，让两个写入者同时改同一份账本。
+  另外，没有硬链接的文件系统（部分网络盘）会退回「先建文件再写内容」，崩在中间会短暂
+  留下一个没有身份的锁，只能按 mtime 熬到 5 分钟才被回收；有硬链接时不存在这个窗口。
 - **装了包能跑通，但没证明模型判断得好不好 (#267)** — `scripts/installed-acceptance.mjs`
   跑的是真正 npm 装出来的产品：启动装好的 MCP、跑一轮 `ans_chat` 再续一轮、
   整理选定的材料、查内部搜索写进去的行能不能被别的会话召回、打开一个旧库。

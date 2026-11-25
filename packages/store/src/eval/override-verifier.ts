@@ -3,6 +3,10 @@
 // 0 = allowed/success
 // 1 = governance denied (quota, late obligation, invalid postmortem, no match)
 // 2 = malformed args, corrupt ledger, or internal/IO failure
+// 3 = the ledger lock is held by another writer — contention, not corruption; nothing was changed
+//
+// Design: contention exits 3, not 2 — 2 means the ledger cannot be trusted, and a caller that
+// quarantines on it would destroy a healthy file (#577).
 
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -14,6 +18,7 @@ import {
   type OverrideGovernanceEvent,
   type ShipOverrideReasonCode,
 } from "./override-core";
+import { LedgerLockTimeoutError } from "./ledger-lock";
 import {
   appendOverrideEvent,
   readShipOverrideLedger,
@@ -262,6 +267,10 @@ try {
   });
   emitSuccess({ ok: true, epoch: completeEpoch, contentHash: artifact.contentHash, revision: ledger.revision });
 } catch (error) {
+  if (error instanceof LedgerLockTimeoutError) {
+    console.error(error.message);
+    process.exit(3);
+  }
   console.error("override verifier internal error: " + String((error as Error).stack ?? error));
   process.exit(2);
 }

@@ -9,7 +9,7 @@ import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./gold
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
-import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
+import { classifyLedgerWriteFailure, quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock, type LedgerWriteFailure } from "./skip-ledger";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
@@ -33,7 +33,7 @@ function repoRoot(): string {
   }
 }
 
-function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[], gain?: GainConclusion): string {
+function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[], gain?: GainConclusion, notes: string[] = []): string {
   const m = report.metrics;
   const verdict = failures.length ? "FAIL" : warnings.length ? "WARN" : "PASS";
   const lines: string[] = [
@@ -122,6 +122,9 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
   for (const [tier, t] of Object.entries(report.tierBreakdown)) lines.push(`| ${tier} | ${t.cases} | ${t.passed} | ${t.passRate.toFixed(3)} |`);
   lines.push("", "## Stage attribution (failed cases)", "", "```json", JSON.stringify(report.stageBreakdown), "```", "", "## Cases", "", "| case | group | tier | stage | result |", "|---|---|---|---|---|");
   for (const c of report.cases) lines.push(`| ${c.id} | ${c.group} | ${c.difficulty} | ${c.failedStage ?? "-"} | ${c.passed ? "PASS" : "FAIL"} |`);
+  // run notes are facts about the run, not a gate signal: they must not move the verdict, which
+  // is why they are rendered apart from the gate warnings.
+  if (notes.length) lines.push("", "## Run notes (not a gate signal)", "", ...notes.map((n) => "- " + n));
   if (warnings.length) lines.push("", "## Gate warnings (non-blocking)", "", ...warnings.map((w) => "- " + w));
   if (failures.length) lines.push("", "## Gate failures", "", ...failures.map((x) => "- " + x));
   // E3: observational zone rendered even when empty/skipped (report-as-contract).
@@ -304,10 +307,14 @@ async function main(): Promise<number> {
     console.error("[eval] observation write failed (fail-open): " + String((e as Error).message ?? e));
   }
 
-  // every observational explicit-skip lands in the WARN ledger (share schema with
-  // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
-  // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
+  // explicit skips from an observational run are recorded in memory only: this path has never
+  // written skip-ledger.json (#590), so the 3-streak escalation below cannot fire from here and
+  // ship-gate still reads whatever the other writer left.
   const ob = report.metrics.observational;
+  // only a failure is reported; this path does not persist the ledger yet (#590)
+  type SkipLedgerWriteNote = { recorded: false; reason: LedgerWriteFailure | "quarantined"; detail: string };
+  let skipLedgerWrite: SkipLedgerWriteNote | null = null;
+  const runNotes: string[] = [];
   if (ob) {
     const keys: string[] = [];
     for (const [k, v] of Object.entries(ob)) {
@@ -318,22 +325,49 @@ async function main(): Promise<number> {
     // no fit-eligible units) records reason-code data-absent — never builds the 3-streak.
     const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
     const dataAbsent = keys.length > 0 && obTrack === "consumed" && ((ob as { dataAbsent?: boolean }).dataAbsent === true || isSkip(ob.accessAge));
-    let streak = 0;
+    const recordOnce = (): number => withSkipLedgerLock(outDir, (sl) => {
+      const next = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+      if (skipMustFail(sl)) {
+        console.error("[eval] OBSERVATIONAL skip streak " + next + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + join(outDir, "skip-ledger.json") + " ");
+      }
+      return next;
+    });
     try {
-      withSkipLedgerLock(outDir, (sl) => {
-        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-        if (skipMustFail(sl)) {
-          console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + join(outDir, "skip-ledger.json") + " ");
-        }
-        return streak;
-      });
+      recordOnce();
     } catch (e) {
-      const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
-      console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
-      withSkipLedgerLock(outDir, (sl) => {
-        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-        return streak;
-      });
+      const kind = classifyLedgerWriteFailure(e);
+      const detail = String((e as Error).message ?? e);
+      if (kind === "corrupt") {
+        const moved = quarantineSkipLedger(outDir, new Date().toISOString());
+        if ("failed" in moved) {
+          skipLedgerWrite = { recorded: false, reason: "corrupt", detail };
+          const why = String((moved.failed as Error)?.message ?? moved.failed);
+          runNotes.push("OBSERVATIONAL skip-ledger fails its contract and could not be quarantined — left in place (" + why + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract and could not be quarantined — left in place (" + why + ")");
+        } else if ("absent" in moved) {
+          skipLedgerWrite = { recorded: false, reason: "corrupt", detail };
+          runNotes.push("OBSERVATIONAL skip-ledger fails its contract, but there was no file to move aside (" + detail + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — no file to quarantine (" + detail + ")");
+        } else {
+          skipLedgerWrite = { recorded: false, reason: "quarantined", detail: moved.quarantined };
+          runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + moved.quarantined + " — the skip history restarts empty");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + moved.quarantined + " and restarted empty (" + detail + ")");
+          try {
+            recordOnce();
+          } catch (restart) {
+            const restartKind = classifyLedgerWriteFailure(restart);
+            skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
+            runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
+            console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);
+          }
+        }
+      } else {
+        // a held lock or a filesystem error leaves the file intact, so the history stays and only
+        // this run's skip is missing — say so instead of quarantining a healthy ledger
+        skipLedgerWrite = { recorded: false, reason: kind, detail };
+        runNotes.push("OBSERVATIONAL skip-ledger not recorded (" + kind + "), so the skip streak did not move this run: " + detail);
+        console.error("[eval] OBSERVATIONAL skip-ledger left alone (" + kind + ") — " + detail);
+      }
     }
   }
 
@@ -403,9 +437,13 @@ async function main(): Promise<number> {
     gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null },
     // quarantine disclosure (policy layer; dataset fingerprint deliberately unchanged).
     quarantine: { active: quarantineActive, expired: quarantineExpired, schema: quarantine.schema },
+    // whether this run's observational skip landed; absent when the run had nothing to record. A
+    // lock held by another writer leaves the ledger untouched, so the 3-streak counter did not
+    // move — say it out loud rather than let a later reader assume it did.
+    ...(skipLedgerWrite ? { skipLedger: skipLedgerWrite } : {}),
   };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
-  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");
+  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion, runNotes), "utf8");
 
   console.log(
     `[eval] cases ${report.totals.passed}/${report.totals.cases} pass, fingerprint=${report.datasetFingerprint}, ` +

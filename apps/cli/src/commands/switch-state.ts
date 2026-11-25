@@ -44,12 +44,10 @@ export async function runSwitchState(args: string[]): Promise<number> {
     const v = verifySwitchState(outDir, dbPath);
     process.stdout.write("[switch-state] verify: " + (v.ok ? "OK" : "FAIL") + " — " + v.detail + "\n");
     if (!v.ok) {
-      try {
-        const q = quarantineSkipLedger(outDir, new Date().toISOString());
-        process.stderr.write("[switch-state] unverifiable ledger quarantined to " + q + "\n");
-      } catch (e) {
-        process.stderr.write("[switch-state] verify failed but quarantine was unavailable: " + String((e as Error).message ?? e) + "\n");
-      }
+      const moved = quarantineSkipLedger(outDir, new Date().toISOString());
+      if ("quarantined" in moved) process.stderr.write("[switch-state] unverifiable ledger quarantined to " + moved.quarantined + "\n");
+      else if ("absent" in moved) process.stderr.write("[switch-state] unverifiable ledger, but no ledger file was there to move aside\n");
+      else process.stderr.write("[switch-state] unverifiable ledger could not be quarantined: " + String((moved.failed as Error)?.message ?? moved.failed) + "\n");
     }
     return v.ok ? 0 : 1;
   }

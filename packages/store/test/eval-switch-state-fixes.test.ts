@@ -2,16 +2,20 @@
 // F1 chain-wins rebuild (replaces quarantine loop with ledger recovery)
 // F2 legacy stage-transition/rollback/freeze rows fail loud
 // F3 superseded on-chain by eval-ship-gate-integrity.test.mjs
-// F4 stale lock recovery (malformed JSON reaped)
+// F4 unreadable lock content is dated by the lock file's mtime (fresh kept, aged reaped)
+// F6-F9 (#577) identity decides before age: a live owner keeps its lock, a dead one is reaped,
+//         an unclassifiable one falls to age, and releasing never deletes a successor's lock
 // D6 mutation: changing registered fields changes the digest
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { SkipLedgerError, classifyLedgerWriteFailure, parseSkipLedger, quarantineSkipLedger, withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
+import { withProbe } from "./helpers/probe-stub";
 
 const fixturePath = join(process.cwd(), "fixtures", "switch-registration.json");
 const canonical = readFileSync(fixturePath, "utf8");
@@ -68,16 +72,25 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // malformed lock file is reaped, advanceSwitch succeeds.
+  // F4 (#577): unreadable lock content is dated by the lock file's own mtime, so a fresh one is
+  // left alone and an aged one is reaped. Deleting it on sight let two writers delete each other's
+  // lock in the moment between create and write.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f4-"));
     const dbPath = join(dir, "anysearch.db");
     freshDb(dbPath);
-    writeFileSync(join(dir, ".skip-ledger.lock"), "{ not-json", "utf8");
+    const lock = join(dir, ".skip-ledger.lock");
+    writeFileSync(lock, "{ not-json", "utf8");
     process.env.ANS_SWITCH_REG_PATH = fixturePath;
+    let timedOut = false;
+    try { advanceSwitch({ outDir: dir, dbPath, mode: "real" }); } catch (e) { timedOut = e instanceof LedgerLockTimeoutError; }
+    ok("F4 a fresh unreadable lock is left alone", timedOut && existsSync(lock) && readFileSync(lock, "utf8") === "{ not-json");
+    ok("F4 advanceSwitch leaves the ledger alone on a lock timeout", !readdirSync(dir).some((name) => name.includes(".quarantined-")));
+    const aged = (Date.now() - LEDGER_LOCK_MAX_AGE_MS - 60 * 1000) / 1000;
+    utimesSync(lock, aged, aged);
     const r = advanceSwitch({ outDir: dir, dbPath, mode: "real" });
-    ok("F4 malformed lock is reaped", !existsSync(join(dir, ".skip-ledger.lock")));
-    ok("F4 advanceSwitch succeeds despite malformed lock", typeof r.state.phase === "string");
+    ok("F4 an aged unreadable lock is reaped", !existsSync(lock));
+    ok("F4 advanceSwitch succeeds once the aged lock is reaped", typeof r.state.phase === "string");
     rmSync(dir, { recursive: true, force: true });
   }
 
@@ -141,27 +154,165 @@ try {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f5-"));
     const lock = join(dir, ".skip-ledger.lock");
     writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-    const realKill = process.kill;
-    const unconfirmable: typeof process.kill = (pid, signal) => {
-      if (pid === process.pid && signal === 0) {
-        throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
-      }
-      return realKill(pid, signal);
-    };
-    process.kill = unconfirmable;
-    let survived = false;
-    try {
+    const survived = withProbe(process.pid, "EPERM", () => {
       try {
         withSkipLedgerLock(dir, () => {});
       } catch {
         // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
       }
-      survived = existsSync(lock);
-    } finally {
-      process.kill = realKill;
-      rmSync(dir, { recursive: true, force: true });
-    }
+      return existsSync(lock);
+    });
     ok("F5 live lock survives an unconfirmable probe", survived);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F6 (#577): a live owner keeps the lock however old its record is. Age alone is not evidence
+  // of death: a write paused past LOCK_MAX_AGE_MS (sleep, a debugger, a wedged network path) used
+  // to have its lock deleted out from under it, and two writers then ran at once.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-577-f6-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    const record = JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() });
+    writeFileSync(lock, record, "utf8");
+    let entered = false;
+    let error: unknown = null;
+    try {
+      withSkipLedgerLock(dir, () => { entered = true; });
+    } catch (e) {
+      error = e;
+    }
+    ok("F6 a live owner keeps the lock however old its record", !entered && error instanceof LedgerLockTimeoutError && readFileSync(lock, "utf8") === record);
+    ok("F6 lock contention is not reported as a broken ledger", !(error instanceof SkipLedgerError));
+    const message = error instanceof Error ? error.message : "";
+    ok("F6 the timeout names the holder, the path, and the way out",
+      message.includes(String(process.pid)) && message.includes(".skip-ledger.lock") && message.includes("delete the lock file"));
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F7 (#577): a proven-dead owner is still reaped at once, however fresh the record is. This is
+  // the half of the old rule that was right and must not be lost.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-577-f7-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    const gonePid = 999999;
+    writeFileSync(lock, JSON.stringify({ pid: gonePid, at: new Date().toISOString() }), "utf8");
+    let entered = false;
+    withProbe(gonePid, "ESRCH", () => { withSkipLedgerLock(dir, () => { entered = true; }); });
+    ok("F7 a proven-dead owner is reaped at once", entered && !existsSync(lock));
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F8 (#577): an owner the probe cannot classify falls back to the age rule — kept while the
+  // record is fresh, reaped once it is older than LEDGER_LOCK_MAX_AGE_MS.
+  {
+    const fresh = mkdtempSync(join(tmpdir(), "ans-577-f8-fresh-"));
+    const aged = mkdtempSync(join(tmpdir(), "ans-577-f8-aged-"));
+    const unprobeablePid = 424242;
+    writeFileSync(join(fresh, ".skip-ledger.lock"), JSON.stringify({ pid: unprobeablePid, at: new Date().toISOString() }), "utf8");
+    writeFileSync(join(aged, ".skip-ledger.lock"), JSON.stringify({ pid: unprobeablePid, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() }), "utf8");
+    let freshEntered = false;
+    let agedEntered = false;
+    withProbe(unprobeablePid, "ERR_INVALID_ARG_TYPE", () => {
+      try { withSkipLedgerLock(fresh, () => { freshEntered = true; }); } catch { /* expected: kept */ }
+      withSkipLedgerLock(aged, () => { agedEntered = true; });
+    });
+    ok("F8 an unclassifiable owner with a fresh record keeps the lock", !freshEntered && existsSync(join(fresh, ".skip-ledger.lock")));
+    ok("F8 an unclassifiable owner older than the max age is reaped", agedEntered && !existsSync(join(aged, ".skip-ledger.lock")));
+    rmSync(fresh, { recursive: true, force: true });
+    rmSync(aged, { recursive: true, force: true });
+  }
+
+  // F9 (#577): releasing removes only the record this call wrote. A writer that lost the lock used
+  // to delete its successor's lock on the way out, letting a third process in.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-577-f9-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    const successor = JSON.stringify({ pid: 4242, at: new Date().toISOString() });
+    withSkipLedgerLock(dir, () => {
+      writeFileSync(lock, successor, "utf8");
+      return null;
+    });
+    ok("F9 releasing leaves a lock this call no longer owns", existsSync(lock) && readFileSync(lock, "utf8") === successor);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F10 (#577): a filesystem without hard links falls back to create-then-write. The claim is
+  // complete before the callback runs, and an existing lock is still respected.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-577-f10-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    const noLinks = { link(): void { throw Object.assign(new Error("hard links unsupported here"), { code: "EPERM" }); } };
+    let claimSeen = "";
+    withLedgerLock(lock, () => { claimSeen = readFileSync(lock, "utf8"); return null; }, noLinks);
+    const claim = JSON.parse(claimSeen) as { pid?: number };
+    ok("F10 the fallback writes a complete claim before the callback runs", claim.pid === process.pid && !existsSync(lock));
+
+    const held = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+    writeFileSync(lock, held, "utf8");
+    let entered = false;
+    let timedOut = false;
+    try { withLedgerLock(lock, () => { entered = true; return null; }, noLinks); } catch (e) { timedOut = e instanceof LedgerLockTimeoutError; }
+    ok("F10 the fallback still respects a held lock", !entered && timedOut && readFileSync(lock, "utf8") === held);
+
+    const broken = { link(): void { throw Object.assign(new Error("permission denied"), { code: "EACCES" }); } };
+    let thrown = "";
+    try { withLedgerLock(lock, () => null, broken); } catch (e) { thrown = String((e as NodeJS.ErrnoException).code ?? e); }
+    ok("F10 a link failure that is not 'no hard links' is thrown, not degraded", thrown === "EACCES");
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F11 (#577): only a ledger that cannot be read is corruption. A held lock or a filesystem error
+  // leaves the file exactly as it was, and quarantining on either throws away a healthy history.
+  {
+    ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
+    ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
+    const fsError = Object.assign(new Error("denied"), { code: "EACCES", errno: -13, syscall: "open" });
+    ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(fsError) === "io");
+    // libuv reports an errno it cannot name with code "UNKNOWN"; it is still a disk failure
+    const unnamedErrno = Object.assign(new Error("unnamed"), { code: "UNKNOWN", errno: -4094 });
+    ok("F11 an unnamed errno is still io", classifyLedgerWriteFailure(unnamedErrno) === "io");
+
+    const emptyDir = mkdtempSync(join(tmpdir(), "ans-577-quarantine-"));
+    ok("F11 a quarantine with no file says there was nothing to move", "absent" in quarantineSkipLedger(emptyDir, new Date().toISOString()));
+    // the two outcomes a bare null used to hide: where the file went, and why it did not
+    const at = "2026-01-02T03:04:05.006Z";
+    writeFileSync(join(emptyDir, "skip-ledger.json"), "{}");
+    const moved = quarantineSkipLedger(emptyDir, at);
+    ok("F11 a quarantine reports where the file went", "quarantined" in moved && existsSync(moved.quarantined) && !existsSync(join(emptyDir, "skip-ledger.json")));
+    writeFileSync(join(emptyDir, "skip-ledger.json"), "{}");
+    // a directory where the quarantine name wants to be makes the rename fail on every platform
+    const blockedAt = "2026-01-02T03:04:05.007Z";
+    mkdirSync(join(emptyDir, "skip-ledger.quarantined-2026-01-02T03-04-05-007Z.json"));
+    const blocked = quarantineSkipLedger(emptyDir, blockedAt);
+    ok("F11 a failed quarantine carries the error out", "failed" in blocked && String((blocked as { failed: unknown }).failed).length > 0);
+    ok("F11 a failed quarantine leaves the ledger where it was", existsSync(join(emptyDir, "skip-ledger.json")));
+    rmSync(emptyDir, { recursive: true, force: true });
+    let rethrown: unknown = null;
+    try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
+    ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);
+
+    // Node's own programming errors carry a code as well; only a real errno failure is a disk fault
+    let coded: unknown = null;
+    try { classifyLedgerWriteFailure(Object.assign(new TypeError("bad arg"), { code: "ERR_INVALID_ARG_TYPE" })); } catch (e) { coded = e; }
+    ok("F11 a coded programming error is still rethrown", coded instanceof TypeError);
+
+    let contractError: unknown = null;
+    try {
+      parseSkipLedger(JSON.stringify({
+        schema: "anysearch/gain-ledger@3",
+        consecutiveWarn: 0,
+        history: [{ at: "2026-01-01T00:00:00Z", tier: "not-a-tier", look: 1, track: "consumed" }],
+        resolutions: [],
+        lastSkipKeys: [],
+        state: { phase: "S0", since: null, transitionId: null, evidenceHash: null },
+        actions: [],
+        revision: 0,
+      }));
+    } catch (e) {
+      contractError = e;
+    }
+    ok("F11 a ledger that breaks its own contract is corruption, not io",
+      contractError instanceof SkipLedgerError && classifyLedgerWriteFailure(contractError) === "corrupt");
   }
 } finally {
   delete process.env.ANS_SWITCH_REG_PATH;

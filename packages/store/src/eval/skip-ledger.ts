@@ -7,9 +7,9 @@
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
-import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pidIsAlive } from "../process-liveness.js";
+import { LedgerLockTimeoutError, withLedgerLock } from "./ledger-lock";
 import type { SwitchPhase } from "./switch-machine";
 
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
@@ -105,22 +105,22 @@ const ACTION_KINDS: readonly string[] = ["stage-transition", "rollback", "freeze
 
 function validateEntry(e: unknown, idx: number): void {
   const o = e as Partial<SkipLedgerEntry> | null;
-  if (!o || typeof o.at !== "string" || typeof o.tier !== "string") throw new Error("skip-ledger entry #" + idx + ": missing at/tier");
-  if (!(LEDGER_TIERS as readonly string[]).includes(o.tier)) throw new Error("skip-ledger entry #" + idx + ": unknown tier " + o.tier);
-  if (o.track !== "consumed" && o.track !== "synthetic") throw new Error("skip-ledger entry #" + idx + ": unknown track " + String(o.track));
+  if (!o || typeof o.at !== "string" || typeof o.tier !== "string") throw new SkipLedgerError("skip-ledger entry #" + idx + ": missing at/tier");
+  if (!(LEDGER_TIERS as readonly string[]).includes(o.tier)) throw new SkipLedgerError("skip-ledger entry #" + idx + ": unknown tier " + o.tier);
+  if (o.track !== "consumed" && o.track !== "synthetic") throw new SkipLedgerError("skip-ledger entry #" + idx + ": unknown track " + String(o.track));
   if (o.tier === "green") {
-    if (o.reasonCode !== undefined) throw new Error("skip-ledger entry #" + idx + ": green row must not carry reasonCode");
+    if (o.reasonCode !== undefined) throw new SkipLedgerError("skip-ledger entry #" + idx + ": green row must not carry reasonCode");
   } else if (typeof o.reasonCode !== "string") {
-    throw new Error("skip-ledger entry #" + idx + ": non-green row missing valid reasonCode");
+    throw new SkipLedgerError("skip-ledger entry #" + idx + ": non-green row missing valid reasonCode");
   }
 }
 
 function validateStateBlock(s: unknown): void {
   const o = s as Partial<SwitchStateBlock> | null;
-  if (!o || !PHASES.includes(String(o.phase))) throw new Error("skip-ledger state block: unknown phase " + String(o && o.phase));
+  if (!o || !PHASES.includes(String(o.phase))) throw new SkipLedgerError("skip-ledger state block: unknown phase " + String(o && o.phase));
   for (const k of ["since", "transitionId", "evidenceHash"] as const) {
     const v = o[k];
-    if (v !== null && typeof v !== "string") throw new Error("skip-ledger state block: " + k + " must be string|null");
+    if (v !== null && typeof v !== "string") throw new SkipLedgerError("skip-ledger state block: " + k + " must be string|null");
   }
 }
 
@@ -224,27 +224,10 @@ export function tailStreak(actions: SwitchActionEntry[], pred: (a: SwitchActionE
 }
 
 // close the dual-writer read-modify-write window for the JSON skip-ledger.
-// A sidecar lock file wraps every read/modify/atomic-rename cycle. Stale locks are recovered
-// when the owning process no longer exists.
+// A sidecar lock file wraps every read/modify/atomic-rename cycle; the reaping and release rules
+// live in ledger-lock so the skip and ship-override ledgers answer the same way.
 function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }
 function lockPathFor(outDir: string): string { return join(outDir, ".skip-ledger.lock"); }
-
-// under Windows file-locking semantics a still-running owner cannot be
-// rmSync'd from a sibling, leaving a stuck lock file. The default lock max age (5 minutes)
-// bounds the recovery window without making healthy locks flappable.
-const LOCK_MAX_AGE_MS = 5 * 60 * 1000;
-
-function sleep(ms: number): void { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-
-function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
-  if (!info) return true;
-  if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
-  if (typeof info.at === "string") {
-    const t = Date.parse(info.at);
-    if (Number.isFinite(t) && Date.now() - t > LOCK_MAX_AGE_MS) return true;
-  }
-  return false;
-}
 
 export function readSkipLedger(outDir: string): SkipLedger {
   const p = ledgerPathFor(outDir);
@@ -260,39 +243,41 @@ export function writeSkipLedgerAtomic(outDir: string, ledger: SkipLedger): void 
   renameSync(tmp, p);
 }
 
-export function quarantineSkipLedger(outDir: string, at: string): string {
+// Three outcomes, because the callers say three different things: where the file went, that there
+// was nothing to move, or why the move failed. A bare path or null cannot tell the last two apart,
+// and a caller that reports "quarantined to <path>" must never point at a file still in place.
+export type QuarantineResult =
+  | { quarantined: string }
+  | { absent: true }
+  | { failed: unknown };
+
+export function quarantineSkipLedger(outDir: string, at: string): QuarantineResult {
   const p = ledgerPathFor(outDir);
   const q = p.replace(/\.json$/, ".quarantined-" + at.replace(/[:.]/g, "-") + ".json");
-  try { renameSync(p, q); } catch { /* restart empty regardless */ }
-  return q;
+  try {
+    renameSync(p, q);
+    return { quarantined: q };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { absent: true };
+    return { failed: e };
+  }
 }
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
-  mkdirSync(outDir, { recursive: true });
-  const lockPath = lockPathFor(outDir);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    let fd: number | undefined;
-    try {
-      fd = openSync(lockPath, "wx");
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), "utf8");
-      closeSync(fd);
-      try {
-        const ledger = readSkipLedger(outDir);
-        return fn(ledger);
-      } finally {
-        try { rmSync(lockPath, { force: true }); } catch { /* next lock owner recovers stale lock */ }
-      }
-    } catch (e) {
-      if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      try {
-        let info: { pid?: number; at?: string } | null = null;
-        try { info = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number; at?: string }; } catch { info = null; }
-        // Unparseable lock or recoverable (dead pid / stale mtime) -> reap and retry on next attempt.
-        if (info === null || lockIsRecoverable(info)) rmSync(lockPath, { force: true });
-      } catch { /* transient filesystem failure; retry */ }
-      sleep(25);
-    }
-  }
-  throw new SkipLedgerError("skip-ledger lock timeout: " + lockPath);
+  return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
+}
+
+export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
+
+// Three outcomes reach a caller: the ledger is unreadable, the lock is held, or the filesystem
+// refused. Anything else is a bug in the writer and is rethrown, so no caller can mistake it for a
+// missing write.
+export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
+  if (error instanceof SkipLedgerError) return "corrupt";
+  if (error instanceof LedgerLockTimeoutError) return "lock-busy";
+  // a real errno failure. Node's programming errors carry a code too (ERR_INVALID_ARG_TYPE), and
+  // reading one of those as a disk problem is how a bug turns into a silently missing skip.
+  const errno = error as NodeJS.ErrnoException | null;
+  if (errno && typeof errno.errno === "number" && !/^ERR_/.test(String(errno.code ?? ""))) return "io";
+  throw error;
 }
