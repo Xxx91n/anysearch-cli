@@ -164,17 +164,23 @@ export interface ResolvedLlmConfig {
 }
 
 const USER_BROKEN = "LLM config file is broken; provider/model could not be loaded. Fix the config file and try again.";
-// The project file is named by its path inside the project, never by an absolute
-// path: the sentence also reaches MCP tool results, which must stay free of
-// absolute paths.
 const STORED_KEY_BROKEN =
   "A model API key is still stored in credentials.json, but it is not in use until the config is fixed.";
 const STORED_KEY_UNCONFIGURED =
   "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.";
 
+// Both labels below are relative on purpose: these sentences also reach MCP
+// tool results, which must stay free of absolute paths.
+
 /** The project file's path inside the project, using forward slashes. */
 export function projectConfigRelativePath(cwd: string = process.cwd()): string {
   return relative(cwd, projectConfigPath(cwd)).split(sep).join("/");
+}
+
+/** The user file's path from the config root, using `~` and forward slashes. */
+export function userConfigTildePath(home: string = resolveConfigHome()): string {
+  const rel = relative(home, userConfigPath(home));
+  return rel.startsWith("..") ? "the user config file" : "~/" + rel.split(sep).join("/");
 }
 
 function projectBrokenSentence(label: string): string {

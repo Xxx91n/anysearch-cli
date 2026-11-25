@@ -5,8 +5,8 @@
 ### Changed
 
 - **`formatLlmConfigGap`**（`packages/store/src/config-llm.ts`）：缺有效 provider/model 时按固定顺序拼句子——坏文件（用户级保留原句，项目级点名实际读到的相对路径，两边都坏就两句都给）→ 半配置（用户级/项目级文件、环境变量、命令行是哪一层，设了什么、缺哪个字段）→ `credentials.json` 里存着却没用上的模型 key。句子不带 key 值、provider 值、绝对路径或 warning 原文。
-- **项目级路径按实际文件走**：`projectConfigRelativePath()` 从 `projectConfigPath()` 取项目内的相对路径，正常布局是 `.ans/config.toml`，旧布局回退时是 `.anysearch/config.toml`；升级没迁完的人不会再被指到一个不存在的文件。
-- **`formatLlmConfigFault` 只认每层文件状态**：不再读只描述用户级的 `configFault`；`ResolvedLlmConfig.configFault` 和 `LlmConfigFaultKind` 一并删掉，全仓没有读取点。
+- **两边提示都按实际文件走**：`projectConfigRelativePath()` 从 `projectConfigPath()` 取项目内的相对路径（正常 `.ans/config.toml`，旧布局 `.anysearch/config.toml`），`userConfigTildePath()` 从 `userConfigPath()` 取 `~/...` 的用户级路径；升级没迁完的人不会再被指到一个不存在的文件。
+- **`formatLlmConfigFault`（内部）只认每层文件状态**：不再读只描述用户级的 `configFault`；`ResolvedLlmConfig.configFault` 和 `LlmConfigFaultKind` 一并删掉，全仓没有读取点。
 - **两个入口共用同一组事实**：`ans chat` 和 `ans_chat` 都调 `formatLlmConfigGap`，通用提示由同一份 `needsLlmSetupHint` 决定。用户级坏文件照旧不打印「LLM provider not configured」（那条会带出一个示例 provider 名，和「坏文件」自相矛盾）；项目级坏、半配置、什么都没配各自说自己的那一句。
 - **MCP 缺配置仍是裸错误**：`isError: true`、只有纯文字 `content`、没有 `structuredContent`。正文点名层和字段；`credentials.json` 的故障还是走原来那条 `credentialFileNotice`。
 - **零副作用有快照证明**（`apps/mcp/test/ans-chat-config-gap.test.ts`）：真实临时 SQLite 里，缺配置的 `ans_chat` 调用前后只有 `task_records` 多一条已结束的失败记录（`exit_code=1`、`session_id=NULL`）、`observability_traces` 多一条；`sessions`、`budget_ledger`、`budget_reservations`、`task_budgets` 一行不涨。
