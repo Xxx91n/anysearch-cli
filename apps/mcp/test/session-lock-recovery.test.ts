@@ -484,6 +484,8 @@ async function main() {
         + JSON.stringify(bRes.text.slice(0, 200)) + ")");
       assert(!bRes.text.includes("删掉"),
         "C1: a live holder is not offered a manual clear (#587 review)");
+      assert(bRes.text.includes("leases"),
+        "C1: the refusal still names the lease directory (#587 review)");
       assert(refusedMs < 1_500, "C1: the refusal is immediate, not a queue (took " + refusedMs + " ms)");
       assert(bEntry === undefined, "C1: the refused attempt never reaches the provider");
 

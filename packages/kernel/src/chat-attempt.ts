@@ -71,15 +71,14 @@ export class ChatAttemptBusyError extends Error {
 export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): string {
   const holder = error.facts?.holder;
   const who = holder ? "持有者 pid " + holder.pid + "（主机 " + holder.host + "）" : undefined;
-  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
-  // Only an owner this machine cannot confirm is a candidate for a manual
-  // clear; telling the user to delete a lock whose pid is alive invites the
-  // double writer this lock exists to prevent.
+  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。" + (who ? who + "。" : "");
+  // The path is always shown, including for a live holder: a pid can be
+  // recycled, so the lease stays the only thing a person can act on.
+  const where = "锁在 " + error.leasePath + "。";
   if (error.facts?.liveness === "alive") {
-    return head + (who ? who + "还在跑，" : "") + "等它跑完再来。";
+    return head + "它还在跑，等它跑完再来。" + where;
   }
-  return head + (who ? who + "。" : "")
-    + "等它结束后再试。如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。";
+  return head + "等它结束后再试。" + where + "如果确认那个进程已经不在，删掉这个目录再试。";
 }
 
 export type ChatCollisionChoice = "stop" | "wait" | { fork: string };

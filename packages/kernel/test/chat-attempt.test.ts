@@ -179,6 +179,8 @@ async function main() {
       const busyText = chatAttemptBusyText(busyError);
       assert(!busyText.includes("删掉"),
         "A5: a live holder is not offered a manual clear (got " + JSON.stringify(busyText) + ")");
+      assert(busyText.includes(busyError.leasePath),
+        "A5: the lease path is shown even for a live holder — a recycled pid leaves it the only thing to act on");
       assert(chatAttemptBusyText(busyError, "ans_chat: ").startsWith("ans_chat: "),
         "A5: the host prefix goes in front of the shared sentence");
       // The point of #299: no queue. A poll-based wait would be at least one
