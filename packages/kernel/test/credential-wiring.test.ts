@@ -663,7 +663,7 @@ test("a credential fault is classified by cause, not flattened into one sentence
   // classification: a held lock is not a permissions problem, and a broken file
   // is neither.
   const cases: Array<[string, RegExp]> = [
-    ["another ans process is holding it: refusing to write the credential file /x: another ans process is writing it (x.lock is still held after 5s)", /another ans process is writing/],
+    ["another ans process is holding it: refusing to write the credential file /x: another ans process may be writing it (x.lock is still held after 5s); if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds", /crashed write left this lock behind/],
     ["refusing to write the credential file /x: cannot take the write lock /x.lock (EACCES)", /folder refused access \(EACCES\)/],
     ["refusing to write the credential file /x: its Windows DACL still allows BA", /could not be locked to your account/],
     ["/x: not valid JSON (line 3 column 5); fix or remove the file", /not readable as stored keys/],
@@ -677,7 +677,7 @@ test("a credential fault is classified by cause, not flattened into one sentence
     // same "entry N" shape, and a timeout or a held lock on it is not a broken
     // record - repair cannot fix either, so the cause must survive (#569 review).
     ["/config/entry 2/credentials.json: could not read it (ETIMEDOUT); retry once the file is reachable", /did not respond in time \(ETIMEDOUT\)/],
-    ["refusing to write the credential file /config/entry 2/credentials.json: another ans process is writing it (x.lock is still held after 5s)", /another ans process is writing/],
+    ["refusing to write the credential file /config/entry 2/credentials.json: another ans process may be writing it (x.lock is still held after 5s); if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds", /crashed write left this lock behind/],
   ];
   for (const [raw, want] of cases) {
     const engine = createEngine(undefined, {
@@ -724,7 +724,7 @@ test("a disk-full failure is not reported as a permissions problem", () => {
     domainsDirs: [],
     env: {},
     searchCredentials: () => {
-      throw new Error("refusing to write the credential file /x: cannot create /x (ENOSPC). Set the key in the environment instead");
+      throw new Error("refusing to write the credential file /x: cannot create /x (ENOSPC). Set the key in the provider's own environment variable instead (OPENAI_API_KEY, TAVILY_API_KEY)");
     },
   });
   try {

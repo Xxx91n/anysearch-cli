@@ -19,6 +19,7 @@ import {
   createDomainReloader,
   domainTomlPath,
   isRecordProblemMessage,
+  LOCK_HELD_NOTICE,
   resolvePolicyFromSchema,
   resolveSearchCredentials,
   type ResolvedSearchCredentials,
@@ -176,9 +177,9 @@ function classifyCredentialFault(error: unknown): string {
   if (/refusing to write/i.test(raw)) {
     // The refusal carries the real cause (permissions, an unusable ACL tool, a
     // failed protection check, a held lock). Keeping the category is what lets a
-    // user tell "fix the folder" from "another ans is writing it".
-    if (/still held after/i.test(raw)) {
-      return "another ans process is writing the credential file; wait for it to finish and retry";
+    // user tell "fix the folder" from "a write lock is held".
+    if (raw.includes(LOCK_HELD_NOTICE)) {
+      return "the credential file is locked; " + LOCK_HELD_NOTICE;
     }
     // An ACL/protection fault is checked before the errno rules: it is thrown
     // after the write itself succeeded, so an errno in the message says nothing

@@ -8,12 +8,19 @@
  * that must word a user-facing message (the skill lock) uses `probePid` to tell
  * a live holder from an owner it cannot confirm.
  *
+ * These probes answer about ONE pid on this host. A negative pid addresses a
+ * whole process GROUP and answers for the group, not for one process, so do
+ * not route it through this module; scripts/probe-process.mjs and
+ * scripts/preflight-test.mjs own that question.
+ *
  * This module imports nothing, so the config write path can ask about a pid
  * without loading the database binding.
  */
 export type PidLiveness = "alive" | "dead" | "unknown";
 
 export function probePid(pid: number): PidLiveness {
+  // Only one positive pid can be answered; anything else is unknown, not a guess.
+  if (!Number.isInteger(pid) || pid <= 0) return "unknown";
   try {
     process.kill(pid, 0);
     return "alive";

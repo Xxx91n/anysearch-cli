@@ -38,7 +38,6 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { ansCredentialsPathFor, resolveConfigHome } from "./ans-paths.js";
@@ -662,11 +661,15 @@ export function lookupModelCredential(
 // ---------------------------------------------------------------------------
 
 /**
- * How long to keep trying for the mutation lock before giving up, and how long
- * before an existing lock is assumed abandoned. Writing a key is a
- * sub-millisecond read-modify-write, so a lock older than the stale window means
- * its owner died; waiting forever would hang a command, and stealing silently
- * would reintroduce the very race this lock prevents.
+ * How long a writer waits for the mutation lock, and how long before a lock
+ * on disk counts as abandoned. Writing a key is a sub-millisecond
+ * read-modify-write, so waiting forever would hang a command, and stealing
+ * silently would reintroduce the race this lock prevents.
+ *
+ * The lock file records no owner, so reclaiming looks at the file's age alone.
+ * A writer waits LOCK_WAIT_MS and then fails; a lock older than LOCK_STALE_MS
+ * is deleted. A lock left by a crash therefore clears itself when the same
+ * command is run again a few seconds later.
  */
 const LOCK_WAIT_MS = 5_000;
 const LOCK_STALE_MS = 10_000;
@@ -683,8 +686,11 @@ const LOCK_STALE_MS = 10_000;
  * `openSync(..., "wx")` is the atomic step (O_CREAT|O_EXCL): exactly one creator
  * wins. A lock whose mtime is older than the stale window is treated as
  * abandoned and removed, which bounds recovery from a killed process.
+ *
+ * `advice` closes every refusal this function raises. `heldAdvice` is added
+ * only when the lock stays held; empty means the reason stands alone.
  */
-function withCredentialLock<T>(path: string, fn: () => T): T {
+function withCredentialLock<T>(path: string, fn: () => T, advice: string, heldAdvice = ""): T {
   const lockPath = path + ".lock";
   // Every failure in this function leaves by the same door as a failed write, so
   // the user sees one actionable sentence whatever step failed - including "the
@@ -693,8 +699,8 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
   // lane in CI: a read-only config directory must fail with this message, not
   // with an errno).
   // Never after a publish: this door is a refused lock or an unusable folder.
-  const refused = (reason: string): CredentialWriteRefusal =>
-    new CredentialWriteRefusal(refusalSentence(path, reason), false);
+  const refused = (reason: string, override?: string): CredentialWriteRefusal =>
+    new CredentialWriteRefusal(refusalSentence(path, reason, override ?? advice), false);
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -726,15 +732,17 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
       }
       if (Date.now() >= deadline) {
         throw refused(
-          "another ans process is writing it (" + lockPath + " is still held after " +
-          Math.round(LOCK_WAIT_MS / 1000) + "s)",
+          "another ans process may be writing it (" + lockPath + " is still held after " +
+          Math.round(LOCK_WAIT_MS / 1000) + "s); " + LOCK_HELD_NOTICE,
+          // The folder is fine here; sending the user to its permissions would
+          // point them away from what actually happened.
+          heldAdvice,
         );
       }
       sleepMs(20);
     }
   }
   try {
-    writeSync(fd, String(process.pid));
     return fn();
   } finally {
     try { closeSync(fd); } catch { /* already closed */ }
@@ -902,10 +910,32 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
   }
 }
 
+/**
+ * What a held write lock means, shared with `classifyCredentialFault`: the
+ * classifier keys its branch on this text and repeats it, so both surfaces
+ * describe the same event instead of keeping two paraphrases.
+ */
+export const LOCK_HELD_NOTICE =
+  "if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds";
+
+/** The only way out when the file or its folder refuses: the permissions are wrong. */
+const FILE_ADVICE = "Fix the folder's permissions and retry.";
+
+/**
+ * A way around the file that only applies to storing a key: the providers whose
+ * keys this file holds each have their own env var, so the list comes from that
+ * catalog instead of being copied here.
+ */
+const ENV_ADVICE =
+  "Set the key in the provider's own environment variable instead (" +
+  CREDENTIAL_PROVIDERS.map((provider) => provider.envKey).join(", ") + ").";
+
+/** What a refusal tells the user to do instead, unless it names its own. */
+const WRITE_ADVICE = ENV_ADVICE + " " + FILE_ADVICE;
+
 /** `classifyCredentialFault` matches on "refusing to write", so this sentence is built once. */
-function refusalSentence(path: string, reason: string): string {
-  return "refusing to write the credential file " + path + ": " + reason +
-    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
+function refusalSentence(path: string, reason: string, advice = WRITE_ADVICE): string {
+  return "refusing to write the credential file " + path + ": " + reason + (advice ? ". " + advice : "");
 }
 
 /**
@@ -929,9 +959,11 @@ export class CredentialWriteRefusal extends Error {
 /**
  * Write the file so that no unprotected copy of the secret ever lands on disk:
  * the empty temp file is protected and verified FIRST, the key is written into
- * that already-protected file, and the result is renamed into place.
+ * that already-protected file, and the result is renamed into place. A failure
+ * ends with the caller's `advice`, which differs per entry (see
+ * `withCredentialLock`).
  */
-function writeProtectedFile(path: string, content: string, platform: NodeJS.Platform): void {
+function writeProtectedFile(path: string, content: string, platform: NodeJS.Platform, advice: string): void {
   const dir = dirname(path);
   const tmp = join(dir, ".credentials." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   let published = false;
@@ -960,7 +992,7 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    throw new CredentialWriteRefusal(refusalSentence(path, reason), published);
+    throw new CredentialWriteRefusal(refusalSentence(path, reason, advice), published);
   }
 }
 
@@ -1029,9 +1061,10 @@ export function writeUserCredential(
     }
     const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
     kept.push({ provider: info.id, endpoint, apiKey });
-    writeProtectedFile(path, serialize(kept), activePlatform());
+    writeProtectedFile(path, serialize(kept), activePlatform(), WRITE_ADVICE);
     return path;
-  });
+  // Only storing a key has a way around a held lock; removing one does not.
+  }, WRITE_ADVICE, ENV_ADVICE);
 }
 
 /** Remove one key. Returns false when there was nothing to remove. */
@@ -1059,9 +1092,9 @@ export function removeUserCredential(
       try { unlinkSync(path); } catch { /* already gone */ }
       return true;
     }
-    writeProtectedFile(path, serialize(kept), activePlatform());
+    writeProtectedFile(path, serialize(kept), activePlatform(), FILE_ADVICE);
     return true;
-  });
+  }, FILE_ADVICE);
 }
 
 export type CredentialRepairResult =
@@ -1104,7 +1137,7 @@ export function repairUserCredentials(
     }
     if (bytes.problems.length === 0) return { kind: "healthy", path, kept: bytes.bindings.length };
     try {
-      writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
+      writeProtectedFile(path, serialize(bytes.bindings), activePlatform(), FILE_ADVICE);
     } catch (e) {
       if (e instanceof CredentialWriteRefusal) {
         return { kind: "write-failed", error: e.message, published: e.published };
@@ -1112,6 +1145,6 @@ export function repairUserCredentials(
       throw e;
     }
     return { kind: "repaired", path, kept: bytes.bindings.length, dropped: bytes.problems };
-  });
+  }, FILE_ADVICE);
 }
 
