@@ -237,3 +237,21 @@ test("missing 文件也要有记录：两层永远都在", () => {
   assert.equal(cfg.configFiles.project.layer, "project");
   assert.equal(cfg.configFiles.project.status, "missing");
 });
+
+test("displayPath 来自 resolver 的 home/cwd，旧布局也指对文件", () => {
+  const box = makeBox();
+  const cfg = box.resolve();
+  assert.equal(cfg.configFiles.user.displayPath, "~/.ans/config.toml");
+  assert.equal(cfg.configFiles.project.displayPath, ".ans/config.toml");
+
+  // A resolver given another cwd must report THAT project's file, not the
+  // process cwd's. Legacy layout is the case where the two names differ.
+  const legacyCwd = mkdtempSync(join(tmpdir(), "ans-status-legacy-"));
+  const legacyPath = join(legacyCwd, ".anysearch", "config.toml");
+  writeToml(legacyPath, "[llm\n");
+  const legacyCfg = resolveLlmConfig({
+    home: box.home, cwd: legacyCwd, env: {}, credentials: false, warn: () => {},
+  });
+  assert.equal(legacyCfg.configFiles.project.displayPath, ".anysearch/config.toml");
+  assert.equal(legacyCfg.configFiles.project.status, "broken");
+});

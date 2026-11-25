@@ -43,7 +43,8 @@ import {
 } from "@anysearch-cli/kernel";
 import {
   domainTomlPath,
-  formatLlmConfigFault,
+  formatLlmConfigGap,
+  needsLlmSetupHint,
   resolveConsolidateScope,
   ConsolidateScopeError,
   toBudgetCaps,
@@ -513,16 +514,20 @@ export function registerAnsChat(
           return toolFailure("ans_chat: message is required unless operation is \"consolidate\".");
         }
         if (!providerName || !modelName) {
-          const configFault = formatLlmConfigFault(cfg);
-          if (configFault) return toolFailure("ans_chat: " + configFault);
+          // #581: the same facts and the same order as the CLI — broken file(s),
+          // half-written file(s), then a stored key with no model to spend it on.
           // Missing configuration is an execution failure, not a successful
           // chat whose text happens to say "not configured". #300: name both
           // ways in — env OR a config file — so a host that wrote a TOML knows
           // to check it instead of being told only to set env vars.
-          return toolFailure(
-            "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
-            "or write provider/model in ~/.ans/config.toml (user) or .ans/config.toml (project).",
-          );
+          const userLabel = cfg.configFiles.user.displayPath;
+          const projectLabel = cfg.configFiles.project.displayPath;
+          const gap = formatLlmConfigGap(cfg);
+          const missing = needsLlmSetupHint(cfg)
+            ? "LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
+              "or write provider/model in " + userLabel + " (user) or " + projectLabel + " (project)."
+            : undefined;
+          return toolFailure("ans_chat: " + [gap, missing].filter(Boolean).join(" "));
         }
         // Design: a caller that already cancelled gets no LLM construction,
         // session mint, or budget work — those would be state written for a

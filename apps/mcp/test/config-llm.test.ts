@@ -241,8 +241,10 @@ async function main() {
       assert(textOf(res).includes("LLM not configured"), "missing config: existing message kept");
       assert(!textOf(res).includes("LLM config file is broken"),
         "missing config: a missing file is not called broken");
-      assert(!textOf(res).includes("model API key is still stored"),
-        "missing config: no broken-config key notice is added");
+      assert(textOf(res).includes("model API key is still stored"),
+        "missing config + stored key: the stored key is named as unusable (#581)");
+      assert(!textOf(res).includes("anthropic"), "missing config + stored key: no provider value reaches the result");
+      assert(!textOf(res).includes(fix.home), "missing config + stored key: no file path reaches the result");
     }
 
     {
@@ -301,8 +303,76 @@ async function main() {
       assert(res?.isError === true, "bad project TOML: isError true");
       assert(textOf(res).includes("LLM not configured"),
         "bad project TOML: missing user config keeps the existing message");
+      assert(textOf(res).includes("The project config file (.ans/config.toml) is broken"),
+        "bad project TOML: the project file is named (#581)");
+      assert(!textOf(res).includes(fix.cwd),
+        "bad project TOML: the project is named by its relative path, never the absolute one");
       assert(!textOf(res).includes("LLM config file is broken"),
-        "bad project TOML: #547 does not expand to the project config");
+        "bad project TOML: the user-level sentence is not used for a project-only fault");
+    }
+
+    {
+      // #581: both files broken → both sentences, still no absolute path.
+      const fix = fixture("[llm\n", "[llm\n");
+      const h = harness(fix);
+      const res = await h.call();
+      const text = textOf(res);
+      assert(res?.isError === true, "both files broken: isError true");
+      assert(text.includes("LLM config file is broken"), "both files broken: the user sentence is kept");
+      assert(text.includes("The project config file (.ans/config.toml) is broken"),
+        "both files broken: the project file is named too");
+      assert(!text.includes(fix.home) && !text.includes(fix.cwd),
+        "both files broken: neither absolute path reaches the result");
+    }
+
+    {
+      // #581: a half-written user file says which field it has and which it lacks.
+      const fix = fixture('[llm]\nprovider = "anthropic"\n');
+      const h = harness(fix);
+      const res = await h.call();
+      const text = textOf(res);
+      assert(res?.isError === true, "half user file: isError true");
+      assert(text.includes("The user config file sets provider but not model."),
+        "half user file: names the layer and the missing field");
+      assert(!text.includes("LLM not configured"), "half user file: the generic sentence is not used");
+      assert(!text.includes("anthropic"), "half user file: no provider value reaches the result");
+    }
+
+    {
+      // #581: the project layer is named by its relative path when it is the half one.
+      const fix = fixture(undefined, '[llm]\nmodel = "gpt-5"\n');
+      const h = harness(fix);
+      const res = await h.call();
+      const text = textOf(res);
+      assert(text.includes("The project config file (.ans/config.toml) sets model but not provider."),
+        "half project file: names the layer and the missing field");
+      assert(!text.includes(fix.cwd), "half project file: no absolute path reaches the result");
+      assert(!text.includes("gpt-5"), "half project file: no model value reaches the result");
+    }
+
+    {
+      // #581: an empty [llm] is half, not "nothing configured".
+      const fix = fixture("[llm]\n");
+      const h = harness(fix);
+      const res = await h.call();
+      const text = textOf(res);
+      assert(text.includes("The user config file has an [llm] section, but neither provider nor model is set."),
+        "empty [llm]: says the section exists and is empty");
+      assert(text.includes("LLM not configured"), "empty [llm]: keeps the existing instruction");
+    }
+
+    {
+      // #581: a partial env layer has no file record, so it must be named
+      // separately — otherwise the error has no reason at all.
+      const fix = fixture();
+      const h = harness(fix, { ANS_LLM_PROVIDER: "openai" });
+      const res = await h.call();
+      const text = textOf(res);
+      assert(res?.isError === true, "env-only provider: isError true");
+      assert(text.includes("The environment sets provider but not model."),
+        "env-only provider: names the layer and the missing model");
+      assert(!text.includes("LLM not configured"), "env-only provider: the generic sentence is not used");
+      assert(!text.includes("openai"), "env-only provider: no provider value reaches the result");
     }
 
     {
