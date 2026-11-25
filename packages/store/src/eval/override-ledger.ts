@@ -198,9 +198,9 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Design: only ESRCH proves the owner gone (#570) — see pidIsAlive in
-// process-liveness. Any other probe result keeps this lock until the age
-// window expires, so a live writer is never cut off mid-write.
+// Design: only ESRCH reclaims on pid evidence (#570) — see pidIsAlive in
+// process-liveness. Any other probe result falls through to the age rule: a
+// fresh lock is kept, one older than LOCK_MAX_AGE_MS is still recovered.
 function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
   if (!info) return true;
   if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
