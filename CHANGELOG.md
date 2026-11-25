@@ -19,6 +19,7 @@
 - **MCP 侧的分类也带上 repair**：`classifyCredentialFault` 认 `parseBinding` 报的那四条记录细节，坏条目直接引用 kernel 的 `invalid-record` 提示句，不再退成 `fix or remove it, then retry`。认法本身也在 store：`RECORD_PROBLEM_DETAILS` 收在内部，`parseBinding` 的消息和 `isRecordProblemMessage` 都用它，kernel 只调后者（不是拿它们拼正则，措辞里出现括号或点也不会变形），kernel 只问这个谓词，store 的测试再钉一遍每条细节确实是 `parseBinding` 会说出来的。只认 `entry N` 不够：路径里的 `/config/entry 2/credentials.json` 也长这样，而那条路径上的超时或写锁都不是 repair 能修的；反过来说，匹配也不能限定 label 的形状——`acme (work)` 这种带括号的 provider 同样要认出来。同一批措辞不再在下面那条通用分支里重复一遍。
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
+- **写进用户文件的那段说明也用命令常量拼**：`CREDENTIALS_NOTE` 以前硬写 `ans auth set` / `ans auth remove <provider>`，命令改名后用户打开自己的凭据文件就会看到一个不存在的命令。命令常量先挪到它前面声明（否则模块初始化时踩 TDZ），说明改成用 `STORE_KEY_COMMAND` / `REMOVE_KEY_COMMAND` 拼，测试钉住两个命令都在里面。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
 ### Known limits
