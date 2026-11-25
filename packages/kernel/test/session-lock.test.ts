@@ -93,7 +93,10 @@ function busyAt(
     case "alive":
       return busy.includes("(still running") && busy.includes("no longer belongs to that run");
     case "gone":
-      return busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes("That process is gone");
+      // The marker survives; the "retry after it finishes" tail must not.
+      return busy.startsWith("Session is busy: ")
+        && busy.includes("That process is gone")
+        && !busy.includes(SESSION_BUSY_MESSAGE);
     case "anonymous":
       return busy.includes("nobody is using it");
     default:

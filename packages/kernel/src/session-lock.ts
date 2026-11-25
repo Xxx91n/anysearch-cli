@@ -94,8 +94,12 @@ const POLL_MS = 50;
 const HEARTBEAT_MIN_MS = 100;
 const HEARTBEAT_MAX_MS = 5_000;
 
+/** The marker every busy answer starts with, so a log filter can find them all
+ *  even when the sentence after it has to change. */
+const SESSION_BUSY_MARKER = "Session is busy: ";
+
 export const SESSION_BUSY_MESSAGE =
-  "Session is busy: another run still holds this session (possibly in another process); retry after it finishes.";
+  SESSION_BUSY_MARKER + "another run still holds this session (possibly in another process); retry after it finishes.";
 
 /** Who holds the lock, and what the probe said about it. Best effort: an
  *  identity that is missing or unreadable is simply not described. */
@@ -132,8 +136,10 @@ function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
     ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host + holderNote(facts) + "."
     : "";
   if (facts.liveness === "dead") {
-    return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath
-      + ". That process is gone, so delete that lock directory and retry.";
+    // The marker without its usual tail: "retry after it finishes" would name a
+    // process this waiter just proved is gone.
+    return SESSION_BUSY_MARKER + "this session's lock is still held." + holder
+      + " Lock: " + lockPath + ". That process is gone, so delete that lock directory and retry.";
   }
   if (facts.liveness === "alive") {
     return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath

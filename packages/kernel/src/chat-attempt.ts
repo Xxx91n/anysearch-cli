@@ -78,7 +78,7 @@ export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): s
   const where = "锁在 " + error.leasePath + "。";
   const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
   if (error.facts?.liveness === "dead") {
-    return head + "持有它的进程已经不在了。" + where + "删掉这个目录再试。";
+    return head + (who ?? "持有者") + "，但那个进程已经不在了。" + where + "删掉这个目录再试。";
   }
   if (error.facts?.liveness === "alive") {
     return head + (who ? who + "。" : "") + "它还在跑，等它跑完再来。" + where
