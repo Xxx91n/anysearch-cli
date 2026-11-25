@@ -1,3 +1,22 @@
+## Unreleased — #571: 崩溃留下的凭据写锁，报错不再冤枉别的进程
+
+一句话说清：**存 key 的写锁文件里一直写着进程号，但全仓没人读——回收只看文件多旧。这是把毫秒级的短锁：等锁 5 秒，文件 10 秒才算旧，所以进程拿着锁被杀以后，下一次存 key 会失败，可报错说「另一个 ans 进程正在写」，让人去找一个根本不存在的进程。现在锁文件不再写进程号（它就是一把只按时间老化的短锁），报错改成说两种可能：写锁还没放开，如果没人正在写那就是崩溃留下的，几秒后重试。**
+
+### Changed
+
+- **锁文件不再记录持有者**（`withCredentialLock`）：不再往 `.lock` 里写 `process.pid`。回收规则原样保留——等 5 秒，文件超过 10 秒（`LOCK_STALE_MS`）就当旧锁删掉。要在锁上判「这个 pid 还在不在」，先得有可靠的「同一台机器」判据：hostname 会撞名，machineId 在被克隆的容器里是同一个值，这把毫秒级的锁不值得为它造一套身份协议。
+- **拒绝的句子说两种可能**：`another ans process may be writing it (… is still held after 5s); if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds`。这条不再缀「去修文件夹权限」那句——文件夹是好的，那句话把人指到错误的方向。
+- **退路按入口分开**：存 key 有替代动作，退路是「设进对应 provider 自己的环境变量」，例子按 `CREDENTIAL_PROVIDERS` 的 `envKey` 现拼（这份文件管哪几家就列哪几家，加 provider 不会漏），也不再只点名全局的 `ANS_LLM_API_KEY`。`remove` / `repair` 没有等价动作：写文件失败、文件夹不可写就给「修文件夹权限、重试」，锁被占时只说到重试为止。这条 advice 在 `withCredentialLock` 和 `writeProtectedFile` 里都是必填参数，新入口漏传就是编译错。
+- **kernel 那句和 store 共用一份**（`composition.ts`）：复用 store 导出的 `LOCK_HELD_NOTICE`，写锁拒绝真走到分类器时说的是同一句话，不再各写一份措辞。
+- **测试里那份判活没了**（`apps/mcp/test/session-lock-recovery.test.ts`）：改用 store 的 `pidIsAlive`（`@anysearch-cli/store/process-liveness` 子路径，不把数据库绑进测试进程）。它只被一处调用，传的是活着的子进程，判定不变。
+- **共享判活的头注释**（`process-liveness.ts`）写明它只回答「同一台机器上单个进程号还在不在」；进程组探测（`scripts/probe-process.mjs`、`scripts/preflight-test.mjs` 的负进程号加 Darwin EPERM）是另一套语义，不走这里。这条规矩同时落进代码：`probePid` 遇到不是正整数的 pid（0、负数、小数）直接答 `unknown`，不会把进程组的答案当成某个进程的。
+
+### Known limits
+
+- 崩溃之后的那一次写入还是会失败，得等锁自己变旧（最长 10 秒）再重试。密钥不会丢：抢不到锁就什么都不写。报错现在把这条路写出来了。
+- 锁分不出「有人正在写」和「上次崩了」：两种情况的现场一模一样，所以它只按时间走。
+- 锁的等待窗口（5 秒）、老化窗口（10 秒）、持锁期间的访问保护流程都没动。
+
 ## Unreleased — #579: 每份 config.toml 有自己的状态，`ans llm` 直接显示
 
 一句话说清：**以前 `ans llm` 的 `Files:` 行只有两个路径，文件不存在、空文件、只写了 `[llm]` 的一半、读不出来，在清单上长得一模一样。现在解析器给用户级和项目级各一条文件记录——六种状态、这个文件真正读进来的字段名、以及文件级诊断 kind——`ans llm` 的同一行直接标出两份文件各是什么状态，被安全丢掉的键也列出来；清单不再因为凭据文件坏了退 1。**

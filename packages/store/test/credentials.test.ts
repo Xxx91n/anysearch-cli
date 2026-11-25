@@ -626,18 +626,48 @@ test("two concurrent writers both keep their key (the lock covers read-modify-wr
   } finally { cleanup(); }
 });
 
-test("a stuck lock reports who is holding it instead of writing anyway", () => {
+test("a stuck lock reports a held write lock instead of writing anyway", () => {
   const { home, cleanup } = tempRoot();
   try {
     const path = userCredentialsPath(home);
     mkdirSync(join(home, ".ans"), { recursive: true });
-    // A fresh lock (well inside the stale window) belongs to a live process.
-    writeFileSync(path + ".lock", "12345", "utf8");
-    assert.throws(
-      () => writeUserCredential({ provider: "openai", apiKey: "k" }, { home }),
-      /refusing to write the credential file.*another ans process is writing it/,
-    );
+    // A fresh lock (well inside the stale window) belongs to a live writer; a
+    // crashed creator leaves exactly this file behind, empty (#571).
+    writeFileSync(path + ".lock", "", "utf8");
+    let refusal: Error | undefined;
+    try {
+      writeUserCredential({ provider: "openai", apiKey: "k" }, { home });
+    } catch (e) {
+      refusal = e as Error;
+    }
+    if (refusal === undefined) assert.fail("the held lock must refuse the write");
+    // The refusal names both possibilities: it cannot tell a live writer from
+    // a crash, and claiming "another process" used to send users hunting for
+    // one that was never there.
+    assert.match(refusal.message, /refusing to write the credential file.*still held after 5s.*a crashed write left this lock behind/);
+    // The folder is fine, so the permissions advice would point the wrong way.
+    assert.doesNotMatch(refusal.message, /fix the folder's permissions/);
     assert.equal(existsSync(path), false, "nothing was written while the lock was held");
+  } finally { cleanup(); }
+});
+
+test("a held lock tells remove to retry instead of naming an env var", () => {
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    writeFileSync(path + ".lock", "", "utf8");
+    let refusal: Error | undefined;
+    try {
+      removeUserCredential({ provider: "openai" }, { home });
+    } catch (e) {
+      refusal = e as Error;
+    }
+    if (refusal === undefined) assert.fail("the held lock must refuse the removal");
+    assert.match(refusal.message, /still held after 5s/);
+    // Deleting a key has no env-var equivalent, and the folder is not the fault
+    // either, so the retry line has to stand alone.
+    assert.doesNotMatch(refusal.message, /environment variable|folder's permissions/);
   } finally { cleanup(); }
 });
 
@@ -646,7 +676,8 @@ test("an abandoned lock is reclaimed so a killed process cannot wedge the file",
   try {
     const path = userCredentialsPath(home);
     mkdirSync(join(home, ".ans"), { recursive: true });
-    writeFileSync(path + ".lock", "99999", "utf8");
+    // What a crashed creator leaves: an empty file, no owner recorded.
+    writeFileSync(path + ".lock", "", "utf8");
     // Age it past the stale window: a lock older than that means its owner died.
     const old = new Date(Date.now() - 60_000);
     utimesSync(path + ".lock", old, old);
