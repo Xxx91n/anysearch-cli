@@ -6,7 +6,7 @@
 // F6-F9 (#577) identity decides before age: a live owner keeps its lock, a dead one is reaped,
 //         an unclassifiable one falls to age, and releasing never deletes a successor's lock
 // D6 mutation: changing registered fields changes the digest
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -273,7 +273,19 @@ try {
     ok("F11 an unnamed errno is still io", classifyLedgerWriteFailure(unnamedErrno) === "io");
 
     const emptyDir = mkdtempSync(join(tmpdir(), "ans-577-quarantine-"));
-    ok("F11 a quarantine that moves nothing says so", quarantineSkipLedger(emptyDir, new Date().toISOString()) === null);
+    ok("F11 a quarantine with no file says there was nothing to move", "absent" in quarantineSkipLedger(emptyDir, new Date().toISOString()));
+    // the two outcomes a bare null used to hide: where the file went, and why it did not
+    const at = "2026-01-02T03:04:05.006Z";
+    writeFileSync(join(emptyDir, "skip-ledger.json"), "{}");
+    const moved = quarantineSkipLedger(emptyDir, at);
+    ok("F11 a quarantine reports where the file went", "quarantined" in moved && existsSync(moved.quarantined) && !existsSync(join(emptyDir, "skip-ledger.json")));
+    writeFileSync(join(emptyDir, "skip-ledger.json"), "{}");
+    // a directory where the quarantine name wants to be makes the rename fail on every platform
+    const blockedAt = "2026-01-02T03:04:05.007Z";
+    mkdirSync(join(emptyDir, "skip-ledger.quarantined-2026-01-02T03-04-05-007Z.json"));
+    const blocked = quarantineSkipLedger(emptyDir, blockedAt);
+    ok("F11 a failed quarantine carries the error out", "failed" in blocked && String((blocked as { failed: unknown }).failed).length > 0);
+    ok("F11 a failed quarantine leaves the ledger where it was", existsSync(join(emptyDir, "skip-ledger.json")));
     rmSync(emptyDir, { recursive: true, force: true });
     let rethrown: unknown = null;
     try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }

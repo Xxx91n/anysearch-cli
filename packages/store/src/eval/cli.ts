@@ -338,17 +338,20 @@ async function main(): Promise<number> {
       const kind = classifyLedgerWriteFailure(e);
       const detail = String((e as Error).message ?? e);
       if (kind === "corrupt") {
-        const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
-        if (quarantined === null) {
-          // the rename failed, so the ledger is still where it was: say that instead of pointing at
-          // a path that holds nothing
+        const moved = quarantineSkipLedger(outDir, new Date().toISOString());
+        if ("failed" in moved) {
           skipLedgerWrite = { recorded: false, reason: "corrupt", detail };
-          runNotes.push("OBSERVATIONAL skip-ledger fails its contract and could not be moved aside — it is still in place (" + detail + ")");
-          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract and could not be quarantined — left in place (" + detail + ")");
+          const why = String((moved.failed as Error)?.message ?? moved.failed);
+          runNotes.push("OBSERVATIONAL skip-ledger fails its contract and could not be quarantined — left in place (" + why + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract and could not be quarantined — left in place (" + why + ")");
+        } else if ("absent" in moved) {
+          skipLedgerWrite = { recorded: false, reason: "corrupt", detail };
+          runNotes.push("OBSERVATIONAL skip-ledger fails its contract, but there was no file to move aside (" + detail + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — no file to quarantine (" + detail + ")");
         } else {
-          skipLedgerWrite = { recorded: false, reason: "quarantined", detail: quarantined };
-          runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + quarantined + " — the skip history restarts empty");
-          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
+          skipLedgerWrite = { recorded: false, reason: "quarantined", detail: moved.quarantined };
+          runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + moved.quarantined + " — the skip history restarts empty");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + moved.quarantined + " and restarted empty (" + detail + ")");
           try {
             recordOnce();
           } catch (restart) {

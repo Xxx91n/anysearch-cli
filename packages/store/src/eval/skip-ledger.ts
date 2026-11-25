@@ -243,16 +243,23 @@ export function writeSkipLedgerAtomic(outDir: string, ledger: SkipLedger): void 
   renameSync(tmp, p);
 }
 
-// Returns where the file was moved, or null when nothing moved — a caller that reports
-// "quarantined to <path>" must not point at a file that is still in the old place.
-export function quarantineSkipLedger(outDir: string, at: string): string | null {
+// Three outcomes, because the callers say three different things: where the file went, that there
+// was nothing to move, or why the move failed. A bare path or null cannot tell the last two apart,
+// and a caller that reports "quarantined to <path>" must never point at a file still in place.
+export type QuarantineResult =
+  | { quarantined: string }
+  | { absent: true }
+  | { failed: unknown };
+
+export function quarantineSkipLedger(outDir: string, at: string): QuarantineResult {
   const p = ledgerPathFor(outDir);
   const q = p.replace(/\.json$/, ".quarantined-" + at.replace(/[:.]/g, "-") + ".json");
   try {
     renameSync(p, q);
-    return q;
-  } catch {
-    return null;
+    return { quarantined: q };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { absent: true };
+    return { failed: e };
   }
 }
 
