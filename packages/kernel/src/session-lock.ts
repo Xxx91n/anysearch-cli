@@ -16,7 +16,9 @@
 //   same host + probe unknown    reclaimed only once the stale window has
 //                                passed — the pid says nothing, so the
 //                                heartbeat is the only evidence left, and a
-//                                holder that is really running keeps it fresh
+//                                running holder keeps refreshing it. A failed
+//                                heartbeat write stops the beat for good, so
+//                                this window is a last resort, not a promise.
 //   other host / no identity     reclaimed only once the stale window has
 //                                passed — the conservative rule for an owner
 //                                this machine has no pid evidence about. A lock
@@ -96,16 +98,32 @@ export const SESSION_BUSY_MESSAGE =
   "Session is busy: another run still holds this session (possibly in another process); retry after it finishes.";
 
 /**
- * The busy sentence a waiter raises, naming the lock directory it could not
- * take.
- *
- * The path is the point: a lock whose owner left no pid this machine can
- * confirm outlives its stale window, and clearing one by hand is the last
- * resort. A sentence that only says "retry later" leaves the user waiting for
- * a run that will never end.
+ * Who the lock names, for a message a person reads. Best effort: an identity
+ * that is missing or unreadable is simply not described.
  */
-function sessionBusyMessage(lockPath: string): string {
-  return SESSION_BUSY_MESSAGE + " Lock: " + lockPath
+function describeHolder(lockPath: string): string | undefined {
+  try {
+    const owner = readLockOwner(lockPath);
+    return owner ? "pid " + owner.pid + " on " + owner.host : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The busy sentence a waiter raises, naming who holds the lock and where it
+ * lives.
+ *
+ * Both halves are the point: a lock whose owner left no pid this machine can
+ * confirm outlives its stale window, and clearing one by hand is the last
+ * resort. "Retry later" alone leaves the user waiting for a run that will
+ * never end, and a path alone does not say which process to look for.
+ */
+function lockBusyMessage(lockPath: string): string {
+  const holder = describeHolder(lockPath);
+  return SESSION_BUSY_MESSAGE
+    + (holder ? " Holder: " + holder + "." : "")
+    + " Lock: " + lockPath
     + ". If you are sure that process is gone, delete that lock directory and retry.";
 }
 
@@ -166,7 +184,7 @@ const HEARTBEAT_FILE = "heartbeat";
  */
 class LockHeldError extends Error {
   constructor(readonly lockPath: string) {
-    super(sessionBusyMessage(lockPath));
+    super(lockBusyMessage(lockPath));
     this.name = "LockHeldError";
   }
 }

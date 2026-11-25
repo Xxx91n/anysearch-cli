@@ -10,12 +10,15 @@
 //      marked incomplete by a request nobody ran;
 //   A5 a second attempt on a session that is already leased fails AT ONCE with
 //      ChatAttemptBusyError, not after a wait;
-//   A6 an in-memory chat (no handle, or no record directory) still runs.
+//   A6 an in-memory chat (no handle, or no record directory) still runs;
+//   A7 a lease left by an owner the probe cannot classify is reclaimed once its
+//      heartbeat goes stale — the lease follows the same reclaim rule as the
+//      run lock (#576).
 //
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { mkdirSync, mkdtempSync, rmSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, existsSync, utimesSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runChatAttempt, ChatAttemptBusyError, sessionLeasePath } from "../src/chat-attempt";
 import { SqliteSessionStore } from "@anysearch-cli/store";
@@ -165,6 +168,8 @@ async function main() {
 
       assert(busy instanceof ChatAttemptBusyError, "A5: the second attempt fails with ChatAttemptBusyError");
       assert((busy as ChatAttemptBusyError)?.sessionId === "s5", "A5: the error names the session");
+      assert((busy as ChatAttemptBusyError)?.leasePath === sessionLeasePath(piDir, "s5"),
+        "A5: the error names the lease a person can clear by hand (#576)");
       // The point of #299: no queue. A poll-based wait would be at least one
       // sleep tick; the production window is 120 s, so anything near that is a
       // failure of the ticket, not a slow test.
@@ -194,6 +199,45 @@ async function main() {
         "A6: without a directory the bookkeeping still happens (nothing to serialize)");
       store.close();
     }
+    // ---------- A7: the lease reclaims like the run lock ----------
+    {
+      // #576: the lease and the run lock share one reclaim decision, so the
+      // case the run lock's L10 covers has to hold here too: an owner this
+      // machine cannot classify is judged on the heartbeat, not kept forever.
+      const piDir = join(workDir, "a7", "pi");
+      const leasePath = sessionLeasePath(piDir, "s7");
+      const unknownPid = 777777777;
+      mkdirSync(leasePath, { recursive: true });
+      writeFileSync(join(leasePath, "owner.json"),
+        JSON.stringify({ pid: unknownPid, host: hostname(), startedAt: Date.now() }));
+      const heartbeat = join(leasePath, "heartbeat");
+      writeFileSync(heartbeat, String(Date.now()));
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(heartbeat, old, old);
+
+      const realKill = process.kill;
+      const unconfirmable: typeof process.kill = (pid, signal) => {
+        if (pid === unknownPid && signal === 0) {
+          throw Object.assign(new Error("probe could not classify this pid"), { code: "ERR_INVALID_ARG_TYPE" });
+        }
+        return realKill(pid, signal);
+      };
+      process.kill = unconfirmable;
+      try {
+        const outcome = await runChatAttempt({
+          sessionId: "s7", projectRoot: "/p", piSessionDir: piDir,
+          sessionLock: { staleMs: 1_000 },
+        }, async (attempt) => {
+          attempt.markStarted();
+          return { completed: true };
+        });
+        assert(outcome.completed === true,
+          "A7: an unconfirmable lease past the stale window is reclaimed and the attempt runs");
+      } finally {
+        process.kill = realKill;
+      }
+    }
+
   } finally {
     try { rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* OS temp */ }
   }

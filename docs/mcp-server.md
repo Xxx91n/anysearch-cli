@@ -459,11 +459,11 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   preempted, and once the holder's process is confirmed dead the next
   waiter takes over at once. The 10-minute stale window governs the owners
   this machine cannot confirm — another host, a missing identity, or a pid
-  the probe cannot classify — and a holder that is still running keeps its
-  heartbeat fresh, so it never ages out. A busy answer names the lock
-  directory it could not take, so a lock whose owner is gone can be cleared
-  by hand. Different sessions still run in parallel. No evidence exists for
-  network-filesystem session directories; same machine only.
+  the probe cannot classify — and those are judged on the heartbeat, which
+  a running holder keeps refreshing. A busy answer names the holder and the
+  lock directory it could not take, so a lock whose owner is gone can be
+  cleared by hand. Different sessions still run in parallel. No evidence
+  exists for network-filesystem session directories; same machine only.
 - A chat **attempt** is the wider unit around that run: lease → record start →
   run → record result (#299). Its lease lives in a `leases/` folder beside
   `locks/` and covers the two `chat_projects` writes, so two attempts on one

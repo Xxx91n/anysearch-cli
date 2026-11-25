@@ -79,14 +79,16 @@ async function expectAcquired(lockDir: string, staleMs: number, waitMs: number):
 }
 
 /**
- * The busy answer for `lockDir`: the shared sentence, then the directory the
- * waiter could not take. The path is what a person needs to clear a lock whose
- * owner is gone (#576), so every busy assertion checks it is there.
+ * The busy answer for `lockDir`: the shared sentence, the directory the waiter
+ * could not take, and how to clear it. The path and the instructions are what a
+ * person needs once the owner is gone (#576), so every busy assertion checks
+ * both are there.
  */
 function busyAt(busy: string | undefined, lockDir: string): boolean {
   return busy !== undefined
     && busy.startsWith(SESSION_BUSY_MESSAGE)
-    && busy.includes(lockDir);
+    && busy.includes(lockDir)
+    && busy.includes("delete that lock directory");
 }
 
 // ---------- runtime wiring helpers (same minimal shape as the #258 tests) ----------
@@ -166,6 +168,8 @@ async function main() {
       const busy = await expectBusy(lockDir, 200, 300);
       assert(busyAt(busy, lockDir),
         "L2: a contender outliving the wait cap gets the session-busy error (got " + JSON.stringify(busy) + ")");
+      assert(busy !== undefined && busy.includes("pid " + process.pid),
+        "L2: the busy message names the holder's pid (got " + JSON.stringify(busy) + ")");
 
       release();
       assert(!existsSync(lockDir), "L2: release removes the lock directory");
