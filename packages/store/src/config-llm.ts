@@ -488,23 +488,26 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   return resolved;
 }
 
-/** Where a base URL set by each layer can be read back in full. */
-const BASE_URL_SOURCE: Partial<Record<LlmLayer, string>> = {
+/** Where a base URL can be read back in full. The project file is not one of them:
+ * it may only set provider and model, so it never carries a base URL. */
+const BASE_URL_SOURCE: Record<"cli" | "env" | "user", string> = {
   cli: "--llm.base-url",
   env: "ANS_LLM_BASE_URL",
-  project: "the project config file",
   user: "the user config file",
 };
 
-/** 能安全打印的地址才给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
+/** 地址能安全打印就给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
  * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。 */
 function bindingAdvice(provider: string, effective: string | null, source?: LlmLayer): string {
   if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
   if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  const where = BASE_URL_SOURCE[source ?? "user"] ?? "your config";
-  return "re-store it for that endpoint: its full value is in " + where +
-    ", which is not printed here (redacted, or too long for one line); run `" +
-    storeKeyCommand(provider) + " --endpoint <the endpoint from " + where + ">`";
+  const where = source !== undefined && source in BASE_URL_SOURCE
+    ? BASE_URL_SOURCE[source as keyof typeof BASE_URL_SOURCE]
+    : "your config";
+  return "re-store it for that endpoint: the full address is in " + where +
+    ", and the one shown above is not printable here (redacted, too long, or contains control characters). " +
+    "Run `" + storeKeyCommand(provider) + " --endpoint <the endpoint from " + where +
+    ">`, replacing the angle-bracket part with the real address";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and
