@@ -85,9 +85,6 @@ export * from "./eval/switch-run";
 
 // skip-ledger @3 read surface for ans switch-state.
 export * from "./eval/skip-ledger";
-// the error a ledger write throws when another writer holds its lock, so a caller can tell
-// contention apart from a broken ledger instead of matching on the message.
-export { LedgerLockTimeoutError } from "./eval/ledger-lock";
 
 // -D13: pure calibration revision lifecycle surface.
 export * from "./eval/revision-core";

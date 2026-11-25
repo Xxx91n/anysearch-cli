@@ -1,18 +1,17 @@
 // One sidecar lock, shared by the eval ledgers.
 //
 // The skip/gain ledger and the ship override ledger each carried a byte-identical copy of this
-// logic and already drifted once, so the rules live here and both ask for them. The lock file
-// holds one JSON claim, written when the lock is taken and never refreshed: { pid, at }.
+// logic and already drifted once, so the rules live here and both ask for them.
+//
+// The lock file holds one JSON claim, taken once and never refreshed: { pid, at }. Where hard links
+// exist the claim is linked into place, so a lock file that is visible always holds a complete
+// claim; where they do not, the file is created and then written, and a crash in between leaves it
+// claim-less until the age rule clears it.
 //
 // Design: identity decides before age — probe dead reaps, alive keeps, unknown falls to age —
-// because a claim is never refreshed while it is held, so age cannot tell a paused owner from a
-// dead one. Reaping a live owner's lock is how two writers ended up appending to one ledger (#577).
-// Design: the claim is published with link(2) from a staging file, so a lock file that exists
-// always holds a complete claim — a waiter never has to guess whether an empty file is a crash or
-// a writer mid-create. Filesystems without hard links fall back to create-then-write.
-// Design: reaping and releasing compare the file's exact claim text before deleting — a lock that
-// changed hands in between belongs to whoever wrote that text, not to the reader that judged the
-// previous one.
+// because a claim is never refreshed, so age cannot tell a paused owner from a dead one.
+// Design: reaping and releasing compare the exact claim text before deleting, so a lock that
+// changed hands belongs to its new writer (#577).
 import { closeSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
@@ -28,6 +27,12 @@ const LOCK_RETRY_MS = 25;
 export interface LedgerLockRecord {
   pid: number;
   at: string;
+}
+
+// Only the hard-link step is substitutable: a test cannot make the real filesystem refuse hard
+// links, and the fallback it triggers is otherwise never exercised.
+export interface LedgerLockPrimitives {
+  link(from: string, to: string): void;
 }
 
 export class LedgerLockTimeoutError extends Error {
@@ -49,6 +54,8 @@ interface LockSnapshot {
   owner: Partial<LedgerLockRecord> | null;
   ageMs: number | null;
 }
+
+let warnedNoHardLinks = false;
 
 function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -97,16 +104,21 @@ function deleteIfClaim(lockPath: string, expected: string): void {
   try { rmSync(lockPath, { force: true }); } catch { /* the next writer re-judges it */ }
 }
 
-function takeClaim(lockPath: string, claim: string): boolean {
-  const staging = lockPath + "." + process.pid + "." + randomUUID() + ".tmp";
-  writeFileSync(staging, claim, "utf8");
+// true = this call owns the lock. The staging file already holds the claim, so nothing is written
+// inside the retry loop and no lock is ever visible before its content exists.
+function takeClaim(staging: string, lockPath: string, claim: string, link: LedgerLockPrimitives["link"]): boolean {
   try {
-    linkSync(staging, lockPath);
+    link(staging, lockPath);
     return true;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
-    // no hard links on this filesystem (some network shares): fall back to create-then-write, the
-    // one path where a lock file can be observed before its claim lands
+    if (!warnedNoHardLinks) {
+      warnedNoHardLinks = true;
+      console.error(
+        "[ledger-lock] hard links unavailable in " + dirname(lockPath) + " (" + String((e as NodeJS.ErrnoException).code ?? e) +
+        ") — falling back to create-then-write, so a crash mid-create can leave a claim-less lock",
+      );
+    }
     let fd: number | undefined;
     try {
       fd = openSync(lockPath, "wx");
@@ -125,33 +137,41 @@ function takeClaim(lockPath: string, claim: string): boolean {
     } finally {
       if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
     }
-  } finally {
-    try { rmSync(staging, { force: true }); } catch { /* a leftover staging file is inert */ }
   }
 }
 
-export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
+export function withLedgerLock<T>(
+  lockPath: string,
+  fn: () => T,
+  primitives: LedgerLockPrimitives = { link: linkSync },
+): T {
   mkdirSync(dirname(lockPath), { recursive: true });
   const claim = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+  const staging = lockPath + "." + process.pid + "." + randomUUID() + ".tmp";
   const startedAt = Date.now();
   let lastOwner: Partial<LedgerLockRecord> | null = null;
 
-  for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt++) {
-    if (!takeClaim(lockPath, claim)) {
-      const snapshot = readLock(lockPath);
-      if (snapshot) {
-        lastOwner = snapshot.owner;
-        if (lockIsReapable(snapshot)) deleteIfClaim(lockPath, snapshot.claim);
+  try {
+    writeFileSync(staging, claim, "utf8");
+    for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt++) {
+      if (!takeClaim(staging, lockPath, claim, primitives.link)) {
+        const snapshot = readLock(lockPath);
+        if (snapshot) {
+          lastOwner = snapshot.owner;
+          if (lockIsReapable(snapshot)) deleteIfClaim(lockPath, snapshot.claim);
+        }
+        sleep(LOCK_RETRY_MS);
+        continue;
       }
-      sleep(LOCK_RETRY_MS);
-      continue;
-    }
 
-    try {
-      return fn();
-    } finally {
-      deleteIfClaim(lockPath, claim);
+      try {
+        return fn();
+      } finally {
+        deleteIfClaim(lockPath, claim);
+      }
     }
+  } finally {
+    try { rmSync(staging, { force: true }); } catch { /* a leftover staging file is inert */ }
   }
 
   throw new LedgerLockTimeoutError(lockPath, lastOwner, Date.now() - startedAt);

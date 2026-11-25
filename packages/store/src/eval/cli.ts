@@ -309,7 +309,7 @@ async function main(): Promise<number> {
   // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
   // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
   const ob = report.metrics.observational;
-  let skipLedgerWrite: { recorded: boolean; reason?: string; detail?: string } = { recorded: true };
+  let skipLedgerWrite: { recorded: boolean; reason?: string; detail?: string } | null = ob ? { recorded: true } : null;
   if (ob) {
     const keys: string[] = [];
     for (const [k, v] of Object.entries(ob)) {
@@ -346,6 +346,12 @@ async function main(): Promise<number> {
         });
       }
     }
+  }
+
+  if (skipLedgerWrite && !skipLedgerWrite.recorded) {
+    // the gate warning list is what reaches eval-report.md, the console and the JSON, so an
+    // unrecorded skip is visible to whoever reads the run without opening the raw artifact
+    g.warnings.push("OBSERVATIONAL skip-ledger not recorded: another writer held the lock, so the skip streak did not move this run (" + String(skipLedgerWrite.detail ?? "lock busy") + ")");
   }
 
   // impl-plan 3/8: advance the consumed/synthetic switch state machine.
@@ -414,10 +420,10 @@ async function main(): Promise<number> {
     gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null },
     // quarantine disclosure (policy layer; dataset fingerprint deliberately unchanged).
     quarantine: { active: quarantineActive, expired: quarantineExpired, schema: quarantine.schema },
-    // whether this run's observational skip landed. A lock held by another writer leaves the
-    // ledger untouched, so the 3-streak counter did not move; say it out loud rather than let a
-    // later reader assume the run recorded everything it saw.
-    skipLedger: skipLedgerWrite,
+    // whether this run's observational skip landed; absent when the run had nothing to record. A
+    // lock held by another writer leaves the ledger untouched, so the 3-streak counter did not
+    // move — say it out loud rather than let a later reader assume it did.
+    ...(skipLedgerWrite ? { skipLedger: skipLedgerWrite } : {}),
   };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
   writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");

@@ -14,7 +14,7 @@ import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
 import { SkipLedgerError, withSkipLedgerLock } from "../src/eval/skip-ledger";
-import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError } from "../src/eval/ledger-lock";
+import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
 import { withProbe } from "./helpers/probe-stub";
 
 const fixturePath = join(process.cwd(), "fixtures", "switch-registration.json");
@@ -233,6 +233,26 @@ try {
       return null;
     });
     ok("F9 releasing leaves a lock this call no longer owns", existsSync(lock) && readFileSync(lock, "utf8") === successor);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F10 (#577): a filesystem without hard links falls back to create-then-write. The claim is
+  // complete before the callback runs, and an existing lock is still respected.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-577-f10-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    const noLinks = { link(): void { throw Object.assign(new Error("hard links unsupported here"), { code: "EPERM" }); } };
+    let claimSeen = "";
+    withLedgerLock(lock, () => { claimSeen = readFileSync(lock, "utf8"); return null; }, noLinks);
+    const claim = JSON.parse(claimSeen) as { pid?: number };
+    ok("F10 the fallback writes a complete claim before the callback runs", claim.pid === process.pid && !existsSync(lock));
+
+    const held = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+    writeFileSync(lock, held, "utf8");
+    let entered = false;
+    let timedOut = false;
+    try { withLedgerLock(lock, () => { entered = true; return null; }, noLinks); } catch (e) { timedOut = e instanceof LedgerLockTimeoutError; }
+    ok("F10 the fallback still respects a held lock", !entered && timedOut && readFileSync(lock, "utf8") === held);
     rmSync(dir, { recursive: true, force: true });
   }
 } finally {

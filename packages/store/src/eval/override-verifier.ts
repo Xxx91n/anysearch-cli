@@ -5,8 +5,8 @@
 // 2 = malformed args, corrupt ledger, or internal/IO failure
 // 3 = the ledger lock is held by another writer — contention, not corruption; nothing was changed
 //
-// Design: contention gets its own exit code rather than reusing 2, which already means the ledger
-// cannot be trusted and would have the caller quarantine a healthy file (#577).
+// Design: contention exits 3, not 2 — 2 means the ledger cannot be trusted, and a caller that
+// quarantines on it would destroy a healthy file (#577).
 
 import { existsSync, readFileSync } from "node:fs";
 import {
