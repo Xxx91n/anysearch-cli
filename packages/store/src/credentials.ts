@@ -54,10 +54,42 @@ export { resolveConfigHome };
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
+
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
+/** `ans auth set openai`, with `--endpoint <url>` when the binding has one: a
+ * binding is (provider, endpoint), so advice that drops the flag stores the key
+ * against the default and reproduces the warning. */
+export function storeKeyCommand(provider: string, endpoint?: string | null): string {
+  // A function replacement: `$&` in a provider read from the config file would
+  // otherwise be expanded. Characters outside shellArg's safe set get quoted, so a
+  // config value cannot turn the advice into a second command.
+  const command = STORE_KEY_COMMAND.replace("<provider>", () => shellArg(provider));
+  return endpoint ? command + " --endpoint " + shellArg(endpoint) : command;
+}
+
+/** True when the endpoint can be printed as it stands: showing it takes nothing
+ * away and cuts nothing off. */
+export function isPrintableEndpoint(endpoint: string): boolean {
+  if (endpoint.length > ENDPOINT_LIMIT) return false;
+  if (/[\p{Cc}\p{Cf}]/u.test(endpoint)) return false;
+  return !shownEndpoint(endpoint).redacted;
+}
+
+/** One argument as the shell reads it back, so a pasted endpoint like
+ * `https://gw.example/v1?a=1&b=2` stays one argument. */
+function shellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  // Windows documents PowerShell, where a backtick escapes inside double quotes;
+  // POSIX shells escape with a backslash.
+  const escaped = process.platform === "win32"
+    ? value.replace(/[`"$]/g, (c) => "`" + c)
+    : value.replace(/[\\"$`]/g, (c) => "\\" + c);
+  return '"' + escaped + '"';
+}
 
 /** Written into every file so its plaintext nature is obvious to a human who opens
  * it: this text outlives a rename inside the user's own file. */
@@ -260,23 +292,36 @@ const ENDPOINT_LIMIT = 200;
  */
 export function displayEndpoint(endpoint: string | null): string {
   if (!endpoint) return "(provider default endpoint)";
-  return shownValue(shownEndpoint(endpoint), ENDPOINT_LIMIT);
+  return shownValue(shownEndpoint(endpoint).value, ENDPOINT_LIMIT);
 }
 
-function shownEndpoint(endpoint: string): string {
+/** The endpoint as it may be shown, plus whether showing it took anything away.
+ * One parse answers both questions, so a redaction rule added here cannot be
+ * missed by the printability check. */
+function shownEndpoint(endpoint: string): { value: string; redacted: boolean } {
   // `new URL("user:pass@host/v1")` parses with scheme "user:" — so a missing
   // scheme must be caught BEFORE parsing, or the userinfo would ride along.
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) return stripAuthorityAndQuery(endpoint);
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) {
+    return { value: stripAuthorityAndQuery(endpoint), redacted: endpointHasCredentials(endpoint) };
+  }
   try {
     const url = new URL(endpoint);
+    const redacted = url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "";
     url.username = "";
     url.password = "";
     url.search = "";
     url.hash = "";
-    return url.toString().replace(/\/+$/, "");
+    return { value: url.toString().replace(/\/+$/, ""), redacted };
   } catch {
-    return stripAuthorityAndQuery(endpoint);
+    return { value: stripAuthorityAndQuery(endpoint), redacted: endpointHasCredentials(endpoint) };
   }
+}
+
+/** Userinfo, a query or a fragment: anything showing this address would expose. */
+function endpointHasCredentials(endpoint: string): boolean {
+  if (/[?#]/.test(endpoint)) return true;
+  const authority = endpoint.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split("/")[0] ?? "";
+  return authority.includes("@");
 }
 
 /** Drop userinfo (everything up to the last '@' in the authority) and the query. */

@@ -37,6 +37,7 @@
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **写进用户文件的那段说明也用命令常量拼**：`CREDENTIALS_NOTE` 以前硬写 `ans auth set` / `ans auth remove <provider>`，命令改名后用户打开自己的凭据文件就会看到一个不存在的命令。命令常量先挪到它前面声明（否则模块初始化时踩 TDZ），说明改成用 `STORE_KEY_COMMAND` / `REMOVE_KEY_COMMAND` 拼，测试钉住两个命令都在里面。
+- **点名某个 provider 的命令也从同一个常量拼**：`ans llm` 的「store one once with: ans auth set openai」、store 的 endpoint 冲突告警、kernel 的 `permanent-auth` 提示都自己拼命令名。新增 `storeKeyCommand(provider, endpoint?)`（从 `STORE_KEY_COMMAND` 换掉占位符，替换用函数形式，provider 里的 `$&` 不会被展开），几处都走它。endpoint 冲突那条告警还带上 `--endpoint <生效的地址>`（带 shell 元字符时用双引号包住，转义按平台走：POSIX 用反斜杠，Windows 用 PowerShell 的反引号；地址能不能打印直接看它本身（`isPrintableEndpoint` 和 `displayEndpoint` 共用一次解析：`shownEndpoint` 同时给出展示形态和「是否被脱敏过」，所以以后加一条脱敏规则不会漏掉判定），不能打就说出完整值在哪儿（`--llm.base-url` / `ANS_LLM_BASE_URL` / 项目或用户 config），给出的命令里 `--endpoint` 是个必须替换的占位符——半截地址直接粘回去会存成一个谁都不认的绑定；命令里 provider 和 endpoint 都过 shell 引号，配置里带 `;` 的 provider 拼不出第二条命令；回到默认 endpoint 时干脆不带 `--endpoint`）：绑定是 (provider, endpoint)，不带这个参数照抄下去，key 还是落到默认 endpoint，下次照样报同一句。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
 ### Known limits
