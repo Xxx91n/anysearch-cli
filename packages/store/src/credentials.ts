@@ -38,7 +38,6 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { ansCredentialsPathFor, resolveConfigHome } from "./ans-paths.js";
@@ -54,10 +53,42 @@ export { resolveConfigHome };
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
+
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
+
+/** `ans auth set openai`, with `--endpoint <url>` when the binding has one: a
+ * binding is (provider, endpoint), so advice that drops the flag stores the key
+ * against the default and reproduces the warning. */
+export function storeKeyCommand(provider: string, endpoint?: string | null): string {
+  // A function replacement: `$&` in a provider read from the config file would
+  // otherwise be expanded. Characters outside shellArg's safe set get quoted, so a
+  // config value cannot turn the advice into a second command.
+  const command = STORE_KEY_COMMAND.replace("<provider>", () => shellArg(provider));
+  return endpoint ? command + " --endpoint " + shellArg(endpoint) : command;
+}
+
+/** True when the endpoint can be printed as it stands: showing it takes nothing
+ * away and cuts nothing off. */
+export function isPrintableEndpoint(endpoint: string): boolean {
+  if (endpoint.length > ENDPOINT_LIMIT) return false;
+  if (/[\p{Cc}\p{Cf}]/u.test(endpoint)) return false;
+  return !shownEndpoint(endpoint).redacted;
+}
+
+/** One argument as the shell reads it back, so a pasted endpoint like
+ * `https://gw.example/v1?a=1&b=2` stays one argument. */
+function shellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  // Windows documents PowerShell, where a backtick escapes inside double quotes;
+  // POSIX shells escape with a backslash.
+  const escaped = process.platform === "win32"
+    ? value.replace(/[`"$]/g, (c) => "`" + c)
+    : value.replace(/[\\"$`]/g, (c) => "\\" + c);
+  return '"' + escaped + '"';
+}
 
 /** Written into every file so its plaintext nature is obvious to a human who opens
  * it: this text outlives a rename inside the user's own file. */
@@ -260,23 +291,36 @@ const ENDPOINT_LIMIT = 200;
  */
 export function displayEndpoint(endpoint: string | null): string {
   if (!endpoint) return "(provider default endpoint)";
-  return shownValue(shownEndpoint(endpoint), ENDPOINT_LIMIT);
+  return shownValue(shownEndpoint(endpoint).value, ENDPOINT_LIMIT);
 }
 
-function shownEndpoint(endpoint: string): string {
+/** The endpoint as it may be shown, plus whether showing it took anything away.
+ * One parse answers both questions, so a redaction rule added here cannot be
+ * missed by the printability check. */
+function shownEndpoint(endpoint: string): { value: string; redacted: boolean } {
   // `new URL("user:pass@host/v1")` parses with scheme "user:" — so a missing
   // scheme must be caught BEFORE parsing, or the userinfo would ride along.
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) return stripAuthorityAndQuery(endpoint);
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) {
+    return { value: stripAuthorityAndQuery(endpoint), redacted: endpointHasCredentials(endpoint) };
+  }
   try {
     const url = new URL(endpoint);
+    const redacted = url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "";
     url.username = "";
     url.password = "";
     url.search = "";
     url.hash = "";
-    return url.toString().replace(/\/+$/, "");
+    return { value: url.toString().replace(/\/+$/, ""), redacted };
   } catch {
-    return stripAuthorityAndQuery(endpoint);
+    return { value: stripAuthorityAndQuery(endpoint), redacted: endpointHasCredentials(endpoint) };
   }
+}
+
+/** Userinfo, a query or a fragment: anything showing this address would expose. */
+function endpointHasCredentials(endpoint: string): boolean {
+  if (/[?#]/.test(endpoint)) return true;
+  const authority = endpoint.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split("/")[0] ?? "";
+  return authority.includes("@");
 }
 
 /** Drop userinfo (everything up to the last '@' in the authority) and the query. */
@@ -305,6 +349,14 @@ function shownValue(raw: string, limit: number): string {
  * fault sentence, `ans auth list` and `ans llm` all print it verbatim. */
 export function providerLabel(raw: string): string {
   return shownValue(raw, PROVIDER_LIMIT);
+}
+
+/** What may be SHOWN for a `[llm]` key name read out of the file: `ans llm`
+ * prints it in `ignored:` and the parse warning names it (#579). The limit is
+ * its own: a key name is not a provider id, even though both are short labels. */
+const KEY_LIMIT = 40;
+export function llmKeyLabel(raw: string): string {
+  return shownValue(raw, KEY_LIMIT);
 }
 
 /**
@@ -609,11 +661,15 @@ export function lookupModelCredential(
 // ---------------------------------------------------------------------------
 
 /**
- * How long to keep trying for the mutation lock before giving up, and how long
- * before an existing lock is assumed abandoned. Writing a key is a
- * sub-millisecond read-modify-write, so a lock older than the stale window means
- * its owner died; waiting forever would hang a command, and stealing silently
- * would reintroduce the very race this lock prevents.
+ * How long a writer waits for the mutation lock, and how long before a lock
+ * on disk counts as abandoned. Writing a key is a sub-millisecond
+ * read-modify-write, so waiting forever would hang a command, and stealing
+ * silently would reintroduce the race this lock prevents.
+ *
+ * The lock file records no owner, so reclaiming looks at the file's age alone.
+ * A writer waits LOCK_WAIT_MS and then fails; a lock older than LOCK_STALE_MS
+ * is deleted. A lock left by a crash therefore clears itself when the same
+ * command is run again a few seconds later.
  */
 const LOCK_WAIT_MS = 5_000;
 const LOCK_STALE_MS = 10_000;
@@ -630,8 +686,11 @@ const LOCK_STALE_MS = 10_000;
  * `openSync(..., "wx")` is the atomic step (O_CREAT|O_EXCL): exactly one creator
  * wins. A lock whose mtime is older than the stale window is treated as
  * abandoned and removed, which bounds recovery from a killed process.
+ *
+ * `advice` closes every refusal this function raises. `heldAdvice` is added
+ * only when the lock stays held; empty means the reason stands alone.
  */
-function withCredentialLock<T>(path: string, fn: () => T): T {
+function withCredentialLock<T>(path: string, fn: () => T, advice: string, heldAdvice = ""): T {
   const lockPath = path + ".lock";
   // Every failure in this function leaves by the same door as a failed write, so
   // the user sees one actionable sentence whatever step failed - including "the
@@ -640,8 +699,8 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
   // lane in CI: a read-only config directory must fail with this message, not
   // with an errno).
   // Never after a publish: this door is a refused lock or an unusable folder.
-  const refused = (reason: string): CredentialWriteRefusal =>
-    new CredentialWriteRefusal(refusalSentence(path, reason), false);
+  const refused = (reason: string, override?: string): CredentialWriteRefusal =>
+    new CredentialWriteRefusal(refusalSentence(path, reason, override ?? advice), false);
   try {
     mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
   } catch (e) {
@@ -673,15 +732,17 @@ function withCredentialLock<T>(path: string, fn: () => T): T {
       }
       if (Date.now() >= deadline) {
         throw refused(
-          "another ans process is writing it (" + lockPath + " is still held after " +
-          Math.round(LOCK_WAIT_MS / 1000) + "s)",
+          "another ans process may be writing it (" + lockPath + " is still held after " +
+          Math.round(LOCK_WAIT_MS / 1000) + "s); " + LOCK_HELD_NOTICE,
+          // The folder is fine here; sending the user to its permissions would
+          // point them away from what actually happened.
+          heldAdvice,
         );
       }
       sleepMs(20);
     }
   }
   try {
-    writeSync(fd, String(process.pid));
     return fn();
   } finally {
     try { closeSync(fd); } catch { /* already closed */ }
@@ -849,10 +910,32 @@ export function verifyFileProtection(path: string, platform: NodeJS.Platform = a
   }
 }
 
+/**
+ * What a held write lock means, shared with `classifyCredentialFault`: the
+ * classifier keys its branch on this text and repeats it, so both surfaces
+ * describe the same event instead of keeping two paraphrases.
+ */
+export const LOCK_HELD_NOTICE =
+  "if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds";
+
+/** The only way out when the file or its folder refuses: the permissions are wrong. */
+const FILE_ADVICE = "Fix the folder's permissions and retry.";
+
+/**
+ * A way around the file that only applies to storing a key: the providers whose
+ * keys this file holds each have their own env var, so the list comes from that
+ * catalog instead of being copied here.
+ */
+const ENV_ADVICE =
+  "Set the key in the provider's own environment variable instead (" +
+  CREDENTIAL_PROVIDERS.map((provider) => provider.envKey).join(", ") + ").";
+
+/** What a refusal tells the user to do instead, unless it names its own. */
+const WRITE_ADVICE = ENV_ADVICE + " " + FILE_ADVICE;
+
 /** `classifyCredentialFault` matches on "refusing to write", so this sentence is built once. */
-function refusalSentence(path: string, reason: string): string {
-  return "refusing to write the credential file " + path + ": " + reason +
-    ". Set the key in the environment instead (e.g. ANS_LLM_API_KEY), or fix the folder's permissions and retry.";
+function refusalSentence(path: string, reason: string, advice = WRITE_ADVICE): string {
+  return "refusing to write the credential file " + path + ": " + reason + (advice ? ". " + advice : "");
 }
 
 /**
@@ -876,9 +959,11 @@ export class CredentialWriteRefusal extends Error {
 /**
  * Write the file so that no unprotected copy of the secret ever lands on disk:
  * the empty temp file is protected and verified FIRST, the key is written into
- * that already-protected file, and the result is renamed into place.
+ * that already-protected file, and the result is renamed into place. A failure
+ * ends with the caller's `advice`, which differs per entry (see
+ * `withCredentialLock`).
  */
-function writeProtectedFile(path: string, content: string, platform: NodeJS.Platform): void {
+function writeProtectedFile(path: string, content: string, platform: NodeJS.Platform, advice: string): void {
   const dir = dirname(path);
   const tmp = join(dir, ".credentials." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
   let published = false;
@@ -907,7 +992,7 @@ function writeProtectedFile(path: string, content: string, platform: NodeJS.Plat
     // failed verification - leaves by this one door, worded the same way. A raw
     // EEXIST/EACCES would leave the user guessing whether a key was stored.
     const reason = e instanceof Error ? e.message : String(e);
-    throw new CredentialWriteRefusal(refusalSentence(path, reason), published);
+    throw new CredentialWriteRefusal(refusalSentence(path, reason, advice), published);
   }
 }
 
@@ -976,9 +1061,10 @@ export function writeUserCredential(
     }
     const kept = existing.bindings.filter((b) => !(b.provider === info.id && b.endpoint === endpoint));
     kept.push({ provider: info.id, endpoint, apiKey });
-    writeProtectedFile(path, serialize(kept), activePlatform());
+    writeProtectedFile(path, serialize(kept), activePlatform(), WRITE_ADVICE);
     return path;
-  });
+  // Only storing a key has a way around a held lock; removing one does not.
+  }, WRITE_ADVICE, ENV_ADVICE);
 }
 
 /** Remove one key. Returns false when there was nothing to remove. */
@@ -1006,9 +1092,9 @@ export function removeUserCredential(
       try { unlinkSync(path); } catch { /* already gone */ }
       return true;
     }
-    writeProtectedFile(path, serialize(kept), activePlatform());
+    writeProtectedFile(path, serialize(kept), activePlatform(), FILE_ADVICE);
     return true;
-  });
+  }, FILE_ADVICE);
 }
 
 export type CredentialRepairResult =
@@ -1051,7 +1137,7 @@ export function repairUserCredentials(
     }
     if (bytes.problems.length === 0) return { kind: "healthy", path, kept: bytes.bindings.length };
     try {
-      writeProtectedFile(path, serialize(bytes.bindings), activePlatform());
+      writeProtectedFile(path, serialize(bytes.bindings), activePlatform(), FILE_ADVICE);
     } catch (e) {
       if (e instanceof CredentialWriteRefusal) {
         return { kind: "write-failed", error: e.message, published: e.published };
@@ -1059,6 +1145,6 @@ export function repairUserCredentials(
       throw e;
     }
     return { kind: "repaired", path, kept: bytes.bindings.length, dropped: bytes.problems };
-  });
+  }, FILE_ADVICE);
 }
 

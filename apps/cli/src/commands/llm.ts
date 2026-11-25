@@ -8,9 +8,11 @@
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
-import { modelEnvKeysFor, STORE_KEY_COMMAND } from "@anysearch-cli/store";
+import { modelEnvKeysFor, storeKeyCommand, STORE_KEY_COMMAND } from "@anysearch-cli/store";
 import {
   type CredentialFileContents,
+  type LlmConfigFileStatus,
+  type ResolvedLlmConfig,
   displayEndpoint,
   KEY_SOURCE_LABELS,
   readUserCredentials,
@@ -21,6 +23,41 @@ import {
   projectConfigPath,
   writeUserLlmConfig,
 } from "../config-llm";
+
+/** The six file states, spelled exactly as the listing prints them (#579). */
+const LLM_FILE_STATUS_LABELS: Record<LlmConfigFileStatus, string> = {
+  missing: "missing",
+  empty: "empty",
+  "no-llm": "no [llm]",
+  half: "half",
+  ok: "ok",
+  broken: "broken",
+};
+
+/** The `Files:` line: both paths, both states, and every key the policy dropped. */
+function filesLine(cfg: ResolvedLlmConfig, home: string, cwd: string): string {
+  const user = cfg.configFiles.user;
+  const project = cfg.configFiles.project;
+  let line = "Files: user " + userConfigPath(home) + " [" + LLM_FILE_STATUS_LABELS[user.status] +
+    "] | project " + projectConfigPath(cwd) + " [" + LLM_FILE_STATUS_LABELS[project.status] + "]";
+  const ignored = (["user", "project"] as const).flatMap((layer) =>
+    cfg.configFiles[layer].diagnostics
+      .map((d) => d.key)
+      .filter((key): key is string => key !== undefined)
+      .map((key) => layer + ":" + JSON.stringify(key)));
+  if (ignored.length > 0) {
+    // Each key carries its file: user keys are unknown names, project keys were
+    // refused by the provider/model whitelist, so the fix differs.
+    line += " (ignored: " + ignored.join(", ") + ")";
+  }
+  const notTable = (["user", "project"] as const).filter((layer) =>
+    cfg.configFiles[layer].diagnostics.some((d) => d.kind === "llm-not-table"));
+  if (notTable.length > 0) {
+    // Say which file is not a table so the user edits the right one.
+    line += " ([llm] is not a table: " + notTable.join(", ") + ")";
+  }
+  return line;
+}
 
 /** One wording for a provider whose key cannot be known, because the file that
  * would hold it is broken. Both listings say exactly this, and neither repeats the
@@ -56,12 +93,13 @@ export async function runLlm(args: string[]): Promise<number> {
   // to the credential read, so the listing can never describe another file.
   const env = process.env;
   const home = resolveConfigHome(undefined, env);
+  const cwd = process.cwd();
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
     // Design: 列表和解析器共用一次读取，下面那行 BROKEN 是这句话唯一的出口。
     const credentialFile = readUserCredentials({ home });
-    const cfg = resolveLlmConfig({ home, credentialsFile: credentialFile });
+    const cfg = resolveLlmConfig({ home, cwd, credentialsFile: credentialFile });
     const src = (k: keyof typeof cfg.sources) => cfg.sources[k] ?? "unset";
     console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
       "  [provider:" + src("provider") + " model:" + src("model") + "]");
@@ -69,7 +107,9 @@ export async function runLlm(args: string[]): Promise<number> {
     // Sources are layer labels (flag/env/project/user/credentials), never the secret itself.
     console.log("Sources: provider=" + src("provider") + " model=" + src("model") +
       " baseUrl=" + src("baseUrl") + " api=" + src("api") + " apiKey=" + src("apiKey"));
-    console.log("Files: user " + userConfigPath(home) + " | project " + projectConfigPath());
+    // #579: both paths come from the same home and cwd the resolver used, so the
+    // listing cannot describe a different config root.
+    console.log(filesLine(cfg, home, cwd));
     console.log("Credentials: " + credentialsPath(home) + " (plain text; an env value still wins)");
     console.log("");
     console.log("Available providers:");
@@ -106,10 +146,9 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  " + STORE_KEY_COMMAND + "         Store the key once (plain text, owner-only)");
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
-    // A broken credential file is a failure here too: `ans auth`, `ans doctor`,
-    // `set` and `remove` all say so with exit 1. The `Credentials file: BROKEN`
-    // line above already ends with the way out, so only the exit code is added.
-    return credentialFile.error ? 1 : 0;
+    // Design: the listing always exits 0 — it reports state, not health; only a
+    // usage error exits 2. A broken credential file still prints its BROKEN line.
+    return 0;
   }
 
   const subcommand = args[0];
@@ -140,7 +179,7 @@ export async function runLlm(args: string[]): Promise<number> {
       process.stderr.write((e?.message || String(e)) + "\n");
       return 1;
     }
-    console.log("Secrets stay out of the config file — store one once with: ans auth set " + provider + ".");
+    console.log("Secrets stay out of the config file — store one once with: " + storeKeyCommand(provider) + ".");
     console.log("An env value (" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + " / ANS_LLM_API_KEY) still wins over the stored key.");
     console.log("");
     try {
@@ -149,7 +188,7 @@ export async function runLlm(args: string[]): Promise<number> {
     } catch (e: any) {
       console.log("[WARN] Provider factory failed: " + (e?.message || String(e)));
       console.log("Make sure the SDK is installed.");
-      console.log("If the provider needs a key: ans auth set " + provider + "   (or export " + (API_KEYS[provider] || "ITS_API_KEY") + ")");
+      console.log("If the provider needs a key: " + storeKeyCommand(provider) + "   (or export " + (API_KEYS[provider] || "ITS_API_KEY") + ")");
     }
     return 0;
   }

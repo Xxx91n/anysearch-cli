@@ -302,6 +302,12 @@
 - **分层诊断**:`ans doctor` 把「这台机器上到底能用什么」拆成四层分别回答——安装、能力、宿主、数据。每条结果只落在四种状态之一：可用（查过，是好的）、未配置（还没配，或者本来就不需要配，合法的空）、未检查（没能查或没查，不算通过）、失败（查过，确实坏了）。每条还标着是离线检查还是真实调用：离线通过不等于真实调用通过。退出码只看失败；`--strict` 才把未检查也算没通过（代码里叫 doctor / DiagReport）。
   _Avoid_: 健康检查、smoke test、doctor 自检
 
+- **每层文件状态**:用户级和项目级各一份 `config.toml` 单独记一档，六种之一——`missing`（没有文件）、`empty`（文件在但空白）、`no-llm`（能解析但没有可用的 `[llm]`，含 `[llm]` 不是表）、`half`（有 `[llm]` 表但 provider 和 model 没齐，空表也算）、`ok`（provider 和 model 都在）、`broken`（读不出来或 TOML 坏）。说的是文件本身，不是最终用哪套模型（代码里叫 LlmConfigFileStatus，解析结果里的字段是 `configFiles`）。
+  _Avoid_: 配置健康度、config health
+
+- **诊断 kind**:一条结构化诊断挂在某层文件的记录上（记录说明哪一层），自己只说哪一类；键级诊断再带一个键名，不带路径、值、endpoint 或解析原文。给人看的句子仍由 `warn` 出（代码里叫 LlmFileDiagnosticKind / LlmFileDiagnostic）。
+  _Avoid_: 错误码、diagnostic code
+
 - **待信任**:宿主已经写好了配置，但宿主自己还要人点一下「信任这个项目/插件」才会真正执行。这不是失败，也不是配置没写——是等人去点，所以单独列一条，不并进「配置在位」里（`ans doctor` 宿主层的 `待信任` 行）。
   _Avoid_: 待授权、pending trust
 
