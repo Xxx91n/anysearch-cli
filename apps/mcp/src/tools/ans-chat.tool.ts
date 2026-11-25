@@ -19,6 +19,7 @@ import {
   resolvePiSessionDir,
   runChatAttempt,
   ChatAttemptBusyError,
+  chatAttemptBusyText,
   credentialFileNotice,
   type ChatAttemptOutcome,
   type CredentialFileNotice,
@@ -717,9 +718,7 @@ export function registerAnsChat(
             });
           } catch (error) {
             if (error instanceof ChatAttemptBusyError) {
-              return toolFailure(
-                "ans_chat: 这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。",
-              );
+              return toolFailure(chatAttemptBusyText(error, "ans_chat: "));
             }
             throw error;
           }

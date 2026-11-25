@@ -37,6 +37,9 @@ import {
   acquireSessionLock,
   isSessionBusy,
   resolveSessionLockWindows,
+  SESSION_BUSY_MARKER,
+  sessionBusyFacts,
+  type SessionBusyFacts,
   type SessionLockWindows,
 } from "./session-lock";
 
@@ -49,10 +52,44 @@ import {
  * English text.
  */
 export class ChatAttemptBusyError extends Error {
-  constructor(readonly sessionId: string) {
-    super("Session is busy: another chat attempt holds it; this attempt was not started.");
+  constructor(
+    readonly sessionId: string,
+    /** The lease directory still held, so a host can name what to clear. */
+    readonly leasePath: string,
+    /** Who holds it and whether they are still running; absent when unreadable. */
+    readonly facts?: SessionBusyFacts,
+  ) {
+    super(SESSION_BUSY_MARKER + "another chat attempt holds it; this attempt was not started.");
     this.name = "ChatAttemptBusyError";
   }
+}
+
+/**
+ * The collision sentence both hosts print, in the user's language. `prefix` is
+ * the host's own ("ans_chat: "); everything else must stay identical, so a
+ * change to the wording cannot land in one host and miss the other.
+ */
+export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): string {
+  const holder = error.facts?.holder;
+  const who = holder
+    ? "持有者 pid " + holder.pid + "（主机 " + holder.host
+      + (holder.lockedAt === undefined ? "" : "，锁建于 " + new Date(holder.lockedAt).toISOString())
+      + "）"
+    : undefined;
+  const where = "锁在 " + error.leasePath + "。";
+  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
+  if (error.facts?.liveness === "dead" && who) {
+    // Not "running elsewhere": the probe proved that process is gone, and this
+    // is the one branch where the user has to act.
+    return prefix + "这段会话的锁还占着（" + error.sessionId + "）。" + who
+      + "，但那个进程已经不在了。" + where + "删掉这个目录再试。";
+  }
+  if (error.facts?.liveness === "alive") {
+    return head + (who ? who + "。" : "") + "它还在跑，等它跑完再来。" + where
+      + "如果那个 pid 已经不是原来那个进程（被复用了），删掉这个目录再试。";
+  }
+  return head + (who ? who + "。" : "") + "等它结束后再试。" + where
+    + (holder ? "如果确认那个进程已经不在，删掉这个目录再试。" : "如果确认没人在用，删掉这个目录再试。");
 }
 
 export type ChatCollisionChoice = "stop" | "wait" | { fork: string };
@@ -120,23 +157,26 @@ export async function runChatAttempt(
   if (!piSessionDir || !sessionId) return runBody(body, store, sessionId, projectRoot);
 
   const windows = resolveSessionLockWindows(options.sessionLock);
+  // One path for every answer about this lease: the acquisition, the wait, and
+  // the collision error all name the same directory, so the host can show it.
+  const leasePath = sessionLeasePath(piSessionDir, sessionId);
   let release: (() => void) | undefined;
   try {
-    release = await acquireSessionLease(sessionLeasePath(piSessionDir, sessionId), windows);
+    release = await acquireSessionLease(leasePath, windows);
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
     const choice = await options.onBusy?.(sessionId) ?? "stop";
-    if (choice === "stop") throw new ChatAttemptBusyError(sessionId);
+    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyFacts(error));
     if (choice === "wait") {
       // Design: #315/#317 replace #266's automatic two-minute queue — an
       // unattended caller must not hang without an explanation. Only a caller
       // who explicitly chooses wait gets a bounded wait on the lease.
       try {
-        release = await acquireSessionLock(sessionLeasePath(piSessionDir, sessionId), {
+        release = await acquireSessionLock(leasePath, {
           ...windows, waitMs: windows.waitMs || 120_000,
         });
       } catch (waitError) {
-        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId);
+        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyFacts(waitError));
         throw waitError;
       }
     } else {
