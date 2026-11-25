@@ -59,10 +59,8 @@ export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can 
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
-/** Written into every file so its plaintext nature is obvious to a human who opens it.
- * The two commands come from the constants above: a note naming a command that no
- * longer exists is worse than no note, and this text outlives a rename inside the
- * user's own file. */
+/** Written into every file so its plaintext nature is obvious to a human who opens
+ * it: this text outlives a rename inside the user's own file. */
 export const CREDENTIALS_NOTE =
   "Plain text provider API keys. This file is NOT encrypted and is NOT a system keychain. " +
   "It is readable only by your OS account (checked when ans writes it). " +
