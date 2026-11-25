@@ -21,6 +21,8 @@ test("http and https with their default ports have the same identity", () => {
 
 test("a non-default port and the path/query bytes are kept", () => {
   assert.equal(normalizeUrlIdentity("https://example.com:8080/Case?b=2&a=1"), "example.com:8080/Case?b=2&a=1");
+  assert.equal(normalizeUrlIdentity("http://example.com:443/x"), "example.com:443/x");
+  assert.equal(normalizeUrlIdentity("https://example.com:80/x"), "example.com:80/x");
   assert.equal(
     normalizeUrlIdentity("https://example.com/x?a=1&utm_source=news&b=2"),
     "example.com/x?a=1&b=2",

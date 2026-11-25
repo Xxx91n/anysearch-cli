@@ -68,10 +68,12 @@ export function normalizeUrlIdentity(raw: string): string {
   const text = raw.trim();
   const url = parseWebUrl(text);
   if (!url) return text;
-  if (url.protocol !== "http:" && url.protocol !== "https:") return text;
 
   const host = url.hostname.replace(/\.$/, "").replace(/^www\./, "");
-  const port = url.port === "80" || url.port === "443" ? "" : url.port;
+  // WHATWG's URL already drops the default port for its scheme (80 on http,
+  // 443 on https) and keeps every other port. A port that is non-default for
+  // the scheme it came with is part of the endpoint, so it stays.
+  const port = url.port;
 
   for (const name of [...url.searchParams.keys()]) {
     if (name.startsWith("utm_") || Object.hasOwn(NAMED_TRACKING_PARAMS, name)) {

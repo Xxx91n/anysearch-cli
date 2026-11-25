@@ -4,8 +4,8 @@
 
 ### Changed
 
-- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉 80/443 默认端口，去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序和非 tracking 参数原样保留。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。
-- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着，CLI 搜索输出形状没动。
+- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉该 scheme 的默认端口（http 80 / https 443），去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序、非默认端口和非 tracking 参数原样保留。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。
+- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断也按同一身份比，不再各留一套裸字符串集合。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着，CLI 搜索输出形状没动。
 - **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同一页的三种写法不再留两条活行。
 - **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 收到模型写的任意拼法先归一化再查行；行里存的身份和模型引用的 `https://...` 不再对不上。
 

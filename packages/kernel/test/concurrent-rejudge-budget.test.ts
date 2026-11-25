@@ -29,7 +29,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { createConsolidationSeams } from "../src/consolidation";
 import type { BudgetLedgerPort } from "../src/ports";
-import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;
@@ -236,7 +235,7 @@ async function runRace(
   const beta = openStore(db);
   // #606: consolidation renders the archive's URL identity, so the marker the
   // fake model looks for is that identity, not the caller's https:// spelling.
-  const betaMarker = normalizeUrlIdentity(seedArgs.betaUrl);
+  const betaMarker = seedArgs.betaUrl.replace(/^https:\/\//, "");
   const alphaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never);
   const betaLedger = recordingLedger();
   const betaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never, {

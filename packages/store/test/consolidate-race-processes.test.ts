@@ -39,7 +39,6 @@ import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
 import { __setEmbeddingModuleForTest } from "../src/embedding-arm";
 import { __setExtractorForTest } from "@anysearch-cli/embedding";
-import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;
@@ -329,7 +328,7 @@ async function runRace(
         "B2: the planned target id and text travel back");
       assert(det.currentTargetId === liveRowId(root, db) && det.currentContent === A4_MERGED,
         "B2: the current live id and content travel back");
-      assert(det.evidence.some((e: any) => e.url === normalizeUrlIdentity(seedArgs.betaUrl)), "B2: our side's material travels back");
+      assert(det.evidence.some((e: any) => e.url === seedArgs.betaUrl.replace(/^https:\/\//, "")), "B2: our side's material travels back");
       assert(det.currentEvidence.some((e: any) => e.url === "a.example/notice-2026-11-01"),
         "B2: the other side's material travels back");
       assert(det.relation === "unclear" && det.retries === 1, "B2: the re-judge verdict and its one retry travel back");

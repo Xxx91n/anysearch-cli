@@ -43,7 +43,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { createLlmSession, createConsolidationSeams } from "../src/index";
-import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 
 const PROVIDER = process.env.ANS_LLM_PROVIDER;
 const MODEL = process.env.ANS_LLM_MODEL;
@@ -184,7 +183,7 @@ if (!PROVIDER || !MODEL || !API_KEY) {
         assert(!!d, name + ": the refusal detail exists");
         if (d) {
           assert(d.oldContent === cases.oldContent, name + ": the refusal carries the old content");
-          assert(d.evidence.length === 1 && d.evidence[0].url === normalizeUrlIdentity(cases.newUrl), name + ": the refusal carries the source");
+          assert(d.evidence.length === 1 && d.evidence[0].url === cases.newUrl.replace(/^https:\/\//, ""), name + ": the refusal carries the source");
           assert(typeof d.followUp === "string" && d.followUp.length > 0, name + ": the refusal says what to check next");
           record.verdict = { sameFact: d.sameFact, reliable: d.reliable, relation: d.relation, reason: d.reason };
         }
