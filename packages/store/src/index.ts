@@ -85,6 +85,9 @@ export * from "./eval/switch-run";
 
 // skip-ledger @3 read surface for ans switch-state.
 export * from "./eval/skip-ledger";
+// the sidecar lock both eval ledgers share, so a caller can tell lock contention
+// (LedgerLockTimeoutError) apart from a broken ledger.
+export * from "./eval/ledger-lock";
 
 // -D13: pure calibration revision lifecycle surface.
 export * from "./eval/revision-core";

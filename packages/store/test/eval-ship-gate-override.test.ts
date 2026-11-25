@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withShipOverrideLedgerLock } from "../src/eval/override-ledger";
+import { LedgerLockTimeoutError } from "../src/eval/ledger-lock";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..");
@@ -153,6 +154,37 @@ try {
     rmSync(lockDir, { recursive: true, force: true });
   }
   assert(survived, "an unconfirmable probe keeps a live override writer's lock");
+}
+
+// #577: a live owner keeps the override lock however old the record is. Age is not proof of death,
+// and deleting a live lock is how two writers end up appending to the same ledger.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-age-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  const record = JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() });
+  writeFileSync(lock, record, "utf8");
+  let entered = false;
+  let timedOut = false;
+  try {
+    withShipOverrideLedgerLock(dir, () => { entered = true; return null; });
+  } catch (e) {
+    timedOut = e instanceof LedgerLockTimeoutError;
+  }
+  assert(!entered && timedOut && readFileSync(lock, "utf8") === record, "a live owner keeps the override lock however old its record");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: releasing removes only the record this call wrote, never a successor's lock.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-release-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  const successor = JSON.stringify({ pid: 4242, at: new Date().toISOString() });
+  withShipOverrideLedgerLock(dir, () => {
+    writeFileSync(lock, successor, "utf8");
+    return null;
+  });
+  assert(existsSync(lock) && readFileSync(lock, "utf8") === successor, "releasing leaves a lock this call no longer owns");
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // Eval integrity contract accepts override only with a closed reasonCode.

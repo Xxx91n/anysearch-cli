@@ -5,17 +5,14 @@
 
 import { createHash } from "node:crypto";
 import {
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   renameSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { pidIsAlive } from "../process-liveness.js";
+import { withLedgerLock } from "./ledger-lock";
 import {
   isShipOverrideReasonCode,
   parseShipOverridePostmortem,
@@ -192,22 +189,6 @@ function lockPathFor(outDir: string): string {
   return join(outDir, ".ship-override-ledger.lock");
 }
 
-const LOCK_MAX_AGE_MS = 5 * 60 * 1000;
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
-  if (!info) return true;
-  if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
-  if (typeof info.at === "string") {
-    const at = Date.parse(info.at);
-    if (Number.isFinite(at) && Date.now() - at > LOCK_MAX_AGE_MS) return true;
-  }
-  return false;
-}
-
 export function readShipOverrideLedger(outDir: string): ShipOverrideLedger {
   const p = ledgerPathFor(outDir);
   return existsSync(p) ? parseShipOverrideLedger(readFileSync(p, "utf8")) : emptyShipOverrideLedger();
@@ -222,31 +203,7 @@ export function writeShipOverrideLedgerAtomic(outDir: string, ledger: ShipOverri
 }
 
 export function withShipOverrideLedgerLock<T>(outDir: string, fn: (ledger: ShipOverrideLedger) => T): T {
-  mkdirSync(outDir, { recursive: true });
-  const lockPath = lockPathFor(outDir);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    let fd: number | undefined;
-    try {
-      fd = openSync(lockPath, "wx");
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), "utf8");
-      closeSync(fd);
-      try {
-        return fn(readShipOverrideLedger(outDir));
-      } finally {
-        try { rmSync(lockPath, { force: true }); } catch { /* stale-lock recovery below */ }
-      }
-    } catch (error) {
-      if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      try {
-        let info: { pid?: number; at?: string } | null = null;
-        try { info = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number; at?: string }; } catch { info = null; }
-        if (info === null || lockIsRecoverable(info)) rmSync(lockPath, { force: true });
-      } catch { /* transient fs failure; retry */ }
-      sleep(25);
-    }
-  }
-  throw new ShipOverrideLedgerError("override ledger lock timeout: " + lockPath);
+  return withLedgerLock(lockPathFor(outDir), () => fn(readShipOverrideLedger(outDir)));
 }
 
 export function readShipOverridePostmortem(path: string): {

@@ -10,6 +10,7 @@ import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
 import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
+import { LedgerLockTimeoutError } from "./ledger-lock";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
@@ -328,12 +329,22 @@ async function main(): Promise<number> {
         return streak;
       });
     } catch (e) {
-      const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
-      console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
-      withSkipLedgerLock(outDir, (sl) => {
-        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-        return streak;
-      });
+      if (e instanceof LedgerLockTimeoutError) {
+        // a second writer owns the lock. That is contention, not a broken ledger, so a healthy
+        // file must not be quarantined because a peer was slower than the wait window.
+        console.error("[eval] OBSERVATIONAL skip-ledger left alone — " + e.message);
+      } else {
+        const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
+        console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
+        try {
+          withSkipLedgerLock(outDir, (sl) => {
+            streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+            return streak;
+          });
+        } catch (again) {
+          console.error("[eval] OBSERVATIONAL skip-ledger restart failed — eval continues: " + String((again as Error).message ?? again));
+        }
+      }
     }
   }
 

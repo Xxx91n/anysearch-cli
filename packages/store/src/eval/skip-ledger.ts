@@ -7,9 +7,9 @@
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
-import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pidIsAlive } from "../process-liveness.js";
+import { withLedgerLock } from "./ledger-lock";
 import type { SwitchPhase } from "./switch-machine";
 
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
@@ -224,27 +224,10 @@ export function tailStreak(actions: SwitchActionEntry[], pred: (a: SwitchActionE
 }
 
 // close the dual-writer read-modify-write window for the JSON skip-ledger.
-// A sidecar lock file wraps every read/modify/atomic-rename cycle. Stale locks are recovered
-// when the owning process no longer exists.
+// A sidecar lock file wraps every read/modify/atomic-rename cycle; the reaping and release rules
+// live in ledger-lock so the skip and ship-override ledgers answer the same way.
 function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }
 function lockPathFor(outDir: string): string { return join(outDir, ".skip-ledger.lock"); }
-
-// under Windows file-locking semantics a still-running owner cannot be
-// rmSync'd from a sibling, leaving a stuck lock file. The default lock max age (5 minutes)
-// bounds the recovery window without making healthy locks flappable.
-const LOCK_MAX_AGE_MS = 5 * 60 * 1000;
-
-function sleep(ms: number): void { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-
-function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
-  if (!info) return true;
-  if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
-  if (typeof info.at === "string") {
-    const t = Date.parse(info.at);
-    if (Number.isFinite(t) && Date.now() - t > LOCK_MAX_AGE_MS) return true;
-  }
-  return false;
-}
 
 export function readSkipLedger(outDir: string): SkipLedger {
   const p = ledgerPathFor(outDir);
@@ -268,31 +251,5 @@ export function quarantineSkipLedger(outDir: string, at: string): string {
 }
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
-  mkdirSync(outDir, { recursive: true });
-  const lockPath = lockPathFor(outDir);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    let fd: number | undefined;
-    try {
-      fd = openSync(lockPath, "wx");
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), "utf8");
-      closeSync(fd);
-      try {
-        const ledger = readSkipLedger(outDir);
-        return fn(ledger);
-      } finally {
-        try { rmSync(lockPath, { force: true }); } catch { /* next lock owner recovers stale lock */ }
-      }
-    } catch (e) {
-      if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      try {
-        let info: { pid?: number; at?: string } | null = null;
-        try { info = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number; at?: string }; } catch { info = null; }
-        // Unparseable lock or recoverable (dead pid / stale mtime) -> reap and retry on next attempt.
-        if (info === null || lockIsRecoverable(info)) rmSync(lockPath, { force: true });
-      } catch { /* transient filesystem failure; retry */ }
-      sleep(25);
-    }
-  }
-  throw new SkipLedgerError("skip-ledger lock timeout: " + lockPath);
+  return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
 }
