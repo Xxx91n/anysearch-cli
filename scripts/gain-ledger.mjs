@@ -66,9 +66,15 @@ export function writeGainLedger(file, ledger) {
   // applyResolution unconditionally sets them, so strip them when writing an
   // @3 schema back — otherwise eval would persist @1-shaped keys it does not
   // understand and could lose them on its next write.
-  const out = ledger.schema === GAIN_LEDGER_SCHEMA_V3
-    ? { ...ledger, disposition: undefined, verdict: undefined }
-    : ledger;
+  // @1 是唯一携带 disposition/verdict 的 schema（@2/@3 是 skip-ledger，
+  // 不认识这两个键）。applyResolution 无条件写入它们，写回 @2/@3 时
+  // 必须剥离，否则 eval 下次写回会把 @1 专属键带进 skip-ledger.json
+  // 并可能在其下一次持锁写入时丢失证据。
+  const out =
+    ledger.schema === GAIN_LEDGER_SCHEMA_V2 ||
+    ledger.schema === GAIN_LEDGER_SCHEMA_V3
+      ? { ...ledger, disposition: undefined, verdict: undefined }
+      : ledger;
   const tmp = file + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n", "utf8");
   fs.renameSync(tmp, file);
