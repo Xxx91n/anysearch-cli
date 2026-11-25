@@ -1,0 +1,151 @@
+[assistant toolCall] {"type":"toolCall","id":"call_00_o81lj7uhfsptawwvvxi237y5","name":"search","arguments":{"query":"docs.example.dev 部署 配置 中文检索"}}
+[assistant toolCall] {"type":"toolCall","id":"call_01_3tfwwr53l7n414k3r29kmsmb","name":"search","arguments":{"query":"docs.example.dev"}}
+[assistant text] 我先搜一下这个站点相关的资料。
+[event] tool_execution_start search {"query":"docs.example.dev 部署 配置 中文检索"}
+[event] tool_execution_start search {"query":"docs.example.dev"}
+[tool] search("docs.example.dev 部署 配置 中文检索")
+[tool] search -> 5 results, handles: m:102, m:103, m:107, m:108, m:101
+[tool] search("docs.example.dev")
+[tool] search -> 5 results, handles: m:102, m:103, m:107, m:108, m:101
+[event] tool_execution_end search isError=false
+[event] tool_execution_end search isError=false
+[assistant toolCall] {"type":"toolCall","id":"call_00_5th1dmyv25nbwrggxb0gt241","name":"search","arguments":{"query":"docs.example.dev 中文 分词 检索 chunk"}}
+[assistant toolCall] {"type":"toolCall","id":"call_01_m1bccjn17n7mmod9fpqy0wnz","name":"fetch","arguments":{"handles":["m:102","m:103","m:108","m:101"]}}
+[event] tool_execution_start search {"query":"docs.example.dev 中文 分词 检索 chunk"}
+[tool] search("docs.example.dev 中文 分词 检索 chunk")
+[tool] search -> 5 results, handles: m:102, m:103, m:107, m:108, m:101
+[event] tool_execution_end search isError=false
+[event] tool_execution_start fetch {"handles":["m:102","m:103","m:108","m:101"]}
+[tool] fetch(["m:102","m:103","m:108","m:101"])
+[tool] fetch OK m:102 -> https://docs.example.dev/guide/config (394 chars)
+[tool] fetch OK m:103 -> https://docs.example.dev/guide/deploy (239 chars)
+[tool] fetch OK m:108 -> https://docs.example.dev/faq (273 chars)
+[tool] fetch OK m:101 -> https://docs.example.dev/guide/quickstart (237 chars)
+[tool] fetch result: 4 pages, 0 failures
+[event] tool_execution_end fetch isError=false
+[assistant toolCall] {"type":"toolCall","id":"call_00_i5y4fij3bylghpk5ebmob4me","name":"search","arguments":{"query":"example.dev blog bigram tokenizer Chinese search zero rows"}}
+[assistant toolCall] {"type":"toolCall","id":"call_01_75ytc1z7zpw7v0whmoepmldw","name":"search","arguments":{"query":"site:docs.example.dev 中文 bigram"}}
+[assistant text] 部署和配置的信息已经拿到了，但中文检索只给了个线索（“bigram post”），我再去找那篇。
+[event] tool_execution_start search {"query":"example.dev blog bigram tokenizer Chinese search zero rows"}
+[event] tool_execution_start search {"query":"site:docs.example.dev 中文 bigram"}
+[tool] search("example.dev blog bigram tokenizer Chinese search zero rows")
+[tool] search -> 5 results, handles: m:101, m:104, m:105, m:106, m:102
+[tool] search("site:docs.example.dev 中文 bigram")
+[tool] search -> 5 results, handles: m:102, m:103, m:107, m:108, m:101
+[event] tool_execution_end search isError=false
+[event] tool_execution_end search isError=false
+[assistant toolCall] {"type":"toolCall","id":"call_00_10sqpdwn8g1ch0qma93y4r78","name":"fetch","arguments":{"handles":["m:104","m:107","m:106"]}}
+[event] tool_execution_start fetch {"handles":["m:104","m:107","m:106"]}
+[tool] fetch(["m:104","m:107","m:106"])
+[tool] fetch OK m:104 -> https://blog.example.dev/2026/fts5-chinese (547 chars)
+[tool] fetch OK m:107 -> https://docs.example.dev/api/endpoints (208 chars)
+[tool] fetch OK m:106 -> https://news.example.dev/weekly-2026-11 (267 chars)
+[tool] fetch result: 3 pages, 0 failures
+[event] tool_execution_end fetch isError=false
+[assistant toolCall] {"type":"toolCall","id":"call_00_83aj0umx3evyghcxv0aysxfa","name":"search","arguments":{"query":"\"Making FTS5 work for Chinese text\" part 2 blog.example.dev"}}
+[event] tool_execution_start search {"query":"\"Making FTS5 work for Chinese text\" part 2 blog.example.dev"}
+[tool] search("\"Making FTS5 work for Chinese text\" part 2 blog.example.dev")
+[tool] search -> 5 results, handles: m:101, m:104, m:105, m:106, m:102
+[event] tool_execution_end search isError=false
+[assistant text] 我查了官方文档站和相关博客，要点如下（三块：部署、配置、中文检索）。
+
+## 1. 配置（Configuration）
+来源：https://docs.example.dev/guide/config
+
+- **解析优先级（从高到低）**：CLI flag > 环境变量 > 项目配置文件 > 用户配置文件。逐字段独立解析，不是"整个文件覆盖"。
+- 关键变量：
+  - `EXAMPLE_PROVIDER`：`openai` / `anthropic` / `google`
+  - `EXAMPLE_MODEL`：模型 id
+  - `EXAMPLE_BASE_URL` + `EXAMPLE_API`：自定义端点**必须成对出现**，`api` 只能是 `chat`、`messages`、`responses` 之一。
+- ⚠️ 常见坑：**只给 base_url 不给 api kind，会被静默忽略（仅打一条警告）**。FAQ 里也重复强调了这一点。
+- https 端口默认 443。
+
+配套信息：快速开始是 `npm i -g exampledev` → `exampledev init` → 设 `EXAMPLE_API_KEY` → `exampledev chat`（https://docs.example.dev/guide/quickstart）。离线模式用 `--offline`，跑固定本地集合，不联系任何 provider（https://docs.example.dev/faq）。
+
+## 2. 部署（Deploy）
+来源：https://docs.example.dev/guide/deploy
+
+三步清单：
+1. `exampledev migrate` —— 幂等 DDL，可安全重复执行。
+2. 环境中设置 `DEPLOY_TOKEN`。
+3. `exampledev doctor` 必须通过，否则不允许接流量。
+
+注意：部署页本身很短，**没有**写滚动重启的具体步骤、健康检查细节或数据库版本要求——搜索结果摘要里提到这些词，但页面正文只有上面三条。这块建议你直接看源站或问维护者，我没有找到更细的部署文档。
+
+服务端接口与限流（https://docs.example.dev/api/endpoints），鉴权统一用 `Authorization: Bearer <key>`：
+
+| endpoint | 限流 |
+|---|---|
+| `/v1/search` | 10/min |
+| `/v1/extract` | 5/min |
+| `/v1/answer` | 2/min |
+
+## 3. 中文检索
+来源：https://blog.example.dev/2026/fts5-chinese
+
+- **根因**：SQLite FTS5 的 `unicode61` 分词器会把整句中文当成一个 token，所以查什么都匹配不到——这也是 FAQ 里"中文搜索返回零行"的答案。
+- **做法**：在应用层做 **bigram 切分**，`中文分词` → 短语查询 `"中文 文分 分词"`。
+- 四条踩坑经验：
+  0. **不要用 `detail=none`** —— 短语查询需要位置信息（positions）。
+  1. 在 **CJK/拉丁文边界和标点边界插入分隔符**。
+  2. **单字片段要有兜底**（他们用 `LIKE`）。
+  3. **查询侧和写入侧必须用同一套切分规则**，否则短语永远对不上。
+
+## 一处没能读到的内容
+上面那篇博客结尾指向续篇 `https://blog.example.dev/2026/fts5-chinese-part-2`，但这个链接在搜索结果里没有独立条目，按环境规则我不能凭正文里的链接直接抓取。如果需要续篇细节（大概率是实现代码/迁移步骤），可以把链接贴给我，我再读。
+
+另外附带一条可能有用的：ExampleDev Weekly #47（https://news.example.dev/weekly-2026-11）提到 `exampledev doctor` 会"每个文件打印一行"，以及"session fork 现在会带上 budget 行"的修复——如果你在排查 doctor 输出格式，这条相关。
+
+**一句话总结**：配置这件事记住"逐字段分层解析 + base_url 必须配 api kind"；部署是三命令顺序 migrate → DEPLOY_TOKEN → doctor 通过；中文检索的核心不是换分词器插件，而是应用层 bigram + 写入/查询同规则 + 单字 LIKE 兜底 + 禁用 detail=none。
+
+===== final answer (broad) =====
+我查了官方文档站和相关博客，要点如下（三块：部署、配置、中文检索）。
+
+## 1. 配置（Configuration）
+来源：https://docs.example.dev/guide/config
+
+- **解析优先级（从高到低）**：CLI flag > 环境变量 > 项目配置文件 > 用户配置文件。逐字段独立解析，不是"整个文件覆盖"。
+- 关键变量：
+  - `EXAMPLE_PROVIDER`：`openai` / `anthropic` / `google`
+  - `EXAMPLE_MODEL`：模型 id
+  - `EXAMPLE_BASE_URL` + `EXAMPLE_API`：自定义端点**必须成对出现**，`api` 只能是 `chat`、`messages`、`responses` 之一。
+- ⚠️ 常见坑：**只给 base_url 不给 api kind，会被静默忽略（仅打一条警告）**。FAQ 里也重复强调了这一点。
+- https 端口默认 443。
+
+配套信息：快速开始是 `npm i -g exampledev` → `exampledev init` → 设 `EXAMPLE_API_KEY` → `exampledev chat`（https://docs.example.dev/guide/quickstart）。离线模式用 `--offline`，跑固定本地集合，不联系任何 provider（https://docs.example.dev/faq）。
+
+## 2. 部署（Deploy）
+来源：https://docs.example.dev/guide/deploy
+
+三步清单：
+1. `exampledev migrate` —— 幂等 DDL，可安全重复执行。
+2. 环境中设置 `DEPLOY_TOKEN`。
+3. `exampledev doctor` 必须通过，否则不允许接流量。
+
+注意：部署页本身很短，**没有**写滚动重启的具体步骤、健康检查细节或数据库版本要求——搜索结果摘要里提到这些词，但页面正文只有上面三条。这块建议你直接看源站或问维护者，我没有找到更细的部署文档。
+
+服务端接口与限流（https://docs.example.dev/api/endpoints），鉴权统一用 `Authorization: Bearer <key>`：
+
+| endpoint | 限流 |
+|---|---|
+| `/v1/search` | 10/min |
+| `/v1/extract` | 5/min |
+| `/v1/answer` | 2/min |
+
+## 3. 中文检索
+来源：https://blog.example.dev/2026/fts5-chinese
+
+- **根因**：SQLite FTS5 的 `unicode61` 分词器会把整句中文当成一个 token，所以查什么都匹配不到——这也是 FAQ 里"中文搜索返回零行"的答案。
+- **做法**：在应用层做 **bigram 切分**，`中文分词` → 短语查询 `"中文 文分 分词"`。
+- 四条踩坑经验：
+  0. **不要用 `detail=none`** —— 短语查询需要位置信息（positions）。
+  1. 在 **CJK/拉丁文边界和标点边界插入分隔符**。
+  2. **单字片段要有兜底**（他们用 `LIKE`）。
+  3. **查询侧和写入侧必须用同一套切分规则**，否则短语永远对不上。
+
+## 一处没能读到的内容
+上面那篇博客结尾指向续篇 `https://blog.example.dev/2026/fts5-chinese-part-2`，但这个链接在搜索结果里没有独立条目，按环境规则我不能凭正文里的链接直接抓取。如果需要续篇细节（大概率是实现代码/迁移步骤），可以把链接贴给我，我再读。
+
+另外附带一条可能有用的：ExampleDev Weekly #47（https://news.example.dev/weekly-2026-11）提到 `exampledev doctor` 会"每个文件打印一行"，以及"session fork 现在会带上 budget 行"的修复——如果你在排查 doctor 输出格式，这条相关。
+
+**一句话总结**：配置这件事记住"逐字段分层解析 + base_url 必须配 api kind"；部署是三命令顺序 migrate → DEPLOY_TOKEN → doctor 通过；中文检索的核心不是换分词器插件，而是应用层 bigram + 写入/查询同规则 + 单字 LIKE 兜底 + 禁用 detail=none。

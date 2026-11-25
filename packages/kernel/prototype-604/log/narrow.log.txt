@@ -1,0 +1,62 @@
+[assistant toolCall] {"type":"toolCall","id":"call_00_elongyn848ztzljlhy7ei1e9","name":"search","arguments":{"query":"docs.example.dev custom endpoint base_url api configuration"}}
+[assistant toolCall] {"type":"toolCall","id":"call_01_nn3qgy3y2zv2945hmud6ihtb","name":"search","arguments":{"query":"\"example.dev\" docs custom endpoint \"base_url\" \"api\" keys"}}
+[event] tool_execution_start search {"query":"docs.example.dev custom endpoint base_url api configuration"}
+[event] tool_execution_start search {"query":"\"example.dev\" docs custom endpoint \"base_url\" \"api\" keys"}
+[tool] search("docs.example.dev custom endpoint base_url api configuration")
+[tool] search -> 5 results, handles: m:102, m:103, m:107, m:108, m:101
+[tool] search("\"example.dev\" docs custom endpoint \"base_url\" \"api\" keys")
+[tool] search -> 3 results, handles: m:101, m:102, m:108
+[event] tool_execution_end search isError=false
+[event] tool_execution_end search isError=false
+[assistant toolCall] {"type":"toolCall","id":"call_00_5ddbdvhyviiynpruaumdxwl3","name":"fetch","arguments":{"handles":["m:102","m:108","m:101"]}}
+[event] tool_execution_start fetch {"handles":["m:102","m:108","m:101"]}
+[tool] fetch(["m:102","m:108","m:101"])
+[tool] fetch OK m:102 -> https://docs.example.dev/guide/config (394 chars)
+[tool] fetch OK m:108 -> https://docs.example.dev/faq (273 chars)
+[tool] fetch OK m:101 -> https://docs.example.dev/guide/quickstart (237 chars)
+[tool] fetch result: 3 pages, 0 failures
+[event] tool_execution_end fetch isError=false
+[assistant text] 我在文档站读了两页相关内容，结论如下。
+
+## base_url 和 api 怎么设
+
+配置参考页给出的是一对键,必须成对出现:
+
+- **`base_url`**(环境变量写作 `EXAMPLE_BASE_URL`)—— 自定义端点的地址;https 时端口默认 443,不必显式写 `:443`。
+- **`api`**(环境变量写作 `EXAMPLE_API`)—— 指明这个端点说的是哪种协议,取值只能是三者之一:`chat`、`messages`、`responses`。
+
+解析优先级是:CLI flag > 环境变量 > 项目配置文件 > 用户配置文件。所以 config 文件里的 `base_url` / `api` 会被同名环境变量或命令行参数覆盖——排查问题时先确认没有更高优先级的层在盖掉你的值。
+
+## 漏一个会怎样
+
+- **写了 base_url、漏了 api**:配置参考页明确说 —— 这个 base URL 会被**忽略**,并且**给出一条 warning**。也就是说程序不会报错退出,而是静默回落到默认 provider/默认端点,你会以为自己连的是自建端点,其实没连上。这是最容易踩的坑。
+- **写了 api、漏了 base_url**:FAQ 里把这条归纳成对称的说法——"Set base_url AND api kind — one without the other is ignored"(缺一个,另一个就会被忽略)。不过要注意,FAQ 只讲了"被忽略",**没有**像配置参考页那样承诺这种情况也会打 warning;文档里也没有交代 `api` 单独存在时是否退回某个默认值。所以这一侧的行为,文档描述得比另一侧含糊,别假设它一定会提醒你。
+
+一句话:两个键只要缺一个,自定义端点就不生效,而其中只有"缺 api"这一种情况被文档保证会有 warning。配完建议用一个能明显区分的 model id 或看启动日志,确认端点真的被用上了。
+
+来源:
+- https://docs.example.dev/guide/config
+- https://docs.example.dev/faq
+
+===== final answer (narrow) =====
+我在文档站读了两页相关内容，结论如下。
+
+## base_url 和 api 怎么设
+
+配置参考页给出的是一对键,必须成对出现:
+
+- **`base_url`**(环境变量写作 `EXAMPLE_BASE_URL`)—— 自定义端点的地址;https 时端口默认 443,不必显式写 `:443`。
+- **`api`**(环境变量写作 `EXAMPLE_API`)—— 指明这个端点说的是哪种协议,取值只能是三者之一:`chat`、`messages`、`responses`。
+
+解析优先级是:CLI flag > 环境变量 > 项目配置文件 > 用户配置文件。所以 config 文件里的 `base_url` / `api` 会被同名环境变量或命令行参数覆盖——排查问题时先确认没有更高优先级的层在盖掉你的值。
+
+## 漏一个会怎样
+
+- **写了 base_url、漏了 api**:配置参考页明确说 —— 这个 base URL 会被**忽略**,并且**给出一条 warning**。也就是说程序不会报错退出,而是静默回落到默认 provider/默认端点,你会以为自己连的是自建端点,其实没连上。这是最容易踩的坑。
+- **写了 api、漏了 base_url**:FAQ 里把这条归纳成对称的说法——"Set base_url AND api kind — one without the other is ignored"(缺一个,另一个就会被忽略)。不过要注意,FAQ 只讲了"被忽略",**没有**像配置参考页那样承诺这种情况也会打 warning;文档里也没有交代 `api` 单独存在时是否退回某个默认值。所以这一侧的行为,文档描述得比另一侧含糊,别假设它一定会提醒你。
+
+一句话:两个键只要缺一个,自定义端点就不生效,而其中只有"缺 api"这一种情况被文档保证会有 warning。配完建议用一个能明显区分的 model id 或看启动日志,确认端点真的被用上了。
+
+来源:
+- https://docs.example.dev/guide/config
+- https://docs.example.dev/faq
