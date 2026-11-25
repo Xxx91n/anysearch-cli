@@ -31,18 +31,40 @@ import { sweepStaleWorkFiles } from "./stale-work-files.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
+  isPrintableEndpoint,
   lookupModelCredential,
   displayEndpoint,
+  llmKeyLabel,
   modelEnvKeysFor,
   normalizeBindingEndpoint,
   providerForEnvKey,
   readUserCredentials,
   resolveConfigHome,
+  storeKeyCommand,
 } from "./credentials";
 import type { CredentialFileContents, CredentialFileFault } from "./credentials";
 
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
+
+/** The layers that can supply a base URL. The project file may only set provider
+ * and model, so it is not one of them. */
+export type BaseUrlLayer = "cli" | "env" | "user";
+
+/** The winning base URL and the layer it came from: both, or neither. */
+type PickedBaseUrl =
+  | { value: string; layer: BaseUrlLayer }
+  | { value?: undefined; layer?: undefined };
+
+/** Where each resolved field came from. `baseUrl` is narrower than the rest:
+ * no project file can set one. */
+export interface LlmSources {
+  provider?: LlmLayer;
+  model?: LlmLayer;
+  baseUrl?: BaseUrlLayer;
+  api?: LlmLayer;
+  apiKey?: LlmLayer;
+}
 
 /**
  * How to name each layer in plain words, for any command that shows where a
@@ -81,6 +103,40 @@ export interface LlmFlags {
 
 export type LlmConfigFaultKind = "unreadable" | "invalid-toml";
 
+/**
+ * What one config.toml turned out to be (#579). Six closed values; the listing
+ * prints them, and a surface can read the same fact instead of inferring it
+ * from warnings.
+ */
+export type LlmConfigFileStatus = "missing" | "empty" | "no-llm" | "half" | "ok" | "broken";
+
+/**
+ * Why a file's [llm] section did not supply a key, or why the file did not parse
+ * at all. File-level kinds carry no `key`; every key-level kind names one.
+ */
+export type LlmFileDiagnosticKind =
+  | "unreadable"
+  | "invalid-toml"
+  | "llm-not-table"
+  | "not-allowed-key"
+  | "secret-looking-key"
+  | "unknown-key"
+  | "invalid-type";
+
+export interface LlmFileDiagnostic {
+  kind: LlmFileDiagnosticKind;
+  /** The [llm] key this diagnostic is about; file-level kinds leave it out. */
+  key?: string;
+}
+
+export interface LlmConfigFileState {
+  layer: "user" | "project";
+  status: LlmConfigFileStatus;
+  /** [llm] keys this file supplied. Names only, never values. */
+  present: string[];
+  diagnostics: LlmFileDiagnostic[];
+}
+
 export interface ResolvedLlmConfig {
   provider?: string;
   model?: string;
@@ -92,7 +148,13 @@ export interface ResolvedLlmConfig {
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
-  sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
+  sources: LlmSources;
+  /**
+   * Per-file facts (#579): one record for the user file and one for the project
+   * file, always both, whether or not the file exists. A surface reads status
+   * and diagnostics here; `warn` stays the human sentence.
+   */
+  configFiles: Record<"user" | "project", LlmConfigFileState>;
   /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
   configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
@@ -162,7 +224,7 @@ export function projectConfigPath(cwd: string = process.cwd()): string {
   return ansProjectConfigPath(cwd);
 }
 
-interface LoadedLlmFile {
+interface LoadedLlmFile extends LlmConfigFileState {
   config: LlmFileConfig;
   fault?: LlmConfigFaultKind;
 }
@@ -191,33 +253,61 @@ function parseLlmTomlResult(
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
     warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
-    return { config: {}, fault: "invalid-toml" };
+    return {
+      layer: level, config: {}, fault: "invalid-toml", status: "broken", present: [],
+      diagnostics: [{ kind: "invalid-toml" }],
+    };
   }
   const section = root["llm"];
-  if (section === undefined || section === null) return { config: {} };
-  if (typeof section !== "object") {
+  if (section === undefined || section === null) {
+    return { layer: level, config: {}, status: "no-llm", present: [], diagnostics: [] };
+  }
+  // Design: a non-table `[llm]` means "no [llm]" — arrays and datetimes are
+  // objects too, and must not become an invented half-written section.
+  if (typeof section !== "object" || Array.isArray(section) || section instanceof Date) {
     warn("[config] " + filePath + ": [llm] must be a table; ignoring section");
-    return { config: {} };
+    return {
+      layer: level, config: {}, status: "no-llm", present: [],
+      diagnostics: [{ kind: "llm-not-table" }],
+    };
   }
   const allowed = level === "project" ? PROJECT_LLM_WHITELIST : USER_LLM_KEYS;
   const out: LlmFileConfig = {};
+  const present: string[] = [];
+  const diagnostics: LlmFileDiagnostic[] = [];
   for (const [key, value] of Object.entries(section as Record<string, unknown>)) {
     if (!allowed.has(key)) {
-      const why = SECRET_KEY_RE.test(key)
-        ? "secrets never go in config files; use env_key = \"ENV_VAR_NAME\""
-        : level === "project"
-          ? "project config may only set: " + [...PROJECT_LLM_WHITELIST].join(", ")
-          : "unknown [llm] key";
-      warn("[config] " + filePath + ": ignoring [llm]." + key + " — " + why);
+      let kind: LlmFileDiagnosticKind;
+      let why: string;
+      if (SECRET_KEY_RE.test(key)) {
+        kind = "secret-looking-key";
+        why = "secrets never go in config files; use env_key = \"ENV_VAR_NAME\"";
+      } else if (level === "project") {
+        kind = "not-allowed-key";
+        why = "project config may only set: " + [...PROJECT_LLM_WHITELIST].join(", ");
+      } else {
+        kind = "unknown-key";
+        why = "unknown [llm] key";
+      }
+      // The key name comes from the file; a quoted TOML key can carry ESC
+      // sequences. Clean it before it reaches a terminal or a stored fact.
+      const shownKey = llmKeyLabel(key);
+      warn("[config] " + filePath + ": ignoring [llm]." + shownKey + " — " + why);
+      diagnostics.push({ kind, key: shownKey });
       continue;
     }
     if (typeof value !== "string" || value === "") {
       warn("[config] " + filePath + ": ignoring [llm]." + key + " — value must be a non-empty string");
+      diagnostics.push({ kind: "invalid-type", key });
       continue;
     }
     (out as Record<string, string>)[key] = value;
+    present.push(key);
   }
-  return { config: out };
+  // An [llm] table with no usable fields is still a half-written config: the
+  // section is there, the provider/model pair is not.
+  const status: LlmConfigFileStatus = out.provider && out.model ? "ok" : "half";
+  return { layer: level, config: out, status, present, diagnostics };
 }
 
 // Parse the [llm] section of a config.toml, applying the level's key policy.
@@ -236,7 +326,9 @@ function loadFile(
   level: "user" | "project",
   warn: (msg: string) => void,
 ): LoadedLlmFile {
-  if (!existsSync(path)) return { config: {} };
+  if (!existsSync(path)) {
+    return { layer: level, config: {}, status: "missing", present: [], diagnostics: [] };
+  }
   // Design: an unreadable file (a directory at config.toml, a permission error)
   // is a config fault, not an absent config — report it and carry on with the
   // lower layers instead of throwing out of the composition root before the
@@ -247,7 +339,15 @@ function loadFile(
     raw = readFileSync(path, "utf8");
   } catch (e) {
     warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
-    return { config: {}, fault: "unreadable" };
+    return {
+      layer: level, config: {}, fault: "unreadable", status: "broken", present: [],
+      diagnostics: [{ kind: "unreadable" }],
+    };
+  }
+  // Design: decide `empty` before parsing — trim-empty is its own state, not
+  // "no [llm]", and parsing cannot tell them apart.
+  if (raw.trim() === "") {
+    return { layer: level, config: {}, status: "empty", present: [], diagnostics: [] };
   }
   return parseLlmTomlResult(raw, level, path, warn);
 }
@@ -288,12 +388,21 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     api: flags.api,
   };
 
-  const resolved: ResolvedLlmConfig = { sources: {} };
+  const resolved: ResolvedLlmConfig = {
+    sources: {},
+    configFiles: {
+      user: {
+        layer: userFile.layer, status: userFile.status,
+        present: userFile.present, diagnostics: userFile.diagnostics,
+      },
+      project: {
+        layer: projectFile.layer, status: projectFile.status,
+        present: projectFile.present, diagnostics: projectFile.diagnostics,
+      },
+    },
+  };
   if (userFile.fault) resolved.configFault = userFile.fault;
-  const pick = (
-    field: "provider" | "model" | "base_url" | "api",
-    outKey: "provider" | "model" | "baseUrl" | "api",
-  ) => {
+  const pick = (field: "provider" | "model" | "api", outKey: "provider" | "model" | "api") => {
     for (const [layer, cfg] of [
       ["cli", cliLayer],
       ["env", envLayer],
@@ -312,7 +421,6 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       if (v) {
         if (outKey === "provider") resolved.provider = v;
         else if (outKey === "model") resolved.model = v;
-        else if (outKey === "baseUrl") resolved.baseUrl = v;
         else resolved.api = v as ResolvedLlmConfig["api"];
         resolved.sources[outKey] = layer;
         return;
@@ -321,8 +429,23 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   };
   pick("provider", "provider");
   pick("model", "model");
-  pick("base_url", "baseUrl");
   pick("api", "api");
+
+  // Design: base_url is picked on its own so the layer travels with the value.
+  // A project file may only set provider and model, so it is not a base-URL
+  // layer at all; keeping it out here is what lets the advice below name where
+  // an unprintable URL lives instead of guessing.
+  let baseUrlPick: PickedBaseUrl = {};
+  for (const [layer, cfg] of [["cli", cliLayer], ["env", envLayer], ["user", user]] as const) {
+    if (cfg.base_url) {
+      baseUrlPick = { value: cfg.base_url, layer };
+      break;
+    }
+  }
+  if (baseUrlPick.value !== undefined) {
+    resolved.baseUrl = baseUrlPick.value;
+    resolved.sources.baseUrl = baseUrlPick.layer;
+  }
 
   // baseUrl is a no-op without a wire protocol: warn here so every caller
   // sees the failure mode instead of each re-checking baseUrl && !api.
@@ -464,24 +587,52 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       if (lookup.status === "found") {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
-      } else if (lookup.status === "endpoint-mismatch") {
+      } else if (lookup.status === "endpoint-mismatch" && resolved.provider) {
+        // The guard narrows the type; a mismatch already implies a provider.
         // Name every stored endpoint. Reporting one (whichever the file sorted
         // first) would send the user to fix the wrong binding.
         const storedList = lookup.stored.length > 0
           ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
           : "(the provider default)";
+        const effective = normalizeBindingEndpoint(resolved.baseUrl);
         warn(
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
-          storedList + " but the effective endpoint is " +
-          displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl)) +
-          " — refusing to send that secret to a different endpoint; run `ans auth set " +
-          resolved.provider + "` for this endpoint (see `ans auth list` for what is stored)",
+          storedList + " but the effective endpoint is " + displayEndpoint(effective) +
+          " — refusing to send that secret to a different endpoint; " +
+          bindingAdvice(resolved.provider, effective, baseUrlPick) +
+          " (see `ans auth list` for what is stored)",
         );
       }
     }
   }
 
   return resolved;
+}
+
+/** Where a base URL can be read back in full, for the sentence that tells a user
+ * to go and copy it. */
+const BASE_URL_SOURCE: Record<BaseUrlLayer, string> = {
+  cli: "--llm.base-url",
+  env: "ANS_LLM_BASE_URL",
+  user: "the user config file",
+};
+
+/** 地址能安全打印就给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
+ * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。
+ *
+ * Design: the pick is passed whole so an unprintable URL always names the layer
+ * it came from. `effective` is null exactly when no usable base URL was set,
+ * which is also when the pick carries no value — there is nothing to name. */
+function bindingAdvice(provider: string, effective: string | null, baseUrl: PickedBaseUrl): string {
+  if (effective === null || baseUrl.value === undefined) {
+    return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
+  }
+  if (isPrintableEndpoint(effective)) {
+    return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
+  }
+  return "re-store it for that endpoint: the full address is in " + BASE_URL_SOURCE[baseUrl.layer] +
+    ". It cannot be printed here (redacted, too long, or contains control characters). Run `" +
+    storeKeyCommand(provider) + " --endpoint <that address>`, replacing the angle-bracket part";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

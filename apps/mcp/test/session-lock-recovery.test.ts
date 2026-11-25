@@ -33,6 +33,10 @@ import Database from "better-sqlite3";
 // NOT imported any more: #299 replaced the waiting path these cases used to
 // assert, and the refusal text now belongs to the attempt module's own test.
 import { SESSION_LOCKS_DIRNAME } from "@anysearch-cli/kernel";
+// The liveness probe comes from the product too (#571): this test used to keep
+// its own copy that read EPERM as "alive" and everything else as "dead", another
+// answer to a question the product is meant to answer once.
+import { pidIsAlive } from "@anysearch-cli/store/process-liveness";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -332,10 +336,6 @@ function lockEntries(piDir: string) {
     return { name, owner, heartbeatAgeMs };
   });
 }
-function pidAlive(pid: number | undefined): boolean {
-  if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException)?.code === "EPERM"; }
-}
 function makeEnv(root: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     ANS_DB_PATH: join(root, "anysearch.db"),
@@ -462,7 +462,10 @@ async function main() {
       const owner = entries[0]?.owner ?? null;
       assert(entries.length === 1 && owner?.pid === a.child.pid,
         "C1: at second 4 the lock names process A (got " + JSON.stringify(entries) + ")");
-      assert(pidAlive(owner?.pid), "C1: the recorded owner pid is alive on this machine");
+      // `pidIsAlive` takes a number; the assertion above already established
+      // that the lock names this child, so the guard only satisfies the type.
+      assert(typeof owner?.pid === "number" && pidIsAlive(owner.pid),
+        "C1: the recorded owner pid is alive on this machine");
       assert(entries[0].heartbeatAgeMs !== null && entries[0].heartbeatAgeMs! < 1_600,
         "C1: the heartbeat is fresh while the holder runs (age " + entries[0].heartbeatAgeMs + " ms)");
 

@@ -29,6 +29,16 @@ test("pidIsAlive: only ESRCH proves death", () => {
   withProbe("ESRCH", () => assert.equal(pidIsAlive(1234), false, "ESRCH is the one proof of death"));
 });
 
+test("probePid answers unknown for anything that is not one positive pid", () => {
+  // A successful probe is stubbed, so an unguarded pid would come back alive.
+  withProbe(null, () => {
+    assert.equal(probePid(0), "unknown", "0 asks about the caller's own group");
+    assert.equal(probePid(-1), "unknown", "a negative pid asks about a group");
+    assert.equal(probePid(12.5), "unknown", "a pid is a whole number");
+    assert.equal(probePid(Number.NaN), "unknown");
+  });
+});
+
 test("probePid keeps dead, alive and unconfirmable apart", () => {
   withProbe(null, () => assert.equal(probePid(1234), "alive"));
   withProbe("EPERM", () => assert.equal(probePid(1234), "alive", "EPERM proves the process exists"));

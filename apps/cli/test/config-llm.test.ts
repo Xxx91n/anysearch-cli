@@ -445,6 +445,116 @@ test("a user-file base_url bound env_key is refused when another layer moves the
   assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
 });
 
+test("endpoint 冲突的告警连 --endpoint 一起给，照着跑不会回到同一句（#573）", () => {
+  // A binding is (provider, endpoint). Advice that omits --endpoint stores the key
+  // against the provider default, and the next run prints this very warning.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://b.example/v1" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /ans auth set openai --endpoint https:\/\/b\.example\/v1/, warning);
+});
+
+test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）", () => {
+  // displayEndpoint strips userinfo and the query everywhere else in this warning;
+  // the part the user is told to paste must not put them back.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://user:pw@gw.example/v1?key=secret" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.ok(warning, "the warning is printed");
+  assert.doesNotMatch(warning, /pw@/, warning);
+  assert.doesNotMatch(warning, /key=secret/, warning);
+  // The command is given, but its endpoint is a placeholder that has to be
+  // replaced: the address shown above is redacted, so pasting it back would bind
+  // something nobody meant. The full value is named where it lives.
+  assert.match(warning, /--endpoint <that address>/, warning);
+  assert.match(warning, /the full address is in ANS_LLM_BASE_URL/, warning);
+  assert.match(warning, /It cannot be printed here \(redacted, too long, or contains control characters\)/, warning);
+  // No "shown above": that pointer would send the user to the redacted copy.
+  assert.doesNotMatch(warning, /shown above/i, warning);
+  assert.doesNotMatch(warning, /carries credentials/, "no false reason：" + warning);
+  assert.doesNotMatch(warning, /user:pw@gw/, "the secret never printed：" + warning);
+});
+
+test("不打印那一档说清完整地址在用户配置文件里（#573 审查）", () => {
+  // The three labels of BASE_URL_SOURCE are user-facing sentences; only the env
+  // one was pinned. A base URL from the user file must name that file.
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://user:pw@gw.example/v1?key=secret"\n',
+  });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: {} }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /the full address is in the user config file/, warning);
+  assert.doesNotMatch(warning, /user:pw@gw/, warning);
+});
+
+test("不打印那一档说清完整地址在 --llm.base-url 上（#573 审查）", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({
+    env: {},
+    flags: { baseUrl: "https://user:pw@gw.example/v1?key=secret" },
+  }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /the full address is in --llm\.base-url/, warning);
+});
+
+test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {
+  // Nothing to bind to: the fix is `ans auth set openai`, and a placeholder flag
+  // would be stored verbatim as an endpoint.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: {} }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /run `ans auth set openai` to bind it to the provider default/, warning);
+  assert.doesNotMatch(warning, /--endpoint/, warning);
+});
+
+test("没凭据的地址照常给可粘的命令，哪怕大小写会被 URL 归一化（#573 审查）", () => {
+  // displayEndpoint lowercases the host, so comparing raw against display called a
+  // harmless URL "unsafe" and told the user it carried credentials.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://MyGW.example/v1" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /--endpoint https:\/\/MyGW\.example\/v1/, warning);
+  assert.doesNotMatch(warning, /replacing the placeholder/, warning);
+});
+
+test("过长的地址也走「不打印」那一档，理由不能是「带凭据」（#573 审查）", () => {
+  // Truncation has nothing to do with credentials; the reason must not invent one.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  const longUrl = "https://gw.example/v1/" + "x".repeat(300);
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: longUrl } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /cannot be printed here \(redacted, too long, or contains control characters\)/, warning);
+  assert.doesNotMatch(warning, /carries credentials/, warning);
+});
+
 test("an unset env_key falls through to the stored key instead of stopping", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',

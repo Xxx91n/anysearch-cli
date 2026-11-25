@@ -1,6 +1,6 @@
 ## Unreleased — #576: 说不清的锁不再永远卡住，busy 也告诉你锁在哪儿
 
-一句话说清：**session-lock 原来把「同主机 + 探测说不清」和「活着」当成一回事，于是崩溃留下的锁在心跳老掉以后也不会回收，只能人去删；而用户看到的那句 busy 只说 retry after it finishes，连锁在哪个目录都不讲。现在三态各走各的路：死了立刻收，活着永不收，说不清就按心跳走 10 分钟 stale 窗口。busy 文本带上持有者的 pid/host、锁目录和「确认进程已不在后删掉它」的处置说明。**
+一句话说清：**session-lock 原来把「同主机 + 探测说不清」和「活着」当成一回事，于是崩溃留下的锁在心跳老掉以后也不会回收，只能人去删；而用户看到的那句 busy 只说 retry after it finishes，连锁在哪个目录都不讲。现在三态各走各的路：死了立刻收，活着永不收，说不清就按心跳走 10 分钟 stale 窗口。busy 文本带上持有者、锁目录和锁建立的时间，并按探测结果给出对应的那条出路。**
 
 ### Changed
 
@@ -10,6 +10,41 @@
 ### Known limits
 
 - **探测说不清时只能靠心跳兜底**：心跳写入失败一次就停跳，这种情况下 age 规则会提前生效——但只在探测说不清那一档；活着的持有者探测返回成功，仍受保护。
+
+## Unreleased — #571: 崩溃留下的凭据写锁，报错不再冤枉别的进程
+
+一句话说清：**存 key 的写锁文件里一直写着进程号，但全仓没人读——回收只看文件多旧。这是把毫秒级的短锁：等锁 5 秒，文件 10 秒才算旧，所以进程拿着锁被杀以后，下一次存 key 会失败，可报错说「另一个 ans 进程正在写」，让人去找一个根本不存在的进程。现在锁文件不再写进程号（它就是一把只按时间老化的短锁），报错改成说两种可能：写锁还没放开，如果没人正在写那就是崩溃留下的，几秒后重试。**
+
+### Changed
+
+- **锁文件不再记录持有者**（`withCredentialLock`）：不再往 `.lock` 里写 `process.pid`。回收规则原样保留——等 5 秒，文件超过 10 秒（`LOCK_STALE_MS`）就当旧锁删掉。要在锁上判「这个 pid 还在不在」，先得有可靠的「同一台机器」判据：hostname 会撞名，machineId 在被克隆的容器里是同一个值，这把毫秒级的锁不值得为它造一套身份协议。
+- **拒绝的句子说两种可能**：`another ans process may be writing it (… is still held after 5s); if no ans process is writing it, a crashed write left this lock behind - retry in a few seconds`。这条不再缀「去修文件夹权限」那句——文件夹是好的，那句话把人指到错误的方向。
+- **退路按入口分开**：存 key 有替代动作，退路是「设进对应 provider 自己的环境变量」，例子按 `CREDENTIAL_PROVIDERS` 的 `envKey` 现拼（这份文件管哪几家就列哪几家，加 provider 不会漏），也不再只点名全局的 `ANS_LLM_API_KEY`。`remove` / `repair` 没有等价动作：写文件失败、文件夹不可写就给「修文件夹权限、重试」，锁被占时只说到重试为止。这条 advice 在 `withCredentialLock` 和 `writeProtectedFile` 里都是必填参数，新入口漏传就是编译错。
+- **kernel 那句和 store 共用一份**（`composition.ts`）：复用 store 导出的 `LOCK_HELD_NOTICE`，写锁拒绝真走到分类器时说的是同一句话，不再各写一份措辞。
+- **测试里那份判活没了**（`apps/mcp/test/session-lock-recovery.test.ts`）：改用 store 的 `pidIsAlive`（`@anysearch-cli/store/process-liveness` 子路径，不把数据库绑进测试进程）。它只被一处调用，传的是活着的子进程，判定不变。
+- **共享判活的头注释**（`process-liveness.ts`）写明它只回答「同一台机器上单个进程号还在不在」；进程组探测（`scripts/probe-process.mjs`、`scripts/preflight-test.mjs` 的负进程号加 Darwin EPERM）是另一套语义，不走这里。这条规矩同时落进代码：`probePid` 遇到不是正整数的 pid（0、负数、小数）直接答 `unknown`，不会把进程组的答案当成某个进程的。
+
+### Known limits
+
+- 崩溃之后的那一次写入还是会失败，得等锁自己变旧（最长 10 秒）再重试。密钥不会丢：抢不到锁就什么都不写。报错现在把这条路写出来了。
+- 锁分不出「有人正在写」和「上次崩了」：两种情况的现场一模一样，所以它只按时间走。
+- 锁的等待窗口（5 秒）、老化窗口（10 秒）、持锁期间的访问保护流程都没动。
+
+## Unreleased — #579: 每份 config.toml 有自己的状态，`ans llm` 直接显示
+
+一句话说清：**以前 `ans llm` 的 `Files:` 行只有两个路径，文件不存在、空文件、只写了 `[llm]` 的一半、读不出来，在清单上长得一模一样。现在解析器给用户级和项目级各一条文件记录——六种状态、这个文件真正读进来的字段名、以及文件级诊断 kind——`ans llm` 的同一行直接标出两份文件各是什么状态，被安全丢掉的键也列出来；清单不再因为凭据文件坏了退 1。**
+
+### Changed
+
+- **`ResolvedLlmConfig.configFiles`**（`packages/store/src/config-llm.ts`）：用户级、项目级各一条 `{ layer, status, present, diagnostics }`，两层永远都在。状态只有六个：`missing`（不存在）、`empty`（存在但 trim 后为空）、`no-llm`（能解析但没有可用的 `[llm]`，包括 `[llm]` 不是表）、`half`（`[llm]` 读到字段但缺 provider 或 model，空表也算）、`ok`（provider 和 model 都在）、`broken`（读不出来或 TOML 坏）。
+- **`present` 只放字段名**：这个文件读进来的 `[llm]` 键名，不含值，也不含路径。`broken` 和 `empty` 不贡献任何模型字段；`half` 的合法字段照旧参与逐字段覆盖。
+- **诊断 kind 封闭成七类**：`unreadable`、`invalid-toml`、`llm-not-table`、`not-allowed-key`、`secret-looking-key`、`unknown-key`、`invalid-type`；键级诊断带一个键名，文件级诊断不带。诊断里没有路径、值、endpoint、provider 值或解析原文。
+- **被丢的键名先清洗再显示**：TOML 的引号键能带控制字符（例如 ANSI 转义），`ans llm` 的 `ignored:` 和 `warn` 都可能把文件里的键名原样打到终端。现在键名在生成诊断时就走 `llmKeyLabel`（控制字符换成空格、长度封顶），事实和终端都拿到清洗后的名字。
+- **`[llm]` 写成数组或 TOML datetime 也算不是表**：以前 `typeof [] === "object"` 会让数组钻过检查、把每个索引当未知键报；TOML datetime 也会被当成一个空表。现在两者都归入 `no-llm` + `llm-not-table`，整段忽略。
+- **`ans llm` 的 `Files:` 行**：`user <路径> [<标签>] | project <路径> [<标签>]`，标签就是六个状态（`no-llm` 显示成 `no [llm]`）；有被丢的键时同一行补 `(ignored: user:"<键名>", project:"<键名>")`，键名带层名并用 JSON 引号包住（键名里的逗号、括号不会伪造出别的条目）。`[llm]` 不是表时再补 `([llm] is not a table: <层>)`。路径和解析结果用同一个 home、同一个 cwd。
+- **清单恒退 0**：凭据文件坏了不再改退出码；配置文件的状态本来就不影响清单退出码；`Credentials file: BROKEN` 照常打印。只有用法错误退 2。`ans llm check` / `set` / `models` 没动。
+- **现有 `warn` 句子原样保留**：已有的给人看的句子、默认 stderr 行为和安全规则都不变，结构化诊断只是和它并列产生。唯一的措辞变化是规格要求的那条：`[llm]` 是数组或 TOML datetime 时以前会按索引/空表处理，现在统一成一句「`[llm]` 不是表」。
+- **词表**：`GLOSSARY.md` 补了「每层文件状态」和「诊断 kind」两条。
 
 ## Unreleased — #570: 判活只剩一个答案：只有 ESRCH 算死，探测失败不再等于进程已死
 
@@ -50,6 +85,7 @@
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **写进用户文件的那段说明也用命令常量拼**：`CREDENTIALS_NOTE` 以前硬写 `ans auth set` / `ans auth remove <provider>`，命令改名后用户打开自己的凭据文件就会看到一个不存在的命令。命令常量先挪到它前面声明（否则模块初始化时踩 TDZ），说明改成用 `STORE_KEY_COMMAND` / `REMOVE_KEY_COMMAND` 拼，测试钉住两个命令都在里面。
+- **点名某个 provider 的命令也从同一个常量拼**：`ans llm` 的「store one once with: ans auth set openai」、store 的 endpoint 冲突告警、kernel 的 `permanent-auth` 提示都自己拼命令名。新增 `storeKeyCommand(provider, endpoint?)`（从 `STORE_KEY_COMMAND` 换掉占位符，替换用函数形式，provider 里的 `$&` 不会被展开），几处都走它。endpoint 冲突那条告警还带上 `--endpoint <生效的地址>`（带 shell 元字符时用双引号包住，转义按平台走：POSIX 用反斜杠，Windows 用 PowerShell 的反引号；地址能不能打印直接看它本身（`isPrintableEndpoint` 和 `displayEndpoint` 共用一次解析：`shownEndpoint` 同时给出展示形态和「是否被脱敏过」，所以以后加一条脱敏规则不会漏掉判定），不能打就说出完整值在哪儿（`--llm.base-url` / `ANS_LLM_BASE_URL` / 项目或用户 config），给出的命令里 `--endpoint` 是个必须替换的占位符——半截地址直接粘回去会存成一个谁都不认的绑定；命令里 provider 和 endpoint 都过 shell 引号，配置里带 `;` 的 provider 拼不出第二条命令；回到默认 endpoint 时干脆不带 `--endpoint`）：绑定是 (provider, endpoint)，不带这个参数照抄下去，key 还是落到默认 endpoint，下次照样报同一句。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
 ### Known limits
