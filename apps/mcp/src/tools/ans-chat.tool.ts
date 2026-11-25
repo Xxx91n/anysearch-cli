@@ -521,10 +521,11 @@ export function registerAnsChat(
           // chat whose text happens to say "not configured". #300: name both
           // ways in — env OR a config file — so a host that wrote a TOML knows
           // to check it instead of being told only to set env vars.
-          const gap = formatLlmConfigGap(cfg, projectConfigRelativePath());
+          const projectLabel = projectConfigRelativePath();
+          const gap = formatLlmConfigGap(cfg, projectLabel);
           const missing = needsLlmSetupHint(cfg)
             ? "LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars, " +
-              "or write provider/model in ~/.ans/config.toml (user) or .ans/config.toml (project)."
+              "or write provider/model in ~/.ans/config.toml (user) or " + projectLabel + " (project)."
             : undefined;
           return toolFailure("ans_chat: " + [gap, missing].filter(Boolean).join(" "));
         }

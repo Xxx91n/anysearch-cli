@@ -145,8 +145,10 @@ export async function runChat(argv: string[]): Promise<number> {
     // #581: say what the files actually are, in one fixed order: broken file(s),
     // then the half-written one (file, env, or CLI layer), then the stored key
     // nobody can use. The shared hint decides the "nothing configured" line:
-    // half config and a broken user file get their own sentence instead.
-    const gap = formatLlmConfigGap(cfg, projectConfigRelativePath());
+    // half config names the missing field instead, except an empty [llm] (no
+    // fields at all), which gets both; a broken user file never gets the hint.
+    const projectLabel = projectConfigRelativePath();
+    const gap = formatLlmConfigGap(cfg, projectLabel);
     if (gap) process.stderr.write(gap + "\n");
     if (needsLlmSetupHint(cfg)) {
       process.stderr.write("LLM provider not configured.\n");

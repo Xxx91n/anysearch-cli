@@ -167,7 +167,6 @@ const USER_BROKEN = "LLM config file is broken; provider/model could not be load
 // The project file is named by its path inside the project, never by an absolute
 // path: the sentence also reaches MCP tool results, which must stay free of
 // absolute paths.
-const DEFAULT_PROJECT_CONFIG_LABEL = ".ans/config.toml";
 const STORED_KEY_BROKEN =
   "A model API key is still stored in credentials.json, but it is not in use until the config is fixed.";
 const STORED_KEY_UNCONFIGURED =
@@ -189,10 +188,7 @@ function projectBrokenSentence(label: string): string {
  * itself, and both sentences appear when both are broken. Sentences never
  * carry a value, a provider name, a warning's text, or an absolute path.
  */
-export function formatLlmConfigFault(
-  cfg: ResolvedLlmConfig,
-  projectLabel: string = DEFAULT_PROJECT_CONFIG_LABEL,
-): string | undefined {
+function formatLlmConfigFault(cfg: ResolvedLlmConfig, projectLabel: string): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const broken = (["user", "project"] as const)
     .filter((layer) => cfg.configFiles[layer].status === "broken")
@@ -229,10 +225,7 @@ function halfConfigSentence(state: LlmConfigFileState, projectLabel: string): st
  * configured" guidance after this, so a broken user file keeps its old sentence
  * and never points at the example provider name.
  */
-export function formatLlmConfigGap(
-  cfg: ResolvedLlmConfig,
-  projectLabel: string = DEFAULT_PROJECT_CONFIG_LABEL,
-): string | undefined {
+export function formatLlmConfigGap(cfg: ResolvedLlmConfig, projectLabel: string): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const sentences: string[] = [];
   const fault = formatLlmConfigFault(cfg, projectLabel);
@@ -245,7 +238,9 @@ export function formatLlmConfigGap(
   // with only ANS_LLM_PROVIDER (or only --llm.provider) would fail with no
   // reason at all: the file half sentences do not cover it, and the generic
   // hint is reserved for "nothing configured".
-  const missing = !cfg.provider ? "provider" : !cfg.model ? "model" : undefined;
+  let missing: "provider" | "model" | undefined;
+  if (!cfg.provider) missing = "provider";
+  else if (!cfg.model) missing = "model";
   const set = missing === "provider" ? "model" : "provider";
   const setLayer = missing === "provider" ? cfg.sources.model : cfg.sources.provider;
   if ((setLayer === "env" || setLayer === "cli")) {
@@ -260,8 +255,8 @@ export function formatLlmConfigGap(
 
 /**
  * True when neither field resolved and the user file is not broken: the host
- * adds its own "nothing configured" guidance. Half config is not this case —
- * its gap sentence already names the missing field and layer.
+ * adds its own "nothing configured" guidance. An empty `[llm]` is `half` but
+ * resolves neither field, so it gets both the half sentence and this hint.
  */
 export function needsLlmSetupHint(cfg: ResolvedLlmConfig): boolean {
   return !cfg.provider && !cfg.model && cfg.configFiles.user.status !== "broken";
