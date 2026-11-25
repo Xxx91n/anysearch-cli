@@ -1,3 +1,17 @@
+## Unreleased — #581: `ans chat` / `ans_chat` 说清哪份配置坏了、缺什么
+
+一句话说清：**以前缺 provider/model 时两个入口基本只说「没配」；用户级的 `config.toml` 坏了还能看到一句英文，仓库里的 `.ans/config.toml` 坏了却完全看不出来；文件写到一半和从来没配过也长得一模一样。现在两个入口读每份文件的真实状态：坏文件逐层点名（项目级只给相对路径 `.ans/config.toml`），半配置说清哪一层、缺 provider 还是 model，最后才落到原来的「什么都没配」；`credentials.json` 里还存着模型 key 时补一句「key 还在，但没配模型可用」。**
+
+### Changed
+
+- **`formatLlmConfigGap`**（`packages/store/src/config-llm.ts`）：缺有效 provider/model 时按固定顺序拼句子——坏文件（用户级保留原句，项目级点名实际读到的相对路径，两边都坏就两句都给）→ 半配置（用户级/项目级文件、环境变量、命令行是哪一层，设了什么、缺哪个字段）→ `credentials.json` 里存着却没用上的模型 key。句子不带 key 值、provider 值、绝对路径或 warning 原文。
+- **项目级路径按实际文件走**：`projectConfigRelativePath()` 从 `projectConfigPath()` 取项目内的相对路径，正常布局是 `.ans/config.toml`，旧布局回退时是 `.anysearch/config.toml`；升级没迁完的人不会再被指到一个不存在的文件。
+- **`formatLlmConfigFault` 只认每层文件状态**：不再读只描述用户级的 `configFault`；`ResolvedLlmConfig.configFault` 和 `LlmConfigFaultKind` 一并删掉，全仓没有读取点。
+- **两个入口共用同一组事实**：`ans chat` 和 `ans_chat` 都调 `formatLlmConfigGap`，通用提示由同一份 `needsLlmSetupHint` 决定。用户级坏文件照旧不打印「LLM provider not configured」（那条会带出一个示例 provider 名，和「坏文件」自相矛盾）；项目级坏、半配置、什么都没配各自说自己的那一句。
+- **MCP 缺配置仍是裸错误**：`isError: true`、只有纯文字 `content`、没有 `structuredContent`。正文点名层和字段；`credentials.json` 的故障还是走原来那条 `credentialFileNotice`。
+- **零副作用有快照证明**（`apps/mcp/test/ans-chat-config-gap.test.ts`）：真实临时 SQLite 里，缺配置的 `ans_chat` 调用前后只有 `task_records` 多一条已结束的失败记录（`exit_code=1`、`session_id=NULL`）、`observability_traces` 多一条；`sessions`、`budget_ledger`、`budget_reservations`、`task_budgets` 一行不涨。
+- **`ans consolidate` 和成功结果的形状没动**：坏文件 + 环境变量补齐照常跑，文件故障只进 stderr 和 `anysearch.llm.configWarnings` 计数。
+
 ## Unreleased — #577: eval 账本的锁先看人死活，再看时间；收尾不再删别人的锁
 
 一句话说清：**两个 eval 账本写盘时会在旁边放一把 sidecar 锁，锁上记着持有者的 pid 和开始时间。等待者判断能不能抢，先看 pid 探活、再看「锁放了多久」——而「放了多久」那一条完全不看 pid。于是持锁进程只要卡住 5 分钟（合盖休眠、断点、网络盘挂住），人还活着却被当成死人，锁被删掉；它恢复后接着写，两个写入者就重叠了。它收尾时又无条件再删一次，把后来者刚建的锁也删了，第三个进程还能进。现在身份优先：探活说活着就一直不抢，只有探死或「说不清」才落到 5 分钟规则；抢锁和放锁都要确认这把锁还是自己的。**
@@ -14,6 +28,7 @@
 ### Known limits
 
 - **探活说活着的锁只能人删**：持锁进程被挂起、停在断点、或者 pid 被无关进程复用时，锁会一直留着，后来者每次等 2.5 秒后报错。这是有意换来的取舍——宁可响亮失败，也不再静默双写。报错里写了怎么手工收场。
+
 ## Unreleased — #576: 说不清的锁不再永远卡住，busy 也告诉你锁在哪儿
 
 一句话说清：**session-lock 原来把「同主机 + 探测说不清」和「活着」当成一回事，于是崩溃留下的锁在心跳老掉以后也不会回收，只能人去删；而用户看到的那句 busy 只说 retry after it finishes，连锁在哪个目录都不讲。现在三态各走各的路：死了立刻收，活着永不收，说不清就按心跳走 10 分钟 stale 窗口。busy 文本带上持有者、锁目录和锁建立的时间，并按探测结果给出对应的那条出路。**

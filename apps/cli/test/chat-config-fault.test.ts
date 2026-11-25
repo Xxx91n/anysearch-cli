@@ -63,7 +63,7 @@ async function runChatFixture(opts: {
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
-  return { code, stderr, home };
+  return { code, stderr, home, cwd };
 }
 
 const modelKey = "sk-ant-547-test-000000";
@@ -81,12 +81,41 @@ test("broken config names the fault and keeps a stored model key visible", async
   assert.doesNotMatch(result.stderr, /anthropic/);
 });
 
-test("missing config keeps the existing not-configured message", async () => {
+test("missing config keeps the existing message and says the stored key is idle", async () => {
   const result = await runChatFixture({ bindings: [modelBinding] });
   assert.equal(result.code, 3);
   assert.match(result.stderr, /LLM provider not configured/);
   assert.doesNotMatch(result.stderr, /LLM config file is broken/);
-  assert.doesNotMatch(result.stderr, /model API key is still stored/);
+  // #581: a stored model key with no provider/model is named, and the sentence
+  // carries neither the provider value nor a path.
+  const keyLine = result.stderr.split("\n").find((line) => line.startsWith("A model API key is still stored"));
+  assert.equal(keyLine,
+    "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.");
+  assert.doesNotMatch(keyLine ?? "", /anthropic/);
+  assert.ok(!keyLine?.includes(result.home));
+});
+
+test("a half-written user file names the layer and the missing model", async () => {
+  const result = await runChatFixture({ configToml: '[llm]\nprovider = "anthropic"\n' });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /The user config file sets provider but not model\./);
+  assert.doesNotMatch(result.stderr, /LLM provider not configured/);
+  assert.doesNotMatch(result.stderr, /anthropic/);
+});
+
+test("a half-written project file names the project and the missing provider", async () => {
+  const result = await runChatFixture({ projectToml: '[llm]\nmodel = "gpt-5"\n' });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /The project config file \(\.ans\/config\.toml\) sets model but not provider\./);
+  assert.ok(!result.stderr.includes(result.cwd));
+  assert.doesNotMatch(result.stderr, /gpt-5/);
+});
+
+test("an empty [llm] says the section exists but is empty", async () => {
+  const result = await runChatFixture({ configToml: "[llm]\n" });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /The user config file has an \[llm\] section, but neither provider nor model is set\./);
+  assert.match(result.stderr, /LLM provider not configured/);
 });
 
 test("broken config with only a search key does not claim a model key remains", async () => {
@@ -128,11 +157,28 @@ test("broken config with no credential file does not claim a model key remains",
   assert.doesNotMatch(result.stderr, /model API key is still stored/);
 });
 
-test("a broken project config does not replace the missing user config message", async () => {
+test("a broken project config is named by its relative path and keeps the missing-user message", async () => {
   const result = await runChatFixture({ projectToml: "[llm\n" });
   assert.equal(result.code, 3);
   assert.match(result.stderr, /LLM provider not configured/);
+  assert.match(result.stderr, /The project config file \(\.ans\/config\.toml\) is broken/);
   assert.doesNotMatch(result.stderr, /LLM config file is broken/);
+  // The resolver's own stderr warning may carry the path; the sentence under
+  // test must not.
+  const projectLine = result.stderr.split("\n").find((line) => line.startsWith("The project config file"));
+  assert.ok(projectLine);
+  assert.ok(!projectLine.includes(result.cwd));
+});
+
+test("both config files broken gives both sentences", async () => {
+  const result = await runChatFixture({ configToml: "[llm\n", projectToml: "[llm\n" });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /LLM config file is broken/);
+  assert.match(result.stderr, /The project config file \(\.ans\/config\.toml\) is broken/);
+  assert.doesNotMatch(result.stderr, /LLM provider not configured/);
+  const gapLine = result.stderr.split("\n").find((line) => line.includes("LLM config file is broken"));
+  assert.ok(gapLine);
+  assert.ok(!gapLine.includes(result.home) && !gapLine.includes(result.cwd));
 });
 
 test("flags still pass the config gate when the user config is broken", async () => {

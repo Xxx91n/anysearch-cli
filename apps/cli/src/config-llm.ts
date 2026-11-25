@@ -8,6 +8,7 @@
 export {
   displayEndpoint,
   formatLlmConfigFault,
+  formatLlmConfigGap,
   KEY_SOURCE_LABELS,
   parseLlmFlags,
   parseLlmToml,
@@ -24,7 +25,6 @@ export {
 export type {
   CredentialBinding,
   CredentialFileContents,
-  LlmConfigFaultKind,
   LlmConfigFileState,
   LlmConfigFileStatus,
   LlmFileConfig,

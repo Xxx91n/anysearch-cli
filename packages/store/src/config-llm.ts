@@ -101,8 +101,6 @@ export interface LlmFlags {
   api?: string;
 }
 
-export type LlmConfigFaultKind = "unreadable" | "invalid-toml";
-
 /**
  * What one config.toml turned out to be (#579). Six closed values; the listing
  * prints them, and a surface can read the same fact instead of inferring it
@@ -155,8 +153,6 @@ export interface ResolvedLlmConfig {
    * and diagnostics here; `warn` stays the human sentence.
    */
   configFiles: Record<"user" | "project", LlmConfigFileState>;
-  /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
-  configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
   /**
@@ -167,12 +163,70 @@ export interface ResolvedLlmConfig {
   credentialFileFault?: CredentialFileFault;
 }
 
+const USER_BROKEN = "LLM config file is broken; provider/model could not be loaded. Fix the config file and try again.";
+// The project file is named by its path inside the project, never by an absolute
+// path: the sentence also travels in MCP tool results (see §8 of the spec).
+const PROJECT_BROKEN =
+  "The project config file (.ans/config.toml) is broken; provider/model could not be loaded from it. Fix it and try again.";
+const STORED_KEY_BROKEN =
+  "A model API key is still stored in credentials.json, but it is not in use until the config is fixed.";
+const STORED_KEY_UNCONFIGURED =
+  "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.";
+
+const HALF_LAYER_LABELS: Record<"user" | "project", string> = {
+  user: "The user config file",
+  project: "The project config file (.ans/config.toml)",
+};
+
+/**
+ * The one exit for "a config file is broken". Both files are judged separately
+ * (#581): the user file keeps its existing sentence, the project file names
+ * itself, and both sentences appear when both are broken. Sentences never
+ * carry a value, a provider name, a warning's text, or an absolute path.
+ */
 export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
-  if (!cfg.configFault || (cfg.provider && cfg.model)) return undefined;
-  return "LLM config file is broken; provider/model could not be loaded. Fix the config file and try again." +
-    (cfg.hasStoredModelCredential
-      ? " A model API key is still stored in credentials.json, but it is not in use until the config is fixed."
-      : "");
+  if (cfg.provider && cfg.model) return undefined;
+  const broken = (["user", "project"] as const)
+    .filter((layer) => cfg.configFiles[layer].status === "broken")
+    .map((layer) => (layer === "user" ? USER_BROKEN : PROJECT_BROKEN));
+  return broken.length > 0 ? broken.join(" ") : undefined;
+}
+
+/**
+ * What one half-written file did set, and what is still missing. An [llm]
+ * section whose fields were all dropped (empty, wrong types, or not a table)
+ * says that instead of naming a field it never had.
+ */
+function halfConfigSentence(state: LlmConfigFileState): string | undefined {
+  if (state.status !== "half") return undefined;
+  const hasProvider = state.present.includes("provider");
+  const hasModel = state.present.includes("model");
+  const detail = hasProvider && !hasModel ? "sets provider but not model"
+    : hasModel && !hasProvider ? "sets model but not provider"
+      : "has an [llm] section, but neither provider nor model is set";
+  return HALF_LAYER_LABELS[state.layer] + " " + detail + ".";
+}
+
+/**
+ * Why this run has no usable provider/model, in the fixed order (#581): broken
+ * files, then half-written files, then a stored model key that no config can
+ * use. The caller adds its own "nothing configured" guidance afterwards, so a
+ * broken user file keeps its old sentence and never points at the example
+ * provider name.
+ */
+export function formatLlmConfigGap(cfg: ResolvedLlmConfig): string | undefined {
+  if (cfg.provider && cfg.model) return undefined;
+  const sentences: string[] = [];
+  const fault = formatLlmConfigFault(cfg);
+  if (fault) sentences.push(fault);
+  for (const layer of ["user", "project"] as const) {
+    const half = halfConfigSentence(cfg.configFiles[layer]);
+    if (half) sentences.push(half);
+  }
+  if (cfg.hasStoredModelCredential) {
+    sentences.push(fault ? STORED_KEY_BROKEN : STORED_KEY_UNCONFIGURED);
+  }
+  return sentences.length > 0 ? sentences.join(" ") : undefined;
 }
 
 export interface ResolveLlmOpts {
@@ -226,7 +280,6 @@ export function projectConfigPath(cwd: string = process.cwd()): string {
 
 interface LoadedLlmFile extends LlmConfigFileState {
   config: LlmFileConfig;
-  fault?: LlmConfigFaultKind;
 }
 
 /**
@@ -254,7 +307,7 @@ function parseLlmTomlResult(
   } catch (e) {
     warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
     return {
-      layer: level, config: {}, fault: "invalid-toml", status: "broken", present: [],
+      layer: level, config: {}, status: "broken", present: [],
       diagnostics: [{ kind: "invalid-toml" }],
     };
   }
@@ -340,7 +393,7 @@ function loadFile(
   } catch (e) {
     warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
     return {
-      layer: level, config: {}, fault: "unreadable", status: "broken", present: [],
+      layer: level, config: {}, status: "broken", present: [],
       diagnostics: [{ kind: "unreadable" }],
     };
   }
@@ -401,7 +454,6 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       },
     },
   };
-  if (userFile.fault) resolved.configFault = userFile.fault;
   const pick = (field: "provider" | "model" | "api", outKey: "provider" | "model" | "api") => {
     for (const [layer, cfg] of [
       ["cli", cliLayer],
