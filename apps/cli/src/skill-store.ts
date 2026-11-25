@@ -374,9 +374,8 @@ function probeLockOwner(owner: LockOwner | undefined): LockState {
   // Containers can share a hostname but not a PID namespace, and ESRCH inside one
   // namespace says nothing about a pid in another.
   if (owner.namespace !== identity?.namespace) return "unknown";
-  // Design: keep the three states (#570) — the lock messages below say
-  // "running" for a live holder and "cannot be proven dead" for the rest;
-  // the identity gates above answer "unknown" on their own.
+  // The lock messages below say "running" for a live holder and "cannot be
+  // proven dead" for the rest, so the three states must stay distinct.
   return probePid(owner.pid);
 }
 
