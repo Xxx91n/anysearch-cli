@@ -31,6 +31,7 @@ import { sweepStaleWorkFiles } from "./stale-work-files.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
+  isPrintableEndpoint,
   lookupModelCredential,
   displayEndpoint,
   modelEnvKeysFor,
@@ -260,20 +261,6 @@ function loadFile(
  * var NAME, never the secret), else the provider's own env vars, else the user
  * credential file.
  */
-/**
- * How to re-bind this provider to the endpoint in force. Only a URL safe to print
- * becomes a command you can paste; one that carries credentials (or is long enough
- * to be truncated) is not printed, and its placeholder stays unquoted on purpose -
- * pasted verbatim it must fail loudly instead of storing a string that looks like
- * an endpoint and binds nothing.
- */
-function bindingAdvice(provider: string, effective: string | null): string {
-  if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
-  if (effective === displayEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  return "run `" + storeKeyCommand(provider) + " --endpoint <your endpoint>` for this endpoint, " +
-    "replacing the placeholder with the address from your config (it carries credentials, so it is not printed)";
-}
-
 export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
@@ -498,6 +485,14 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   }
 
   return resolved;
+}
+
+/** 打印安全才给能直接粘的命令；地址带凭据或被截断就给占位符，让用户自己填。 */
+function bindingAdvice(provider: string, effective: string | null): string {
+  if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
+  if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
+  return "run `" + storeKeyCommand(provider) + " --endpoint <your endpoint>` for this endpoint, " +
+    "replacing the placeholder with the address from your config (it is not printed here)";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

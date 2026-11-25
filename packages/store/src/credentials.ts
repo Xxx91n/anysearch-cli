@@ -65,9 +65,20 @@ const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
  * against the default and reproduces the warning. */
 export function storeKeyCommand(provider: string, endpoint?: string | null): string {
   // A function replacement: `$&` in a provider read from the config file would
-  // otherwise be expanded.
-  const command = STORE_KEY_COMMAND.replace("<provider>", () => provider);
+  // otherwise be expanded. Both values are quoted, so advice built from a config
+  // value cannot turn into a second command.
+  const command = STORE_KEY_COMMAND.replace("<provider>", () => shellArg(provider));
   return endpoint ? command + " --endpoint " + shellArg(endpoint) : command;
+}
+
+/** True when the endpoint can be printed as it stands: no userinfo, no query or
+ * fragment, no control characters, and short enough that no part is cut. */
+export function isPrintableEndpoint(endpoint: string): boolean {
+  if (endpoint.length > ENDPOINT_LIMIT) return false;
+  if (/[\p{Cc}\p{Cf}]/u.test(endpoint)) return false;
+  if (/[?#]/.test(endpoint)) return false;
+  const authority = endpoint.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split("/")[0] ?? "";
+  return !authority.includes("@");
 }
 
 /** One argument as the shell reads it back, so a pasted endpoint like

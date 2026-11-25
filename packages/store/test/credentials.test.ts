@@ -22,6 +22,7 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
+  isPrintableEndpoint,
   isRecordProblemMessage,
   lookupModelCredential,
   normalizeBindingEndpoint,
@@ -51,8 +52,10 @@ test("给具体 provider 的命令名也从同一个常量拼出来（#573）", 
   assert.equal(storeKeyCommand("openai").startsWith(STORE_KEY_COMMAND.split(" ")[0] + " "), true);
   assert.equal(storeKeyCommand("exa").includes("<provider>"), false);
   // A provider read from the config file is not validated: `$&` must be printed,
-  // not expanded into the text it would match.
-  assert.equal(storeKeyCommand("$&"), "ans auth set $&");
+  // not expanded into the text it would match (it is quoted now, but the two
+  // characters survive in either shell's escaping).
+  assert.ok(storeKeyCommand("$&").includes("$&"), storeKeyCommand("$&"));
+  assert.notEqual(storeKeyCommand("$&"), STORE_KEY_COMMAND);
   // An endpoint with shell metacharacters has to survive a copy-paste.
   assert.equal(
     storeKeyCommand("openai", "https://gw.example/v1?region=us&version=1"),
@@ -63,6 +66,10 @@ test("给具体 provider 的命令名也从同一个常量拼出来（#573）", 
     "ans auth set openai --endpoint https://b.example/v1",
     "a plain URL needs no quotes",
   );
+  // A provider read from the config file is quoted the same way: `openai; rm -rf /`
+  // must not become two commands in advice meant to be pasted.
+  assert.equal(storeKeyCommand("openai; rm -rf /"), 'ans auth set "openai; rm -rf /"');
+  assert.equal(storeKeyCommand("openai"), "ans auth set openai", "a plain provider stays bare");
   // The escape character follows the shell the platform documents.
   const dollar = storeKeyCommand("openai", "https://gw.example/v1?$top=5");
   assert.equal(dollar, process.platform === "win32"
@@ -810,6 +817,17 @@ test("每条记录细节都由 parseBinding 产出，kernel 的分类靠的就�
     assert.equal(isRecordProblemMessage("/config/entry 2/credentials.json: could not read it (ETIMEDOUT)"), false);
     assert.equal(isRecordProblemMessage("/x: not valid JSON (line 3 column 5)"), false);
   } finally { cleanup(); }
+});
+
+test("能不能打印看的是地址本身，不是它和展示形态是否相等（#573 审查）", () => {
+  // displayEndpoint also lowercases the host and encodes the path, so comparing the
+  // two says "unsafe" for a URL that carries nothing secret.
+  assert.equal(isPrintableEndpoint("https://MyGW.corp.example/v1"), true);
+  assert.equal(isPrintableEndpoint("https://gw.example/v1"), true);
+  assert.equal(isPrintableEndpoint("https://user:pw@gw.example/v1"), false, "userinfo");
+  assert.equal(isPrintableEndpoint("https://gw.example/v1?api-version=1"), false, "query");
+  assert.equal(isPrintableEndpoint("https://gw.example/v1#x"), false, "fragment");
+  assert.equal(isPrintableEndpoint("https://gw.example/v1/" + "x".repeat(300)), false, "too long to print whole");
 });
 
 test("endpoint 的展示形式也去控制字符、限长度（#569 审查）", () => {

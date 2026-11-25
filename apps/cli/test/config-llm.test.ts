@@ -492,6 +492,20 @@ test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查
   assert.doesNotMatch(warning, /--endpoint/, warning);
 });
 
+test("没凭据的地址照常给可粘的命令，哪怕大小写会被 URL 归一化（#573 审查）", () => {
+  // displayEndpoint lowercases the host, so comparing raw against display called a
+  // harmless URL "unsafe" and told the user it carried credentials.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://MyGW.example/v1" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /--endpoint https:\/\/MyGW\.example\/v1/, warning);
+  assert.doesNotMatch(warning, /replacing the placeholder/, warning);
+});
+
 test("an unset env_key falls through to the stored key instead of stopping", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',
