@@ -231,6 +231,11 @@ export function normalizeBindingEndpoint(endpoint: string | null | undefined): s
   return trimmed === "" ? null : trimmed;
 }
 
+/** The provider label's limit, and the endpoint's: both come out of the file and
+ * both are printed in full up to here. */
+const PROVIDER_LIMIT = 40;
+const ENDPOINT_LIMIT = 200;
+
 /**
  * What may be SHOWN for a bound endpoint. A base URL can carry credentials
  * (`https://user:pass@host/v1`) or a secret in its query string, and `ans auth
@@ -281,11 +286,6 @@ function shownValue(raw: string, limit: number): string {
   return cleaned.length > limit ? cleaned.slice(0, limit) + "…" : cleaned;
 }
 
-/** The provider label's limit, and the endpoint's: both come out of the file and
- * both are printed in full up to here. */
-const PROVIDER_LIMIT = 40;
-const ENDPOINT_LIMIT = 200;
-
 /** What may be SHOWN for a provider id read out of the file: `parseBinding`'s
  * fault sentence, `ans auth list` and `ans llm` all print it verbatim. */
 export function providerLabel(raw: string): string {
@@ -293,11 +293,11 @@ export function providerLabel(raw: string): string {
 }
 
 /**
- * The four things `parseBinding` says about one unusable record, exported because
- * the kernel's fault classifier matches on this wording. Keep the messages below
- * built from them, so a rewording cannot leave the classifier matching nothing.
+ * The four things `parseBinding` says about one unusable record. The messages
+ * below are built from them and `isRecordProblemMessage` matches on them, so a
+ * rewording cannot leave the classifier matching nothing.
  */
-export const RECORD_PROBLEM_DETAILS = {
+const RECORD_PROBLEM_DETAILS = {
   notAnObject: "is not an object",
   noProvider: "has no provider",
   noApiKey: "has no apiKey",
@@ -355,9 +355,9 @@ function stripBom(text: string): string {
 }
 
 /**
- * The pieces every surface builds its advice from: the two command names, and the
- * two halves of the sentence. Only a fault inside a readable file can be repaired,
- * so `KEEP_KEYS` belongs to that case alone.
+ * The pieces every surface builds its advice from: the command names, and the two
+ * halves of the sentence. Only a fault inside a readable file can be repaired, so
+ * `KEEP_KEYS` belongs to that case alone.
  */
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";

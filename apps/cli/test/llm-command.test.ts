@@ -75,6 +75,19 @@ test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
       assert.match(out, /BROKEN \(the credential file could not be read\)/, out);
     }
 
+    // A record fault is a different fact: the file was read, one entry was not,
+    // and the repair path keeps the rest. Saying "could not be read" here would
+    // hide it.
+    writeFileSync(join(home, ".ans", "credentials.json"), JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "[redacted]" }, { provider: "anthropic" }],
+    }), "utf8");
+    for (const args of [[], ["check"]]) {
+      const { code, out } = await capture(() => runLlm(args));
+      assert.equal(code, 1, out);
+      assert.match(out, /BROKEN \(one record cannot be read; `ans auth repair` keeps the rest\)/, out);
+      assert.doesNotMatch(out, /NO KEY/, "坏记录时也不能报没配：\n" + out);
+    }
+
     // A healthy file still exits 0: the failure above comes from the file, not
     // from the command deciding to fail whenever it prints something.
     writeFileSync(join(home, ".ans", "credentials.json"), JSON.stringify({

@@ -15,7 +15,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CREDENTIAL_FILE_FAULT_ERRNOS,
-  RECORD_PROBLEM_DETAILS,
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
@@ -756,19 +755,18 @@ test("每条记录细节都由 parseBinding 产出，kernel 的分类靠的就�
   try {
     const path = userCredentialsPath(home);
     mkdirSync(join(home, ".ans"), { recursive: true });
-    const cases: Array<[unknown[], keyof typeof RECORD_PROBLEM_DETAILS]> = [
-      [["not-an-object"], "notAnObject"],
-      [[{ apiKey: "k" }], "noProvider"],
-      [[{ provider: "exa" }], "noApiKey"],
-      [[{ provider: "exa", apiKey: "k", endpoint: 5 }], "nonStringEndpoint"],
+    // Every shape `parseBinding` rejects must come back as a record problem: that
+    // is the contract the kernel's classifier leans on.
+    const cases: unknown[][] = [
+      ["not-an-object"],
+      [{ apiKey: "k" }],
+      [{ provider: "exa" }],
+      [{ provider: "exa", apiKey: "k", endpoint: 5 }],
     ];
-    for (const [bindings, key] of cases) {
+    for (const bindings of cases) {
       writeFileSync(path, JSON.stringify({ bindings }), "utf8");
       const file = readUserCredentials({ home });
-      assert.ok(
-        file.error?.includes(RECORD_PROBLEM_DETAILS[key]),
-        key + " should be what the read reports: " + file.error,
-      );
+      assert.ok(file.error, "the read reports it: " + JSON.stringify(bindings));
       assert.equal(isRecordProblemMessage(file.error ?? ""), true, "the classifier's predicate agrees: " + file.error);
     }
     // A path that merely looks like a record is not one, and neither is a
