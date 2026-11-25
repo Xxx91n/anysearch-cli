@@ -1,5 +1,6 @@
-// explicit-skip three-tier + WARN ledger + 3-streak escalation (negative: silent
-// swallow impossible — skip without reason/key recording fails these assertions).
+// explicit-skip three-tier markers + legacy @3 skip-ledger schema/streak contract tests.
+// Note (#591): D7 3-streak escalation is retired on the eval CLI path; these tests remain to
+// cover E3 skip markers, @1/@2 -> @3 lossless upcasting, and backward-compatible ledger parsing.
 import { skip, isSkip, skipKey } from "../src/eval/explicit-skip";
 import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail, SKIP_STREAK_LIMIT } from "../src/eval/skip-ledger";
 

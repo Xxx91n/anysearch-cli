@@ -1391,9 +1391,10 @@ async function stepMemoryEval() {
     if (!z || typeof z !== "object") failUnverifiable("memory-eval report missing metrics.observational zone (E3 fail-closed)");
     if (z.schema !== "anysearch/observational@1") failUnverifiable("observational zone schema drift: " + z.schema);
     for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures", "armDeltas", "maxLexicalOverlap", "exclusiveHits", "nativeScoresMissing"]) if (!(k in z)) failUnverifiable("observational zone missing" + k);
-    // #591: D7 3-streak escalation is retired on the eval path (ephemeral per-case DBs are
-    // structurally data-absent). Keep E3 presence fail-closed; real consumed-track PSI and
-    // human-review escalation live in switch-run against the durable DB.
+    // Design: retire D7 3-streak escalation on the eval path (#591) — golden eval runs on ephemeral
+    // per-case DBs (structurally data-absent); real consumed-track PSI and human-review escalation
+    // live in switch-run against the durable DB. Rejected alternatives: fake PSI baseline, or
+    // warn-only streaks on data-absent. E3 presence stays fail-closed.
     report("pass", "memory-eval observational zone present (values never gated; D7 streak retired on eval path)");
     // impl-plan 8: ship-gate reads switch state through the ledger (informational;
     // exit-code semantics unchanged — S0 data-absent boots must pass on both db shapes).
@@ -1404,7 +1405,7 @@ async function stepMemoryEval() {
         const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
         report("info", "switch-state: phase" + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since" + st.since : "") + (st && st.transitionId ? " transitionId" + st.transitionId : ""));
       } catch (e) {
-        report("info", "switch-state: ledger unreadable (handled by eval quarantine): " + String(e && e.message ? e.message : e));
+        report("info", "switch-state: ledger unreadable (run ans switch-state --verify to inspect/quarantine): " + String(e && e.message ? e.message : e));
       }
     } else {
       report("info", "switch-state: no ledger yet — phase S0 (boot)");

@@ -159,13 +159,16 @@ const sg = readFileSync(join(__dirname, "..", "..", "..", "scripts", "ship-gate.
 assert(sg.includes("stepMemoryEval") && sg.includes("memory eval"), "ship-gate wires stepMemoryEval");
 // #591: step 7 retires D7 observational skip-streak failure while keeping E3 presence check,
 // switch-state readout, and step 1 access-chain skip-ledger escalation.
-const step7Start = sg.indexOf("function stepMemoryEval");
-const step7Src = step7Start >= 0 ? sg.slice(step7Start) : "";
-assert(step7Start >= 0 && !step7Src.includes("observational explicit-skip streak") && !step7Src.includes("sl.consecutiveWarn >= 3"), "#591: ship-gate step 7 retires observational skip-streak fail branch");
+const step7Start = sg.indexOf("async function stepMemoryEval");
+const step7End = step7Start >= 0 ? sg.indexOf("\nasync function ", step7Start + 1) : -1;
+const step7Src = step7Start >= 0 ? sg.slice(step7Start, step7End > step7Start ? step7End : undefined) : "";
+assert(step7Start >= 0 && step7End > step7Start, "#591: located stepMemoryEval body in scripts/ship-gate.mjs");
+assert(!step7Src.includes("observational explicit-skip streak") && !step7Src.includes("sl.consecutiveWarn >= 3"), "#591: ship-gate step 7 retires observational skip-streak fail branch");
+assert(!step7Src.includes("handled by eval quarantine"), "#591: ship-gate step 7 no longer claims eval quarantines unreadable skip-ledger");
 assert(step7Src.includes("anysearch/observational@1") && step7Src.includes("switch-state:"), "#591: ship-gate step 7 keeps E3 check and switch-state readout");
 assert(sg.includes("access-chain-skip-ledger.json") && sg.includes("access-chain verify skip streak"), "#591: ship-gate step 1 access-chain 3-streak gate remains intact");
 const evalCliSrc = readFileSync(join(__dirname, "..", "src", "eval", "cli.ts"), "utf8");
-assert(!evalCliSrc.includes("recordSkips") && !evalCliSrc.includes("skipMustFail") && !evalCliSrc.includes("OBSERVATIONAL skip streak"), "#591: eval cli.ts removes retired D7 skip-streak accounting");
+assert(!evalCliSrc.includes('from "./skip-ledger"') && !evalCliSrc.includes("OBSERVATIONAL skip streak"), "#591: eval cli.ts drops retired skip-ledger import and D7 escalation output");
 // task-parity gate wired at step 1.
 assert(sg.includes("task-parity"), "ship-gate wires task parity check");
 

@@ -188,8 +188,8 @@ export interface ObservationalZone {
   simulatedObservationWindow?: boolean;
   // r110 SP-/SA-: structural data-absence marker on the consumed track — true when
   // there are no access events at all OR events exist but no unit qualifies as fit-eligible
-  // (widened: "structurally absent" covers the fit-eligible dimension). The eval
-  // CLI records reasonCode=data-absent for such runs; the 3-streak never counts them.
+  // (widened: "structurally absent" covers the fit-eligible dimension). Report-only on the
+  // eval path (#591 retired eval-side D7 3-streak accounting).
   dataAbsent: boolean;
   // r110 SA-: fixture definition hash pinned in the report so a fingerprint flip is
   // auditable from the artifact (eval-baseline.json carries the same zone on calibration).
@@ -863,12 +863,11 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       // Consumed track has no pre-registered baseline histogram to compare against yet, so
       // PSI is honestly null (gate T2 then reports "unavailable", not a fabricated 0).
       const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: evTotal, fittableUnits, psi: null, windowDays, daysSinceLastFit: null });
-      // r110 SP-(b)/SA-: 's "structural data absence" covers BOTH shapes —
+      // r110 SP-(b)/SA-: "structural data absence" covers BOTH shapes —
       // no events at all (0 rows), and events that exist but are not fit-eligible (a single
       // eval run's golden DB can never mature past the T1-units / T2-baseline / T3-window
-      // clauses — those failures quote data immaturity, not pipeline regressions). Such runs
-      // record reasonCode=data-absent and never build the 3-streak (eval exit stays 0).
-      // Synthetic-track skips stay reasonCode=gate-not-met: they are deliberate machinery.
+      // clauses — those failures quote data immaturity, not pipeline regressions). Reported in E3
+      // observational output only (#591 retired eval-side D7 3-streak accounting).
       const dataAbsent = zoneTrack === "consumed" && isStructuralAbsence(gate.failures);
       let evWriteFails = 0;
       for (const r of results) if (typeof r.eventWriteFailures === "number") evWriteFails += r.eventWriteFailures;

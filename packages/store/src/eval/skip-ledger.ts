@@ -7,13 +7,15 @@
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
-// (#591): D7 3-streak escalation is retired on the eval CLI path because golden eval runs on
-// ephemeral per-case DBs (consumed track is structurally data-absent). This module's @3 schema,
-// lock, and atomic write remain active for switch-run / ans switch-state; legacy skip-streak
-// helpers and fields are preserved for backward-compatible parsing and unit contracts.
+// Design: retire D7 3-streak escalation on the eval CLI path (#591) — golden eval runs on
+// ephemeral per-case DBs (consumed track is structurally data-absent), and real consumed-track
+// PSI + human-review escalation live in switch-run against the durable DB. Rejected alternatives:
+// synthesizing a PSI baseline for ephemeral DBs, or warn-only streaks on data-absent. This
+// module's @3 schema, lock, and atomic write remain active for switch-run / ans switch-state;
+// legacy skip-streak helpers and fields stay for backward-compatible parsing and unit contracts.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LedgerLockTimeoutError, withLedgerLock } from "./ledger-lock";
+import { withLedgerLock } from "./ledger-lock";
 import type { SwitchPhase } from "./switch-machine";
 
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
@@ -158,10 +160,9 @@ export function parseSkipLedger(text: string): SkipLedger {
   return j as unknown as SkipLedger;
 }
 
-// Record one eval run's skip-key set (skips are "identical" when the key set repeats).
-// Multi-tier alignment with: consecutive identical sets bump the streak; a run with
-// zero skips resets it.: a data-absent run never bumps the streak and breaks the
-// run (streak back to 0), so the next gate-not-met run starts at 1.
+// Legacy skip-streak helper (retired on the eval CLI path in #591; kept for backward-compatible
+// @1/@2/@3 schema contracts and unit tests). Consecutive identical key sets bump the streak;
+// zero skips or data-absent entries reset it to 0.
 export function recordSkips(
   ledger: SkipLedger,
   skipKeys: string[],
@@ -227,7 +228,7 @@ export function tailStreak(actions: SwitchActionEntry[], pred: (a: SwitchActionE
   return n;
 }
 
-// close the dual-writer read-modify-write window for the JSON skip-ledger.
+// Serialize read-modify-write cycles on the JSON skip-ledger (used by switch-run).
 // A sidecar lock file wraps every read/modify/atomic-rename cycle; the reaping and release rules
 // live in ledger-lock so the skip and ship-override ledgers answer the same way.
 function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }
@@ -269,19 +270,4 @@ export function quarantineSkipLedger(outDir: string, at: string): QuarantineResu
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
   return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
-}
-
-export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
-
-// Three outcomes reach a caller: the ledger is unreadable, the lock is held, or the filesystem
-// refused. Anything else is a bug in the writer and is rethrown, so no caller can mistake it for a
-// missing write.
-export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
-  if (error instanceof SkipLedgerError) return "corrupt";
-  if (error instanceof LedgerLockTimeoutError) return "lock-busy";
-  // a real errno failure. Node's programming errors carry a code too (ERR_INVALID_ARG_TYPE), and
-  // reading one of those as a disk problem is how a bug turns into a silently missing skip.
-  const errno = error as NodeJS.ErrnoException | null;
-  if (errno && typeof errno.errno === "number" && !/^ERR_/.test(String(errno.code ?? ""))) return "io";
-  throw error;
 }
