@@ -84,7 +84,7 @@ try {
     let timedOut = false;
     try { advanceSwitch({ outDir: dir, dbPath, mode: "real" }); } catch (e) { timedOut = e instanceof LedgerLockTimeoutError; }
     ok("F4 a fresh unreadable lock is left alone", timedOut && existsSync(lock) && readFileSync(lock, "utf8") === "{ not-json");
-    ok("F4 a lock timeout quarantines nothing", !readdirSync(dir).some((name) => name.includes(".quarantined-")));
+    ok("F4 advanceSwitch leaves the ledger alone on a lock timeout", !readdirSync(dir).some((name) => name.includes(".quarantined-")));
     const aged = (Date.now() - LEDGER_LOCK_MAX_AGE_MS - 60 * 1000) / 1000;
     utimesSync(lock, aged, aged);
     const r = advanceSwitch({ outDir: dir, dbPath, mode: "real" });
@@ -193,6 +193,9 @@ try {
     }
     ok("F6 a live owner keeps the lock however old its record", !entered && error instanceof LedgerLockTimeoutError && readFileSync(lock, "utf8") === record);
     ok("F6 lock contention is not reported as a broken ledger", !(error instanceof SkipLedgerError));
+    const message = error instanceof Error ? error.message : "";
+    ok("F6 the timeout names the holder, the path, and the way out",
+      message.includes(String(process.pid)) && message.includes(".skip-ledger.lock") && message.includes("delete the lock file"));
     rmSync(dir, { recursive: true, force: true });
   }
 

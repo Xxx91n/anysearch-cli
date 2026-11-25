@@ -187,6 +187,46 @@ try {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// #577: the override ledger is wired to the same lock, so a proven-dead owner is still reaped at
+// once. This pins the wiring; the age rules themselves are covered once, where they live.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-dead-"));
+  const lock = join(dir, ".ship-override-ledger.lock");
+  writeFileSync(lock, JSON.stringify({ pid: 999999, at: new Date().toISOString() }), "utf8");
+  const realKill = process.kill;
+  process.kill = ((pid: number, signal?: string | number) => {
+    if (pid === 999999 && signal === 0) throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    return realKill(pid, signal as NodeJS.Signals);
+  }) as typeof process.kill;
+  let entered = false;
+  try {
+    withShipOverrideLedgerLock(dir, () => { entered = true; return null; });
+  } finally {
+    process.kill = realKill;
+  }
+  assert(entered && !existsSync(lock), "a proven-dead owner is reaped on the override lock");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: a held lock is exit 3 (contention, nothing changed), not exit 2 (corrupt ledger).
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-exit3-"));
+  writeFileSync(join(dir, ".ship-override-ledger.lock"), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), "utf8");
+  const gateReport = join(dir, "eval-report.json");
+  writeFileSync(gateReport, JSON.stringify({ gate: { verdict: "fail", exitCode: 1, failures: ["weakest-link RED arm-a"] } }), "utf8");
+  const res = verifierRun([
+    "record",
+    "--ledger", dir,
+    "--dataset-fingerprint", "ds",
+    "--holdout-fingerprint", "h",
+    "--reason-code", "provider-emergency",
+    "--gate-report", gateReport,
+  ]);
+  assert(res.code === 3, "lock contention exits 3, not 2");
+  assert(res.stderr.includes(".ship-override-ledger.lock") && res.stderr.includes("delete the lock file"), "the exit-3 message names the lock file and the way out");
+  rmSync(dir, { recursive: true, force: true });
+}
+
 // Eval integrity contract accepts override only with a closed reasonCode.
 {
   const ok = evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "override", overrideReasonCode: "provider-emergency" } });

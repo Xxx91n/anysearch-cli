@@ -1,19 +1,16 @@
 // One sidecar lock, shared by the eval ledgers.
 //
 // The skip/gain ledger and the ship override ledger each carried a byte-identical copy of this
-// logic and already drifted once, so the rules live here and both ask for them.
+// logic and already drifted once, so the rules live here and both ask for them. The lock file
+// holds one JSON record, written when the lock is taken and never refreshed: { pid, at }.
 //
-// The lock file holds one JSON record, written when the lock is taken and never refreshed:
-// { pid, at }. Because nothing refreshes it, age alone says nothing about whether the holder is
-// still working — a paused or sleeping process keeps a very old record. Identity decides first:
-//
-//   probe says dead     -> reap, the owner is gone
-//   probe says alive    -> keep, however old the record is
-//   probe says nothing  -> fall back to age, the only case age was ever good for
-//
-// Reaping re-reads the record and deletes only the exact text it judged, so a lock another writer
-// put down in between survives. Releasing deletes the file only while it still holds the record
-// this call wrote, so a lock that changed hands is never removed by its previous owner.
+// Design: identity decides before age — probe dead reaps, alive keeps, unknown falls to age —
+// because a record is never refreshed while it is held, so its age cannot separate a paused owner
+// (asleep, at a breakpoint, on a wedged network path) from a dead one. Reaping a live owner's lock
+// is how two writers ended up appending to one ledger (#577).
+// Design: reaping and releasing compare the file's exact record text before deleting — a lock that
+// changed hands in between belongs to whoever wrote that text, not to the reader that judged the
+// previous one.
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { probePid } from "../process-liveness.js";
@@ -31,9 +28,6 @@ export interface LedgerLockRecord {
 }
 
 export class LedgerLockTimeoutError extends Error {
-  readonly lockPath: string;
-  readonly owner: Partial<LedgerLockRecord> | null;
-
   constructor(lockPath: string, owner: Partial<LedgerLockRecord> | null, waitedMs: number) {
     const heldBy = owner && typeof owner.pid === "number"
       ? " (held by pid " + owner.pid + (owner.at ? " since " + owner.at : "") + ")"
@@ -44,8 +38,6 @@ export class LedgerLockTimeoutError extends Error {
       "If you know that process is gone, delete the lock file and retry",
     );
     this.name = "LedgerLockTimeoutError";
-    this.lockPath = lockPath;
-    this.owner = owner;
   }
 }
 
@@ -85,7 +77,7 @@ function readLock(lockPath: string): LockSnapshot | null {
 
 // 0 and negative pids are process groups on POSIX, so probing them answers about the caller, not
 // the owner. Only a positive pid is an identity worth a probe.
-function ownerIsGone(snapshot: LockSnapshot): boolean {
+function lockIsReapable(snapshot: LockSnapshot): boolean {
   const pid = snapshot.owner?.pid;
   if (typeof pid === "number" && Number.isInteger(pid) && pid > 0) {
     const liveness = probePid(pid);
@@ -95,18 +87,11 @@ function ownerIsGone(snapshot: LockSnapshot): boolean {
   return snapshot.ageMs !== null && snapshot.ageMs > LEDGER_LOCK_MAX_AGE_MS;
 }
 
-function reapIfUnchanged(lockPath: string, judged: string): void {
+function deleteIfContent(lockPath: string, expected: string): void {
   let current: string;
   try { current = readFileSync(lockPath, "utf8"); } catch { return; }
-  if (current !== judged) return; // the lock changed hands after the read that judged it
-  try { rmSync(lockPath, { force: true }); } catch { /* the next attempt re-judges */ }
-}
-
-function releaseIfOurs(lockPath: string, record: string): void {
-  try {
-    if (readFileSync(lockPath, "utf8") !== record) return; // not this call's lock any more
-  } catch { return; }
-  try { rmSync(lockPath, { force: true }); } catch { /* the next writer reaps it */ }
+  if (current !== expected) return;
+  try { rmSync(lockPath, { force: true }); } catch { /* the next writer re-judges it */ }
 }
 
 export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
@@ -124,7 +109,7 @@ export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
       const snapshot = readLock(lockPath);
       if (snapshot) {
         lastOwner = snapshot.owner;
-        if (ownerIsGone(snapshot)) reapIfUnchanged(lockPath, snapshot.record);
+        if (lockIsReapable(snapshot)) deleteIfContent(lockPath, snapshot.record);
       }
       sleep(LOCK_RETRY_MS);
       continue;
@@ -144,7 +129,7 @@ export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
     try {
       return fn();
     } finally {
-      releaseIfOurs(lockPath, record);
+      deleteIfContent(lockPath, record);
     }
   }
 

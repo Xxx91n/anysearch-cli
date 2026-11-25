@@ -336,14 +336,10 @@ async function main(): Promise<number> {
       } else {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
         console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
-        try {
-          withSkipLedgerLock(outDir, (sl) => {
-            streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-            return streak;
-          });
-        } catch (again) {
-          console.error("[eval] OBSERVATIONAL skip-ledger restart failed — eval continues: " + String((again as Error).message ?? again));
-        }
+        withSkipLedgerLock(outDir, (sl) => {
+          streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+          return streak;
+        });
       }
     }
   }
