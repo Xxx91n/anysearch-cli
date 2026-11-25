@@ -84,8 +84,11 @@ test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
     for (const args of [[], ["check"]]) {
       const { code, out } = await capture(() => runLlm(args));
       assert.equal(code, 1, out);
-      assert.match(out, /BROKEN \(one record cannot be read; `ans auth repair` keeps the rest\)/, out);
+      assert.match(out, /BROKEN \(one record cannot be read\)/, out);
       assert.doesNotMatch(out, /NO KEY/, "坏记录时也不能报没配：\n" + out);
+      // The way out rides on the `Credentials file: BROKEN` line; a per-provider
+      // label that repeated it would say it once per provider.
+      assert.equal((out.match(/ans auth repair/g) ?? []).length, 1, "修法只说一次：\n" + out);
     }
 
     // A healthy file still exits 0: the failure above comes from the file, not

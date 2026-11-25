@@ -23,12 +23,13 @@ import {
 } from "../config-llm";
 
 /** One wording for a provider whose key cannot be known, because the file that
- * would hold it is broken. Both listings say exactly this. A record fault is its
- * own case: the file was read, one entry was not, and `ans auth repair` can keep
- * the rest - "could not be read" would hide that way out. */
+ * would hold it is broken. Both listings say exactly this, and neither repeats the
+ * fix: the `Credentials file: BROKEN` line above already ends with it (`file.error`
+ * carries it), and a per-provider line would say it once per provider. A record
+ * fault is still its own case - the file was read, one entry was not. */
 function brokenLabel(file: CredentialFileContents): string {
   return file.fault?.kind === "invalid-record"
-    ? "BROKEN (one record cannot be read; `ans auth repair` keeps the rest)"
+    ? "BROKEN (one record cannot be read)"
     : "BROKEN (the credential file could not be read)";
 }
 
