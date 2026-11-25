@@ -67,7 +67,7 @@ test("给具体 provider 的命令名也从同一个常量拼出来（#573）", 
   const dollar = storeKeyCommand("openai", "https://gw.example/v1?$top=5");
   assert.equal(dollar, process.platform === "win32"
     ? 'ans auth set openai --endpoint "https://gw.example/v1?`$top=5"'
-    : 'ans auth set openai --endpoint "https://gw.example/v1?\$top=5"');
+    : 'ans auth set openai --endpoint "https://gw.example/v1?\\$top=5"');
 });
 
 test("文件里的说明用命令常量拼，改名不会在用户文件里留下一个不存在的命令（#570）", () => {
