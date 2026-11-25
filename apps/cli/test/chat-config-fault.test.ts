@@ -19,6 +19,7 @@ async function runChatFixture(opts: {
   configToml?: string;
   configDirectory?: boolean;
   projectToml?: string;
+  legacyProjectToml?: string;
   credentials?: string;
   bindings?: Binding[];
   argv?: string[];
@@ -32,6 +33,10 @@ async function runChatFixture(opts: {
   if (opts.projectToml !== undefined) {
     mkdirSync(join(cwd, ".ans"), { recursive: true });
     writeFileSync(join(cwd, ".ans", "config.toml"), opts.projectToml);
+  }
+  if (opts.legacyProjectToml !== undefined) {
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "config.toml"), opts.legacyProjectToml);
   }
   if (opts.credentials !== undefined) writeFileSync(join(home, ".ans", "credentials.json"), opts.credentials);
   if (opts.bindings !== undefined) {
@@ -185,6 +190,16 @@ test("a broken project config is named by its relative path and keeps the missin
   // test must not.
   const projectLine = result.stderr.split("\n").find((line) => line.startsWith("The project config file"));
   assert.ok(projectLine);
+  assert.ok(!projectLine.includes(result.cwd));
+});
+
+test("a broken legacy-layout project file names the file actually read", async () => {
+  const result = await runChatFixture({ legacyProjectToml: "[llm\n" });
+  assert.equal(result.code, 3);
+  const projectLine = result.stderr.split("\n").find((line) => line.startsWith("The project config file"));
+  assert.ok(projectLine);
+  assert.match(projectLine, /\(\.anysearch\/config\.toml\) is broken/);
+  assert.doesNotMatch(projectLine, /\.ans\/config\.toml/);
   assert.ok(!projectLine.includes(result.cwd));
 });
 

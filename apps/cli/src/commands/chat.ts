@@ -13,7 +13,7 @@ import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
 import { createEngine } from "../composition";
-import { formatLlmConfigGap, resolveLlmConfig, userConfigPath } from "../config-llm";
+import { formatLlmConfigGap, needsLlmSetupHint, projectConfigRelativePath, resolveLlmConfig, userConfigPath } from "../config-llm";
 import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
@@ -143,12 +143,12 @@ export async function runChat(argv: string[]): Promise<number> {
   const cfg = resolveLlmConfig({ home: configHome, flags, credentialsFile: credentialFile });
   if (!cfg.provider || !cfg.model) {
     // #581: say what the files actually are, in one fixed order: broken file(s),
-    // then the half-written one, then the stored key nobody can use. A broken
-    // user file is the diagnosis; the old sentence is kept verbatim and the
-    // "nothing configured" hint below never adds an example provider name to it.
-    const gap = formatLlmConfigGap(cfg);
+    // then the half-written one (file, env, or CLI layer), then the stored key
+    // nobody can use. The shared hint decides the "nothing configured" line:
+    // half config and a broken user file get their own sentence instead.
+    const gap = formatLlmConfigGap(cfg, projectConfigRelativePath());
     if (gap) process.stderr.write(gap + "\n");
-    if (!cfg.provider && !cfg.model && cfg.configFiles.user.status !== "broken") {
+    if (needsLlmSetupHint(cfg)) {
       process.stderr.write("LLM provider not configured.\n");
       process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes " + userConfigPath() + ")\n");
       process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");

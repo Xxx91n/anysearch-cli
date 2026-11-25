@@ -24,7 +24,7 @@ import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync,
   unlinkSync, writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
 import { sweepStaleWorkFiles } from "./stale-work-files.js";
@@ -165,18 +165,23 @@ export interface ResolvedLlmConfig {
 
 const USER_BROKEN = "LLM config file is broken; provider/model could not be loaded. Fix the config file and try again.";
 // The project file is named by its path inside the project, never by an absolute
-// path: the sentence also travels in MCP tool results (see §8 of the spec).
-const PROJECT_BROKEN =
-  "The project config file (.ans/config.toml) is broken; provider/model could not be loaded from it. Fix it and try again.";
+// path: the sentence also reaches MCP tool results, which must stay free of
+// absolute paths.
+const DEFAULT_PROJECT_CONFIG_LABEL = ".ans/config.toml";
 const STORED_KEY_BROKEN =
   "A model API key is still stored in credentials.json, but it is not in use until the config is fixed.";
 const STORED_KEY_UNCONFIGURED =
   "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.";
 
-const HALF_LAYER_LABELS: Record<"user" | "project", string> = {
-  user: "The user config file",
-  project: "The project config file (.ans/config.toml)",
-};
+/** The project file's path inside the project, using forward slashes. */
+export function projectConfigRelativePath(cwd: string = process.cwd()): string {
+  return relative(cwd, projectConfigPath(cwd)).split(sep).join("/");
+}
+
+function projectBrokenSentence(label: string): string {
+  return "The project config file (" + label + ") is broken; provider/model could not be loaded from it. " +
+    "Fix it and try again.";
+}
 
 /**
  * The one exit for "a config file is broken". Both files are judged separately
@@ -184,11 +189,14 @@ const HALF_LAYER_LABELS: Record<"user" | "project", string> = {
  * itself, and both sentences appear when both are broken. Sentences never
  * carry a value, a provider name, a warning's text, or an absolute path.
  */
-export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
+export function formatLlmConfigFault(
+  cfg: ResolvedLlmConfig,
+  projectLabel: string = DEFAULT_PROJECT_CONFIG_LABEL,
+): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const broken = (["user", "project"] as const)
     .filter((layer) => cfg.configFiles[layer].status === "broken")
-    .map((layer) => (layer === "user" ? USER_BROKEN : PROJECT_BROKEN));
+    .map((layer) => (layer === "user" ? USER_BROKEN : projectBrokenSentence(projectLabel)));
   return broken.length > 0 ? broken.join(" ") : undefined;
 }
 
@@ -198,30 +206,39 @@ export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined
  * instead of naming a field it never had. A non-table [llm] never reaches here
  * — it is `no-llm`, not `half`.
  */
-function halfConfigSentence(state: LlmConfigFileState): string | undefined {
+function halfConfigSentence(state: LlmConfigFileState, projectLabel: string): string | undefined {
   if (state.status !== "half") return undefined;
   const hasProvider = state.present.includes("provider");
   const hasModel = state.present.includes("model");
-  const detail = hasProvider && !hasModel ? "sets provider but not model"
-    : hasModel && !hasProvider ? "sets model but not provider"
-      : "has an [llm] section, but neither provider nor model is set";
-  return HALF_LAYER_LABELS[state.layer] + " " + detail + ".";
+  let detail: string;
+  if (hasProvider && !hasModel) {
+    detail = "sets provider but not model";
+  } else if (hasModel && !hasProvider) {
+    detail = "sets model but not provider";
+  } else {
+    detail = "has an [llm] section, but neither provider nor model is set";
+  }
+  const label = state.layer === "user" ? "The user config file" : "The project config file (" + projectLabel + ")";
+  return label + " " + detail + ".";
 }
 
 /**
  * Why this run has no usable provider/model, in the fixed order (#581): broken
- * files, then half-written files, then a stored model key that no config can
- * use. The caller adds its own "nothing configured" guidance afterwards, so a
- * broken user file keeps its old sentence and never points at the example
- * provider name.
+ * files, then half-written files (including a partial env/CLI layer), then a
+ * stored model key that no config can use. The caller adds its own "nothing
+ * configured" guidance after this, so a broken user file keeps its old sentence
+ * and never points at the example provider name.
  */
-export function formatLlmConfigGap(cfg: ResolvedLlmConfig): string | undefined {
+export function formatLlmConfigGap(
+  cfg: ResolvedLlmConfig,
+  projectLabel: string = DEFAULT_PROJECT_CONFIG_LABEL,
+): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const sentences: string[] = [];
-  const fault = formatLlmConfigFault(cfg);
+  const fault = formatLlmConfigFault(cfg, projectLabel);
   if (fault) sentences.push(fault);
   for (const layer of ["user", "project"] as const) {
-    const half = halfConfigSentence(cfg.configFiles[layer]);
+    const half = halfConfigSentence(cfg.configFiles[layer], projectLabel);
     if (half) sentences.push(half);
   }
   // A partial env/CLI layer has no file record. Without this sentence a run
@@ -239,6 +256,15 @@ export function formatLlmConfigGap(cfg: ResolvedLlmConfig): string | undefined {
     sentences.push(fault ? STORED_KEY_BROKEN : STORED_KEY_UNCONFIGURED);
   }
   return sentences.length > 0 ? sentences.join(" ") : undefined;
+}
+
+/**
+ * True when neither field resolved and the user file is not broken: the host
+ * adds its own "nothing configured" guidance. Half config is not this case —
+ * its gap sentence already names the missing field and layer.
+ */
+export function needsLlmSetupHint(cfg: ResolvedLlmConfig): boolean {
+  return !cfg.provider && !cfg.model && cfg.configFiles.user.status !== "broken";
 }
 
 export interface ResolveLlmOpts {

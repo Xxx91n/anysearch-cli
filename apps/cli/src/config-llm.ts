@@ -7,12 +7,13 @@
 
 export {
   displayEndpoint,
-  formatLlmConfigFault,
   formatLlmConfigGap,
   KEY_SOURCE_LABELS,
+  needsLlmSetupHint,
   parseLlmFlags,
   parseLlmToml,
   projectConfigPath,
+  projectConfigRelativePath,
   readUserCredentials,
   resolveConfigHome,
   resolveLlmConfig,
