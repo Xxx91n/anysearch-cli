@@ -5,7 +5,7 @@
 // durable PI record takes a lock before touching it. The lock is a directory
 // (mkdir is atomic) under `<piSessionDir>/locks/<key>.lock` holding:
 //
-//   owner.json  { pid, host, startedAt } — the holder's identity
+//   owner.json  { pid, host, lockedAt } — the holder's identity
 //   heartbeat   touched on a timer while the holder runs
 //
 // A plain directory-mtime lock mistakes a long but healthy run for a dead
@@ -132,8 +132,8 @@ function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
     ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host + holderNote(facts) + "."
     : "";
   if (facts.liveness === "dead") {
-    return "Session lock: the holder is gone, but its lock could not be cleared." + holder
-      + " Lock: " + lockPath + ". Delete that lock directory and retry.";
+    return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath
+      + ". That process is gone, so delete that lock directory and retry.";
   }
   if (facts.liveness === "alive") {
     return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath
@@ -249,15 +249,13 @@ function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined 
     throw new UnreadableOwnerError("owner.json exists but cannot be read");
   }
   try {
-    // `startedAt` is the field's older name, still present in locks written
-    // before the rename.
     const raw = JSON.parse(text) as Partial<SessionLockHolder> & { startedAt?: unknown };
     if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
       throw new UnreadableOwnerError("owner.json has no usable identity");
     }
-    // Best effort, unlike the identity above: a lock written before this field
-    // existed still names its holder, so a missing or unusable time only costs
-    // the message that one detail. `startedAt` is the older name for it.
+    // Best effort, unlike the identity above: a missing or unusable time only
+    // costs the message that one detail. `startedAt` is the field's older name,
+    // still present in locks written before the rename.
     const lockedAt = readableTime(raw.lockedAt) ?? readableTime(raw.startedAt);
     return lockedAt === undefined
       ? { pid: raw.pid as number, host: raw.host }
@@ -269,9 +267,9 @@ function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined 
 }
 
 /**
- * A timestamp the message can print, or undefined. The range check is not
- * pedantry: `new Date(1e300).toISOString()` throws, and that would turn a
- * "session busy" answer into an unreadable crash on the way out.
+ * A timestamp the message can print, or undefined. A value outside what a Date
+ * can represent makes `toISOString()` throw, which would turn a "session busy"
+ * answer into an unreadable crash on the way out.
  */
 function readableTime(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined;

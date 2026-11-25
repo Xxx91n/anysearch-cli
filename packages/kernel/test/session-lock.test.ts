@@ -93,7 +93,7 @@ function busyAt(
     case "alive":
       return busy.includes("(still running") && busy.includes("no longer belongs to that run");
     case "gone":
-      return busy.includes("holder is gone") && busy.includes("Delete that lock directory");
+      return busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes("That process is gone");
     case "anonymous":
       return busy.includes("nobody is using it");
     default:
