@@ -24,7 +24,7 @@ import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync,
   unlinkSync, writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
 import { sweepStaleWorkFiles } from "./stale-work-files.js";
@@ -181,12 +181,14 @@ function projectDisplayPath(cwd: string, path: string): string {
 }
 
 /**
- * The user file's `~/...` label. This is a path field: paths only. `path` must
- * be inside `home` (as `userConfigPath(home)` is); an outside path would render
- * as `~/../…`.
+ * The user file's `~/...` label. Paths only. A path outside `home` falls back
+ * to the file name, so an absolute path (including the cross-drive case on
+ * Windows) can never leak into an MCP result.
  */
 function userDisplayPath(home: string, path: string): string {
-  return "~/" + relative(home, path).split(sep).join("/");
+  const rel = relative(home, path);
+  if (rel.startsWith("..") || isAbsolute(rel)) return basename(path);
+  return "~/" + rel.split(sep).join("/");
 }
 
 function projectBrokenSentence(label: string): string {
