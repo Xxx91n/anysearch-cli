@@ -5,7 +5,7 @@
 ### Changed
 
 - **`session-lock` 的回收判定**：改用共享的三态探活 `probePid`。`dead` 立刻回收、`alive` 永不回收、`unknown` 落到和「别的机器」同一条 10 分钟 age 规则（心跳是唯一证据）。`EPERM` 仍按 `alive` 处理，不进 age 规则。运行锁和聊天租约走同一份判定，行为一致。
-- **busy 文本**：`LockHeldError` 记住锁目录，消息在原来那句后面补上 `Holder: pid <n> on <host>`、`Lock: <路径>` 和手动清理办法；CLI 和 MCP 的中文「这段会话正在别处运行」也带上租约目录。
+- **busy 文本**：`LockHeldError` 记住锁目录，消息在原来那句后面补上 `Holder: pid <n> on <host>`、`Lock: <路径>` 和手动清理办法；CLI 和 MCP 的中文「这段会话正在别处运行」也带上持有者的 pid/host 和租约目录。
 
 ### Known limits
 
