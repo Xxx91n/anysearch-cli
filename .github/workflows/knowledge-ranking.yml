@@ -32,6 +32,13 @@ jobs:
         with:
           working-directory: candidate
           install: false
+          # Design: cache: true with both lockfiles in the key — the cache holds
+          # pnpm's store, not node_modules, so one store serves both installs, and
+          # the paths stay repo-root-relative (not relative to working-directory).
+          cache: true
+          cache-dependency-path: |
+            candidate/pnpm-lock.yaml
+            baseline/pnpm-lock.yaml
       - uses: actions/setup-node@v5
         with:
           node-version: 22
