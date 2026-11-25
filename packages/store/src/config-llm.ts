@@ -175,9 +175,15 @@ const STORED_KEY_UNCONFIGURED =
 // tool results, which must stay free of absolute paths. They come from the SAME
 // home/cwd the resolver read, so a surface never has to guess the file.
 
-/** The project file's path inside the project, using forward slashes. */
+/** True when `rel` escapes its base or is already absolute (cross-drive on Windows). */
+function leavesBase(rel: string): boolean {
+  return rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel);
+}
+
+/** The project file's relative path; an escaping/absolute path falls back to its file name. */
 function projectDisplayPath(cwd: string, path: string): string {
-  return relative(cwd, path).split(sep).join("/");
+  const rel = relative(cwd, path);
+  return leavesBase(rel) ? basename(path) : rel.split(sep).join("/");
 }
 
 /**
@@ -187,8 +193,7 @@ function projectDisplayPath(cwd: string, path: string): string {
  */
 function userDisplayPath(home: string, path: string): string {
   const rel = relative(home, path);
-  if (rel.startsWith("..") || isAbsolute(rel)) return basename(path);
-  return "~/" + rel.split(sep).join("/");
+  return leavesBase(rel) ? basename(path) : "~/" + rel.split(sep).join("/");
 }
 
 function projectBrokenSentence(label: string): string {
