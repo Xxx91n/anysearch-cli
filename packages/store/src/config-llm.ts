@@ -478,7 +478,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " + displayEndpoint(effective) +
           " — refusing to send that secret to a different endpoint; " +
-          bindingAdvice(resolved.provider, effective, resolved.sources.baseUrl) +
+          bindingAdvice(resolved.provider, effective, baseUrlLayer(resolved.sources.baseUrl)) +
           " (see `ans auth list` for what is stored)",
         );
       }
@@ -490,24 +490,28 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
 
 /** Where a base URL can be read back in full. The project file is not one of them:
  * it may only set provider and model, so it never carries a base URL. */
-const BASE_URL_SOURCE: Record<"cli" | "env" | "user", string> = {
+type BaseUrlLayer = "cli" | "env" | "user";
+const BASE_URL_SOURCE: Record<BaseUrlLayer, string> = {
   cli: "--llm.base-url",
   env: "ANS_LLM_BASE_URL",
   user: "the user config file",
 };
 
+/** The layers a base URL can come from, so the advice never guesses one. */
+function baseUrlLayer(source?: LlmLayer): BaseUrlLayer | undefined {
+  return source === "cli" || source === "env" || source === "user" ? source : undefined;
+}
+
 /** 地址能安全打印就给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
  * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。 */
-function bindingAdvice(provider: string, effective: string | null, source?: LlmLayer): string {
+function bindingAdvice(provider: string, effective: string | null, source?: BaseUrlLayer): string {
   if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
   if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  const where = source !== undefined && source in BASE_URL_SOURCE
-    ? BASE_URL_SOURCE[source as keyof typeof BASE_URL_SOURCE]
-    : "your config";
-  return "re-store it for that endpoint: the full address is in " + where +
-    ", and the one shown above is not printable here (redacted, too long, or contains control characters). " +
-    "Run `" + storeKeyCommand(provider) + " --endpoint <the endpoint from " + where +
-    ">`, replacing the angle-bracket part with the real address";
+  const where = source === undefined ? undefined : BASE_URL_SOURCE[source];
+  return "re-store it for that endpoint: " +
+    (where === undefined ? "take the full address from your config" : "the full address is in " + where) +
+    ". It cannot be printed here (redacted, too long, or contains control characters). Run `" +
+    storeKeyCommand(provider) + " --endpoint <that address>`, replacing the angle-bracket part";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

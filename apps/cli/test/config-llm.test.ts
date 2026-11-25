@@ -474,9 +474,11 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   // The command is given, but its endpoint is a placeholder that has to be
   // replaced: the address shown above is redacted, so pasting it back would bind
   // something nobody meant. The full value is named where it lives.
-  assert.match(warning, /--endpoint <the endpoint from ANS_LLM_BASE_URL>/, warning);
+  assert.match(warning, /--endpoint <that address>/, warning);
   assert.match(warning, /the full address is in ANS_LLM_BASE_URL/, warning);
-  assert.match(warning, /replacing the angle-bracket part with the real address/, warning);
+  assert.match(warning, /It cannot be printed here \(redacted, too long, or contains control characters\)/, warning);
+  // No "shown above": that pointer would send the user to the redacted copy.
+  assert.doesNotMatch(warning, /shown above/i, warning);
   assert.doesNotMatch(warning, /carries credentials/, "no false reason：" + warning);
   assert.doesNotMatch(warning, /user:pw@gw/, "the secret never printed：" + warning);
 });
@@ -519,7 +521,7 @@ test("过长的地址也走「不打印」那一档，理由不能是「带凭�
   const longUrl = "https://gw.example/v1/" + "x".repeat(300);
   resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: longUrl } }));
   const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
-  assert.match(warning, /not printable here \(redacted, too long, or contains control characters\)/, warning);
+  assert.match(warning, /cannot be printed here \(redacted, too long, or contains control characters\)/, warning);
   assert.doesNotMatch(warning, /carries credentials/, warning);
 });
 
