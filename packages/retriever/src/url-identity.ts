@@ -13,14 +13,9 @@
 // scheme/www/tracking and choked on a host with a trailing dot or a scheme-less
 // `host:port`. That copy is retired; this is the only implementation.
 
-// The exact parameters the old engine copy already stripped; `utm_*` is matched
-// by prefix so a campaign parameter the list never heard of is still tracking.
-const TRACKING_PARAMS: Record<string, true> = {
-  utm_source: true,
-  utm_medium: true,
-  utm_campaign: true,
-  utm_term: true,
-  utm_content: true,
+// Tracking parameters the old engine copy stripped by name. Everything with a
+// `utm_` prefix is matched by prefix, so it is not repeated here.
+const NAMED_TRACKING_PARAMS: Record<string, true> = {
   fbclid: true,
   gclid: true,
   ref: true,
@@ -79,7 +74,7 @@ export function normalizeUrlIdentity(raw: string): string {
   const port = url.port === "80" || url.port === "443" ? "" : url.port;
 
   for (const name of [...url.searchParams.keys()]) {
-    if (name.startsWith("utm_") || Object.hasOwn(TRACKING_PARAMS, name)) {
+    if (name.startsWith("utm_") || Object.hasOwn(NAMED_TRACKING_PARAMS, name)) {
       url.searchParams.delete(name);
     }
   }
