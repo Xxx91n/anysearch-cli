@@ -472,15 +472,21 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         const storedList = lookup.stored.length > 0
           ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
           : "(the provider default)";
-        // The display form, not the raw one: this advice is printed, and a base
-        // URL can carry `user:pass@` or a key in its query. Redacting it twice
-        // here would leave the secret in the part the user is told to paste.
-        const effectiveShown = displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl));
+        // Two rules meet here: a URL that carries credentials must not be printed
+        // (this goes to stderr and into logs), and a redacted URL must not be
+        // handed to the user as the value to store - that binding would be wrong.
+        // So the advice names the value when it is safe to print, and asks for it
+        // when it is not.
+        const effective = normalizeBindingEndpoint(resolved.baseUrl);
+        const effectiveShown = displayEndpoint(effective);
+        const endpointArg = effective && effective === effectiveShown
+          ? effectiveShown
+          : "<the endpoint from your config>";
         warn(
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " + effectiveShown +
           " — refusing to send that secret to a different endpoint; run `" +
-          storeKeyCommand(resolved.provider, effectiveShown) +
+          storeKeyCommand(resolved.provider, endpointArg) +
           "` for this endpoint (see `ans auth list` for what is stored)",
         );
       }

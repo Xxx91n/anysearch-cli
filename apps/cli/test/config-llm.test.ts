@@ -471,6 +471,9 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   assert.ok(warning, "the warning is printed");
   assert.doesNotMatch(warning, /pw@/, warning);
   assert.doesNotMatch(warning, /key=secret/, warning);
+  // And the redacted URL is not handed over as the value to store: that binding
+  // would point where the user never meant it to.
+  assert.match(warning, /--endpoint "<the endpoint from your config>"/, warning);
 });
 
 test("an unset env_key falls through to the stored key instead of stopping", () => {
