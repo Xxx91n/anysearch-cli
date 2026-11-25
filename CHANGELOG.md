@@ -1,3 +1,20 @@
+## Unreleased — #606: 网址身份只留一把尺子
+
+一句话说清：**「这两个网址是不是同一页」以前只有 engine 里一份私有实现，它只管 scheme、`www.` 和几个 tracking 参数；尾点、默认端口、fragment 都不认，`example.com.:443/x?utm_source=a#frag` 和 `https://example.com/x` 会被当成两页。现在归一化收在 `@anysearch-cli/retriever` 的 `normalizeUrlIdentity`，搜索去重、资料库写入、摘要来源比对共用它；用户看到的链接不变。**
+
+### Changed
+
+- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉 80/443 默认端口，去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序和非 tracking 参数原样保留。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。
+- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着，CLI 搜索输出形状没动。
+- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同一页的三种写法不再留两条活行。
+- **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 收到模型写的任意拼法先归一化再查行；行里存的身份和模型引用的 `https://...` 不再对不上。
+
+### Tests
+
+- `packages/retriever/test/url-identity.test.ts`：三种写法归一成同一身份，默认端口/尾点/`www.`/tracking/fragment、非默认端口和非 http(s) 输入。
+- `packages/kernel/test/engine-url-identity.test.ts`：一个信息源返回三种写法，只留一条结果，`sourceUrl` 仍带 scheme。
+- `packages/store/test/url-identity.test.ts`：两次写入同一页的两种写法落同一身份，旧行被顶掉；`adjudicateMemory` 的默认实体键也是身份。
+
 ## Unreleased — #581: `ans chat` / `ans_chat` 说清哪份配置坏了、缺什么
 
 一句话说清：**以前缺 provider/model 时两个入口基本只说「没配」；用户级的 `config.toml` 坏了还能看到一句英文，仓库里的 `.ans/config.toml` 坏了却完全看不出来；文件写到一半和从来没配过也长得一模一样。现在两个入口读每份文件的真实状态：坏文件逐层点名（项目级只给相对路径 `.ans/config.toml`），半配置说清哪一层、缺 provider 还是 model，最后才落到原来的「什么都没配」；`credentials.json` 里还存着模型 key 时补一句「key 还在，但没配模型可用」。**

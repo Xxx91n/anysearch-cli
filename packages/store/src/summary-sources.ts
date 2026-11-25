@@ -1,3 +1,4 @@
+import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 // #263 (D8/D9): summary provenance and the suspension a correction causes.
 //
 // Two problems this module solves, both named in the ticket:
@@ -439,7 +440,9 @@ export function resolveSummarySourcesFromReads(
       continue;
     }
     if (typeof url !== "string" || url.length === 0) continue;
-    for (const id of urlMaterialRows(db, url)) push("material", id);
+    // #606: the archive stores the URL identity, while a summary cites whatever
+    // spelling the model read. Compare on the same ruler, never the raw string.
+    for (const id of urlMaterialRows(db, normalizeUrlIdentity(url))) push("material", id);
   }
   return out;
 }
