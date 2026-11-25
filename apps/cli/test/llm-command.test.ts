@@ -43,6 +43,29 @@ async function capture(fn: () => Promise<number>): Promise<{ code: number; out: 
   }
 }
 
+test("ans llm set 打出的命令名来自常量，占位符不会漏到输出里（#573）", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-llm-573-"));
+  const saved: Record<string, string | undefined> = {};
+  for (const key of ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    const { code, out } = await capture(() => runLlm(["set", "openai"]));
+    assert.equal(code, 0, out);
+    assert.match(out, /ans auth set openai/, "the command is named for this provider：" + out);
+    assert.doesNotMatch(out, /<provider>/, "the placeholder never reaches the user：" + out);
+  } finally {
+    for (const key of ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
   const home = mkdtempSync(join(tmpdir(), "ans-llm-357-"));
   const saved: Record<string, string | undefined> = {};

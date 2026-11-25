@@ -466,8 +466,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
       } else if (lookup.status === "endpoint-mismatch" && resolved.provider) {
-        // The lookup returns "absent" without a provider, so a mismatch always
-        // has one; naming it lets the message quote the command for this provider.
+        // Narrowing, not a runtime check: `lookupModelCredential` returns "absent"
+        // without a provider, so a mismatch already implies one. The guard is here
+        // only so the command can be built from a typed string.
         // Name every stored endpoint. Reporting one (whichever the file sorted
         // first) would send the user to fix the wrong binding.
         const storedList = lookup.stored.length > 0

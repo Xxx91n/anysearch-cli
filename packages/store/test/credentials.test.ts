@@ -50,6 +50,9 @@ test("给具体 provider 的命令名也从同一个常量拼出来（#573）", 
   assert.equal(storeKeyCommand("openai"), "ans auth set openai");
   assert.equal(storeKeyCommand("openai").startsWith(STORE_KEY_COMMAND.split(" ")[0] + " "), true);
   assert.equal(storeKeyCommand("exa").includes("<provider>"), false);
+  // A provider read from the config file is not validated: `$&` must be printed,
+  // not expanded into the text it would match.
+  assert.equal(storeKeyCommand("$&"), "ans auth set $&");
 });
 
 test("文件里的说明用命令常量拼，改名不会在用户文件里留下一个不存在的命令（#570）", () => {
