@@ -487,12 +487,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   return resolved;
 }
 
-/** 打印安全才给能直接粘的命令；地址带凭据或被截断就给占位符，让用户自己填。 */
+/** 能安全打印的地址才给可直接粘的命令；带凭据或过长的地址只说要做什么，不给命令——
+ * 半截地址（脱敏版或占位符）粘回去会存成一个谁都不认的绑定。 */
 function bindingAdvice(provider: string, effective: string | null): string {
   if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
   if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  return "run `" + storeKeyCommand(provider) + " --endpoint <your endpoint>` for this endpoint, " +
-    "replacing the placeholder with the effective endpoint above (it is not printed here)";
+  return "re-store the key for the endpoint above, it is not printed here because it carries credentials";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

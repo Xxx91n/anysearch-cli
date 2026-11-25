@@ -471,11 +471,10 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   assert.ok(warning, "the warning is printed");
   assert.doesNotMatch(warning, /pw@/, warning);
   assert.doesNotMatch(warning, /key=secret/, warning);
-  // The placeholder is not handed over as a value to store: unquoted, so a paste
-  // fails instead of binding an endpoint nobody meant, and the sentence says what
-  // to put there.
-  assert.match(warning, /--endpoint <your endpoint>/, warning);
-  assert.match(warning, /replacing the placeholder with the effective endpoint above/, warning);
+  // No command at all in this branch: a truncated or redacted URL pasted back
+  // would store a binding nobody meant.
+  assert.doesNotMatch(warning, /--endpoint/, warning);
+  assert.match(warning, /re-store the key for the endpoint above/, warning);
 });
 
 test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {
