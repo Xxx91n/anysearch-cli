@@ -4,12 +4,13 @@
 // asserted over tools/list in sdk-v2-schema.test.ts.
 
 import { buildServer } from "../src/server.js";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { KernelJsonSchemas } from "@anysearch-cli/kernel";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { RetrieverPort, Query } from "@anysearch-cli/kernel";
+import { hostDomainsDirs, loadDomainByNameIn } from "@anysearch-cli/store";
 import type { SessionStore, MemoryHit } from "@anysearch-cli/store";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
 
@@ -51,6 +52,77 @@ const mockEngine: CompositionResult = { retriever: mockRetriever, store: mockSto
 const server2 = buildServer(mockEngine);
 const server3 = buildServer(mockEngine);
 assert(server2 !== server3, "buildServer() returns new instance each call (factory pattern)");
+
+// #605: the package domains copy is generated at build time, so a source
+// checkout falls back to the repo root. The fallback must not fire for an
+// installed package, whose ../../../domains is <prefix>/node_modules/domains.
+{
+  // macOS tmpdir is /var → /private/var; resolve once so path assertions and
+  // process.chdir() see the same spelling.
+  const box = realpathSync(mkdtempSync(join(tmpdir(), "ans-mcp-root-domains-")));
+  const before = process.cwd();
+  try {
+    process.chdir(box);
+    const sourceSelf = join(box, "apps", "mcp", "dist");
+    mkdirSync(sourceSelf, { recursive: true });
+    mkdirSync(join(box, ".git"), { recursive: true });
+    mkdirSync(join(box, "domains"), { recursive: true });
+    writeFileSync(join(box, "package.json"), '{"name":"anysearch-cli"}');
+    writeFileSync(join(box, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
+    writeFileSync(join(box, "domains", "docs.toml"), [
+      'name = "docs"',
+      'description = "test docs domain"',
+      "",
+      "[settings]",
+      'language = "TypeScript"',
+      "",
+      "[skills]",
+      'active = ["search"]',
+      "",
+      "[sources]",
+      "enabled = []",
+      "",
+      "[rag]",
+      'adapter = "none"',
+      "",
+      "[hooks]",
+      'toolWhitelist = ["search", "fetch"]',
+    ].join("\n") + "\n");
+
+    const sourceDirs = hostDomainsDirs(sourceSelf, {});
+    assert(sourceDirs.includes(join(sourceSelf, "..", "domains")), "the package domains dir stays in the chain");
+    assert(sourceDirs.includes(join(box, "domains")), "the monorepo layout adds the repo-root domains fallback");
+    assert(
+      sourceDirs.indexOf(join(box, "domains")) < sourceDirs.indexOf(join(sourceSelf, "..", "domains")),
+      "the committed root comes before the generated package copy",
+    );
+    assert(loadDomainByNameIn("docs", sourceDirs).name === "docs", "the fallback loads a repo-root TOML");
+
+    const envDirs = hostDomainsDirs(sourceSelf, { ANS_DOMAINS_DIR: join(box, "domains") });
+    assert(envDirs[0] === join(box, "domains"), "an explicit ANS_DOMAINS_DIR stays at the chain head");
+
+    mkdirSync(join(box, ".ans", "domains"), { recursive: true });
+    writeFileSync(join(box, ".ans", "domains", "own.toml"), 'name = "own"\ndescription = "operator domain"\n');
+    const ownDirs = hostDomainsDirs(sourceSelf, {});
+    assert(ownDirs.includes(join(box, ".ans", "domains")), "the operator's .ans/domains stays in the chain");
+    assert(ownDirs.includes(join(box, "domains")), "the repo root still joins after it");
+
+    const bundleSelf = join(box, "apps", "cli", "mcp", "dist");
+    mkdirSync(bundleSelf, { recursive: true });
+    const bundleDirs = hostDomainsDirs(bundleSelf, {});
+    assert(bundleDirs.includes(join(box, "domains")), "the bundled ans-mcp entry finds the repo root too");
+    assert(loadDomainByNameIn("docs", bundleDirs).name === "docs", "the bundled entry loads a repo-root TOML");
+
+    const packagedSelf = join(box, "node_modules", "@anysearch-cli", "mcp", "dist");
+    mkdirSync(join(box, "node_modules", "domains"), { recursive: true });
+    writeFileSync(join(box, "node_modules", "domains", "default.toml"), 'name = "default"\ndescription = "decoy"\n');
+    const packagedDirs = hostDomainsDirs(packagedSelf, {});
+    assert(!packagedDirs.includes(join(box, "node_modules", "domains")), "an installed package does not read node_modules/domains");
+  } finally {
+    process.chdir(before);
+    rmSync(box, { recursive: true, force: true });
+  }
+}
 
 // Test 4 (regression): buildServer without an engine must
 // boot from a COLD HOME - a temp dir with no ~/.ans parent - proving the

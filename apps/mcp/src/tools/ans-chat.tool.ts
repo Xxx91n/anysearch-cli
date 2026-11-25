@@ -21,6 +21,7 @@ import {
   ChatAttemptBusyError,
   chatAttemptBusyText,
   credentialFileNotice,
+  fallbackAgentDomain,
   type ChatAttemptOutcome,
   type CredentialFileNotice,
   emptyRunUsage,
@@ -553,13 +554,7 @@ export function registerAnsChat(
             });
           }
           const taskBudgetScope = chatBudget.taskBudget;
-          const domain = eng.config ?? {
-            sources: { enabled: [] },
-            prompts: [],
-            skills: { active: ["search"] },
-            hooks: { toolWhitelist: ["search"] },
-            rag: { adapter: "none" },
-          };
+          const domain = eng.config ?? fallbackAgentDomain();
           // #132: explicit server-minted session handle (MCP 2026-07-28 /
           // SEP-2567). A caller that threads the handle from a previous
           // structuredContent.sessionId resumes the same L1/L2 anchors; omitting

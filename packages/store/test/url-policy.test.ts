@@ -17,6 +17,7 @@ import {
   loadPolicyFromToml,
   atomicWriteFile,
   createDomainReloader,
+  domainTomlPath,
 } from "../src/url-policy";
 
 let passed = 0;
@@ -148,6 +149,27 @@ writeFileSync(tomlPath, readFileSync(tomlPath, "utf8").replace("not = [valid tom
 const future3 = Date.now() / 1000 + 6;
 utimesSync(tomlPath, future3, future3);
 assert("reloader: repaired TOML -> reloaded again", rel().kind === "reloaded");
+
+// --- source checkout: caller dirs beat the generated apps/*/domains copy ---
+// The reloader's path must come from the same chain the loader used, or a
+// checkout edit updates the loader and leaves the runtime watching the copy.
+{
+  const savedEnv = process.env.ANS_DOMAINS_DIR;
+  delete process.env.ANS_DOMAINS_DIR;
+  const cwdDir = join(tmpDir, "checkout", "apps", "cli");
+  const rootDir = join(tmpDir, "checkout", "domains");
+  const copyDir = join(cwdDir, "domains");
+  mkdirSync(rootDir, { recursive: true });
+  mkdirSync(copyDir, { recursive: true });
+  writeFileSync(join(rootDir, "default.toml"), 'name = "root"\n', "utf8");
+  writeFileSync(join(copyDir, "default.toml"), 'name = "copy"\n', "utf8");
+  assert("domainTomlPath: caller dirs (repo root) beat the cwd build copy",
+    domainTomlPath(cwdDir, "default", [rootDir, copyDir]) === join(rootDir, "default.toml"));
+  assert("domainTomlPath: no dirs falls back to the cwd convention",
+    domainTomlPath(cwdDir, "default") === join(copyDir, "default.toml"));
+  if (savedEnv === undefined) delete process.env.ANS_DOMAINS_DIR;
+  else process.env.ANS_DOMAINS_DIR = savedEnv;
+}
 rmSync(tmpDir, { recursive: true, force: true });
 
 console.log("url-policy tests: " + passed + " passed, " + failed + " failed");

@@ -149,9 +149,10 @@ async function testLoadByName() {
     const schema = loadDomainByName("default", REPO_ROOT);
     assert(schema.name === "default", "loadDomainByName: name = default");
     assert(schema.sources.enabled.length === 3, "loadDomainByName: 3 sources enabled");
-    // shipped default whitelists the built-in search tool + 3 ctx_* host tools.
-    assert(schema.hooks.toolWhitelist.length === 4, "loadDomainByName: 4 hooks");
-    assert(schema.hooks.toolWhitelist.includes("search"), "loadDomainByName: search whitelisted ");
+    // #605: the shipped default whitelists exactly the two internal agent tools.
+    assert(schema.hooks.toolWhitelist.length === 2, "loadDomainByName: 2 hooks");
+    assert(schema.hooks.toolWhitelist.includes("search"), "loadDomainByName: search whitelisted");
+    assert(schema.hooks.toolWhitelist.includes("fetch"), "loadDomainByName: fetch whitelisted");
   } catch (e: any) {
     assert(false, "loadDomainByName default: " + e.message);
   }
@@ -164,6 +165,7 @@ async function testLoadByName() {
     assert(schema.sources.enabled.includes("exa"), "research includes exa");
     assert(schema.sources.enabled.includes("tavily"), "research includes tavily");
     assert(!schema.sources.enabled.includes("anysearch"), "research excludes anysearch");
+    assert(!schema.skills.active.includes("atomcode-research"), "research drops the removed atomcode skill");
   } catch (e: any) {
     assert(false, "loadDomainByName research: " + e.message);
   }

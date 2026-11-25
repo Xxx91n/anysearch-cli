@@ -33,6 +33,20 @@
         "^test"
       ]
     },
+    "@anysearch-cli/mcp#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/domains/**"
+      ],
+      "outputs": [
+        "dist/**",
+        "lib/**",
+        "domains/**"
+      ]
+    },
     "@anysearch-cli/cli#build": {
       "dependsOn": [
         "^build"

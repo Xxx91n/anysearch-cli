@@ -15,6 +15,28 @@
 - `packages/kernel/test/engine-url-identity.test.ts`：一个信息源返回三种写法，只留一条结果，`sourceUrl` 仍带 scheme。
 - `packages/store/test/url-identity.test.ts`：两次写入同一页的两种写法落同一身份，旧行被顶掉；`adjudicateMemory` 的默认实体键也是身份；改动前的老行在顶号和摘要来源查询里仍能被找到。
 
+## Unreleased — #605: 出厂域白名单只留真工具，domains 只维护仓根一份
+
+一句话说清：**三个出厂域的白名单一直列着 `ctx_execute`、`ctx_search`、`ctx_batch_execute`、`atomcode` 这些内核里根本没有的工具，`ans domain` / `ans doctor` 把它们当可用工具展示；MCP 包里还提交了一份 `domains` 副本，改仓根的 TOML 不构建就不会生效。现在白名单只剩 `search` 和 `fetch`，死名字和 `atomcode-research` 都删了；`apps/mcp/domains` 改成构建时生成、不进 Git，MCP 在没构建的源码树里直接读仓根。**
+
+### Changed
+
+- **三个出厂域**（`domains/default.toml`、`docs.toml`、`research.toml`）：`hooks.toolWhitelist = ["search", "fetch"]`，`ctx_execute` / `ctx_search` / `ctx_batch_execute` / `atomcode` 全删；research 的 `skills.active` 去掉 `atomcode-research`。`skills.toolRequires` 仍然不配。`fetch` 还没有工具实现，#608 接上后生效；三个 TOML 都标了占位。
+- **两个运行时的无域兜底**（`apps/cli/src/commands/chat.ts`、`apps/mcp/src/tools/ans-chat.tool.ts`）：没加载任何域时的兜底白名单从 `["search"]` 换成 `["search", "fetch"]`。两份手抄的兜底域对象合并成 kernel 的 `fallbackAgentDomain()` 工厂，每次给一份新对象；它没有站点白名单，域配置读失败时 `fetch` 不受站点限制，注释已写明这个代价。
+- **MCP 只维护一份 domains**：`apps/mcp/domains` 从 Git 移除并加进 `.gitignore`；构建时 `sync-domains.mjs` 仍从仓根复制，装好的包里照旧带着副本。CLI 和 MCP 共用 store 的 `hostDomainsDirs`：它从入口往上找检出根（`ans` 的 `apps/cli/dist`、`ans mcp` 的 `apps/cli/mcp/dist`、`apps/mcp/src|dist` 都找得到），源码检出先读仓根、再读包内生成副本，改根 TOML 不用重新 build 也能看见；检出内的 `<cwd>/domains` 构建副本不抢在仓根前面；`<cwd>/.ans/domains` 还是操作者自己的配置，保持原优先级。装好的包没有仓库标记，只读自己包里的副本，`<prefix>/node_modules/domains` 不会被误读。检出的判据和 `build-identity` 共用 `isRepoCheckoutRoot`（同一目录里同时有 `.git`、`pnpm-workspace.yaml`，且 `package.json` 是 `anysearch-cli` / `@anysearch-cli/*`），用户自己的 monorepo 不会被认成检出。
+- **Turbo 缓存跟着产物走**：`@anysearch-cli/mcp#build` 的输出补上 `domains/**`，输入补上 `$TURBO_ROOT$/domains/**`。改仓根的 TOML 会换掉 build 的哈希，不会命中旧缓存把一份过时的域副本还原回来。
+- **安装来源少了一个死取值**：`apps/cli/src/build-identity.ts` 的 `InstallSource` 去掉了永远返回不到的 `unknown`（`existsSync` 不抛异常，那个 catch 走不到），`ans upgrade status --json` 的 `installed.source` 现在只有 `checkout` / `package`；外部按三值写判断的地方要跟着改。
+- **读副本的地方改读仓根**：`packages/kernel/test/agent-tool-filter.test.ts` 和 `rag-adapter.test.ts` 只读 `domains/`；`scripts/recall-acceptance.mjs` 没设 `ANS_RECALL_MCP_DIST` 时读仓根，指向装好的 dist 时自动取 dist 旁边的 `domains/`，`ANS_RECALL_MCP_DOMAINS` 仍可覆盖；缺 `default.toml` 会说明两条可用的设置路并退 2。
+
+### Tests
+
+- `agent-tool-filter.test.ts` 逐个核对三个出厂域的白名单正好是 `["search", "fetch"]`，确认 `fetch` 能过过滤器，`atomcode-research` 不再启用；`fallbackAgentDomain()` 每条断言白名单、过滤结果和“两次调用不是同一对象”。
+- `domain-loader.test.ts` 的 default/research 断言改成新白名单和去掉的技能；`rag-adapter.test.ts` 只读仓根，生成副本再也盖不住坏 TOML。
+- `apps/mcp/test/server.test.ts` 用临时目录搭出三种布局：`apps/mcp/dist` 和 `apps/cli/mcp/dist` 都能从根 `domains/` 加载 `docs`（没有 `default.toml` 也照常走兜底）；装进 `node_modules` 后不会读旁边的同名 `domains`。
+- `apps/cli/test/domain-search-dirs.test.ts` 钉住 CLI 的同一结论：源码检出里仓根 `domains/` 排在包内生成副本前面。
+
+
+Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed content into `but resolve apply <path>:<N>`. `but resolve --ai` resolves everything at once.
 ## Unreleased — #581: `ans chat` / `ans_chat` 说清哪份配置坏了、缺什么
 
 一句话说清：**以前缺 provider/model 时两个入口基本只说「没配」；用户级的 `config.toml` 坏了还能看到一句英文，仓库里的 `.ans/config.toml` 坏了却完全看不出来；文件写到一半和从来没配过也长得一模一样。现在两个入口读每份文件的真实状态：坏文件逐层点名（项目级只给相对路径 `.ans/config.toml`），半配置说清哪一层、缺 provider 还是 model，最后才落到原来的「什么都没配」；`credentials.json` 里还存着模型 key 时补一句「key 还在，但没配模型可用」。**

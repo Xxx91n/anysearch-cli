@@ -1,5 +1,6 @@
 // @anysearch-cli/kernel: retrieval engine ports + agent runtime
 export * from "./ports";
+export * from "./fallback-domain";
 export * from "./runtime";
 export * from "./engine";
 // One remedy sentence per provider error class, printed by both hosts.
