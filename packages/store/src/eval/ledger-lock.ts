@@ -2,20 +2,20 @@
 //
 // The skip/gain ledger and the ship override ledger each carried a byte-identical copy of this
 // logic and already drifted once, so the rules live here and both ask for them. The lock file
-// holds one JSON record, written when the lock is taken and never refreshed: { pid, at }.
+// holds one JSON claim, written when the lock is taken and never refreshed: { pid, at }.
 //
 // Design: identity decides before age — probe dead reaps, alive keeps, unknown falls to age —
-// because a record is never refreshed while it is held, so its age cannot separate a paused owner
+// because a claim is never refreshed while it is held, so its age cannot separate a paused owner
 // (asleep, at a breakpoint, on a wedged network path) from a dead one. Reaping a live owner's lock
 // is how two writers ended up appending to one ledger (#577).
-// Design: reaping and releasing compare the file's exact record text before deleting — a lock that
+// Design: reaping and releasing compare the file's exact claim text before deleting — a lock that
 // changed hands in between belongs to whoever wrote that text, not to the reader that judged the
 // previous one.
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { probePid } from "../process-liveness.js";
 
-// A lock with no usable identity is reaped past this age. It bounds the wait on a record whose
+// A lock with no usable identity is reaped past this age. It bounds the wait on a claim whose
 // owner cannot be probed at all; it is not evidence that a live holder is gone.
 export const LEDGER_LOCK_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -42,7 +42,7 @@ export class LedgerLockTimeoutError extends Error {
 }
 
 interface LockSnapshot {
-  record: string;
+  claim: string;
   owner: Partial<LedgerLockRecord> | null;
   ageMs: number | null;
 }
@@ -54,25 +54,25 @@ function sleep(ms: number): void {
 // Unreadable content is not "nobody owns this": the file's own mtime still dates it, and that is
 // what keeps two writers from deleting each other's lock in the moment between create and write.
 function readLock(lockPath: string): LockSnapshot | null {
-  let record: string;
-  try { record = readFileSync(lockPath, "utf8"); } catch { return null; }
+  let claim: string;
+  try { claim = readFileSync(lockPath, "utf8"); } catch { return null; }
   let owner: Partial<LedgerLockRecord> | null = null;
   try {
-    const parsed = JSON.parse(record) as { pid?: unknown; at?: unknown } | null;
+    const parsed = JSON.parse(claim) as { pid?: unknown; at?: unknown } | null;
     if (parsed && typeof parsed === "object") {
       owner = {};
       if (typeof parsed.pid === "number") owner.pid = parsed.pid;
       if (typeof parsed.at === "string") owner.at = parsed.at;
     }
   } catch { owner = null; }
-  // the record's own `at` dates the holder's claim; mtime only dates a record too broken to carry
-  // one. A clock that ran ahead then reads as "not old yet", which waits rather than steals.
+  // the claim's own `at` dates the holder's word; mtime only dates a claim too broken to carry one.
+  // A clock that ran ahead then reads as "not old yet", which waits rather than steals.
   const at = owner?.at ? Date.parse(owner.at) : Number.NaN;
   let ageMs: number | null = Number.isFinite(at) ? Date.now() - at : null;
   if (ageMs === null) {
     try { ageMs = Date.now() - statSync(lockPath).mtimeMs; } catch { /* raced away */ }
   }
-  return { record, owner, ageMs };
+  return { claim, owner, ageMs };
 }
 
 // 0 and negative pids are process groups on POSIX, so probing them answers about the caller, not
@@ -87,7 +87,7 @@ function lockIsReapable(snapshot: LockSnapshot): boolean {
   return snapshot.ageMs !== null && snapshot.ageMs > LEDGER_LOCK_MAX_AGE_MS;
 }
 
-function deleteIfContent(lockPath: string, expected: string): void {
+function deleteIfClaim(lockPath: string, expected: string): void {
   let current: string;
   try { current = readFileSync(lockPath, "utf8"); } catch { return; }
   if (current !== expected) return;
@@ -96,7 +96,7 @@ function deleteIfContent(lockPath: string, expected: string): void {
 
 export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
   mkdirSync(dirname(lockPath), { recursive: true });
-  const record = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+  const claim = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
   const startedAt = Date.now();
   let lastOwner: Partial<LedgerLockRecord> | null = null;
 
@@ -109,19 +109,19 @@ export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
       const snapshot = readLock(lockPath);
       if (snapshot) {
         lastOwner = snapshot.owner;
-        if (lockIsReapable(snapshot)) deleteIfContent(lockPath, snapshot.record);
+        if (lockIsReapable(snapshot)) deleteIfClaim(lockPath, snapshot.claim);
       }
       sleep(LOCK_RETRY_MS);
       continue;
     }
 
     try {
-      writeFileSync(fd, record, "utf8");
+      writeFileSync(fd, claim, "utf8");
       closeSync(fd);
     } catch (e) {
       try { closeSync(fd); } catch { /* already closed */ }
       // nobody else can own a lock this call just created, so drop it instead of leaving a
-      // record-less file for the next writer to date by mtime
+      // claim-less file for the next writer to date by mtime
       try { rmSync(lockPath, { force: true }); } catch { /* a later writer reaps it by age */ }
       throw e;
     }
@@ -129,7 +129,7 @@ export function withLedgerLock<T>(lockPath: string, fn: () => T): T {
     try {
       return fn();
     } finally {
-      deleteIfContent(lockPath, record);
+      deleteIfClaim(lockPath, claim);
     }
   }
 

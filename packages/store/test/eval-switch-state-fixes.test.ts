@@ -15,6 +15,7 @@ import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
 import { SkipLedgerError, withSkipLedgerLock } from "../src/eval/skip-ledger";
 import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError } from "../src/eval/ledger-lock";
+import { withProbe } from "./helpers/probe-stub";
 
 const fixturePath = join(process.cwd(), "fixtures", "switch-registration.json");
 const canonical = readFileSync(fixturePath, "utf8");
@@ -153,27 +154,16 @@ try {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f5-"));
     const lock = join(dir, ".skip-ledger.lock");
     writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-    const realKill = process.kill;
-    const unconfirmable: typeof process.kill = (pid, signal) => {
-      if (pid === process.pid && signal === 0) {
-        throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
-      }
-      return realKill(pid, signal);
-    };
-    process.kill = unconfirmable;
-    let survived = false;
-    try {
+    const survived = withProbe(process.pid, "EPERM", () => {
       try {
         withSkipLedgerLock(dir, () => {});
       } catch {
         // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
       }
-      survived = existsSync(lock);
-    } finally {
-      process.kill = realKill;
-      rmSync(dir, { recursive: true, force: true });
-    }
+      return existsSync(lock);
+    });
     ok("F5 live lock survives an unconfirmable probe", survived);
+    rmSync(dir, { recursive: true, force: true });
   }
 
   // F6 (#577): a live owner keeps the lock however old its record is. Age alone is not evidence
@@ -206,17 +196,8 @@ try {
     const lock = join(dir, ".skip-ledger.lock");
     const gonePid = 999999;
     writeFileSync(lock, JSON.stringify({ pid: gonePid, at: new Date().toISOString() }), "utf8");
-    const realKill = process.kill;
-    process.kill = ((pid: number, signal?: string | number) => {
-      if (pid === gonePid && signal === 0) throw Object.assign(new Error("no such process"), { code: "ESRCH" });
-      return realKill(pid, signal as NodeJS.Signals);
-    }) as typeof process.kill;
     let entered = false;
-    try {
-      withSkipLedgerLock(dir, () => { entered = true; });
-    } finally {
-      process.kill = realKill;
-    }
+    withProbe(gonePid, "ESRCH", () => { withSkipLedgerLock(dir, () => { entered = true; }); });
     ok("F7 a proven-dead owner is reaped at once", entered && !existsSync(lock));
     rmSync(dir, { recursive: true, force: true });
   }
@@ -229,19 +210,12 @@ try {
     const unprobeablePid = 424242;
     writeFileSync(join(fresh, ".skip-ledger.lock"), JSON.stringify({ pid: unprobeablePid, at: new Date().toISOString() }), "utf8");
     writeFileSync(join(aged, ".skip-ledger.lock"), JSON.stringify({ pid: unprobeablePid, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() }), "utf8");
-    const realKill = process.kill;
-    process.kill = ((pid: number, signal?: string | number) => {
-      if (pid === unprobeablePid && signal === 0) throw Object.assign(new Error("probe could not classify"), { code: "ERR_INVALID_ARG_TYPE" });
-      return realKill(pid, signal as NodeJS.Signals);
-    }) as typeof process.kill;
     let freshEntered = false;
     let agedEntered = false;
-    try {
+    withProbe(unprobeablePid, "ERR_INVALID_ARG_TYPE", () => {
       try { withSkipLedgerLock(fresh, () => { freshEntered = true; }); } catch { /* expected: kept */ }
       withSkipLedgerLock(aged, () => { agedEntered = true; });
-    } finally {
-      process.kill = realKill;
-    }
+    });
     ok("F8 an unclassifiable owner with a fresh record keeps the lock", !freshEntered && existsSync(join(fresh, ".skip-ledger.lock")));
     ok("F8 an unclassifiable owner older than the max age is reaped", agedEntered && !existsSync(join(aged, ".skip-ledger.lock")));
     rmSync(fresh, { recursive: true, force: true });

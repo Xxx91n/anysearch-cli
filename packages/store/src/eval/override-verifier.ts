@@ -4,6 +4,10 @@
 // 1 = governance denied (quota, late obligation, invalid postmortem, no match)
 // 2 = malformed args, corrupt ledger, or internal/IO failure
 // 3 = the ledger lock is held by another writer — contention, not corruption; nothing was changed
+//
+// Design: lock contention exits 3 instead of reusing 2 — 2 already means "the ledger cannot be
+// trusted", and a caller that reacts by quarantining would destroy a healthy file because a peer
+// was slow (#577).
 
 import { existsSync, readFileSync } from "node:fs";
 import {

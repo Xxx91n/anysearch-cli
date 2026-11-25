@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withShipOverrideLedgerLock } from "../src/eval/override-ledger";
 import { LedgerLockTimeoutError } from "../src/eval/ledger-lock";
+import { withProbe } from "./helpers/probe-stub";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..");
@@ -133,27 +134,16 @@ try {
   const lockDir = mkdtempSync(join(tmpdir(), "ans-override-lock-"));
   const lock = join(lockDir, ".ship-override-ledger.lock");
   writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-  const realKill = process.kill;
-  const unconfirmable: typeof process.kill = (pid, signal) => {
-    if (pid === process.pid && signal === 0) {
-      throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
-    }
-    return realKill(pid, signal);
-  };
-  process.kill = unconfirmable;
-  let survived = false;
-  try {
+  const survived = withProbe(process.pid, "EPERM", () => {
     try {
       withShipOverrideLedgerLock(lockDir, () => {});
     } catch {
       // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
     }
-    survived = existsSync(lock);
-  } finally {
-    process.kill = realKill;
-    rmSync(lockDir, { recursive: true, force: true });
-  }
+    return existsSync(lock);
+  });
   assert(survived, "an unconfirmable probe keeps a live override writer's lock");
+  rmSync(lockDir, { recursive: true, force: true });
 }
 
 // #577: a live owner keeps the override lock however old the record is. Age is not proof of death,
@@ -193,19 +183,29 @@ try {
   const dir = mkdtempSync(join(tmpdir(), "ans-override-lock-dead-"));
   const lock = join(dir, ".ship-override-ledger.lock");
   writeFileSync(lock, JSON.stringify({ pid: 999999, at: new Date().toISOString() }), "utf8");
-  const realKill = process.kill;
-  process.kill = ((pid: number, signal?: string | number) => {
-    if (pid === 999999 && signal === 0) throw Object.assign(new Error("no such process"), { code: "ESRCH" });
-    return realKill(pid, signal as NodeJS.Signals);
-  }) as typeof process.kill;
   let entered = false;
-  try {
-    withShipOverrideLedgerLock(dir, () => { entered = true; return null; });
-  } finally {
-    process.kill = realKill;
-  }
+  withProbe(999999, "ESRCH", () => { withShipOverrideLedgerLock(dir, () => { entered = true; return null; }); });
   assert(entered && !existsSync(lock), "a proven-dead owner is reaped on the override lock");
   rmSync(dir, { recursive: true, force: true });
+}
+
+// #577: an owner the probe cannot classify falls to the age rule on the override ledger too —
+// kept while the record is fresh, reaped past the max age.
+{
+  const fresh = mkdtempSync(join(tmpdir(), "ans-override-lock-unknown-fresh-"));
+  const aged = mkdtempSync(join(tmpdir(), "ans-override-lock-unknown-aged-"));
+  writeFileSync(join(fresh, ".ship-override-ledger.lock"), JSON.stringify({ pid: 424242, at: new Date().toISOString() }), "utf8");
+  writeFileSync(join(aged, ".ship-override-ledger.lock"), JSON.stringify({ pid: 424242, at: new Date(Date.now() - 10 * 60 * 1000).toISOString() }), "utf8");
+  let freshEntered = false;
+  let agedEntered = false;
+  withProbe(424242, "ERR_INVALID_ARG_TYPE", () => {
+    try { withShipOverrideLedgerLock(fresh, () => { freshEntered = true; return null; }); } catch { /* expected: kept */ }
+    withShipOverrideLedgerLock(aged, () => { agedEntered = true; return null; });
+  });
+  assert(!freshEntered && existsSync(join(fresh, ".ship-override-ledger.lock")), "an unclassifiable owner with a fresh record keeps the override lock");
+  assert(agedEntered && !existsSync(join(aged, ".ship-override-ledger.lock")), "an unclassifiable owner past the max age is reaped on the override lock");
+  rmSync(fresh, { recursive: true, force: true });
+  rmSync(aged, { recursive: true, force: true });
 }
 
 // #577: a held lock is exit 3 (contention, nothing changed), not exit 2 (corrupt ledger).
