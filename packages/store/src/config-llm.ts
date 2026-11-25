@@ -180,10 +180,11 @@ function projectDisplayPath(cwd: string, path: string): string {
   return relative(cwd, path).split(sep).join("/");
 }
 
-/** The user file's path from the config root, using `~` and forward slashes. */
+/**
+ * The user file's `~/...` label. This is a path field: paths only. The sole
+ * caller passes `userConfigPath(home)`, which is always inside `home`.
+ */
 function userDisplayPath(home: string, path: string): string {
-  // `userConfigPath(home)` is always inside `home`; a `..` fallback here would
-  // put an English sentence into a field that every caller treats as a path.
   return "~/" + relative(home, path).split(sep).join("/");
 }
 
