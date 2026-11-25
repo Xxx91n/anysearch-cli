@@ -194,8 +194,9 @@ export function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined
 
 /**
  * What one half-written file did set, and what is still missing. An [llm]
- * section whose fields were all dropped (empty, wrong types, or not a table)
- * says that instead of naming a field it never had.
+ * section whose fields were all dropped (empty or wrong types) says that
+ * instead of naming a field it never had. A non-table [llm] never reaches here
+ * — it is `no-llm`, not `half`.
  */
 function halfConfigSentence(state: LlmConfigFileState): string | undefined {
   if (state.status !== "half") return undefined;
@@ -222,6 +223,17 @@ export function formatLlmConfigGap(cfg: ResolvedLlmConfig): string | undefined {
   for (const layer of ["user", "project"] as const) {
     const half = halfConfigSentence(cfg.configFiles[layer]);
     if (half) sentences.push(half);
+  }
+  // A partial env/CLI layer has no file record. Without this sentence a run
+  // with only ANS_LLM_PROVIDER (or only --llm.provider) would fail with no
+  // reason at all: the file half sentences do not cover it, and the generic
+  // hint is reserved for "nothing configured".
+  const missing = !cfg.provider ? "provider" : !cfg.model ? "model" : undefined;
+  const set = missing === "provider" ? "model" : "provider";
+  const setLayer = missing === "provider" ? cfg.sources.model : cfg.sources.provider;
+  if ((setLayer === "env" || setLayer === "cli")) {
+    const label = setLayer === "env" ? "The environment" : "The command line";
+    sentences.push(label + " sets " + set + " but not " + missing + ".");
   }
   if (cfg.hasStoredModelCredential) {
     sentences.push(fault ? STORED_KEY_BROKEN : STORED_KEY_UNCONFIGURED);

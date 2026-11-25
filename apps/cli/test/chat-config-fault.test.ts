@@ -22,6 +22,7 @@ async function runChatFixture(opts: {
   credentials?: string;
   bindings?: Binding[];
   argv?: string[];
+  env?: Record<string, string>;
 }) {
   const home = mkdtempSync(join(tmpdir(), "ans-547-chat-home-"));
   const cwd = mkdtempSync(join(tmpdir(), "ans-547-chat-cwd-"));
@@ -44,6 +45,7 @@ async function runChatFixture(opts: {
   process.env.USERPROFILE = home;
   process.env.ANS_DB_PATH = ":memory:";
   process.env.ANS_PI_SESSION_DIR = join(cwd, "pi-sessions");
+  for (const [key, value] of Object.entries(opts.env ?? {})) process.env[key] = value;
 
   const previousCwd = process.cwd();
   const realWrite = process.stderr.write.bind(process.stderr);
@@ -116,6 +118,22 @@ test("an empty [llm] says the section exists but is empty", async () => {
   assert.equal(result.code, 3);
   assert.match(result.stderr, /The user config file has an \[llm\] section, but neither provider nor model is set\./);
   assert.match(result.stderr, /LLM provider not configured/);
+});
+
+test("an env-only provider names the env layer and the missing model", async () => {
+  const result = await runChatFixture({ env: { ANS_LLM_PROVIDER: "openai" } });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /The environment sets provider but not model\./);
+  assert.doesNotMatch(result.stderr, /LLM provider not configured/);
+  assert.doesNotMatch(result.stderr, /openai/);
+});
+
+test("a command-line-only provider names the command line and the missing model", async () => {
+  const result = await runChatFixture({ argv: ["-p", "hello", "--llm.provider", "openai"] });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /The command line sets provider but not model\./);
+  assert.doesNotMatch(result.stderr, /LLM provider not configured/);
+  assert.doesNotMatch(result.stderr, /openai/);
 });
 
 test("broken config with only a search key does not claim a model key remains", async () => {

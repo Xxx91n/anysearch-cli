@@ -362,6 +362,20 @@ async function main() {
     }
 
     {
+      // #581: a partial env layer has no file record, so it must be named
+      // separately — otherwise the error has no reason at all.
+      const fix = fixture();
+      const h = harness(fix, { ANS_LLM_PROVIDER: "openai" });
+      const res = await h.call();
+      const text = textOf(res);
+      assert(res?.isError === true, "env-only provider: isError true");
+      assert(text.includes("The environment sets provider but not model."),
+        "env-only provider: names the layer and the missing model");
+      assert(!text.includes("LLM not configured"), "env-only provider: the generic sentence is not used");
+      assert(!text.includes("openai"), "env-only provider: no provider value reaches the result");
+    }
+
+    {
       const fix = fixture("[llm\n", '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n');
       const h = harness(fix);
       await h.call();
