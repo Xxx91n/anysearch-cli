@@ -8,7 +8,7 @@
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
-import { modelEnvKeysFor, STORE_KEY_COMMAND } from "@anysearch-cli/store";
+import { modelEnvKeysFor, storeKeyCommand, STORE_KEY_COMMAND } from "@anysearch-cli/store";
 import {
   type CredentialFileContents,
   displayEndpoint,
@@ -140,7 +140,7 @@ export async function runLlm(args: string[]): Promise<number> {
       process.stderr.write((e?.message || String(e)) + "\n");
       return 1;
     }
-    console.log("Secrets stay out of the config file — store one once with: ans auth set " + provider + ".");
+    console.log("Secrets stay out of the config file — store one once with: " + storeKeyCommand(provider) + ".");
     console.log("An env value (" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + " / ANS_LLM_API_KEY) still wins over the stored key.");
     console.log("");
     try {
@@ -149,7 +149,7 @@ export async function runLlm(args: string[]): Promise<number> {
     } catch (e: any) {
       console.log("[WARN] Provider factory failed: " + (e?.message || String(e)));
       console.log("Make sure the SDK is installed.");
-      console.log("If the provider needs a key: ans auth set " + provider + "   (or export " + (API_KEYS[provider] || "ITS_API_KEY") + ")");
+      console.log("If the provider needs a key: " + storeKeyCommand(provider) + "   (or export " + (API_KEYS[provider] || "ITS_API_KEY") + ")");
     }
     return 0;
   }

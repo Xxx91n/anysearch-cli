@@ -18,6 +18,7 @@ import {
   CREDENTIALS_NOTE,
   REMOVE_KEY_COMMAND,
   STORE_KEY_COMMAND,
+  storeKeyCommand,
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
@@ -43,6 +44,13 @@ function tempRoot(): { home: string; cleanup: () => void } {
 }
 
 const KEY = "sk-test-ABCDEFGHIJKLMNOP-zero-zero";
+
+test("给具体 provider 的命令名也从同一个常量拼出来（#573）", () => {
+  // `ans auth set openai` and `ans auth set <provider>` must not drift apart.
+  assert.equal(storeKeyCommand("openai"), "ans auth set openai");
+  assert.equal(storeKeyCommand("openai").startsWith(STORE_KEY_COMMAND.split(" ")[0] + " "), true);
+  assert.equal(storeKeyCommand("exa").includes("<provider>"), false);
+});
 
 test("文件里的说明用命令常量拼，改名不会在用户文件里留下一个不存在的命令（#570）", () => {
   // This text is written into the user's own credentials file and outlives any

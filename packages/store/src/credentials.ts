@@ -54,6 +54,12 @@ export { resolveConfigHome };
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
+
+/** The same command named for one provider, for a message about that provider:
+ * `ans auth set openai`. Built from the constant, so a rename reaches both. */
+export function storeKeyCommand(provider: string): string {
+  return STORE_KEY_COMMAND.replace("<provider>", provider);
+}
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";

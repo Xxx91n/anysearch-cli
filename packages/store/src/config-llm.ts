@@ -38,6 +38,7 @@ import {
   providerForEnvKey,
   readUserCredentials,
   resolveConfigHome,
+  storeKeyCommand,
 } from "./credentials";
 import type { CredentialFileContents, CredentialFileFault } from "./credentials";
 
@@ -464,7 +465,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       if (lookup.status === "found") {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
-      } else if (lookup.status === "endpoint-mismatch") {
+      } else if (lookup.status === "endpoint-mismatch" && resolved.provider) {
+        // The lookup returns "absent" without a provider, so a mismatch always
+        // has one; naming it lets the message quote the command for this provider.
         // Name every stored endpoint. Reporting one (whichever the file sorted
         // first) would send the user to fix the wrong binding.
         const storedList = lookup.stored.length > 0
@@ -474,8 +477,8 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " +
           displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl)) +
-          " — refusing to send that secret to a different endpoint; run `ans auth set " +
-          resolved.provider + "` for this endpoint (see `ans auth list` for what is stored)",
+          " — refusing to send that secret to a different endpoint; run `" +
+          storeKeyCommand(resolved.provider) + "` for this endpoint (see `ans auth list` for what is stored)",
         );
       }
     }

@@ -20,6 +20,7 @@
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **写进用户文件的那段说明也用命令常量拼**：`CREDENTIALS_NOTE` 以前硬写 `ans auth set` / `ans auth remove <provider>`，命令改名后用户打开自己的凭据文件就会看到一个不存在的命令。命令常量先挪到它前面声明（否则模块初始化时踩 TDZ），说明改成用 `STORE_KEY_COMMAND` / `REMOVE_KEY_COMMAND` 拼，测试钉住两个命令都在里面。
+- **点名某个 provider 的命令也从同一个常量拼**：`ans llm` 的「store one once with: ans auth set openai」和 store 的 endpoint 冲突告警都自己拼命令名。新增 `storeKeyCommand(provider)`（从 `STORE_KEY_COMMAND` 换掉占位符），三处都走它。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
 
 ### Known limits
