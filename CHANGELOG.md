@@ -1,3 +1,19 @@
+## Unreleased — #579: 每份 config.toml 有自己的状态，`ans llm` 直接显示
+
+一句话说清：**以前 `ans llm` 的 `Files:` 行只有两个路径，文件不存在、空文件、只写了 `[llm]` 的一半、读不出来，在清单上长得一模一样。现在解析器给用户级和项目级各一条文件记录——六种状态、这个文件真正读进来的字段名、以及文件级诊断 kind——`ans llm` 的同一行直接标出两份文件各是什么状态，被安全丢掉的键也列出来；清单不再因为凭据文件坏了退 1。**
+
+### Changed
+
+- **`ResolvedLlmConfig.configFiles`**（`packages/store/src/config-llm.ts`）：用户级、项目级各一条 `{ layer, status, present, diagnostics }`，两层永远都在。状态只有六个：`missing`（不存在）、`empty`（存在但 trim 后为空）、`no-llm`（能解析但没有可用的 `[llm]`，包括 `[llm]` 不是表）、`half`（`[llm]` 读到字段但缺 provider 或 model，空表也算）、`ok`（provider 和 model 都在）、`broken`（读不出来或 TOML 坏）。
+- **`present` 只放字段名**：这个文件读进来的 `[llm]` 键名，不含值，也不含路径。`broken` 和 `empty` 不贡献任何模型字段；`half` 的合法字段照旧参与逐字段覆盖。
+- **诊断 kind 封闭成七类**：`unreadable`、`invalid-toml`、`llm-not-table`、`not-allowed-key`、`secret-looking-key`、`unknown-key`、`invalid-type`；键级诊断带一个键名，文件级诊断不带。诊断里没有路径、值、endpoint、provider 值或解析原文。
+- **被丢的键名先清洗再显示**：TOML 的引号键能带控制字符（例如 ANSI 转义），`ans llm` 的 `ignored:` 和 `warn` 都可能把文件里的键名原样打到终端。现在键名在生成诊断时就走 `llmKeyLabel`（控制字符换成空格、长度封顶），事实和终端都拿到清洗后的名字。
+- **`[llm]` 写成数组或 TOML datetime 也算不是表**：以前 `typeof [] === "object"` 会让数组钻过检查、把每个索引当未知键报；TOML datetime 也会被当成一个空表。现在两者都归入 `no-llm` + `llm-not-table`，整段忽略。
+- **`ans llm` 的 `Files:` 行**：`user <路径> [<标签>] | project <路径> [<标签>]`，标签就是六个状态（`no-llm` 显示成 `no [llm]`）；有被丢的键时同一行补 `(ignored: user:"<键名>", project:"<键名>")`，键名带层名并用 JSON 引号包住（键名里的逗号、括号不会伪造出别的条目）。`[llm]` 不是表时再补 `([llm] is not a table: <层>)`。路径和解析结果用同一个 home、同一个 cwd。
+- **清单恒退 0**：凭据文件坏了不再改退出码；配置文件的状态本来就不影响清单退出码；`Credentials file: BROKEN` 照常打印。只有用法错误退 2。`ans llm check` / `set` / `models` 没动。
+- **现有 `warn` 句子原样保留**：已有的给人看的句子、默认 stderr 行为和安全规则都不变，结构化诊断只是和它并列产生。唯一的措辞变化是规格要求的那条：`[llm]` 是数组或 TOML datetime 时以前会按索引/空表处理，现在统一成一句「`[llm]` 不是表」。
+- **词表**：`GLOSSARY.md` 补了「每层文件状态」和「诊断 kind」两条。
+
 ## Unreleased — #570: 判活只剩一个答案：只有 ESRCH 算死，探测失败不再等于进程已死
 
 一句话说清：**同一个「这个 pid 还在不在」在仓里有好几套答案：session-lock 和 local-service 只认 `EPERM` 为活，其它错误码一律判死，于是探测说不清时会把活着的锁主人当场踢走、把活 server 的地址丢掉；两个 eval ledger 更狠，`catch` 里一律判死，连 `EPERM`（进程存在、只是别人的）都不例外，活着的写入者拿着的新锁三十毫秒就被删。现在只剩 `process-liveness.ts` 的一份实现：同主机只有 `ESRCH` 能证明进程死了，其它任何结果都算「确认不了」，按活着处理。**

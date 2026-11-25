@@ -352,6 +352,14 @@ export function providerLabel(raw: string): string {
   return shownValue(raw, PROVIDER_LIMIT);
 }
 
+/** What may be SHOWN for a `[llm]` key name read out of the file: `ans llm`
+ * prints it in `ignored:` and the parse warning names it (#579). The limit is
+ * its own: a key name is not a provider id, even though both are short labels. */
+const KEY_LIMIT = 40;
+export function llmKeyLabel(raw: string): string {
+  return shownValue(raw, KEY_LIMIT);
+}
+
 /**
  * The four things `parseBinding` says about one unusable record. The messages
  * below are built from them and `isRecordProblemMessage` matches on them, so a
