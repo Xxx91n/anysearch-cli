@@ -13,7 +13,7 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { SkipLedgerError, classifyLedgerWriteFailure, withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { SkipLedgerError, classifyLedgerWriteFailure, parseSkipLedger, withSkipLedgerLock } from "../src/eval/skip-ledger";
 import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
 import { withProbe } from "./helpers/probe-stub";
 
@@ -267,6 +267,25 @@ try {
     ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
     ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
     ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(Object.assign(new Error("denied"), { code: "EACCES" })) === "io");
+    ok("F11 a writer bug is not recorded as a missing write", classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")) === "unknown");
+
+    let contractError: unknown = null;
+    try {
+      parseSkipLedger(JSON.stringify({
+        schema: "anysearch/gain-ledger@3",
+        consecutiveWarn: 0,
+        history: [{ at: "2026-01-01T00:00:00Z", tier: "not-a-tier", look: 1, track: "consumed" }],
+        resolutions: [],
+        lastSkipKeys: [],
+        state: { phase: "S0", since: null, transitionId: null, evidenceHash: null },
+        actions: [],
+        revision: 0,
+      }));
+    } catch (e) {
+      contractError = e;
+    }
+    ok("F11 a ledger that breaks its own contract is corruption, not io",
+      contractError instanceof SkipLedgerError && classifyLedgerWriteFailure(contractError) === "corrupt");
   }
 } finally {
   delete process.env.ANS_SWITCH_REG_PATH;

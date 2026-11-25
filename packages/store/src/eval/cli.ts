@@ -323,28 +323,29 @@ async function main(): Promise<number> {
     // no fit-eligible units) records reason-code data-absent — never builds the 3-streak.
     const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
     const dataAbsent = keys.length > 0 && obTrack === "consumed" && ((ob as { dataAbsent?: boolean }).dataAbsent === true || isSkip(ob.accessAge));
-    let streak = 0;
+    const recordOnce = (): number => withSkipLedgerLock(outDir, (sl) => {
+      const next = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+      if (skipMustFail(sl)) {
+        console.error("[eval] OBSERVATIONAL skip streak " + next + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + join(outDir, "skip-ledger.json") + " ");
+      }
+      return next;
+    });
     try {
-      withSkipLedgerLock(outDir, (sl) => {
-        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-        if (skipMustFail(sl)) {
-          console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + join(outDir, "skip-ledger.json") + " ");
-        }
-        return streak;
-      });
+      recordOnce();
     } catch (e) {
       const kind = classifyLedgerWriteFailure(e);
+      // a bug in the writer is not a state of the ledger: let it fail the run instead of being
+      // recorded as "this run did not write"
+      if (kind === "unknown") throw e;
       const detail = String((e as Error).message ?? e);
       if (kind === "corrupt") {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
         console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
         try {
-          withSkipLedgerLock(outDir, (sl) => {
-            streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-            return streak;
-          });
+          recordOnce();
         } catch (restart) {
           const restartKind = classifyLedgerWriteFailure(restart);
+          if (restartKind === "unknown") throw restart;
           skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
           runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
           console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);

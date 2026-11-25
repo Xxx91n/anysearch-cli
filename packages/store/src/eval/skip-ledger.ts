@@ -105,22 +105,22 @@ const ACTION_KINDS: readonly string[] = ["stage-transition", "rollback", "freeze
 
 function validateEntry(e: unknown, idx: number): void {
   const o = e as Partial<SkipLedgerEntry> | null;
-  if (!o || typeof o.at !== "string" || typeof o.tier !== "string") throw new Error("skip-ledger entry #" + idx + ": missing at/tier");
-  if (!(LEDGER_TIERS as readonly string[]).includes(o.tier)) throw new Error("skip-ledger entry #" + idx + ": unknown tier " + o.tier);
-  if (o.track !== "consumed" && o.track !== "synthetic") throw new Error("skip-ledger entry #" + idx + ": unknown track " + String(o.track));
+  if (!o || typeof o.at !== "string" || typeof o.tier !== "string") throw new SkipLedgerError("skip-ledger entry #" + idx + ": missing at/tier");
+  if (!(LEDGER_TIERS as readonly string[]).includes(o.tier)) throw new SkipLedgerError("skip-ledger entry #" + idx + ": unknown tier " + o.tier);
+  if (o.track !== "consumed" && o.track !== "synthetic") throw new SkipLedgerError("skip-ledger entry #" + idx + ": unknown track " + String(o.track));
   if (o.tier === "green") {
-    if (o.reasonCode !== undefined) throw new Error("skip-ledger entry #" + idx + ": green row must not carry reasonCode");
+    if (o.reasonCode !== undefined) throw new SkipLedgerError("skip-ledger entry #" + idx + ": green row must not carry reasonCode");
   } else if (typeof o.reasonCode !== "string") {
-    throw new Error("skip-ledger entry #" + idx + ": non-green row missing valid reasonCode");
+    throw new SkipLedgerError("skip-ledger entry #" + idx + ": non-green row missing valid reasonCode");
   }
 }
 
 function validateStateBlock(s: unknown): void {
   const o = s as Partial<SwitchStateBlock> | null;
-  if (!o || !PHASES.includes(String(o.phase))) throw new Error("skip-ledger state block: unknown phase " + String(o && o.phase));
+  if (!o || !PHASES.includes(String(o.phase))) throw new SkipLedgerError("skip-ledger state block: unknown phase " + String(o && o.phase));
   for (const k of ["since", "transitionId", "evidenceHash"] as const) {
     const v = o[k];
-    if (v !== null && typeof v !== "string") throw new Error("skip-ledger state block: " + k + " must be string|null");
+    if (v !== null && typeof v !== "string") throw new SkipLedgerError("skip-ledger state block: " + k + " must be string|null");
   }
 }
 
@@ -254,13 +254,15 @@ export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) =
   return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
 }
 
-export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
+export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io" | "unknown";
 
-// Only a ledger that cannot be read is corrupt and worth quarantining. A held lock or a filesystem
-// error leaves the file exactly as it was, so treating either as corruption throws away a healthy
-// history for a transient reason.
+// Only a ledger that cannot be read is corrupt and worth quarantining. A held lock or an errno
+// failure leaves the file exactly as it was, so quarantining on either throws away a healthy
+// history for a transient reason. Anything else is a bug in the writer, not a state of the ledger,
+// and the caller must let it through instead of recording it as "not written".
 export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
   if (error instanceof SkipLedgerError) return "corrupt";
   if (error instanceof LedgerLockTimeoutError) return "lock-busy";
-  return "io";
+  if (typeof (error as NodeJS.ErrnoException | null)?.code === "string") return "io";
+  return "unknown";
 }
