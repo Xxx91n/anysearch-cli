@@ -309,6 +309,7 @@ async function main(): Promise<number> {
   // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
   // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
   const ob = report.metrics.observational;
+  let skipLedgerWrite: { recorded: boolean; reason?: string; detail?: string } = { recorded: true };
   if (ob) {
     const keys: string[] = [];
     for (const [k, v] of Object.entries(ob)) {
@@ -331,7 +332,10 @@ async function main(): Promise<number> {
     } catch (e) {
       if (e instanceof LedgerLockTimeoutError) {
         // a second writer owns the lock. That is contention, not a broken ledger, so a healthy
-        // file must not be quarantined because a peer was slower than the wait window.
+        // file must not be quarantined because a peer was slower than the wait window — but the
+        // skip really did go unrecorded, so the report has to say so instead of a stderr line
+        // only the console sees.
+        skipLedgerWrite = { recorded: false, reason: "lock-busy", detail: e.message };
         console.error("[eval] OBSERVATIONAL skip-ledger left alone — " + e.message);
       } else {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
@@ -410,6 +414,10 @@ async function main(): Promise<number> {
     gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null },
     // quarantine disclosure (policy layer; dataset fingerprint deliberately unchanged).
     quarantine: { active: quarantineActive, expired: quarantineExpired, schema: quarantine.schema },
+    // whether this run's observational skip landed. A lock held by another writer leaves the
+    // ledger untouched, so the 3-streak counter did not move; say it out loud rather than let a
+    // later reader assume the run recorded everything it saw.
+    skipLedger: skipLedgerWrite,
   };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
   writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");

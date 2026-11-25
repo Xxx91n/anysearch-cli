@@ -5,9 +5,8 @@
 // 2 = malformed args, corrupt ledger, or internal/IO failure
 // 3 = the ledger lock is held by another writer — contention, not corruption; nothing was changed
 //
-// Design: lock contention exits 3 instead of reusing 2 — 2 already means "the ledger cannot be
-// trusted", and a caller that reacts by quarantining would destroy a healthy file because a peer
-// was slow (#577).
+// Design: contention gets its own exit code rather than reusing 2, which already means the ledger
+// cannot be trusted and would have the caller quarantine a healthy file (#577).
 
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -269,8 +268,6 @@ try {
   emitSuccess({ ok: true, epoch: completeEpoch, contentHash: artifact.contentHash, revision: ledger.revision });
 } catch (error) {
   if (error instanceof LedgerLockTimeoutError) {
-    // another writer holds the ledger lock: say so and change nothing, instead of reporting a
-    // corrupt ledger (exit 2) for a file that is fine
     console.error(error.message);
     process.exit(3);
   }
