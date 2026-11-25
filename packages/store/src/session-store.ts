@@ -1378,7 +1378,7 @@ export class SqliteSessionStore implements SessionStore {
         const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
-        try { await this.linkEntities(insertedId, { ...km, url }); } catch {} // entity linking fail-open, covers accept+supersede
+        try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
         // #277: the cross-script pass runs AFTER this write's verdict, never
         // before it. Run inside `linkEntities` it could mark the NEW row
         // "object undetermined" and the supersede below would then close the old
@@ -1411,7 +1411,7 @@ export class SqliteSessionStore implements SessionStore {
         const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, km.entity ?? url, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
-        try { await this.linkEntities(insertedId, { ...km, url }); } catch {} // fail-open
+        try { await this.linkEntities(insertedId, km); } catch {} // fail-open
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
