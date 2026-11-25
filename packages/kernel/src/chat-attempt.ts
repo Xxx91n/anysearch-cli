@@ -37,7 +37,8 @@ import {
   acquireSessionLock,
   isSessionBusy,
   resolveSessionLockWindows,
-  sessionBusyHolder,
+  sessionBusyFacts,
+  type SessionBusyFacts,
   type SessionLockWindows,
 } from "./session-lock";
 
@@ -52,21 +53,33 @@ import {
 export class ChatAttemptBusyError extends Error {
   constructor(
     readonly sessionId: string,
-    /**
-     * The lease directory that is still held. A host that words this collision
-     * itself needs it: a lease whose owner is gone is the one busy state a
-     * person can clear by hand, and they cannot clear a path nobody showed them.
-     */
+    /** The lease directory still held, so a host can name what to clear. */
     readonly leasePath: string,
-    /**
-     * The holder's pid and host, when the lease named them. Without this the
-     * message asks a person to confirm "that process" without saying which.
-     */
-    readonly holder?: { pid: number; host: string },
+    /** Who holds it and whether they are still running; absent when unreadable. */
+    readonly facts?: SessionBusyFacts,
   ) {
     super("Session is busy: another chat attempt holds it; this attempt was not started.");
     this.name = "ChatAttemptBusyError";
   }
+}
+
+/**
+ * The collision sentence both hosts print, in the user's language. `prefix` is
+ * the host's own ("ans_chat: "); everything else must stay identical, so a
+ * change to the wording cannot land in one host and miss the other.
+ */
+export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): string {
+  const holder = error.facts?.holder;
+  const who = holder ? "持有者 pid " + holder.pid + "（主机 " + holder.host + "）" : undefined;
+  const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
+  // Only an owner this machine cannot confirm is a candidate for a manual
+  // clear; telling the user to delete a lock whose pid is alive invites the
+  // double writer this lock exists to prevent.
+  if (error.facts?.liveness === "alive") {
+    return head + (who ? who + "还在跑，" : "") + "等它跑完再来。";
+  }
+  return head + (who ? who + "。" : "")
+    + "等它结束后再试。如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。";
 }
 
 export type ChatCollisionChoice = "stop" | "wait" | { fork: string };
@@ -143,7 +156,7 @@ export async function runChatAttempt(
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
     const choice = await options.onBusy?.(sessionId) ?? "stop";
-    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyHolder(error));
+    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyFacts(error));
     if (choice === "wait") {
       // Design: #315/#317 replace #266's automatic two-minute queue — an
       // unattended caller must not hang without an explanation. Only a caller
@@ -153,7 +166,7 @@ export async function runChatAttempt(
           ...windows, waitMs: windows.waitMs || 120_000,
         });
       } catch (waitError) {
-        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyHolder(waitError));
+        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyFacts(waitError));
         throw waitError;
       }
     } else {

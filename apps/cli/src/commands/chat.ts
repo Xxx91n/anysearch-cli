@@ -8,7 +8,7 @@
 // finished, so the paths named here are the defaults, not the only answer.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, isDomainConstraintError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, isDomainConstraintError } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
@@ -476,16 +476,10 @@ export async function runChat(argv: string[]): Promise<number> {
       return { completed: completed && !failed && !cancellation.signal.aborted };
     });
   } catch (error: any) {
-    // One wording for "another attempt has this session right now". It is not a
-    // crash and not a usage error: the same command works once the other run
-    // ends, so the message says exactly that, names the handle to try, and
-    // names the lease directory a person can clear once that process is gone.
+    // Contention, not a crash: the wording (and what it says about clearing a
+    // dead lease) comes from the kernel, so both hosts print the same sentence.
     if (error instanceof ChatAttemptBusyError) {
-      process.stderr.write(
-        "这段会话正在别处运行（" + error.sessionId + "）。"
-        + (error.holder ? "持有者 pid " + error.holder.pid + "（主机 " + error.holder.host + "）。" : "")
-        + "等它结束后再试。如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。\n",
-      );
+      process.stderr.write(chatAttemptBusyText(error) + "\n");
       return 1;
     }
     throw error;

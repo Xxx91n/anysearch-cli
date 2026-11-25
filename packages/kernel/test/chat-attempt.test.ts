@@ -20,7 +20,7 @@
 import { mkdirSync, mkdtempSync, rmSync, existsSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { runChatAttempt, ChatAttemptBusyError, sessionLeasePath } from "../src/chat-attempt";
+import { runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, sessionLeasePath } from "../src/chat-attempt";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 
 let passed = 0, failed = 0;
@@ -170,6 +170,17 @@ async function main() {
       assert((busy as ChatAttemptBusyError)?.sessionId === "s5", "A5: the error names the session");
       assert((busy as ChatAttemptBusyError)?.leasePath === sessionLeasePath(piDir, "s5"),
         "A5: the error names the lease a person can clear by hand (#576)");
+      const busyError = busy as ChatAttemptBusyError;
+      assert(busyError?.facts?.liveness === "alive" && busyError?.facts?.holder?.pid === process.pid,
+        "A5: the collision reports the holder as this live process (got " + JSON.stringify(busyError?.facts) + ")");
+      // #587 review: the manual clear belongs only to an owner this machine
+      // cannot confirm alive — offering it while the holder is running invites
+      // the double writer the lease exists to prevent.
+      const busyText = chatAttemptBusyText(busyError);
+      assert(!busyText.includes("删掉"),
+        "A5: a live holder is not offered a manual clear (got " + JSON.stringify(busyText) + ")");
+      assert(chatAttemptBusyText(busyError, "ans_chat: ").startsWith("ans_chat: "),
+        "A5: the host prefix goes in front of the shared sentence");
       // The point of #299: no queue. A poll-based wait would be at least one
       // sleep tick; the production window is 120 s, so anything near that is a
       // failure of the ticket, not a slow test.
