@@ -13,7 +13,7 @@ import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
 import { createEngine } from "../composition";
-import { formatLlmConfigGap, needsLlmSetupHint, projectConfigRelativePath, resolveLlmConfig, userConfigPath } from "../config-llm";
+import { formatLlmConfigGap, needsLlmSetupHint, resolveLlmConfig, userConfigPath } from "../config-llm";
 import { credentialFileWarning, domainTomlPath, loadDomainByNameIn, isDomainSchemaError, readUserCredentials, resolveConfigHome, resolveProjectContext, type BudgetBalance } from "@anysearch-cli/store";
 import { parseChatArgv, selectChatSession, formatChatList, chatRecordReader } from "./chat-session";
 import { wireChatMemory } from "./chat-memory";
@@ -147,8 +147,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // nobody can use. The shared hint decides the "nothing configured" line:
     // half config names the missing field instead, except an empty [llm] (no
     // fields at all), which gets both; a broken user file never gets the hint.
-    const projectLabel = projectConfigRelativePath();
-    const gap = formatLlmConfigGap(cfg, projectLabel);
+    const gap = formatLlmConfigGap(cfg);
     if (gap) process.stderr.write(gap + "\n");
     if (needsLlmSetupHint(cfg)) {
       process.stderr.write("LLM provider not configured.\n");

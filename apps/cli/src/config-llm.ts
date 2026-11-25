@@ -13,7 +13,6 @@ export {
   parseLlmFlags,
   parseLlmToml,
   projectConfigPath,
-  projectConfigRelativePath,
   readUserCredentials,
   resolveConfigHome,
   resolveLlmConfig,

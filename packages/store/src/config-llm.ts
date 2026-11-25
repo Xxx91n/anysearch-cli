@@ -133,6 +133,8 @@ export interface LlmConfigFileState {
   /** [llm] keys this file supplied. Names only, never values. */
   present: string[];
   diagnostics: LlmFileDiagnostic[];
+  /** Display label for sentences: project-relative or `~/…`, never absolute. */
+  displayPath: string;
 }
 
 export interface ResolvedLlmConfig {
@@ -170,16 +172,17 @@ const STORED_KEY_UNCONFIGURED =
   "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.";
 
 // Both labels below are relative on purpose: these sentences also reach MCP
-// tool results, which must stay free of absolute paths.
+// tool results, which must stay free of absolute paths. They come from the SAME
+// home/cwd the resolver read, so a surface never has to guess the file.
 
 /** The project file's path inside the project, using forward slashes. */
-export function projectConfigRelativePath(cwd: string = process.cwd()): string {
-  return relative(cwd, projectConfigPath(cwd)).split(sep).join("/");
+function projectDisplayPath(cwd: string, path: string): string {
+  return relative(cwd, path).split(sep).join("/");
 }
 
 /** The user file's path from the config root, using `~` and forward slashes. */
-export function userConfigTildePath(home: string = resolveConfigHome()): string {
-  const rel = relative(home, userConfigPath(home));
+function userDisplayPath(home: string, path: string): string {
+  const rel = relative(home, path);
   return rel.startsWith("..") ? "the user config file" : "~/" + rel.split(sep).join("/");
 }
 
@@ -194,11 +197,11 @@ function projectBrokenSentence(label: string): string {
  * itself, and both sentences appear when both are broken. Sentences never
  * carry a value, a provider name, a warning's text, or an absolute path.
  */
-function formatLlmConfigFault(cfg: ResolvedLlmConfig, projectLabel: string): string | undefined {
+function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const broken = (["user", "project"] as const)
     .filter((layer) => cfg.configFiles[layer].status === "broken")
-    .map((layer) => (layer === "user" ? USER_BROKEN : projectBrokenSentence(projectLabel)));
+    .map((layer) => (layer === "user" ? USER_BROKEN : projectBrokenSentence(cfg.configFiles.project.displayPath)));
   return broken.length > 0 ? broken.join(" ") : undefined;
 }
 
@@ -208,7 +211,7 @@ function formatLlmConfigFault(cfg: ResolvedLlmConfig, projectLabel: string): str
  * instead of naming a field it never had. A non-table [llm] never reaches here
  * — it is `no-llm`, not `half`.
  */
-function halfConfigSentence(state: LlmConfigFileState, projectLabel: string): string | undefined {
+function halfConfigSentence(state: LlmConfigFileState): string | undefined {
   if (state.status !== "half") return undefined;
   const hasProvider = state.present.includes("provider");
   const hasModel = state.present.includes("model");
@@ -220,7 +223,9 @@ function halfConfigSentence(state: LlmConfigFileState, projectLabel: string): st
   } else {
     detail = "has an [llm] section, but neither provider nor model is set";
   }
-  const label = state.layer === "user" ? "The user config file" : "The project config file (" + projectLabel + ")";
+  const label = state.layer === "user"
+    ? "The user config file"
+    : "The project config file (" + state.displayPath + ")";
   return label + " " + detail + ".";
 }
 
@@ -231,13 +236,13 @@ function halfConfigSentence(state: LlmConfigFileState, projectLabel: string): st
  * configured" guidance after this, so a broken user file keeps its old sentence
  * and never points at the example provider name.
  */
-export function formatLlmConfigGap(cfg: ResolvedLlmConfig, projectLabel: string): string | undefined {
+export function formatLlmConfigGap(cfg: ResolvedLlmConfig): string | undefined {
   if (cfg.provider && cfg.model) return undefined;
   const sentences: string[] = [];
-  const fault = formatLlmConfigFault(cfg, projectLabel);
+  const fault = formatLlmConfigFault(cfg);
   if (fault) sentences.push(fault);
   for (const layer of ["user", "project"] as const) {
-    const half = halfConfigSentence(cfg.configFiles[layer], projectLabel);
+    const half = halfConfigSentence(cfg.configFiles[layer]);
     if (half) sentences.push(half);
   }
   // A partial env/CLI layer has no file record. Without this sentence a run
@@ -317,7 +322,7 @@ export function projectConfigPath(cwd: string = process.cwd()): string {
   return ansProjectConfigPath(cwd);
 }
 
-interface LoadedLlmFile extends LlmConfigFileState {
+interface LoadedLlmFile extends Omit<LlmConfigFileState, "displayPath"> {
   config: LlmFileConfig;
 }
 
@@ -461,8 +466,10 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   const home = resolveConfigHome(opts.home, env);
   const warn = opts.warn ?? ((m: string) => process.stderr.write(m + "\n"));
 
-  const userFile = loadFile(userConfigPath(home), "user", warn);
-  const projectFile = loadFile(projectConfigPath(cwd), "project", warn);
+  const userConfigFile = userConfigPath(home);
+  const projectConfigFile = projectConfigPath(cwd);
+  const userFile = loadFile(userConfigFile, "user", warn);
+  const projectFile = loadFile(projectConfigFile, "project", warn);
   const user = userFile.config;
   const project = projectFile.config;
   const flags = opts.flags ?? {};
@@ -486,10 +493,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       user: {
         layer: userFile.layer, status: userFile.status,
         present: userFile.present, diagnostics: userFile.diagnostics,
+        displayPath: userDisplayPath(home, userConfigFile),
       },
       project: {
         layer: projectFile.layer, status: projectFile.status,
         present: projectFile.present, diagnostics: projectFile.diagnostics,
+        displayPath: projectDisplayPath(cwd, projectConfigFile),
       },
     },
   };
