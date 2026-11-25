@@ -29,9 +29,9 @@ export function probePid(pid: number): PidLiveness {
 /**
  * True unless the pid is proven gone; see the module comment.
  *
- * A caller acting on `true` must keep its own age or heartbeat fallback:
- * `true` means "not proven dead", not "proven alive" — a probe that could not
- * classify the pid lands here too.
+ * `true` means "not proven dead", not "proven alive": a probe that could not
+ * classify the pid lands here too, and each caller decides what to do with an
+ * unconfirmed owner.
  */
 export function pidIsAlive(pid: number): boolean {
   return probePid(pid) !== "dead";
