@@ -34,7 +34,7 @@ function repoRoot(): string {
   }
 }
 
-function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[], gain?: GainConclusion): string {
+function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[], gain?: GainConclusion, notes: string[] = []): string {
   const m = report.metrics;
   const verdict = failures.length ? "FAIL" : warnings.length ? "WARN" : "PASS";
   const lines: string[] = [
@@ -123,6 +123,9 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
   for (const [tier, t] of Object.entries(report.tierBreakdown)) lines.push(`| ${tier} | ${t.cases} | ${t.passed} | ${t.passRate.toFixed(3)} |`);
   lines.push("", "## Stage attribution (failed cases)", "", "```json", JSON.stringify(report.stageBreakdown), "```", "", "## Cases", "", "| case | group | tier | stage | result |", "|---|---|---|---|---|");
   for (const c of report.cases) lines.push(`| ${c.id} | ${c.group} | ${c.difficulty} | ${c.failedStage ?? "-"} | ${c.passed ? "PASS" : "FAIL"} |`);
+  // run notes are facts about the run, not a gate signal: they must not move the verdict, which
+  // is why they are rendered apart from the gate warnings.
+  if (notes.length) lines.push("", "## Run notes (not a gate signal)", "", ...notes.map((n) => "- " + n));
   if (warnings.length) lines.push("", "## Gate warnings (non-blocking)", "", ...warnings.map((w) => "- " + w));
   if (failures.length) lines.push("", "## Gate failures", "", ...failures.map((x) => "- " + x));
   // E3: observational zone rendered even when empty/skipped (report-as-contract).
@@ -310,6 +313,7 @@ async function main(): Promise<number> {
   // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
   const ob = report.metrics.observational;
   let skipLedgerWrite: { recorded: boolean; reason?: string; detail?: string } | null = ob ? { recorded: true } : null;
+  const runNotes: string[] = [];
   if (ob) {
     const keys: string[] = [];
     for (const [k, v] of Object.entries(ob)) {
@@ -336,6 +340,7 @@ async function main(): Promise<number> {
         // skip really did go unrecorded, so the report has to say so instead of a stderr line
         // only the console sees.
         skipLedgerWrite = { recorded: false, reason: "lock-busy", detail: e.message };
+        runNotes.push("OBSERVATIONAL skip-ledger not recorded: another writer held the lock, so the skip streak did not move this run (" + e.message + ")");
         console.error("[eval] OBSERVATIONAL skip-ledger left alone — " + e.message);
       } else {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
@@ -346,12 +351,6 @@ async function main(): Promise<number> {
         });
       }
     }
-  }
-
-  if (skipLedgerWrite && !skipLedgerWrite.recorded) {
-    // the gate warning list is what reaches eval-report.md, the console and the JSON, so an
-    // unrecorded skip is visible to whoever reads the run without opening the raw artifact
-    g.warnings.push("OBSERVATIONAL skip-ledger not recorded: another writer held the lock, so the skip streak did not move this run (" + String(skipLedgerWrite.detail ?? "lock busy") + ")");
   }
 
   // impl-plan 3/8: advance the consumed/synthetic switch state machine.
@@ -426,7 +425,7 @@ async function main(): Promise<number> {
     ...(skipLedgerWrite ? { skipLedger: skipLedgerWrite } : {}),
   };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
-  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");
+  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion, runNotes), "utf8");
 
   console.log(
     `[eval] cases ${report.totals.passed}/${report.totals.cases} pass, fingerprint=${report.datasetFingerprint}, ` +

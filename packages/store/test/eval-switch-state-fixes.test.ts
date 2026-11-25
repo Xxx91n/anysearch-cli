@@ -253,6 +253,11 @@ try {
     let timedOut = false;
     try { withLedgerLock(lock, () => { entered = true; return null; }, noLinks); } catch (e) { timedOut = e instanceof LedgerLockTimeoutError; }
     ok("F10 the fallback still respects a held lock", !entered && timedOut && readFileSync(lock, "utf8") === held);
+
+    const broken = { link(): void { throw Object.assign(new Error("permission denied"), { code: "EACCES" }); } };
+    let thrown = "";
+    try { withLedgerLock(lock, () => null, broken); } catch (e) { thrown = String((e as NodeJS.ErrnoException).code ?? e); }
+    ok("F10 a link failure that is not 'no hard links' is thrown, not degraded", thrown === "EACCES");
     rmSync(dir, { recursive: true, force: true });
   }
 } finally {

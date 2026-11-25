@@ -55,6 +55,10 @@ interface LockSnapshot {
   ageMs: number | null;
 }
 
+// Codes that mean "this filesystem has no hard links". Everything else (EACCES, ENOSPC, ENOENT)
+// is a real failure and must not be mistaken for a missing feature.
+const NO_HARD_LINKS = new Set(["EPERM", "EOPNOTSUPP", "ENOTSUP", "ENOSYS", "EXDEV"]);
+
 let warnedNoHardLinks = false;
 
 function sleep(ms: number): void {
@@ -111,11 +115,13 @@ function takeClaim(staging: string, lockPath: string, claim: string, link: Ledge
     link(staging, lockPath);
     return true;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+    const code = String((e as NodeJS.ErrnoException).code ?? "");
+    if (code === "EEXIST") return false;
+    if (!NO_HARD_LINKS.has(code)) throw e;
     if (!warnedNoHardLinks) {
       warnedNoHardLinks = true;
       console.error(
-        "[ledger-lock] hard links unavailable in " + dirname(lockPath) + " (" + String((e as NodeJS.ErrnoException).code ?? e) +
+        "[ledger-lock] hard links unavailable in " + dirname(lockPath) + " (" + code +
         ") — falling back to create-then-write, so a crash mid-create can leave a claim-less lock",
       );
     }
