@@ -9,7 +9,7 @@
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withLedgerLock } from "./ledger-lock";
+import { LedgerLockTimeoutError, withLedgerLock } from "./ledger-lock";
 import type { SwitchPhase } from "./switch-machine";
 
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
@@ -252,4 +252,15 @@ export function quarantineSkipLedger(outDir: string, at: string): string {
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
   return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
+}
+
+export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
+
+// Only a ledger that cannot be read is corrupt and worth quarantining. A held lock or a filesystem
+// error leaves the file exactly as it was, so treating either as corruption throws away a healthy
+// history for a transient reason.
+export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
+  if (error instanceof SkipLedgerError) return "corrupt";
+  if (error instanceof LedgerLockTimeoutError) return "lock-busy";
+  return "io";
 }

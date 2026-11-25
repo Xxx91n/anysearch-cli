@@ -13,7 +13,7 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { SkipLedgerError, withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { SkipLedgerError, classifyLedgerWriteFailure, withSkipLedgerLock } from "../src/eval/skip-ledger";
 import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
 import { withProbe } from "./helpers/probe-stub";
 
@@ -259,6 +259,14 @@ try {
     try { withLedgerLock(lock, () => null, broken); } catch (e) { thrown = String((e as NodeJS.ErrnoException).code ?? e); }
     ok("F10 a link failure that is not 'no hard links' is thrown, not degraded", thrown === "EACCES");
     rmSync(dir, { recursive: true, force: true });
+  }
+
+  // F11 (#577): only a ledger that cannot be read is corruption. A held lock or a filesystem error
+  // leaves the file exactly as it was, and quarantining on either throws away a healthy history.
+  {
+    ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
+    ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
+    ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(Object.assign(new Error("denied"), { code: "EACCES" })) === "io");
   }
 } finally {
   delete process.env.ANS_SWITCH_REG_PATH;

@@ -9,8 +9,7 @@ import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./gold
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
-import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
-import { LedgerLockTimeoutError } from "./ledger-lock";
+import { classifyLedgerWriteFailure, quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
@@ -334,21 +333,28 @@ async function main(): Promise<number> {
         return streak;
       });
     } catch (e) {
-      if (e instanceof LedgerLockTimeoutError) {
-        // a second writer owns the lock. That is contention, not a broken ledger, so a healthy
-        // file must not be quarantined because a peer was slower than the wait window — but the
-        // skip really did go unrecorded, so the report has to say so instead of a stderr line
-        // only the console sees.
-        skipLedgerWrite = { recorded: false, reason: "lock-busy", detail: e.message };
-        runNotes.push("OBSERVATIONAL skip-ledger not recorded: another writer held the lock, so the skip streak did not move this run (" + e.message + ")");
-        console.error("[eval] OBSERVATIONAL skip-ledger left alone — " + e.message);
-      } else {
+      const kind = classifyLedgerWriteFailure(e);
+      const detail = String((e as Error).message ?? e);
+      if (kind === "corrupt") {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
-        console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
-        withSkipLedgerLock(outDir, (sl) => {
-          streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-          return streak;
-        });
+        console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
+        try {
+          withSkipLedgerLock(outDir, (sl) => {
+            streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+            return streak;
+          });
+        } catch (restart) {
+          const restartKind = classifyLedgerWriteFailure(restart);
+          skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
+          runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);
+        }
+      } else {
+        // a held lock or a filesystem error leaves the file intact, so the history stays and only
+        // this run's skip is missing — say so instead of quarantining a healthy ledger
+        skipLedgerWrite = { recorded: false, reason: kind, detail };
+        runNotes.push("OBSERVATIONAL skip-ledger not recorded (" + kind + "), so the skip streak did not move this run: " + detail);
+        console.error("[eval] OBSERVATIONAL skip-ledger left alone (" + kind + ") — " + detail);
       }
     }
   }
