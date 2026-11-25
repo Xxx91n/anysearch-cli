@@ -475,7 +475,7 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   // fails instead of binding an endpoint nobody meant, and the sentence says what
   // to put there.
   assert.match(warning, /--endpoint <your endpoint>/, warning);
-  assert.match(warning, /replacing the placeholder with the address from your config/, warning);
+  assert.match(warning, /replacing the placeholder with the effective endpoint above/, warning);
 });
 
 test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {

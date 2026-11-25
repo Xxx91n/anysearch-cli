@@ -492,7 +492,7 @@ function bindingAdvice(provider: string, effective: string | null): string {
   if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
   if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
   return "run `" + storeKeyCommand(provider) + " --endpoint <your endpoint>` for this endpoint, " +
-    "replacing the placeholder with the address from your config (it is not printed here)";
+    "replacing the placeholder with the effective endpoint above (it is not printed here)";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

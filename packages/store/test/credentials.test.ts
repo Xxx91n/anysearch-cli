@@ -828,6 +828,11 @@ test("能不能打印看的是地址本身，不是它和展示形态是否相�
   assert.equal(isPrintableEndpoint("https://gw.example/v1?api-version=1"), false, "query");
   assert.equal(isPrintableEndpoint("https://gw.example/v1#x"), false, "fragment");
   assert.equal(isPrintableEndpoint("https://gw.example/v1/" + "x".repeat(300)), false, "too long to print whole");
+  assert.equal(
+    isPrintableEndpoint("https://gw.example/v1/" + String.fromCharCode(27) + "[2K"),
+    false,
+    "control characters",
+  );
 });
 
 test("endpoint 的展示形式也去控制字符、限长度（#569 审查）", () => {
