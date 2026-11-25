@@ -19,6 +19,7 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
+  isRecordProblemMessage,
   lookupModelCredential,
   normalizeBindingEndpoint,
   readFaultRemedy,
@@ -768,7 +769,12 @@ test("每条记录细节都由 parseBinding 产出，kernel 的分类靠的就�
         file.error?.includes(RECORD_PROBLEM_DETAILS[key]),
         key + " should be what the read reports: " + file.error,
       );
+      assert.equal(isRecordProblemMessage(file.error ?? ""), true, "the classifier's predicate agrees: " + file.error);
     }
+    // A path that merely looks like a record is not one, and neither is a
+    // file-level fault.
+    assert.equal(isRecordProblemMessage("/config/entry 2/credentials.json: could not read it (ETIMEDOUT)"), false);
+    assert.equal(isRecordProblemMessage("/x: not valid JSON (line 3 column 5)"), false);
   } finally { cleanup(); }
 });
 

@@ -281,14 +281,16 @@ function shownValue(raw: string, limit: number): string {
   return cleaned.length > limit ? cleaned.slice(0, limit) + "…" : cleaned;
 }
 
+/** The provider label's limit, and the endpoint's: both come out of the file and
+ * both are printed in full up to here. */
+const PROVIDER_LIMIT = 40;
+const ENDPOINT_LIMIT = 200;
+
 /** What may be SHOWN for a provider id read out of the file: `parseBinding`'s
  * fault sentence, `ans auth list` and `ans llm` all print it verbatim. */
 export function providerLabel(raw: string): string {
-  return shownValue(raw, 40);
+  return shownValue(raw, PROVIDER_LIMIT);
 }
-
-/** The longest endpoint this prints in full; longer values keep their head. */
-const ENDPOINT_LIMIT = 200;
 
 /**
  * The four things `parseBinding` says about one unusable record, exported because
@@ -301,6 +303,18 @@ export const RECORD_PROBLEM_DETAILS = {
   noApiKey: "has no apiKey",
   nonStringEndpoint: "has a non-string endpoint",
 } as const;
+
+/**
+ * True when a message names one unusable record. The kernel's fault classifier
+ * asks this instead of carrying store's wording, and containment (rather than a
+ * pattern built from the details) means no rewording can turn a sentence into a
+ * regular expression.
+ */
+export function isRecordProblemMessage(message: string): boolean {
+  const at = /\bentry \d+\b/.exec(message);
+  if (!at) return false;
+  return Object.values(RECORD_PROBLEM_DETAILS).some((detail) => message.includes(detail, at.index));
+}
 
 /**
  * Validate one stored record. Returns the binding, or a reason it cannot be
@@ -347,6 +361,7 @@ function stripBom(text: string): string {
  */
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
+export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";

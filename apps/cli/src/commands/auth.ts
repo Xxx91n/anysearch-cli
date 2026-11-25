@@ -22,6 +22,7 @@ import {
   normalizeBindingEndpoint,
   providerLabel,
   readUserCredentials,
+  REMOVE_KEY_COMMAND,
   REPAIR_COMMAND,
   removeUserCredential,
   repairUserCredentials,
@@ -80,10 +81,10 @@ function usage(): number {
   stderr("\n");
   stderr("  ans auth                     Show where each provider's key comes from\n");
   stderr("  ans auth list                Same, plus the stored entries and where the file is\n");
-  stderr("  ans auth set <provider>      Store a key in the user credential file (typed, never echoed)\n");
+  stderr("  " + STORE_KEY_COMMAND + "      Store a key in the user credential file (typed, never echoed)\n");
   stderr("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
   stderr("      [--no-verify]            Do not check a search key upstream before storing it (offline machines)\n");
-  stderr("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
+  stderr("  " + REMOVE_KEY_COMMAND + "   Remove one stored key [--endpoint <url>]\n");
   stderr("  " + REPAIR_COMMAND + "              Keep the records it can read, drop the ones it cannot\n");
   stderr("\n");
   stderr("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");

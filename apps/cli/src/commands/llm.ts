@@ -22,6 +22,10 @@ import {
   writeUserLlmConfig,
 } from "../config-llm";
 
+/** One wording for a provider whose key cannot be known, because the file that
+ * would hold it could not be read. Both listings say exactly this. */
+const BROKEN_LABEL = "BROKEN (the credential file could not be read)";
+
 /** The BROKEN line both listings below print; the same result also goes to the resolver. */
 function printCredentialFault(file: CredentialFileContents): void {
   if (file.error) console.log("Credentials file: BROKEN — " + file.error);
@@ -75,7 +79,7 @@ export async function runLlm(args: string[]): Promise<number> {
       let label: string;
       if (envName || effective) label = "AUTH";
       else if (stored.length > 0) label = "NO KEY (stored, not in effect)";
-      else if (credentialFile.error) label = "BROKEN (the credential file could not be read)";
+      else if (credentialFile.error) label = BROKEN_LABEL;
       else label = "NO KEY";
       console.log("  " + name + " [" + label + "] - " + models.join(", "));
       if (envName && !effective) {
@@ -161,7 +165,7 @@ export async function runLlm(args: string[]): Promise<number> {
       if (envName) where = "KEY SET (" + envName + ")";
       else if (effective) where = "KEY SET (" + resolvedFrom + ")";
       else if (fromStore) where = "KEY SET (stored file, not in effect)";
-      else if (credentialFile.error) where = "BROKEN (the credential file could not be read)";
+      else if (credentialFile.error) where = BROKEN_LABEL;
       else where = "NO KEY";
       try {
         await factoryFn();

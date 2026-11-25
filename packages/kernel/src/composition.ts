@@ -18,7 +18,7 @@ import {
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
-  RECORD_PROBLEM_DETAILS,
+  isRecordProblemMessage,
   resolvePolicyFromSchema,
   resolveSearchCredentials,
   type ResolvedSearchCredentials,
@@ -145,15 +145,6 @@ function buildProviders(
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
-/** Built from store's own wording, so a rewording there cannot leave this
- * matching nothing; the label in between may hold parentheses (`acme (work)`),
- * so it is skipped rather than pattern-matched, and a file path never carries a
- * validation detail. */
-const RECORD_PROBLEM = new RegExp(
-  "\\bentry \\d+[^\\n]*?(" + Object.values(RECORD_PROBLEM_DETAILS).join("|") + ")",
-  "i",
-);
-
 /**
  * Turn a credential-resolution failure into a sentence safe to show. Only a
  * recognised category and a bare errno are quoted: this text comes from a module
@@ -171,7 +162,9 @@ function classifyCredentialFault(error: unknown): string {
 
   // A record inside a readable file is the one fault `ans auth repair` fixes, so
   // it gets the published notice's own sentence instead of the flat one below.
-  if (!permission && RECORD_PROBLEM.test(raw)) return credentialFileNotice({ kind: "invalid-record" }).notice;
+  if (!permission && isRecordProblemMessage(raw)) {
+    return credentialFileNotice({ kind: "invalid-record" }).notice;
+  }
 
   // File-level faults only: every record detail is matched above, so repeating
   // those phrases here would leave two patterns competing for one message.
