@@ -5,6 +5,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync,
   unlinkSync, utimesSync, writeFileSync,
@@ -272,4 +274,22 @@ test("a symlinked config is swept beside the real file, not the link", (context)
   utimesSync(stale, twoHoursAgo, twoHoursAgo);
   writeUserLlmConfig({ model: "gpt-5" }, home);
   assert.ok(!existsSync(stale), "the sweep follows the link to the file that was written");
+});
+
+test("importing the config writer does not load the native database binding", () => {
+  // The resolve hook must be in place before config-llm loads, so the probe
+  // imports it dynamically: a static import would run before the hook.
+  const probe = [
+    "import { registerHooks } from 'node:module';",
+    "const seen = [];",
+    "registerHooks({ resolve(specifier, context, next) { seen.push(specifier); return next(specifier, context); } });",
+    "await import('./src/config-llm.ts');",
+    "process.stdout.write(JSON.stringify(seen.filter((s) => s.startsWith('better-sqlite3'))));",
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", probe], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "[]", "the config write path must not pull better-sqlite3 in");
 });

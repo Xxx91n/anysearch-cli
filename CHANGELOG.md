@@ -27,7 +27,7 @@
 ### Changed
 
 - **写前清扫**（`packages/store/src/config-llm.ts` 的 `writeUserConfigFile`）：按解析后的真实目标取目录和文件名——软链跟到它指向的文件，旧布局的 `~/.anysearch-cli/config.toml` 也走同一套。前缀 `.` + 文件名 + `.`、后缀 `.tmp`、mtime 超过一小时的才删；别的 `.tmp` 一律不碰，年轻于阈值的也不碰（那是另一个并发写正在用的）。临时名的前缀和后缀只写一处，写和清扫不会各改各的。
-- **清扫函数搬出数据库模块**（`packages/store/src/stale-work-files.ts`）：`sweepStaleWorkFiles` 原来住在 `migration-backup.ts`，会把 better-sqlite3 拖进只做 TOML 和环境变量解析的 `config-llm`。现在它只依赖 `node:fs` / `node:path` 和不碰数据库的 pid 判活（`process-liveness.ts`）；旧的 `.copying` / `.adopting` 调用点改成传选项包，行为不变，包根导出也没变。
+- **清扫函数搬出数据库模块**（`packages/store/src/stale-work-files.ts`）：`sweepStaleWorkFiles` 原来住在 `migration-backup.ts`，会把 better-sqlite3 拖进只做 TOML 和环境变量解析的 `config-llm`。现在它只依赖 `node:fs` / `node:path` 和 `process-liveness.ts` 的 pid 判活，两者都不碰数据库；旧的 `.copying` / `.adopting` 调用点改成传选项包，行为不变，包根导出也没变。
 - **跨卷复制的 staging 目录也能清**：`.copying` 留下的是目录，`rmSync` 按调用方要求递归；目录按子树里最新一次写入判龄，正在复制的目录不会被另一个进程当垃圾删掉。`moveEntry` 和测试共用 `sweepCopyStaging`。
 - **清理失败不影响写入**：目录读不了、单个文件删不掉都静默跳过。
 

@@ -1,15 +1,13 @@
 /**
  * Whether a pid is still running.
  *
- * Design: only ESRCH is proof of death — every other outcome counts as
- * "cannot confirm", so the owner is treated as alive. The earlier rule was
- * "any error except EPERM means dead", and that released work on errors that
- * say nothing about liveness: a malformed pid raises
- * ERR_INVALID_ARG_TYPE, and Windows has other probe failures of its own.
+ * Design: only ESRCH is proof of death; every other outcome means "cannot
+ * confirm", so the owner counts as alive. Do not narrow this to EPERM — a
+ * malformed pid raises ERR_INVALID_ARG_TYPE, and Windows has other probe
+ * failures of its own.
  *
- * This module imports nothing: it is the one liveness rule shared by the task
- * ledger and the work-file sweep, and the config write path must not load a
- * database binding to ask whether a pid runs.
+ * This module imports nothing, so the config write path can ask about a pid
+ * without loading the database binding.
  */
 export function pidIsAlive(pid: number): boolean {
   try {
