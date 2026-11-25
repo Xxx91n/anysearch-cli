@@ -182,8 +182,9 @@ function projectDisplayPath(cwd: string, path: string): string {
 
 /** The user file's path from the config root, using `~` and forward slashes. */
 function userDisplayPath(home: string, path: string): string {
-  const rel = relative(home, path);
-  return rel.startsWith("..") ? "the user config file" : "~/" + rel.split(sep).join("/");
+  // `userConfigPath(home)` is always inside `home`; a `..` fallback here would
+  // put an English sentence into a field that every caller treats as a path.
+  return "~/" + relative(home, path).split(sep).join("/");
 }
 
 function projectBrokenSentence(label: string): string {
