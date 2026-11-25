@@ -93,28 +93,29 @@ const RESOLVE_SCRIPT = path.resolve(SCRIPT_DIR, "../../../scripts/gain-warn-reso
   fs.rmSync(dir, { recursive: true, force: true });
 }
 // withSkipLedgerLock provides cross-process mutual exclusion: two node processes
-// increment the same streak concurrently, each holding the lock across a widened
-// critical section. Without mutual exclusion both read 0 and write 1 (lost update,
-// result 1); with the lock the result is 2.
+// increment a counter concurrently, each holding the lock across a widened
+// critical section. Without mutual exclusion both read 0 and write 1 (lost
+// update, result 1); with the lock the result is 2. Uses a direct write (not
+// writeGainLedger) so the two processes never collide on the same .tmp file.
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-lock-"));
-  const f = path.join(dir, "skip-ledger.json");
-  writeGainLedger(f, emptyLedger());
+  const counter = path.join(dir, "counter.txt");
+  fs.writeFileSync(counter, "0", "utf8");
   const incScript = path.join(dir, "inc.mjs");
   fs.writeFileSync(
     incScript,
-    "import { withSkipLedgerLock, readGainLedger, writeGainLedger, emptyLedger } from \"" +
+    "import { withSkipLedgerLock } from \"" +
       path.resolve(SCRIPT_DIR, "../../../scripts/gain-ledger.mjs") +
-      "\";\nimport fs from \"node:fs\";\nconst f = process.argv[2];\nwithSkipLedgerLock(f, () => {\n  const l = readGainLedger(f);\n  l.consecutiveWarn += 1;\n  // widen the critical section so two processes really overlap\n  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);\n  writeGainLedger(f, l);\n});\n",
+      "\";\nimport fs from \"node:fs\";\nconst counter = process.argv[2];\nwithSkipLedgerLock(counter, () => {\n  const v = Number(fs.readFileSync(counter, \"utf8\") || \"0\");\n  // widen the critical section so two processes really overlap\n  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);\n  fs.writeFileSync(counter, String(v + 1), \"utf8\");\n});\n",
     "utf8",
   );
-  const p1 = spawn(process.execPath, [incScript, f], { stdio: "ignore" });
-  const p2 = spawn(process.execPath, [incScript, f], { stdio: "ignore" });
+  const p1 = spawn(process.execPath, [incScript, counter], { stdio: "ignore" });
+  const p2 = spawn(process.execPath, [incScript, counter], { stdio: "ignore" });
   await Promise.all([
     new Promise((r) => p1.on("exit", r)),
     new Promise((r) => p2.on("exit", r)),
   ]);
-  assert.equal(readGainLedger(f).consecutiveWarn, 2, "concurrent increments serialized by the lock");
+  assert.equal(fs.readFileSync(counter, "utf8"), "2", "concurrent increments serialized by the lock");
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log("gain-ledger.test.mjs: all checks passed");
