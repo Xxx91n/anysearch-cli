@@ -7,6 +7,9 @@ export * from "./config-llm";
 export * from "./credentials";
 export * from "./domain-schema";
 export * from "./session-store";
+// #570: one pid-liveness reading for every lock, ledger and registry record
+// in the product — only ESRCH proves a process is gone.
+export * from "./process-liveness";
 export * from "./budget-ledger";
 // #302: the per-execution task budget (chat's new accounting form) and the
 // process/task lifecycle registry the main program writes into.

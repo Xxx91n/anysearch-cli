@@ -97,3 +97,28 @@ test("published address: loopback only, and a dead owner is ignored", () => {
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("published address: a probe that cannot classify the pid keeps the record", () => {
+  // #570: only ESRCH proves the owner is gone. A probe that fails for another
+  // reason (EPERM, ERR_INVALID_ARG_TYPE, an odd Windows fault) says nothing
+  // about the process, so dropping the record would send callers to a port
+  // nobody listens on while the server is still running.
+  const { home, env } = homeEnv("registry-unconfirmed");
+  const realKill = process.kill;
+  try {
+    writeServerRegistry("http://127.0.0.1:45683", env);
+    const unconfirmable: typeof process.kill = (pid, signal) => {
+      if (pid === process.pid && signal === 0) {
+        throw Object.assign(new Error("probe could not classify this pid"), { code: "ERR_INVALID_ARG_TYPE" });
+      }
+      return realKill(pid, signal);
+    };
+    process.kill = unconfirmable;
+    assert.equal(readServerRegistry(env)?.url, "http://127.0.0.1:45683",
+      "an unconfirmable probe keeps the live server's address");
+    assert.equal(resolveServerEndpoint(env).source, "registry");
+  } finally {
+    process.kill = realKill;
+    rmSync(home, { recursive: true, force: true });
+  }
+});

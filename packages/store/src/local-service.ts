@@ -24,6 +24,7 @@ import {
   ansServerRegistryPath,
   ansServerTokenPath,
 } from "./ans-paths.js";
+import { pidIsAlive } from "./process-liveness.js";
 
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:33333";
 
@@ -189,24 +190,13 @@ function loopbackUrl(raw: string): string | null {
   }
 }
 
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM means the process exists but belongs to someone else; any other
-    // error (ESRCH and friends) means it is gone.
-    return (error as NodeJS.ErrnoException)?.code === "EPERM";
-  }
-}
-
 /** Read the published address, ignoring a record whose process is gone. */
 export function readServerRegistry(env: NodeJS.ProcessEnv = process.env): ServerRegistryEntry | null {
   try {
     const raw = JSON.parse(readFileSync(serverRegistryPath(env), "utf8")) as Partial<ServerRegistryEntry>;
     const url = typeof raw.url === "string" ? loopbackUrl(raw.url) : null;
     if (!url) return null;
-    if (typeof raw.pid === "number" && !pidAlive(raw.pid)) return null;
+    if (typeof raw.pid === "number" && !pidIsAlive(raw.pid)) return null;
     return {
       url,
       ...(typeof raw.pid === "number" ? { pid: raw.pid } : {}),

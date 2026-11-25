@@ -11,14 +11,14 @@
 // A plain directory-mtime lock mistakes a long but healthy run for a dead
 // one and steals it. A waiter here reclaims only on real evidence:
 //
-//   same host + live pid      never reclaimed, however old the heartbeat is
-//   same host + dead pid      reclaimed at the next poll
-//   other host / no identity  reclaimed only once the stale window has
-//                             passed — the conservative rule for owners this
-//                             machine cannot confirm. A lock without
-//                             owner.json yet is fresh by directory mtime,
-//                             which holds a just-created lock until its
-//                             identity lands.
+//   same host + not proven dead  never reclaimed, however old the heartbeat is
+//   same host + confirmed dead   reclaimed at the next poll
+//   other host / no identity     reclaimed only once the stale window has
+//                                passed — the conservative rule for an owner
+//                                this machine has no pid evidence about. A lock
+//                                without owner.json yet is fresh by directory
+//                                mtime, which holds a just-created lock until
+//                                its identity lands.
 //
 // Production windows are SESSION_LOCK_STALE_MS / SESSION_LOCK_WAIT_MS and the
 // heartbeat cadence is heartbeatIntervalMs. The short windows the tests use
@@ -53,12 +53,22 @@
 // Design: a same-host pid recycled to a new process reads as alive — that
 // keeps a dead owner's lock longer than necessary, and is accepted because the
 // alternative (guessing a start time) would be wrong more often.
+// Design: liveness is the store's one rule (#570) — only a same-host ESRCH
+// proves the owner is gone. EPERM proves the process exists for another user;
+// an unclassifiable probe error (Windows faults, ERR_INVALID_ARG_TYPE) says
+// nothing about it. Either way the waiter leaves the lock alone instead of
+// taking a running session away.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { pidIsAlive } from "@anysearch-cli/store/process-liveness";
 
-/** Reclaim window for a lock whose owner this machine cannot confirm. */
+/**
+ * Reclaim window for an owner this machine has no pid evidence about — another
+ * host, or a missing/unreadable identity. A same-host owner that merely cannot
+ * be proven dead is never aged out.
+ */
 export const SESSION_LOCK_STALE_MS = 10 * 60_000;
 /** #317: no automatic wait; callers must explicitly request a positive cap. */
 export const SESSION_LOCK_WAIT_MS = 0;
@@ -165,16 +175,6 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
   }
 }
 
-function pidIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    // EPERM: the process exists but belongs to another user.
-    return (e as NodeJS.ErrnoException)?.code === "EPERM";
-  }
-}
-
 /** Age of the freshest evidence in the lock: heartbeat mtime, else dir mtime. */
 function lockAgeMs(lockPath: string, now: number): number {
   try {
@@ -187,9 +187,11 @@ function lockAgeMs(lockPath: string, now: number): number {
 
 /**
  * Whether the lock at `lockPath` may be reclaimed right now — see the module
- * comment for the rule table. The one-line version: a live local owner is
- * never reclaimed, a confirmed-dead local owner is reclaimed at once, and
- * everyone else has to outlive the stale window.
+ * comment for the rule table. The one-line version: a local owner that is not
+ * proven dead (including a probe this machine cannot classify) is never
+ * reclaimed; a confirmed-dead local owner is reclaimed at once; an owner with
+ * no pid evidence here (another host, missing or unreadable identity) has to
+ * outlive the stale window.
  *
  * An owner.json that exists but cannot be read counts as "cannot confirm":
  * this waiter falls back to the age rule, and while the file stays unreadable
