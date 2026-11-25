@@ -1,17 +1,14 @@
-// The one ruler for "is this the same page".
+// The identity of a web page: the key two spellings must share to count as
+// "same page".
 //
-// Identity is what search dedup, archive writes, ticket matching and the fetch
-// path compare. It is deliberately NOT a display URL: the scheme is dropped,
-// a leading `www.` and a trailing host dot are folded, default ports (80/443)
-// are dropped, tracking parameters and the fragment are removed. Everything
-// else — path case, query order, non-tracking parameters — stays as it came in.
+// Search dedup and archive writes call this. It produces an identity key, NOT
+// a link: the scheme is dropped, `www.` and a trailing host dot are folded,
+// the two standard web ports (80 and 443) are dropped, tracking parameters and
+// the fragment are removed. Path case, query order and every other byte stay
+// as given, so the result is safe to pass in again (idempotent).
 //
-// Display surfaces keep the link they already show; this module never feeds a
-// user-visible URL.
-//
-// #606: there used to be a private copy in the engine that handled only
-// scheme/www/tracking and choked on a host with a trailing dot or a scheme-less
-// `host:port`. That copy is retired; this is the only implementation.
+// A surface that shows a URL must keep the link it already carries (for search
+// results that is `sourceUrl`); this key is not display text.
 
 // Tracking parameters the old engine copy stripped by name. Everything with a
 // `utm_` prefix is matched by prefix, so it is not repeated here.
@@ -20,6 +17,28 @@ const NAMED_TRACKING_PARAMS: Record<string, true> = {
   gclid: true,
   ref: true,
 };
+
+/**
+ * Drop tracking parameters without re-encoding the rest of the query. The
+ * URLSearchParams path rewrites the whole query (`%20` becomes `+`), which
+ * gives one page two identities depending on whether a tracking parameter
+ * happened to be present.
+ */
+function stripTrackingParams(search: string): string {
+  if (!search.startsWith("?")) return "";
+  const kept = search.slice(1).split("&").filter((part) => {
+    const eq = part.indexOf("=");
+    const rawName = eq === -1 ? part : part.slice(0, eq);
+    let name = rawName;
+    try {
+      name = decodeURIComponent(rawName.replace(/\+/g, " "));
+    } catch {
+      // A malformed escape is not a tracking name; keep the parameter as-is.
+    }
+    return !(name.startsWith("utm_") || Object.hasOwn(NAMED_TRACKING_PARAMS, name));
+  });
+  return kept.length > 0 ? "?" + kept.join("&") : "";
+}
 
 /**
  * Parse an http(s) URL, adding `https://` when the caller left the scheme off.
@@ -59,7 +78,7 @@ function parseWebUrl(raw: string): URL | null {
 
 /**
  * The identity of a web URL: scheme-insensitive, no `www.`, no trailing host
- * dot, no default port, no tracking parameters, no fragment.
+ * dot, no standard web port, no tracking parameters, no fragment.
  *
  * Unparseable or non-http(s) input is returned trimmed and otherwise untouched,
  * so a caller that passes a non-URL string still gets a stable key.
@@ -70,16 +89,30 @@ export function normalizeUrlIdentity(raw: string): string {
   if (!url) return text;
 
   const host = url.hostname.replace(/\.$/, "").replace(/^www\./, "");
-  // WHATWG's URL already drops the default port for its scheme (80 on http,
-  // 443 on https) and keeps every other port. A port that is non-default for
-  // the scheme it came with is part of the endpoint, so it stays.
-  const port = url.port;
+  // The identity drops the scheme, so it cannot tell "default for https" from
+  // "default for http". Both standard web ports are therefore not part of the
+  // key, and feeding the key back in gives the same key.
+  const port = url.port === "80" || url.port === "443" ? "" : url.port;
+  const search = stripTrackingParams(url.search);
 
-  for (const name of [...url.searchParams.keys()]) {
-    if (name.startsWith("utm_") || Object.hasOwn(NAMED_TRACKING_PARAMS, name)) {
-      url.searchParams.delete(name);
-    }
+  return host + (port ? ":" + port : "") + url.pathname + search;
+}
+
+/**
+ * Return only the results whose URL identity is not in `seen`, adding each
+ * returned identity to `seen` as it goes. The round and reround merge sites
+ * share this so they cannot drift into two different "new result" rules.
+ */
+export function pickUnseenUrlResults<T extends { url: string }>(
+  seen: Set<string>,
+  results: readonly T[],
+): T[] {
+  const fresh: T[] = [];
+  for (const result of results) {
+    const key = normalizeUrlIdentity(result.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fresh.push(result);
   }
-
-  return host + (port ? ":" + port : "") + url.pathname + url.search;
+  return fresh;
 }

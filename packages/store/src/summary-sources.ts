@@ -440,9 +440,17 @@ export function resolveSummarySourcesFromReads(
       continue;
     }
     if (typeof url !== "string" || url.length === 0) continue;
-    // #606: the archive stores the URL identity, while a summary cites whatever
-    // spelling the model read. Compare on the same ruler, never the raw string.
-    for (const id of urlMaterialRows(db, normalizeUrlIdentity(url))) push("material", id);
+    // The archive stores identities, while a summary cites the spelling the
+    // model read. Try the identity first; only when it names no row at all fall
+    // back to the raw string, so a live identity row is never mixed with the
+    // retired raw predecessor of the same page.
+    const identity = normalizeUrlIdentity(url);
+    const identityIds = urlMaterialRows(db, identity);
+    if (identityIds.length > 0) {
+      for (const id of identityIds) push("material", id);
+    } else if (identity !== url) {
+      for (const id of urlMaterialRows(db, url)) push("material", id);
+    }
   }
   return out;
 }

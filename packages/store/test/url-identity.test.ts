@@ -1,5 +1,6 @@
-// #606: archive writes use the same URL identity as search dedup.
+// Archive writes use the same URL identity as search dedup.
 import assert from "node:assert/strict";
+import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,6 +55,91 @@ test("adjudicated material rows also use the identity, not the caller's spelling
     )[0]!;
     assert.equal(row.url, "example.com/page");
     assert.equal(row.entity, "example.com/page", "the default entity key is the identity too");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a citation written before identity storage still resolves to its row", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-url-identity-legacy-read-"));
+  const dbPath = join(dir, "data.db");
+  const store = new SqliteSessionStore(dbPath);
+  try {
+    const session = await store.createSession("legacy");
+    const raw = "https://legacy.example/a";
+    // Simulate a row written before the archive stored identities: raw URL and
+    // the raw URL as its default entity.
+    const db = new Database(dbPath);
+    db.prepare(
+      "INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(session.id, raw, "legacy", "legacy body", "exa", raw);
+    db.close();
+
+    const resolved = store.resolveSummarySources([raw]);
+    assert.equal(resolved.length, 1, "the legacy citation resolves");
+    assert.equal(resolved[0]?.kind, "material");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writing an identity also retires a legacy row with the same raw spelling", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-url-identity-legacy-write-"));
+  const dbPath = join(dir, "data.db");
+  const store = new SqliteSessionStore(dbPath);
+  try {
+    const session = await store.createSession("legacy");
+    const raw = "https://legacy.example/b";
+    const db = new Database(dbPath);
+    db.prepare(
+      "INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(session.id, raw, "old", "old body", "exa", raw);
+    const oldId = store.dbQuery<{ id: number }>("SELECT MAX(id) AS id FROM retrieval_results")[0]!.id;
+    db.close();
+
+    await store.saveResults(session.id, [
+      { url: raw, title: "new", snippet: "new body", source: "tavily" },
+    ]);
+    const rows = store.dbQuery<{ id: number; url: string; valid_until: string | null }>(
+      "SELECT id, url, valid_until FROM retrieval_results ORDER BY id",
+    );
+    const old = rows.find((r) => r.id === oldId)!;
+    const fresh = rows.find((r) => r.id !== oldId)!;
+    assert.ok(old.valid_until, "the legacy row is retired by the raw spelling");
+    assert.equal(fresh.url, "legacy.example/b", "the new row stores the identity");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a legacy raw entity is superseded instead of duplicated", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ans-url-identity-legacy-adj-"));
+  const dbPath = join(dir, "data.db");
+  const store = new SqliteSessionStore(dbPath);
+  try {
+    const session = await store.createSession("legacy");
+    const raw = "https://legacy.example/c";
+    const db = new Database(dbPath);
+    db.prepare(
+      "INSERT INTO retrieval_results (session_id, url, title, snippet, source, entity) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(session.id, raw, "old", "old body", "exa", raw);
+    const oldId = store.dbQuery<{ id: number }>("SELECT MAX(id) AS id FROM retrieval_results")[0]!.id;
+    db.close();
+
+    const result = await store.adjudicateMemory(session.id, [
+      { url: raw, title: "new", snippet: "new body", source: "tavily", evidence: 0.9 },
+    ]);
+    assert.equal(result[0]?.action, "supersede", "the legacy entity is found and superseded");
+    assert.equal(result[0]?.supersededId, oldId);
+
+    const old = store.dbQuery<{ valid_until: string | null }>(
+      "SELECT valid_until FROM retrieval_results WHERE id = ?",
+      oldId,
+    )[0]!;
+    assert.ok(old.valid_until, "the legacy row is closed");
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

@@ -4,16 +4,16 @@
 
 ### Changed
 
-- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉该 scheme 的默认端口（http 80 / https 443），去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序、非默认端口和非 tracking 参数原样保留。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。
-- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断也按同一身份比，不再各留一套裸字符串集合。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着，CLI 搜索输出形状没动。
-- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同一页的三种写法不再留两条活行。
-- **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 收到模型写的任意拼法先归一化再查行；行里存的身份和模型引用的 `https://...` 不再对不上。
+- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉两个标准 web 端口（80/443），去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序、非标准端口和其他参数原样保留，删 tracking 参数也不重排整条 query 的编码。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。函数幂等：身份再过一遍还是同一个身份。
+- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断共用 `pickUnseenUrlResults`，不再各留一套裸字符串集合。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着；`ans search` 的输出形状没动。从 `retrieval_results.url` 直接取网址的展示面（`ans entity unresolved`、`ans pref review`、重建摘要）看到的是这一列存的写法，新行没有 scheme。
+- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同时按调用方原串再关一次，改动前写进去的老行也能被顶掉。
+- **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 先按身份查，查不到再按引用原串查一次；新行和改动前的旧行都能对上，摘要依赖不会丢。
 
 ### Tests
 
-- `packages/retriever/test/url-identity.test.ts`：三种写法归一成同一身份，默认端口/尾点/`www.`/tracking/fragment、非默认端口和非 http(s) 输入。
+- `packages/retriever/test/url-identity.test.ts`：三种写法归一成同一身份；标准端口、尾点、`www.`、tracking、fragment；非标准端口和 query 原字节保留；身份幂等；`pickUnseenUrlResults` 只返回新身份。
 - `packages/kernel/test/engine-url-identity.test.ts`：一个信息源返回三种写法，只留一条结果，`sourceUrl` 仍带 scheme。
-- `packages/store/test/url-identity.test.ts`：两次写入同一页的两种写法落同一身份，旧行被顶掉；`adjudicateMemory` 的默认实体键也是身份。
+- `packages/store/test/url-identity.test.ts`：两次写入同一页的两种写法落同一身份，旧行被顶掉；`adjudicateMemory` 的默认实体键也是身份；改动前的老行在顶号和摘要来源查询里仍能被找到。
 
 ## Unreleased — #581: `ans chat` / `ans_chat` 说清哪份配置坏了、缺什么
 

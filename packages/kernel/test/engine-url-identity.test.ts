@@ -1,5 +1,4 @@
-// #606: search dedup reads the shared URL identity, while display keeps the
-// provider's full link.
+// Search dedup reads the shared URL identity, while display keeps the provider's full link.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RetroaererdEngine } from "../src/engine";
