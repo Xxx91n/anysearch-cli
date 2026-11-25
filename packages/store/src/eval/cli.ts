@@ -311,7 +311,9 @@ async function main(): Promise<number> {
   // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
   // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
   const ob = report.metrics.observational;
-  let skipLedgerWrite: { recorded: boolean; reason?: string; detail?: string } | null = ob ? { recorded: true } : null;
+  // only a failure is reported: the eval path does not persist the skip ledger at all yet (#590),
+  // so claiming "recorded" on a clean run would be a lie
+  let skipLedgerWrite: { recorded: false; reason: string; detail: string } | null = null;
   const runNotes: string[] = [];
   if (ob) {
     const keys: string[] = [];
@@ -334,9 +336,6 @@ async function main(): Promise<number> {
       recordOnce();
     } catch (e) {
       const kind = classifyLedgerWriteFailure(e);
-      // a bug in the writer is not a state of the ledger: let it fail the run instead of being
-      // recorded as "this run did not write"
-      if (kind === "unknown") throw e;
       const detail = String((e as Error).message ?? e);
       if (kind === "corrupt") {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
@@ -345,7 +344,6 @@ async function main(): Promise<number> {
           recordOnce();
         } catch (restart) {
           const restartKind = classifyLedgerWriteFailure(restart);
-          if (restartKind === "unknown") throw restart;
           skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
           runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
           console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);

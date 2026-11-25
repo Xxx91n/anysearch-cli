@@ -254,15 +254,14 @@ export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) =
   return withLedgerLock(lockPathFor(outDir), () => fn(readSkipLedger(outDir)));
 }
 
-export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io" | "unknown";
+export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
 
-// Only a ledger that cannot be read is corrupt and worth quarantining. A held lock or an errno
-// failure leaves the file exactly as it was, so quarantining on either throws away a healthy
-// history for a transient reason. Anything else is a bug in the writer, not a state of the ledger,
-// and the caller must let it through instead of recording it as "not written".
+// Only three outcomes reach a caller: the ledger is unreadable (corrupt), the lock is held, or the
+// filesystem refused. Anything else is a bug in the writer, not a state of the ledger, so it is
+// rethrown here instead of becoming a fourth kind each caller has to remember.
 export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
   if (error instanceof SkipLedgerError) return "corrupt";
   if (error instanceof LedgerLockTimeoutError) return "lock-busy";
   if (typeof (error as NodeJS.ErrnoException | null)?.code === "string") return "io";
-  return "unknown";
+  throw error;
 }

@@ -267,7 +267,9 @@ try {
     ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
     ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
     ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(Object.assign(new Error("denied"), { code: "EACCES" })) === "io");
-    ok("F11 a writer bug is not recorded as a missing write", classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")) === "unknown");
+    let rethrown: unknown = null;
+    try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
+    ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);
 
     let contractError: unknown = null;
     try {
