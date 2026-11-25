@@ -190,7 +190,7 @@ export class SufficiencyEvaluator {
         // Merge results: append new URLs. Compare on the URL identity the engine
         // and the archive use, so a differently spelled reround hit is recognised
         // as already seen instead of archived twice.
-        const seenUrls = new Set((envelope.results || []).map((r: any) => normalizeUrlIdentity(String(r.url ?? ""))));
+        const seenUrls = new Set<string>((envelope.results || []).map((r: any) => normalizeUrlIdentity(String(r.url ?? ""))));
         const newResults = pickUnseenUrlResults(seenUrls, reroundEnvelope.results || []);
         if (newResults.length === 0) break; // no new info, stop.
         // #259: archive the reround's FRESH results only. They are about to
