@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, emptyLedger, WARN_STREAK_LIMIT } from "../../../scripts/gain-ledger.mjs";
+import { execSync } from "node:child_process";
+import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, emptyLedger, WARN_STREAK_LIMIT, withSkipLedgerLock } from "../../../scripts/gain-ledger.mjs";
 
 // streak: three consecutive WARNs trip the forced-review latch
 {
@@ -39,7 +40,7 @@ import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, 
   fs.rmSync(dir, { recursive: true, force: true });
 }
 // @3 skip-ledger survives human resolution: streak cleared, one resolution added,
-// history / state block / actions log preserved — nothing is wiped (#592).
+// history / state block / actions log preserved — nothing is wiped.
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-@3-"));
   const f = path.join(dir, "skip-ledger.json");
@@ -68,6 +69,47 @@ import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, 
   assert.equal(again.actions.length, 1, "@3 actions preserved");
   assert.equal(again.revision, 9, "@3 revision preserved");
   assert.deepStrictEqual(again.lastSkipKeys, ["k1", "k2"], "@3 lastSkipKeys preserved");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+// unrecognized schema must fail loud, never overwrite evidence (resolves inline review #1)
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-unknown-"));
+  const f = path.join(dir, "skip-ledger.json");
+  const unknown = { schema: "anysearch/gain-ledger@9", consecutiveWarn: 3, history: [], resolutions: [] };
+  writeGainLedger(f, unknown);
+  const before = fs.readFileSync(f, "utf8");
+  const script = path.resolve(path.dirname(import.meta.url), "../../scripts/gain-warn-resolve.mjs");
+  let code = 0;
+  try {
+    execSync("node " + script + " --decision stay-warn --note x --ledger " + f, { stdio: "pipe" });
+  } catch (e) {
+    code = e.status;
+  }
+  assert.notEqual(code, 0, "unrecognized schema must exit non-zero");
+  assert.equal(fs.readFileSync(f, "utf8"), before, "unrecognized schema must not overwrite");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+// withSkipLedgerLock serializes read-modify-write: second acquisition runs only after
+// the first released the lock, so consecutiveWarn accumulates instead of clobbering.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-lock-"));
+  const f = path.join(dir, "skip-ledger.json");
+  writeGainLedger(f, emptyLedger());
+  let runs = 0;
+  withSkipLedgerLock(f, () => {
+    const l = readGainLedger(f);
+    l.consecutiveWarn += 1;
+    writeGainLedger(f, l);
+    runs += 1;
+  });
+  withSkipLedgerLock(f, () => {
+    const l = readGainLedger(f);
+    l.consecutiveWarn += 1;
+    writeGainLedger(f, l);
+    runs += 1;
+  });
+  assert.equal(runs, 2, "both lock acquisitions ran");
+  assert.equal(readGainLedger(f).consecutiveWarn, 2, "serialized read-modify-write accumulated");
   fs.rmSync(dir, { recursive: true, force: true });
 }
 console.log("gain-ledger.test.mjs: all checks passed");

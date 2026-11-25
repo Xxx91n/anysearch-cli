@@ -17,6 +17,27 @@ if (!decision || !RESOLUTIONS.includes(decision)) {
   console.error("usage: gain-warn-resolve --decision " + RESOLUTIONS.join("|") + " [--note ...] [--ledger path]");
   process.exit(2);
 }
+// Guard: a file that exists but cannot be read as a recognized ledger must
+// never be silently replaced with an empty @1 ledger (that would destroy the
+// @3 evidence the lock exists to protect). Fail loud instead — matches the
+// skip-ledger.ts rule of quarantining unreadable files rather than clearing them.
+const RECOGNIZED = [GAIN_LEDGER_SCHEMA, GAIN_LEDGER_SCHEMA_V2, GAIN_LEDGER_SCHEMA_V3];
+function readLedgerOrFail(file) {
+  const raw = fs.readFileSync(file, "utf8");
+  let j;
+  try {
+    j = JSON.parse(raw);
+  } catch (e) {
+    console.error("[gain-warn-resolve] " + file + " is not valid JSON — refusing to overwrite evidence; aborting: " + String(e));
+    process.exit(1);
+  }
+  if (!j || typeof j.schema !== "string" || !RECOGNIZED.includes(j.schema)) {
+    console.error("[gain-warn-resolve] " + file + " has unrecognized schema " + String(j && j.schema) + " — refusing to overwrite evidence; aborting.");
+    process.exit(1);
+  }
+  return readGainLedger(file);
+}
+
 const now = new Date().toISOString();
 const commit = (ledger) => {
   applyResolution(ledger, decision, now, note);
@@ -25,11 +46,11 @@ const commit = (ledger) => {
 };
 let ledger;
 if (fs.existsSync(ledgerPath)) {
-  const probe = readGainLedger(ledgerPath);
+  const probe = readLedgerOrFail(ledgerPath);
   if (probe.schema === GAIN_LEDGER_SCHEMA_V2 || probe.schema === GAIN_LEDGER_SCHEMA_V3) {
     // skip-ledger: hold the same lock eval's withSkipLedgerLock uses, so this
     // read-modify-write cannot race eval's dual writers or clobber @3 evidence.
-    ledger = withSkipLedgerLock(ledgerPath, () => commit(readGainLedger(ledgerPath)));
+    ledger = withSkipLedgerLock(ledgerPath, () => commit(readLedgerOrFail(ledgerPath)));
   } else {
     ledger = commit(probe);
   }

@@ -36,8 +36,10 @@ export function readGainLedger(file) {
       // @3 skip-ledger (shared wire family): keep every field byte-for-byte
       // (state / actions / revision / lastSkipKeys, plus entry-level track /
       // reasonCode) so a human resolution never wipes the evidence the lock
-      // exists to protect. Only consecutiveWarn / resolutions are normalized;
-      // everything else is preserved as-is.
+      // exists to protect. consecutiveWarn / resolutions are normalized here;
+      // disposition / verdict are @1-only fields — writeGainLedger drops them
+      // when writing back an @3 schema so eval never sees @1-shaped keys it
+      // does not understand.
       return {
         ...j,
         consecutiveWarn: typeof j.consecutiveWarn === "number" ? j.consecutiveWarn : 0,
@@ -60,19 +62,30 @@ export function readGainLedger(file) {
 export function writeGainLedger(file, ledger) {
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true });
+  // @3 skip-ledger has no disposition/verdict fields (those are @1-only).
+  // applyResolution unconditionally sets them, so strip them when writing an
+  // @3 schema back — otherwise eval would persist @1-shaped keys it does not
+  // understand and could lose them on its next write.
+  const out = ledger.schema === GAIN_LEDGER_SCHEMA_V3
+    ? { ...ledger, disposition: undefined, verdict: undefined }
+    : ledger;
   const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(ledger, null, 2) + "\n", "utf8");
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n", "utf8");
   fs.renameSync(tmp, file);
 }
 
 // pidIsAlive mirrors packages/store/src/eval/skip-ledger.ts's stale-lock
 // recovery without importing the TS module (scripts are plain stdlib Node).
+// Product rule (packages/store/src/process-liveness.ts): only ESRCH proves
+// death — EPERM and every other probe failure mean "not proven dead", i.e.
+// the holder is treated as alive. Treating unknown errors as dead would reap
+// a still-live lock and let two writers clobber one ledger.
 function pidIsAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (e) {
-    return e.code === "EPERM";
+    return e.code !== "ESRCH";
   }
 }
 
