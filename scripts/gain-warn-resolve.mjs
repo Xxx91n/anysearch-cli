@@ -4,7 +4,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { readGainLedger, writeGainLedger, applyResolution, RESOLUTIONS, withSkipLedgerLock, GAIN_LEDGER_SCHEMA_V2, GAIN_LEDGER_SCHEMA_V3 } from "./gain-ledger.mjs";
+import { readGainLedger, writeGainLedger, applyResolution, RESOLUTIONS, withSkipLedgerLock, GAIN_LEDGER_SCHEMA, GAIN_LEDGER_SCHEMA_V2, GAIN_LEDGER_SCHEMA_V3 } from "./gain-ledger.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -33,6 +33,14 @@ function readLedgerOrFail(file) {
   }
   if (!j || typeof j.schema !== "string" || !RECOGNIZED.includes(j.schema)) {
     console.error("[gain-warn-resolve] " + file + " has unrecognized schema " + String(j && j.schema) + " — refusing to overwrite evidence; aborting.");
+    process.exit(1);
+  }
+  // 结构校验：recognized schema 但 shape 损坏（consecutiveWarn 不是数字、
+  // history 不是数组）时，readGainLedger 会把它“修复”为空 @1 并返回，
+  // 随后被不加锁的 commit() 整份覆盖掉原 @2/@3 账本——正是本次要堵的洞。
+  // 在这里直接拒绝，不写、不覆盖。
+  if (typeof j.consecutiveWarn !== "number" || !Array.isArray(j.history)) {
+    console.error("[gain-warn-resolve] " + file + " has malformed ledger shape — refusing to overwrite evidence; aborting.");
     process.exit(1);
   }
   return readGainLedger(file);
