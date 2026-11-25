@@ -482,8 +482,9 @@ export async function runChat(argv: string[]): Promise<number> {
     // names the lease directory a person can clear once that process is gone.
     if (error instanceof ChatAttemptBusyError) {
       process.stderr.write(
-        "这段会话正在别处运行（" + error.sessionId + "）。等它结束后再试。"
-        + "如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。\n",
+        "这段会话正在别处运行（" + error.sessionId + "）。"
+        + (error.holder ? "持有者 pid " + error.holder.pid + "（主机 " + error.holder.host + "）。" : "")
+        + "等它结束后再试。如果确认那个进程已经不在，删掉 " + error.leasePath + " 这个目录再试。\n",
       );
       return 1;
     }

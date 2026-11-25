@@ -37,6 +37,7 @@ import {
   acquireSessionLock,
   isSessionBusy,
   resolveSessionLockWindows,
+  sessionBusyHolder,
   type SessionLockWindows,
 } from "./session-lock";
 
@@ -57,6 +58,11 @@ export class ChatAttemptBusyError extends Error {
      * person can clear by hand, and they cannot clear a path nobody showed them.
      */
     readonly leasePath: string,
+    /**
+     * The holder's pid and host, when the lease named them. Without this the
+     * message asks a person to confirm "that process" without saying which.
+     */
+    readonly holder?: { pid: number; host: string },
   ) {
     super("Session is busy: another chat attempt holds it; this attempt was not started.");
     this.name = "ChatAttemptBusyError";
@@ -137,7 +143,7 @@ export async function runChatAttempt(
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
     const choice = await options.onBusy?.(sessionId) ?? "stop";
-    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath);
+    if (choice === "stop") throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyHolder(error));
     if (choice === "wait") {
       // Design: #315/#317 replace #266's automatic two-minute queue — an
       // unattended caller must not hang without an explanation. Only a caller
@@ -147,7 +153,7 @@ export async function runChatAttempt(
           ...windows, waitMs: windows.waitMs || 120_000,
         });
       } catch (waitError) {
-        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath);
+        if (isSessionBusy(waitError)) throw new ChatAttemptBusyError(sessionId, leasePath, sessionBusyHolder(waitError));
         throw waitError;
       }
     } else {

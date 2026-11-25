@@ -74,8 +74,8 @@ import { probePid } from "@anysearch-cli/store/process-liveness";
 
 /**
  * Reclaim window for an owner this machine has no pid evidence about — another
- * host, or a missing/unreadable identity. A same-host owner that merely cannot
- * be proven dead is never aged out.
+ * host, a missing or unreadable identity, or a pid the probe cannot classify.
+ * A same-host owner the probe confirms alive is never aged out.
  */
 export const SESSION_LOCK_STALE_MS = 10 * 60_000;
 /** #317: no automatic wait; callers must explicitly request a positive cap. */
@@ -101,10 +101,9 @@ export const SESSION_BUSY_MESSAGE =
  * Who the lock names, for a message a person reads. Best effort: an identity
  * that is missing or unreadable is simply not described.
  */
-function describeHolder(lockPath: string): string | undefined {
+function readHolder(lockPath: string): LockOwner | undefined {
   try {
-    const owner = readLockOwner(lockPath);
-    return owner ? "pid " + owner.pid + " on " + owner.host : undefined;
+    return readLockOwner(lockPath);
   } catch {
     return undefined;
   }
@@ -119,12 +118,22 @@ function describeHolder(lockPath: string): string | undefined {
  * resort. "Retry later" alone leaves the user waiting for a run that will
  * never end, and a path alone does not say which process to look for.
  */
-function lockBusyMessage(lockPath: string): string {
-  const holder = describeHolder(lockPath);
+function lockBusyMessage(lockPath: string, holder: LockOwner | undefined): string {
   return SESSION_BUSY_MESSAGE
-    + (holder ? " Holder: " + holder + "." : "")
+    + (holder ? " Holder: pid " + holder.pid + " on " + holder.host + "." : "")
     + " Lock: " + lockPath
     + ". If you are sure that process is gone, delete that lock directory and retry.";
+}
+
+/**
+ * Who the contention error says holds the lock, when its identity was readable.
+ * A host that words the collision itself shows it: without a pid, "confirm that
+ * process is gone" asks the user to guess which process.
+ */
+export function sessionBusyHolder(error: unknown): { pid: number; host: string } | undefined {
+  return error instanceof LockHeldError && error.holder
+    ? { pid: error.holder.pid, host: error.holder.host }
+    : undefined;
 }
 
 export interface SessionLockWindows {
@@ -183,8 +192,8 @@ const HEARTBEAT_FILE = "heartbeat";
  * never shown.
  */
 class LockHeldError extends Error {
-  constructor(readonly lockPath: string) {
-    super(lockBusyMessage(lockPath));
+  constructor(readonly holder: LockOwner | undefined, lockPath: string) {
+    super(lockBusyMessage(lockPath, holder));
     this.name = "LockHeldError";
   }
 }
@@ -422,7 +431,7 @@ export async function acquireSessionLease(
 ): Promise<() => void> {
   mkdirSync(dirname(leasePath), { recursive: true });
   const release = takeLockDir(leasePath, windows.staleMs);
-  if (!release) throw new LockHeldError(leasePath);
+  if (!release) throw new LockHeldError(readHolder(leasePath), leasePath);
   return release;
 }
 
@@ -453,7 +462,7 @@ export async function acquireSessionLock(
     // contention, the cap bounds retries; zero never enters the polling path.
     const release = takeLockDir(lockPath, staleMs);
     if (release) return release;
-    if (Date.now() >= deadlineAt) throw new LockHeldError(lockPath);
+    if (Date.now() >= deadlineAt) throw new LockHeldError(readHolder(lockPath), lockPath);
     await sleep(POLL_MS);
   }
 }

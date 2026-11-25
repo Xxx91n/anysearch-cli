@@ -224,6 +224,14 @@ async function main() {
       };
       process.kill = unconfirmable;
       try {
+        // Without this the test would pass on a patch that never took effect:
+        // 777777777 would then read as dead and the lease would be reclaimed
+        // for the wrong reason.
+        let probeCode: string | undefined;
+        try { process.kill(unknownPid, 0); } catch (e) { probeCode = (e as NodeJS.ErrnoException)?.code; }
+        assert(probeCode === "ERR_INVALID_ARG_TYPE",
+          "A7: the probe really cannot classify this pid (got " + JSON.stringify(probeCode) + ")");
+
         const outcome = await runChatAttempt({
           sessionId: "s7", projectRoot: "/p", piSessionDir: piDir,
           sessionLock: { staleMs: 1_000 },
