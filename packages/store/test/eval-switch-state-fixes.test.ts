@@ -268,6 +268,9 @@ try {
     ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
     const fsError = Object.assign(new Error("denied"), { code: "EACCES", errno: -13, syscall: "open" });
     ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(fsError) === "io");
+    // libuv reports an errno it cannot name with code "UNKNOWN"; it is still a disk failure
+    const unnamedErrno = Object.assign(new Error("unnamed"), { code: "UNKNOWN", errno: -4094 });
+    ok("F11 an unnamed errno is still io", classifyLedgerWriteFailure(unnamedErrno) === "io");
     let rethrown: unknown = null;
     try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
     ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);

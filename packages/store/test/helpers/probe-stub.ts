@@ -11,7 +11,9 @@ export function withProbe<T>(pid: number, code: "ESRCH" | "EPERM" | "ERR_INVALID
     return real(target, signal as NodeJS.Signals);
   }) as typeof process.kill;
   try {
-    return fn();
+    const out = fn();
+    if (out instanceof Promise) throw new Error("withProbe callback must be synchronous");
+    return out;
   } finally {
     process.kill = real;
   }

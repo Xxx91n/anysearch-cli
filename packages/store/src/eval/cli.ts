@@ -338,6 +338,8 @@ async function main(): Promise<number> {
       const detail = String((e as Error).message ?? e);
       if (kind === "corrupt") {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
+        skipLedgerWrite = { recorded: false, reason: "quarantined", detail: quarantined };
+        runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + quarantined + " — the skip history restarts empty");
         console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
         try {
           recordOnce();

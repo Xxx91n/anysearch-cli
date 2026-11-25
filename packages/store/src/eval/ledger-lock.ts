@@ -11,7 +11,9 @@
 // Design: identity decides before age — probe dead reaps, alive keeps, unknown falls to age —
 // because a claim is never refreshed, so age cannot tell a paused owner from a dead one.
 // Design: reaping and releasing compare the exact claim text before deleting, so a lock that
-// changed hands belongs to its new writer (#577).
+// changed hands belongs to its new writer (#577). The re-read and the unlink are two calls, not
+// one; what closes the gap is that a successor's claim always differs in pid or timestamp, so the
+// comparison fails and the delete is skipped.
 import { closeSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
@@ -69,7 +71,15 @@ function sleep(ms: number): void {
 // writers from deleting each other's lock in the moment between create and write.
 function readLock(lockPath: string): LockSnapshot | null {
   let claim: string;
-  try { claim = readFileSync(lockPath, "utf8"); } catch { return null; }
+  try {
+    claim = readFileSync(lockPath, "utf8");
+  } catch (e) {
+    // only "the file is not there" means the lock is gone; a lock this process cannot read is a
+    // real failure, and looping on it would end in a timeout that blames the holder
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
+    return null;
+  }
   let owner: Partial<LedgerLockRecord> | null = null;
   try {
     const parsed = JSON.parse(claim) as { pid?: unknown; at?: unknown } | null;

@@ -265,6 +265,6 @@ export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
   // a real errno failure. Node's programming errors carry a code too (ERR_INVALID_ARG_TYPE), and
   // reading one of those as a disk problem is how a bug turns into a silently missing skip.
   const errno = error as NodeJS.ErrnoException | null;
-  if (errno && typeof errno.errno === "number" && /^E[A-Z]+$/.test(String(errno.code ?? ""))) return "io";
+  if (errno && typeof errno.errno === "number" && !/^ERR_/.test(String(errno.code ?? ""))) return "io";
   throw error;
 }
