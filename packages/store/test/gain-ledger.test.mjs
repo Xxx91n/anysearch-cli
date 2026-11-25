@@ -118,7 +118,8 @@ function runResolve(f, decision = "stay-warn") {
   assert.equal(after.actions.length, 1, "e2e actions preserved");
   assert.equal(after.revision, 9, "e2e revision preserved");
   assert.deepStrictEqual(after.lastSkipKeys, ["k1"], "e2e lastSkipKeys preserved");
-  assert.equal(fs.existsSync(f + ".tmp"), false, "e2e no .tmp residue");
+  const tmpResidue = fs.readdirSync(dir).filter((n) => n.startsWith("skip-ledger.json") && n.endsWith(".tmp")).length;
+  assert.equal(tmpResidue, 0, "e2e no .tmp residue");
   assert.equal(fs.existsSync(path.join(dir, ".skip-ledger.lock")), false, "e2e no lock residue");
   fs.rmSync(dir, { recursive: true, force: true });
 }
@@ -169,8 +170,7 @@ function runResolve(f, decision = "stay-warn") {
   assert.equal(JSON.parse(text).schema, "anysearch/gain-ledger@2", "@2 schema preserved");
   fs.rmSync(dir, { recursive: true, force: true });
 }
-// withSkipLedgerLock 保证同一把锁上的顺序读-改-写不互相覆盖：两次获取锁，
-// 每次读出当前值、加一、写回，最终计数器应为 2（两次都基于最新值写入）。
+// 顺序两次获取锁，读-改-写不互相覆盖：两次都基于最新值写入，最终为 2。
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-lock-"));
   const counter = path.join(dir, "counter.txt");

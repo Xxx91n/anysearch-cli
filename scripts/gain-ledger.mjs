@@ -72,8 +72,14 @@ export function writeGainLedger(file, ledger) {
   // tmp name carries pid so two ship-gate processes writing the same ledger
   // concurrently never clobber each other's .tmp (rename ENOENT).
   const tmp = file + "." + process.pid + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n", "utf8");
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n", "utf8");
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    // 写失败时清理掉残留的 .tmp，避免每次崩都在目录里永久堆积一个。
+    try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    throw e;
+  }
 }
 
 // pidIsAlive mirrors packages/store/src/eval/skip-ledger.ts's stale-lock
