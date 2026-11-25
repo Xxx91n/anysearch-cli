@@ -144,8 +144,10 @@ function buildProviders(
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
-/** The four details `parseBinding` reports for one record; the file path never matches. */
-const RECORD_PROBLEM = /\bentry \d+ (\([^()\n]*\) )?(is not an object|has no provider|has no apiKey|has a non-string endpoint)/i;
+/** The four details `parseBinding` reports for one record, matched on one line; a
+ * file path never carries them. The label in between may hold parentheses itself
+ * (`acme (work)`), so it is skipped rather than pattern-matched. */
+const RECORD_PROBLEM = /\bentry \d+[^\n]*?(is not an object|has no provider|has no apiKey|has a non-string endpoint)/i;
 
 /**
  * Turn a credential-resolution failure into a sentence safe to show. Only a
