@@ -79,7 +79,6 @@ import {
   linkSync,
   openSync,
   readFileSync,
-  readdirSync,
   readSync,
   renameSync,
   rmSync,
@@ -87,9 +86,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { basename, dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { beginInit, endInit, withInitBusyRetry } from "./sqlite-init.js";
 import { openDatabase } from "./db.js";
+import { sweepStaleWorkFiles, workFileOwnerIsLive } from "./stale-work-files.js";
 
 /** Layout marker table name; presence (with the marker row) means "written by build line ≥ #310". */
 export const STORE_META_TABLE = "store_meta";
@@ -440,29 +440,9 @@ export function setAsideUnreadable(path: string): string {
   return aside;
 }
 
-/**
- * Drop work files a killed run left next to `target`.
- *
- * Every run names its own staging file, so nothing else clears them and an
- * interrupted copy leaves a whole file's (or directory's) worth of bytes behind.
- * `suffix` is the caller's own marker: `.adopting` here, `.copying` for the
- * cross-volume directory move. Only files old enough that no live run can still
- * be writing them are removed.
- */
-export function sweepStaleWorkFiles(target: string, suffix: string): void {
-  const dir = dirname(target);
-  const prefix = basename(target) + ".";
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  let names: string[];
-  try { names = readdirSync(dir); } catch { return; }
-  for (const name of names) {
-    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
-    const file = join(dir, name);
-    try {
-      if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
-    } catch { /* leave it */ }
-  }
-}
+/** Suffix of the database file a killed adoption staged beside its target. */
+const ADOPT_WORK_SUFFIX = ".adopting";
+const ADOPT_WORK_OWNER = workFileOwnerIsLive(ADOPT_WORK_SUFFIX);
 
 /**
  * #323: publish a consistent copy of `from` at `to` for the directory rename.
@@ -484,14 +464,14 @@ export function sweepStaleWorkFiles(target: string, suffix: string): void {
  */
 export function adoptDatabase(from: string, to: string): { bytes: number; sha256: string } {
   if (!existsSync(from)) throw new Error("cannot adopt " + from + ": the file does not exist");
-  sweepStaleWorkFiles(to, ".adopting");
+  sweepStaleWorkFiles(to, { suffix: ADOPT_WORK_SUFFIX, isLive: ADOPT_WORK_OWNER });
   if (existsSync(to)) {
     if (opensAsDatabase(to)) return { bytes: statSync(to).size, sha256: sha256File(to) };
     setAsideUnreadable(to);
   }
   // A name of this call's own: a stray leftover from a killed run can never be
   // mistaken for a published copy, and two processes cannot collide on it.
-  const work = to + "." + process.pid + ".adopting";
+  const work = to + "." + process.pid + ADOPT_WORK_SUFFIX;
   let db: Database.Database | undefined;
   try {
     const conn = openDatabase(from, { timeout: 5000 });

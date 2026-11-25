@@ -45,6 +45,23 @@
 - 记录只形容「文件能不能用」，说不了「你本来存了几个 key」。
 - 提示句沿用 #533 的「重启这个 MCP 服务」：`ans_chat` 的解析器每次调用都重读文件，但同一台服务器上的搜索引擎仍是启动时的快照，重启是最稳的一句。
 
+## Unreleased — #554: 写 `config.toml` 前清掉超龄临时文件
+
+一句话说清：**进程在「临时文件写完」和 rename 之间被杀，`.config.toml.<pid>.<hex>.tmp` 会永远留在 `~/.ans`。现在每次写之前顺手扫一遍：只清「`.` + 目标文件名 + `.`」开头、`.tmp` 结尾、超过一小时的，扫不动也照常写。**
+
+### Changed
+
+- **写前清扫**（`packages/store/src/config-llm.ts` 的 `writeUserConfigFile`）：按解析后的真实目标取目录和文件名——软链跟到它指向的文件，旧布局的 `~/.anysearch-cli/config.toml` 也走同一套。前缀 `.` + 文件名 + `.`、后缀 `.tmp`、mtime 超过一小时的才删；别的 `.tmp` 一律不碰，年轻于阈值的也不碰（那是另一个并发写正在用的）。临时名的前缀和后缀只写一处，写和清扫不会各改各的。
+- **清扫函数搬出数据库模块**（`packages/store/src/stale-work-files.ts`）：`sweepStaleWorkFiles` 原来住在 `migration-backup.ts`，会把 better-sqlite3 拖进只做 TOML 和环境变量解析的 `config-llm`。现在它只依赖 `node:fs` / `node:path` 和 `process-liveness.ts` 的 pid 判活，两者都不碰数据库；旧的 `.copying` / `.adopting` 调用点改成传选项包，行为不变，包根导出也没变。
+- **跨卷复制的 staging 目录也能清**：`.copying` 留下的是目录，`rmSync` 按调用方要求递归；目录按子树里最新一次写入判龄，正在复制的目录不会被另一个进程当垃圾删掉。`moveEntry` 和测试共用 `sweepCopyStaging`。
+- **清理失败不影响写入**：目录读不了、单个文件删不掉都静默跳过。
+
+### Known limits
+
+- **`credentials.json` 的同类临时文件照旧没人清**：`.credentials.<pid>.<hex>.tmp` 是另一个写路径，这票按 out of scope 留着，另议。
+- **阈值是一小时**：一个被杀进程留下的临时文件要等一小时后、下一次写配置时才清掉；不会立刻消失，但也不会无限攒。
+- **pid 被复用时旧目录会多留一会儿**：`.copying` 的名字带着发起复制的 pid，清扫先看这个进程还在不在；pid 被别的进程复用时会误当成还活着，等它退出后再清。只会晚清，不会误删。
+
 ## Unreleased — #539: `config.toml` 改成原子写，写一半不再留下半截配置
 
 一句话说清：**`ans llm set` 以前直接往 `~/.ans/config.toml` 里覆盖写，中途出事（盘满、进程被杀、断电）会留下半截文件，而读那边把解析不了的文件整份忽略，用户的自定义配置就这么没了。现在跟 `config.env`、`credentials.json` 一样：先写同目录的临时文件，再 rename 顶上去。失败时旧文件一个字节都不动。**
@@ -63,7 +80,7 @@
 - **Windows 上有一类持有者会让写入从成功变失败**：别的进程拿读写共享打开着 `config.toml`（编辑器、索引器、备份工具常见这个模式），就地写今天能过，rename 会 EPERM。`config.env` 和 `credentials.json` 早就接受了同一个代价；失败时旧文件保得住。
 - **软链照旧穿透**：写之前 `lstat` 一次，`~/.ans/config.toml` 是软链就写到它指向的真实文件，链接本身留着。把配置软链进 dotfiles 仓库的人不会在升级后发现链接被换成普通文件。
 - **解不开的软链直接拒绝写**：软链悬空、成环、或者目标没权限时，不再静默回落成「按普通路径写」，那样等于把链接顶掉。报错点名这个链接，让人去修。
-- **临时文件没人清**：进程在 rename 之前被杀，会留一个 `.config.toml.<pid>.<hex>.tmp`。没有任何代码读它，`sweepStaleWorkFiles` 也不认 `.tmp`，所以是惰性垃圾。
+- **进程被杀会留下临时文件**：在 rename 之前被杀，会留一个 `.config.toml.<pid>.<hex>.tmp`；没有任何代码读它，所以是惰性垃圾。这一条由 #554 收掉：每次写之前扫一遍超龄的同类临时文件。
 - **读侧一个字没动**：坏文件仍然只 warn 一句就整份忽略。截断正好停在合法 TOML 边界时零告警、`ans doctor` 报 0 失败，那是 #546。
 ## Unreleased — #515: 全取消的 MCP 结果带 `interrupted`
 

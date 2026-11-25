@@ -5,14 +5,17 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
-  chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, unlinkSync,
-  writeFileSync,
+  chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync,
+  unlinkSync, utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { userConfigPath, writeUserLlmConfig } from "../src/config-llm.js";
 import { configWriteSeam } from "../src/config-llm-seam.js";
+import { STALE_WORK_FILE_AGE_MS } from "../src/stale-work-files.js";
 
 const GOOD = '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\nbase_url = "https://example.test"\n';
 
@@ -189,4 +192,104 @@ test("the published file is owner-only even over an existing 0644 file", {
   assert.equal(statSync(path).mode & 0o777, 0o644, "the fixture starts world-readable");
   writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home);
   assert.equal(statSync(path).mode & 0o777, 0o600, "every write tightens the mode, not just the first");
+});
+
+test("a write sweeps its own stale temp files and leaves every other .tmp", () => {
+  const { home, path } = fixture();
+  const dir = dirname(path);
+  // Take the name from the writer itself, so this test follows its shape
+  // instead of pinning a literal.
+  let ownTemp = "";
+  withSeam({
+    write: (file, body) => {
+      ownTemp = file;
+      writeFileSync(file, body);
+    },
+  }, () => writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, home));
+  // The first write published that temp away; put an abandoned copy back under
+  // the same name, and a younger sibling of the same shape.
+  writeFileSync(ownTemp, "stale");
+  const fresh = ownTemp.slice(0, -".tmp".length) + ".fresh.tmp";
+  const unrelated = join(dir, "notes.tmp");
+  writeFileSync(fresh, "fresh");
+  writeFileSync(unrelated, "unrelated");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(ownTemp, twoHoursAgo, twoHoursAgo);
+  utimesSync(unrelated, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ provider: "openai" }, home);
+  assert.ok(!existsSync(ownTemp), "an abandoned temp of this file is swept");
+  assert.deepEqual(
+    temps(home).sort(),
+    [basename(fresh), basename(unrelated)].sort(),
+    "only the fresh and unrelated temps survive",
+  );
+});
+
+test("a stale work file the sweep cannot remove does not stop the write", {
+  skip: process.platform === "win32" ? "the POSIX mode is not enforceable on Windows" : false,
+}, () => {
+  const { home, path } = fixture();
+  const stuck = join(dirname(path), ".config.toml.999.deadbeef1234.tmp");
+  mkdirSync(stuck);
+  writeFileSync(join(stuck, "payload"), "held");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(stuck, twoHoursAgo, twoHoursAgo);
+  chmodSync(stuck, 0o555); // no write bit: the child cannot be unlinked
+  const written = writeUserLlmConfig({ provider: "openai" }, home);
+  assert.equal(written, path);
+  assert.ok(readFileSync(path, "utf8").includes('provider = "openai"'), "the write went through");
+  assert.ok(existsSync(stuck), "what the sweep could not remove stays where it was");
+});
+
+test("a write through the legacy config home sweeps there too", () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-config-write-legacy-"));
+  const legacy = join(home, ".anysearch-cli");
+  mkdirSync(legacy, { recursive: true });
+  const path = join(legacy, "config.toml");
+  writeFileSync(path, GOOD);
+  assert.equal(userConfigPath(home), path, "the fixture starts on the legacy file");
+  const stale = join(legacy, ".config.toml.999.deadbeef1234.tmp");
+  writeFileSync(stale, "stale");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ model: "gpt-5" }, home);
+  assert.ok(!existsSync(stale), "the sweep follows the path the writer actually uses");
+});
+
+test("a symlinked config is swept beside the real file, not the link", (context) => {
+  const { home, path } = fixture();
+  const realDir = join(home, "dotfiles");
+  mkdirSync(realDir, { recursive: true });
+  const real = join(realDir, "config.toml");
+  writeFileSync(real, GOOD);
+  try {
+    symlinkSync(real, path, "file");
+  } catch {
+    context.skip("this host does not allow creating symlinks");
+    return;
+  }
+  const stale = join(realDir, ".config.toml.999.deadbeef1234.tmp");
+  writeFileSync(stale, "stale");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  writeUserLlmConfig({ model: "gpt-5" }, home);
+  assert.ok(!existsSync(stale), "the sweep follows the link to the file that was written");
+});
+
+test("importing the config writer does not load the native database binding", () => {
+  // The resolve hook must be in place before config-llm loads, so the probe
+  // imports it dynamically: a static import would run before the hook.
+  const probe = [
+    "import { registerHooks } from 'node:module';",
+    "const seen = [];",
+    "registerHooks({ resolve(specifier, context, next) { seen.push(specifier); return next(specifier, context); } });",
+    "await import('./src/config-llm.ts');",
+    "process.stdout.write(JSON.stringify(seen.filter((s) => s.startsWith('better-sqlite3'))));",
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", probe], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "[]", "the config write path must not pull better-sqlite3 in");
 });

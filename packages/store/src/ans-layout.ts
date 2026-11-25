@@ -54,8 +54,8 @@ import {
   opensAsDatabase,
   setAsideUnreadable,
   SQLITE_SIDECAR_SUFFIXES,
-  sweepStaleWorkFiles,
 } from "./migration-backup.js";
+import { sweepStaleWorkFiles, workFileOwnerIsLive } from "./stale-work-files.js";
 
 /** Marker file inside the user root; its presence means "the rename ran". */
 export const ANS_LAYOUT_MARKER = ".layout.json";
@@ -136,6 +136,23 @@ function writtenSince(path: string, since: number): boolean {
   return false;
 }
 
+/** Suffix of the directory a cross-volume copy stages beside its target. */
+const COPY_STAGING_SUFFIX = ".copying";
+const COPY_STAGING_OWNER = workFileOwnerIsLive(COPY_STAGING_SUFFIX);
+
+/**
+ * Clear what a killed cross-volume copy left beside `to`. The staging entry is
+ * a directory, so it is removed recursively; an owner that still runs is left
+ * alone, because a copy can stall longer than the age window. The same sweep
+ * runs before a new copy starts.
+ */
+export function sweepCopyStaging(to: string): void {
+  sweepStaleWorkFiles(to, {
+    suffix: COPY_STAGING_SUFFIX,
+    recursive: true,
+    isLive: COPY_STAGING_OWNER,
+  });
+}
 
 /**
  * Rename one entry, falling back to a copy when the two roots are on different
@@ -152,8 +169,8 @@ function moveEntry(from: string, to: string): "moved" | "copied" {
   // rename. Copying straight to `to` would leave a half-written entry under the
   // name the reader prefers when an interrupted run is retried, and the intact
   // source would then be ignored forever.
-  const staging = to + "." + process.pid + ".copying";
-  sweepStaleWorkFiles(to, ".copying");
+  const staging = to + "." + process.pid + COPY_STAGING_SUFFIX;
+  sweepCopyStaging(to);
   try {
     cpSync(from, staging, { recursive: true, errorOnExist: false, force: false });
     renameSync(staging, to);

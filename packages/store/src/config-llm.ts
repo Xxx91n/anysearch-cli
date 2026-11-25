@@ -27,6 +27,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
+import { sweepStaleWorkFiles } from "./stale-work-files.js";
 import { ansCredentialsPathFor, ansProjectConfigPath, ansUserConfigPathFor } from "./ans-paths.js";
 import {
   credentialProvider,
@@ -577,7 +578,11 @@ function linkTarget(path: string): string {
 function writeUserConfigFile(path: string, content: string): void {
   path = linkTarget(path);
   const dir = dirname(path);
-  const temp = join(dir, "." + basename(path) + "." + process.pid + "." + randomBytes(6).toString("hex") + ".tmp");
+  // The temp name starts with a dot; the sweep and the write share these two pieces.
+  const tempPrefix = "." + basename(path) + ".";
+  const tempSuffix = ".tmp";
+  sweepStaleWorkFiles(path, { suffix: tempSuffix, prefix: tempPrefix });
+  const temp = join(dir, tempPrefix + process.pid + "." + randomBytes(6).toString("hex") + tempSuffix);
   const write = configWriteSeam.write ?? writeConfigTemp;
   // Design: plain rename, no fs-atomic backoff — that policy waits up to a
   // minute on a Windows sharing error, and a hanging config command is worse

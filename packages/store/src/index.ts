@@ -20,6 +20,9 @@ export * from "./build-info";
 // migration diagnostics (doctor). Backup happens inside the store
 // constructors; this export is the seam tests and doctor consume.
 export * from "./migration-backup";
+// Work-file cleanup for killed runs, without the database binding: config
+// writes and cross-volume copies both stage beside their target.
+export * from "./stale-work-files";
 export * from "./domain-loader";
 // `ans recommend` engine: BM25 (FTS5) over domain metadata, the #125 CJK substring stage behind it,
 // + peer-optional embedding arm (#110).

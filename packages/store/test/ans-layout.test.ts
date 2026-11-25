@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../src/db";
-import { ansLayoutMarkerPath, ensureAnsLayout, readAnsLayoutRecord } from "../src/ans-layout";
+import { ansLayoutMarkerPath, ensureAnsLayout, readAnsLayoutRecord, sweepCopyStaging } from "../src/ans-layout";
 import { adoptDatabase } from "../src/migration-backup";
+import { STALE_WORK_FILE_AGE_MS } from "../src/stale-work-files";
 import { ansPiSessionsDir } from "../src/ans-paths";
 
 function sandbox(): { home: string; env: NodeJS.ProcessEnv; done: () => void } {
@@ -491,4 +493,67 @@ test("the product's own checkout keeps its builtin domains where the build expec
     assert.equal(existsSync(join(pkg, "domains", "shipped.toml")), true, "a product package keeps the copy it ships");
     assert.equal(existsSync(join(root, ".ans", "domains")), false, "nothing was moved into .ans either");
   } finally { box.done(); }
+});
+
+test("a stale copy staging directory is removed, not left forever", () => {
+  const root = mkdtempSync(join(tmpdir(), "ans-copy-sweep-"));
+  const target = join(root, "domains");
+  const stale = target + ".999999.copying";
+  mkdirSync(stale);
+  const payload = join(stale, "payload");
+  writeFileSync(payload, "left by a killed copy");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(payload, twoHoursAgo, twoHoursAgo);
+  utimesSync(stale, twoHoursAgo, twoHoursAgo);
+  sweepCopyStaging(target);
+  assert.ok(!existsSync(stale), "the directory the killed copy staged is gone");
+});
+
+test("a copy staging directory still being written is not swept", () => {
+  const root = mkdtempSync(join(tmpdir(), "ans-copy-live-"));
+  const target = join(root, "domains");
+  const live = target + ".999999.copying";
+  mkdirSync(live);
+  mkdirSync(join(live, "sub"));
+  writeFileSync(join(live, "sub", "payload"), "still copying");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(live, twoHoursAgo, twoHoursAgo); // the staging dir itself looks old
+  sweepCopyStaging(target);
+  assert.ok(existsSync(live), "a child written just now keeps the directory alive");
+});
+
+test("a staging directory owned by a live process is kept", () => {
+  // Keep a real second process alive without a timer: it lives until stdin closes.
+  const child = spawn(process.execPath, ["-e", "process.stdin.resume()"], {
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  try {
+    const root = mkdtempSync(join(tmpdir(), "ans-copy-owner-"));
+    const target = join(root, "domains");
+    const owned = target + "." + child.pid + ".copying";
+    mkdirSync(owned);
+    const payload = join(owned, "payload");
+    writeFileSync(payload, "still copying");
+    const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+    utimesSync(payload, twoHoursAgo, twoHoursAgo);
+    utimesSync(owned, twoHoursAgo, twoHoursAgo);
+    sweepCopyStaging(target);
+    assert.ok(existsSync(owned), "the process that owns the copy is still running");
+  } finally {
+    child.kill();
+  }
+});
+
+test("a staging directory named after this process is swept", () => {
+  const root = mkdtempSync(join(tmpdir(), "ans-copy-self-"));
+  const target = join(root, "domains");
+  const own = target + "." + process.pid + ".copying";
+  mkdirSync(own);
+  const payload = join(own, "payload");
+  writeFileSync(payload, "left by an earlier crash");
+  const twoHoursAgo = new Date(Date.now() - 2 * STALE_WORK_FILE_AGE_MS);
+  utimesSync(payload, twoHoursAgo, twoHoursAgo);
+  utimesSync(own, twoHoursAgo, twoHoursAgo);
+  sweepCopyStaging(target);
+  assert.ok(!existsSync(own), "this process's own name is swept before a new copy starts");
 });
