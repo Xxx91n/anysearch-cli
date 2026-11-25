@@ -18,8 +18,10 @@ import {
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
+  isRecordProblemMessage,
   lookupModelCredential,
   normalizeBindingEndpoint,
+  readFaultRemedy,
   readUserCredentials,
   removeUserCredential,
   repairUserCredentials,
@@ -728,10 +730,60 @@ test("removeUserCredential refuses a broken file without repeating the read's ad
       message = (e as Error).message;
     }
     assert.match(message, /entry 2 \(exa\) has no apiKey/);
-    assert.equal(message.split("fix or remove").length - 1, 1, "同一句只说一次：" + message);
-    assert.match(message, /the key was not removed/);
+    assert.equal((message.match(/fix or remove/gi) ?? []).length, 1, "同一句只说一次：" + message);
+    // The tail says why the write was refused, not that the file did not change:
+    // the caller gets that from `published`, and the CLI prints it once (#550).
+    assert.match(message, /removing it now would replace the file with only the records it could read/);
+    assert.doesNotMatch(message, /would drop the other keys/, "repair keeps the readable keys：" + message);
+    assert.doesNotMatch(message, /the file was not changed/);
     assert.match(readFileSync(path, "utf8"), /good-key/, "the other key survives");
   } finally { cleanup(); }
+});
+
+test("每一种 errno 说自己那一条修法，只读挂载不是权限问题（#550）", () => {
+  // A read-only mount is not fixed by chmod, and the closed set exists so each
+  // code can say the thing that actually works.
+  assert.equal(readFaultRemedy("EROFS"), "move the file to a writable disk");
+  assert.equal(readFaultRemedy("EACCES"), "fix its permissions");
+  assert.match(readFaultRemedy("ELOOP"), /check the file and the folder it lives in/);
+});
+
+test("每条记录细节都由 parseBinding 产出，kernel 的分类靠的就是这份措辞（#569 审查）", () => {
+  // The classifier matches store's wording, so the two have to be the same
+  // strings: exporting them is only half the guard, and this is the other half.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    // Every shape `parseBinding` rejects must come back as a record problem: that
+    // is the contract the kernel's classifier leans on.
+    const cases: unknown[][] = [
+      ["not-an-object"],
+      [{ apiKey: "k" }],
+      [{ provider: "exa" }],
+      [{ provider: "exa", apiKey: "k", endpoint: 5 }],
+    ];
+    for (const bindings of cases) {
+      writeFileSync(path, JSON.stringify({ bindings }), "utf8");
+      const file = readUserCredentials({ home });
+      assert.ok(file.error, "the read reports it: " + JSON.stringify(bindings));
+      assert.equal(isRecordProblemMessage(file.error ?? ""), true, "the classifier's predicate agrees: " + file.error);
+    }
+    // A path that merely looks like a record is not one, and neither is a
+    // file-level fault.
+    assert.equal(isRecordProblemMessage("/config/entry 2/credentials.json: could not read it (ETIMEDOUT)"), false);
+    assert.equal(isRecordProblemMessage("/x: not valid JSON (line 3 column 5)"), false);
+  } finally { cleanup(); }
+});
+
+test("endpoint 的展示形式也去控制字符、限长度（#569 审查）", () => {
+  const esc = String.fromCharCode(27);
+  const shown = displayEndpoint("https://exa.ai/" + esc + "[2K" + "y".repeat(400));
+  const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
+  assert.ok(!control.test(shown), "no control characters: " + JSON.stringify(shown));
+  assert.ok(shown.length <= 201, "bounded, got " + shown.length + ": " + shown);
+  // A value that needs no cleaning is printed whole.
+  assert.equal(displayEndpoint("https://api.example.com/v1"), "https://api.example.com/v1");
 });
 
 test("a provider value read out of the file is shown without control characters and bounded (#537)", () => {

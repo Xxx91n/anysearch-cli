@@ -20,11 +20,15 @@ import {
   credentialProvider,
   displayEndpoint,
   normalizeBindingEndpoint,
+  providerLabel,
   readUserCredentials,
+  REMOVE_KEY_COMMAND,
+  REPAIR_COMMAND,
   removeUserCredential,
   repairUserCredentials,
   resolveConfigHome,
   resolveLlmConfig,
+  STORE_KEY_COMMAND,
   userCredentialsPath,
   writeUserCredential,
 } from "@anysearch-cli/store";
@@ -35,7 +39,6 @@ import {
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
 import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
-import { brokenFileHint, NOTHING_CHANGED, publishedButUnverified } from "../messages";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**
@@ -65,9 +68,12 @@ function stderr(text: string): void {
   else process.stderr.write(text);
 }
 
-/** Show whether an entry exists, bound where — and it must never show the value. */
+/** Show whether an entry exists, bound where — and it must never show the value.
+ * Both halves come out of the file, so both take store's display cleaning: an
+ * escape sequence or an arbitrarily long value would otherwise reach the terminal
+ * through this line. */
 function describeBinding(binding: { provider: string; endpoint: string | null }): string {
-  return binding.provider + "  " + displayEndpoint(binding.endpoint);
+  return providerLabel(binding.provider) + "  " + displayEndpoint(binding.endpoint);
 }
 
 function usage(): number {
@@ -75,11 +81,11 @@ function usage(): number {
   stderr("\n");
   stderr("  ans auth                     Show where each provider's key comes from\n");
   stderr("  ans auth list                Same, plus the stored entries and where the file is\n");
-  stderr("  ans auth set <provider>      Store a key in the user credential file (typed, never echoed)\n");
+  stderr("  " + STORE_KEY_COMMAND + "      Store a key in the user credential file (typed, never echoed)\n");
   stderr("      [--endpoint <url>]       Model providers only: bind the key to one endpoint\n");
   stderr("      [--no-verify]            Do not check a search key upstream before storing it (offline machines)\n");
-  stderr("  ans auth remove <provider>   Remove one stored key [--endpoint <url>]\n");
-  stderr("  ans auth repair              Keep the keys a broken file can still give up, drop the rest\n");
+  stderr("  " + REMOVE_KEY_COMMAND + "   Remove one stored key [--endpoint <url>]\n");
+  stderr("  " + REPAIR_COMMAND + "              Keep the records it can read, drop the ones it cannot\n");
   stderr("\n");
   stderr("Providers: " + CREDENTIAL_PROVIDERS.map((p) => p.id).join(", ") + "\n");
   stderr("The store is plain text, owner-only, and shared by the CLI and GUI entries of this account.\n");
@@ -162,8 +168,7 @@ function statusLines(
       state = "set";
     } else if (file.error) {
       // The file is broken, so this command cannot tell whether the provider had
-      // an entry. "not set" would be a lie about a key that is still in the file
-      // (#537).
+      // an entry. "not set" would be a lie about a key that is still in the file.
       where = "unknown - the credential file could not be read";
       state = "broken";
     } else if (binding) {
@@ -259,6 +264,16 @@ function writePublished(e: unknown): boolean | undefined {
   return typeof flagged === "boolean" ? flagged : undefined;
 }
 
+/** A command that gave up before touching the file. */
+const NOTHING_CHANGED = "Nothing was changed.";
+
+/** A write that landed but failed its access check, said for this command's subject. */
+function publishedButUnverified(fact: string): string {
+  return "The write went through but failed its access check, so the file may " + fact +
+    ", or may have been removed taking every other provider's key with it. " +
+    "Check it with `ans auth list` before storing anything again.";
+}
+
 /** One wording for every refused write; `fact` is what this command was changing. */
 function reportWriteOutcome(message: string, published: boolean, fact: string): void {
   stderr(message + "\n");
@@ -303,12 +318,11 @@ export async function runAuth(args: string[]): Promise<number> {
         stdout("  (no stored keys)");
       }
     }
-    stdout("Store a key: ans auth set <provider>   (typed, never echoed)");
+    stdout("Store a key: " + STORE_KEY_COMMAND + "   (typed, never echoed)");
     stdout("Env still wins: ANS_LLM_API_KEY, or the provider's own *_API_KEY variable");
     if (file.error) {
       // A script reading only the exit code cannot tell a broken file from a
       // healthy one, and `ans doctor`, `set` and `remove` already exit 1 for it.
-      stdout(brokenFileHint(file));
       return 1;
     }
     return 0;
@@ -344,7 +358,6 @@ export async function runAuth(args: string[]): Promise<number> {
     if (broken.error) {
       stderr(broken.error + "\n");
       stderr("Nothing was typed and nothing was written.\n");
-      stderr(brokenFileHint(broken) + "\n");
       return 1;
     }
 

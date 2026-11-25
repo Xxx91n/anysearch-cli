@@ -9,7 +9,14 @@
 - **`ans auth set` 在读文件那一步就失败**：读文件挪到提示输入之前，坏文件时既不问 key 也不联网验，报错点名文件，`--no-verify` 与否都一样。原来模型 provider 不联网验，所以那条误导只发生在 exa / tavily / anysearch 三家身上。
 - **`ans auth remove` 同样先读文件**，坏文件时报一次修法就停。
 - **新增 `ans auth repair`**（`repairUserCredentials`）：在写锁里重读**原始字节**，保留过得了 `parseBinding` 的条目、丢掉过不了的，然后走 `writeProtectedFile` 写回。不能拿 `readUserCredentials` 已经筛空的 `bindings` 回写——那正是读路径一直拒绝的擦除。健康的文件是 no-op，一个字节都不动；不是 JSON 或没有 `bindings` 列表时不动文件，只说「删了重存」。
-- **报错句不再重复，并且点名修法**：`FIX_ADVICE` 一处拼出，两个写入口改成说「这次没写成什么」（`the key was not written - rewriting the file would drop the other keys` / `the key was not removed - the file was not changed`）。这句里现在带 `ans auth repair`——`ans chat` 和搜索路径的 warning 只往 stderr 说这一句，那里看不到 auth 的帮助，不点名的话用户唯一看得见的动作就是删掉整份文件。
+- **修法只在 store 那一句里出现**：`FIX_OR_REPLACE` / `KEEP_KEYS` 一处拼出，读路径和两个写入口都用它。`ans chat` 和搜索路径的 warning 只往 stderr 说这一句，那里看不到 auth 的帮助，不点名的话用户唯一看得见的动作就是删掉整份文件。
+- **同一句修法不再打两遍**：`brokenFileHint` / `faultAdvice` 和 doctor 的 `BROKEN_FILE_ADVICE` 表都删了（`messages.ts` 只剩 `ans auth` 一个调用方，一并并进 `auth.ts`）。store 的 `error` 本来就以修法收尾，命令行再补一行只是换种字体把同一件事说第二遍，还给两种口径（`then retry` 还是 `store the key again`）。现在 `ans auth` / `auth list` / `set` 的早退 / `ans llm` / `ans doctor` 都只打 store 那一句；「文件没动」由命令说一次（`Nothing was changed.`）。
+- **写拒绝的尾巴改成说原因**：`the key was not written - rewriting the file would drop the other keys` 与它自己前半句的 `ans auth repair` 打架——repair 干的就是重写。现在说的是这次写会怎么处理这份文件（`writing it now would replace the file with only the records it could read`），四种故障来源都成立；结果由 `published` 字段和 CLI 的 `Nothing was changed.` 说。
+- **`auth list` 打印的值都过清洗**：`showProvider` 改名导出成 `providerLabel`，`describeBinding` 用它；`displayEndpoint` 也补上同一层（去控制字符、超过 200 字符截断）。这两处以前把文件里的 `provider` / `endpoint` 原样打到终端。
+- **只读挂载的修法改对**：`EROFS` 原来给的是 `fix its permissions`——只读挂载上改权限没用，改成 `move the file to a writable disk`。
+- **`ans llm` 坏文件时不再说 `NO KEY`**：列表和 `ans llm check` 都按 `credentialFile.error` 报 `BROKEN (the credential file could not be read)`（一处 `brokenLabel(file)`，两处排版共用；`invalid-record` 那档说「有一条记录读不了」，不跟「整份读不出来」混成一句。修法只留在上面那行 `Credentials file: BROKEN` 里，逐 provider 再说一遍就是每家一条）——`bindings` 是空的，但 key 可能就在文件里读不出来，这正是 #537 从 `ans auth` 里拿掉的那句谎话。
+- **`ans --help` 用 store 的常量拼**：`STORE_KEY_COMMAND` / `REPAIR_COMMAND`，措辞收进「只丢读不了的记录」这一档，不再说 `repair a broken file`。
+- **MCP 侧的分类也带上 repair**：`classifyCredentialFault` 认 `parseBinding` 报的那四条记录细节，坏条目直接引用 kernel 的 `invalid-record` 提示句，不再退成 `fix or remove it, then retry`。认法本身也在 store：`RECORD_PROBLEM_DETAILS` 收在内部，`parseBinding` 的消息和 `isRecordProblemMessage` 都用它，kernel 只调后者（不是拿它们拼正则，措辞里出现括号或点也不会变形），kernel 只问这个谓词，store 的测试再钉一遍每条细节确实是 `parseBinding` 会说出来的。只认 `entry N` 不够：路径里的 `/config/entry 2/credentials.json` 也长这样，而那条路径上的超时或写锁都不是 repair 能修的；反过来说，匹配也不能限定 label 的形状——`acme (work)` 这种带括号的 provider 同样要认出来。同一批措辞不再在下面那条通用分支里重复一遍。
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
@@ -17,7 +24,7 @@
 ### Known limits
 
 - **修复路径只修「结构里某条坏了」这一类**：不是 JSON 的文件没有任何能读的条目，`repair` 拒绝动它并让用户删掉重存；把原文件备份到旁边不做——旁路备份得自己再走一遍访问保护，多一份没人管的密钥副本，不划算。
-- **`parseBinding` 的错误句带的是文件里 `provider` 的原值**：这次加了 `showProvider`，去掉控制字符、超过 40 字符截断，但它仍然是文件里的字面值。kernel 那条 stderr 另有 `redactSecrets`，`ans auth` / `auth list` / `ans llm` / doctor 只靠这一层。
+- **`parseBinding` 的错误句带的是文件里 `provider` 的原值**：`providerLabel` 去掉控制字符、超过 40 字符截断，`auth list` 的绑定行走同一个函数，但它仍然是文件里的字面值。kernel 那条 stderr 另有 `redactSecrets`，`ans auth` / `auth list` / `ans llm` / doctor 只靠这一层。
 - **修复回写只重建 `note` + `bindings`**：手改进文件的其他顶层字段会在修复时消失（写路径从来如此），输出只说保留了几条、丢了几条。
 - **修复时写失败可能让文件消失**：`writeProtectedFile` 在 rename 之后核对失败会把文件删掉（fail closed，store 原有行为）。新建的 repair 把这条路暴露给了「本来只想保住 key」的人，所以在那个出口上它不再说「什么都没变」，而是看文件还在不在：还在就说原样没动，没了就直说重存。
 - **`ans chat` 没跟着改**：坏文件时它仍旧只 warn 一句 `[config] … continuing without the user credential file` 然后照常跑（env 里的 key 还能用），退出码 0。它不是只读状态命令，凭据文件坏了不该让整场会话起不来。

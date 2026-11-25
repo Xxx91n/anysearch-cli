@@ -18,6 +18,7 @@ import {
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
+  isRecordProblemMessage,
   resolvePolicyFromSchema,
   resolveSearchCredentials,
   type ResolvedSearchCredentials,
@@ -159,7 +160,15 @@ function classifyCredentialFault(error: unknown): string {
   // a permissions problem would destroy the user's other keys for nothing.
   const permission = code === "EACCES" || code === "EPERM" || code === "EROFS";
 
-  if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
+  // A record inside a readable file is the one fault `ans auth repair` fixes, so
+  // it gets the published notice's own sentence instead of the flat one below.
+  if (!permission && isRecordProblemMessage(raw)) {
+    return credentialFileNotice({ kind: "invalid-record" }).notice;
+  }
+
+  // File-level faults only: every record detail is matched above, so repeating
+  // those phrases here would leave two patterns competing for one message.
+  if (/not valid JSON|missing the "bindings" list/i.test(raw)) {
     return permission
       ? "the user credential file could not be read (" + code + "); check its permissions"
       : "the user credential file is not readable as stored keys; fix or remove it, then retry";

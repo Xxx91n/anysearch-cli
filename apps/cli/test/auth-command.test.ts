@@ -112,6 +112,38 @@ test("ans auth list shows the binding and nothing of the key", async () => {
   }
 });
 
+test("ans auth list 打印文件里的 provider 时也过一遍清洗，控制字符和长度都挡住（#550）", async () => {
+  const { home, cleanup } = tempHome();
+  try {
+    await withoutCredentialEnv(home, async () => {
+      const esc = String.fromCharCode(27);
+      const nasty = "exa" + esc + "[2K" + "x".repeat(200);
+      const nastyEndpoint = "https://exa-mirror.ai/" + esc + "[2K" + "y".repeat(300);
+      writeCredentials(home, JSON.stringify({
+        bindings: [
+          { provider: nasty, apiKey: KEY },
+          { provider: "tavily", apiKey: KEY, endpoint: nastyEndpoint },
+        ],
+      }));
+
+      const { code, out } = await capture(() => runAuth(["list"]));
+      assert.equal(code, 0, out);
+      // Every byte below 0x20 except the line feed that ends each printed line.
+      const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(9) +
+        String.fromCharCode(11) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
+      assert.ok(!control.test(out), "no control characters reached the terminal：" + JSON.stringify(out));
+      const line = out.split("\n").find((l) => l.includes("xxxx")) ?? "";
+      assert.ok(!line.includes("x".repeat(60)), "the label is cut, not printed whole：" + JSON.stringify(line));
+      assert.ok(line.length <= 120, "the label is bounded：" + JSON.stringify(line));
+      // The endpoint comes out of the same file, so it takes the same cleaning.
+      const endpointLine = out.split("\n").find((l) => l.includes("exa-mirror.ai")) ?? "";
+      assert.ok(endpointLine.length <= 260, "the endpoint is bounded：" + JSON.stringify(endpointLine));
+    });
+  } finally {
+    cleanup();
+  }
+});
+
 test("ans auth set --endpoint binds a model key to that endpoint", async () => {
   const { home, cleanup } = tempHome();
   const saved = process.env.HOME;
@@ -333,8 +365,10 @@ test("ans auth 坏文件时，文件里还有 key 的那家不再报 not set（#
       // "not set" describes a state nobody observed.
       assert.doesNotMatch(out, /\[EMPTY\]/, "坏文件时不能说某家没配：" + out);
       assert.match(out, /\[BROKEN\]\s+openai\s+unknown/, out);
-      // One sentence, one place: the read no longer repeats its own advice.
-      assert.equal(out.split("fix or remove").length - 1, 1, "同一句只说一次：" + out);
+      // One sentence, one place: the read no longer repeats its own advice. The
+      // count ignores case, because the duplicate that shipped was the capitalised
+      // "Fix or remove..." printed beside store's lowercase one.
+      assert.equal((out.match(/fix or remove/gi) ?? []).length, 1, "同一句只说一次：" + out);
 
       // An env key is a fact that does not depend on the file, so it survives.
       process.env.EXA_API_KEY = "exa-from-env";
@@ -377,11 +411,12 @@ test("ans auth remove 在坏文件上说一次修法就停，不动文件（#537
 
       const { code, out } = await capture(() => runAuth(["remove", "exa"]));
       assert.equal(code, 1, out);
-      assert.equal(out.split("fix or remove").length - 1, 1, "同一句只出现一次：" + out);
-      // The store's own sentence carries it; the command no longer reads the file
-      // a second time to add a second wording.
-      assert.match(out, /the key was not removed - the file was not changed/, out);
+      assert.equal((out.match(/fix or remove/gi) ?? []).length, 1, "同一句只出现一次：" + out);
+      // The store's own sentence carries the way out; the command adds the outcome
+      // once and never a second wording of the same advice.
+      assert.match(out, /removing it now would replace the file with only the records it could read/, out);
       assert.match(out, /ans auth repair/, "the way out is named where the user reads it：" + out);
+      assert.equal((out.match(/Nothing was changed/g) ?? []).length, 1, "文件没动只说一次：" + out);
       assert.equal(readFileSync(path, "utf8"), MIXED_FILE, "nothing was removed");
     });
   } finally {
@@ -434,8 +469,8 @@ test("ans auth repair 遇到不是 JSON 的文件不猜，只说删了重存（#
       // nothing left for repair to keep.
       const status = await capture(() => runAuth([]));
       assert.equal(status.code, 1, status.out);
-      assert.match(status.out, /store the key again: ans auth set/, status.out);
-      assert.doesNotMatch(status.out, /Fix the file: ans auth repair/, status.out);
+      assert.match(status.out, /fix or remove the file, then retry/, status.out);
+      assert.doesNotMatch(status.out, /ans auth repair/, status.out);
       assert.equal(readFileSync(path, "utf8"), "{ not json", "文件原样不动");
     });
   } finally {
@@ -805,14 +840,16 @@ test("ans auth set：写之前就被拒时，说「没变」，不说「不确�
   }
 });
 
-test("ans auth remove：坏文件被拒不报「不确定」，那句「file was not changed」就是答案（#537）", async () => {
+test("ans auth remove：坏文件被拒时说一次「没变」，不说「不确定」（#537）", async () => {
   const { home, cleanup } = tempHome();
   try {
     await withoutCredentialEnv(home, async () => {
       writeCredentials(home, MIXED_FILE);
       const { code, out } = await capture(() => runAuth(["remove", "exa"]));
       assert.equal(code, 1, out);
-      assert.match(out, /the file was not changed/, out);
+      // The refusal says why; the command says the outcome, once, and the two do
+      // not restate each other (#550).
+      assert.equal((out.match(/Nothing was changed/g) ?? []).length, 1, out);
       assert.doesNotMatch(out, /not clear whether/, "同一句里不能既说没变又说不确定：" + out);
     });
   } finally {

@@ -231,14 +231,24 @@ export function normalizeBindingEndpoint(endpoint: string | null | undefined): s
   return trimmed === "" ? null : trimmed;
 }
 
+/** The provider label's limit, and the endpoint's: both come out of the file and
+ * both are printed in full up to here. */
+const PROVIDER_LIMIT = 40;
+const ENDPOINT_LIMIT = 200;
+
 /**
  * What may be SHOWN for a bound endpoint. A base URL can carry credentials
  * (`https://user:pass@host/v1`) or a secret in its query string, and `ans auth
- * list` prints the binding — so the userinfo and the query are stripped first.
- * The stored value is untouched; only the display form is.
+ * list` prints the binding — so the userinfo and the query are stripped first,
+ * then the value takes the same control-character and length cleaning as a
+ * provider label. The stored value is untouched; only the display form is.
  */
 export function displayEndpoint(endpoint: string | null): string {
   if (!endpoint) return "(provider default endpoint)";
+  return shownValue(shownEndpoint(endpoint), ENDPOINT_LIMIT);
+}
+
+function shownEndpoint(endpoint: string): string {
   // `new URL("user:pass@host/v1")` parses with scheme "user:" — so a missing
   // scheme must be caught BEFORE parsing, or the userinfo would ride along.
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)) return stripAuthorityAndQuery(endpoint);
@@ -264,16 +274,46 @@ function stripAuthorityAndQuery(value: string): string {
 }
 
 /**
- * What may be SHOWN for a provider id read out of the file: the fault sentence is
- * printed verbatim by `ans auth`, `auth list`, `ans llm` and doctor, so a value
- * pasted into that field must not arrive with control characters or at any length.
+ * What may be SHOWN for a value read out of the file: control characters are
+ * replaced (a pasted ESC sequence can rewrite a terminal) and the length is
+ * bounded. The stored value is untouched; only the display form is.
  */
-function showProvider(raw: string): string {
+function shownValue(raw: string, limit: number): string {
   // `\p{Cc}` is the control class and `\p{Cf}` the format class (zero-width
   // joiners, bidi overrides): both can rewrite or hide what a terminal shows. A
   // space in their place keeps two tokens from fusing into one word.
   const cleaned = raw.replace(/[\p{Cc}\p{Cf}]+/gu, " ").trim();
-  return cleaned.length > 40 ? cleaned.slice(0, 40) + "…" : cleaned;
+  return cleaned.length > limit ? cleaned.slice(0, limit) + "…" : cleaned;
+}
+
+/** What may be SHOWN for a provider id read out of the file: `parseBinding`'s
+ * fault sentence, `ans auth list` and `ans llm` all print it verbatim. */
+export function providerLabel(raw: string): string {
+  return shownValue(raw, PROVIDER_LIMIT);
+}
+
+/**
+ * The four things `parseBinding` says about one unusable record. The messages
+ * below are built from them and `isRecordProblemMessage` matches on them, so a
+ * rewording cannot leave the classifier matching nothing.
+ */
+const RECORD_PROBLEM_DETAILS = {
+  notAnObject: "is not an object",
+  noProvider: "has no provider",
+  noApiKey: "has no apiKey",
+  nonStringEndpoint: "has a non-string endpoint",
+} as const;
+
+/**
+ * True when a message names one unusable record. The kernel's fault classifier
+ * asks this instead of carrying store's wording, and containment (rather than a
+ * pattern built from the details) means no rewording can turn a sentence into a
+ * regular expression.
+ */
+export function isRecordProblemMessage(message: string): boolean {
+  const at = /\bentry \d+\b/.exec(message);
+  if (!at) return false;
+  return Object.values(RECORD_PROBLEM_DETAILS).some((detail) => message.includes(detail, at.index));
 }
 
 /**
@@ -283,19 +323,23 @@ function showProvider(raw: string): string {
  */
 function parseBinding(raw: unknown, index: number): { binding: CredentialBinding } | { problem: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return { problem: "entry " + (index + 1) + " is not an object" };
+    return { problem: "entry " + (index + 1) + " " + RECORD_PROBLEM_DETAILS.notAnObject };
   }
   const rec = raw as Record<string, unknown>;
   const provider = typeof rec["provider"] === "string" ? rec["provider"].trim().toLowerCase() : "";
-  if (!provider) return { problem: "entry " + (index + 1) + " has no provider" };
+  if (!provider) return { problem: "entry " + (index + 1) + " " + RECORD_PROBLEM_DETAILS.noProvider };
   const apiKey = typeof rec["apiKey"] === "string" ? rec["apiKey"].trim() : "";
-  if (!apiKey) return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has no apiKey" };
+  if (!apiKey) {
+    return { problem: "entry " + (index + 1) + " (" + providerLabel(provider) + ") " + RECORD_PROBLEM_DETAILS.noApiKey };
+  }
   // An endpoint that is present but not a string cannot be silently reshaped
   // into "the provider default" - that would change which host the key is sent
   // to, which is exactly what the binding is supposed to prevent.
   const rawEndpoint = rec["endpoint"];
   if (rawEndpoint !== undefined && rawEndpoint !== null && typeof rawEndpoint !== "string") {
-    return { problem: "entry " + (index + 1) + " (" + showProvider(provider) + ") has a non-string endpoint" };
+    return {
+      problem: "entry " + (index + 1) + " (" + providerLabel(provider) + ") " + RECORD_PROBLEM_DETAILS.nonStringEndpoint,
+    };
   }
   const endpoint = typeof rawEndpoint === "string" ? normalizeBindingEndpoint(rawEndpoint) : null;
   return { binding: { provider, endpoint, apiKey } };
@@ -311,12 +355,13 @@ function stripBom(text: string): string {
 }
 
 /**
- * The pieces every surface builds its advice from: the two command names, and the
- * two halves of the sentence. Only a fault inside a readable file can be repaired,
- * so `KEEP_KEYS` belongs to that case alone.
+ * The pieces every surface builds its advice from: the command names, and the two
+ * halves of the sentence. Only a fault inside a readable file can be repaired, so
+ * `KEEP_KEYS` belongs to that case alone.
  */
 export const REPAIR_COMMAND = "ans auth repair";
 export const STORE_KEY_COMMAND = "ans auth set <provider>";
+export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
@@ -330,7 +375,7 @@ const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 const READ_REMEDY: Record<CredentialFileFaultErrno, string> = {
   EACCES: "fix its permissions",
   EPERM: "fix its permissions",
-  EROFS: "fix its permissions",
+  EROFS: "move the file to a writable disk",
   EISDIR: "move the directory at that path aside",
   ENOTDIR: "fix the path: a parent directory is a file",
   ENAMETOOLONG: "shorten the path",
@@ -923,7 +968,7 @@ export function writeUserCredential(
     if (existing.error) {
       // The read already ended with the advice; say only what this write did not do.
       throw new CredentialWriteRefusal(
-        existing.error + "; the key was not written - rewriting the file would drop the other keys",
+        existing.error + "; writing it now would replace the file with only the records it could read",
         false,
       );
     }
@@ -947,7 +992,7 @@ export function removeUserCredential(
     const existing = readUserCredentials({ filePath: path });
     if (existing.error) {
       throw new CredentialWriteRefusal(
-        existing.error + "; the key was not removed - the file was not changed",
+        existing.error + "; removing it now would replace the file with only the records it could read",
         false,
       );
     }

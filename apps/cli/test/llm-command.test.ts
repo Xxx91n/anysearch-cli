@@ -61,11 +61,34 @@ test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
       // #537: the same file makes `ans auth` and `ans doctor` fail, so this
       // command cannot keep reporting success for it.
       assert.equal(code, 1, out);
-      assert.match(out, /Fix or remove the file, then store the key again/, "exit 1 comes with the way out：" + out);
+      // One sentence carries the fault and the way out; the count ignores case,
+      // which is how the duplicate this test missed got past it (#550).
+      assert.match(out, /fix or remove the file, then retry/, "exit 1 comes with the way out：" + out);
+      assert.equal((out.match(/fix or remove/gi) ?? []).length, 1, "修法只说一次：" + out);
       assert.doesNotMatch(out, /ans auth repair/, "repair cannot keep anything from a file that will not parse：" + out);
       const faultLines = out.split("\n").filter((line) => line.includes("not valid JSON"));
       assert.equal(faultLines.length, 1, "args " + JSON.stringify(args) + " 只能说一次：\n" + out);
       assert.match(faultLines[0]!, /Credentials file: BROKEN/);
+      // The file is broken, so whether a provider has a key is unknown - "NO KEY"
+      // is the same lie `ans auth` stopped telling (#537).
+      assert.doesNotMatch(out, /NO KEY/, "坏文件时不能报没配：\n" + out);
+      assert.match(out, /BROKEN \(the credential file could not be read\)/, out);
+    }
+
+    // A record fault is a different fact: the file was read, one entry was not,
+    // and the repair path keeps the rest. Saying "could not be read" here would
+    // hide it.
+    writeFileSync(join(home, ".ans", "credentials.json"), JSON.stringify({
+      bindings: [{ provider: "openai", apiKey: "[redacted]" }, { provider: "anthropic" }],
+    }), "utf8");
+    for (const args of [[], ["check"]]) {
+      const { code, out } = await capture(() => runLlm(args));
+      assert.equal(code, 1, out);
+      assert.match(out, /BROKEN \(one record cannot be read\)/, out);
+      assert.doesNotMatch(out, /NO KEY/, "坏记录时也不能报没配：\n" + out);
+      // The way out rides on the `Credentials file: BROKEN` line; a per-provider
+      // label that repeated it would say it once per provider.
+      assert.equal((out.match(/ans auth repair/g) ?? []).length, 1, "修法只说一次：\n" + out);
     }
 
     // A healthy file still exits 0: the failure above comes from the file, not
