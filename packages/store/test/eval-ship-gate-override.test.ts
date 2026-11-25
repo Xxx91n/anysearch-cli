@@ -1,10 +1,11 @@
 // ship-gate verifier wiring and independent command integration.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withShipOverrideLedgerLock } from "../src/eval/override-ledger";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..");
@@ -122,6 +123,36 @@ try {
   rmSync(corruptDir, { recursive: true, force: true });
 } finally {
   rmSync(dir, { recursive: true, force: true });
+}
+
+// #570: a live owner's lock survives a probe that cannot be classified. Only
+// ESRCH proves the owner is gone; the old catch-all treated an EPERM probe as
+// death and deleted a fresh lock out from under a running writer.
+{
+  const lockDir = mkdtempSync(join(tmpdir(), "ans-override-lock-"));
+  const lock = join(lockDir, ".ship-override-ledger.lock");
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+  const realKill = process.kill;
+  const unconfirmable: typeof process.kill = (pid, signal) => {
+    if (pid === process.pid && signal === 0) {
+      throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
+    }
+    return realKill(pid, signal);
+  };
+  process.kill = unconfirmable;
+  let survived = false;
+  try {
+    try {
+      withShipOverrideLedgerLock(lockDir, () => {});
+    } catch {
+      // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
+    }
+    survived = existsSync(lock);
+  } finally {
+    process.kill = realKill;
+    rmSync(lockDir, { recursive: true, force: true });
+  }
+  assert(survived, "an unconfirmable probe keeps a live override writer's lock");
 }
 
 // Eval integrity contract accepts override only with a closed reasonCode.

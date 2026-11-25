@@ -322,6 +322,37 @@ async function main() {
       rmSync(lockDir, { recursive: true, force: true });
     }
 
+    // ---------- L9: a probe that cannot confirm does not reclaim the lock ----------
+    {
+      // #570: only a same-host ESRCH proves the holder is gone. An error the
+      // probe cannot classify (ERR_INVALID_ARG_TYPE and the odd Windows
+      // failures) says nothing about the owner, so a live local holder keeps
+      // the lock — the old EPERM-only rule reclaimed here and took a running
+      // session away.
+      const lockDir = join(workDir, "l9", "s.lock");
+      writeFakeOwner(lockDir, process.pid, hostname());
+      writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+      const realKill = process.kill;
+      const unconfirmable: typeof process.kill = (pid, signal) => {
+        if (pid === process.pid && signal === 0) {
+          throw Object.assign(new Error("probe could not classify this pid"), { code: "ERR_INVALID_ARG_TYPE" });
+        }
+        return realKill(pid, signal);
+      };
+      process.kill = unconfirmable;
+      try {
+        const busy = await expectBusy(lockDir, 500, 300);
+        assert(busy === SESSION_BUSY_MESSAGE,
+          "L9: an unconfirmable probe on a live local owner reads as alive, not dead (got "
+          + JSON.stringify(busy) + ")");
+        assert(existsSync(ownerFile(lockDir)),
+          "L9: the live owner's lock survives a probe the waiter cannot classify");
+      } finally {
+        process.kill = realKill;
+        rmSync(lockDir, { recursive: true, force: true });
+      }
+    }
+
     // ---------- W1: the runtime holds the lock for the whole run ----------
     {
       const piDir = join(workDir, "w1-pi");

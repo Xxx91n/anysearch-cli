@@ -1,3 +1,20 @@
+## Unreleased — #570: 判活只剩一个答案：只有 ESRCH 算死，探测失败不再等于进程已死
+
+一句话说清：**同一个「这个 pid 还在不在」在仓里有好几套答案：session-lock 和 local-service 只认 `EPERM` 为活，其它错误码一律判死，于是探测说不清时会把活着的锁主人当场踢走、把活 server 的地址丢掉；两个 eval ledger 更狠，`catch` 里一律判死，连 `EPERM`（进程存在、只是别人的）都不例外，活着的写入者拿着的新锁三十毫秒就被删。现在只剩 `process-liveness.ts` 的一份实现：同主机只有 `ESRCH` 能证明进程死了，其它任何结果都算「确认不了」，按活着处理。**
+
+### Changed
+
+- **`session-lock`**：删掉私有 `pidIsAlive`，改用共享实现。同主机持有者的探测抛出 `ERR_INVALID_ARG_TYPE`、Windows 故障这类说不清的错误时，等待者不再当场抢锁；`ESRCH` 仍立即回收，活着的持有者仍永远不回收。
+- **`local-service`**：删掉私有 `pidAlive`，改用共享实现。探测说不清时保留已发布的 server 地址；只有 `ESRCH` 才丢记录，调用方不会再被送去一个没人监听的端口。
+- **`override-ledger` / `skip-ledger`**：删掉私有 `processAlive`（`catch → false`），改用共享实现。活着的写入者不再因为一次 `EPERM` 或意外错误被删锁；这种锁现在等 5 分钟 age 窗口兜底。
+- **`apps/cli` 的 skill 锁**：探测那一支改用共享实现；machineId / bootId / pid namespace 三道闸和「只有 dead 才动锁」不变。共享探测保留 `alive` / `dead` / `unknown` 三档（`probePid`），因为 skill 锁的提示语要区分「有活人在跑」和「证明不了」；`pidIsAlive` 是它的布尔读法。
+- **导出**：`pidIsAlive` 仍从 `@anysearch-cli/store` 包根导出，改由 `process-liveness` 直接导出；store 新增 `./process-liveness` 子路径，kernel 和 hook 面拿得到它，又不会因此拉进 `better-sqlite3`。
+
+### Known limits
+
+- **同主机上永远说不清的锁只能人删**：探测持续失败时，session-lock 一直按「活着」处理。这和「pid 被复用时也读成活着」是同一种取舍；不为它新加老化规则。
+- **eval ledger 的 5 分钟窗口没变**：探测说活着时，锁仍会在 `LOCK_MAX_AGE_MS` 之后按年龄回收——那是另一条既有规则，本票不动。
+
 ## Unreleased — #537: 凭据文件坏了，`ans auth` 不再把存过的 key 说成没配，并给出一条修复路径
 
 一句话说清：**凭据文件是全有或全无地读的——只要有一条记录读不懂，整份文件判成不可信，交回一个空列表。于是 `ans auth` 把文件里明明还躺着的 key 报成 `not set`、退出码 0，脚本完全发现不了；`auth set` 先让用户输 key、再联网验，验完才在写文件那一步说文件坏了，key 被上游拒时用户会以为 key 本身有问题；`auth remove` 同样被拒；没有任何修复路径，唯一出路是删掉整份文件，连带丢掉另外几家的 key。现在坏文件单独一档 `[BROKEN]`、`ans auth` 和 `ans llm` 一起退 1，`set` / `remove` 在读文件那一步就停，新增 `ans auth repair` 只丢读不了的条目。**

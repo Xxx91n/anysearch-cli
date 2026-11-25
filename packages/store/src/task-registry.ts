@@ -29,7 +29,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDatabase } from "./db";
 import { beginInit, endInit, execDdlAtomically, isDuplicateColumnError, withInitBusyRetry } from "./sqlite-init";
-import { pidIsAlive } from "./budget-ledger";
+import { pidIsAlive } from "./process-liveness";
 import { SCHEMA_SQL } from "./schema-content";
 // #310: the registry can be the FIRST opener of a durable database (the main
 // program registers its task before any command builds an engine), so the

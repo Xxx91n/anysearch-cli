@@ -9,6 +9,7 @@
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
 import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, closeSync } from "node:fs";
 import { join } from "node:path";
+import { pidIsAlive } from "../process-liveness.js";
 import type { SwitchPhase } from "./switch-machine";
 
 export const SKIP_LEDGER_SCHEMA = "anysearch/gain-ledger@3";
@@ -235,13 +236,9 @@ const LOCK_MAX_AGE_MS = 5 * 60 * 1000;
 
 function sleep(ms: number): void { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 
-function processAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
 function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
   if (!info) return true;
-  if (typeof info.pid === "number" && !processAlive(info.pid)) return true;
+  if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
   if (typeof info.at === "string") {
     const t = Date.parse(info.at);
     if (Number.isFinite(t) && Date.now() - t > LOCK_MAX_AGE_MS) return true;

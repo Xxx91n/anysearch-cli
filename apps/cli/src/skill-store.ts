@@ -15,6 +15,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
 import { ansProjectSkillsDir, ansUserSkillsDirFor } from "@anysearch-cli/store/paths";
+import { probePid } from "@anysearch-cli/store/process-liveness";
 import { atomicRename as renameWithRetry, renameSeam, setRenameSeam, sleepSync } from "./fs-atomic";
 
 export interface SkillOptions {
@@ -373,16 +374,9 @@ function probeLockOwner(owner: LockOwner | undefined): LockState {
   // Containers can share a hostname but not a PID namespace, and ESRCH inside one
   // namespace says nothing about a pid in another.
   if (owner.namespace !== identity?.namespace) return "unknown";
-  try {
-    process.kill(owner.pid, 0);
-    return "alive";
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return "dead";
-    // EPERM means the process exists but belongs to another user.
-    if (code === "EPERM") return "alive";
-    return "unknown";
-  }
+  // The lock messages below say "running" for a live holder and "cannot be
+  // proven dead" for the rest, so the three states must stay distinct.
+  return probePid(owner.pid);
 }
 
 // Design: an exclusive, owner-recorded guard serializes reclaimers — the holder

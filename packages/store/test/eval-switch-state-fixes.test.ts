@@ -11,6 +11,7 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
+import { withSkipLedgerLock } from "../src/eval/skip-ledger";
 
 const fixturePath = join(process.cwd(), "fixtures", "switch-registration.json");
 const canonical = readFileSync(fixturePath, "utf8");
@@ -130,6 +131,37 @@ try {
     }
     ok("D6 mutation diverges the registration digest", divergent);
     rmSync(tmp, { force: true });
+  }
+
+  // F5 (#570): a live writer's lock survives a probe that cannot be classified.
+  // Only ESRCH proves the owner is gone. The old catch-all treated EPERM (and
+  // every other probe failure) as death and deleted a fresh lock out from under
+  // a running writer.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-r116-f5-"));
+    const lock = join(dir, ".skip-ledger.lock");
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+    const realKill = process.kill;
+    const unconfirmable: typeof process.kill = (pid, signal) => {
+      if (pid === process.pid && signal === 0) {
+        throw Object.assign(new Error("probe could not classify this pid"), { code: "EPERM" });
+      }
+      return realKill(pid, signal);
+    };
+    process.kill = unconfirmable;
+    let survived = false;
+    try {
+      try {
+        withSkipLedgerLock(dir, () => {});
+      } catch {
+        // Expected: with the lock kept, the 100 × 25 ms retry loop runs out.
+      }
+      survived = existsSync(lock);
+    } finally {
+      process.kill = realKill;
+      rmSync(dir, { recursive: true, force: true });
+    }
+    ok("F5 live lock survives an unconfirmable probe", survived);
   }
 } finally {
   delete process.env.ANS_SWITCH_REG_PATH;

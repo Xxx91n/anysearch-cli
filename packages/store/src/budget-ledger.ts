@@ -61,10 +61,6 @@ export interface ReservationOwner {
   host: string;
 }
 
-// Exported since #302: task_records carries the same owner pair and needs the
-// same "only a provably dead owner is dead" rule for its open-task diagnostics.
-export { pidIsAlive };
-
 // #275: the owner of every reservation this process makes. Defaults to this
 // process; a test (or a probe) can stand in for another one.
 // Design: identity is pid + host, the same pair the session lock uses — the

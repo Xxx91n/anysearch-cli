@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { pidIsAlive } from "../process-liveness.js";
 import {
   isShipOverrideReasonCode,
   parseShipOverridePostmortem,
@@ -197,13 +198,9 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function processAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
 function lockIsRecoverable(info: { pid?: number; at?: string } | null): boolean {
   if (!info) return true;
-  if (typeof info.pid === "number" && !processAlive(info.pid)) return true;
+  if (typeof info.pid === "number" && !pidIsAlive(info.pid)) return true;
   if (typeof info.at === "string") {
     const at = Date.parse(info.at);
     if (Number.isFinite(at) && Date.now() - at > LOCK_MAX_AGE_MS) return true;
