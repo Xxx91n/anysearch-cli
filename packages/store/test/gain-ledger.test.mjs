@@ -91,7 +91,7 @@ function runResolve(f, decision = "stay-warn") {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 // e2e: running gain-warn-resolve on an @3 ledger must keep all evidence and
-// leave no .tmp / .skip-ledger.lock residue (resolves tmW).
+// leave no .tmp / .skip-ledger.lock residue.
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-e2e-"));
   const f = path.join(dir, "skip-ledger.json");
@@ -106,7 +106,6 @@ function runResolve(f, decision = "stay-warn") {
     revision: 9,
   };
   writeGainLedger(f, at3);
-  const before = fs.readFileSync(f, "utf8");
   const { code, stderr } = runResolve(f, "stay-warn");
   assert.equal(code, 0, "e2e @3 resolve must exit 0, got " + code + (stderr ? ": " + stderr : ""));
   const after = JSON.parse(fs.readFileSync(f, "utf8"));
@@ -136,7 +135,7 @@ function runResolve(f, decision = "stay-warn") {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 // bad-shaped @2 (consecutiveWarn not a number) must fail loud, never be
-// "repaired" into empty @1 and clobbered (resolves tmq part 1)
+// "repaired" into empty @1 and clobbered.
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-badshape-"));
   const f = path.join(dir, "skip-ledger.json");
@@ -150,7 +149,7 @@ function runResolve(f, decision = "stay-warn") {
 }
 // well-formed @2 round-trip: applyResolution adds disposition/verdict, but
 // writeGainLedger must strip them for @2 so they never leak into
-// skip-ledger.json (resolves tmq part 2 — test + implementation together)
+// skip-ledger.json.
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gain-ledger-@2-"));
   const f = path.join(dir, "skip-ledger.json");
