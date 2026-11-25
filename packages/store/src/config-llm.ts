@@ -34,6 +34,7 @@ import {
   isPrintableEndpoint,
   lookupModelCredential,
   displayEndpoint,
+  llmKeyLabel,
   modelEnvKeysFor,
   normalizeBindingEndpoint,
   providerForEnvKey,
@@ -102,6 +103,40 @@ export interface LlmFlags {
 
 export type LlmConfigFaultKind = "unreadable" | "invalid-toml";
 
+/**
+ * What one config.toml turned out to be (#579). Six closed values; the listing
+ * prints them, and a surface can read the same fact instead of inferring it
+ * from warnings.
+ */
+export type LlmConfigFileStatus = "missing" | "empty" | "no-llm" | "half" | "ok" | "broken";
+
+/**
+ * Why a file's [llm] section did not supply a key, or why the file did not parse
+ * at all. File-level kinds carry no `key`; every key-level kind names one.
+ */
+export type LlmFileDiagnosticKind =
+  | "unreadable"
+  | "invalid-toml"
+  | "llm-not-table"
+  | "not-allowed-key"
+  | "secret-looking-key"
+  | "unknown-key"
+  | "invalid-type";
+
+export interface LlmFileDiagnostic {
+  kind: LlmFileDiagnosticKind;
+  /** The [llm] key this diagnostic is about; file-level kinds leave it out. */
+  key?: string;
+}
+
+export interface LlmConfigFileState {
+  layer: "user" | "project";
+  status: LlmConfigFileStatus;
+  /** [llm] keys this file supplied. Names only, never values. */
+  present: string[];
+  diagnostics: LlmFileDiagnostic[];
+}
+
 export interface ResolvedLlmConfig {
   provider?: string;
   model?: string;
@@ -114,6 +149,12 @@ export interface ResolvedLlmConfig {
   envKey?: string;
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: LlmSources;
+  /**
+   * Per-file facts (#579): one record for the user file and one for the project
+   * file, always both, whether or not the file exists. A surface reads status
+   * and diagnostics here; `warn` stays the human sentence.
+   */
+  configFiles: Record<"user" | "project", LlmConfigFileState>;
   /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
   configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
@@ -183,7 +224,7 @@ export function projectConfigPath(cwd: string = process.cwd()): string {
   return ansProjectConfigPath(cwd);
 }
 
-interface LoadedLlmFile {
+interface LoadedLlmFile extends LlmConfigFileState {
   config: LlmFileConfig;
   fault?: LlmConfigFaultKind;
 }
@@ -212,33 +253,61 @@ function parseLlmTomlResult(
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
     warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
-    return { config: {}, fault: "invalid-toml" };
+    return {
+      layer: level, config: {}, fault: "invalid-toml", status: "broken", present: [],
+      diagnostics: [{ kind: "invalid-toml" }],
+    };
   }
   const section = root["llm"];
-  if (section === undefined || section === null) return { config: {} };
-  if (typeof section !== "object") {
+  if (section === undefined || section === null) {
+    return { layer: level, config: {}, status: "no-llm", present: [], diagnostics: [] };
+  }
+  // Design: a non-table `[llm]` means "no [llm]" — arrays and datetimes are
+  // objects too, and must not become an invented half-written section.
+  if (typeof section !== "object" || Array.isArray(section) || section instanceof Date) {
     warn("[config] " + filePath + ": [llm] must be a table; ignoring section");
-    return { config: {} };
+    return {
+      layer: level, config: {}, status: "no-llm", present: [],
+      diagnostics: [{ kind: "llm-not-table" }],
+    };
   }
   const allowed = level === "project" ? PROJECT_LLM_WHITELIST : USER_LLM_KEYS;
   const out: LlmFileConfig = {};
+  const present: string[] = [];
+  const diagnostics: LlmFileDiagnostic[] = [];
   for (const [key, value] of Object.entries(section as Record<string, unknown>)) {
     if (!allowed.has(key)) {
-      const why = SECRET_KEY_RE.test(key)
-        ? "secrets never go in config files; use env_key = \"ENV_VAR_NAME\""
-        : level === "project"
-          ? "project config may only set: " + [...PROJECT_LLM_WHITELIST].join(", ")
-          : "unknown [llm] key";
-      warn("[config] " + filePath + ": ignoring [llm]." + key + " — " + why);
+      let kind: LlmFileDiagnosticKind;
+      let why: string;
+      if (SECRET_KEY_RE.test(key)) {
+        kind = "secret-looking-key";
+        why = "secrets never go in config files; use env_key = \"ENV_VAR_NAME\"";
+      } else if (level === "project") {
+        kind = "not-allowed-key";
+        why = "project config may only set: " + [...PROJECT_LLM_WHITELIST].join(", ");
+      } else {
+        kind = "unknown-key";
+        why = "unknown [llm] key";
+      }
+      // The key name comes from the file; a quoted TOML key can carry ESC
+      // sequences. Clean it before it reaches a terminal or a stored fact.
+      const shownKey = llmKeyLabel(key);
+      warn("[config] " + filePath + ": ignoring [llm]." + shownKey + " — " + why);
+      diagnostics.push({ kind, key: shownKey });
       continue;
     }
     if (typeof value !== "string" || value === "") {
       warn("[config] " + filePath + ": ignoring [llm]." + key + " — value must be a non-empty string");
+      diagnostics.push({ kind: "invalid-type", key });
       continue;
     }
     (out as Record<string, string>)[key] = value;
+    present.push(key);
   }
-  return { config: out };
+  // An [llm] table with no usable fields is still a half-written config: the
+  // section is there, the provider/model pair is not.
+  const status: LlmConfigFileStatus = out.provider && out.model ? "ok" : "half";
+  return { layer: level, config: out, status, present, diagnostics };
 }
 
 // Parse the [llm] section of a config.toml, applying the level's key policy.
@@ -257,7 +326,9 @@ function loadFile(
   level: "user" | "project",
   warn: (msg: string) => void,
 ): LoadedLlmFile {
-  if (!existsSync(path)) return { config: {} };
+  if (!existsSync(path)) {
+    return { layer: level, config: {}, status: "missing", present: [], diagnostics: [] };
+  }
   // Design: an unreadable file (a directory at config.toml, a permission error)
   // is a config fault, not an absent config — report it and carry on with the
   // lower layers instead of throwing out of the composition root before the
@@ -268,7 +339,15 @@ function loadFile(
     raw = readFileSync(path, "utf8");
   } catch (e) {
     warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
-    return { config: {}, fault: "unreadable" };
+    return {
+      layer: level, config: {}, fault: "unreadable", status: "broken", present: [],
+      diagnostics: [{ kind: "unreadable" }],
+    };
+  }
+  // Design: decide `empty` before parsing — trim-empty is its own state, not
+  // "no [llm]", and parsing cannot tell them apart.
+  if (raw.trim() === "") {
+    return { layer: level, config: {}, status: "empty", present: [], diagnostics: [] };
   }
   return parseLlmTomlResult(raw, level, path, warn);
 }
@@ -309,7 +388,19 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     api: flags.api,
   };
 
-  const resolved: ResolvedLlmConfig = { sources: {} };
+  const resolved: ResolvedLlmConfig = {
+    sources: {},
+    configFiles: {
+      user: {
+        layer: userFile.layer, status: userFile.status,
+        present: userFile.present, diagnostics: userFile.diagnostics,
+      },
+      project: {
+        layer: projectFile.layer, status: projectFile.status,
+        present: projectFile.present, diagnostics: projectFile.diagnostics,
+      },
+    },
+  };
   if (userFile.fault) resolved.configFault = userFile.fault;
   const pick = (field: "provider" | "model" | "api", outKey: "provider" | "model" | "api") => {
     for (const [layer, cfg] of [
