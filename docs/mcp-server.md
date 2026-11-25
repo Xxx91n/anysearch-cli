@@ -455,12 +455,18 @@ tells servers to use explicit, server-minted handles (SEP-2567).
 - One session record has one writer, so same-session requests serialize —
   within a process and across processes (#266). The cross-process lock lives
   in a `locks/` folder inside `ANS_PI_SESSION_DIR`: the holder records its
-  pid/host and refreshes a heartbeat, a live local holder is never
-  preempted, and once the holder's process is confirmed dead the next
-  waiter takes over at once instead of waiting the 10-minute stale window
-  (which only governs owners this machine cannot confirm, e.g. on another
-  host). Different sessions still run in parallel. No evidence exists for
-  network-filesystem session directories; same machine only.
+  pid/host and refreshes a heartbeat, a local holder whose process is
+  confirmed alive is never preempted, and once the holder's process is
+  confirmed dead the next waiter takes over at once. The 10-minute stale
+  window governs the owners this machine cannot confirm — another host, a
+  missing identity, or a pid the probe cannot classify — judging them on
+  the heartbeat alone. A busy answer names the lock directory, the holder's
+  pid and host, when the lock was taken, and the one way out —
+  worded for what the probe found: a confirmed-alive holder is told to clear
+  the lock only if its pid was recycled (the start time is what lets a person
+  tell), a confirmed-dead one is told to delete it, and a lock with no
+  readable identity is asked about nobody in particular. Different sessions still run in parallel. No evidence
+  exists for network-filesystem session directories; same machine only.
 - A chat **attempt** is the wider unit around that run: lease → record start →
   run → record result (#299). Its lease lives in a `leases/` folder beside
   `locks/` and covers the two `chat_projects` writes, so two attempts on one

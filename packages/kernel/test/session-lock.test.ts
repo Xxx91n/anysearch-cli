@@ -4,7 +4,9 @@
 //   L1 defaults and bounds — the engineering values are the production ones
 //      (10 min stale, no automatic wait) and the heartbeat cadence is clamped;
 //   L2 mutual exclusion in one process, plus busy after the wait cap;
-//   L3 a live local owner is never reclaimed, however old its heartbeat is;
+//   L3 a live local owner is never reclaimed, however old its heartbeat is —
+//      and neither is one whose pid the probe cannot classify, until that
+//      owner's heartbeat goes stale (#576);
 //   L4 a confirmed-dead local owner is reclaimed at once — no ten-minute wait;
 //   L5 a foreign-host owner and an identity-less lock are only reclaimed
 //      after the stale window (conservative for the unconfirmable);
@@ -26,6 +28,7 @@ import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
 import {
   acquireSessionLock,
   heartbeatIntervalMs,
+  SESSION_BUSY_MARKER,
   SESSION_BUSY_MESSAGE,
   SESSION_LOCKS_DIRNAME,
   SESSION_LOCK_STALE_MS,
@@ -74,6 +77,32 @@ async function expectBusy(lockDir: string, staleMs: number, waitMs: number): Pro
 
 async function expectAcquired(lockDir: string, staleMs: number, waitMs: number): Promise<() => void> {
   return acquireSessionLock(lockDir, { staleMs, waitMs });
+}
+
+/**
+ * The busy answer for `lockDir`, worded for what the probe said: `alive` gets
+ * the recycled-pid way out, `gone` must not ask for a wait, `anonymous` has no
+ * "that process" to name, and `unconfirmed` is the shared sentence.
+ */
+function busyAt(
+  busy: string | undefined,
+  lockDir: string,
+  kind: "alive" | "gone" | "anonymous" | "unconfirmed" = "unconfirmed",
+): boolean {
+  if (busy === undefined || !busy.includes(lockDir)) return false;
+  switch (kind) {
+    case "alive":
+      return busy.includes("(still running") && busy.includes("no longer belongs to that run");
+    case "gone":
+      // The marker survives; the "retry after it finishes" tail must not.
+      return busy.startsWith(SESSION_BUSY_MARKER)
+        && busy.includes("That process is gone")
+        && !busy.includes(SESSION_BUSY_MESSAGE);
+    case "anonymous":
+      return busy.includes("nobody is using it");
+    default:
+      return busy.startsWith(SESSION_BUSY_MESSAGE) && busy.includes("If you are sure that process is gone");
+  }
 }
 
 // ---------- runtime wiring helpers (same minimal shape as the #258 tests) ----------
@@ -151,8 +180,12 @@ async function main() {
       assert(existsSync(heartbeatFile(lockDir)), "L2: the holder writes a heartbeat immediately");
 
       const busy = await expectBusy(lockDir, 200, 300);
-      assert(busy === SESSION_BUSY_MESSAGE,
+      assert(busyAt(busy, lockDir, "alive"),
         "L2: a contender outliving the wait cap gets the session-busy error (got " + JSON.stringify(busy) + ")");
+      assert(busy !== undefined && busy.includes("pid " + process.pid),
+        "L2: the busy message names the holder's pid (got " + JSON.stringify(busy) + ")");
+      assert(busy !== undefined && busy.includes("still running"),
+        "L2: a holder this machine can see running is not offered a manual clear (got " + JSON.stringify(busy) + ")");
 
       release();
       assert(!existsSync(lockDir), "L2: release removes the lock directory");
@@ -172,7 +205,7 @@ async function main() {
       backdate(lockDir, 60 * 60_000);
 
       const busy = await expectBusy(lockDir, 200, 300);
-      assert(busy === SESSION_BUSY_MESSAGE,
+      assert(busyAt(busy, lockDir, "alive"),
         "L3: a live local owner keeps the lock however old the heartbeat is (got " + JSON.stringify(busy) + ")");
       assert(existsSync(ownerFile(lockDir)), "L3: the contender did not sweep the live owner's lock");
 
@@ -210,7 +243,7 @@ async function main() {
       writeFakeOwner(foreign, 424242, "some-other-host");
       writeFileSync(heartbeatFile(foreign), String(Date.now()));
       let busy = await expectBusy(foreign, 1_000, 300);
-      assert(busy === SESSION_BUSY_MESSAGE,
+      assert(busyAt(busy, foreign),
         "L5: a foreign-host owner with a fresh heartbeat is not reclaimed (got " + JSON.stringify(busy) + ")");
 
       // ...and reclaimable once the heartbeat outlives the stale window.
@@ -224,7 +257,7 @@ async function main() {
       const anonymous = join(workDir, "l5b", "s.lock");
       mkdirSync(anonymous, { recursive: true });
       busy = await expectBusy(anonymous, 1_000, 300);
-      assert(busy === SESSION_BUSY_MESSAGE,
+      assert(busyAt(busy, anonymous, "anonymous"),
         "L5: an identity-less lock younger than the stale window is not reclaimed (got " + JSON.stringify(busy) + ")");
       backdate(anonymous, 1_500);
       const release2 = await expectAcquired(anonymous, 1_000, 2_000);
@@ -282,7 +315,7 @@ async function main() {
         // further to assert — the important case is the one below.
         assert(true, "L7: the sweep succeeded and the acquisition was bounded");
       } else {
-        assert(busy === SESSION_BUSY_MESSAGE,
+        assert(busyAt(busy, lockDir, "anonymous"),
           "L7: when the sweep cannot remove the lock, the wait ends as session busy (got "
           + JSON.stringify(busy) + ")");
         assert(existsSync(lockDir), "L7: a lock the sweep could not remove still exists for the next waiter");
@@ -314,7 +347,7 @@ async function main() {
       // stale 1 s vs wait 300 ms: the fresh heartbeat cannot age past the
       // window before this waiter gives up, so a sweep would be a bug.
       const busy = await expectBusy(lockDir, 1_000, 300);
-      assert(busy === SESSION_BUSY_MESSAGE,
+      assert(busyAt(busy, lockDir),
         "L8: a fresh replacement lock is not swept by age (got " + JSON.stringify(busy) + ")");
       const ownerNow = JSON.parse(readFileSync(ownerFile(lockDir), "utf8"));
       assert(ownerNow.pid === 888888,
@@ -322,13 +355,13 @@ async function main() {
       rmSync(lockDir, { recursive: true, force: true });
     }
 
-    // ---------- L9: a probe that cannot confirm does not reclaim the lock ----------
+    // ---------- L9: a probe that cannot confirm keeps a fresh lock ----------
     {
-      // #570: only a same-host ESRCH proves the holder is gone. An error the
-      // probe cannot classify (ERR_INVALID_ARG_TYPE and the odd Windows
-      // failures) says nothing about the owner, so a live local holder keeps
-      // the lock — the old EPERM-only rule reclaimed here and took a running
-      // session away.
+      // #570: only a same-host ESRCH proves the holder is gone. #576: a probe
+      // that cannot classify the pid (ERR_INVALID_ARG_TYPE and the odd Windows
+      // failures) is no evidence either way, so the heartbeat decides — a fresh
+      // one is still proof of a running holder and the lock stays. What #576
+      // changed is only what happens once that heartbeat goes stale (L10).
       const lockDir = join(workDir, "l9", "s.lock");
       writeFakeOwner(lockDir, process.pid, hostname());
       writeFileSync(heartbeatFile(lockDir), String(Date.now()));
@@ -342,8 +375,8 @@ async function main() {
       process.kill = unconfirmable;
       try {
         const busy = await expectBusy(lockDir, 500, 300);
-        assert(busy === SESSION_BUSY_MESSAGE,
-          "L9: an unconfirmable probe on a live local owner reads as alive, not dead (got "
+        assert(busyAt(busy, lockDir),
+          "L9: an unconfirmable probe with a fresh heartbeat keeps the lock (got "
           + JSON.stringify(busy) + ")");
         assert(existsSync(ownerFile(lockDir)),
           "L9: the live owner's lock survives a probe the waiter cannot classify");
@@ -351,6 +384,85 @@ async function main() {
         process.kill = realKill;
         rmSync(lockDir, { recursive: true, force: true });
       }
+    }
+
+    // ---------- L10: an unclassifiable owner ages out like a foreign one ----------
+    {
+      // #576: a pid the probe cannot classify is no evidence either way, so the
+      // heartbeat decides — the same window a foreign host gets. Without this,
+      // a lock left behind by a crashed run on a host whose probe keeps failing
+      // could only ever be cleared by hand.
+      const lockDir = join(workDir, "l10", "s.lock");
+      writeFakeOwner(lockDir, 777777777, hostname());
+      writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+      backdate(heartbeatFile(lockDir), 1_500);
+      const realKill = process.kill;
+      const unconfirmable: typeof process.kill = (pid, signal) => {
+        if (pid === 777777777 && signal === 0) {
+          throw Object.assign(new Error("probe could not classify this pid"), { code: "ERR_INVALID_ARG_TYPE" });
+        }
+        return realKill(pid, signal);
+      };
+      process.kill = unconfirmable;
+      try {
+        const release = await expectAcquired(lockDir, 1_000, 2_000);
+        const owner = JSON.parse(readFileSync(ownerFile(lockDir), "utf8"));
+        assert(owner.pid === process.pid,
+          "L10: an owner the probe cannot classify is reclaimed once the heartbeat is stale (got "
+          + JSON.stringify(owner) + ")");
+        release();
+        assert(!existsSync(lockDir), "L10: the reclaimed lock is released cleanly");
+      } finally {
+        process.kill = realKill;
+      }
+    }
+
+    // ---------- L11: a dead owner that could not be swept is not told to wait ----------
+    {
+      // The one path that carries a dead verdict into the busy message: the
+      // owner is gone, so the sweep is allowed, but the rename fails (a locked
+      // directory, permissions) and the waiter has to give up. "Retry after it
+      // finishes" would name a process that no longer exists.
+      const deadPid = await recentlyDeadPid();
+      if (deadPid !== null) {
+        const parent = join(workDir, "l11");
+        const lockDir = join(parent, "s.lock");
+        writeFakeOwner(lockDir, deadPid, hostname());
+        writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+        try { chmodSync(parent, 0o555); } catch { /* not enforced here */ }
+        let busy: string | undefined;
+        try {
+          busy = await expectBusy(lockDir, 50, 300);
+        } finally {
+          try { chmodSync(parent, 0o755); } catch { /* best effort */ }
+        }
+        if (!existsSync(lockDir)) {
+          // The sweep won on this filesystem; there is no busy message to read.
+          assert(true, "L11: the sweep succeeded, so no dead-owner message is produced");
+        } else {
+          assert(busyAt(busy, lockDir, "gone"),
+            "L11: a dead owner whose lock could not be swept is told to clear it, not to wait (got "
+            + JSON.stringify(busy) + ")");
+        }
+        try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }
+    }
+
+    // ---------- L12: an unprintable lock time costs the message, not the answer ----------
+    {
+      // A hand-edited owner.json can hold any number. Formatting it must not
+      // turn "session busy" into a RangeError the caller cannot recognise.
+      const lockDir = join(workDir, "l12", "s.lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(ownerFile(lockDir),
+        JSON.stringify({ pid: process.pid, host: hostname(), lockedAt: 1e300 }));
+      writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+      const busy = await expectBusy(lockDir, 1_000, 300);
+      assert(busyAt(busy, lockDir, "alive"),
+        "L12: an out-of-range lock time still answers session busy (got " + JSON.stringify(busy) + ")");
+      assert(busy !== undefined && !busy.includes("lock taken at"),
+        "L12: an out-of-range lock time is left out of the message");
+      rmSync(lockDir, { recursive: true, force: true });
     }
 
     // ---------- W1: the runtime holds the lock for the whole run ----------

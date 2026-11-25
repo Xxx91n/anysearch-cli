@@ -5,14 +5,20 @@
 // durable PI record takes a lock before touching it. The lock is a directory
 // (mkdir is atomic) under `<piSessionDir>/locks/<key>.lock` holding:
 //
-//   owner.json  { pid, host, startedAt } — the holder's identity
+//   owner.json  { pid, host, lockedAt } — the holder's identity
 //   heartbeat   touched on a timer while the holder runs
 //
 // A plain directory-mtime lock mistakes a long but healthy run for a dead
 // one and steals it. A waiter here reclaims only on real evidence:
 //
-//   same host + not proven dead  never reclaimed, however old the heartbeat is
 //   same host + confirmed dead   reclaimed at the next poll
+//   same host + confirmed alive  never reclaimed, however old the heartbeat is
+//   same host + probe unknown    reclaimed only once the stale window has
+//                                passed — the pid says nothing, so the
+//                                heartbeat is the only evidence left, and a
+//                                running holder keeps refreshing it. A failed
+//                                heartbeat write stops the beat for good, so
+//                                this window is a last resort, not a promise.
 //   other host / no identity     reclaimed only once the stale window has
 //                                passed — the conservative rule for an owner
 //                                this machine has no pid evidence about. A lock
@@ -54,20 +60,22 @@
 // keeps a dead owner's lock longer than necessary, and is accepted because the
 // alternative (guessing a start time) would be wrong more often.
 // Design: liveness is the store's one rule (#570) — only a same-host ESRCH
-// proves the owner is gone. EPERM proves the process exists for another user;
-// an unclassifiable probe error (Windows faults, ERR_INVALID_ARG_TYPE) says
-// nothing about it. Either way the waiter leaves the lock alone instead of
-// taking a running session away.
+// proves the owner is gone, and EPERM proves the process exists for another
+// user, so neither of those two is ever aged out. A probe that cannot classify
+// the pid proves nothing either way: that owner is judged by the same heartbeat
+// window as a foreign one (#576), so a run that died without a reclaimable pid
+// recovers on its own, while a holder that is still running keeps the window
+// fresh and is left alone.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { pidIsAlive } from "@anysearch-cli/store/process-liveness";
+import { probePid, type PidLiveness } from "@anysearch-cli/store/process-liveness";
 
 /**
  * Reclaim window for an owner this machine has no pid evidence about — another
- * host, or a missing/unreadable identity. A same-host owner that merely cannot
- * be proven dead is never aged out.
+ * host, a missing or unreadable identity, or a pid the probe cannot classify.
+ * A same-host owner the probe confirms alive is never aged out.
  */
 export const SESSION_LOCK_STALE_MS = 10 * 60_000;
 /** #317: no automatic wait; callers must explicitly request a positive cap. */
@@ -86,8 +94,79 @@ const POLL_MS = 50;
 const HEARTBEAT_MIN_MS = 100;
 const HEARTBEAT_MAX_MS = 5_000;
 
+/** The marker every busy answer starts with, so a log filter can find them all
+ *  even when the sentence after it has to change. */
+export const SESSION_BUSY_MARKER = "Session is busy: ";
+
 export const SESSION_BUSY_MESSAGE =
-  "Session is busy: another run still holds this session (possibly in another process); retry after it finishes.";
+  SESSION_BUSY_MARKER + "another run still holds this session (possibly in another process); retry after it finishes.";
+
+/** Who holds the lock, and what the probe said about it. Best effort: an
+ *  identity that is missing or unreadable is simply not described. */
+export interface SessionBusyFacts {
+  holder?: SessionLockHolder;
+  /** Only a same-host holder can be probed; absent means nobody to ask. */
+  liveness?: PidLiveness;
+}
+
+function readSessionBusyFacts(lockPath: string): SessionBusyFacts {
+  let holder: SessionLockHolder | undefined;
+  try {
+    holder = readSessionLockHolder(lockPath);
+  } catch {
+    return {};
+  }
+  if (!holder) return {};
+  return holder.host === hostname()
+    ? { holder, liveness: probePid(holder.pid) }
+    : { holder };
+}
+
+/**
+ * The busy sentence: who holds the lock, where it lives, and the one way out.
+ *
+ * The way out is worded for what the probe actually said, because one sentence
+ * cannot be true for all four: a confirmed-alive holder must not be told to
+ * delete a running run's lock, a confirmed-dead one must not be told to wait
+ * for a process that is gone, and a lock with no readable identity has no
+ * "that process" to point at.
+ */
+function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
+  const holder = facts.holder
+    ? " Holder: pid " + facts.holder.pid + " on " + facts.holder.host + holderNote(facts) + "."
+    : "";
+  if (facts.liveness === "dead") {
+    // The marker without its usual tail: "retry after it finishes" would name a
+    // process this waiter just proved is gone.
+    return SESSION_BUSY_MARKER + "this session's lock is still held." + holder
+      + " Lock: " + lockPath + ". That process is gone, so delete that lock directory and retry.";
+  }
+  if (facts.liveness === "alive") {
+    return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath
+      + ". If that pid no longer belongs to that run, delete that lock directory and retry.";
+  }
+  const advice = facts.holder
+    ? " If you are sure that process is gone, delete that lock directory and retry."
+    : " If you are sure nobody is using it, delete that lock directory and retry.";
+  return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath + "." + advice;
+}
+
+/** What the holder line adds: whether it is still running, and when the lock
+ *  was taken. */
+function holderNote(facts: SessionBusyFacts): string {
+  const lockedAt = facts.holder?.lockedAt;
+  const notes = [
+    facts.liveness === "alive" ? "still running" : "",
+    lockedAt === undefined ? "" : "lock taken at " + new Date(lockedAt).toISOString(),
+  ].filter(Boolean);
+  return notes.length > 0 ? " (" + notes.join(", ") + ")" : "";
+}
+
+/** What a host needs to word the collision itself. Undefined for any other
+ *  error, so a caller can tell contention from a filesystem fault. */
+export function sessionBusyFacts(error: unknown): SessionBusyFacts | undefined {
+  return error instanceof LockHeldError ? error.facts : undefined;
+}
 
 export interface SessionLockWindows {
   /** Override for SESSION_LOCK_STALE_MS. */
@@ -124,12 +203,15 @@ export function heartbeatIntervalMs(staleMs: number): number {
   return Math.min(HEARTBEAT_MAX_MS, Math.max(HEARTBEAT_MIN_MS, Math.floor(staleMs / 3)));
 }
 
-// The fields a rule reads. `startedAt` is also written into owner.json for
-// whoever inspects a stuck lock by hand; no decision uses it, so it is not
-// parsed back — a field no rule consumes would just invite one to.
-interface LockOwner {
+/**
+ * Who a lock names. `lockedAt` is when the lock was taken — not when the
+ * process started — and only the busy message reads it. No reclaim decision
+ * uses it.
+ */
+export interface SessionLockHolder {
   pid: number;
   host: string;
+  lockedAt?: number;
 }
 
 const OWNER_FILE = "owner.json";
@@ -139,8 +221,17 @@ const HEARTBEAT_FILE = "heartbeat";
  * The directory already belongs to a reachable holder. Separate from other
  * failures so the waiting path can poll and the one-shot path can answer
  * "busy" instead of retrying: only this one means "someone else has it".
+ *
+ * Carries the lock directory so the message can name it: contention is the one
+ * failure a person can clear by hand, and they cannot clear a path they were
+ * never shown.
  */
-class LockHeldError extends Error {}
+class LockHeldError extends Error {
+  constructor(readonly facts: SessionBusyFacts, lockPath: string) {
+    super(lockBusyMessage(lockPath, facts));
+    this.name = "LockHeldError";
+  }
+}
 
 /**
  * The holder's identity, or undefined when there is none to read.
@@ -155,7 +246,7 @@ class LockHeldError extends Error {}
  */
 class UnreadableOwnerError extends Error {}
 
-function readLockOwner(lockPath: string): LockOwner | undefined {
+function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined {
   let text: string;
   try {
     text = readFileSync(join(lockPath, OWNER_FILE), "utf8");
@@ -164,15 +255,31 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
     throw new UnreadableOwnerError("owner.json exists but cannot be read");
   }
   try {
-    const raw = JSON.parse(text) as Partial<LockOwner>;
+    const raw = JSON.parse(text) as Partial<SessionLockHolder> & { startedAt?: unknown };
     if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
       throw new UnreadableOwnerError("owner.json has no usable identity");
     }
-    return { pid: raw.pid as number, host: raw.host };
+    // Best effort, unlike the identity above: a missing or unusable time only
+    // costs the message that one detail. `startedAt` is the field's older name,
+    // still present in locks written before the rename.
+    const lockedAt = readableTime(raw.lockedAt) ?? readableTime(raw.startedAt);
+    return lockedAt === undefined
+      ? { pid: raw.pid as number, host: raw.host }
+      : { pid: raw.pid as number, host: raw.host, lockedAt };
   } catch (e) {
     if (e instanceof UnreadableOwnerError) throw e;
     throw new UnreadableOwnerError("owner.json is not valid JSON");
   }
+}
+
+/**
+ * A timestamp the message can print, or undefined. A value outside what a Date
+ * can represent makes `toISOString()` throw, which would turn a "session busy"
+ * answer into an unreadable crash on the way out.
+ */
+function readableTime(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined;
+  return Number.isFinite(new Date(value).getTime()) ? value : undefined;
 }
 
 /** Age of the freshest evidence in the lock: heartbeat mtime, else dir mtime. */
@@ -187,11 +294,11 @@ function lockAgeMs(lockPath: string, now: number): number {
 
 /**
  * Whether the lock at `lockPath` may be reclaimed right now — see the module
- * comment for the rule table. The one-line version: a local owner that is not
- * proven dead (including a probe this machine cannot classify) is never
- * reclaimed; a confirmed-dead local owner is reclaimed at once; an owner with
- * no pid evidence here (another host, missing or unreadable identity) has to
- * outlive the stale window.
+ * comment for the rule table. The one-line version: a local owner that is
+ * confirmed alive is never reclaimed; a confirmed-dead local owner is reclaimed
+ * at once; an owner this machine has no usable pid evidence about — another
+ * host, a missing or unreadable identity, or a probe that cannot classify the
+ * pid — has to outlive the stale window.
  *
  * An owner.json that exists but cannot be read counts as "cannot confirm":
  * this waiter falls back to the age rule, and while the file stays unreadable
@@ -201,14 +308,16 @@ function lockAgeMs(lockPath: string, now: number): number {
  * this branch keeps.
  */
 function reclaimableNow(lockPath: string, staleMs: number): boolean {
-  let owner: LockOwner | undefined;
+  let owner: SessionLockHolder | undefined;
   try {
-    owner = readLockOwner(lockPath);
+    owner = readSessionLockHolder(lockPath);
   } catch {
     return lockAgeMs(lockPath, Date.now()) > staleMs;
   }
   if (owner && owner.host === hostname()) {
-    return !pidIsAlive(owner.pid);
+    const liveness = probePid(owner.pid);
+    if (liveness === "dead") return true;
+    if (liveness === "alive") return false;
   }
   return lockAgeMs(lockPath, Date.now()) > staleMs;
 }
@@ -293,7 +402,7 @@ function publishOwnership(lockPath: string, staleMs: number): () => void {
     writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify({
       pid: process.pid,
       host: hostname(),
-      startedAt: Date.now(),
+      lockedAt: Date.now(),
     }));
   } catch (e) {
     // ENOENT here means the directory we created is already gone — another
@@ -373,7 +482,7 @@ export async function acquireSessionLease(
 ): Promise<() => void> {
   mkdirSync(dirname(leasePath), { recursive: true });
   const release = takeLockDir(leasePath, windows.staleMs);
-  if (!release) throw new LockHeldError(SESSION_BUSY_MESSAGE);
+  if (!release) throw new LockHeldError(readSessionBusyFacts(leasePath), leasePath);
   return release;
 }
 
@@ -404,7 +513,7 @@ export async function acquireSessionLock(
     // contention, the cap bounds retries; zero never enters the polling path.
     const release = takeLockDir(lockPath, staleMs);
     if (release) return release;
-    if (Date.now() >= deadlineAt) throw new LockHeldError(SESSION_BUSY_MESSAGE);
+    if (Date.now() >= deadlineAt) throw new LockHeldError(readSessionBusyFacts(lockPath), lockPath);
     await sleep(POLL_MS);
   }
 }
@@ -419,6 +528,6 @@ export async function acquireSessionLock(
 // the lock alone — because neither can prove ownership and guessing either way
 // is unsafe.
 function ownsLockDir(lockPath: string): boolean {
-  const owner = readLockOwner(lockPath);
+  const owner = readSessionLockHolder(lockPath);
   return owner !== undefined && owner.pid === process.pid && owner.host === hostname();
 }

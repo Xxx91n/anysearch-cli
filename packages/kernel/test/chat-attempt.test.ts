@@ -10,14 +10,17 @@
 //      marked incomplete by a request nobody ran;
 //   A5 a second attempt on a session that is already leased fails AT ONCE with
 //      ChatAttemptBusyError, not after a wait;
-//   A6 an in-memory chat (no handle, or no record directory) still runs.
+//   A6 an in-memory chat (no handle, or no record directory) still runs;
+//   A7 a lease left by an owner the probe cannot classify is reclaimed once its
+//      heartbeat goes stale — the lease follows the same reclaim rule as the
+//      run lock (#576).
 //
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { mkdirSync, mkdtempSync, rmSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, existsSync, utimesSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { runChatAttempt, ChatAttemptBusyError, sessionLeasePath } from "../src/chat-attempt";
+import { runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, sessionLeasePath } from "../src/chat-attempt";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 
 let passed = 0, failed = 0;
@@ -165,6 +168,21 @@ async function main() {
 
       assert(busy instanceof ChatAttemptBusyError, "A5: the second attempt fails with ChatAttemptBusyError");
       assert((busy as ChatAttemptBusyError)?.sessionId === "s5", "A5: the error names the session");
+      assert((busy as ChatAttemptBusyError)?.leasePath === sessionLeasePath(piDir, "s5"),
+        "A5: the error names the lease a person can clear by hand (#576)");
+      const busyError = busy as ChatAttemptBusyError;
+      assert(busyError?.facts?.liveness === "alive" && busyError?.facts?.holder?.pid === process.pid,
+        "A5: the collision reports the holder as this live process (got " + JSON.stringify(busyError?.facts) + ")");
+      // #587 review: a live holder must not be told to delete the lock as if
+      // the owner were gone — only a recycled pid makes the lease the target.
+      const busyText = chatAttemptBusyText(busyError);
+      assert(busyText.includes("被复用") && !busyText.includes("如果确认那个进程已经不在"),
+        "A5: a live holder is offered the recycled-pid way out, not a blind delete (got "
+        + JSON.stringify(busyText) + ")");
+      assert(busyText.includes(busyError.leasePath),
+        "A5: the lease path is shown even for a live holder — a recycled pid leaves it the only thing to act on");
+      assert(chatAttemptBusyText(busyError, "ans_chat: ").startsWith("ans_chat: "),
+        "A5: the host prefix goes in front of the shared sentence");
       // The point of #299: no queue. A poll-based wait would be at least one
       // sleep tick; the production window is 120 s, so anything near that is a
       // failure of the ticket, not a slow test.
@@ -194,6 +212,53 @@ async function main() {
         "A6: without a directory the bookkeeping still happens (nothing to serialize)");
       store.close();
     }
+    // ---------- A7: the lease reclaims like the run lock ----------
+    {
+      // #576: the lease and the run lock share one reclaim decision, so the
+      // case the run lock's L10 covers has to hold here too: an owner this
+      // machine cannot classify is judged on the heartbeat, not kept forever.
+      const piDir = join(workDir, "a7", "pi");
+      const leasePath = sessionLeasePath(piDir, "s7");
+      const unknownPid = 777777777;
+      mkdirSync(leasePath, { recursive: true });
+      writeFileSync(join(leasePath, "owner.json"),
+        JSON.stringify({ pid: unknownPid, host: hostname(), startedAt: Date.now() }));
+      const heartbeat = join(leasePath, "heartbeat");
+      writeFileSync(heartbeat, String(Date.now()));
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(heartbeat, old, old);
+
+      const realKill = process.kill;
+      const unconfirmable: typeof process.kill = (pid, signal) => {
+        if (pid === unknownPid && signal === 0) {
+          throw Object.assign(new Error("probe could not classify this pid"), { code: "ERR_INVALID_ARG_TYPE" });
+        }
+        return realKill(pid, signal);
+      };
+      process.kill = unconfirmable;
+      try {
+        // Without this the test would pass on a patch that never took effect:
+        // 777777777 would then read as dead and the lease would be reclaimed
+        // for the wrong reason.
+        let probeCode: string | undefined;
+        try { process.kill(unknownPid, 0); } catch (e) { probeCode = (e as NodeJS.ErrnoException)?.code; }
+        assert(probeCode === "ERR_INVALID_ARG_TYPE",
+          "A7: the probe really cannot classify this pid (got " + JSON.stringify(probeCode) + ")");
+
+        const outcome = await runChatAttempt({
+          sessionId: "s7", projectRoot: "/p", piSessionDir: piDir,
+          sessionLock: { staleMs: 1_000 },
+        }, async (attempt) => {
+          attempt.markStarted();
+          return { completed: true };
+        });
+        assert(outcome.completed === true,
+          "A7: an unconfirmable lease past the stale window is reclaimed and the attempt runs");
+      } finally {
+        process.kill = realKill;
+      }
+    }
+
   } finally {
     try { rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* OS temp */ }
   }
