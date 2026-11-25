@@ -67,8 +67,9 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// A claim that cannot be read still has a date: the file's own mtime. That is what keeps two
-// writers from deleting each other's lock in the moment between create and write.
+// A lock this process cannot read is a real failure and is thrown: looping on it would end in a
+// timeout that blames the holder. mtime dates the other case — content that reads but carries no
+// usable `at`, left behind by a writer that died between create and write.
 function readLock(lockPath: string): LockSnapshot | null {
   let claim: string;
   try {

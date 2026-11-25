@@ -9,7 +9,7 @@ import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./gold
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
-import { classifyLedgerWriteFailure, quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
+import { classifyLedgerWriteFailure, quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock, type LedgerWriteFailure } from "./skip-ledger";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
@@ -312,7 +312,8 @@ async function main(): Promise<number> {
   // ship-gate still reads whatever the other writer left.
   const ob = report.metrics.observational;
   // only a failure is reported; this path does not persist the ledger yet (#590)
-  let skipLedgerWrite: { recorded: false; reason: string; detail: string } | null = null;
+  type SkipLedgerWriteNote = { recorded: false; reason: LedgerWriteFailure | "quarantined"; detail: string };
+  let skipLedgerWrite: SkipLedgerWriteNote | null = null;
   const runNotes: string[] = [];
   if (ob) {
     const keys: string[] = [];
@@ -338,16 +339,24 @@ async function main(): Promise<number> {
       const detail = String((e as Error).message ?? e);
       if (kind === "corrupt") {
         const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
-        skipLedgerWrite = { recorded: false, reason: "quarantined", detail: quarantined };
-        runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + quarantined + " — the skip history restarts empty");
-        console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
-        try {
-          recordOnce();
-        } catch (restart) {
-          const restartKind = classifyLedgerWriteFailure(restart);
-          skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
-          runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
-          console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);
+        if (quarantined === null) {
+          // the rename failed, so the ledger is still where it was: say that instead of pointing at
+          // a path that holds nothing
+          skipLedgerWrite = { recorded: false, reason: "corrupt", detail };
+          runNotes.push("OBSERVATIONAL skip-ledger fails its contract and could not be moved aside — it is still in place (" + detail + ")");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract and could not be quarantined — left in place (" + detail + ")");
+        } else {
+          skipLedgerWrite = { recorded: false, reason: "quarantined", detail: quarantined };
+          runNotes.push("OBSERVATIONAL skip-ledger failed its contract and was quarantined to " + quarantined + " — the skip history restarts empty");
+          console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + detail + ")");
+          try {
+            recordOnce();
+          } catch (restart) {
+            const restartKind = classifyLedgerWriteFailure(restart);
+            skipLedgerWrite = { recorded: false, reason: restartKind, detail: String((restart as Error).message ?? restart) };
+            runNotes.push("OBSERVATIONAL skip-ledger restarted empty but this run's skip was not recorded (" + restartKind + ": " + skipLedgerWrite.detail + ")");
+            console.error("[eval] OBSERVATIONAL skip-ledger restart failed (" + restartKind + ") — " + skipLedgerWrite.detail);
+          }
         }
       } else {
         // a held lock or a filesystem error leaves the file intact, so the history stays and only

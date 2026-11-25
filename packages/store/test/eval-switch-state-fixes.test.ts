@@ -13,7 +13,7 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { SkipLedgerError, classifyLedgerWriteFailure, parseSkipLedger, withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { SkipLedgerError, classifyLedgerWriteFailure, parseSkipLedger, quarantineSkipLedger, withSkipLedgerLock } from "../src/eval/skip-ledger";
 import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
 import { withProbe } from "./helpers/probe-stub";
 
@@ -271,6 +271,10 @@ try {
     // libuv reports an errno it cannot name with code "UNKNOWN"; it is still a disk failure
     const unnamedErrno = Object.assign(new Error("unnamed"), { code: "UNKNOWN", errno: -4094 });
     ok("F11 an unnamed errno is still io", classifyLedgerWriteFailure(unnamedErrno) === "io");
+
+    const emptyDir = mkdtempSync(join(tmpdir(), "ans-577-quarantine-"));
+    ok("F11 a quarantine that moves nothing says so", quarantineSkipLedger(emptyDir, new Date().toISOString()) === null);
+    rmSync(emptyDir, { recursive: true, force: true });
     let rethrown: unknown = null;
     try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
     ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);

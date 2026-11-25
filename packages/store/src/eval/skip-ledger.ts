@@ -243,11 +243,17 @@ export function writeSkipLedgerAtomic(outDir: string, ledger: SkipLedger): void 
   renameSync(tmp, p);
 }
 
-export function quarantineSkipLedger(outDir: string, at: string): string {
+// Returns where the file was moved, or null when nothing moved — a caller that reports
+// "quarantined to <path>" must not point at a file that is still in the old place.
+export function quarantineSkipLedger(outDir: string, at: string): string | null {
   const p = ledgerPathFor(outDir);
   const q = p.replace(/\.json$/, ".quarantined-" + at.replace(/[:.]/g, "-") + ".json");
-  try { renameSync(p, q); } catch { /* restart empty regardless */ }
-  return q;
+  try {
+    renameSync(p, q);
+    return q;
+  } catch {
+    return null;
+  }
 }
 
 export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) => T): T {
