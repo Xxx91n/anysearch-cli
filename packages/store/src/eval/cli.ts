@@ -307,12 +307,11 @@ async function main(): Promise<number> {
     console.error("[eval] observation write failed (fail-open): " + String((e as Error).message ?? e));
   }
 
-  // every observational explicit-skip lands in the WARN ledger (share schema with
-  // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
-  // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
+  // explicit skips from an observational run are recorded in memory only: this path has never
+  // written skip-ledger.json (#590), so the 3-streak escalation below cannot fire from here and
+  // ship-gate still reads whatever the other writer left.
   const ob = report.metrics.observational;
-  // only a failure is reported: the eval path does not persist the skip ledger at all yet (#590),
-  // so claiming "recorded" on a clean run would be a lie
+  // only a failure is reported; this path does not persist the ledger yet (#590)
   let skipLedgerWrite: { recorded: false; reason: string; detail: string } | null = null;
   const runNotes: string[] = [];
   if (ob) {

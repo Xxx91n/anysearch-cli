@@ -256,12 +256,15 @@ export function withSkipLedgerLock<T>(outDir: string, fn: (ledger: SkipLedger) =
 
 export type LedgerWriteFailure = "corrupt" | "lock-busy" | "io";
 
-// Only three outcomes reach a caller: the ledger is unreadable (corrupt), the lock is held, or the
-// filesystem refused. Anything else is a bug in the writer, not a state of the ledger, so it is
-// rethrown here instead of becoming a fourth kind each caller has to remember.
+// Three outcomes reach a caller: the ledger is unreadable, the lock is held, or the filesystem
+// refused. Anything else is a bug in the writer and is rethrown, so no caller can mistake it for a
+// missing write.
 export function classifyLedgerWriteFailure(error: unknown): LedgerWriteFailure {
   if (error instanceof SkipLedgerError) return "corrupt";
   if (error instanceof LedgerLockTimeoutError) return "lock-busy";
-  if (typeof (error as NodeJS.ErrnoException | null)?.code === "string") return "io";
+  // a real errno failure. Node's programming errors carry a code too (ERR_INVALID_ARG_TYPE), and
+  // reading one of those as a disk problem is how a bug turns into a silently missing skip.
+  const errno = error as NodeJS.ErrnoException | null;
+  if (errno && typeof errno.errno === "number" && /^E[A-Z]+$/.test(String(errno.code ?? ""))) return "io";
   throw error;
 }

@@ -266,10 +266,16 @@ try {
   {
     ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
     ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
-    ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(Object.assign(new Error("denied"), { code: "EACCES" })) === "io");
+    const fsError = Object.assign(new Error("denied"), { code: "EACCES", errno: -13, syscall: "open" });
+    ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(fsError) === "io");
     let rethrown: unknown = null;
     try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
     ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);
+
+    // Node's own programming errors carry a code as well; only a real errno failure is a disk fault
+    let coded: unknown = null;
+    try { classifyLedgerWriteFailure(Object.assign(new TypeError("bad arg"), { code: "ERR_INVALID_ARG_TYPE" })); } catch (e) { coded = e; }
+    ok("F11 a coded programming error is still rethrown", coded instanceof TypeError);
 
     let contractError: unknown = null;
     try {
