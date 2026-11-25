@@ -144,6 +144,9 @@ function buildProviders(
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
+/** The four details `parseBinding` reports for one record; the file path never matches. */
+const RECORD_PROBLEM = /\bentry \d+ (\([^()\n]*\) )?(is not an object|has no provider|has no apiKey|has a non-string endpoint)/i;
+
 /**
  * Turn a credential-resolution failure into a sentence safe to show. Only a
  * recognised category and a bare errno are quoted: this text comes from a module
@@ -162,7 +165,11 @@ function classifyCredentialFault(error: unknown): string {
   // A record inside a readable file is the one fault `ans auth repair` fixes. It
   // is reported with the published notice's own sentence, so the MCP side keeps
   // the repair half instead of flattening it into "fix or remove it".
-  if (!permission && /\bentry \d+\b/i.test(raw)) return credentialFileNotice({ kind: "invalid-record" }).notice;
+  //
+  // Anchored on the validation detail, not on "entry N" alone: a path such as
+  // `/config/entry 2/credentials.json` carries that shape too, and a timeout or a
+  // held lock on that path is not a broken record - repair cannot fix either.
+  if (!permission && RECORD_PROBLEM.test(raw)) return credentialFileNotice({ kind: "invalid-record" }).notice;
 
   if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
     return permission

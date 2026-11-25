@@ -670,6 +670,11 @@ test("a credential fault is classified by cause, not flattened into one sentence
     // A record inside a readable file can be repaired; the MCP-side sentence says
     // so instead of dropping the way out.
     ["/x: entry 2 (anthropic) has no apiKey; fix or remove the file, or run ans auth repair to keep the keys it can still read", /ans auth repair/],
+    // ...but only when a record really failed validation. A path can carry the
+    // same "entry N" shape, and a timeout or a held lock on it is not a broken
+    // record - repair cannot fix either, so the cause must survive (#569 review).
+    ["/config/entry 2/credentials.json: could not read it (ETIMEDOUT); retry once the file is reachable", /did not respond in time \(ETIMEDOUT\)/],
+    ["refusing to write the credential file /config/entry 2/credentials.json: another ans process is writing it (x.lock is still held after 5s)", /another ans process is writing/],
   ];
   for (const [raw, want] of cases) {
     const engine = createEngine(undefined, {

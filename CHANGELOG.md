@@ -15,7 +15,7 @@
 - **`auth list` 打印的 provider 也过清洗**：`showProvider` 改名导出成 `providerLabel`，`describeBinding` 也用它。这条出口以前把文件里的 `provider` 原样打到终端，控制字符和任意长度都能进来。
 - **只读挂载的修法改对**：`EROFS` 原来给的是 `fix its permissions`——只读挂载上改权限没用，改成 `move the file to a writable disk`。
 - **`ans --help` 用 store 的常量拼**：`STORE_KEY_COMMAND` / `REPAIR_COMMAND`，措辞收进「只丢读不了的记录」这一档，不再说 `repair a broken file`。
-- **MCP 侧的分类也带上 repair**：`classifyCredentialFault` 认记录指针（`entry N`），坏条目直接引用 kernel 的 `invalid-record` 提示句，不再退成 `fix or remove it, then retry`。
+- **MCP 侧的分类也带上 repair**：`classifyCredentialFault` 认 `parseBinding` 报的那四条记录细节（`entry N … is not an object` / `has no provider` / `has no apiKey` / `has a non-string endpoint`），坏条目直接引用 kernel 的 `invalid-record` 提示句，不再退成 `fix or remove it, then retry`。只认 `entry N` 不够：路径里的 `/config/entry 2/credentials.json` 也长这样，而那条路径上的超时或写锁都不是 repair 能修的。
 - **`could not read it` 和 `missing the "bindings" list` 两种故障也带上修法**，以前只有 JSON 解析失败和坏条目带。
 - **修复的承诺只在能修的那一档**：`CredentialFileFaultKind` 多了一档 `invalid-record`（文件能读、某条记录读不了），只有这一档的报错点名 `ans auth repair`；`not-json` 和「缺 `bindings` 列表」这种解析类故障没有东西可留，`unreadable` 档 repair 读的是同一个文件、也帮不上，都不提。措辞由 store 导出（`FIX_OR_REPLACE` / `KEEP_KEYS`），kernel 的提示表直接引用，不再各写一份。
 - **读文件时剥掉 UTF-8 BOM**：记事本和 PowerShell 重定向都会写 BOM，`JSON.parse` 直接拒绝，用户在编辑器里看着正常的文件被判成 `not valid JSON`，而且报错没有行列号。
