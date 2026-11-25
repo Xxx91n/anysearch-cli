@@ -24,7 +24,7 @@ import {
   closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync,
   unlinkSync, writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { parse as tomlParse, stringify as tomlStringify, TomlError } from "smol-toml";
 import { configWriteSeam } from "./config-llm-seam.js";
 import { sweepStaleWorkFiles } from "./stale-work-files.js";
@@ -171,29 +171,19 @@ const STORED_KEY_BROKEN =
 const STORED_KEY_UNCONFIGURED =
   "A model API key is still stored in credentials.json, but it is not in use until provider and model are configured.";
 
-// Both labels below are relative on purpose: these sentences also reach MCP
-// tool results, which must stay free of absolute paths. They come from the SAME
-// home/cwd the resolver read, so a surface never has to guess the file.
+// Both labels are relative on purpose: these sentences also reach MCP tool
+// results, which must stay free of absolute paths. `path` is always built from
+// the same home/cwd (`userConfigPath` / `projectConfigPath`), so a surface never
+// has to guess the file and `relative()` never escapes its base.
 
-/** True when `rel` escapes its base or is already absolute (cross-drive on Windows). */
-function leavesBase(rel: string): boolean {
-  return rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel);
-}
-
-/** The project file's relative path; an escaping/absolute path falls back to its file name. */
+/** The project file's path inside the project, using forward slashes. */
 function projectDisplayPath(cwd: string, path: string): string {
-  const rel = relative(cwd, path);
-  return leavesBase(rel) ? basename(path) : rel.split(sep).join("/");
+  return relative(cwd, path).split(sep).join("/");
 }
 
-/**
- * The user file's `~/...` label. Paths only. A path outside `home` falls back
- * to the file name, so an absolute path (including the cross-drive case on
- * Windows) can never leak into an MCP result.
- */
+/** The user file's path from the config root, using `~` and forward slashes. */
 function userDisplayPath(home: string, path: string): string {
-  const rel = relative(home, path);
-  return leavesBase(rel) ? basename(path) : "~/" + rel.split(sep).join("/");
+  return "~/" + relative(home, path).split(sep).join("/");
 }
 
 function projectBrokenSentence(label: string): string {
