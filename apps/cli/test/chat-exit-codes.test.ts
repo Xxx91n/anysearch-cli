@@ -14,8 +14,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,6 +60,43 @@ function isolate() {
   };
 }
 
+/** Point the layered resolver at a local endpoint through the env layer. */
+function pointAtModel(port: number): void {
+  process.env.ANS_LLM_PROVIDER = "openai";
+  process.env.ANS_LLM_MODEL = "gpt-5";
+  process.env.ANS_LLM_BASE_URL = "http://127.0.0.1:" + port + "/v1";
+  process.env.ANS_LLM_API = "chat";
+  process.env.ANS_LLM_API_KEY = "sk-test-local";
+}
+
+/**
+ * A local model endpoint that accepts a request and never answers. `onRequest`
+ * runs when the first request arrives, which is also proof that the run got
+ * past config resolution and reached a provider call.
+ */
+async function stallingEndpoint(onRequest: () => void) {
+  const sockets = new Set<Socket>();
+  const server = createServer(() => onRequest());
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  const listening = Promise.withResolvers<void>();
+  server.once("error", listening.reject);
+  server.once("listening", () => listening.resolve());
+  server.listen(0, "127.0.0.1");
+  await listening.promise;
+  return {
+    port: (server.address() as { port: number }).port,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      const closed = Promise.withResolvers<void>();
+      server.close(() => closed.resolve());
+      await closed.promise;
+    },
+  };
+}
+
 test("no question is a usage error: exit 2", async () => {
   const f = isolate();
   try {
@@ -87,53 +124,47 @@ test("no interrupted turn to continue: exit 1", async () => {
   }
 });
 
+// Production's dispatch registers a task per command. This stands in for it:
+// the id only has to name the execution whose budget the run attaches to, and
+// an undeclared budget has no row to enforce, so a fake id is enough.
+const CHAT_TASK = { taskId: "cli-chat-fake", kind: "cli.chat", role: "business" as const, attachSession: () => {} };
+
 test("Ctrl-C during the model call: exit 130", async () => {
   const f = isolate();
-  const sockets = new Set<Socket>();
-  let server: Server | undefined;
+  const endpoint = await stallingEndpoint(() => {
+    // Reaching the request proves the SIGINT listener is installed and a model
+    // call is in flight, so the abort is the path a user's Ctrl-C takes.
+    process.emit("SIGINT");
+  });
   try {
-    server = createServer(() => {
-      // Accept the request and never answer. Reaching this callback proves the
-      // SIGINT listener is installed and a model call is in flight, so the
-      // abort is the same path a user's Ctrl-C takes.
-      process.emit("SIGINT");
-    });
-    server.on("connection", (socket) => {
-      sockets.add(socket);
-      socket.on("close", () => sockets.delete(socket));
-    });
-    const listening = Promise.withResolvers<void>();
-    server.once("error", listening.reject);
-    server.once("listening", () => listening.resolve());
-    server.listen(0, "127.0.0.1");
-    await listening.promise;
-    const port = (server.address() as { port: number }).port;
-
-    process.env.ANS_LLM_PROVIDER = "openai";
-    process.env.ANS_LLM_MODEL = "gpt-5";
-    process.env.ANS_LLM_BASE_URL = "http://127.0.0.1:" + port + "/v1";
-    process.env.ANS_LLM_API = "chat";
-    process.env.ANS_LLM_API_KEY = "sk-test-local";
-
-    // Production's dispatch registers a task per command. This stands in for
-    // it: the id only has to name the execution whose budget the run attaches
-    // to, and an undeclared budget has no row to enforce, so a fake id is
-    // enough for the cancellation path.
-    const run = runWithCliTask(
-      { taskId: "cli-chat-fake", kind: "cli.chat", role: "business", attachSession: () => {} },
-      () => runChat(["-p", "hello"]),
-    );
-    // A hung run fails the test runner's own timeout; a returned code is the
-    // contract under test.
-    const code = await run;
+    pointAtModel(endpoint.port);
+    const code = await runWithCliTask(CHAT_TASK, () => runChat(["-p", "hello"]));
     assert.equal(code, 130);
   } finally {
-    for (const socket of sockets) socket.destroy();
-    if (server) {
-      const closed = Promise.withResolvers<void>();
-      server.close(() => closed.resolve());
-      await closed.promise;
-    }
+    await endpoint.close();
+    f.restore();
+  }
+});
+
+test("a broken user config plus env still reaches the model", async () => {
+  const f = isolate();
+  writeFileSync(join(f.home, ".ans", "config.toml"), "[llm\n");
+  const request = Promise.withResolvers<void>();
+  const endpoint = await stallingEndpoint(() => request.resolve());
+  try {
+    pointAtModel(endpoint.port);
+    const run = runWithCliTask(CHAT_TASK, () => runChat(["-p", "hello"]));
+    // The provider request is the proof the broken file did not stop the run.
+    // Race the run so a regression that exits early fails with its exit code
+    // instead of waiting for the test runner's timeout.
+    await Promise.race([
+      request.promise,
+      run.then((code) => { throw new Error("the run exited " + code + " before reaching the model"); }),
+    ]);
+    process.emit("SIGINT");
+    assert.equal(await run, 130);
+  } finally {
+    await endpoint.close();
     f.restore();
   }
 });
