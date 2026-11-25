@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
-import { emptySkipLedger, parseSkipLedger, recordSkips, appendSwitchAction, readSkipLedger, writeSkipLedgerAtomic, withSkipLedgerLock, SKIP_LEDGER_SCHEMA } from "../src/eval/skip-ledger";
+import { emptySkipLedger, parseSkipLedger, appendSwitchAction, readSkipLedger, writeSkipLedgerAtomic, withSkipLedgerLock, SKIP_LEDGER_SCHEMA } from "../src/eval/skip-ledger";
 import { decideSwitch, evaluateReadiness, evaluateReconcile, mcnemar, SWITCH_EDGE_EVENTS, SWITCH_EDGE_TRANSITIONS, type SwitchCounters, type SwitchPhase, type SwitchReadings } from "../src/eval/switch-machine";
 import { advanceSwitch, verifySwitchState, writeSwitchChainEvent, loadSwitchRegistration, rebuildStateFromChain, replaySwitchChain, switchEventTypeFor, probeSwitchIntegrity, SWITCH_REGISTRATION_HASH_EXPECTATION } from "../src/eval/switch-run";
 
@@ -98,15 +98,10 @@ try { parseSkipLedger('{"schema":"anysearch/gain-ledger@9"}'); assert(false, "@9
 try { parseSkipLedger(JSON.stringify({ schema: SKIP_LEDGER_SCHEMA, consecutiveWarn: 0, history: [], resolutions: [], state: { phase: "S9", since: null, transitionId: null, evidenceHash: null }, actions: [], revision: 0 })); assert(false, "bad phase must throw"); } catch { passed++; }
 
 const l = emptySkipLedger();
-assert(recordSkips(l, ["k|gate-not-met|x"], "t1") === 1, "skip streak 1");
+l.consecutiveWarn = 1;
 appendSwitchAction(l, { at: "t2", kind: "rollback", from: "S2", to: "S1", reason: "rollback-s2-s1", provenance: "real" });
-assert(l.consecutiveWarn === 1, "rollback action leaves skip streak untouched");
-assert(l.history.length === 1 && l.actions.length === 1 && l.actions[0]?.provenance === "real", "rollback lives in actions with provenance");
-
-const trackLedger = emptySkipLedger();
-recordSkips(trackLedger, ["consumed-key"], "t1", { track: "consumed", reasonCode: "gate-not-met" });
-const syntheticStreak = recordSkips(trackLedger, ["synthetic-key"], "t2", { track: "synthetic", reasonCode: "gate-not-met" });
-assert(syntheticStreak === 0 && trackLedger.consecutiveWarn === 1, "synthetic gate-not-met never increments consumed three-streak");
+assert(l.consecutiveWarn === 1, "rollback action leaves legacy consecutiveWarn untouched");
+assert(l.actions.length === 1 && l.actions[0]?.provenance === "real", "rollback lives in actions with provenance");
 
 const dir = mkdtempSync(join(tmpdir(), "ans-switch-"));
 try {
@@ -170,17 +165,17 @@ try {
 
   const luDir = mkdtempSync(join(tmpdir(), "ans-switch-lock-"));
   withSkipLedgerLock(luDir, (ledger) => {
-    recordSkips(ledger, ["lost-update-key"], "t1");
+    appendSwitchAction(ledger, { at: "t1", kind: "readiness", from: "S0", to: "S0", reason: "lost-update-1", provenance: "real" });
     writeSkipLedgerAtomic(luDir, ledger);
     return 0;
   });
   withSkipLedgerLock(luDir, (ledger) => {
-    recordSkips(ledger, ["lost-update-key"], "t2");
+    appendSwitchAction(ledger, { at: "t2", kind: "readiness", from: "S0", to: "S0", reason: "lost-update-2", provenance: "real" });
     writeSkipLedgerAtomic(luDir, ledger);
     return 0;
   });
   const locked = readSkipLedger(luDir);
-  assert(locked.history.length === 2 && locked.revision >= 2, "locked RMW preserves both writes and increments revision");
+  assert(locked.actions.length === 2 && locked.revision >= 2, "locked RMW preserves both writes and increments revision");
   rmSync(luDir, { recursive: true, force: true });
 } finally {
   rmSync(dir, { recursive: true, force: true });

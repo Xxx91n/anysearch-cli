@@ -13,7 +13,7 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { SkipLedgerError, classifyLedgerWriteFailure, parseSkipLedger, quarantineSkipLedger, withSkipLedgerLock } from "../src/eval/skip-ledger";
+import { SkipLedgerError, parseSkipLedger, quarantineSkipLedger, runWithSkipLedgerRecovery, withSkipLedgerLock } from "../src/eval/skip-ledger";
 import { LEDGER_LOCK_MAX_AGE_MS, LedgerLockTimeoutError, withLedgerLock } from "../src/eval/ledger-lock";
 import { withProbe } from "./helpers/probe-stub";
 
@@ -261,17 +261,9 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // F11 (#577): only a ledger that cannot be read is corruption. A held lock or a filesystem error
-  // leaves the file exactly as it was, and quarantining on either throws away a healthy history.
+  // F11 (#577/#591): quarantineSkipLedger reports all three outcomes (absent, quarantined, failed),
+  // and contract violations in parseSkipLedger throw SkipLedgerError.
   {
-    ok("F11 an unreadable ledger is corruption", classifyLedgerWriteFailure(new SkipLedgerError("not valid JSON")) === "corrupt");
-    ok("F11 a held lock is contention", classifyLedgerWriteFailure(new LedgerLockTimeoutError("/tmp/.skip-ledger.lock", null, 10)) === "lock-busy");
-    const fsError = Object.assign(new Error("denied"), { code: "EACCES", errno: -13, syscall: "open" });
-    ok("F11 a filesystem error is neither", classifyLedgerWriteFailure(fsError) === "io");
-    // libuv reports an errno it cannot name with code "UNKNOWN"; it is still a disk failure
-    const unnamedErrno = Object.assign(new Error("unnamed"), { code: "UNKNOWN", errno: -4094 });
-    ok("F11 an unnamed errno is still io", classifyLedgerWriteFailure(unnamedErrno) === "io");
-
     const emptyDir = mkdtempSync(join(tmpdir(), "ans-577-quarantine-"));
     ok("F11 a quarantine with no file says there was nothing to move", "absent" in quarantineSkipLedger(emptyDir, new Date().toISOString()));
     // the two outcomes a bare null used to hide: where the file went, and why it did not
@@ -287,14 +279,6 @@ try {
     ok("F11 a failed quarantine carries the error out", "failed" in blocked && String((blocked as { failed: unknown }).failed).length > 0);
     ok("F11 a failed quarantine leaves the ledger where it was", existsSync(join(emptyDir, "skip-ledger.json")));
     rmSync(emptyDir, { recursive: true, force: true });
-    let rethrown: unknown = null;
-    try { classifyLedgerWriteFailure(new TypeError("cannot read properties of undefined")); } catch (e) { rethrown = e; }
-    ok("F11 a writer bug is rethrown, not classified", rethrown instanceof TypeError);
-
-    // Node's own programming errors carry a code as well; only a real errno failure is a disk fault
-    let coded: unknown = null;
-    try { classifyLedgerWriteFailure(Object.assign(new TypeError("bad arg"), { code: "ERR_INVALID_ARG_TYPE" })); } catch (e) { coded = e; }
-    ok("F11 a coded programming error is still rethrown", coded instanceof TypeError);
 
     let contractError: unknown = null;
     try {
@@ -311,8 +295,74 @@ try {
     } catch (e) {
       contractError = e;
     }
-    ok("F11 a ledger that breaks its own contract is corruption, not io",
-      contractError instanceof SkipLedgerError && classifyLedgerWriteFailure(contractError) === "corrupt");
+    ok("F11 a ledger that breaks its own contract throws SkipLedgerError", contractError instanceof SkipLedgerError);
+
+    // #591: runWithSkipLedgerRecovery quarantines corrupt ledgers aside and retries advanceSwitch
+    // once, while leaving lock/IO failures untouched and never retrying failed quarantines.
+    const recDir = mkdtempSync(join(tmpdir(), "ans-591-recovery-"));
+    try {
+      const recDb = join(recDir, "durable.db");
+      new SqliteSessionStore(recDb).close();
+      const recOut = join(recDir, "out");
+      mkdirSync(recOut, { recursive: true });
+      writeFileSync(join(recOut, "skip-ledger.json"), "{broken json", "utf8");
+      const notes: string[] = [];
+      const sw = runWithSkipLedgerRecovery(
+        recOut,
+        () => advanceSwitch({ outDir: recOut, dbPath: recDb, mode: "real" }),
+        (m) => notes.push(m),
+        "2026-01-02T03:04:05.010Z",
+      );
+      const qFile = join(recOut, "skip-ledger.quarantined-2026-01-02T03-04-05-010Z.json");
+      ok("F11 corrupt skip-ledger is quarantined aside preserving bytes", existsSync(qFile) && readFileSync(qFile, "utf8") === "{broken json");
+      const rebuilt = JSON.parse(readFileSync(join(recOut, "skip-ledger.json"), "utf8"));
+      ok("F11 advanceSwitch restarts clean @3 ledger after quarantine", sw.state.phase === "S0" && rebuilt.schema === "anysearch/gain-ledger@3" && rebuilt.actions.length >= 1 && notes.some((n) => n.includes("quarantined")));
+
+      // Lock contention and filesystem errors (non-SkipLedgerError) must NOT quarantine a healthy ledger.
+      const healthyBefore = readFileSync(join(recOut, "skip-ledger.json"), "utf8");
+      let lockErr: unknown = null;
+      try {
+        runWithSkipLedgerRecovery(recOut, () => { throw new LedgerLockTimeoutError(join(recOut, ".skip-ledger.lock"), null, 10); });
+      } catch (e) { lockErr = e; }
+      ok("F11 lock-busy is rethrown without quarantining healthy ledger", lockErr instanceof LedgerLockTimeoutError && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
+
+      let ioErr: unknown = null;
+      try {
+        runWithSkipLedgerRecovery(recOut, () => { throw Object.assign(new Error("permission denied"), { code: "EACCES", errno: -13 }); });
+      } catch (e) { ioErr = e; }
+      ok("F11 filesystem errno is rethrown without quarantining healthy ledger", (ioErr as NodeJS.ErrnoException)?.code === "EACCES" && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
+
+      // Concurrent repair: if another process fixed the file before quarantine acquires the lock,
+      // the healthy ledger is preserved (not moved aside) and fn() is retried once.
+      const raceNotes: string[] = [];
+      let raceCalls = 0;
+      const raceResult = runWithSkipLedgerRecovery(
+        recOut,
+        () => {
+          raceCalls++;
+          if (raceCalls === 1) throw new SkipLedgerError("stale read before peer repaired file");
+          return "repaired-ok";
+        },
+        (m) => raceNotes.push(m),
+        "2026-01-02T03:04:05.012Z",
+      );
+      ok("F11 concurrently repaired healthy ledger is preserved and retried", raceResult === "repaired-ok" && raceCalls === 2 && raceNotes.length === 0 && !existsSync(join(recOut, "skip-ledger.quarantined-2026-01-02T03-04-05-012Z.json")) && readFileSync(join(recOut, "skip-ledger.json"), "utf8") === healthyBefore);
+
+      // Failed quarantine leaves the file in place and does not retry.
+      const failOut = join(recDir, "fail-out");
+      mkdirSync(failOut, { recursive: true });
+      writeFileSync(join(failOut, "skip-ledger.json"), "{still broken", "utf8");
+      mkdirSync(join(failOut, "skip-ledger.quarantined-2026-01-02T03-04-05-011Z.json"));
+      const failNotes: string[] = [];
+      let failCalls = 0;
+      let failErr: unknown = null;
+      try {
+        runWithSkipLedgerRecovery(failOut, () => { failCalls++; throw new SkipLedgerError("bad json"); }, (m) => failNotes.push(m), "2026-01-02T03:04:05.011Z");
+      } catch (e) { failErr = e; }
+      ok("F11 blocked quarantine is not retried and leaves ledger in place", failErr instanceof SkipLedgerError && failCalls === 1 && existsSync(join(failOut, "skip-ledger.json")) && failNotes.some((n) => n.includes("could not be quarantined")));
+    } finally {
+      rmSync(recDir, { recursive: true, force: true });
+    }
   }
 } finally {
   delete process.env.ANS_SWITCH_REG_PATH;
