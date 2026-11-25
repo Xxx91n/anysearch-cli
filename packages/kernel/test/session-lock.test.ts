@@ -28,6 +28,7 @@ import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
 import {
   acquireSessionLock,
   heartbeatIntervalMs,
+  SESSION_BUSY_MARKER,
   SESSION_BUSY_MESSAGE,
   SESSION_LOCKS_DIRNAME,
   SESSION_LOCK_STALE_MS,
@@ -94,7 +95,7 @@ function busyAt(
       return busy.includes("(still running") && busy.includes("no longer belongs to that run");
     case "gone":
       // The marker survives; the "retry after it finishes" tail must not.
-      return busy.startsWith("Session is busy: ")
+      return busy.startsWith(SESSION_BUSY_MARKER)
         && busy.includes("That process is gone")
         && !busy.includes(SESSION_BUSY_MESSAGE);
     case "anonymous":

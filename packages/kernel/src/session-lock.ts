@@ -96,7 +96,7 @@ const HEARTBEAT_MAX_MS = 5_000;
 
 /** The marker every busy answer starts with, so a log filter can find them all
  *  even when the sentence after it has to change. */
-const SESSION_BUSY_MARKER = "Session is busy: ";
+export const SESSION_BUSY_MARKER = "Session is busy: ";
 
 export const SESSION_BUSY_MESSAGE =
   SESSION_BUSY_MARKER + "another run still holds this session (possibly in another process); retry after it finishes.";

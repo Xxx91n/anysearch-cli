@@ -37,6 +37,7 @@ import {
   acquireSessionLock,
   isSessionBusy,
   resolveSessionLockWindows,
+  SESSION_BUSY_MARKER,
   sessionBusyFacts,
   type SessionBusyFacts,
   type SessionLockWindows,
@@ -58,7 +59,7 @@ export class ChatAttemptBusyError extends Error {
     /** Who holds it and whether they are still running; absent when unreadable. */
     readonly facts?: SessionBusyFacts,
   ) {
-    super("Session is busy: another chat attempt holds it; this attempt was not started.");
+    super(SESSION_BUSY_MARKER + "another chat attempt holds it; this attempt was not started.");
     this.name = "ChatAttemptBusyError";
   }
 }
@@ -77,8 +78,11 @@ export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): s
     : undefined;
   const where = "锁在 " + error.leasePath + "。";
   const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
-  if (error.facts?.liveness === "dead") {
-    return head + (who ?? "持有者") + "，但那个进程已经不在了。" + where + "删掉这个目录再试。";
+  if (error.facts?.liveness === "dead" && who) {
+    // Not "running elsewhere": the probe proved that process is gone, and this
+    // is the one branch where the user has to act.
+    return prefix + "这段会话的锁还占着（" + error.sessionId + "）。" + who
+      + "，但那个进程已经不在了。" + where + "删掉这个目录再试。";
   }
   if (error.facts?.liveness === "alive") {
     return head + (who ? who + "。" : "") + "它还在跑，等它跑完再来。" + where
