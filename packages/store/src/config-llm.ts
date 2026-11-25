@@ -181,8 +181,9 @@ function projectDisplayPath(cwd: string, path: string): string {
 }
 
 /**
- * The user file's `~/...` label. This is a path field: paths only. The sole
- * caller passes `userConfigPath(home)`, which is always inside `home`.
+ * The user file's `~/...` label. This is a path field: paths only. `path` must
+ * be inside `home` (as `userConfigPath(home)` is); an outside path would render
+ * as `~/../…`.
  */
 function userDisplayPath(home: string, path: string): string {
   return "~/" + relative(home, path).split(sep).join("/");
