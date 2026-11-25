@@ -17,10 +17,6 @@ if (!decision || !RESOLUTIONS.includes(decision)) {
   console.error("usage: gain-warn-resolve --decision " + RESOLUTIONS.join("|") + " [--note ...] [--ledger path]");
   process.exit(2);
 }
-// Guard: a file that exists but cannot be read as a recognized ledger must
-// never be silently replaced with an empty @1 ledger (that would destroy the
-// @3 evidence the lock exists to protect). Fail loud instead — matches the
-// skip-ledger.ts rule of quarantining unreadable files rather than clearing them.
 const RECOGNIZED = [GAIN_LEDGER_SCHEMA, GAIN_LEDGER_SCHEMA_V2, GAIN_LEDGER_SCHEMA_V3];
 function readLedgerOrFail(file) {
   const raw = fs.readFileSync(file, "utf8");
@@ -35,10 +31,8 @@ function readLedgerOrFail(file) {
     console.error("[gain-warn-resolve] " + file + " has unrecognized schema " + String(j && j.schema) + " — refusing to overwrite evidence; aborting.");
     process.exit(1);
   }
-  // 结构校验：recognized schema 但 shape 损坏（consecutiveWarn 不是数字、
-  // history 不是数组）时，readGainLedger 会把它“修复”为空 @1 并返回，
-  // 随后被不加锁的 commit() 整份覆盖掉原 @2/@3 账本——正是本次要堵的洞。
-  // 在这里直接拒绝，不写、不覆盖。
+  // recognized schema but broken shape: refuse instead of letting readGainLedger
+  // repair it into an empty @1 and get clobbered.
   if (typeof j.consecutiveWarn !== "number" || !Array.isArray(j.history)) {
     console.error("[gain-warn-resolve] " + file + " has malformed ledger shape — refusing to overwrite evidence; aborting.");
     process.exit(1);
