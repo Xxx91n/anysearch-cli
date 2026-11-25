@@ -153,6 +153,14 @@
   旧规则会在持锁进程还活着的时候按年龄把锁删掉，让两个写入者同时改同一份账本。
   另外，没有硬链接的文件系统（部分网络盘）会退回「先建文件再写内容」，崩在中间会短暂
   留下一个没有身份的锁，只能按 mtime 熬到 5 分钟才被回收；有硬链接时不存在这个窗口。
+- **eval 路径只出 E3 观测报告，不再跑 D7 三连击门禁 (#591)** — golden 评测每个用例都跑在
+  即用即删的临时库上，消费轨天然缺数据（`dataAbsent` 恒为 `true`），且另有四项离线固定
+  跳过字段，3 连击在这条路上结构上不可达。因此 `packages/store/src/eval/cli.ts` 和
+  `scripts/ship-gate.mjs`（`stepMemoryEval`）已移除 eval 侧的 skip 3 连击记账与挂红分支；
+  E3 观测区字段完整性检查照常保留，`skip-ledger.json`（`@3`）继续由 `switch-run`
+  （`advanceSwitch` / `readConsumedReadings`）针对持久库读写 `state` / `actions` 并承担真实
+  消费轨的 PSI 与人工复核升级；`scripts/ship-gate.mjs` 的 `stepAccessChainVerify` 链校验
+  三连击门禁不受影响。
 - **装了包能跑通，但没证明模型判断得好不好 (#267)** — `scripts/installed-acceptance.mjs`
   跑的是真正 npm 装出来的产品：启动装好的 MCP、跑一轮 `ans_chat` 再续一轮、
   整理选定的材料、查内部搜索写进去的行能不能被别的会话召回、打开一个旧库。

@@ -1,6 +1,6 @@
 // impl plan step 7 +: gate contract self-check (integer allowance + WARN band).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -83,20 +83,43 @@ try {
   // had bypassed the schema-application path).
   const durableDb = join(outDir, "durable.db");
   new SqliteSessionStore(durableDb).close();
+  // #591: pre-seed a @3 skip-ledger with consecutiveWarn=3 so we verify eval CLI no longer
+  // escalates or mutates skip streak/history, while advanceSwitch() still writes state/actions.
+  const seedLedgerPath = join(outDir, "skip-ledger.json");
+  writeFileSync(seedLedgerPath, JSON.stringify({
+    schema: "anysearch/gain-ledger@3",
+    consecutiveWarn: 3,
+    history: [{ at: "2026-01-01T00:00:00.000Z", tier: "warn", look: "seeded", track: "consumed", reasonCode: "gate-not-met" }],
+    resolutions: [],
+    lastSkipKeys: ["seeded"],
+    state: { phase: "S0", since: null, transitionId: null, evidenceHash: null },
+    actions: [],
+    revision: 1,
+  }, null, 2) + "\n", "utf8");
   const run = spawnSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir, "--offline"], { cwd: join(__dirname, ".."), encoding: "utf8", env: { ...process.env, ANS_EVAL_NO_LOOK: "1", ANS_DB_PATH: durableDb } });
   if (run.status !== 0) {
     failed++; console.error("FAIL: CLI exited " + run.status + ": " + String(run.stderr).slice(0, 300));
   } else {
-  assert(!String(run.stderr).includes("no such table"), "eval CLI switch step does not hit no-such-table (schema-application path reused)");
+  const stderr = String(run.stderr);
+  assert(!stderr.includes("no such table"), "eval CLI switch step does not hit no-such-table (schema-application path reused)");
+  assert(!stderr.includes("OBSERVATIONAL skip streak") && !stderr.includes("gain-warn-resolve"), "#591: eval CLI does not emit D7 skip streak escalation or gain-warn-resolve hint");
   assert(existsSync(join(outDir, "eval-report.json")), "CLI writes eval-report.json");
   assert(existsSync(join(outDir, "eval-report.md")), "CLI writes eval-report.md");
   const rep = JSON.parse(readFileSync(join(outDir, "eval-report.json"), "utf8"));
   assert(rep.gate.exitCode === 0, "CLI gate exit 0 embedded");
   assert(typeof rep.datasetFingerprint === "string" && rep.datasetFingerprint.length === 16, "report carries fingerprint");
+  assert(!("skipLedger" in rep), "#591: eval report omits retired skipLedger disclosure field");
+  const ob = rep.metrics?.observational;
+  const e3Keys = ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures", "armDeltas", "maxLexicalOverlap", "exclusiveHits", "nativeScoresMissing"];
+  assert(ob && ob.schema === "anysearch/observational@1" && e3Keys.every((k) => k in ob), "#591: E3 observational zone stays complete in eval-report.json");
+  const afterLedger = JSON.parse(readFileSync(seedLedgerPath, "utf8"));
+  assert(afterLedger.schema === "anysearch/gain-ledger@3" && afterLedger.state?.phase === "S0" && Array.isArray(afterLedger.actions) && afterLedger.actions.length >= 1, "#591: advanceSwitch() still writes @3 state/actions to skip-ledger.json");
+  assert(afterLedger.consecutiveWarn === 3 && Array.isArray(afterLedger.history) && afterLedger.history.length === 1, "#591: eval CLI does not mutate skip streak or history in skip-ledger.json");
   const md = readFileSync(join(outDir, "eval-report.md"), "utf8");
   assert(md.includes("Stage attribution") && md.includes("fingerprint"), "md has stage attribution + fingerprint");
   assert(md.includes("Statistical power") && md.includes("Wilson95") && md.includes("family size"), "md has power block (MDE/Wilson/family)");
   assert(md.includes("Difficulty tiers"), "md has difficulty tier breakdown");
+  assert(!md.includes("OBSERVATIONAL skip-ledger"), "#591: eval-report.md omits retired observational skip-ledger notes");
   }
 } finally {
   try { rmSync(outDir, { recursive: true, force: true }); } catch {}
@@ -134,6 +157,15 @@ try {
 // ship-gate wiring: the memory-eval step must exist (dropped step = dropped gate).
 const sg = readFileSync(join(__dirname, "..", "..", "..", "scripts", "ship-gate.mjs"), "utf8");
 assert(sg.includes("stepMemoryEval") && sg.includes("memory eval"), "ship-gate wires stepMemoryEval");
+// #591: step 7 retires D7 observational skip-streak failure while keeping E3 presence check,
+// switch-state readout, and step 1 access-chain skip-ledger escalation.
+const step7Start = sg.indexOf("function stepMemoryEval");
+const step7Src = step7Start >= 0 ? sg.slice(step7Start) : "";
+assert(step7Start >= 0 && !step7Src.includes("observational explicit-skip streak") && !step7Src.includes("sl.consecutiveWarn >= 3"), "#591: ship-gate step 7 retires observational skip-streak fail branch");
+assert(step7Src.includes("anysearch/observational@1") && step7Src.includes("switch-state:"), "#591: ship-gate step 7 keeps E3 check and switch-state readout");
+assert(sg.includes("access-chain-skip-ledger.json") && sg.includes("access-chain verify skip streak"), "#591: ship-gate step 1 access-chain 3-streak gate remains intact");
+const evalCliSrc = readFileSync(join(__dirname, "..", "src", "eval", "cli.ts"), "utf8");
+assert(!evalCliSrc.includes("recordSkips") && !evalCliSrc.includes("skipMustFail") && !evalCliSrc.includes("OBSERVATIONAL skip streak"), "#591: eval cli.ts removes retired D7 skip-streak accounting");
 // task-parity gate wired at step 1.
 assert(sg.includes("task-parity"), "ship-gate wires task parity check");
 

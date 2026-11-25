@@ -7,6 +7,10 @@
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
+// (#591): D7 3-streak escalation is retired on the eval CLI path because golden eval runs on
+// ephemeral per-case DBs (consumed track is structurally data-absent). This module's @3 schema,
+// lock, and atomic write remain active for switch-run / ans switch-state; legacy skip-streak
+// helpers and fields are preserved for backward-compatible parsing and unit contracts.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LedgerLockTimeoutError, withLedgerLock } from "./ledger-lock";
