@@ -72,14 +72,13 @@ export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): s
   const holder = error.facts?.holder;
   const who = holder
     ? "持有者 pid " + holder.pid + "（主机 " + holder.host
-      + (holder.startedAt === undefined ? "" : "，" + new Date(holder.startedAt).toISOString() + " 启动")
+      + (holder.lockedAt === undefined ? "" : "，锁建于 " + new Date(holder.lockedAt).toISOString())
       + "）"
     : undefined;
   const where = "锁在 " + error.leasePath + "。";
   const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
   if (error.facts?.liveness === "dead") {
-    return prefix + "这段会话的锁还占着（" + error.sessionId + "）。"
-      + (who ? who + "，但那个进程已经不在了。" : "持有它的进程已经不在了。")
+    return head + (who ? who + "，但那个进程已经不在了。" : "持有它的进程已经不在了。")
       + where + "删掉这个目录再试。";
   }
   if (error.facts?.liveness === "alive") {

@@ -444,6 +444,23 @@ async function main() {
       }
     }
 
+    // ---------- L12: an unprintable lock time costs the message, not the answer ----------
+    {
+      // A hand-edited owner.json can hold any number. Formatting it must not
+      // turn "session busy" into a RangeError the caller cannot recognise.
+      const lockDir = join(workDir, "l12", "s.lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(ownerFile(lockDir),
+        JSON.stringify({ pid: process.pid, host: hostname(), lockedAt: 1e300 }));
+      writeFileSync(heartbeatFile(lockDir), String(Date.now()));
+      const busy = await expectBusy(lockDir, 1_000, 300);
+      assert(busyAt(busy, lockDir, "alive"),
+        "L12: an out-of-range lock time still answers session busy (got " + JSON.stringify(busy) + ")");
+      assert(busy !== undefined && !busy.includes("lock taken at"),
+        "L12: an out-of-range lock time is left out of the message");
+      rmSync(lockDir, { recursive: true, force: true });
+    }
+
     // ---------- W1: the runtime holds the lock for the whole run ----------
     {
       const piDir = join(workDir, "w1-pi");

@@ -100,15 +100,15 @@ export const SESSION_BUSY_MESSAGE =
 /** Who holds the lock, and what the probe said about it. Best effort: an
  *  identity that is missing or unreadable is simply not described. */
 export interface SessionBusyFacts {
-  holder?: { pid: number; host: string; startedAt?: number };
+  holder?: SessionLockHolder;
   /** Only a same-host holder can be probed; absent means nobody to ask. */
   liveness?: PidLiveness;
 }
 
 function readSessionBusyFacts(lockPath: string): SessionBusyFacts {
-  let holder: LockOwner | undefined;
+  let holder: SessionLockHolder | undefined;
   try {
-    holder = readLockOwner(lockPath);
+    holder = readSessionLockHolder(lockPath);
   } catch {
     return {};
   }
@@ -145,13 +145,13 @@ function lockBusyMessage(lockPath: string, facts: SessionBusyFacts): string {
   return SESSION_BUSY_MESSAGE + holder + " Lock: " + lockPath + "." + advice;
 }
 
-/** What the holder line adds: whether it is still running, and since when. The
- *  start time is what lets a person tell a live holder from a recycled pid. */
+/** What the holder line adds: whether it is still running, and when the lock
+ *  was taken. */
 function holderNote(facts: SessionBusyFacts): string {
-  const startedAt = facts.holder?.startedAt;
+  const lockedAt = facts.holder?.lockedAt;
   const notes = [
     facts.liveness === "alive" ? "still running" : "",
-    startedAt === undefined ? "" : "started " + new Date(startedAt).toISOString(),
+    lockedAt === undefined ? "" : "lock taken at " + new Date(lockedAt).toISOString(),
   ].filter(Boolean);
   return notes.length > 0 ? " (" + notes.join(", ") + ")" : "";
 }
@@ -197,13 +197,15 @@ export function heartbeatIntervalMs(staleMs: number): number {
   return Math.min(HEARTBEAT_MAX_MS, Math.max(HEARTBEAT_MIN_MS, Math.floor(staleMs / 3)));
 }
 
-// The fields a rule reads, plus the start time the busy message shows: a person
-// comparing it with the run they remember is how a recycled pid is told apart
-// from a live holder. No reclaim decision reads it.
-interface LockOwner {
+/**
+ * Who a lock names. `lockedAt` is when the lock was taken — not when the
+ * process started — and only the busy message reads it. No reclaim decision
+ * uses it.
+ */
+export interface SessionLockHolder {
   pid: number;
   host: string;
-  startedAt?: number;
+  lockedAt?: number;
 }
 
 const OWNER_FILE = "owner.json";
@@ -238,7 +240,7 @@ class LockHeldError extends Error {
  */
 class UnreadableOwnerError extends Error {}
 
-function readLockOwner(lockPath: string): LockOwner | undefined {
+function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined {
   let text: string;
   try {
     text = readFileSync(join(lockPath, OWNER_FILE), "utf8");
@@ -247,23 +249,33 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
     throw new UnreadableOwnerError("owner.json exists but cannot be read");
   }
   try {
-    const raw = JSON.parse(text) as Partial<LockOwner>;
+    // `startedAt` is the field's older name, still present in locks written
+    // before the rename.
+    const raw = JSON.parse(text) as Partial<SessionLockHolder> & { startedAt?: unknown };
     if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
       throw new UnreadableOwnerError("owner.json has no usable identity");
     }
     // Best effort, unlike the identity above: a lock written before this field
-    // existed still names its holder, so a missing or unusable start time only
-    // costs the message that one detail.
-    const startedAt = typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt)
-      ? raw.startedAt
-      : undefined;
-    return startedAt === undefined
+    // existed still names its holder, so a missing or unusable time only costs
+    // the message that one detail. `startedAt` is the older name for it.
+    const lockedAt = readableTime(raw.lockedAt) ?? readableTime(raw.startedAt);
+    return lockedAt === undefined
       ? { pid: raw.pid as number, host: raw.host }
-      : { pid: raw.pid as number, host: raw.host, startedAt };
+      : { pid: raw.pid as number, host: raw.host, lockedAt };
   } catch (e) {
     if (e instanceof UnreadableOwnerError) throw e;
     throw new UnreadableOwnerError("owner.json is not valid JSON");
   }
+}
+
+/**
+ * A timestamp the message can print, or undefined. The range check is not
+ * pedantry: `new Date(1e300).toISOString()` throws, and that would turn a
+ * "session busy" answer into an unreadable crash on the way out.
+ */
+function readableTime(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return undefined;
+  return Number.isFinite(new Date(value).getTime()) ? value : undefined;
 }
 
 /** Age of the freshest evidence in the lock: heartbeat mtime, else dir mtime. */
@@ -292,9 +304,9 @@ function lockAgeMs(lockPath: string, now: number): number {
  * this branch keeps.
  */
 function reclaimableNow(lockPath: string, staleMs: number): boolean {
-  let owner: LockOwner | undefined;
+  let owner: SessionLockHolder | undefined;
   try {
-    owner = readLockOwner(lockPath);
+    owner = readSessionLockHolder(lockPath);
   } catch {
     return lockAgeMs(lockPath, Date.now()) > staleMs;
   }
@@ -386,7 +398,7 @@ function publishOwnership(lockPath: string, staleMs: number): () => void {
     writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify({
       pid: process.pid,
       host: hostname(),
-      startedAt: Date.now(),
+      lockedAt: Date.now(),
     }));
   } catch (e) {
     // ENOENT here means the directory we created is already gone — another
@@ -512,6 +524,6 @@ export async function acquireSessionLock(
 // the lock alone — because neither can prove ownership and guessing either way
 // is unsafe.
 function ownsLockDir(lockPath: string): boolean {
-  const owner = readLockOwner(lockPath);
+  const owner = readSessionLockHolder(lockPath);
   return owner !== undefined && owner.pid === process.pid && owner.host === hostname();
 }

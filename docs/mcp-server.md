@@ -461,7 +461,7 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   window governs the owners this machine cannot confirm — another host, a
   missing identity, or a pid the probe cannot classify — judging them on
   the heartbeat alone. A busy answer names the lock directory, the holder's
-  pid, host and start time when the lock records them, and the one way out —
+  pid and host, when the lock was taken, and the one way out —
   worded for what the probe found: a confirmed-alive holder is told to clear
   the lock only if its pid was recycled (the start time is what lets a person
   tell), a confirmed-dead one is told to delete it, and a lock with no
