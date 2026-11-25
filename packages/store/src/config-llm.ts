@@ -466,9 +466,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         resolved.apiKey = lookup.apiKey;
         resolved.sources.apiKey = "credentials";
       } else if (lookup.status === "endpoint-mismatch" && resolved.provider) {
-        // Narrowing, not a runtime check: `lookupModelCredential` returns "absent"
-        // without a provider, so a mismatch already implies one. The guard is here
-        // only so the command can be built from a typed string.
+        // The guard narrows the type; a mismatch already implies a provider.
         // Name every stored endpoint. Reporting one (whichever the file sorted
         // first) would send the user to fix the wrong binding.
         const storedList = lookup.stored.length > 0
@@ -479,7 +477,8 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
           storedList + " but the effective endpoint is " +
           displayEndpoint(normalizeBindingEndpoint(resolved.baseUrl)) +
           " — refusing to send that secret to a different endpoint; run `" +
-          storeKeyCommand(resolved.provider) + "` for this endpoint (see `ans auth list` for what is stored)",
+          storeKeyCommand(resolved.provider, normalizeBindingEndpoint(resolved.baseUrl)) +
+          "` for this endpoint (see `ans auth list` for what is stored)",
         );
       }
     }

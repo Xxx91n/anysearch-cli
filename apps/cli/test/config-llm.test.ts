@@ -445,6 +445,19 @@ test("a user-file base_url bound env_key is refused when another layer moves the
   assert.ok(f.warnings.some((w) => w.includes("refusing to send that secret to a different endpoint")));
 });
 
+test("endpoint 冲突的告警连 --endpoint 一起给，照着跑不会回到同一句（#573）", () => {
+  // A binding is (provider, endpoint). Advice that omits --endpoint stores the key
+  // against the provider default, and the next run prints this very warning.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: { ANS_LLM_BASE_URL: "https://b.example/v1" } }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /ans auth set openai --endpoint https:\/\/b\.example\/v1/, warning);
+});
+
 test("an unset env_key falls through to the stored key instead of stopping", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "NOT_EXPORTED"\n',

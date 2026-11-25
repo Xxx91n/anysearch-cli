@@ -56,11 +56,15 @@ export const STORE_KEY_COMMAND = "ans auth set <provider>";
 export const REMOVE_KEY_COMMAND = "ans auth remove <provider>";
 
 /** The same command named for one provider, for a message about that provider:
- * `ans auth set openai`. Built from the constant, so a rename reaches both. */
-export function storeKeyCommand(provider: string): string {
+ * `ans auth set openai`. Built from the constant, so a rename reaches both. With
+ * an endpoint, the flag comes along: a binding is (provider, endpoint), so advice
+ * about a mismatched endpoint that omits `--endpoint` sends the user back to the
+ * default endpoint and to the same warning. */
+export function storeKeyCommand(provider: string, endpoint?: string | null): string {
   // A function replacement, not a string one: `$&`/`$1` in a provider read from
   // the config file would otherwise be expanded instead of printed.
-  return STORE_KEY_COMMAND.replace("<provider>", () => provider);
+  const command = STORE_KEY_COMMAND.replace("<provider>", () => provider);
+  return endpoint ? command + " --endpoint " + endpoint : command;
 }
 export const FIX_OR_REPLACE = "fix or remove the file";
 export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can still read";
