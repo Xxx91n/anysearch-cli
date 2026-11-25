@@ -46,6 +46,25 @@ import type { CredentialFileContents, CredentialFileFault } from "./credentials"
 /** `credentials` = the user credential file (#301); every other layer is a config source. */
 export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
 
+/** The layers that can supply a base URL. The project file may only set provider
+ * and model, so it is not one of them. */
+export type BaseUrlLayer = "cli" | "env" | "user";
+
+/** The winning base URL and the layer it came from: both, or neither. */
+type PickedBaseUrl =
+  | { value: string; layer: BaseUrlLayer }
+  | { value?: undefined; layer?: undefined };
+
+/** Where each resolved field came from. `baseUrl` is narrower than the rest:
+ * no project file can set one. */
+export interface LlmSources {
+  provider?: LlmLayer;
+  model?: LlmLayer;
+  baseUrl?: BaseUrlLayer;
+  api?: LlmLayer;
+  apiKey?: LlmLayer;
+}
+
 /**
  * How to name each layer in plain words, for any command that shows where a
  * value came from. It lives next to `LlmLayer` because the labels ARE that
@@ -94,7 +113,7 @@ export interface ResolvedLlmConfig {
   /** The env var name the file asked the key to come from, if any. */
   envKey?: string;
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
-  sources: Partial<Record<"provider" | "model" | "baseUrl" | "api" | "apiKey", LlmLayer>>;
+  sources: LlmSources;
   /** A user-level config file existed but could not be read or parsed. Never carries file contents. */
   configFault?: LlmConfigFaultKind;
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
@@ -292,10 +311,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
 
   const resolved: ResolvedLlmConfig = { sources: {} };
   if (userFile.fault) resolved.configFault = userFile.fault;
-  const pick = (
-    field: "provider" | "model" | "base_url" | "api",
-    outKey: "provider" | "model" | "baseUrl" | "api",
-  ) => {
+  const pick = (field: "provider" | "model" | "api", outKey: "provider" | "model" | "api") => {
     for (const [layer, cfg] of [
       ["cli", cliLayer],
       ["env", envLayer],
@@ -314,7 +330,6 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       if (v) {
         if (outKey === "provider") resolved.provider = v;
         else if (outKey === "model") resolved.model = v;
-        else if (outKey === "baseUrl") resolved.baseUrl = v;
         else resolved.api = v as ResolvedLlmConfig["api"];
         resolved.sources[outKey] = layer;
         return;
@@ -323,8 +338,23 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   };
   pick("provider", "provider");
   pick("model", "model");
-  pick("base_url", "baseUrl");
   pick("api", "api");
+
+  // Design: base_url is picked on its own so the layer travels with the value.
+  // A project file may only set provider and model, so it is not a base-URL
+  // layer at all; keeping it out here is what lets the advice below name where
+  // an unprintable URL lives instead of guessing.
+  let baseUrlPick: PickedBaseUrl = {};
+  for (const [layer, cfg] of [["cli", cliLayer], ["env", envLayer], ["user", user]] as const) {
+    if (cfg.base_url) {
+      baseUrlPick = { value: cfg.base_url, layer };
+      break;
+    }
+  }
+  if (baseUrlPick.value !== undefined) {
+    resolved.baseUrl = baseUrlPick.value;
+    resolved.sources.baseUrl = baseUrlPick.layer;
+  }
 
   // baseUrl is a no-op without a wire protocol: warn here so every caller
   // sees the failure mode instead of each re-checking baseUrl && !api.
@@ -478,7 +508,7 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " + displayEndpoint(effective) +
           " — refusing to send that secret to a different endpoint; " +
-          bindingAdvice(resolved.provider, effective, baseUrlLayer(resolved.sources.baseUrl)) +
+          bindingAdvice(resolved.provider, effective, baseUrlPick) +
           " (see `ans auth list` for what is stored)",
         );
       }
@@ -488,28 +518,28 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   return resolved;
 }
 
-/** Where a base URL can be read back in full. The project file is not one of them:
- * it may only set provider and model, so it never carries a base URL. */
-type BaseUrlLayer = "cli" | "env" | "user";
+/** Where a base URL can be read back in full, for the sentence that tells a user
+ * to go and copy it. */
 const BASE_URL_SOURCE: Record<BaseUrlLayer, string> = {
   cli: "--llm.base-url",
   env: "ANS_LLM_BASE_URL",
   user: "the user config file",
 };
 
-/** The layers a base URL can come from, so the advice never guesses one. */
-function baseUrlLayer(source?: LlmLayer): BaseUrlLayer | undefined {
-  return source === "cli" || source === "env" || source === "user" ? source : undefined;
-}
-
 /** 地址能安全打印就给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
- * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。 */
-function bindingAdvice(provider: string, effective: string | null, source?: BaseUrlLayer): string {
-  if (effective === null) return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
-  if (isPrintableEndpoint(effective)) return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  const where = source === undefined ? undefined : BASE_URL_SOURCE[source];
-  return "re-store it for that endpoint: " +
-    (where === undefined ? "take the full address from your config" : "the full address is in " + where) +
+ * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。
+ *
+ * Design: the pick is passed whole so an unprintable URL always names the layer
+ * it came from. `effective` is null exactly when no usable base URL was set,
+ * which is also when the pick carries no value — there is nothing to name. */
+function bindingAdvice(provider: string, effective: string | null, baseUrl: PickedBaseUrl): string {
+  if (effective === null || baseUrl.value === undefined) {
+    return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
+  }
+  if (isPrintableEndpoint(effective)) {
+    return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
+  }
+  return "re-store it for that endpoint: the full address is in " + BASE_URL_SOURCE[baseUrl.layer] +
     ". It cannot be printed here (redacted, too long, or contains control characters). Run `" +
     storeKeyCommand(provider) + " --endpoint <that address>`, replacing the angle-bracket part";
 }

@@ -483,6 +483,36 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   assert.doesNotMatch(warning, /user:pw@gw/, "the secret never printed：" + warning);
 });
 
+test("不打印那一档说清完整地址在用户配置文件里（#573 审查）", () => {
+  // The three labels of BASE_URL_SOURCE are user-facing sentences; only the env
+  // one was pinned. A base URL from the user file must name that file.
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://user:pw@gw.example/v1?key=secret"\n',
+  });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: {} }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /the full address is in the user config file/, warning);
+  assert.doesNotMatch(warning, /user:pw@gw/, warning);
+});
+
+test("不打印那一档说清完整地址在 --llm.base-url 上（#573 审查）", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({
+    env: {},
+    flags: { baseUrl: "https://user:pw@gw.example/v1?key=secret" },
+  }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /the full address is in --llm\.base-url/, warning);
+});
+
 test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {
   // Nothing to bind to: the fix is `ans auth set openai`, and a placeholder flag
   // would be stored verbatim as an endpoint.
