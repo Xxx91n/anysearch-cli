@@ -44,7 +44,7 @@ const help = [
   "  doctor    分层诊断：安装 / 能力 / 宿主 / 数据，逐条说清可用、未配置、未检查、失败",
   "            options: --json（结构化输出）· --strict（没失败但有未检查时退 5）",
   "  auth      Provider API keys: status, store one once, or drop a record it cannot read",
-  "            " + STORE_KEY_COMMAND + " · " + REPAIR_COMMAND + " keeps the records it can still read",
+  "            " + STORE_KEY_COMMAND + " stores one · " + REPAIR_COMMAND + " keeps the records it can still read",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",

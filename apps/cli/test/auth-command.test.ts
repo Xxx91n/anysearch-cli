@@ -118,7 +118,13 @@ test("ans auth list 打印文件里的 provider 时也过一遍清洗，控制�
     await withoutCredentialEnv(home, async () => {
       const esc = String.fromCharCode(27);
       const nasty = "exa" + esc + "[2K" + "x".repeat(200);
-      writeCredentials(home, JSON.stringify({ bindings: [{ provider: nasty, apiKey: KEY }] }));
+      const nastyEndpoint = "https://exa-mirror.ai/" + esc + "[2K" + "y".repeat(300);
+      writeCredentials(home, JSON.stringify({
+        bindings: [
+          { provider: nasty, apiKey: KEY },
+          { provider: "tavily", apiKey: KEY, endpoint: nastyEndpoint },
+        ],
+      }));
 
       const { code, out } = await capture(() => runAuth(["list"]));
       assert.equal(code, 0, out);
@@ -126,8 +132,12 @@ test("ans auth list 打印文件里的 provider 时也过一遍清洗，控制�
       const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(9) +
         String.fromCharCode(11) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
       assert.ok(!control.test(out), "no control characters reached the terminal：" + JSON.stringify(out));
-      const line = out.split("\n").find((l) => l.includes("exa")) ?? "";
-      assert.ok(line.length <= 60, "the label is bounded：" + JSON.stringify(line));
+      const line = out.split("\n").find((l) => l.includes("xxxx")) ?? "";
+      assert.ok(!line.includes("x".repeat(60)), "the label is cut, not printed whole：" + JSON.stringify(line));
+      assert.ok(line.length <= 120, "the label is bounded：" + JSON.stringify(line));
+      // The endpoint comes out of the same file, so it takes the same cleaning.
+      const endpointLine = out.split("\n").find((l) => l.includes("exa-mirror.ai")) ?? "";
+      assert.ok(endpointLine.length <= 260, "the endpoint is bounded：" + JSON.stringify(endpointLine));
     });
   } finally {
     cleanup();
@@ -404,7 +414,7 @@ test("ans auth remove 在坏文件上说一次修法就停，不动文件（#537
       assert.equal((out.match(/fix or remove/gi) ?? []).length, 1, "同一句只出现一次：" + out);
       // The store's own sentence carries the way out; the command adds the outcome
       // once and never a second wording of the same advice.
-      assert.match(out, /removing it now would rebuild the file and drop the record it cannot read/, out);
+      assert.match(out, /removing it now would replace the file with only the records it could read/, out);
       assert.match(out, /ans auth repair/, "the way out is named where the user reads it：" + out);
       assert.equal((out.match(/Nothing was changed/g) ?? []).length, 1, "文件没动只说一次：" + out);
       assert.equal(readFileSync(path, "utf8"), MIXED_FILE, "nothing was removed");

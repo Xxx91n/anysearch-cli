@@ -18,6 +18,7 @@ import {
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
+  RECORD_PROBLEM_DETAILS,
   resolvePolicyFromSchema,
   resolveSearchCredentials,
   type ResolvedSearchCredentials,
@@ -144,10 +145,14 @@ function buildProviders(
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
-/** The four details `parseBinding` reports for one record, matched on one line; a
- * file path never carries them. The label in between may hold parentheses itself
- * (`acme (work)`), so it is skipped rather than pattern-matched. */
-const RECORD_PROBLEM = /\bentry \d+[^\n]*?(is not an object|has no provider|has no apiKey|has a non-string endpoint)/i;
+/** Built from store's own wording, so a rewording there cannot leave this
+ * matching nothing; the label in between may hold parentheses (`acme (work)`),
+ * so it is skipped rather than pattern-matched, and a file path never carries a
+ * validation detail. */
+const RECORD_PROBLEM = new RegExp(
+  "\\bentry \\d+[^\\n]*?(" + Object.values(RECORD_PROBLEM_DETAILS).join("|") + ")",
+  "i",
+);
 
 /**
  * Turn a credential-resolution failure into a sentence safe to show. Only a
@@ -164,16 +169,13 @@ function classifyCredentialFault(error: unknown): string {
   // a permissions problem would destroy the user's other keys for nothing.
   const permission = code === "EACCES" || code === "EPERM" || code === "EROFS";
 
-  // A record inside a readable file is the one fault `ans auth repair` fixes. It
-  // is reported with the published notice's own sentence, so the MCP side keeps
-  // the repair half instead of flattening it into "fix or remove it".
-  //
-  // Anchored on the validation detail, not on "entry N" alone: a path such as
-  // `/config/entry 2/credentials.json` carries that shape too, and a timeout or a
-  // held lock on that path is not a broken record - repair cannot fix either.
+  // A record inside a readable file is the one fault `ans auth repair` fixes, so
+  // it gets the published notice's own sentence instead of the flat one below.
   if (!permission && RECORD_PROBLEM.test(raw)) return credentialFileNotice({ kind: "invalid-record" }).notice;
 
-  if (/not valid JSON|missing the "bindings" list|is not an object|has no provider|has no apiKey|non-string endpoint/i.test(raw)) {
+  // File-level faults only: every record detail is matched above, so repeating
+  // those phrases here would leave two patterns competing for one message.
+  if (/not valid JSON|missing the "bindings" list/i.test(raw)) {
     return permission
       ? "the user credential file could not be read (" + code + "); check its permissions"
       : "the user credential file is not readable as stored keys; fix or remove it, then retry";

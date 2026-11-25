@@ -69,6 +69,10 @@ test("ans llm / ans llm check：坏凭据文件只说一句", async () => {
       const faultLines = out.split("\n").filter((line) => line.includes("not valid JSON"));
       assert.equal(faultLines.length, 1, "args " + JSON.stringify(args) + " 只能说一次：\n" + out);
       assert.match(faultLines[0]!, /Credentials file: BROKEN/);
+      // The file is broken, so whether a provider has a key is unknown - "NO KEY"
+      // is the same lie `ans auth` stopped telling (#537).
+      assert.doesNotMatch(out, /NO KEY/, "坏文件时不能报没配：\n" + out);
+      assert.match(out, /BROKEN \(the credential file could not be read\)/, out);
     }
 
     // A healthy file still exits 0: the failure above comes from the file, not

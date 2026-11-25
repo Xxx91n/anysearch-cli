@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CREDENTIAL_FILE_FAULT_ERRNOS,
+  RECORD_PROBLEM_DETAILS,
   CREDENTIAL_PROVIDERS,
   credentialProtectionSeam,
   displayEndpoint,
@@ -732,7 +733,7 @@ test("removeUserCredential refuses a broken file without repeating the read's ad
     assert.equal((message.match(/fix or remove/gi) ?? []).length, 1, "同一句只说一次：" + message);
     // The tail says why the write was refused, not that the file did not change:
     // the caller gets that from `published`, and the CLI prints it once (#550).
-    assert.match(message, /removing it now would rebuild the file and drop the record it cannot read/);
+    assert.match(message, /removing it now would replace the file with only the records it could read/);
     assert.doesNotMatch(message, /would drop the other keys/, "repair keeps the readable keys：" + message);
     assert.doesNotMatch(message, /the file was not changed/);
     assert.match(readFileSync(path, "utf8"), /good-key/, "the other key survives");
@@ -745,6 +746,40 @@ test("每一种 errno 说自己那一条修法，只读挂载不是权限问题�
   assert.equal(readFaultRemedy("EROFS"), "move the file to a writable disk");
   assert.equal(readFaultRemedy("EACCES"), "fix its permissions");
   assert.match(readFaultRemedy("ELOOP"), /check the file and the folder it lives in/);
+});
+
+test("每条记录细节都由 parseBinding 产出，kernel 的分类靠的就是这份措辞（#569 审查）", () => {
+  // The classifier matches store's wording, so the two have to be the same
+  // strings: exporting them is only half the guard, and this is the other half.
+  const { home, cleanup } = tempRoot();
+  try {
+    const path = userCredentialsPath(home);
+    mkdirSync(join(home, ".ans"), { recursive: true });
+    const cases: Array<[unknown[], keyof typeof RECORD_PROBLEM_DETAILS]> = [
+      [["not-an-object"], "notAnObject"],
+      [[{ apiKey: "k" }], "noProvider"],
+      [[{ provider: "exa" }], "noApiKey"],
+      [[{ provider: "exa", apiKey: "k", endpoint: 5 }], "nonStringEndpoint"],
+    ];
+    for (const [bindings, key] of cases) {
+      writeFileSync(path, JSON.stringify({ bindings }), "utf8");
+      const file = readUserCredentials({ home });
+      assert.ok(
+        file.error?.includes(RECORD_PROBLEM_DETAILS[key]),
+        key + " should be what the read reports: " + file.error,
+      );
+    }
+  } finally { cleanup(); }
+});
+
+test("endpoint 的展示形式也去控制字符、限长度（#569 审查）", () => {
+  const esc = String.fromCharCode(27);
+  const shown = displayEndpoint("https://exa.ai/" + esc + "[2K" + "y".repeat(400));
+  const control = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]");
+  assert.ok(!control.test(shown), "no control characters: " + JSON.stringify(shown));
+  assert.ok(shown.length <= 201, "bounded, got " + shown.length + ": " + shown);
+  // A value that needs no cleaning is printed whole.
+  assert.equal(displayEndpoint("https://api.example.com/v1"), "https://api.example.com/v1");
 });
 
 test("a provider value read out of the file is shown without control characters and bounded (#537)", () => {

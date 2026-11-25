@@ -8,7 +8,7 @@
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).
 
 import { PROVIDER_FACTORIES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
-import { modelEnvKeysFor } from "@anysearch-cli/store";
+import { modelEnvKeysFor, STORE_KEY_COMMAND } from "@anysearch-cli/store";
 import {
   type CredentialFileContents,
   displayEndpoint,
@@ -75,6 +75,7 @@ export async function runLlm(args: string[]): Promise<number> {
       let label: string;
       if (envName || effective) label = "AUTH";
       else if (stored.length > 0) label = "NO KEY (stored, not in effect)";
+      else if (credentialFile.error) label = "BROKEN (the credential file could not be read)";
       else label = "NO KEY";
       console.log("  " + name + " [" + label + "] - " + models.join(", "));
       if (envName && !effective) {
@@ -91,7 +92,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("");
     console.log("Commands:");
     console.log("  ans llm set [provider] [model]  Set default LLM provider + model");
-    console.log("  ans auth set <provider>         Store the key once (plain text, owner-only)");
+    console.log("  " + STORE_KEY_COMMAND + "         Store the key once (plain text, owner-only)");
     console.log("  ans llm check                   Check auth status for all providers");
     console.log("  ans llm models [provider]       List available models");
     // A broken credential file is a failure here too: `ans auth`, `ans doctor`,
@@ -160,6 +161,7 @@ export async function runLlm(args: string[]): Promise<number> {
       if (envName) where = "KEY SET (" + envName + ")";
       else if (effective) where = "KEY SET (" + resolvedFrom + ")";
       else if (fromStore) where = "KEY SET (stored file, not in effect)";
+      else if (credentialFile.error) where = "BROKEN (the credential file could not be read)";
       else where = "NO KEY";
       try {
         await factoryFn();
@@ -169,7 +171,7 @@ export async function runLlm(args: string[]): Promise<number> {
       }
     }
     console.log("");
-    console.log("Store a key once: ans auth set <provider>   (plain text, owner-only, shared with GUI entries)");
+    console.log("Store a key once: " + STORE_KEY_COMMAND + "   (plain text, owner-only, shared with GUI entries)");
     console.log("Or set an env var: export OPENAI_API_KEY=...");
     return credentialFile.error ? 1 : 0;
   }
