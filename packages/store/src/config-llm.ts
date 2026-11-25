@@ -472,22 +472,23 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         const storedList = lookup.stored.length > 0
           ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
           : "(the provider default)";
-        // Two rules meet here: a URL that carries credentials must not be printed
-        // (this goes to stderr and into logs), and a redacted URL must not be
-        // handed to the user as the value to store - that binding would be wrong.
-        // So the advice names the value when it is safe to print, and asks for it
-        // when it is not.
+        // 地址带凭据时不打印，也不把脱敏后的地址当值交给用户；回到默认 endpoint
+        // 时根本没有要给的地址，命令就不带 --endpoint。
         const effective = normalizeBindingEndpoint(resolved.baseUrl);
         const effectiveShown = displayEndpoint(effective);
-        const endpointArg = effective && effective === effectiveShown
-          ? effectiveShown
-          : "<the endpoint from your config>";
+        const endpointArg = effective === null
+          ? null
+          : effective === effectiveShown
+            ? effectiveShown
+            : "<your endpoint>";
         warn(
           "[config] " + credsPath + ": the stored " + resolved.provider + " key is bound to " +
           storedList + " but the effective endpoint is " + effectiveShown +
           " — refusing to send that secret to a different endpoint; run `" +
-          storeKeyCommand(resolved.provider, endpointArg) +
-          "` for this endpoint (see `ans auth list` for what is stored)",
+          storeKeyCommand(resolved.provider, endpointArg) + "` " +
+          (endpointArg
+            ? "for this endpoint (see `ans auth list` for what is stored)"
+            : "to bind it to the provider default (see `ans auth list` for what is stored)"),
         );
       }
     }

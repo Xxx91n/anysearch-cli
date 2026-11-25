@@ -473,7 +473,21 @@ test("endpoint 冲突的告警不把 URL 里的凭据打出来（#573 审查）"
   assert.doesNotMatch(warning, /key=secret/, warning);
   // And the redacted URL is not handed over as the value to store: that binding
   // would point where the user never meant it to.
-  assert.match(warning, /--endpoint "<the endpoint from your config>"/, warning);
+  assert.match(warning, /--endpoint "<your endpoint>"/, warning);
+});
+
+test("回到默认 endpoint 时，告警的命令不带 --endpoint（#573 审查）", () => {
+  // Nothing to bind to: the fix is `ans auth set openai`, and a placeholder flag
+  // would be stored verbatim as an endpoint.
+  const f = fixture({ userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n' });
+  writeUserCredential(
+    { provider: "openai", apiKey: "sk-stored", endpoint: "https://a.example/v1" },
+    { home: f.home },
+  );
+  resolveLlmConfig(f.opts({ env: {} }));
+  const warning = f.warnings.find((w) => w.includes("refusing to send that secret to a different endpoint")) ?? "";
+  assert.match(warning, /run `ans auth set openai` to bind it to the provider default/, warning);
+  assert.doesNotMatch(warning, /--endpoint/, warning);
 });
 
 test("an unset env_key falls through to the stored key instead of stopping", () => {

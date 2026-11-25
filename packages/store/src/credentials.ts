@@ -60,27 +60,26 @@ export const KEEP_KEYS = "or run " + REPAIR_COMMAND + " to keep the keys it can 
 const REMOVE_ADVICE = "; " + FIX_OR_REPLACE + ", then retry";
 const REPAIR_ADVICE = "; " + FIX_OR_REPLACE + ", " + KEEP_KEYS;
 
-/** The same command named for one provider, for a message about that provider:
- * `ans auth set openai`. Built from the constant, so a rename reaches both. With
- * an endpoint, the flag comes along: a binding is (provider, endpoint), so advice
- * about a mismatched endpoint that omits `--endpoint` sends the user back to the
- * default endpoint and to the same warning. */
+/** `ans auth set openai`, with `--endpoint <url>` when the binding has one: a
+ * binding is (provider, endpoint), so advice that drops the flag stores the key
+ * against the default and reproduces the warning. */
 export function storeKeyCommand(provider: string, endpoint?: string | null): string {
-  // A function replacement, not a string one: `$&`/`$1` in a provider read from
-  // the config file would otherwise be expanded instead of printed.
+  // A function replacement: `$&` in a provider read from the config file would
+  // otherwise be expanded.
   const command = STORE_KEY_COMMAND.replace("<provider>", () => provider);
   return endpoint ? command + " --endpoint " + shellArg(endpoint) : command;
 }
 
-/**
- * One argument as a shell reads it back: bare when it holds nothing special, and
- * double-quoted otherwise. An endpoint like `https://gw.example/v1?a=1&b=2` copied
- * into a POSIX shell would otherwise be two commands, and the tool would receive a
- * truncated URL - the advice is meant to be pasted, so it has to survive that.
- */
+/** One argument as the shell reads it back, so a pasted endpoint like
+ * `https://gw.example/v1?a=1&b=2` stays one argument. */
 function shellArg(value: string): string {
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
-  return '"' + value.replace(/[\\"$`]/g, (c) => "\\" + c) + '"';
+  // Windows documents PowerShell, where a backtick escapes inside double quotes;
+  // POSIX shells escape with a backslash.
+  const escaped = process.platform === "win32"
+    ? value.replace(/[`"$]/g, (c) => "`" + c)
+    : value.replace(/[\\"$`]/g, (c) => "\\" + c);
+  return '"' + escaped + '"';
 }
 
 /** Written into every file so its plaintext nature is obvious to a human who opens
