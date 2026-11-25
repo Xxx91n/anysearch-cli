@@ -888,7 +888,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
           ? gate.ok
             ? { status: "ready-to-spawn" as const, track: "synthetic" as const, fixture: feed.name, psi: feed.psi, label: SIMULATED_LABEL }
             : skip("BG/NBD fit (" + SIMULATED_LABEL + "): " + gate.failures.join("; "), "gate-not-met")
-          : skip("BG/NBD fit" + (dataAbsent ? " (structural data absence — ledgered data-absent)" : "") + ": " + gate.failures.join("; "), "gate-not-met"),
+          : skip("BG/NBD fit" + (dataAbsent ? " (structural data absence — report-only)" : "") + ": " + gate.failures.join("; "), "gate-not-met"),
         revival: archives > 0
           ? { status: "ok" as const, archives, undone, undoneRate: undone / archives }
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),

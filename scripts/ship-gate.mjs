@@ -1405,7 +1405,7 @@ async function stepMemoryEval() {
         const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
         report("info", "switch-state: phase" + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since" + st.since : "") + (st && st.transitionId ? " transitionId" + st.transitionId : ""));
       } catch (e) {
-        report("info", "switch-state: ledger unreadable (run ans switch-state --verify to inspect/quarantine): " + String(e && e.message ? e.message : e));
+        report("info", "switch-state: ledger unreadable (inspect or remove " + skipL + "): " + String(e && e.message ? e.message : e));
       }
     } else {
       report("info", "switch-state: no ledger yet — phase S0 (boot)");
