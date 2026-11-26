@@ -1,3 +1,22 @@
+## Unreleased — #607: 整页正文入库的列和顶号规则
+
+一句话说清：**资料库以前只有搜索给的一小段 `snippet`，抓回来的整页没地方放。现在 `retrieval_results` 多了一列 `content`，并新增 `savePage()` 一次写一页正文；顶号按「片段 < 正文」两档走——搜索命中碰到同 URL 的正文行只挂上去、返回正文行 id，片段永远顶不掉正文；正文补进已有片段行保持行 id 和 title/snippet 不变；同一页内容不同才开新行并让旧行失效。主表 FTS 仍然只索引 title/snippet，正文全文照存不截断。**
+
+### Changed
+
+- **`retrieval_results.content`**（`packages/store/src/schema.sql`、`session-store.ts`）：新增正文列；新库建表自带，老库打开时按既有 `ADD COLUMN` 迁移补上。`fetch` 工具（#608）落地前先只有存储和写规则，没有抓取入口。
+- **`savePage(sessionId, input)`**（`session-store.ts`）：写一页正文，返回 `{ id, action }`（`inserted` / `filled` / `unchanged`，正文净化后为空时 `empty`，正文命中密钥守卫时 `secret`；后两种不落行）。正文只过 `sanitizeText`、不截断；新行 `fetched=1`，`snippet` 抄正文开头 4000 字，给主表 FTS 留一个可搜的窗口；不写 `superseded_by`、不设 TTL。title、url 和 entity 也过 `sanitizeText`，并按读侧既有字段上限截断（title 500 / url 与 entity 2048）；正文不截断。落行前跑 `containsSecret(url + title + content)`，整页里贴的 token/私钥不会进库或归档快照。正文写事务用 `immediate()` 起笔，读完再写不再走 WAL 的 read→write 升级，两个进程同时拉同一页不会撞 `SQLITE_BUSY_SNAPSHOT`。
+- **顶号两档**（`time-decay.ts` 的 `invalidateOldRecords`）：片段写入只配 `protectContent`，同 URL 的正文行不因新片段失效；正文写走新版本，旧行标 `valid_until` 但保留正文。作废一律跳过 `archived=1` 和隔离行，撤销归档 / keep 之后还能回到召回。
+- **活行口径**（`liveResultsByUrl`）：新查询和召回侧一致，带上 `superseded_by IS NULL`；被长期知识更正顶掉、但 `valid_until` 仍为空的行不会再被当成当前版本 attach 或判成 unchanged。
+- **搜索命中挂到正文行**（`saveResultsWithIds`）：同 URL 已有 live 正文行时不再插片段行，touch 正文行并返回它的 id，摘要依赖落在有正文的那一行；跨会话也一样，片段不会关掉别的会话抓到的正文。
+- **同一把尺子**（`adjudicateMemory`、`resolveQuarantinedMemory`）：写入路径遇到同 URL 正文行同样只挂不插；隔离 keep 关闭 counterpoint 时跳过正文行和归档行，不把正文按 entity 关掉。
+
+### Tests
+
+- `packages/store/test/content-write-path.test.ts`：七种写入/顶号分支、片段永不顶正文、就地补正文保持 id 和 title/snippet、同内容不写、不同内容新行、归档/隔离/更正顶掉的行不被当成活版本、正文命中密钥守卫不落行、title/url/entity 按字段上限截断而正文不截断、正文不进主表 FTS、adjudicate 与 quarantine keep 同一把尺子。
+- `packages/store/test/content-column-migration.test.ts`：没有 `content` 列的老库打开后加列、能写能读，且不触发新的迁移前备份。
+- `packages/store/test/schema-content-drift.test.ts`：`schema-content.ts` 与 `schema.sql` 逐字节一致。
+
 ## Unreleased — #606: 网址身份只留一把尺子
 
 一句话说清：**「这两个网址是不是同一页」以前只有 engine 里一份私有实现，它只管 scheme、`www.` 和几个 tracking 参数；没有 scheme 的串直接按原样保留，主机尾点和非本 scheme 的标准端口也不认，删 tracking 参数还会把整条 query 重新编码。现在归一化收在 `@anysearch-cli/retriever` 的 `normalizeUrlIdentity`，搜索去重、资料库写入、摘要来源比对共用它。搜索输出形状没变；但从 `retrieval_results.url` 直接取网址的展示面会看到无 scheme 的身份串。**
