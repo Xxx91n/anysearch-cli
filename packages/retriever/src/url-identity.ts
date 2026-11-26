@@ -71,7 +71,10 @@ function parseWebUrl(raw: string): URL | null {
     // URI such as `tel:1234` must not be rewritten by web rules just because
     // its value starts with a digit. Other single-label hosts (`intranet:3000`)
     // stay raw: they are not public web hosts, and guessing would also swallow
-    // opaque URIs.
+    // opaque URIs. `localhost` is the one exception because it is the standard
+    // local web host. Known cost: a bare `intranet:3000` stays as-is while
+    // `https://intranet:3000` gains the root path (`intranet:3000/`); only that
+    // root spelling diverges, a path-bearing spelling already agrees.
     const colon = text.indexOf(":");
     const before = text.slice(0, colon);
     const after = text.slice(colon + 1);
