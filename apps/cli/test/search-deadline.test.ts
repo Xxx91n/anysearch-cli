@@ -87,19 +87,22 @@ async function run(argv: string[]): Promise<{ code: number; out: string; err: st
   }
 }
 
-function spawnHelp(): Promise<{ code: number | null; out: string; err: string }> {
-  // The package's pretest build produces dist; the top-level help only exists
-  // there, so this is the same entrypoint a user runs.
+function spawnCli(args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+  // The package's pretest build produces dist; this is the same entrypoint a
+  // user runs. Spawning also keeps the test runner's own writes out of the
+  // captured output: an in-process stdout patch can pick up the reporter.
   const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [cli, "--help"], {
+    const child = spawn(process.execPath, [cli, ...args], {
       env: { ...process.env, HOME: dir, USERPROFILE: dir },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
     let err = "";
-    child.stdout.on("data", (chunk) => { out += String(chunk); });
-    child.stderr.on("data", (chunk) => { err += String(chunk); });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { out += chunk; });
+    child.stderr.on("data", (chunk: string) => { err += chunk; });
     child.on("close", (code) => resolve({ code, out, err }));
   });
 }
@@ -134,7 +137,7 @@ test("a slow arm is cut at --deadline, not at the 4s default", async () => {
 });
 
 test("ans --help names --deadline <ms>, its bounds, and the default", async () => {
-  const r = await spawnHelp();
+  const r = await spawnCli(["--help"]);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /--deadline <ms>/, "the search options list the flag; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /500\D+60000/, "the help names the range; got: " + r.out.slice(0, 1200));
@@ -145,7 +148,7 @@ test("--deadline 8000 keeps 8000 out of the query (no-swallow)", async () => {
   const stub = await startFakeAnySearch(MARKDOWN);
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
   try {
-    const r = await run(["q", "--deadline", "8000", "--json"]);
+    const r = await spawnCli(["search", "q", "--deadline", "8000", "--json"]);
     assert.equal(r.code, 0, r.err + r.out);
     const doc = JSON.parse(r.out);
     assert.equal(doc.query, "q", "the deadline value is consumed, not searched; got: " + doc.query);
