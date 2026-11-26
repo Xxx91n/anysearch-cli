@@ -340,9 +340,9 @@ export function resolveActiveAttributionCalibration(
 // already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
-// #657: `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands it over here.
-// The kernel never reads the environment itself, which is why chat and MCP
-// cannot pick the variable up.
+// #657: `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands the number
+// over here. The kernel never reads this variable itself, which is why chat and
+// MCP cannot pick it up.
 function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);
