@@ -1,3 +1,20 @@
+## Unreleased — #582: MCP 的模型错误文字脱敏
+
+一句话说清：**`ans_chat` 的模型初始化失败和运行异常以前把上游错误原文直接塞进 `content`，里面可能带 key、这台机器的绝对路径、配置里的 provider 值和解析器 warning 原文；宿主会把这段文字抄进聊天、贴进工单、存进库。现在失败文字先过一道脱敏，并且说清是配置、鉴权还是运行问题；观测里长期留存的 `configError` 走同一道脱敏。异常原文仍进 stderr——可以带路径，不带 key。**
+
+### Changed
+
+- **`redactPaths`**（`packages/retriever/src/redact.ts`）：把绝对路径换成 `[path]`，认 POSIX 根、盘符、UNC 和带括号的目录（`Program Files (x86)`）；路径里有空格和点（`Ana Maria`、`J. Smith`）也整个换掉。只有已知扩展名（`.toml`、`.jsonl`、`.env`、`.pem` 等）后面跟空格才算路径结束，后面的文字重新扫一遍——同一行第二个路径不会漏；宁可多删一点正文，也不让路径碎片留下。URL 的路径、相对文件名不动。和 `redactSecrets` 一样是可组合的纯函数。
+- **`redactSecrets` 多一个 `keepEnvNames`**：选择保留 `ANS_*` 变量名，避免 `ANS_LLM_CONTEXT_WINDOW` 这种 20 字母以上的设置名被当成 key 抹成 `[redacted]`。只有 MCP 的宿主文字和 stderr 用它，别的调用方默认行为不变。
+- **MCP 失败文字统一出口**（`apps/mcp/src/tools/llm-failure.ts`）：`formatModelFailure` 把「模型没起来」和「请求跑挂了」分成两句，各带 `configuration problem` / `authentication problem` / `file access problem` / `runtime problem` 和对应修法（`ans llm` / `ans auth` / 文件权限 / `ans doctor`）；内核真实抛的 `Unknown LLM provider`、`Model not found`、`baseUrl requires explicit api`、`ANS_LLM_*` 都归到配置问题，`EACCES` 这类读文件失败不再冒充鉴权，鉴权只认上游的真写法（`HTTP 401`、`status code 401`、`401 {...}`、`invalid x-api-key` 等；端口 `:403` 不算）。进正文前先去掉本次解析的 warning 原文、生效的 provider 值、base URL（含 userinfo / query / fragment，整段换成 `[endpoint]`）、其它 URL 的 userinfo / query / fragment、绝对路径和 key 形状；`ANS_*` 设置名和模型名保留，因为那是要照着改的东西；全是敏感内容时只留问题类别，不伪造原因。`ans-chat.tool.ts` 的初始化失败、运行错误、预算停止、consolidate 异常、会话恢复失败、domain 约束停止（原文带 TOML 路径和解析错误）和 `configError` 观测都走这一道；锁冲突那句按 #582 改成给 `leases/<file>` + 会话记录目录提示（CLI 仍给绝对路径，#587 的可操作性不动）；stderr 用 `writeRedactedDiagnostic` 保留原文（路径保留，key 去掉）。不是模型问题的运行异常不冒充模型失败，只脱敏、保留原话。
+- **解析器故障的文字**：配置解析抛错时，`content` 与 `anysearch.llm.configError` 用同一份脱敏结果，观测字段和名字一个没动。
+
+### Tests
+
+- `apps/mcp/test/ans-chat-redaction.test.ts`：假 key、假 provider、假路径三组 sentinel，分别覆盖初始化失败、运行 401、warning 被失败文字引用、配置解析抛错、domain 停止；断言 `content` / `structuredContent`（含 domain 的 detail）/ 观测 `configError` 里一个都不出现，失败文字仍点名问题类别和修法，stderr 保留路径但不带 key；另有 EACCES 归文件权限、端口 `:403` 不算鉴权、带账号密码和 query 的 base URL 不出现。
+- `packages/retriever/test/redact.test.ts`：`redactPaths` 的 POSIX、盘符、UNC、带空格 / 点 / 撇号 / 括号的路径、同一行两条路径、URL、相对文件名；`keepEnvNames` 保留设置名。
+- `apps/mcp/test/session-lock-recovery.test.ts` 与 `packages/kernel/test/chat-attempt.test.ts`：锁冲突文本在 MCP 形态下给 `leases/<file>`、不含会话记录根的绝对路径；CLI 形态仍给完整路径。
+
 ## Unreleased — #580: doctor 每份 config.toml 一行，按文件状态判失败
 
 一句话说清：**以前 doctor 把配置解析器吐出的每条 warning 都记成一条「配置文件」失败，于是明文 key 被丢、项目文件写了不许写的键、`env_key` 没导出、存着的 key 绑错 endpoint，这些「还没配好」都会让整台机器退 1；而文件不存在、空文件、只写了半段 `[llm]`，又一条提示都没有。现在用户级、项目级各固定一行「配置文件（用户级）/（项目级）」：六种文件状态翻成 doctor 的四态，不存在、空、没有 `[llm]`、半配置都算未配置并用大白话说清是哪一种；只有读不出来、TOML 坏才算失败、退 1。值的问题只挂到相关行说明，不改退出码；只有 `base_url` 写了却没有合法 `api` 时，模型配置失败、退 1。**

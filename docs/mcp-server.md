@@ -465,8 +465,9 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   confirmed dead the next waiter takes over at once. The 10-minute stale
   window governs the owners this machine cannot confirm — another host, a
   missing identity, or a pid the probe cannot classify — judging them on
-  the heartbeat alone. A busy answer names the lock directory, the holder's
-  pid and host, when the lock was taken, and the one way out —
+  the heartbeat alone. A busy answer names the lock directory (`leases/<file>`
+  under the session-records root for an MCP result; the CLI prints the full
+  path), the holder's pid and host, when the lock was taken, and the one way out —
   worded for what the probe found: a confirmed-alive holder is told to clear
   the lock only if its pid was recycled (the start time is what lets a person
   tell), a confirmed-dead one is told to delete it, and a lock with no

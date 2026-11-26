@@ -52,7 +52,6 @@ import {
   type BudgetConfig,
   type ResolvedLlmConfig,
 } from "@anysearch-cli/store";
-import { redactSecrets } from "@anysearch-cli/retriever";
 import { createHash } from "node:crypto";
 import {
   buildAnsChatBudgetResult,
@@ -72,6 +71,7 @@ import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from ".
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
+import { formatModelFailure, modelFailureLabel, redactForHost } from "./llm-failure.js";
 import { toolDomainStop } from "./task-budget.js";
 
 // A cut-off run's accounting dimensions: the provider never sent a final
@@ -239,11 +239,12 @@ export function registerAnsChat(
           writeStderr(m);
         } });
       } catch (e) {
-        // Design: a resolver fault must never escape as a raw handler rejection
-        // — that skips observation and returns no isError result. Record it as
-        // an observation and return a structured tool error, carrying whatever
-        // warnings were collected before the fault (#300 review).
-        const detail = redactSecrets(e instanceof Error ? e.message : String(e));
+        // A resolver fault is a task and an observation, not a raw rejection.
+        // The host text and the stored `configError` share one redaction;
+        // stderr keeps the raw line.
+        const raw = e instanceof Error ? e.message : String(e);
+        const detail = redactForHost(raw, { warnings: configWarnings });
+        writeRedactedDiagnostic("[anysearch] ans_chat config resolution failed: " + raw);
         // #303: even a call that never reaches the model is one task — it ran,
         // it ends. Wrapped here rather than around the whole handler so the
         // registration covers the observation too (see mcp-task.ts).
@@ -256,6 +257,24 @@ export function registerAnsChat(
       }
       const providerName = cfg.provider;
       const modelName = cfg.model;
+      // How a failure is worded, once (see llm-failure.ts): the host gets the
+      // kind and the fix; stderr keeps the raw line, paths and all.
+      const failureContext = {
+        provider: cfg.provider,
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        warnings: configWarnings,
+      };
+      const modelFailure = (phase: "setup" | "run", raw: string): string => {
+        writeRedactedDiagnostic("[anysearch] ans_chat " + modelFailureLabel(phase) + ": " + raw);
+        return formatModelFailure(phase, raw, failureContext);
+      };
+      // Store and session faults are not model failures: they keep their own
+      // words, minus the machine-specific parts.
+      const hostFailure = (raw: string): string => {
+        writeRedactedDiagnostic("[anysearch] ans_chat: " + raw);
+        return redactForHost(raw, failureContext);
+      };
       // Design: resolve the credential file's fault once, then let the single
       // exit below put it in the result. One wiring site means no branch can
       // forget it; the store writes the classification, and the kernel's one
@@ -345,7 +364,7 @@ export function registerAnsChat(
             // Includes the degraded registry (no task registered) with a
             // declared [budget]: that corner stops here on purpose (S9's third
             // state) instead of quietly running the consolidation unmetered.
-            return buildAnsChatBudgetResult(consolidateBudget.taskBudgetFaultReason ?? "budget-not-established", consolidateBudget.taskBudgetFault, {
+            return buildAnsChatBudgetResult(consolidateBudget.taskBudgetFaultReason ?? "budget-not-established", hostFailure(consolidateBudget.taskBudgetFault), {
               ...(task ? { taskId: task.taskId } : {}),
               // This stop is a consolidate call, not a chat: saying "chat" would
               // send a caller down the wrong branch (#303 review).
@@ -420,7 +439,7 @@ export function registerAnsChat(
               : undefined);
           } catch (e) {
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
-            return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+            return toolError("ans_chat", hostFailure(e instanceof Error ? e.message : String(e)));
           }
           const usage = seams?.usage ?? {
             calls: 0,
@@ -538,8 +557,11 @@ export function registerAnsChat(
         // after the response socket has closed.
         if (signal?.aborted) return buildAnsChatCancelledResult();
         let recoveryNotice: string | undefined;
+        // The catch below words a failure by whether the client was built.
+        let sessionReady = false;
         try {
           const session = await getLlmSession(cfg);
+          sessionReady = true;
           if (signal?.aborted) return buildAnsChatCancelledResult();
           // #303: this run's own task budget, resolved once the call is really
           // going to start — a caller that cancelled while the LLM client was
@@ -549,7 +571,7 @@ export function registerAnsChat(
           // upstream failure.
           const chatBudget = budgetWiring();
           if (chatBudget.taskBudgetFault) {
-            return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", chatBudget.taskBudgetFault, {
+            return buildAnsChatBudgetResult(chatBudget.taskBudgetFaultReason ?? "budget-not-established", hostFailure(chatBudget.taskBudgetFault), {
               ...(task ? { taskId: task.taskId } : {}),
             });
           }
@@ -576,7 +598,7 @@ export function registerAnsChat(
             ? lookupPiSessionRecord(resolvePiSessionDir(), piSessionKey(requestedSessionId))
             : undefined;
           const continuation = classifyContinuation(recordLookup, !!previousChat?.chatTracked);
-          if (continuation.block) return toolFailure(continuation.block);
+          if (continuation.block) return toolFailure(hostFailure(continuation.block));
           // Only a tracked chat or an existing PI record makes this a
           // continuation. A session row with neither is an old database
           // conversation whose transcript lives in the research store, and
@@ -718,7 +740,10 @@ export function registerAnsChat(
             });
           } catch (error) {
             if (error instanceof ChatAttemptBusyError) {
-              return toolFailure(chatAttemptBusyText(error, "ans_chat: "));
+              // #587 keeps the lease nameable; #582 keeps the machine path out
+              // of host text, so MCP names `leases/<file>` under the known root
+              // (the CLI still prints the absolute path).
+              return toolFailure(chatAttemptBusyText(error, "ans_chat: ", { leasePathStyle: "session-relative" }));
             }
             throw error;
           }
@@ -747,11 +772,10 @@ export function registerAnsChat(
             // reading the message — and the spend already incurred is still
             // reported under `usage`, never hidden behind the error.
             if (runtimeErrorReason === "domain-not-established") {
-              // A broken Active Domain is not a budget answer: nothing was
-              // called and the fix is to repair the TOML. The spend so far is
-              // still reported — flushMemory has already run, so a background
-              // summary may really have cost money.
-              return toolDomainStop("ans_chat", runtimeError, {
+              // Not a budget answer: nothing was called and the fix is to repair
+              // the TOML. Its reason quotes that file and the parser text, so it
+              // is host text like any other; stderr keeps the whole reason.
+              return toolDomainStop("ans_chat", hostFailure(runtimeError), {
                 ...(task ? { taskId: task.taskId } : {}),
                 usage: {
                   run: emptyRunUsage(["run usage: the run stopped before any model call"]),
@@ -763,7 +787,7 @@ export function registerAnsChat(
               // A stop can land mid-stream, so wait for the late settlement
               // before this call's task row is closed; no tail is a no-op.
               await runtime.drainLateSettlement();
-              return buildAnsChatBudgetResult(runtimeErrorReason, runtimeError, {
+              return buildAnsChatBudgetResult(runtimeErrorReason, hostFailure(runtimeError), {
                 ...(task ? { taskId: task.taskId } : {}),
                 usage: {
                   // The accounting this call can speak for: a budget stop ends
@@ -774,7 +798,7 @@ export function registerAnsChat(
                 },
               });
             }
-            return buildAnsChatErrorResult(runtimeError, summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
+            return buildAnsChatErrorResult(modelFailure("run", runtimeError), summaryRebuilds, formatSummaryRebuildLine, recoveryNotice);
           }
           // An interrupted request keeps its handle and reports unknown usage.
           if (!attemptResult.completed) {
@@ -817,8 +841,10 @@ export function registerAnsChat(
             ...(summaryRebuilds.length > 0 ? { summaryRebuilds } : {}),
           }, recoveryNotice);
         } catch (e) {
+          const raw = e instanceof Error ? e.message : String(e);
           return buildAnsChatErrorResult(
-            e instanceof Error ? e.message : String(e), [], formatSummaryRebuildLine, recoveryNotice,
+            sessionReady ? hostFailure(raw) : modelFailure("setup", raw),
+            [], formatSummaryRebuildLine, recoveryNotice,
           );
         }
       }, {

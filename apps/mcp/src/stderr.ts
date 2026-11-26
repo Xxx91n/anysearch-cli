@@ -32,9 +32,11 @@ export function writeStderr(line: string, sink: DiagnosticSink = process.stderr)
  * Design: only strings that can carry config or provider text are redacted.
  * Task ids and ledger ids use `writeStderr` directly: `redactSecrets` would
  * turn them into `[redacted]`, and the log could no longer be tied to its row.
+ * Config names survive: `ANS_LLM_CONTEXT_WINDOW` is what the reader has to set,
+ * and it is not a secret.
  */
 export function writeRedactedDiagnostic(message: string): void {
-  writeStderr(redactSecrets(message));
+  writeStderr(redactSecrets(message, { keepEnvNames: true }));
 }
 
 /** A deduped warning sink: repeated keys are said once, and the set is bounded. */

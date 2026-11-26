@@ -489,6 +489,8 @@ async function main() {
         "C1: a live holder gets the recycled-pid way out, not a blind delete (#587 review)");
       assert(bRes.text.includes("leases"),
         "C1: the refusal still names the lease directory (#587 review)");
+      assert(!bRes.text.includes(join(root, "pi")),
+        "C1: the host text carries no absolute session-records root (#582)");
       assert(refusedMs < 1_500, "C1: the refusal is immediate, not a queue (took " + refusedMs + " ms)");
       assert(bEntry === undefined, "C1: the refused attempt never reaches the provider");
 
