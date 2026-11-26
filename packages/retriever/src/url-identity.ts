@@ -66,15 +66,12 @@ function parseWebUrl(raw: string): URL | null {
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return null; // another scheme with an authority
   if (/^[a-z][a-z0-9+.-]*:/i.test(text)) {
-    // A bare host:port also looks like a scheme (`example.com:443`). Accept
-    // only a hostname-shaped prefix (contains a dot) or `localhost`; an opaque
-    // URI such as `tel:1234` must not be rewritten by web rules just because
-    // its value starts with a digit. Other single-label hosts (`intranet:3000`)
-    // stay raw: they are not public web hosts, and guessing would also swallow
-    // opaque URIs. `localhost` is the one exception because it is the standard
-    // local web host. Known cost: a bare `intranet:3000` stays as-is while
-    // `https://intranet:3000` gains the root path (`intranet:3000/`); only that
-    // root spelling diverges, a path-bearing spelling already agrees.
+    // A bare host:port also looks like a scheme (`example.com:443`). Accept a
+    // hostname-shaped prefix (contains a dot) or `localhost`. Other single-label
+    // hosts stay raw, because guessing would also rewrite an opaque URI such as
+    // `tel:1234`. Consequence: bare `intranet:3000` and `https://intranet:3000`
+    // get two different keys (the URL form gains the root path); path-bearing
+    // spellings already agree.
     const colon = text.indexOf(":");
     const before = text.slice(0, colon);
     const after = text.slice(colon + 1);
