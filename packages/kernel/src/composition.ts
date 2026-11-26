@@ -336,20 +336,13 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-// #657: the ceiling for the eval-only clock. The cap is only there to stop a
-// typo (150000) from holding a measurement open for minutes; 15s is already a
-// wide window for a search.
+// #657: a typo (150000) must not hold a measurement open for minutes; 15s is
+// already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
-/**
- * #657: turn `ANS_EVAL_REQUEST_TIMEOUT_MS` into this engine's deadline.
- * Unset, unparsable or ≤0 (including a fraction that truncates to 0) keeps the
- * user's 4s; anything above 15s is cut to 15s.
- *
- * This is a measuring knob, not a product setting: no help text, no product
- * doc. `ans search` reads the variable and passes the number here; chat and MCP
- * never do, so the kernel itself never reads the environment (see the test).
- */
+// #657: `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands it over here.
+// The kernel never reads the environment itself, which is why chat and MCP
+// cannot pick the variable up.
 function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);

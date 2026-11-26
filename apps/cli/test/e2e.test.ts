@@ -341,6 +341,23 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /"mode": "deep"/);
   });
 
+  // #657：评测专用的钟从环境变量走到引擎，再从 --json 走回来。评测是另起进程跑的，
+  // 这个字段是它唯一能知道「这一跑是几秒的钟」的地方；值没原样生效时还得说一声，
+  // 否则一轮放宽预算的评测白跑了也看不出来。
+  await t("search --json reports the eval clock it ran with", async () => {
+    // 250 ms 而不是 15000：只要证明这个数原样到达引擎就够了，用满上限会让一次挂住的
+    // provider 把这条例子的 15 秒超时吃满。
+    const r = await run(["search", "q", "--json"], { ...process.env, ANS_EVAL_REQUEST_TIMEOUT_MS: "250" });
+    assert.match(r.out, /"requestTimeoutMs": 250/);
+    assert.doesNotMatch(r.out, /没有原样生效/);
+  });
+
+  await t("search falls back to 4000 and says so when the eval clock is unreadable", async () => {
+    const r = await run(["search", "q", "--json"], { ...process.env, ANS_EVAL_REQUEST_TIMEOUT_MS: "15s" });
+    assert.match(r.out, /"requestTimeoutMs": 4000/);
+    assert.match(r.out, /ANS_EVAL_REQUEST_TIMEOUT_MS="15s" 没有原样生效，这次按 4000 ms 跑/);
+  });
+
   // audit: the spec's literal case — lone word identical to the flag value
   // collapses under the old heuristic (query would be empty), survives now.
   await t("search --vertical-domain finance finance keeps the lone identical word (a03 spec case)", async () => {
