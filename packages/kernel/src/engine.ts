@@ -242,7 +242,7 @@ export class RetroaererdEngine {
     if (requestedTimeout !== undefined && (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0)) {
       throw new RangeError("requestTimeoutMs must be a positive finite number of milliseconds");
     }
-    this.requestTimeoutMs = requestedTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
     const cal = opts?.attributionCalibration;
