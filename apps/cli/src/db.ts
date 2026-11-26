@@ -1,26 +1,18 @@
 // Shared helper: engine backed by the durable anysearch DB.
 // ANS_DB_PATH overrides; default ~/.ans/anysearch.db via kernel resolveDbPath.
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents, type ResolvedSearchCredentials } from "@anysearch-cli/store";
+import { hostDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials, type CredentialFileContents, type ResolvedSearchCredentials } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 
-// B1: the domains-dir resolution chain for this CLI.
-// 1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
-// 2. <cwd>/domains — project-local convention, wins over builtin
-// 3. <pkg>/domains — builtin domains shipped inside the installed package
-// (build-time sync from the repo-root domains/)
-// 4. repo-root domains — dev fallback when running from source (tsx)
+// The CLI's domains-dir chain. The tail (repo-root vs package copy, and the
+// source-checkout guard) lives in store's hostDomainsDirs.
 export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   // dev runs under tsx and the published bundle is ESM, so import.meta.url is
   // the only source; keep the __dirname branch for a CJS-inline build.
   const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-  // Shared chain head (ANS_DOMAINS_DIR → cwd/domains) + CLI-specific tails.
-  const dirs = defaultDomainsDirs(env);
-  dirs.push(join(self, "..", "domains"));
-  dirs.push(join(self, "..", "..", "..", "domains"));
-  return dirs;
+  return hostDomainsDirs(self, env);
 }
 
 // Teardown registry lives in ./teardown (pure leaf).

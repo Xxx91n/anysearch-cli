@@ -5,8 +5,8 @@
 import { parse as tomlParse } from "smol-toml";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, validate, type DomainSchema, type RawDomain } from "./domain-schema";
-import { join } from "node:path";
-import { ANS_DOMAINS_DIR_NAME, ansProjectDomainsDir } from "./ans-paths.js";
+import { join, relative } from "node:path";
+import { ANS_DOMAINS_DIR_NAME, ansProjectDomainsDir, findRepoCheckoutRoot, isPathInside } from "./ans-paths.js";
 
 // Parse a TOML string into a RawDomain object.
 export function parseDomainToml(toml: string): RawDomain {
@@ -161,12 +161,40 @@ export function loadDomainByNameIn(
 
 // Default domains-dir chain head: ANS_DOMAINS_DIR (a directory containing tomls
 // directly), then the CWD convention dir. Callers with package-shipped or
-// repo-root fallback dirs append them after this list (see domainSearchDirs in
-// apps/cli) — the env → cwd head order is the single shared contract.
+// repo-root fallback dirs append them after this list (see hostDomainsDirs) —
+// the env → cwd head order is the single shared contract.
 export function defaultDomainsDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const dirs: string[] = [];
   if (env.ANS_DOMAINS_DIR?.trim()) dirs.push(env.ANS_DOMAINS_DIR.trim());
   dirs.push(ansProjectDomainsDir());
+  return dirs;
+}
+
+// The tail shared by every package host (CLI and MCP). In a source checkout the
+// committed repo-root domains/ is the source of truth and comes before the
+// build-generated package copy, so editing a root TOML is visible without a
+// rebuild. An installed package has no repo markers and uses its own copy.
+// The walk-up handles the bundled `ans mcp` entry (<repo>/apps/cli/mcp/dist) as
+// well as apps/*/src and apps/*/dist.
+export function hostDomainsDirs(self: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const dirs = defaultDomainsDirs(env);
+  const repoRoot = findRepoCheckoutRoot(self);
+  if (repoRoot) {
+    // Only the two package build copies are generated. A user project created
+    // inside the checkout keeps its own <cwd>/domains; remove just apps/cli or
+    // apps/mcp. Leave <cwd>/.ans/domains alone either way.
+    const cwd = process.cwd();
+    const cwdDomains = ansProjectDomainsDir(cwd);
+    const rel = isPathInside(cwd, repoRoot) ? relative(repoRoot, cwd) : undefined;
+    const isBuildCopyCwd = rel === join("apps", "cli") || rel === join("apps", "mcp");
+    if (isBuildCopyCwd && cwdDomains === join(cwd, ANS_DOMAINS_DIR_NAME)) {
+      // lastIndexOf skips an identical ANS_DOMAINS_DIR entry at the chain head.
+      const at = dirs.lastIndexOf(cwdDomains);
+      if (at >= 0) dirs.splice(at, 1);
+    }
+    if (existsSync(join(repoRoot, ANS_DOMAINS_DIR_NAME))) dirs.push(join(repoRoot, ANS_DOMAINS_DIR_NAME));
+  }
+  dirs.push(join(self, "..", ANS_DOMAINS_DIR_NAME));
   return dirs;
 }
 

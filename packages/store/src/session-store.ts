@@ -47,6 +47,7 @@ import {
 } from "./summary-rebuild.js";
 
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
+import { hasPageBody, NO_PAGE_BODY_SQL } from "./retrieval-content.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import {
@@ -78,7 +79,7 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
@@ -106,7 +107,7 @@ import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup.j
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
-import type { NormalizedResult } from "@anysearch-cli/retriever";
+import { sanitizeText, type NormalizedResult } from "@anysearch-cli/retriever";
 
 // MemTX-simplified writer adjudication.
 // keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).
@@ -130,6 +131,45 @@ export interface AdjudicationResultItem {
   counterpartId?: number; // equal_conflict: the live memory in conflict with this write
   insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
 }
+
+// What one page-body write did to the archive. `id` names the row holding the
+// body when one exists; `empty` (nothing left after sanitizing) and `secret`
+// (rejected by the shared secret guard) write no row and return null.
+export type PageWriteAction = "inserted" | "filled" | "unchanged" | "empty" | "secret";
+
+export interface SavePageInput {
+  url: string;
+  title?: string | null;
+  /** Full page body. Sanitized with sanitizeText; never truncated. */
+  content: string;
+  source?: string | null; // provider id
+  sourceLabel?: "system" | "user" | "retrieved" | "tool" | "memory";
+  traceId?: string | null;
+  entity?: string;
+}
+
+export interface SavePageResult {
+  /**
+   * The row that holds this body. It belongs to the caller's session whenever a
+   * row was written or filled; "unchanged" may name another session's row when
+   * that session already stored the identical body. Null when nothing was
+   * written: `empty` (no body after sanitizing) or `secret` (guard rejected).
+   */
+  id: number | null;
+  action: PageWriteAction;
+}
+
+/** One live material row, as the write path sees it. */
+interface LiveResultRow {
+  id: number;
+  session_id: string;
+  content: string | null;
+}
+
+// The snippet column is the main FTS index for a new page row. Existing
+// provider snippets are capped at 4000 chars; a fetched page copies the same
+// window from its body, so keyword recall still sees the page's opening.
+const PAGE_SNIPPET_CHARS = 4000;
 
 // equal-conflict review channel row (flag, don't silently pick).
 export interface QuarantinedMemory {
@@ -271,6 +311,10 @@ export interface SessionStore {
   // source-compatible; the search path stamps the ids onto the tool result only
   // when the seam exists, and the URL bridge covers the rest.
   saveResultsWithIds?(sessionId: string, results: NormalizedResult[]): Promise<Array<number | null>>;
+  // Write one fetched page body under the store's tier rules. Optional on
+  // the port, like the id seam above, so hand-built stores stay compatible; a
+  // caller without it reports "no page write" instead of inventing one.
+  savePage?(sessionId: string, input: SavePageInput): Promise<SavePageResult>;
   // #263: a summary anchor may carry `sources` (the rows it was built from);
   // the anchor insert and its dependency rows commit together.
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
@@ -577,6 +621,11 @@ export class SqliteSessionStore implements SessionStore {
     searchMessages: Database.Statement;
     searchAllMessages: Database.Statement;
     saveResult: Database.Statement;
+    // Live rows for one URL, newest first. The write path
+    // reads this once per result to decide insert / fill / attach / unchanged.
+    liveResultsByUrl: Database.Statement;
+    insertContentResult: Database.Statement;
+    updateResultContent: Database.Statement;
     searchResults: Database.Statement;
     saveAnchor: Database.Statement;
     getAnchors: Database.Statement;
@@ -678,6 +727,12 @@ export class SqliteSessionStore implements SessionStore {
     withInitBusyRetry("edge seed", () => { for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t); }, initDeadline);
     // freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
     registerFreshnessFactorFunction(this.db);
+    // An existing database predates the page-body column. New databases
+    // get it from the CREATE TABLE in schema.sql; this ALTER is the migration
+    // and a duplicate is absorbed like every other column migration. Nothing
+    // in schema.sql reads the column, so the order relative to the schema
+    // script is safe.
+    this.applyColumnMigration("retrieval_results.content", "ALTER TABLE retrieval_results ADD COLUMN content TEXT", initDeadline);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
     this.applyColumnMigration("retrieval_results.valid_until", "ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT", initDeadline);
     this.applyColumnMigration("retrieval_results.pinned", "ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0", initDeadline);
@@ -802,6 +857,16 @@ export class SqliteSessionStore implements SessionStore {
       searchMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? AND m.session_id = ? ORDER BY rank LIMIT ?"),
       searchAllMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"),
       saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity, source_label, trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+      // Same-URL live rows, store-wide like the archive. Closed, archived,
+      // quarantined and correction-superseded rows are history, not versions
+      // the write path may extend.
+      liveResultsByUrl: this.db.prepare("SELECT id, session_id, content FROM retrieval_results WHERE url = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL ORDER BY id DESC"),
+      // A fetched page always starts as a content row with fetched=1; the body
+      // itself is never truncated here.
+      insertContentResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity, source_label, trace_id, content, fetched) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1)"),
+      // In-place body fill keeps the row id and leaves title/snippet alone, so
+      // the main FTS index (title/snippet only) never drifts.
+      updateResultContent: this.db.prepare("UPDATE retrieval_results SET content = ?, fetched = 1 WHERE id = ?"),
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
@@ -1327,25 +1392,148 @@ export class SqliteSessionStore implements SessionStore {
    * `null` at index i means "no row was written for result i" — a result
    * carrying a secret is skipped by design (see containsSecret), so the caller
    * must not assume the arrays line up by position alone.
+   *
+   * When the URL already has a page body, the id returned is that body
+   * row (no snippet row is written). The archive is store-wide, so that row may
+   * belong to another session; summary dependencies resolve by id, not session.
    */
   async saveResultsWithIds(sessionId: string, results: NormalizedResult[]): Promise<Array<number | null>> {
     const ids: Array<number | null> = [];
+    // Rows this batch attached to instead of writing. The touch and its
+    // access event run after the write transaction, because the event chain
+    // opens its own IMMEDIATE transaction.
+    const attached: number[] = [];
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
        // write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) { ids.push(null); continue; }
+       // The archive stores the URL identity, not the provider's spelling.
+       // Search dedup and archive writes must agree on it. This column is the
+       // identity key, so surfaces that render it directly (entity review,
+       // preference review, rebuilt summaries, consolidation evidence) show the
+       // scheme-less key; chat answer sources keep `sourceUrl` when present.
+       const url = normalizeUrlIdentity(r.url);
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
-       const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url, sourceLabel, traceId);
+       // Design: a search hit never displaces the page body — attach to the
+       // live content row, touch it, and return its id.
+       const contentRow = this.livePageBody(url, r.url !== url ? r.url : undefined);
+       if (contentRow) {
+         attached.push(contentRow.id);
+         ids.push(contentRow.id);
+         continue;
+       }
+       const info = this.stmts.saveResult.run(sessionId, url, r.title, r.snippet, r.source, null, r.entity ?? url, sourceLabel, traceId);
        // bi-temporal invalidation — close old records for same entity (URL) at write time.
        // Not relying on decay to suppress staleness; valid_until set immediately on new write.
-       try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
+       // Rows written before identity storage keep their old spelling, so close both
+       // the identity and the exact spelling that came in.
+       //
+       // Article carries a snippet only, so protectContent keeps any page
+       // body (in this or another session) live.
+       try {
+         invalidateOldRecords(this.db, url, Number(info.lastInsertRowid), { protectContent: true });
+         if (r.url !== url) invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid), { protectContent: true });
+       } catch {}
        ids.push(Number(info.lastInsertRowid));
       }
     });
-    insertMany(results);
+    insertMany.immediate(results);
+    for (const id of attached) {
+      try { this.stmts.touchAccessed.run(id); this.recordAccessEventChained(id); } catch { this.accessEventTel.writeFailures += 1; }
+    }
     return ids;
+  }
+
+  // Live rows for one URL, newest first. The archive is store-wide, so one URL
+  // has one version chain across sessions. A pre-identity row keeps the caller's
+  // spelling, so the lookup can carry both; ids are deduped.
+  private liveRowsFor(url: string, rawUrl?: string): LiveResultRow[] {
+    const rows = this.stmts.liveResultsByUrl.all(url) as LiveResultRow[];
+    if (rawUrl !== undefined) {
+      const legacy = this.stmts.liveResultsByUrl.all(rawUrl) as LiveResultRow[];
+      for (const row of legacy) if (!rows.some((r) => r.id === row.id)) rows.push(row);
+    }
+    return rows.sort((a, b) => b.id - a.id);
+  }
+
+  // The live row that already holds a page body for this URL, if any. Both
+  // attach sites use this lookup so the tier rule cannot drift.
+  private livePageBody(url: string, rawUrl?: string): LiveResultRow | undefined {
+    return this.liveRowsFor(url, rawUrl).find(hasPageBody);
+  }
+
+  /**
+   * Write a fetched page body for one URL and report which row holds it.
+   *
+   * The body is never truncated, never writes superseded_by, and gets no TTL.
+   * A new row copies the opening into snippet for the main FTS index, which
+   * still covers title/snippet only. Returns `empty` when sanitizing leaves no
+   * body and `secret` when the shared secret guard rejects the page; neither
+   * writes a row.
+   */
+  async savePage(sessionId: string, input: SavePageInput): Promise<SavePageResult> {
+    // Provider text is untrusted. url/title/entity keep the field caps the
+    // read path already enforces; the body is deliberately not truncated.
+    const rawUrl = sanitizeText(input.url).slice(0, 2048);
+    const url = normalizeUrlIdentity(rawUrl);
+    const content = sanitizeText(input.content);
+    if (content.length === 0) return { id: null, action: "empty" };
+    // Design: sanitize the title too — it feeds the main FTS index.
+    const title = input.title === undefined || input.title === null ? null : sanitizeText(input.title).slice(0, 500);
+    // The secret guard covers every write entry. A page is where a pasted
+    // token/private key shows up, and the read filter only sees title/snippet,
+    // so the body is checked before it lands or enters an archive snapshot.
+    if (containsSecret(rawUrl + " " + (title ?? "") + " " + content)) return { id: null, action: "secret" };
+    const entityKey = input.entity === undefined ? url : sanitizeText(input.entity).slice(0, 2048);
+    const sourceLabel = input.sourceLabel ?? "retrieved";
+    let result: SavePageResult = { id: null, action: "empty" };
+
+    const insertPageRow = (): number => {
+      const info = this.stmts.insertContentResult.run(
+        sessionId, url, title, content.slice(0, PAGE_SNIPPET_CHARS),
+        input.source ?? null, entityKey, sourceLabel, input.traceId ?? null, content,
+      );
+      const insertedId = Number(info.lastInsertRowid);
+      try {
+        invalidateOldRecords(this.db, url, insertedId);
+        if (rawUrl !== url) invalidateOldRecords(this.db, rawUrl, insertedId);
+      } catch {}
+      return insertedId;
+    };
+
+    const write = this.db.transaction(() => {
+      const live = this.liveRowsFor(url, rawUrl !== url ? rawUrl : undefined);
+      // Design: tier is content, not provider or length — identical body is a
+      // no-op, a different body opens a new version, a snippet row is filled in
+      // place. No LLM decides this.
+      const contentRow = live.find(hasPageBody);
+      if (contentRow) {
+        if (contentRow.content === content) {
+          result = { id: contentRow.id, action: "unchanged" };
+          return;
+        }
+        // Stronger content replaces the old version; history keeps both.
+        result = { id: insertPageRow(), action: "inserted" };
+        return;
+      }
+      const snippetRow = live.find((r) => r.session_id === sessionId);
+      if (snippetRow) {
+        // Same row becomes the page row. Only content/fetched move, so the
+        // main FTS index (title/snippet) cannot drift.
+        this.stmts.updateResultContent.run(content, snippetRow.id);
+        try {
+          invalidateOldRecords(this.db, url, snippetRow.id);
+          if (rawUrl !== url) invalidateOldRecords(this.db, rawUrl, snippetRow.id);
+        } catch {}
+        result = { id: snippetRow.id, action: "filled" };
+        return;
+      }
+      result = { id: insertPageRow(), action: "inserted" };
+    });
+    write.immediate();
+    return result;
   }
 
   // (Q3=A): write-path adjudication (MemTX-simplified three checks).
@@ -1360,15 +1548,37 @@ export class SqliteSessionStore implements SessionStore {
         continue;
       }
       const evidence = typeof km.evidence === "number" && km.evidence >= 0.6;
+      // Every archive write stores the URL identity; the caller's spelling never
+      // reaches the table.
+      const url = normalizeUrlIdentity(km.url);
+      // An adjudicated write carries a snippet only. If the same URL
+      // already has a page body, the body wins: attach to it (touch + return its
+      // id) instead of inserting a weaker row that the entity supersede would
+      // then use to close the body. This also covers the low-evidence branch —
+      // there is nothing to review when the stronger tier is already there.
+      const contentRow = this.livePageBody(url, km.url !== url ? km.url : undefined);
+      if (contentRow) {
+        try { this.stmts.touchAccessed.run(contentRow.id); this.recordAccessEventChained(contentRow.id); } catch { this.accessEventTel.writeFailures += 1; }
+        out.push({ action: "accept", insertedId: contentRow.id });
+        continue;
+      }
       // Evidence check: evidence >= 0.6, or a direct user write (source "user"), bypasses the gate.
       if (evidence || km.source === "user") {
-        const entityKey = km.entity ?? km.url;
+        const entityKey = km.entity ?? url;
         // Temporal supersede: new write for same entity wins; close old record with valid_until = now (pattern).
-        const existing = this.db
-          .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
-          .get(entityKey, sessionId) as { id: number } | undefined;
+        const findLive = this.db.prepare(
+          "SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1",
+        );
+        const existing = findLive.get(entityKey, sessionId) as { id: number } | undefined;
+        // A row written before identity storage has the raw spelling as its
+        // default entity. Only fall back when the caller did not name an entity,
+        // so a deliberate custom key is never overridden.
+        const legacy = km.entity === undefined && url !== km.url
+          ? findLive.get(km.url, sessionId) as { id: number } | undefined
+          : undefined;
+        const target = existing ?? legacy;
         const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
+        const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
@@ -1378,7 +1588,7 @@ export class SqliteSessionStore implements SessionStore {
         // row anyway — leaving the entity with no live version at all, and no way
         // back even after a human resolves the mark.
         try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
-        if (existing) {
+        if (target) {
           try {
             // Only close the old version when the new one will actually be
             // recallable. A row marked undetermined is not, so closing the old
@@ -1389,8 +1599,8 @@ export class SqliteSessionStore implements SessionStore {
             if (newRowUnresolved) {
               out.push({ action: "accept", insertedId });
             } else {
-              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
-              out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(target.id);
+              out.push({ action: "supersede", reason: "temporal", supersededId: target.id, insertedId });
             }
           } catch {
             out.push({ action: "accept", insertedId });
@@ -1401,7 +1611,7 @@ export class SqliteSessionStore implements SessionStore {
       } else {
         // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
         const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url, sourceLabel, km.traceId ?? null);
+        const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, km.entity ?? url, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // fail-open
@@ -3017,14 +3227,20 @@ export class SqliteSessionStore implements SessionStore {
 
   async resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }> {
     const row = this.db
-      .prepare("SELECT id, session_id, entity FROM retrieval_results WHERE id = ? AND quarantine = 'equal_conflict'")
-      .get(id) as { id: number; session_id: string; entity: string | null } | undefined;
+      .prepare("SELECT id, session_id, entity, content FROM retrieval_results WHERE id = ? AND quarantine = 'equal_conflict'")
+      .get(id) as { id: number; session_id: string; entity: string | null; content: string | null } | undefined;
     if (!row) return { ok: false };
     if (action === "keep") {
       this.db.prepare("UPDATE retrieval_results SET quarantine = NULL WHERE id = ?").run(id);
       // Kept value wins: close the live counterpart for the same entity (bi-temporal pattern).
+      //
+      // The same tier rule applies here. A kept snippet-only row must not
+      // close a page-body counterpart; the reviewer's "keep" gets rid of the
+      // quarantine flag, not of the stronger row's body. A kept content row
+      // still closes content or snippet counterparts.
+      const protect = hasPageBody(row) ? "" : NO_PAGE_BODY_SQL;
       this.db
-        .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL")
+        .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0" + protect)
         .run(row.session_id, row.entity, id);
     } else {
       this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);

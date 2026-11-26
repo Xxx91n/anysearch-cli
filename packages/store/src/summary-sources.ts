@@ -21,6 +21,7 @@
 // recorded any (10/12). A summary with no recorded dependency is left alone —
 // "no record" is not "depends on everything".
 
+import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import type Database from "better-sqlite3";
 
 /** The two anchor types that carry a derived summary (see MemoryPipeline). */
@@ -439,7 +440,17 @@ export function resolveSummarySourcesFromReads(
       continue;
     }
     if (typeof url !== "string" || url.length === 0) continue;
-    for (const id of urlMaterialRows(db, url)) push("material", id);
+    // The archive stores identities, while a summary cites the spelling the
+    // model read. Try the identity first; only when it names no row at all fall
+    // back to the raw string, so a live identity row is never mixed with the
+    // retired raw predecessor of the same page.
+    const identity = normalizeUrlIdentity(url);
+    const identityIds = urlMaterialRows(db, identity);
+    if (identityIds.length > 0) {
+      for (const id of identityIds) push("material", id);
+    } else if (identity !== url) {
+      for (const id of urlMaterialRows(db, url)) push("material", id);
+    }
   }
   return out;
 }

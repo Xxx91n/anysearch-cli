@@ -8,7 +8,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -114,8 +114,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               anyProviderAnswered = true;
             }
 
-            const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
-            newItems.forEach((r: any) => seenUrls.add(r.url));
+            // Rounds dedupe on the URL identity using the same rule as the engine.
+            const newItems = pickUnseenUrlResults(seenUrls, envelope.results ?? []);
             allResults = allResults.concat(newItems);
 
             // Stop early when sufficiency verdict is "correct" (engine D5).

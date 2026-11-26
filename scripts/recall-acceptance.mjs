@@ -33,8 +33,9 @@
 //     downloaded from the CI artifact `tarballs-<os>`:
 //       gh run download <run-id> --name tarballs-ubuntu-latest
 //       npm install ./anysearch-cli-mcp-0.2.0.tgz    # in a throwaway prefix
+//     Without ANS_RECALL_MCP_DOMAINS, the domain TOMLs come from the package
+//     root's domains/ (dist's parent); set it to point somewhere else.
 //       ANS_RECALL_MCP_DIST=<prefix>/node_modules/@anysearch-cli/mcp/dist/index.js \
-//       ANS_RECALL_MCP_DOMAINS=<prefix>/node_modules/@anysearch-cli/mcp/domains \
 //       node scripts/recall-acceptance.mjs
 //   That is the path this repo actually used for the #259 acceptance: the
 //   installed artifact is what ships, so testing it proves the release chain.
@@ -51,7 +52,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const DEFAULT_DIST = resolve(ROOT, "apps/mcp/dist/index.js");
 const DIST = resolve(process.env.ANS_RECALL_MCP_DIST || DEFAULT_DIST);
-const DOMAINS = resolve(process.env.ANS_RECALL_MCP_DOMAINS || resolve(ROOT, "apps/mcp/domains"));
+// The repo-root domains/ is the only committed copy; the package copy is
+// generated at build time. An installed dist carries its package's domains/
+// next to it, so derive that before falling back to the repo-root source.
+const DOMAINS = resolve(
+  process.env.ANS_RECALL_MCP_DOMAINS
+    || (process.env.ANS_RECALL_MCP_DIST ? join(dirname(dirname(DIST)), "domains") : join(ROOT, "domains")),
+);
 
 let failures = 0;
 function check(cond, msg) {
@@ -135,6 +142,14 @@ async function main() {
       "recall acceptance: no MCP dist at " + DIST + "\n" +
       "  Build it (pnpm -r build), or set ANS_RECALL_MCP_DIST to an installed dist\n" +
       "  (see the header for the CI-artifact recipe).",
+    );
+    process.exit(2);
+  }
+  if (!existsSync(join(DOMAINS, "default.toml"))) {
+    console.error(
+      "recall acceptance: no default.toml under " + DOMAINS + "\n" +
+      "  Set ANS_RECALL_MCP_DOMAINS to a directory that contains default.toml,\n" +
+      "  or point ANS_RECALL_MCP_DIST at a package that ships domains/ (rebuild it if needed).",
     );
     process.exit(2);
   }

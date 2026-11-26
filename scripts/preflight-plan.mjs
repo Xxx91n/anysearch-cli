@@ -5,15 +5,14 @@
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
 // dependencies first but does not run their tests (#490). A test that reads
-// another package's files can sit upstream of the change that breaks it:
-// kernel's tests read apps/mcp/domains, which only an unfiltered full run
-// covers — the push gate's --full, CI's check-build lane, and the merge gate.
-// A change outside apps/ and packages/ that is not documentation runs the whole
-// suite, because no rule here names which packages read it. A root file the
-// reader table below names is the exception: it runs those packages and nothing
-// else (#489). The rest of the root still runs everything — the lockfile,
-// turbo.json, pnpm-workspace.yaml, .github/, and .gitignore, which changes what
-// git sees for every package.
+// another package's files can sit upstream of the change that breaks it; only
+// an unfiltered full run covers that — the push gate's --full, CI's
+// check-build lane, and the merge gate. A change outside apps/ and packages/ that
+// is not documentation runs the whole suite, because no rule here names which
+// packages read it. A root file the reader table below names is the exception:
+// it runs those packages and nothing else (#489). The rest of the root still
+// runs everything — the lockfile, turbo.json, pnpm-workspace.yaml, .github/, and
+// .gitignore, which changes what git sees for every package.
 //
 // Design: documentation gets its own mode, not the unowned fallback — a
 // docs-only change runs nothing, and docs next to code are dropped before the
@@ -166,11 +165,11 @@ export function codeOwnership(files, packages) {
  * store never opens the file through store's tests, so a dependent that does
  * read it is named in its own right, as cli is on the domains row.
  *
- * mcp's build copies the root domains into its committed `apps/mcp/domains`, and
- * that is still not a reader: turbo caches `build`, a root-only change is not in
- * that hash, so a warm cache skips the sync and the lane's mcp tests read the
- * stale copy. A row there would claim coverage the gate does not have; it stays
- * out until the copy has a check of its own.
+ * mcp's build copies the root domains into its generated `apps/mcp/domains`.
+ * Its domain tests point ANS_DOMAINS_DIR at their own temp dir, and clean tests
+ * declare none, so no mcp test reads that copy or the repo-root TOMLs. The
+ * domains row stays without mcp unless a test starts reading one. (The no-arg
+ * boots would follow a developer shell's ANS_DOMAIN; CI sets none.)
  *
  * `scripts/test/preflight-root-readers.mjs` holds the answers both test files
  * assert, and the plan test pins every row against the real workspace — each

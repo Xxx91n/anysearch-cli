@@ -5,7 +5,7 @@
 // JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
@@ -39,27 +39,10 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 // the engine result. Exported instead of copied so there is one 4000.
 export { DEFAULT_REQUEST_TIMEOUT_MS };
 
-// Normalize URL for dedup: strip scheme + leading www + tracking params.
-// atomcode research: normalize_url() in paperfoot strips utm_*, fbclid, gclid.
-function normalizeUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    let path = u.pathname;
-    // Strip tracking params.
-    const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid", "ref"];
-    for (const p of trackingParams) u.searchParams.delete(p);
-    // Normalize host: remove leading www.
-    const host = u.host.replace(/^www\./, "");
-    return host + path + (u.search || "");
-  } catch {
-    return url; // invalid URL, use as-is
-  }
-}
-
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
   try {
-    // Handle normalized URLs without protocol (e.g. "a.com/1" after normalizeUrl).
+    // Handle normalized URLs without protocol (e.g. "a.com/1" after normalizeUrlIdentity).
     const withProto = url.includes("://") ? url : "https://" + url;
     return new URL(withProto).host.replace(/^www\./, "");
   } catch {
@@ -101,7 +84,7 @@ export function computeSufficiency(
   rrfRanks: number[] = [],
   providerScores: Record<string, number[]> = {},
 ): SufficiencyResult {
-  const uniqueUrls = new Set(rankedResults.map((r) => normalizeUrl(r.url)));
+  const uniqueUrls = new Set(rankedResults.map((r) => normalizeUrlIdentity(r.url)));
   const uniqueDomains = new Set(rankedResults.map((r) => extractDomain(r.url)));
   const successfulProviders = providerLists.length;
 
@@ -584,7 +567,7 @@ export class RetroaererdEngine {
             // MVSS, attribution, or output. Deny wins (shouldAllowUrl order).
             if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) { gateDropped += 1; continue; }
             gateSurvivors += 1;
-            const norm = normalizeUrl(r.url);
+            const norm = normalizeUrlIdentity(r.url);
             if (!allResults.has(norm)) {
               // Keep the existing archive key and carry the full link for display.
               const extra = q.includeSourceUrls ? { ...r.extra, sourceUrl: r.url } : r.extra;

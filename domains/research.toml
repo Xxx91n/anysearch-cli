@@ -7,7 +7,7 @@ language = "TypeScript"
 depth = "advanced"
 
 [skills]
-active = ["research", "atomcode-research"]
+active = ["research"]
 
 [sources]
 enabled = ["exa", "tavily"]
@@ -16,4 +16,5 @@ enabled = ["exa", "tavily"]
 adapter = "none"
 
 [hooks]
-toolWhitelist = ["search", "ctx_execute", "ctx_search", "ctx_batch_execute", "atomcode"]
+# fetch is not registered yet; this whitelist entry is a placeholder.
+toolWhitelist = ["search", "fetch"]

@@ -7,7 +7,14 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { resolveLlmConfig, type LlmConfigFileStatus, type LlmFileDiagnostic } from "../src/config-llm.js";
+import {
+  PROJECT_LLM_KEYS,
+  REQUIRED_LLM_KEYS,
+  USER_LLM_KEY_NAMES,
+  resolveLlmConfig,
+  type LlmConfigFileStatus,
+  type LlmFileDiagnostic,
+} from "../src/config-llm.js";
 
 function makeBox() {
   const home = mkdtempSync(join(tmpdir(), "ans-status-home-"));
@@ -143,6 +150,7 @@ test("诊断 kind：文件读不出来（config.toml 是目录）", () => {
   assert.equal(file.layer, "user");
   assert.equal(file.status, "broken");
   assert.deepEqual(file.diagnostics, [{ kind: "unreadable" }]);
+  assert.equal(typeof file.fault?.code, "string", "读失败要带 errno 码");
   assert.deepEqual(file.present, []);
   assert.ok(!JSON.stringify(file).includes(box.userPath), "事实里不能有路径");
 });
@@ -153,6 +161,8 @@ test("诊断 kind：TOML 坏", () => {
   const file = box.resolve().configFiles.user;
   assert.equal(file.layer, "user");
   assert.deepEqual(file.diagnostics, [{ kind: "invalid-toml" }]);
+  assert.equal(typeof file.fault?.line, "number", "要给行号");
+  assert.equal(typeof file.fault?.column, "number", "要给列号");
   assert.ok(!JSON.stringify(file).includes(box.userPath), "事实里不能有路径");
 });
 
@@ -236,4 +246,144 @@ test("missing 文件也要有记录：两层永远都在", () => {
   assert.deepEqual(cfg.configFiles.user.diagnostics, []);
   assert.equal(cfg.configFiles.project.layer, "project");
   assert.equal(cfg.configFiles.project.status, "missing");
+});
+test("displayPath 来自 resolver 的 home/cwd，旧布局也指对文件", () => {
+  const box = makeBox();
+  const cfg = box.resolve();
+  assert.equal(cfg.configFiles.user.displayPath, "~/.ans/config.toml");
+  assert.equal(cfg.configFiles.project.displayPath, ".ans/config.toml");
+
+  // A resolver given another cwd must report THAT project's file, not the
+  // process cwd's. Legacy layout is the case where the two names differ.
+  const legacyCwd = mkdtempSync(join(tmpdir(), "ans-status-legacy-"));
+  const legacyPath = join(legacyCwd, ".anysearch", "config.toml");
+  writeToml(legacyPath, "[llm\n");
+  const legacyCfg = resolveLlmConfig({
+    home: box.home, cwd: legacyCwd, env: {}, credentials: false, warn: () => {},
+  });
+  assert.equal(legacyCfg.configFiles.project.displayPath, ".anysearch/config.toml");
+  assert.equal(legacyCfg.configFiles.project.status, "broken");
+});
+
+// ── #580: five value-level diagnostic kinds ─────────────────────────────
+
+test("值级诊断：api 值非法，只带提供值的层", () => {
+  const box = makeBox();
+  writeToml(box.userPath, '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "grpc"\n');
+  const cfg = box.resolve();
+  assert.equal(cfg.api, undefined, "非法值不生效");
+  assert.deepEqual(cfg.valueDiagnostics, [{ kind: "api-invalid", layer: "user" }]);
+  assert.ok(!JSON.stringify(cfg.valueDiagnostics).includes("grpc"), "事实里不能有非法值");
+});
+
+test("值级诊断：env_key 被 provider 绑定拒绝，带变量名", () => {
+  const box = makeBox();
+  writeToml(box.userPath, '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "OPENAI_API_KEY"\n');
+  const cfg = resolveLlmConfig({
+    home: box.home, cwd: box.cwd, env: { ANS_LLM_PROVIDER: "google" },
+    credentials: false, warn: (m: string) => box.warnings.push(m),
+  });
+  assert.equal(cfg.provider, "google");
+  assert.deepEqual(cfg.valueDiagnostics, [
+    { kind: "env-key-provider-mismatch", layer: "user", envKeyLabel: "OPENAI_API_KEY" },
+  ]);
+  assert.ok(!JSON.stringify(cfg.valueDiagnostics).includes("openai"), "事实里不能有 provider 值");
+});
+
+test("值级诊断：env_key 被 endpoint 绑定拒绝，带变量名不带地址", () => {
+  const box = makeBox();
+  const bound = "https://bound-SENTINEL.example/v1";
+  writeToml(
+    box.userPath,
+    '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "chat"\n' +
+    'base_url = "' + bound + '"\nenv_key = "CUSTOM_MODEL_KEY"\n',
+  );
+  const cfg = resolveLlmConfig({
+    home: box.home, cwd: box.cwd, env: { ANS_LLM_BASE_URL: "https://effective-SENTINEL.example/v1" },
+    credentials: false, warn: (m: string) => box.warnings.push(m),
+  });
+  assert.deepEqual(cfg.valueDiagnostics, [
+    { kind: "key-endpoint-mismatch", layer: "user", envKeyLabel: "CUSTOM_MODEL_KEY" },
+  ]);
+  const facts = JSON.stringify(cfg.valueDiagnostics);
+  assert.ok(!facts.includes("bound-SENTINEL"), "事实里不能有绑定地址");
+  assert.ok(!facts.includes("effective-SENTINEL"), "事实里不能有生效地址");
+});
+
+test("值级诊断：存着的模型 key 绑错 endpoint，层是 credentials", () => {
+  const box = makeBox();
+  writeToml(
+    box.userPath,
+    '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "chat"\nbase_url = "https://effective-SENTINEL.example/v1"\n',
+  );
+  const cfg = resolveLlmConfig({
+    home: box.home, cwd: box.cwd, env: {},
+    credentialsFile: {
+      bindings: [{ provider: "openai", endpoint: "https://stored-SENTINEL.example/v1", apiKey: "sk-SECRET-SENTINEL" }],
+    },
+    warn: (m: string) => box.warnings.push(m),
+  });
+  assert.deepEqual(cfg.valueDiagnostics, [
+    { kind: "key-endpoint-mismatch", layer: "credentials", provider: "openai" },
+  ]);
+  assert.equal(cfg.apiKey, undefined, "绑定对不上就不能用这把 key");
+  const facts = JSON.stringify(cfg.valueDiagnostics);
+  for (const sentinel of ["stored-SENTINEL", "effective-SENTINEL", "sk-SECRET-SENTINEL"]) {
+    assert.ok(!facts.includes(sentinel), "事实里不能有 " + sentinel);
+  }
+});
+
+test("值级诊断：env_key 指的变量没导出，带变量名", () => {
+  const box = makeBox();
+  writeToml(box.userPath, '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "MISSING_MODEL_KEY"\n');
+  const cfg = box.resolve();
+  assert.deepEqual(cfg.valueDiagnostics, [
+    { kind: "env-key-unset", layer: "user", envKeyLabel: "MISSING_MODEL_KEY" },
+  ]);
+});
+
+test("值级诊断：env_key 名字去掉控制字符，事实和 warn 都不带 ESC", () => {
+  const box = makeBox();
+  writeToml(box.userPath, '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nenv_key = "\\u001b[2Kpwn"\n');
+  const cfg = box.resolve();
+  assert.deepEqual(cfg.valueDiagnostics, [
+    { kind: "env-key-unset", layer: "user", envKeyLabel: "[2Kpwn" },
+  ]);
+  assert.ok(!JSON.stringify(cfg.valueDiagnostics).includes("\u001b"), "事实里不能有控制字符");
+  assert.ok(!box.warnings.some((w) => w.includes("\u001b")), "warn 里也不能有控制字符");
+});
+
+test("值级诊断：base_url 缺合法 api，带提供地址的层", () => {
+  const box = makeBox();
+  writeToml(
+    box.userPath,
+    '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://endpoint-SENTINEL.example/v1"\n',
+  );
+  const cfg = box.resolve();
+  assert.equal(cfg.baseUrl, "https://endpoint-SENTINEL.example/v1");
+  assert.equal(cfg.api, undefined);
+  assert.deepEqual(cfg.valueDiagnostics, [{ kind: "base-url-without-api", layer: "user" }]);
+  assert.ok(!JSON.stringify(cfg.valueDiagnostics).includes("endpoint-SENTINEL"), "事实里不能有 endpoint");
+});
+
+test("值级诊断：api 非法 + base_url，不再额外报 base-url-without-api", () => {
+  const box = makeBox();
+  writeToml(
+    box.userPath,
+    '[llm]\nprovider = "openai"\nmodel = "gpt-5"\napi = "grpc"\n' +
+    'base_url = "https://endpoint-SENTINEL.example/v1"\n',
+  );
+  const cfg = box.resolve();
+  assert.equal(cfg.api, undefined);
+  assert.deepEqual(cfg.valueDiagnostics, [{ kind: "api-invalid", layer: "user" }]);
+  assert.ok(
+    !box.warnings.some((w) => w.includes("base_url set without api")),
+    "非法 api 已经说明，不再报缺 api",
+  );
+});
+
+test("键策略：必填键和项目白名单都在用户级可写键里", () => {
+  const userKeys = new Set<string>(USER_LLM_KEY_NAMES);
+  for (const key of REQUIRED_LLM_KEYS) assert.ok(userKeys.has(key), "required key must be user-writable: " + key);
+  for (const key of PROJECT_LLM_KEYS) assert.ok(userKeys.has(key), "project key must be user-writable: " + key);
 });

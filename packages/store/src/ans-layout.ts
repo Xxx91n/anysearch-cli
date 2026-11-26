@@ -45,6 +45,7 @@ import {
   ansProjectConfigPath,
   ansProjectIndexDbPath,
   ansProjectDir,
+  isProductPackageRoot,
   samePath,
   legacyHomeDirs,
   legacyProjectDirs,
@@ -198,16 +199,6 @@ function projectDatabaseNotice(path: string, entry: string, env: NodeJS.ProcessE
     "这份是旧布局留下的，产品不再读它，确认不要了可以删掉，或用 " + override + " 指过去。\n";
 }
 
-/** True for a directory that is part of this product rather than a user project. */
-function isProductCheckout(root: string): boolean {
-  try {
-    const name = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown }).name;
-    return typeof name === "string" && (name === "anysearch-cli" || name.startsWith("@anysearch-cli/"));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Move `<project>/domains` into the layout root, in one rename.
  *
@@ -236,7 +227,7 @@ function adoptProjectDomains(
   const to = join(target, ANS_DOMAINS_DIR_NAME);
   if (!existsSync(from) || samePath(from, to)) return;
   if (!existsSync(join(cwd, ".git")) && !existsSync(ansProjectConfigPath(cwd))) return;
-  if (isProductCheckout(cwd)) return;
+  if (isProductPackageRoot(cwd)) return;
   const override = env.ANS_DOMAINS_DIR?.trim();
   if (override && samePath(override, from)) return;
   if (existsSync(to)) {

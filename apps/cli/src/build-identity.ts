@@ -11,19 +11,17 @@
 // 读不出戳时 buildId 是 null，不编一个 "unknown" 字符串：null 拿去比只会得到
 // "判断不了"，而字符串会在某处被当成"和磁盘不一样"，把一个说不清的进程报成旧版。
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildId, readBuildInfo, type BuildInfo } from "@anysearch-cli/store";
+import { buildId, findRepoCheckoutRoot, readBuildInfo, type BuildInfo } from "@anysearch-cli/store";
 
 /** 这份安装从哪来的。 */
 export type InstallSource =
   /** 仓库检出（自己 build 的，或者 pnpm link 过去的）。 */
   | "checkout"
   /** 装出来的包（npm i -g / npx 之类）。 */
-  | "package"
-  /** 说不清：兜底值——detectSource 的 try/catch 只在 existsSync 抛异常时才走到。 */
-  | "unknown";
+  | "package";
 
 /** 一次版本的三句话：标识、版本号、commit。缺的部分留 null，不补。 */
 export interface BuildStamp {
@@ -72,24 +70,13 @@ function runningFromSource(): boolean {
 /**
  * 判断这份安装是仓库检出还是装出来的包。
  *
- * 判据是「往上找，同一个目录里既有 .git 又有 pnpm-workspace.yaml」。只看
- * .git 会把 clone 下来自己 npm install 的东西也算成检出——那种情况装的确实是
- * 包，不该报成源码目录。只看 pnpm-workspace.yaml 又会把用户自己的 monorepo
+ * 判据是「往上找，同一个目录里既有 .git 又有 pnpm-workspace.yaml，而且
+ * package.json 的名字是本产品」。只看 .git 会把 clone 下来自己 npm install
+ * 的东西也算成检出；只看 pnpm-workspace.yaml 又会把用户自己的 monorepo
  * 算进来。
  */
 function detectSource(packageRoot: string): InstallSource {
-  let head = resolve(packageRoot);
-  for (let depth = 0; depth < 6; depth++) {
-    try {
-      if (existsSync(join(head, ".git")) && existsSync(join(head, "pnpm-workspace.yaml"))) return "checkout";
-    } catch {
-      return "unknown";
-    }
-    const parent = dirname(head);
-    if (parent === head) break;
-    head = parent;
-  }
-  return "package";
+  return findRepoCheckoutRoot(packageRoot) ? "checkout" : "package";
 }
 
 function readPackageName(packageRoot: string): string | null {
@@ -158,7 +145,6 @@ export function executingBuildId(): string | null {
 const SOURCE_TEXT: Record<InstallSource, string> = {
   checkout: "仓库检出（自己 build 的）",
   package: "装出来的包",
-  unknown: "说不清（包根读不出来）",
 };
 
 /** 人读的来源说明。 */

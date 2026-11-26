@@ -311,7 +311,7 @@
 - **每层文件状态**:用户级和项目级各一份 `config.toml` 单独记一档，六种之一——`missing`（没有文件）、`empty`（文件在但空白）、`no-llm`（能解析但没有可用的 `[llm]`，含 `[llm]` 不是表）、`half`（有 `[llm]` 表但 provider 和 model 没齐，空表也算）、`ok`（provider 和 model 都在）、`broken`（读不出来或 TOML 坏）。说的是文件本身，不是最终用哪套模型（代码里叫 LlmConfigFileStatus，解析结果里的字段是 `configFiles`）。
   _Avoid_: 配置健康度、config health
 
-- **诊断 kind**:一条结构化诊断挂在某层文件的记录上（记录说明哪一层），自己只说哪一类；键级诊断再带一个键名，不带路径、值、endpoint 或解析原文。给人看的句子仍由 `warn` 出（代码里叫 LlmFileDiagnosticKind / LlmFileDiagnostic）。
+- **诊断 kind**:一条结构化诊断只说自己属于哪一类，不带路径、值、endpoint、provider 值或解析原文。文件级诊断挂在某层文件记录上（记录说明哪一层），键级诊断再带一个清洗过的键名；值级诊断挂在解析结果的 `valueDiagnostics` 上，带层，需要时再带一个非密名字（例如 `env_key` 的变量名），说明「哪一层、哪一类」，不判生死。文件读不出或 TOML 坏时，文件记录另带一个安全的故障位置（错误码或行列号），仍然不带原文。给人看的句子仍由 `warn` 出（代码里叫 LlmFileDiagnosticKind / LlmFileDiagnostic / LlmValueDiagnosticKind / LlmValueDiagnostic）。
   _Avoid_: 错误码、diagnostic code
 
 - **待信任**:宿主已经写好了配置，但宿主自己还要人点一下「信任这个项目/插件」才会真正执行。这不是失败，也不是配置没写——是等人去点，所以单独列一条，不并进「配置在位」里（`ans doctor` 宿主层的 `待信任` 行）。

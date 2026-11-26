@@ -181,6 +181,11 @@ async function main() {
         + JSON.stringify(busyText) + ")");
       assert(busyText.includes(busyError.leasePath),
         "A5: the lease path is shown even for a live holder — a recycled pid leaves it the only thing to act on");
+      const hostText = chatAttemptBusyText(busyError, "ans_chat: ", { leasePathStyle: "session-relative" });
+      assert(hostText.includes("leases/") || hostText.includes("leases\\"),
+        "A5: the host form still names the lease folder (got " + JSON.stringify(hostText) + ")");
+      assert(!hostText.includes(busyError.leasePath),
+        "A5: the host form carries no absolute lease path (#582)");
       assert(chatAttemptBusyText(busyError, "ans_chat: ").startsWith("ans_chat: "),
         "A5: the host prefix goes in front of the shared sentence");
       // The point of #299: no queue. A poll-based wait would be at least one

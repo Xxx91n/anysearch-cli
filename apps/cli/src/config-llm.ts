@@ -6,15 +6,27 @@
 // one copy. #301: the user credential file accessors are re-exported the same way.
 
 export {
+  BASE_URL_SOURCE,
+  bindingCommand,
+  bindingRetarget,
   displayEndpoint,
-  formatLlmConfigFault,
+  formatLlmConfigGap,
   KEY_SOURCE_LABELS,
+  LLM_API_VALUES,
+  llmKeyLabel,
+  needsLlmSetupHint,
+  normalizeBindingEndpoint,
   parseLlmFlags,
   parseLlmToml,
+  PROJECT_LLM_KEYS,
   projectConfigPath,
+  providerLabel,
   readUserCredentials,
+  REQUIRED_LLM_KEYS,
   resolveConfigHome,
   resolveLlmConfig,
+  STORE_KEY_COMMAND,
+  storeKeyCommand,
   userConfigPath,
   userCredentialsPath,
   writeUserCredential,
@@ -22,16 +34,14 @@ export {
 } from "@anysearch-cli/store";
 
 export type {
-  CredentialBinding,
   CredentialFileContents,
-  LlmConfigFaultKind,
   LlmConfigFileState,
   LlmConfigFileStatus,
-  LlmFileConfig,
   LlmFileDiagnostic,
   LlmFileDiagnosticKind,
-  LlmFlags,
+  LlmFileFault,
   LlmLayer,
+  LlmValueDiagnostic,
+  LlmValueDiagnosticKind,
   ResolvedLlmConfig,
-  ResolveLlmOpts,
 } from "@anysearch-cli/store";

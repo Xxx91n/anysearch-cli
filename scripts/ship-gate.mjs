@@ -1391,24 +1391,19 @@ async function stepMemoryEval() {
     if (!z || typeof z !== "object") failUnverifiable("memory-eval report missing metrics.observational zone (E3 fail-closed)");
     if (z.schema !== "anysearch/observational@1") failUnverifiable("observational zone schema drift: " + z.schema);
     for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures", "armDeltas", "maxLexicalOverlap", "exclusiveHits", "nativeScoresMissing"]) if (!(k in z)) failUnverifiable("observational zone missing" + k);
-    // D7: skip-ledger escalation — 3 consecutive identical observational skips force human review.
-    const skipL = path.join(outDir, "skip-ledger.json");
-    if (fs.existsSync(skipL)) {
-      const sl = JSON.parse(fs.readFileSync(skipL, "utf8"));
-      if (typeof sl.consecutiveWarn === "number" && sl.consecutiveWarn >= 3) {
-        fail("observational explicit-skip streak" + sl.consecutiveWarn + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger" + skipL + " ");
-      }
-    }
-    report("pass", "memory-eval observational zone present (values never gated, D7 streak ledger watched)");
+    // Eval path is E3 report-only (D7 3-streak retired; durable-DB switch-run owns real PSI/escalation).
+    report("pass", "memory-eval observational zone present (values never gated; D7 streak retired on eval path)");
     // impl-plan 8: ship-gate reads switch state through the ledger (informational;
     // exit-code semantics unchanged — S0 data-absent boots must pass on both db shapes).
+    const skipL = path.join(outDir, "skip-ledger.json");
     if (fs.existsSync(skipL)) {
       try {
         const sl2 = JSON.parse(fs.readFileSync(skipL, "utf8"));
         const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
         report("info", "switch-state: phase" + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since" + st.since : "") + (st && st.transitionId ? " transitionId" + st.transitionId : ""));
       } catch (e) {
-        report("info", "switch-state: ledger unreadable (handled by eval quarantine): " + String(e && e.message ? e.message : e));
+        const qHint = skipL.replace(/\.json$/, ".quarantined-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json");
+        report("info", "switch-state: ledger unreadable — move aside to preserve evidence (mv " + skipL + " " + qHint + "): " + String(e && e.message ? e.message : e));
       }
     } else {
       report("info", "switch-state: no ledger yet — phase S0 (boot)");

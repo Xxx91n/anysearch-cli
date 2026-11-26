@@ -9,7 +9,7 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest, type SourceTraceLabel } from "@anysearch-cli/retriever";
+import { assertJudgmentInput, unwrapRetrieved, normalizeUrlIdentity, pickUnseenUrlResults, type SufficiencySignal, type GapRequest, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import { MAX_SUFFICIENCY_REROUNDS, isValidSufficiencyRerounds } from "@anysearch-cli/store";
 
 export interface SufficiencyEvaluatorDeps {
@@ -187,9 +187,11 @@ export class SufficiencyEvaluator {
         // the search was in flight must not be followed by a write — this is the
         // check that covers it, not the one above.
         if (scope?.aborted) return empty;
-        // Merge results: append new unique URLs.
-        const seenUrls = new Set((envelope.results || []).map((r: any) => r.url));
-        const newResults = (reroundEnvelope.results || []).filter((r: any) => !seenUrls.has(r.url));
+        // Merge results: append new URLs. Compare on the URL identity the engine
+        // and the archive use, so a differently spelled reround hit is recognised
+        // as already seen instead of archived twice.
+        const seenUrls = new Set<string>((envelope.results || []).map((r: any) => normalizeUrlIdentity(String(r.url ?? ""))));
+        const newResults = pickUnseenUrlResults(seenUrls, reroundEnvelope.results || []);
         if (newResults.length === 0) break; // no new info, stop.
         // #259: archive the reround's FRESH results only. They are about to
         // reach the next provider request, so a later session must be able to

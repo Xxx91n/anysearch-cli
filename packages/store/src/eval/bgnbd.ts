@@ -27,7 +27,8 @@ export interface TauFitGateInput {
 // insufficient rows/fit-eligible units, no baseline histogram pair, too-young observation
 // window; all of them quote an immature dataset, not a degraded pipeline) vs SUBSTANTIVE
 // hits (a numeric PSI drift vs an existing baseline, or the anti-peeking interval). The
-// consumed eval track records the former as reasonCode=data-absent (widened).
+// consumed eval track surfaces the former as dataAbsent=true in the E3 observational report
+// (report-only).
 export function isStructuralAbsence(failures: readonly string[]): boolean {
   if (failures.length === 0) return false;
   return failures.every((f) => f.startsWith("T1:") || f.includes("PSI unavailable") || f.startsWith("T3: observation window"));

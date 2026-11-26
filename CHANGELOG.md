@@ -13,6 +13,109 @@
 
 - **这不是一道门**：`~/.ans/config.env` 里的任何 `ANS_*` 启动时都会被灌进环境，用户自己也能把这个变量设长。名字里带 `EVAL` 只是提醒。最长也只是让他自己那一次搜索多等几秒，默认不动，可以接受。
 
+## Unreleased — #582: MCP 的模型错误文字脱敏
+
+一句话说清：**`ans_chat` 的模型初始化失败和运行异常以前把上游错误原文直接塞进 `content`，里面可能带 key、这台机器的绝对路径、配置里的 provider 值和解析器 warning 原文；宿主会把这段文字抄进聊天、贴进工单、存进库。现在失败文字先过一道脱敏，并且说清是配置、鉴权还是运行问题；观测里长期留存的 `configError` 走同一道脱敏。异常原文仍进 stderr——可以带路径，不带 key。**
+
+### Changed
+
+- **`redactPaths`**（`packages/retriever/src/redact.ts`）：把绝对路径换成 `[path]`，认 POSIX 根、盘符、UNC 和带括号的目录（`Program Files (x86)`）；路径里有空格和点（`Ana Maria`、`J. Smith`）也整个换掉。只有已知扩展名（`.toml`、`.jsonl`、`.env`、`.pem` 等）后面跟空格才算路径结束，后面的文字重新扫一遍——同一行第二个路径不会漏；宁可多删一点正文，也不让路径碎片留下。URL 的路径、相对文件名不动。和 `redactSecrets` 一样是可组合的纯函数。
+- **`redactSecrets` 多一个 `keepEnvNames`**：选择保留 `ANS_*` 变量名，避免 `ANS_LLM_CONTEXT_WINDOW` 这种 20 字母以上的设置名被当成 key 抹成 `[redacted]`。只有 MCP 的宿主文字和 stderr 用它，别的调用方默认行为不变。
+- **MCP 失败文字统一出口**（`apps/mcp/src/tools/llm-failure.ts`）：`formatModelFailure` 把「模型没起来」和「请求跑挂了」分成两句，各带 `configuration problem` / `authentication problem` / `file access problem` / `runtime problem` 和对应修法（`ans llm` / `ans auth` / 文件权限 / `ans doctor`）；内核真实抛的 `Unknown LLM provider`、`Model not found`、`baseUrl requires explicit api`、`ANS_LLM_*` 都归到配置问题，`EACCES` 这类读文件失败不再冒充鉴权，鉴权只认上游的真写法（`HTTP 401`、`status code 401`、`401 {...}`、`invalid x-api-key` 等；端口 `:403` 不算）。进正文前先去掉本次解析的 warning 原文、生效的 provider 值、base URL（含 userinfo / query / fragment，整段换成 `[endpoint]`）、其它 URL 的 userinfo / query / fragment、绝对路径和 key 形状；`ANS_*` 设置名和模型名保留，因为那是要照着改的东西；全是敏感内容时只留问题类别，不伪造原因。`ans-chat.tool.ts` 的初始化失败、运行错误、预算停止、consolidate 异常、会话恢复失败、domain 约束停止（原文带 TOML 路径和解析错误）和 `configError` 观测都走这一道；锁冲突那句按 #582 改成给 `leases/<file>` + 会话记录目录提示（CLI 仍给绝对路径，#587 的可操作性不动）；stderr 用 `writeRedactedDiagnostic` 保留原文（路径保留，key 去掉）。不是模型问题的运行异常不冒充模型失败，只脱敏、保留原话。
+- **解析器故障的文字**：配置解析抛错时，`content` 与 `anysearch.llm.configError` 用同一份脱敏结果，观测字段和名字一个没动。
+
+### Tests
+
+- `apps/mcp/test/ans-chat-redaction.test.ts`：假 key、假 provider、假路径三组 sentinel，分别覆盖初始化失败、运行 401、warning 被失败文字引用、配置解析抛错、domain 停止；断言 `content` / `structuredContent`（含 domain 的 detail）/ 观测 `configError` 里一个都不出现，失败文字仍点名问题类别和修法，stderr 保留路径但不带 key；另有 EACCES 归文件权限、端口 `:403` 不算鉴权、带账号密码和 query 的 base URL 不出现。
+- `packages/retriever/test/redact.test.ts`：`redactPaths` 的 POSIX、盘符、UNC、带空格 / 点 / 撇号 / 括号的路径、同一行两条路径、URL、相对文件名；`keepEnvNames` 保留设置名。
+- `apps/mcp/test/session-lock-recovery.test.ts` 与 `packages/kernel/test/chat-attempt.test.ts`：锁冲突文本在 MCP 形态下给 `leases/<file>`、不含会话记录根的绝对路径；CLI 形态仍给完整路径。
+
+## Unreleased — #580: doctor 每份 config.toml 一行，按文件状态判失败
+
+一句话说清：**以前 doctor 把配置解析器吐出的每条 warning 都记成一条「配置文件」失败，于是明文 key 被丢、项目文件写了不许写的键、`env_key` 没导出、存着的 key 绑错 endpoint，这些「还没配好」都会让整台机器退 1；而文件不存在、空文件、只写了半段 `[llm]`，又一条提示都没有。现在用户级、项目级各固定一行「配置文件（用户级）/（项目级）」：六种文件状态翻成 doctor 的四态，不存在、空、没有 `[llm]`、半配置都算未配置并用大白话说清是哪一种；只有读不出来、TOML 坏才算失败、退 1。值的问题只挂到相关行说明，不改退出码；只有 `base_url` 写了却没有合法 `api` 时，模型配置失败、退 1。**
+
+### Changed
+
+- **解析器补 5 条值级诊断 kind**（`packages/store/src/config-llm.ts`）：`api-invalid`、`env-key-provider-mismatch`、`env-key-unset`、`key-endpoint-mismatch`、`base-url-without-api`。结果上新增 `valueDiagnostics`，每条带层（`cli` / `env` / `user` / `credentials` 等），需要时再带一个非密名字（`env_key` 的变量名，存在 `envKeyLabel`，沿用 `llmKeyLabel` 清洗后再进事实和 stderr）；不带值、endpoint、provider 值、路径或解析原文。原有的 `warn` 人读句子一条没改（只给名字同样过清洗）。
+- **`configFault` 不再参与 doctor**：文件故障只从 `configFiles.*.fault` 读；#581 已把 `configFault` 字段和 `LlmConfigFaultKind` 类型一并删掉。
+- **文件故障的位置是结构化事实**：`configFiles.*.fault` 只在 `broken` 时出现，带 `invalid-toml` 的行列号或读失败的 errno 码，不带原文、路径或值；doctor 不再从英文 warning 字符串里刮行列号。
+- **doctor 固定两行文件行**：每份 `config.toml` 一行，文件不存在也打。状态到四态的映射表和状态/kind 到中文句子的映射表都在 CLI 侧，按类全填——新状态或新 kind 漏了会编译不过。文件行说明分别写：没有这个文件、文件在但里面是空的、文件在但没有 `[llm]`（不是表时补一句整段被忽略）、设了哪些字段缺哪些、读不出来或 TOML 坏（只给路径、错误类型和行列号，不回显原文）。
+- **值问题不再算失败**：文件里被丢的键（明文 key、未知键、项目白名单外键、类型不对）接在文件行后面说明；`env_key` 没导出、绑错 provider、绑错 endpoint 和 `api` 非法挂到「模型配置」或「模型密钥」行，状态仍是可用/未配置，退出码不动。`base_url` 缺合法 `api` 是例外：模型配置记失败、退 1，说明「自定义地址没写 api（要 chat / messages / responses），模型起不来」。
+- **坏文件 + 环境变量补齐**：文件行仍失败、退 1，detail 补一句「值来自环境变量，能用；env 没了就会坏」；模型配置行可以是可用。
+- **退出码和 JSON 形状不变**：有失败项 1；没有失败项时 `--strict` 且有未检查项 5；否则 0。`--json` 仍是单个完整文档，四层顺序和条目字段不变。原来随 warning 数量变化的 `[失败] 配置文件` 行不再出现，固定换成 `配置文件（用户级）`、`配置文件（项目级）` 两条。
+
+## Unreleased — #607: 整页正文入库的列和顶号规则
+
+一句话说清：**资料库以前只有搜索给的一小段 `snippet`，抓回来的整页没地方放。现在 `retrieval_results` 多了一列 `content`，并新增 `savePage()` 一次写一页正文；顶号按「片段 < 正文」两档走——搜索命中碰到同 URL 的正文行只挂上去、返回正文行 id，片段永远顶不掉正文；正文补进已有片段行保持行 id 和 title/snippet 不变；同一页内容不同才开新行并让旧行失效。主表 FTS 仍然只索引 title/snippet，正文全文照存不截断。**
+
+### Changed
+
+- **`retrieval_results.content`**（`packages/store/src/schema.sql`、`session-store.ts`）：新增正文列；新库建表自带，老库打开时按既有 `ADD COLUMN` 迁移补上。`fetch` 工具（#608）落地前先只有存储和写规则，没有抓取入口。
+- **`savePage(sessionId, input)`**（`session-store.ts`）：写一页正文，返回 `{ id, action }`（`inserted` / `filled` / `unchanged`，正文净化后为空时 `empty`，正文命中密钥守卫时 `secret`；后两种不落行）。正文只过 `sanitizeText`、不截断；新行 `fetched=1`，`snippet` 抄正文开头 4000 字，给主表 FTS 留一个可搜的窗口；不写 `superseded_by`、不设 TTL。title、url 和 entity 也过 `sanitizeText`，并按读侧既有字段上限截断（title 500 / url 与 entity 2048）；正文不截断。落行前跑 `containsSecret(url + title + content)`，整页里贴的 token/私钥不会进库或归档快照。正文写事务用 `immediate()` 起笔，读完再写不再走 WAL 的 read→write 升级，两个进程同时拉同一页不会撞 `SQLITE_BUSY_SNAPSHOT`。
+- **顶号两档**（`time-decay.ts` 的 `invalidateOldRecords`）：片段写入只配 `protectContent`，同 URL 的正文行不因新片段失效；正文写走新版本，旧行标 `valid_until` 但保留正文。作废一律跳过 `archived=1` 和隔离行，撤销归档 / keep 之后还能回到召回。
+- **活行口径**（`liveResultsByUrl`）：新查询和召回侧一致，带上 `superseded_by IS NULL`；被长期知识更正顶掉、但 `valid_until` 仍为空的行不会再被当成当前版本 attach 或判成 unchanged。
+- **搜索命中挂到正文行**（`saveResultsWithIds`）：同 URL 已有 live 正文行时不再插片段行，touch 正文行并返回它的 id，摘要依赖落在有正文的那一行；跨会话也一样，片段不会关掉别的会话抓到的正文。
+- **同一把尺子**（`adjudicateMemory`、`resolveQuarantinedMemory`）：写入路径遇到同 URL 正文行同样只挂不插；隔离 keep 关闭 counterpoint 时跳过正文行和归档行，不把正文按 entity 关掉。
+
+### Tests
+
+- `packages/store/test/content-write-path.test.ts`：七种写入/顶号分支、片段永不顶正文、就地补正文保持 id 和 title/snippet、同内容不写、不同内容新行、归档/隔离/更正顶掉的行不被当成活版本、正文命中密钥守卫不落行、title/url/entity 按字段上限截断而正文不截断、正文不进主表 FTS、adjudicate 与 quarantine keep 同一把尺子。
+- `packages/store/test/content-column-migration.test.ts`：没有 `content` 列的老库打开后加列、能写能读，且不触发新的迁移前备份。
+- `packages/store/test/schema-content-drift.test.ts`：`schema-content.ts` 与 `schema.sql` 逐字节一致。
+
+## Unreleased — #606: 网址身份只留一把尺子
+
+一句话说清：**「这两个网址是不是同一页」以前只有 engine 里一份私有实现，它只管 scheme、`www.` 和几个 tracking 参数；没有 scheme 的串直接按原样保留，主机尾点和非本 scheme 的标准端口也不认，删 tracking 参数还会把整条 query 重新编码。现在归一化收在 `@anysearch-cli/retriever` 的 `normalizeUrlIdentity`，搜索去重、资料库写入、摘要来源比对共用它。搜索输出形状没变；但从 `retrieval_results.url` 直接取网址的展示面会看到无 scheme 的身份串。**
+
+### Changed
+
+- **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉两个标准 web 端口（80/443），去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序、非标准端口和其他参数原样保留，删 tracking 参数也不重排整条 query 的编码。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。函数幂等：身份再过一遍还是同一个身份。
+- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断共用 `pickUnseenUrlResults`，不再各留一套裸字符串集合。展示：`ans search` 的输出形状没动，chat 答案里的来源在 `includeAnswer` 时仍用带 scheme 的 `sourceUrl`；直接读 `retrieval_results.url` 的 `ans entity unresolved`、`ans pref review`（含 `--promote` 写进 `MEMORY.md` 的 key）、重建摘要、`ans consolidate` / `ans_chat` 的证据和冲突明细，看到的是这一列存的身份串。
+- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同时按调用方原串再关一次。老行只有在写法正好等于身份或这次传入的原串时才会被关掉；其它历史拼法不回填，同一页可能暂时两条 live。
+- **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 先按身份查，查不到再按引用原串查一次；新行和改动前的旧行都能对上，摘要依赖不会丢。
+
+### Tests
+
+- `packages/retriever/test/url-identity.test.ts`：三种写法归一成同一身份；标准端口、尾点、`www.`、tracking、fragment；非标准端口和 query 原字节保留；身份幂等；`pickUnseenUrlResults` 只返回新身份。
+- `packages/kernel/test/engine-url-identity.test.ts`：一个信息源返回三种写法，只留一条结果，`sourceUrl` 仍带 scheme。
+- `packages/store/test/url-identity.test.ts`：两次写入同一页的两种写法落同一身份，旧行被顶掉；`adjudicateMemory` 的默认实体键也是身份；改动前的老行在顶号和摘要来源查询里仍能被找到。
+
+## Unreleased — #605: 出厂域白名单只留真工具，domains 只维护仓根一份
+
+一句话说清：**三个出厂域的白名单一直列着 `ctx_execute`、`ctx_search`、`ctx_batch_execute`、`atomcode` 这些内核里根本没有的工具，`ans domain` / `ans doctor` 把它们当可用工具展示；MCP 包里还提交了一份 `domains` 副本，改仓根的 TOML 不构建就不会生效。现在白名单只剩 `search` 和 `fetch`，死名字和 `atomcode-research` 都删了；`apps/mcp/domains` 改成构建时生成、不进 Git，MCP 在没构建的源码树里直接读仓根。**
+
+### Changed
+
+- **三个出厂域**（`domains/default.toml`、`docs.toml`、`research.toml`）：`hooks.toolWhitelist = ["search", "fetch"]`，`ctx_execute` / `ctx_search` / `ctx_batch_execute` / `atomcode` 全删；research 的 `skills.active` 去掉 `atomcode-research`。`skills.toolRequires` 仍然不配。`fetch` 还没有工具实现，#608 接上后生效；三个 TOML 都标了占位。
+- **两个运行时的无域兜底**（`apps/cli/src/commands/chat.ts`、`apps/mcp/src/tools/ans-chat.tool.ts`）：没加载任何域时的兜底白名单从 `["search"]` 换成 `["search", "fetch"]`。两份手抄的兜底域对象合并成 kernel 的 `fallbackAgentDomain()` 工厂，每次给一份新对象；它没有站点白名单，域配置读失败时 `fetch` 不受站点限制，注释已写明这个代价。
+- **MCP 只维护一份 domains**：`apps/mcp/domains` 从 Git 移除并加进 `.gitignore`；构建时 `sync-domains.mjs` 仍从仓根复制，装好的包里照旧带着副本。CLI 和 MCP 共用 store 的 `hostDomainsDirs`：它从入口往上找检出根（`ans` 的 `apps/cli/dist`、`ans mcp` 的 `apps/cli/mcp/dist`、`apps/mcp/src|dist` 都找得到），源码检出先读仓根、再读包内生成副本，改根 TOML 不用重新 build 也能看见；检出内的 `<cwd>/domains` 构建副本不抢在仓根前面；`<cwd>/.ans/domains` 还是操作者自己的配置，保持原优先级。装好的包没有仓库标记，只读自己包里的副本，`<prefix>/node_modules/domains` 不会被误读。检出的判据和 `build-identity` 共用 `isRepoCheckoutRoot`（同一目录里同时有 `.git`、`pnpm-workspace.yaml`，且 `package.json` 是 `anysearch-cli` / `@anysearch-cli/*`），用户自己的 monorepo 不会被认成检出。
+- **Turbo 缓存跟着产物走**：`@anysearch-cli/mcp#build` 的输出补上 `domains/**`，输入补上 `$TURBO_ROOT$/domains/**`。改仓根的 TOML 会换掉 build 的哈希，不会命中旧缓存把一份过时的域副本还原回来。
+- **安装来源少了一个死取值**：`apps/cli/src/build-identity.ts` 的 `InstallSource` 去掉了永远返回不到的 `unknown`（`existsSync` 不抛异常，那个 catch 走不到），`ans upgrade status --json` 的 `installed.source` 现在只有 `checkout` / `package`；外部按三值写判断的地方要跟着改。
+- **读副本的地方改读仓根**：`packages/kernel/test/agent-tool-filter.test.ts` 和 `rag-adapter.test.ts` 只读 `domains/`；`scripts/recall-acceptance.mjs` 没设 `ANS_RECALL_MCP_DIST` 时读仓根，指向装好的 dist 时自动取 dist 旁边的 `domains/`，`ANS_RECALL_MCP_DOMAINS` 仍可覆盖；缺 `default.toml` 会说明两条可用的设置路并退 2。
+
+### Tests
+
+- `agent-tool-filter.test.ts` 逐个核对三个出厂域的白名单正好是 `["search", "fetch"]`，确认 `fetch` 能过过滤器，`atomcode-research` 不再启用；`fallbackAgentDomain()` 每条断言白名单、过滤结果和“两次调用不是同一对象”。
+- `domain-loader.test.ts` 的 default/research 断言改成新白名单和去掉的技能；`rag-adapter.test.ts` 只读仓根，生成副本再也盖不住坏 TOML。
+- `apps/mcp/test/server.test.ts` 用临时目录搭出三种布局：`apps/mcp/dist` 和 `apps/cli/mcp/dist` 都能从根 `domains/` 加载 `docs`（没有 `default.toml` 也照常走兜底）；装进 `node_modules` 后不会读旁边的同名 `domains`。
+- `apps/cli/test/domain-search-dirs.test.ts` 钉住 CLI 的同一结论：源码检出里仓根 `domains/` 排在包内生成副本前面。
+
+
+Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed content into `but resolve apply <path>:<N>`. `but resolve --ai` resolves everything at once.
+## Unreleased — #581: `ans chat` / `ans_chat` 说清哪份配置坏了、缺什么
+
+一句话说清：**以前缺 provider/model 时两个入口基本只说「没配」；用户级的 `config.toml` 坏了还能看到一句英文，仓库里的 `.ans/config.toml` 坏了却完全看不出来；文件写到一半和从来没配过也长得一模一样。现在两个入口读每份文件的真实状态：坏文件逐层点名（项目级只给相对路径 `.ans/config.toml`），半配置说清哪一层、缺 provider 还是 model，最后才落到原来的「什么都没配」；`credentials.json` 里还存着模型 key 时补一句「key 还在，但没配模型可用」。**
+
+### Changed
+
+- **`formatLlmConfigGap`**（`packages/store/src/config-llm.ts`）：缺有效 provider/model 时按固定顺序拼句子——坏文件（用户级保留原句，项目级点名实际读到的相对路径，两边都坏就两句都给）→ 半配置（用户级/项目级文件、环境变量、命令行是哪一层，设了什么、缺哪个字段）→ `credentials.json` 里存着却没用上的模型 key。句子不带 key 值、provider 值、绝对路径或 warning 原文。
+- **两边提示都按实际文件走**：解析器在 `configFiles` 里给出 `displayPath`——用户级是 `~/...`，项目级是项目内相对路径（正常 `.ans/config.toml`，旧布局 `.anysearch/config.toml`）。路径由解析器自己的 home/cwd 算好，入口不再自己猜；升级没迁完的人也不会被指到一个不存在的文件。
+- **`formatLlmConfigFault`（内部）只认每层文件状态**：不再读只描述用户级的 `configFault`；`ResolvedLlmConfig.configFault` 和 `LlmConfigFaultKind` 一并删掉，全仓没有读取点。
+- **两个入口共用同一组事实**：`ans chat` 和 `ans_chat` 都调 `formatLlmConfigGap`，通用提示由同一份 `needsLlmSetupHint` 决定。用户级坏文件照旧不打印「LLM provider not configured」（那条会带出一个示例 provider 名，和「坏文件」自相矛盾）；项目级坏、半配置、什么都没配各自说自己的那一句。
+- **MCP 缺配置仍是裸错误**：`isError: true`、只有纯文字 `content`、没有 `structuredContent`。正文点名层和字段；`credentials.json` 的故障还是走原来那条 `credentialFileNotice`。
+- **零副作用有快照证明**（`apps/mcp/test/ans-chat-config-gap.test.ts`）：真实临时 SQLite 里，缺配置的 `ans_chat` 调用前后只有 `task_records` 多一条已结束的失败记录（`exit_code=1`、`session_id=NULL`）、`observability_traces` 多一条；`sessions`、`budget_ledger`、`budget_reservations`、`task_budgets` 一行不涨。
+- **`ans consolidate` 和成功结果的形状没动**：坏文件 + 环境变量补齐照常跑，文件故障只进 stderr 和 `anysearch.llm.configWarnings` 计数。
+
 ## Unreleased — #577: eval 账本的锁先看人死活，再看时间；收尾不再删别人的锁
 
 一句话说清：**两个 eval 账本写盘时会在旁边放一把 sidecar 锁，锁上记着持有者的 pid 和开始时间。等待者判断能不能抢，先看 pid 探活、再看「锁放了多久」——而「放了多久」那一条完全不看 pid。于是持锁进程只要卡住 5 分钟（合盖休眠、断点、网络盘挂住），人还活着却被当成死人，锁被删掉；它恢复后接着写，两个写入者就重叠了。它收尾时又无条件再删一次，把后来者刚建的锁也删了，第三个进程还能进。现在身份优先：探活说活着就一直不抢，只有探死或「说不清」才落到 5 分钟规则；抢锁和放锁都要确认这把锁还是自己的。**
@@ -29,6 +132,7 @@
 ### Known limits
 
 - **探活说活着的锁只能人删**：持锁进程被挂起、停在断点、或者 pid 被无关进程复用时，锁会一直留着，后来者每次等 2.5 秒后报错。这是有意换来的取舍——宁可响亮失败，也不再静默双写。报错里写了怎么手工收场。
+
 ## Unreleased — #576: 说不清的锁不再永远卡住，busy 也告诉你锁在哪儿
 
 一句话说清：**session-lock 原来把「同主机 + 探测说不清」和「活着」当成一回事，于是崩溃留下的锁在心跳老掉以后也不会回收，只能人去删；而用户看到的那句 busy 只说 retry after it finishes，连锁在哪个目录都不讲。现在三态各走各的路：死了立刻收，活着永不收，说不清就按心跳走 10 分钟 stale 窗口。busy 文本带上持有者、锁目录和锁建立的时间，并按探测结果给出对应的那条出路。**
