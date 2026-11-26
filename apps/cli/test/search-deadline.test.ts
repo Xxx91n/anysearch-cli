@@ -140,6 +140,7 @@ test("ans --help names --deadline <ms>, its bounds, and the default", async () =
   const r = await spawnCli(["--help"]);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /--deadline <ms>/, "the search options list the flag; got: " + r.out.slice(0, 1200));
+  assert.match(r.out, /--deadline=<ms>/, "the help also names the equals form; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /500\D+60000/, "the help names the range; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /default 4000/, "the help names the default");
 });
@@ -154,6 +155,20 @@ test("--deadline=500 cuts a slow arm too", async () => {
     assert.equal(r.code, 1, "a cancelled search with no results exits 1; got: " + r.err + r.out);
     assert.match(r.out, /Providers cancelled: anysearch/, "the equals form reached the engine; got: " + r.out.slice(-400));
     assert.ok(wallMs < 4000, "the equals form used the deadline, not the 4s default; got " + wallMs + "ms");
+  } finally {
+    await stub.close();
+  }
+});
+
+test("the last --deadline wins", async () => {
+  const stub = await startFakeAnySearch(MARKDOWN, { delayMs: 5000 });
+  process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
+  try {
+    const started = Date.now();
+    const r = await run(["q", "--deadline", "9000", "--deadline", "500"]);
+    const wallMs = Date.now() - started;
+    assert.equal(r.code, 1, "a cancelled search with no results exits 1; got: " + r.err + r.out);
+    assert.ok(wallMs < 4000, "the later 500ms deadline overrode 9000; got " + wallMs + "ms");
   } finally {
     await stub.close();
   }
@@ -185,6 +200,7 @@ for (const [label, argv] of [
   ["equals missing value", ["q", "--deadline="]],
   ["equals not a number", ["q", "--deadline=abc"]],
   ["equals below the floor", ["q", "--deadline=499"]],
+  ["first duplicate bad", ["q", "--deadline=abc", "--deadline=500"]],
 ] as const) {
   test("--deadline " + label + " exits 2 and states the range and default", async () => {
     const r = await run([...argv]);

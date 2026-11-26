@@ -345,7 +345,7 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
 }
 {
   // Invalid caps fail at construction instead of becoming a 1ms setTimeout.
-  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
     let threw = false;
     try {
       new RetroaererdEngine([], { requestTimeoutMs: bad });

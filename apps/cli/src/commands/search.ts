@@ -121,24 +121,27 @@ export async function runSearch(args: string[]): Promise<number> {
   // wait. Absent keeps the engine's 4s default; the flag only changes this
   // run, never the default itself.
   let requestTimeoutMs: number | undefined;
-  const deadlineArg = args.find((a) => a === "--deadline" || a.startsWith("--deadline="));
-  if (deadlineArg !== undefined) {
-    // Accept both "--deadline 8000" and "--deadline=8000"; a bare "--deadline"
-    // still reads the next token so a following --flag is rejected, not eaten.
-    const raw = deadlineArg === "--deadline"
-      ? flagVal("--deadline")
-      : deadlineArg.slice("--deadline=".length);
-    const wholeNumber = raw !== undefined && !raw.startsWith("--") && /^\d+$/.test(raw);
-    const parsed = wholeNumber ? Number(raw) : NaN;
-    if (!wholeNumber || parsed < SEARCH_DEADLINE_MIN_MS || parsed > SEARCH_DEADLINE_MAX_MS) {
-      process.stderr.write(
-        "ans search: --deadline needs a whole number of milliseconds from " +
-          SEARCH_DEADLINE_MIN_MS + " to " + SEARCH_DEADLINE_MAX_MS +
-          " (default: " + DEFAULT_REQUEST_TIMEOUT_MS + ")\n",
-      );
-      return 2;
+  // Accept "--deadline 8000" and "--deadline=8000". Validate every occurrence,
+  // then let the last one win so a later override in a script behaves as read.
+  const deadlineValues: string[] = [];
+  args.forEach((a, i) => {
+    if (a === "--deadline") deadlineValues.push(args[i + 1] ?? "");
+    else if (a.startsWith("--deadline=")) deadlineValues.push(a.slice("--deadline=".length));
+  });
+  if (deadlineValues.length > 0) {
+    for (const raw of deadlineValues) {
+      const wholeNumber = raw !== "" && !raw.startsWith("--") && /^\d+$/.test(raw);
+      const parsed = wholeNumber ? Number(raw) : NaN;
+      if (!wholeNumber || parsed < SEARCH_DEADLINE_MIN_MS || parsed > SEARCH_DEADLINE_MAX_MS) {
+        process.stderr.write(
+          "ans search: --deadline needs a whole number of milliseconds from " +
+            SEARCH_DEADLINE_MIN_MS + " to " + SEARCH_DEADLINE_MAX_MS +
+            " (default: " + DEFAULT_REQUEST_TIMEOUT_MS + ")\n",
+        );
+        return 2;
+      }
     }
-    requestTimeoutMs = parsed;
+    requestTimeoutMs = Number(deadlineValues[deadlineValues.length - 1]);
   }
 
   // Drop every --flag token (was only --mode) so --json /
