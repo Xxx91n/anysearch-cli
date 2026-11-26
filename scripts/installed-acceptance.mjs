@@ -944,7 +944,7 @@ async function main() {
       const missingText = textOf(missingCall);
       check(missingCall.result?.isError === true, "缺配置时 stdio ans_chat 是 isError", missingText.slice(0, 400));
       check(missingCall.result?.structuredContent === undefined, "缺配置的结果没有 structuredContent",
-        JSON.stringify(missingCall.result?.structuredContent).slice(0, 300));
+        JSON.stringify(missingCall.result?.structuredContent ?? null).slice(0, 300));
       check(missingText.includes("The project config file (.ans/config.toml) is broken"),
         "正文点名坏的是项目级，不再只说没配", missingText.slice(0, 400));
       check(missingText.includes("LLM not configured"), "正文同时告诉宿主该去哪配", missingText.slice(0, 400));
@@ -989,7 +989,7 @@ async function main() {
         "坏用户文件 + env 补齐后 stdio ans_chat 照常成功", fillText.slice(0, 400));
       check(!!fillCall.result?.structuredContent?.sessionId && !!fillCall.result?.structuredContent?.usage,
         "成功结果的 structuredContent 形状不变（有会话句柄和用量）",
-        JSON.stringify(fillCall.result?.structuredContent).slice(0, 400));
+        JSON.stringify(fillCall.result?.structuredContent ?? null).slice(0, 400));
       check(!fillText.includes("config.toml"), "成功时答案里不夹配置文件的事", fillText.slice(0, 400));
       const fillStderr = fillMcp.stderrText();
       check(/config\.toml/.test(fillStderr), "坏文件只进 stderr", fillStderr.slice(-600));
