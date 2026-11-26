@@ -33,6 +33,10 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
 // exists only so tests can shrink it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+// #657: the composition root reads this number back — it resolves the eval-only
+// `ANS_EVAL_REQUEST_TIMEOUT_MS` against it and stamps the effective budget on
+// the engine result. Exported instead of copied so there is one 4000.
+export { DEFAULT_REQUEST_TIMEOUT_MS };
 
 // Normalize URL for dedup: strip scheme + leading www + tracking params.
 // atomcode research: normalize_url() in paperfoot strips utm_*, fbclid, gclid.

@@ -140,7 +140,13 @@ export async function runSearch(args: string[]): Promise<number> {
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch to measure that arm alone). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const engine = createPersistentEngine(active.declaredName);
+  // #657 评测专用：只有这条命令读 `ANS_EVAL_REQUEST_TIMEOUT_MS`，chat 和 MCP 不接。
+  // 不设、写错、写了个 ≤0 的数都是用户默认的 4 秒；最长 15 秒。它不进 help，
+  // 也不进产品文档，用法见 docs/eval/request-timeout-budget.md。
+  const evalTimeoutRaw = process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
+  const engine = createPersistentEngine(active.declaredName, {
+    ...(evalTimeoutRaw === undefined ? {} : { requestTimeoutMs: Number(evalTimeoutRaw) }),
+  });
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that

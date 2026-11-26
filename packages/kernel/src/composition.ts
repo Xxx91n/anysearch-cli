@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { RetroaererdEngine } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -249,6 +249,10 @@ export interface CompositionResult {
   // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
   // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
+  // #657: this engine's per-request deadline in ms — the user's 4000 unless an
+  // eval run raised it. Optional so hand-built mocks stay source-compatible;
+  // every createEngine result supplies it.
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -332,6 +336,25 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
+// #657: the ceiling for the eval-only clock. A run under it is killed at 60
+// seconds anyway, so 15s is already a wide measurement window.
+const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
+
+/**
+ * #657: what `ANS_EVAL_REQUEST_TIMEOUT_MS` means once it reaches the engine.
+ * Unset, unparsable or ≤0 keeps the user's 4s; anything above 15s is cut to 15s.
+ *
+ * This is a measuring knob, not a product setting: no help text, no product
+ * doc. `ans search` reads the variable and passes the number here; chat and MCP
+ * never do, so the kernel itself never reads the environment (see the test).
+ */
+export function evalRequestTimeoutMs(raw?: number): number {
+  if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
+  const ms = Math.trunc(raw);
+  if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.min(ms, EVAL_REQUEST_TIMEOUT_CAP_MS);
+}
+
 export function createEngine(
   domain?: string,
   opts?: {
@@ -361,6 +384,13 @@ export function createEngine(
      * Omitted means declared — passing a name is a request for that domain.
      */
     domainDeclared?: boolean;
+    /**
+     * #657: this engine's per-request deadline in ms. Eval runs pass a longer
+     * one so a slow vertical arm is measured instead of counted as broken;
+     * omitted, unparsable or ≤0 keeps the user's 4s, and 15s is the ceiling.
+     * Only `ans search` passes it (from `ANS_EVAL_REQUEST_TIMEOUT_MS`).
+     */
+    requestTimeoutMs?: number;
   },
 ): CompositionResult {
   // #188 (CodeRabbit): keep the exact dirs the loader used (including the
@@ -549,7 +579,11 @@ export function createEngine(
       return undefined;
     }
   })();
+  // #657: one number, resolved once — the engine runs on it and the eval report
+  // stamps it, so a measurement can never lose the clock it was taken under.
+  const requestTimeoutMs = evalRequestTimeoutMs(opts?.requestTimeoutMs);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
+    requestTimeoutMs,
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
@@ -583,5 +617,6 @@ export function createEngine(
     domainsDirs,
     ledger,
     credentialSources,
+    requestTimeoutMs,
   };
 }
