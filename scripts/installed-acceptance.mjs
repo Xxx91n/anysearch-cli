@@ -490,6 +490,10 @@ async function shAsync(cmd, args, opts = {}) {
   }
   return await new Promise((resolve) => {
     const child = spawn(command, argv, { ...spawnOpts, stdio: ["ignore", "pipe", "pipe"] });
+    // 一律按字符串收：直接 `+=` Buffer 是每个 chunk 各自 toString，中文正好被
+    // chunk 边界切开就成乱码，后面按行切、按内容比都对不上。
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     // stdout 单独收着（和 sh() 同款）：机器可读输出只能从它解析，混进 stderr 的
     // 一句话就会让 JSON.parse 炸掉。out 是给人看的合并流；stderr 单独留着，
     // 好让用例能分开验「警告只在 stderr」。
@@ -884,8 +888,9 @@ async function main() {
       check(requestLog.slice(pkBefore).some((r) => r.role === "chat" && r.body.includes("CFG-PROJECT-BROKEN-QUESTION")),
         "这一轮真的到了模型端点");
       const pkWarningLines = pkChat.stderr.split("\n").filter((line) => /config\.toml/.test(line));
-      check(pkWarningLines.length === 1 && !pkChat.stdout.includes("config.toml"),
-        "坏文件只留一句 stderr 警告，答案正文里没有",
+      check(pkWarningLines.length === 1 && pkWarningLines[0].includes(projectConfig(badProject)) &&
+        !pkChat.stdout.includes("config.toml"),
+        "坏文件只留一句 stderr 警告，且点名坏的项目文件；答案正文里没有",
         JSON.stringify(pkWarningLines.map((line) => line.slice(0, 160))));
       check(!pkChat.out.includes(brokenSentinel), "警告里没有文件原文", pkChat.out.slice(-600));
 
@@ -991,7 +996,10 @@ async function main() {
             "SELECT attributes_json AS attrs FROM observability_spans ORDER BY rowid DESC LIMIT 1"
           ).get();
           let failedSpanAttrs = {};
-          try { failedSpanAttrs = JSON.parse(failedSpan?.attrs ?? "{}"); } catch { /* 读不懂就当没有 */ }
+          try {
+            const parsed = JSON.parse(failedSpan?.attrs ?? "{}");
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) failedSpanAttrs = parsed;
+          } catch { /* 读不懂就当没有 */ }
           check(failedSpanAttrs["anysearch.llm.configWarnings"] >= 1,
             "那一条观测记下了配置警告的条数", String(failedSpan?.attrs).slice(0, 300));
         } finally { db.close(); }
