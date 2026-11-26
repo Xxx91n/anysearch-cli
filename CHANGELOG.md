@@ -1,3 +1,19 @@
+## Unreleased — #657: 评测的钟和用户的钟分开
+
+一句话说清：**用户默认的 4 秒一个字节没动；评测跑专线那批语料时需要一口更长的钟，于是新增一个只有 `ans search` 会读的环境变量 `ANS_EVAL_REQUEST_TIMEOUT_MS`——不设是 4000，写错或 ≤0 也回落 4000，最多 15000。chat 和 MCP 不读它。数字自己带着钟走：引擎实际用的值挂在 `CompositionResult.requestTimeoutMs` 上，报告照着印，不另算一遍。**
+
+### Changed
+
+- **`createEngine` 接受 `requestTimeoutMs`**（`packages/kernel/src/composition.ts`）：交给 `resolveRequestTimeoutMs` 归一化——不设、非法、≤0 都是 4000，超过 15000 按 15000——再把生效值交给引擎、放进结果。chat 和 MCP 从不传，所以那条路上永远是 4000。
+- **`ans search` 读这个变量**（`apps/cli/src/commands/search.ts`）：只有这一条命令读；`ans chat` 和 MCP 工具都不读，也不转发。它不进 help，也不进产品文档，用法写在 `docs/eval/request-timeout-budget.md`。
+- **钟跟着数走**：生效的预算进了 `ans search --json` 的 `requestTimeoutMs`，评测是另起进程跑的，不这么带出来就只剩「按环境变量再猜一遍」。值没原样生效（写错、≤0、超过上限）时 stderr 会点明原值和这次实际用的毫秒数，免得一轮评测白跑还看不出来。
+- **4 秒只写一处**：引擎把 `DEFAULT_REQUEST_TIMEOUT_MS` 显式导出，组合根直接用它，不再另抄一个 4000。引擎里被 `ship-gate` 正则钉住的那三行和 `docs/limitations.md` 里那句一字未改。
+- **词表补两条**：`GLOSSARY.md` 新增「专线」和「截断（删失）」。
+
+### Known limits
+
+- **这不是一道门**：`~/.ans/config.env` 里的任何 `ANS_*` 启动时都会被灌进环境，用户自己也能把这个变量设长。名字里带 `EVAL` 只是提醒。最长也只是让他自己那一次搜索多等几秒，默认不动，可以接受。
+
 ## Unreleased — #583: 装出来的包也得把配置状态说对
 
 一句话说清：**前面的装包验收只证明包能装上、能跑一轮，没验过「两份 `config.toml` 各是什么状态」在装出来的产品里说不说得对。现在 `scripts/installed-acceptance.mjs` 多跑一段 A2：对着这次刚装出来的 `ans` 和 `ans-mcp`，验 `ans llm` 的两个路径加状态标签、`ans doctor` 的两行文件行、`ans chat` 在坏文件/半配置/env 补齐时该跑还是该拦、stdio 版 `ans_chat` 缺配置时 `isError` 且不写会话和预算。模型还是那条车道原有的本地假端点，没有第二套。**

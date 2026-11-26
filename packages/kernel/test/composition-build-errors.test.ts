@@ -30,6 +30,7 @@ const envCredentials = (e?: NodeJS.ProcessEnv) =>
 // 值本身不许出现在记录或 stderr 里，下面有专门一条断言盯着。
 const UNUSABLE_EXA_KEY = "sk-secret-do-not-log\nheader-fault";
 const savedExaKey = process.env.EXA_API_KEY;
+const savedEvalTimeout = process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
 const origStderrWrite = process.stderr.write;
 let captured = "";
 try {
@@ -116,6 +117,29 @@ try {
   assert.equal(captured, "", "the path without a key writes no construction failure");
   closeResult(withoutKey);
 
+  // 评测的钟和用户的钟分开。`ANS_EVAL_REQUEST_TIMEOUT_MS` 只由 `ans search`
+  // 读进来交给组合根；kernel 自己不读这个变量，chat 和 MCP 那两处调用也不读、不传，
+  // 所以它们永远拿 4000。四条规矩：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000。
+  process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = "15000";
+  const defaultClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
+  assert.equal(defaultClock.requestTimeoutMs, 4000,
+    "不设就是 4000：环境变量设了也不算，kernel 不读它");
+  closeResult(defaultClock);
+
+  const raisedClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 15000 });
+  assert.equal(raisedClock.requestTimeoutMs, 15000, "传 15000 生效");
+  closeResult(raisedClock);
+
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5]) {
+    const r = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: bad });
+    assert.equal(r.requestTimeoutMs, 4000, "非法或 ≤0 回落 4000（传的是 " + String(bad) + "）");
+    closeResult(r);
+  }
+
+  const cappedClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 60000 });
+  assert.equal(cappedClock.requestTimeoutMs, 15000, "上限 15000");
+  closeResult(cappedClock);
+
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the
   // unusable key comes back for these two arms.
@@ -143,5 +167,7 @@ try {
   process.stderr.write = origStderrWrite;
   if (savedExaKey === undefined) delete process.env.EXA_API_KEY;
   else process.env.EXA_API_KEY = savedExaKey;
+  if (savedEvalTimeout === undefined) delete process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
+  else process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = savedEvalTimeout;
 }
 console.log("composition-build-errors.test: ok");

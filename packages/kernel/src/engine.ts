@@ -30,9 +30,12 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
-// exists only so tests can shrink it.
+// Design: one 4s cap per request by default, counted from fan-out. The user's
+// default is this number; who may change it and by how much is the composition
+// root's call (`resolveRequestTimeoutMs`). Exported so the composition root
+// reads the same 4s instead of copying it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+export { DEFAULT_REQUEST_TIMEOUT_MS };
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
@@ -222,8 +225,9 @@ export class RetroaererdEngine {
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass (#478); it lives here now. `requestTimeoutMs`
-  // exists only so tests can shrink the 4s deadline.
+  // no caller could pass (#478); it lives here now. `requestTimeoutMs` lets a
+  // test shrink the deadline and an eval run raise it; the user's default is
+  // still 4s.
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 
