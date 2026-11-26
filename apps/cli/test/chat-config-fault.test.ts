@@ -121,7 +121,7 @@ test("a half-written project file names the project and the missing provider", a
 test("an empty [llm] says the section exists but is empty", async () => {
   const result = await runChatFixture({ configToml: "[llm]\n" });
   assert.equal(result.code, 3);
-  assert.match(result.stderr, /The user config file has an \[llm\] section, but neither provider nor model is set\./);
+  assert.match(result.stderr, /The user config file has an \[llm\] section, but none of provider, model is set\./);
   assert.match(result.stderr, /LLM provider not configured/);
 });
 

@@ -18,19 +18,10 @@ import {
   CredentialWriteRefusal,
   type CredentialRepairResult,
   credentialProvider,
-  displayEndpoint,
-  normalizeBindingEndpoint,
-  providerLabel,
-  readUserCredentials,
   REMOVE_KEY_COMMAND,
   REPAIR_COMMAND,
   removeUserCredential,
   repairUserCredentials,
-  resolveConfigHome,
-  resolveLlmConfig,
-  STORE_KEY_COMMAND,
-  userCredentialsPath,
-  writeUserCredential,
 } from "@anysearch-cli/store";
 import {
   isProbeProviderId,
@@ -38,7 +29,19 @@ import {
   type ProbeOutcome,
   type ProbeProviderId,
 } from "@anysearch-cli/retriever/providers";
-import { KEY_SOURCE_LABELS, type LlmLayer } from "../config-llm";
+import {
+  displayEndpoint,
+  KEY_SOURCE_LABELS,
+  normalizeBindingEndpoint,
+  providerLabel,
+  readUserCredentials,
+  resolveConfigHome,
+  resolveLlmConfig,
+  STORE_KEY_COMMAND,
+  userCredentialsPath,
+  writeUserCredential,
+  type LlmLayer,
+} from "../config-llm";
 import { cleanSecret, readSecret, SecretInputCancelled, type SecretInputIO } from "../secret-input";
 
 /**

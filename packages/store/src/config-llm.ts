@@ -52,9 +52,51 @@ export type LlmLayer = "cli" | "env" | "project" | "user" | "credentials";
 export type BaseUrlLayer = "cli" | "env" | "user";
 
 /** The winning base URL and the layer it came from: both, or neither. */
-type PickedBaseUrl =
+export type BaseUrlPick =
   | { value: string; layer: BaseUrlLayer }
   | { value?: undefined; layer?: undefined };
+
+/** Where a stored key should be rebound; callers build the copyable command. */
+export type BindingRetarget =
+  | { kind: "default"; provider: string }
+  | { kind: "endpoint"; provider: string; endpoint: string }
+  | { kind: "unprintable"; provider: string; source: BaseUrlLayer };
+
+/** Chooses where a stored key should be rebound: provider default, current
+ * printable endpoint, or a placeholder plus the layer holding the full address. */
+export function bindingRetarget(
+  provider: string,
+  effective: string | null,
+  baseUrl: BaseUrlPick,
+): BindingRetarget {
+  if (effective === null || baseUrl.value === undefined) {
+    return { kind: "default", provider };
+  }
+  if (isPrintableEndpoint(effective)) {
+    return { kind: "endpoint", provider, endpoint: effective };
+  }
+  return {
+    kind: "unprintable",
+    provider,
+    source: baseUrl.layer,
+  };
+}
+
+/** Builds the copyable re-store command for a binding target. */
+export function bindingCommand(target: BindingRetarget, placeholder = "<address>"): string {
+  switch (target.kind) {
+    case "default":
+      return storeKeyCommand(target.provider);
+    case "endpoint":
+      return storeKeyCommand(target.provider, target.endpoint);
+    case "unprintable":
+      return storeKeyCommand(target.provider) + " --endpoint " + placeholder;
+    default: {
+      const exhaustive: never = target;
+      return exhaustive;
+    }
+  }
+}
 
 /** Where each resolved field came from. `baseUrl` is narrower than the rest:
  * no project file can set one. */
@@ -80,10 +122,16 @@ export const KEY_SOURCE_LABELS: Record<LlmLayer, string> = {
   credentials: "stored file",
 };
 
-// Keys a project-level file may set under [llm]. Everything security-adjacent
-// (endpoint, wire protocol, secret source) is user-level only.
-const PROJECT_LLM_WHITELIST = new Set(["provider", "model"]);
-const USER_LLM_KEYS = new Set(["provider", "model", "base_url", "api", "env_key"]);
+/** Keys every usable file needs. */
+export const REQUIRED_LLM_KEYS = ["provider", "model"] as const;
+// Project-level files may set provider/model only. Endpoint, wire protocol and
+// secret source stay user-level.
+export const PROJECT_LLM_KEYS = ["provider", "model"] as const;
+export const USER_LLM_KEY_NAMES = [...PROJECT_LLM_KEYS, "base_url", "api", "env_key"] as const;
+const PROJECT_LLM_WHITELIST = new Set<string>(PROJECT_LLM_KEYS);
+const USER_LLM_KEYS = new Set<string>(USER_LLM_KEY_NAMES);
+/** The wire protocols store accepts; kernel's `LlmEndpointKind` is the compile-time mirror. */
+export const LLM_API_VALUES = ["chat", "messages", "responses"] as const;
 const SECRET_KEY_RE = /api[_-]?key|token|secret|password/i;
 
 export interface LlmFileConfig {
@@ -101,8 +149,17 @@ export interface LlmFlags {
   api?: string;
 }
 
+/** Where a broken file failed: a TOML line/column or an errno code, never contents or values. */
+export interface LlmFileFault {
+  /** TOML parse position, when the parser reported one. */
+  line?: number;
+  column?: number;
+  /** Read-failure errno code, when the throw carried one. */
+  code?: string;
+}
+
 /**
- * What one config.toml turned out to be (#579). Six closed values; the listing
+ * What one config.toml turned out to be. Six closed values; the listing
  * prints them, and a surface can read the same fact instead of inferring it
  * from warnings.
  */
@@ -127,6 +184,22 @@ export interface LlmFileDiagnostic {
   key?: string;
 }
 
+/** Why a value did not take effect: layer + name, never the value. */
+export type LlmValueDiagnosticKind =
+  | "api-invalid"
+  | "env-key-provider-mismatch"
+  | "env-key-unset"
+  | "key-endpoint-mismatch"
+  | "base-url-without-api";
+
+export type LlmValueDiagnostic =
+  | { kind: "api-invalid"; layer: LlmLayer }
+  | { kind: "base-url-without-api"; layer: LlmLayer }
+  | { kind: "env-key-provider-mismatch"; layer: "user"; envKeyLabel: string }
+  | { kind: "env-key-unset"; layer: "user"; envKeyLabel: string }
+  | { kind: "key-endpoint-mismatch"; layer: "user"; envKeyLabel: string }
+  | { kind: "key-endpoint-mismatch"; layer: "credentials"; provider: string };
+
 export interface LlmConfigFileState {
   layer: "user" | "project";
   status: LlmConfigFileStatus;
@@ -135,13 +208,15 @@ export interface LlmConfigFileState {
   diagnostics: LlmFileDiagnostic[];
   /** Display label for sentences: project-relative or `~/…`, never absolute. */
   displayPath: string;
+  /** Set only when status is `broken`; carries the safe failure location. */
+  fault?: LlmFileFault;
 }
 
 export interface ResolvedLlmConfig {
   provider?: string;
   model?: string;
   baseUrl?: string;
-  api?: "chat" | "messages" | "responses";
+  api?: (typeof LLM_API_VALUES)[number];
   /** Secret material resolved via ANS_LLM_API_KEY, env_key indirection, the provider's own env vars
    * or the user credential file. */
   apiKey?: string;
@@ -150,11 +225,19 @@ export interface ResolvedLlmConfig {
   /** Which layer supplied each resolved field (for `ans llm` display + tests). */
   sources: LlmSources;
   /**
-   * Per-file facts (#579): one record for the user file and one for the project
+   * Per-file facts: one record for the user file and one for the project
    * file, always both, whether or not the file exists. A surface reads status
    * and diagnostics here; `warn` stays the human sentence.
    */
   configFiles: Record<"user" | "project", LlmConfigFileState>;
+  /**
+   * Value-level diagnostics: why a value or key is not in effect.
+   * Separate from configFiles because a binding can live in credentials or env,
+   * and because these never change a file's state.
+   */
+  valueDiagnostics: LlmValueDiagnostic[];
+  /** Display-safe endpoints a rejected stored model key is bound to. */
+  storedModelKeyEndpoints?: string[];
   /** True when credentials are enabled, no other API key was resolved, and credentials.json holds a model-provider binding. */
   hasStoredModelCredential?: boolean;
   /**
@@ -213,15 +296,13 @@ function formatLlmConfigFault(cfg: ResolvedLlmConfig): string | undefined {
  */
 function halfConfigSentence(state: LlmConfigFileState): string | undefined {
   if (state.status !== "half") return undefined;
-  const hasProvider = state.present.includes("provider");
-  const hasModel = state.present.includes("model");
+  const presentRequired = REQUIRED_LLM_KEYS.filter((key) => state.present.includes(key));
+  const missingRequired = REQUIRED_LLM_KEYS.filter((key) => !state.present.includes(key));
   let detail: string;
-  if (hasProvider && !hasModel) {
-    detail = "sets provider but not model";
-  } else if (hasModel && !hasProvider) {
-    detail = "sets model but not provider";
+  if (presentRequired.length === 0) {
+    detail = "has an [llm] section, but none of " + REQUIRED_LLM_KEYS.join(", ") + " is set";
   } else {
-    detail = "has an [llm] section, but neither provider nor model is set";
+    detail = "sets " + presentRequired.join(", ") + " but not " + missingRequired.join(", ");
   }
   const label = state.layer === "user"
     ? "The user config file"
@@ -349,9 +430,15 @@ function parseLlmTomlResult(
   try {
     root = tomlParse(toml) as Record<string, unknown>;
   } catch (e) {
-    warn("[config] " + filePath + ": TOML parse failed (" + tomlParseDetail(e) + "); ignoring file");
+    const detail = tomlParseDetail(e);
+    warn("[config] " + filePath + ": TOML parse failed (" + detail + "); ignoring file");
+    const fault: LlmFileFault = {};
+    if (e instanceof TomlError) {
+      fault.line = e.line;
+      fault.column = e.column;
+    }
     return {
-      layer: level, config: {}, status: "broken", present: [],
+      layer: level, config: {}, fault, status: "broken", present: [],
       diagnostics: [{ kind: "invalid-toml" }],
     };
   }
@@ -373,6 +460,9 @@ function parseLlmTomlResult(
   const present: string[] = [];
   const diagnostics: LlmFileDiagnostic[] = [];
   for (const [key, value] of Object.entries(section as Record<string, unknown>)) {
+    // The key name comes from the file; a quoted TOML key can carry ESC
+    // sequences. Clean it before it reaches a terminal or a stored fact.
+    const shownKey = llmKeyLabel(key);
     if (!allowed.has(key)) {
       let kind: LlmFileDiagnosticKind;
       let why: string;
@@ -386,24 +476,21 @@ function parseLlmTomlResult(
         kind = "unknown-key";
         why = "unknown [llm] key";
       }
-      // The key name comes from the file; a quoted TOML key can carry ESC
-      // sequences. Clean it before it reaches a terminal or a stored fact.
-      const shownKey = llmKeyLabel(key);
       warn("[config] " + filePath + ": ignoring [llm]." + shownKey + " — " + why);
       diagnostics.push({ kind, key: shownKey });
       continue;
     }
     if (typeof value !== "string" || value === "") {
-      warn("[config] " + filePath + ": ignoring [llm]." + key + " — value must be a non-empty string");
-      diagnostics.push({ kind: "invalid-type", key });
+      warn("[config] " + filePath + ": ignoring [llm]." + shownKey + " — value must be a non-empty string");
+      diagnostics.push({ kind: "invalid-type", key: shownKey });
       continue;
     }
     (out as Record<string, string>)[key] = value;
-    present.push(key);
+    present.push(shownKey);
   }
   // An [llm] table with no usable fields is still a half-written config: the
   // section is there, the provider/model pair is not.
-  const status: LlmConfigFileStatus = out.provider && out.model ? "ok" : "half";
+  const status: LlmConfigFileStatus = REQUIRED_LLM_KEYS.every((key) => Boolean(out[key])) ? "ok" : "half";
   return { layer: level, config: out, status, present, diagnostics };
 }
 
@@ -436,8 +523,10 @@ function loadFile(
     raw = readFileSync(path, "utf8");
   } catch (e) {
     warn("[config] " + path + ": could not read config file (" + (e as Error).message + "); ignoring file");
+    const rawCode = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
+    const fault: LlmFileFault = typeof rawCode === "string" ? { code: rawCode } : {};
     return {
-      layer: level, config: {}, status: "broken", present: [],
+      layer: level, config: {}, fault, status: "broken", present: [],
       diagnostics: [{ kind: "unreadable" }],
     };
   }
@@ -489,16 +578,19 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
 
   const resolved: ResolvedLlmConfig = {
     sources: {},
+    valueDiagnostics: [],
     configFiles: {
       user: {
         layer: userFile.layer, status: userFile.status,
         present: userFile.present, diagnostics: userFile.diagnostics,
         displayPath: userDisplayPath(home, userConfigFile),
+        ...(userFile.fault ? { fault: userFile.fault } : {}),
       },
       project: {
         layer: projectFile.layer, status: projectFile.status,
         present: projectFile.present, diagnostics: projectFile.diagnostics,
         displayPath: projectDisplayPath(cwd, projectConfigFile),
+        ...(projectFile.fault ? { fault: projectFile.fault } : {}),
       },
     },
   };
@@ -510,14 +602,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       ["user", user],
     ] as const) {
       const v = cfg[field];
-      // an invalid api value is ignored per-layer so a valid lower layer wins
-      // instead of the whole key being discarded (CodeRabbit #120).
-      if (v && field === "api" && !["chat", "messages", "responses"].includes(v)) {
-        warn("[config] ignoring api=" + v + " from " + layer + " — must be chat|messages|responses");
+      // An invalid api value is dropped for that layer only, so a valid lower
+      // layer can still win instead of the whole key being discarded.
+      if (v && field === "api" && !(LLM_API_VALUES as readonly string[]).includes(v)) {
+        warn("[config] ignoring api=" + llmKeyLabel(v) + " from " + layer + " — must be " + LLM_API_VALUES.join("|"));
+        resolved.valueDiagnostics.push({ kind: "api-invalid", layer });
         continue;
       }
-      // falsy check: an exported-but-empty var (ANS_LLM_PROVIDER=) or a
-      // `--llm.provider=` flag must not shadow lower layers (CodeRabbit #120).
+      // A falsy check: an exported-but-empty var (ANS_LLM_PROVIDER=) or a
+      // `--llm.provider=` flag must not shadow lower layers.
       if (v) {
         if (outKey === "provider") resolved.provider = v;
         else if (outKey === "model") resolved.model = v;
@@ -531,11 +624,11 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   pick("model", "model");
   pick("api", "api");
 
-  // Design: base_url is picked on its own so the layer travels with the value.
+  // base_url is picked on its own so the layer travels with the value.
   // A project file may only set provider and model, so it is not a base-URL
   // layer at all; keeping it out here is what lets the advice below name where
   // an unprintable URL lives instead of guessing.
-  let baseUrlPick: PickedBaseUrl = {};
+  let baseUrlPick: BaseUrlPick = {};
   for (const [layer, cfg] of [["cli", cliLayer], ["env", envLayer], ["user", user]] as const) {
     if (cfg.base_url) {
       baseUrlPick = { value: cfg.base_url, layer };
@@ -547,10 +640,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     resolved.sources.baseUrl = baseUrlPick.layer;
   }
 
-  // baseUrl is a no-op without a wire protocol: warn here so every caller
-  // sees the failure mode instead of each re-checking baseUrl && !api.
-  if (resolved.baseUrl && !resolved.api) {
+  // baseUrl is a no-op without a wire protocol. An invalid api value already
+  // warns on its own, so do not add a second, false "base_url without api"
+  // explanation for the same run.
+  const invalidApi = resolved.valueDiagnostics.some((d) => d.kind === "api-invalid");
+  if (resolved.baseUrl && !resolved.api && !invalidApi) {
     warn("[config] base_url set without api — custom endpoint will be ignored by commands that require the pair");
+    if (baseUrlPick.layer !== undefined) {
+      resolved.valueDiagnostics.push({ kind: "base-url-without-api", layer: baseUrlPick.layer });
+    }
   }
 
   // Secret resolution, in order:
@@ -619,9 +717,15 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       const owner = providerForEnvKey(envKey);
       if (owner) for (const name of modelEnvKeysFor(owner)) refusedSecretSources.add(name);
     };
+    // The name comes from the file, so it can carry control characters. Show
+    // the same cleaned label the file keys use; keep the raw name for lookup.
+    const envKeyLabel = user.env_key ? llmKeyLabel(user.env_key) : undefined;
 
     if (user.env_key && providerBoundElsewhere) {
       refuseEveryName(user.env_key);
+      resolved.valueDiagnostics.push({
+        kind: "env-key-provider-mismatch", layer: "user", envKeyLabel: llmKeyLabel(user.env_key),
+      });
       warn(
         "[config] [llm].env_key ignored: it is bound to provider=" + boundProvider +
         (user.provider === undefined ? " (by the variable's own name)" : "") +
@@ -630,6 +734,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       );
     } else if (user.env_key && endpointBoundElsewhere) {
       refuseEveryName(user.env_key);
+      resolved.valueDiagnostics.push({
+        kind: "key-endpoint-mismatch", layer: "user", envKeyLabel: llmKeyLabel(user.env_key),
+      });
       warn(
         "[config] [llm].env_key ignored: user file binds base_url=" + displayEndpoint(userEndpoint) +
         " but " + resolved.sources.baseUrl + " selected a different endpoint" +
@@ -644,7 +751,10 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       } else {
         // Not a dead end any more: the provider's own env var and the
         // credential file are the next sources.
-        warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
+        resolved.valueDiagnostics.push({
+          kind: "env-key-unset", layer: "user", envKeyLabel: llmKeyLabel(user.env_key),
+        });
+        warn("[config] [llm].env_key names " + envKeyLabel + " but that env var is not set");
       }
     }
 
@@ -691,8 +801,11 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
         // The guard narrows the type; a mismatch already implies a provider.
         // Name every stored endpoint. Reporting one (whichever the file sorted
         // first) would send the user to fix the wrong binding.
-        const storedList = lookup.stored.length > 0
-          ? lookup.stored.map((e) => displayEndpoint(e)).join(", ")
+        resolved.valueDiagnostics.push({ kind: "key-endpoint-mismatch", layer: "credentials", provider: resolved.provider });
+        const storedDisplay = lookup.stored.map((e) => displayEndpoint(e));
+        resolved.storedModelKeyEndpoints = storedDisplay;
+        const storedList = storedDisplay.length > 0
+          ? storedDisplay.join(", ")
           : "(the provider default)";
         const effective = normalizeBindingEndpoint(resolved.baseUrl);
         warn(
@@ -711,28 +824,30 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
 
 /** Where a base URL can be read back in full, for the sentence that tells a user
  * to go and copy it. */
-const BASE_URL_SOURCE: Record<BaseUrlLayer, string> = {
+export const BASE_URL_SOURCE: Record<BaseUrlLayer, string> = {
   cli: "--llm.base-url",
   env: "ANS_LLM_BASE_URL",
   user: "the user config file",
 };
 
-/** 地址能安全打印就给可直接粘的命令；否则说清完整值在哪儿，命令里留一个必须替换的
- * 占位符——脱敏版或半截地址粘回去会存成一个谁都不认的绑定。
- *
- * Design: the pick is passed whole so an unprintable URL always names the layer
- * it came from. `effective` is null exactly when no usable base URL was set,
- * which is also when the pick carries no value — there is nothing to name. */
-function bindingAdvice(provider: string, effective: string | null, baseUrl: PickedBaseUrl): string {
-  if (effective === null || baseUrl.value === undefined) {
-    return "run `" + storeKeyCommand(provider) + "` to bind it to the provider default";
+/** Turns bindingRetarget's decision into the resolver's English advice. */
+function bindingAdvice(provider: string, effective: string | null, baseUrl: BaseUrlPick): string {
+  const target = bindingRetarget(provider, effective, baseUrl);
+  const command = bindingCommand(target);
+  switch (target.kind) {
+    case "default":
+      return "run `" + command + "` to bind it to the provider default";
+    case "endpoint":
+      return "run `" + command + "` for this endpoint";
+    case "unprintable":
+      return "re-store it for that endpoint: the full address is in " + BASE_URL_SOURCE[target.source] +
+        ". It cannot be printed here (redacted, too long, or contains control characters). Run `" +
+        command + "`, replacing the angle-bracket part";
+    default: {
+      const exhaustive: never = target;
+      return exhaustive;
+    }
   }
-  if (isPrintableEndpoint(effective)) {
-    return "run `" + storeKeyCommand(provider, effective) + "` for this endpoint";
-  }
-  return "re-store it for that endpoint: the full address is in " + BASE_URL_SOURCE[baseUrl.layer] +
-    ". It cannot be printed here (redacted, too long, or contains control characters). Run `" +
-    storeKeyCommand(provider) + " --endpoint <that address>`, replacing the angle-bracket part";
 }
 
 // Parse --llm.* flags out of a command argv. Supports "--llm.provider X" and

@@ -356,7 +356,7 @@ async function main() {
       const h = harness(fix);
       const res = await h.call();
       const text = textOf(res);
-      assert(text.includes("The user config file has an [llm] section, but neither provider nor model is set."),
+      assert(text.includes("The user config file has an [llm] section, but none of provider, model is set."),
         "empty [llm]: says the section exists and is empty");
       assert(text.includes("LLM not configured"), "empty [llm]: keeps the existing instruction");
     }
