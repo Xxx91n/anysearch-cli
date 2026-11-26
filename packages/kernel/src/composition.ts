@@ -341,14 +341,15 @@ export function resolveActiveAttributionCalibration(
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
 /**
- * #657: what `ANS_EVAL_REQUEST_TIMEOUT_MS` means once it reaches the engine.
- * Unset, unparsable or ≤0 keeps the user's 4s; anything above 15s is cut to 15s.
+ * #657: turn `ANS_EVAL_REQUEST_TIMEOUT_MS` into this engine's deadline.
+ * Unset, unparsable or ≤0 (including a fraction that truncates to 0) keeps the
+ * user's 4s; anything above 15s is cut to 15s.
  *
  * This is a measuring knob, not a product setting: no help text, no product
  * doc. `ans search` reads the variable and passes the number here; chat and MCP
  * never do, so the kernel itself never reads the environment (see the test).
  */
-export function evalRequestTimeoutMs(raw?: number): number {
+export function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);
   if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
@@ -581,7 +582,7 @@ export function createEngine(
   })();
   // #657: one number, resolved once — the engine runs on it and the eval report
   // stamps it, so a measurement can never lose the clock it was taken under.
-  const requestTimeoutMs = evalRequestTimeoutMs(opts?.requestTimeoutMs);
+  const requestTimeoutMs = resolveRequestTimeoutMs(opts?.requestTimeoutMs);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     requestTimeoutMs,
     ...(sourceWeights ? { sourceWeights } : {}),

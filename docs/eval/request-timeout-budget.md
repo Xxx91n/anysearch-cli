@@ -8,13 +8,13 @@
 |---|---|
 | 谁读它 | 只有 `ans search`。`ans chat` 和 MCP 那条路（`ans_search` / `ans_chat`）不读，也不会被转发进去 |
 | 不设 | 4000 ms，和用户碰到的那条线是同一个数 |
-| 写错（不是数字）、≤0 | 还是 4000 ms，静默回落，不报错 |
+| 写错（不是数字）、≤0 | 还是 4000 ms，静默回落，不报错；小数取整后不到 1 ms 的也一样 |
 | 上限 | 15000 ms，写更大也只按 15000 算 |
 | 进 help、进产品文档吗 | 不进。它不是产品设置，只是评测自己用的钟 |
 
 ## 为什么存在
 
-专线（`vertical`）那批语料里，48 条在用户的 4 秒预算下被掐断。那是「没测到」，不是「坏了」；两者混成一个红，改语料的人就不知道该等一等还是该改题。所以要能用一口更长的钟再跑一遍。
+2026-11-26 那次整跑（#643 的 G 节基线：81 条执行）里，专线那批有 48 条在用户的 4 秒预算下被掐断。那是「没测到」，不是「坏了」；两者混成一个红，改语料的人就不知道该等一等还是该改题。所以要能用一口更长的钟再跑一遍。
 
 但长钟跑出来的数不能和用户口径的数混在一起。规矩是：**数字自己带着钟走**。主报告永远是 4 秒那一档；放宽预算的那批单独一栏，标题写「专线质量（放宽时限）」，每个数旁边印着它用的预算。
 
@@ -25,7 +25,7 @@ ANS_EVAL_REQUEST_TIMEOUT_MS=15000 ans search "查一下这家公司的财报" --
 ```
 
 - 这一跑的数归到 `extended` 那一栏，永远不进覆盖表的「每次提交跑过 / 每周跑过」两栏。
-- 引擎真正拿到的是多少，看 `CompositionResult.requestTimeoutMs`——报告直接拿它盖章，别自己再按环境变量算一遍，那会算出两个数。
+- 引擎真正拿到的是多少，看 `CompositionResult.requestTimeoutMs`——同一个进程里只有一个数，别自己再按环境变量算一遍，那会算出两个数。评测跑的是另一个进程里的 `ans search --json`，那个字段还没进 `--json`，等报告那票（#666）接上再用。
 - 频率是每月一次校准。周任务和每次提交的任务都保持 4 秒主口径。
 
 ## 挡不住的地方
@@ -34,6 +34,6 @@ ANS_EVAL_REQUEST_TIMEOUT_MS=15000 ans search "查一下这家公司的财报" --
 
 ## 谁钉着它
 
-- `packages/kernel/src/composition.ts` 的 `evalRequestTimeoutMs`：四条规矩（不设、非法或 ≤0、上限）都在那一个函数里。
-- `packages/kernel/test/composition-build-errors.test.ts` 的 #657 段：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000；顺带钉住 kernel 自己不读这个环境变量，所以 chat / MCP 拿不到它。
-- `scripts/ship-gate.mjs` 继续用正则钉着引擎里那三行 4 秒和 `docs/limitations.md` 里那句——这次一个字节没动。
+- `packages/kernel/src/composition.ts` 的 `resolveRequestTimeoutMs`：代码里这四条规矩只在这一个函数里（这份文档和 CHANGELOG 只是复述，改上限时别只改一处）。
+- `packages/kernel/test/composition-build-errors.test.ts` 里那组 `#657：评测的钟和用户的钟分开` 的断言：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000；顺带钉住 kernel 自己不读这个环境变量，所以 chat / MCP 拿不到它。
+- `scripts/ship-gate.mjs` 继续用正则钉着引擎里的 `DEFAULT_REQUEST_TIMEOUT_MS`、`deadlineTimer` 的 `setTimeout` 和构造函数里的默认赋值，还有 `docs/limitations.md` 里那句 4 秒——这次一个字节没动。

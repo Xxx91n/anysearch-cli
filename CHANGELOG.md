@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **`createEngine` 接受 `requestTimeoutMs`**（`packages/kernel/src/composition.ts`）：交给 `evalRequestTimeoutMs` 归一化——不设、非法、≤0 都是 4000，超过 15000 按 15000——再把生效值交给引擎、放进结果。chat 和 MCP 从不传，所以那条路上永远是 4000。
+- **`createEngine` 接受 `requestTimeoutMs`**（`packages/kernel/src/composition.ts`）：交给 `resolveRequestTimeoutMs` 归一化——不设、非法、≤0 都是 4000，超过 15000 按 15000——再把生效值交给引擎、放进结果。chat 和 MCP 从不传，所以那条路上永远是 4000。
 - **`ans search` 读这个变量**（`apps/cli/src/commands/search.ts`）：只有这一条命令读；`ans chat` 和 MCP 工具都不读，也不转发。它不进 help，也不进产品文档，用法写在 `docs/eval/request-timeout-budget.md`。
 - **4 秒只写一处**：引擎把 `DEFAULT_REQUEST_TIMEOUT_MS` 显式导出，组合根直接用它，不再另抄一个 4000。引擎里被 `ship-gate` 正则钉住的那三行和 `docs/limitations.md` 里那句一字未改。
 - **词表补两条**：`GLOSSARY.md` 新增「专线」和「截断（删失）」。
