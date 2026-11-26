@@ -336,8 +336,9 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-// #657: the ceiling for the eval-only clock. A run under it is killed at 60
-// seconds anyway, so 15s is already a wide measurement window.
+// #657: the ceiling for the eval-only clock. The cap is only there to stop a
+// typo (150000) from holding a measurement open for minutes; 15s is already a
+// wide window for a search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
 /**
@@ -349,7 +350,7 @@ const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
  * doc. `ans search` reads the variable and passes the number here; chat and MCP
  * never do, so the kernel itself never reads the environment (see the test).
  */
-export function resolveRequestTimeoutMs(raw?: number): number {
+function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);
   if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;

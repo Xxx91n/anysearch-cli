@@ -25,7 +25,8 @@ ANS_EVAL_REQUEST_TIMEOUT_MS=15000 ans search "查一下这家公司的财报" --
 ```
 
 - 这一跑的数归到 `extended` 那一栏，永远不进覆盖表的「每次提交跑过 / 每周跑过」两栏。
-- 引擎真正拿到的是多少，看 `CompositionResult.requestTimeoutMs`——同一个进程里只有一个数，别自己再按环境变量算一遍，那会算出两个数。评测跑的是另一个进程里的 `ans search --json`，那个字段还没进 `--json`，等报告那票（#666）接上再用。
+- 引擎真正拿到的是多少，看 `ans search --json` 里的 `requestTimeoutMs`（同一进程里就是 `CompositionResult.requestTimeoutMs`）——报告直接拿它盖章，别自己再按环境变量算一遍，那会算出两个数。
+- 值没有原样生效时（写错、太小、超过上限），`ans search` 会在 stderr 说一行：原值是什么、这次按多少毫秒跑。这一行是给跑评测的人看的，别当噪音过滤掉。
 - 频率是每月一次校准。周任务和每次提交的任务都保持 4 秒主口径。
 
 ## 挡不住的地方

@@ -140,13 +140,19 @@ export async function runSearch(args: string[]): Promise<number> {
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch to measure that arm alone). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  // #657 评测专用：只有这条命令读 `ANS_EVAL_REQUEST_TIMEOUT_MS`，chat 和 MCP 不接。
-  // 不设、写错、写了个 ≤0 的数都是用户默认的 4 秒；最长 15 秒。它不进 help，
-  // 也不进产品文档，用法见 docs/eval/request-timeout-budget.md。
+  // 评测专用：只有这条命令读它，chat 和 MCP 都不读 —— 评测要一口更长的钟，
+  // 用户口径的 4 秒不能跟着变。
   const evalTimeoutRaw = process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
   const engine = createPersistentEngine(active.declaredName, {
     ...(evalTimeoutRaw === undefined ? {} : { requestTimeoutMs: Number(evalTimeoutRaw) }),
   });
+  // 写错的值会静默回落成 4 秒，这一轮评测就白跑了；说清原值和这次实际用的。
+  if (evalTimeoutRaw !== undefined && Number(evalTimeoutRaw) !== engine.requestTimeoutMs) {
+    process.stderr.write(
+      "[ans search] ANS_EVAL_REQUEST_TIMEOUT_MS=" + JSON.stringify(evalTimeoutRaw) +
+        " 没有原样生效，这次按 " + engine.requestTimeoutMs + " ms 跑\n",
+    );
+  }
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that
@@ -220,6 +226,9 @@ export async function runSearch(args: string[]): Promise<number> {
       const out = {
         query: queryClean,
         mode,
+        // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
+        // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
+        requestTimeoutMs: engine.requestTimeoutMs,
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
