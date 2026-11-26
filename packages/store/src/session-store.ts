@@ -1336,8 +1336,10 @@ export class SqliteSessionStore implements SessionStore {
        // write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) { ids.push(null); continue; }
        // The archive stores the URL identity, not the provider's spelling.
-       // Search dedup and archive writes must agree on it; this column is a
-       // key, not a display link (see `url-identity.ts`).
+       // Search dedup and archive writes must agree on it. This column is the
+       // identity key, so surfaces that render it directly (entity review,
+       // preference review, rebuilt summaries, consolidation evidence) show the
+       // scheme-less key; chat answer sources keep `sourceUrl` when present.
        const url = normalizeUrlIdentity(r.url);
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
