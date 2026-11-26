@@ -221,7 +221,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   const d = rep.verifyDetails[0]!;
   assert(d.oldContent.includes("门店营业时间"), "A2: the refusal carries the old content");
   assert(d.candidate.length > 0, "A2: the refusal carries the candidate");
-  assert(d.evidence.length === 1 && d.evidence[0]!.url === "https://a.example/support-now", "A2: the refusal carries the candidate's source");
+  assert(d.evidence.length === 1 && d.evidence[0]!.url === "a.example/support-now", "A2: the refusal carries the candidate's source");
   assert(d.sameFact === false && d.relation === "different" && typeof d.reason === "string",
     "A2: the refusal carries the verdict and its reason");
   assert(d.followUp.includes("同一对象"), "A2: the follow-up names what to check (object mismatch)");

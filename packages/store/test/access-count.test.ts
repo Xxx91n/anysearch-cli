@@ -52,7 +52,7 @@ async function main() {
     await store.saveResults(session.id, [
       { url: "https://example.com/c", title: "Gamma fusion notes", snippet: "gamma snippet", source: "tavily" },
     ]);
-    const gamma = ro.prepare("SELECT access_count FROM retrieval_results WHERE url = ?").get("https://example.com/c") as any;
+    const gamma = ro.prepare("SELECT access_count FROM retrieval_results WHERE url = ?").get("example.com/c") as any;
     assert(gamma.access_count === 0, "fresh row starts at access_count = 0");
 
     // (C2): access_events mirror — exactly one event per returned hit per call,

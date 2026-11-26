@@ -331,9 +331,9 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   assert(d.plannedContent === A4_OLD, "B2: the detail carries what the correction planned to replace");
   assert(d.currentTargetId === live.id && d.currentContent === A4_MERGED,
     "B2: the detail carries the CURRENT live content, not a guess");
-  assert(d.evidence.some((e) => e.url === "https://b.example/notice-2"), "B2: our side's material is in the detail");
+  assert(d.evidence.some((e) => e.url === "b.example/notice-2"), "B2: our side's material is in the detail");
   const currentUrls = d.currentEvidence.map((e) => e.url);
-  assert(currentUrls.includes("https://a.example/notice-2026-11-01"),
+  assert(currentUrls.includes("a.example/notice-2026-11-01"),
     "B2: the other side's correcting material is in the detail");
   assert(currentUrls.some((u) => u.includes("support-facts")),
     "B2: the current version's own source materials are in the detail");

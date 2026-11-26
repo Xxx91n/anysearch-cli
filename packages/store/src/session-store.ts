@@ -78,7 +78,7 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
@@ -1335,12 +1335,23 @@ export class SqliteSessionStore implements SessionStore {
       for (const r of rs) {
        // write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) { ids.push(null); continue; }
+       // The archive stores the URL identity, not the provider's spelling.
+       // Search dedup and archive writes must agree on it. This column is the
+       // identity key, so surfaces that render it directly (entity review,
+       // preference review, rebuilt summaries, consolidation evidence) show the
+       // scheme-less key; chat answer sources keep `sourceUrl` when present.
+       const url = normalizeUrlIdentity(r.url);
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
-       const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url, sourceLabel, traceId);
+       const info = this.stmts.saveResult.run(sessionId, url, r.title, r.snippet, r.source, null, r.entity ?? url, sourceLabel, traceId);
        // bi-temporal invalidation — close old records for same entity (URL) at write time.
        // Not relying on decay to suppress staleness; valid_until set immediately on new write.
-       try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
+       // Rows written before identity storage keep their old spelling, so close both
+       // the identity and the exact spelling that came in.
+       try {
+         invalidateOldRecords(this.db, url, Number(info.lastInsertRowid));
+         if (r.url !== url) invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid));
+       } catch {}
        ids.push(Number(info.lastInsertRowid));
       }
     });
@@ -1360,15 +1371,26 @@ export class SqliteSessionStore implements SessionStore {
         continue;
       }
       const evidence = typeof km.evidence === "number" && km.evidence >= 0.6;
+      // Every archive write stores the URL identity; the caller's spelling never
+      // reaches the table.
+      const url = normalizeUrlIdentity(km.url);
       // Evidence check: evidence >= 0.6, or a direct user write (source "user"), bypasses the gate.
       if (evidence || km.source === "user") {
-        const entityKey = km.entity ?? km.url;
+        const entityKey = km.entity ?? url;
         // Temporal supersede: new write for same entity wins; close old record with valid_until = now (pattern).
-        const existing = this.db
-          .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
-          .get(entityKey, sessionId) as { id: number } | undefined;
+        const findLive = this.db.prepare(
+          "SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1",
+        );
+        const existing = findLive.get(entityKey, sessionId) as { id: number } | undefined;
+        // A row written before identity storage has the raw spelling as its
+        // default entity. Only fall back when the caller did not name an entity,
+        // so a deliberate custom key is never overridden.
+        const legacy = km.entity === undefined && url !== km.url
+          ? findLive.get(km.url, sessionId) as { id: number } | undefined
+          : undefined;
+        const target = existing ?? legacy;
         const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
+        const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
@@ -1378,7 +1400,7 @@ export class SqliteSessionStore implements SessionStore {
         // row anyway — leaving the entity with no live version at all, and no way
         // back even after a human resolves the mark.
         try { await this.linkCrossScript(insertedId, (km.title ?? "") + " " + (km.snippet ?? "")); } catch {} // fail-open
-        if (existing) {
+        if (target) {
           try {
             // Only close the old version when the new one will actually be
             // recallable. A row marked undetermined is not, so closing the old
@@ -1389,8 +1411,8 @@ export class SqliteSessionStore implements SessionStore {
             if (newRowUnresolved) {
               out.push({ action: "accept", insertedId });
             } else {
-              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
-              out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+              this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(target.id);
+              out.push({ action: "supersede", reason: "temporal", supersededId: target.id, insertedId });
             }
           } catch {
             out.push({ action: "accept", insertedId });
@@ -1401,7 +1423,7 @@ export class SqliteSessionStore implements SessionStore {
       } else {
         // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
         const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url, sourceLabel, km.traceId ?? null);
+        const info = this.stmts.saveResult.run(sessionId, url, km.title, km.snippet, km.source, null, km.entity ?? url, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // fail-open
