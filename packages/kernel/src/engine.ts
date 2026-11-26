@@ -241,9 +241,10 @@ export class RetroaererdEngine {
     this.sourceWeights = opts?.sourceWeights;
     this.gate = { ...DEFAULT_GATE, ...opts?.gate };
     const requestedTimeout = opts?.requestTimeoutMs;
-    // Node clamps setTimeout values above 2^31-1 ms to 1ms; reject those too.
-    if (requestedTimeout !== undefined && (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > 2_147_483_647)) {
-      throw new RangeError("requestTimeoutMs must be a positive finite number of milliseconds no greater than 2147483647");
+    // setTimeout truncates fractions and clamps values above 2^31-1 ms to 1ms;
+    // both would cut a search off at once, so reject them here.
+    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > 2_147_483_647)) {
+      throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than 2147483647");
     }
     this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller

@@ -121,8 +121,9 @@ export async function runSearch(args: string[]): Promise<number> {
   // wait. Absent keeps the engine's 4s default; the flag only changes this
   // run, never the default itself.
   let requestTimeoutMs: number | undefined;
-  // Accept "--deadline 8000" and "--deadline=8000". Validate every occurrence,
-  // then let the last one win so a later override in a script behaves as read.
+  // Accept "--deadline 8000" and "--deadline=8000". Validate every occurrence;
+  // when repeated the last one wins, so a script can set a default and append
+  // an override.
   const deadlineValues: string[] = [];
   args.forEach((a, i) => {
     if (a === "--deadline") deadlineValues.push(args[i + 1] ?? "");
