@@ -233,7 +233,7 @@ function latestUserMarker(body) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || m.role !== "user") continue;
-    const marker = (messageText(m).match(/(FIRST-TURN-QUESTION|SECOND-TURN-QUESTION|LEGACY-FIRST-QUESTION|LEGACY-SECOND-QUESTION|CANCEL-STREAM-QUESTION|PRINT-SEARCH-QUESTION|PRINT-INTERRUPTED-QUESTION|PRINT-EMPTY-QUESTION|CFG-HALF-QUESTION|CFG-PROJECT-BROKEN-QUESTION|CFG-USER-BROKEN-QUESTION|CFG-ENV-FILL-QUESTION|CFG-MCP-ENV-FILL-QUESTION|CFG-MISSING-QUESTION|CFG-SENTINEL-QUESTION)/) ?? [])[1];
+    const marker = (messageText(m).match(/([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+-QUESTION)/) ?? [])[1];
     if (marker) return marker;
   }
   return undefined;
@@ -491,19 +491,21 @@ async function shAsync(cmd, args, opts = {}) {
   return await new Promise((resolve) => {
     const child = spawn(command, argv, { ...spawnOpts, stdio: ["ignore", "pipe", "pipe"] });
     // stdout 单独收着（和 sh() 同款）：机器可读输出只能从它解析，混进 stderr 的
-    // 一句话就会让 JSON.parse 炸掉。out 是给人看的合并流。
+    // 一句话就会让 JSON.parse 炸掉。out 是给人看的合并流；stderr 单独留着，
+    // 好让用例能分开验「警告只在 stderr」。
     let out = "";
     let stdout = "";
+    let stderr = "";
     child.stdout.on("data", (d) => { out += d; stdout += d; });
-    child.stderr.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { out += d; stderr += d; });
     const timer = setTimeout(() => {
       child.kill();
-      resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" "), stdout });
+      resolve({ code: 1, out: out + "\n[timeout] " + cmd + " " + args.join(" "), stdout, stderr });
     }, 240_000);
-    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out, stdout }); });
+    child.once("close", (code) => { clearTimeout(timer); resolve({ code: code ?? 1, out, stdout, stderr }); });
     child.once("error", (e) => {
       clearTimeout(timer);
-      resolve({ code: 1, out: out + "\n[spawn error] " + e.message, stdout });
+      resolve({ code: 1, out: out + "\n[spawn error] " + e.message, stdout, stderr });
     });
   });
 }
@@ -705,8 +707,8 @@ async function main() {
 
     // ================= A2. 配置文件状态：装出来的包也要这么说 =================
     //
-    // #583：前面几条证明装出来的包能跑；这一段证明它也把「两份 config.toml
-    // 各是什么状态」说对。三件事全对着这次装出来的 ans / ans-mcp：
+    // #583：验装出来的包怎么描述两份 config.toml，三件事全对着这次装出来的
+    // ans / ans-mcp：
     //   1. ans llm 清单：两个路径 + 状态标签，配置坏了清单仍退 0。
     //   2. doctor / chat：空文件、半配置、坏 TOML、用户级坏 + 项目级好、
     //      项目级坏、env 补齐，每种都说对、该跑就跑。
@@ -737,6 +739,18 @@ async function main() {
       };
       const userConfig = (home) => join(home, ".ans", "config.toml");
       const projectConfig = (project) => join(project, ".ans", "config.toml");
+      /** 拼一份 `[llm]` TOML；只写传进来的键，省得每处手抄一份。 */
+      const llmToml = ({ provider, model, baseUrl, api } = {}) => [
+        "[llm]",
+        ...(provider ? ['provider = "' + provider + '"'] : []),
+        ...(model ? ['model = "' + model + '"'] : []),
+        ...(baseUrl ? ['base_url = "' + baseUrl + '"'] : []),
+        ...(api ? ['api = "' + api + '"'] : []),
+      ].join("\n") + "\n";
+      /** `ans llm` 里那行 `Files:` 的期望值，和产品那边的拼法对齐。 */
+      const expectedFilesLine = (home, project, userLabel, projectLabel) =>
+        "Files: user " + userConfig(home) + " [" + userLabel + "] | project " +
+        projectConfig(project) + " [" + projectLabel + "]";
       const putUser = (home, text) => writeFileSync(userConfig(home), text, "utf8");
       const putProject = (project, text) => {
         mkdirSync(join(project, ".ans"), { recursive: true });
@@ -781,17 +795,21 @@ async function main() {
       });
       // 每个场景都在 TOML 里埋一个只属于它自己的串。输出里出现它，就说明有地方
       // 把文件原文或密钥抄出来了。
-      const brokenSentinel = "sk-acc583-broken-toml-sentinel";
+      const brokenSentinel = "sk-acc-config-broken-sentinel";
       const brokenToml = '[llm]\nprovider = "' + brokenSentinel + "\n";
-      const userOkToml = '[llm]\nprovider = "openai"\nmodel = "probe-model"\nbase_url = "' +
-        llmEnv.ANS_LLM_BASE_URL + '"\napi = "chat"\n';
+      const userOkToml = llmToml({
+        provider: "openai",
+        model: "probe-model",
+        baseUrl: llmEnv.ANS_LLM_BASE_URL,
+        api: "chat",
+      });
 
       // ---- 半配置：ans llm 两个路径 + 两个标签；doctor 说清缺 model ----
       const halfHome = homeFor("half");
       const halfProject = projectFor("half");
-      putUser(halfHome, '[llm]\nprovider = "openai"\n');
+      putUser(halfHome, llmToml({ provider: "openai" }));
       const halfList = runAns(["llm"], { cwd: halfProject, env: doctorEnv(halfHome, "cfg-half-list.db") });
-      const halfFiles = "Files: user " + userConfig(halfHome) + " [half] | project " + projectConfig(halfProject) + " [missing]";
+      const halfFiles = expectedFilesLine(halfHome, halfProject, "half", "missing");
       check(halfList.code === 0, "半配置时 ans llm 清单退 0", halfList.out);
       check(halfList.out.includes(halfFiles), "ans llm 一行给两个路径和 half / missing 两个标签", halfList.out);
       const halfDoctor = runAns(["doctor"], { cwd: halfProject, env: doctorEnv(halfHome, "cfg-half-doctor.db") });
@@ -822,8 +840,8 @@ async function main() {
       putUser(emptyHome, "");
       const emptyList = runAns(["llm"], { cwd: emptyProject, env: doctorEnv(emptyHome, "cfg-empty-list.db") });
       check(emptyList.code === 0, "空文件时 ans llm 清单退 0", emptyList.out);
-      check(emptyList.out.includes("Files: user " + userConfig(emptyHome) + " [empty] | project " +
-        projectConfig(emptyProject) + " [missing]"), "空文件的标签是 empty", emptyList.out);
+      check(emptyList.out.includes(expectedFilesLine(emptyHome, emptyProject, "empty", "missing")),
+        "空文件的标签是 empty", emptyList.out);
       const emptyDoctor = runAns(["doctor"], { cwd: emptyProject, env: doctorEnv(emptyHome, "cfg-empty-doctor.db") });
       check(emptyDoctor.code === 0, "空文件 doctor 退 0", emptyDoctor.out.slice(-500));
       check(emptyDoctor.out.includes("文件在，里面是空的：~/.ans/config.toml"),
@@ -835,8 +853,8 @@ async function main() {
       putUser(brokenHome, brokenToml);
       const brokenList = runAns(["llm"], { cwd: brokenProject, env: doctorEnv(brokenHome, "cfg-broken-list.db") });
       check(brokenList.code === 0, "配置坏了 ans llm 清单仍退 0", brokenList.out);
-      check(brokenList.out.includes("Files: user " + userConfig(brokenHome) + " [broken] | project " +
-        projectConfig(brokenProject) + " [missing]"), "坏文件的标签是 broken", brokenList.out);
+      check(brokenList.out.includes(expectedFilesLine(brokenHome, brokenProject, "broken", "missing")),
+        "坏文件的标签是 broken", brokenList.out);
       check(!brokenList.out.includes(brokenSentinel), "ans llm 不回显文件原文", brokenList.out);
       const brokenDoctor = runAns(["doctor"], { cwd: brokenProject, env: doctorEnv(brokenHome, "cfg-broken-doctor.db") });
       check(brokenDoctor.code === 1, "TOML 坏了 doctor 退 1", brokenDoctor.out.slice(-500));
@@ -865,14 +883,17 @@ async function main() {
         "项目文件坏了、用户文件好，ans chat 照常跑", pkChat.out);
       check(requestLog.slice(pkBefore).some((r) => r.role === "chat" && r.body.includes("CFG-PROJECT-BROKEN-QUESTION")),
         "这一轮真的到了模型端点");
-      check(/config\.toml/.test(pkChat.out), "坏文件只留一句警告，指向那个文件", pkChat.out.slice(-600));
+      const pkWarningLines = pkChat.stderr.split("\n").filter((line) => /config\.toml/.test(line));
+      check(pkWarningLines.length === 1 && !pkChat.stdout.includes("config.toml"),
+        "坏文件只留一句 stderr 警告，答案正文里没有",
+        JSON.stringify(pkWarningLines.map((line) => line.slice(0, 160))));
       check(!pkChat.out.includes(brokenSentinel), "警告里没有文件原文", pkChat.out.slice(-600));
 
       // ---- 用户级坏 + 项目级好：chat 靠项目级照常跑；doctor 文件行失败、模型可用 ----
       const ubHome = homeFor("user-broken");
       const goodProject = projectFor("project-good");
       putUser(ubHome, brokenToml);
-      putProject(goodProject, '[llm]\nprovider = "openai"\nmodel = "probe-model"\n');
+      putProject(goodProject, llmToml({ provider: "openai", model: "probe-model" }));
       const ubBefore = requestLog.length;
       const ubChat = await runAnsAsync(["chat", "-p", "CFG-USER-BROKEN-QUESTION"], {
         cwd: goodProject,
@@ -969,8 +990,10 @@ async function main() {
           const failedSpan = db.prepare(
             "SELECT attributes_json AS attrs FROM observability_spans ORDER BY rowid DESC LIMIT 1"
           ).get();
-          check(!!failedSpan && failedSpan.attrs.includes("anysearch.llm.configWarnings"),
-            "那一条观测带着配置警告计数", String(failedSpan?.attrs).slice(0, 300));
+          let failedSpanAttrs = {};
+          try { failedSpanAttrs = JSON.parse(failedSpan?.attrs ?? "{}"); } catch { /* 读不懂就当没有 */ }
+          check(failedSpanAttrs["anysearch.llm.configWarnings"] >= 1,
+            "那一条观测记下了配置警告的条数", String(failedSpan?.attrs).slice(0, 300));
         } finally { db.close(); }
       }
       await missingMcp.kill();
@@ -992,20 +1015,22 @@ async function main() {
         JSON.stringify(fillCall.result?.structuredContent ?? null).slice(0, 400));
       check(!fillText.includes("config.toml"), "成功时答案里不夹配置文件的事", fillText.slice(0, 400));
       const fillStderr = fillMcp.stderrText();
-      check(/config\.toml/.test(fillStderr), "坏文件只进 stderr", fillStderr.slice(-600));
+      const fillWarningLines = fillStderr.split("\n").filter((line) => /config\.toml/.test(line));
+      check(fillWarningLines.length === 1, "坏文件只留一句 stderr 警告",
+        JSON.stringify(fillWarningLines.map((line) => line.slice(0, 160))));
       check(!fillStderr.includes(llmEnv.ANS_LLM_API_KEY), "stderr 带路径，不带 key");
       await fillMcp.kill();
 
       // ---- stdio ans_chat：模型起不来 → 只说类别和修法，不带假 key / 假 provider ----
-      const sentinelProvider = "acc583-provider-sentinel";
-      const sentinelKey = "sk-acc583-key-sentinel";
-      const sentinelModel = "acc583-model-sentinel";
+      const sentinelProvider = "acc-config-provider-sentinel";
+      const sentinelKey = "sk-acc-config-key-sentinel";
+      const sentinelModel = "acc-config-model-sentinel";
       const sentinelDb = join(work, "cfg-mcp-sentinel.db");
       const sentinelHome = homeFor("mcp-sentinel");
       const sentinelProject = projectFor("mcp-sentinel");
       const sentinelMcp = mcpClient(mcpBin, mcpEnv(sentinelHome, sentinelDb, "cfg-mcp-sentinel-pi", {
-        // 不给自定义端点：走了 baseUrl 那条路，未知 provider 也能把会话建起来，
-        // 失败要到请求时才出现，验不到「初始化就说配置问题」这条。
+        // 不给 base_url：给了自定义端点，未知 provider 也能把会话建起来，
+        // 失败会拖到请求时才出现，验不到「初始化就说配置问题」。
         ANS_LLM_PROVIDER: sentinelProvider,
         ANS_LLM_MODEL: sentinelModel,
         ANS_LLM_API_KEY: sentinelKey,
@@ -1024,7 +1049,7 @@ async function main() {
       check(!sentinelMcp.stderrText().includes(sentinelKey), "stderr 也不带 key");
       await sentinelMcp.kill();
 
-      // 这张票没验的部分写清楚，不拿「脚本整体退 0」冒充覆盖。
+      // 没验的部分写清楚，别把没跑的算成通过。
       console.log("未测：HTTP 版 ans_chat、真实模型判断、真实 dsh 宿主、浏览器验收。");
     }
 
