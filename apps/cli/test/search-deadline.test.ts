@@ -144,6 +144,21 @@ test("ans --help names --deadline <ms>, its bounds, and the default", async () =
   assert.match(r.out, /default 4000/, "the help names the default");
 });
 
+test("--deadline=500 cuts a slow arm too", async () => {
+  const stub = await startFakeAnySearch(MARKDOWN, { delayMs: 5000 });
+  process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
+  try {
+    const started = Date.now();
+    const r = await run(["q", "--deadline=500"]);
+    const wallMs = Date.now() - started;
+    assert.equal(r.code, 1, "a cancelled search with no results exits 1; got: " + r.err + r.out);
+    assert.match(r.out, /Providers cancelled: anysearch/, "the equals form reached the engine; got: " + r.out.slice(-400));
+    assert.ok(wallMs < 4000, "the equals form used the deadline, not the 4s default; got " + wallMs + "ms");
+  } finally {
+    await stub.close();
+  }
+});
+
 test("--deadline 8000 keeps 8000 out of the query (no-swallow)", async () => {
   const stub = await startFakeAnySearch(MARKDOWN);
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
@@ -167,6 +182,9 @@ for (const [label, argv] of [
   ["fraction", ["q", "--deadline", "1.5"]],
   ["negative", ["q", "--deadline", "-1"]],
   ["another flag", ["q", "--deadline", "--json"]],
+  ["equals missing value", ["q", "--deadline="]],
+  ["equals not a number", ["q", "--deadline=abc"]],
+  ["equals below the floor", ["q", "--deadline=499"]],
 ] as const) {
   test("--deadline " + label + " exits 2 and states the range and default", async () => {
     const r = await run([...argv]);

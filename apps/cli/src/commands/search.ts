@@ -17,10 +17,10 @@ import {
 } from "./search-abstain";
 
 // #649: the terminal's own wait budget. Absent keeps the engine's 4s default;
-// these bounds are the flag's whole contract, and the message below repeats
-// them so a bad value never becomes a search term.
-const SEARCH_DEADLINE_MIN_MS = 500;
-const SEARCH_DEADLINE_MAX_MS = 60000;
+// these bounds are the flag's whole contract. The error message and the
+// top-level help both build from them instead of copying the numbers.
+export const SEARCH_DEADLINE_MIN_MS = 500;
+export const SEARCH_DEADLINE_MAX_MS = 60000;
 
 // Both render paths print "Providers failed" and the remedy beside it, or an
 // abstain hides why the arm died. One helper, so neither branch can drop half.
@@ -121,8 +121,13 @@ export async function runSearch(args: string[]): Promise<number> {
   // wait. Absent keeps the engine's 4s default; the flag only changes this
   // run, never the default itself.
   let requestTimeoutMs: number | undefined;
-  if (flagSeen("--deadline")) {
-    const raw = flagVal("--deadline");
+  const deadlineArg = args.find((a) => a === "--deadline" || a.startsWith("--deadline="));
+  if (deadlineArg !== undefined) {
+    // Accept both "--deadline 8000" and "--deadline=8000"; a bare "--deadline"
+    // still reads the next token so a following --flag is rejected, not eaten.
+    const raw = deadlineArg === "--deadline"
+      ? flagVal("--deadline")
+      : deadlineArg.slice("--deadline=".length);
     const wholeNumber = raw !== undefined && !raw.startsWith("--") && /^\d+$/.test(raw);
     const parsed = wholeNumber ? Number(raw) : NaN;
     if (!wholeNumber || parsed < SEARCH_DEADLINE_MIN_MS || parsed > SEARCH_DEADLINE_MAX_MS) {

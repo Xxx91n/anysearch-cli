@@ -224,8 +224,8 @@ export class RetroaererdEngine {
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass (#478); it lives here now. `requestTimeoutMs`
-  // exists only so tests can shrink the 4s deadline.
+  // no caller could pass (#478); it lives here now. `requestTimeoutMs` is the
+  // caller's per-request cap; absent keeps the 4s default (#649).
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 
@@ -238,7 +238,11 @@ export class RetroaererdEngine {
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
     this.gate = { ...DEFAULT_GATE, ...opts?.gate };
-    this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const requestedTimeout = opts?.requestTimeoutMs;
+    if (requestedTimeout !== undefined && (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0)) {
+      throw new RangeError("requestTimeoutMs must be a positive finite number of milliseconds");
+    }
+    this.requestTimeoutMs = requestedTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
     const cal = opts?.attributionCalibration;

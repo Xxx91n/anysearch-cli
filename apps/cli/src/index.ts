@@ -4,7 +4,7 @@
 // CLI wiring: provider registry + store + engine injected per command.
 
 import { runDoctor } from "./commands/doctor";
-import { runSearch } from "./commands/search";
+import { runSearch, SEARCH_DEADLINE_MIN_MS, SEARCH_DEADLINE_MAX_MS } from "./commands/search";
 import { runDomain } from "./commands/domain";
 import { runAuth } from "./commands/auth";
 import { runLlm } from "./commands/llm";
@@ -23,6 +23,7 @@ import { runHitl } from "./commands/hitl";
 import { runHost } from "./commands/host";
 import { describeAdmissionRefusal, runUpgrade } from "./commands/upgrade";
 import { rehydrateConfigEnv } from "./config-env";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "@anysearch-cli/kernel";
 import { ensureAnsLayoutOrExit, REPAIR_COMMAND, STORE_KEY_COMMAND } from "@anysearch-cli/store";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 import { trackCliCommand } from "./cli-task-tracking";
@@ -49,7 +50,7 @@ const help = [
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
-  "                     --deadline <ms> (500–60000, default 4000)",
+  "                     --deadline <ms> (" + SEARCH_DEADLINE_MIN_MS + "–" + SEARCH_DEADLINE_MAX_MS + ", default " + DEFAULT_REQUEST_TIMEOUT_MS + ")",
   "  chat      新建对话；--continue 续当前项目最近会话；--session ID 续指定会话；--list 查看",
   "            -p 只输出答案和来源；-c 接着问被打断的那轮",
   "            两种模式的进度写到标准错误，失败时退出非零",
