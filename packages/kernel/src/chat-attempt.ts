@@ -25,7 +25,7 @@
 // to wait or fork (#317). The host asks; this module keeps both paths inside
 // the same lease boundary as the ordinary attempt.
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { piSessionKey } from "./pi-runtime";
 import { forkChatSession } from "./fork-session";
@@ -65,18 +65,36 @@ export class ChatAttemptBusyError extends Error {
 }
 
 /**
+ * How the lease is named in the collision sentence.
+ *
+ * `absolute` is the default for a terminal. `session-relative` prints
+ * `leases/<file>` under the session-record root instead: an MCP tool result
+ * travels to a host, so a machine path there leaks the operator's home layout.
+ */
+export interface ChatAttemptBusyTextOptions {
+  leasePathStyle?: "absolute" | "session-relative";
+}
+
+/**
  * The collision sentence both hosts print, in the user's language. `prefix` is
  * the host's own ("ans_chat: "); everything else must stay identical, so a
  * change to the wording cannot land in one host and miss the other.
  */
-export function chatAttemptBusyText(error: ChatAttemptBusyError, prefix = ""): string {
+export function chatAttemptBusyText(
+  error: ChatAttemptBusyError,
+  prefix = "",
+  options: ChatAttemptBusyTextOptions = {},
+): string {
   const holder = error.facts?.holder;
   const who = holder
     ? "持有者 pid " + holder.pid + "（主机 " + holder.host
       + (holder.lockedAt === undefined ? "" : "，锁建于 " + new Date(holder.lockedAt).toISOString())
       + "）"
     : undefined;
-  const where = "锁在 " + error.leasePath + "。";
+  const where = options.leasePathStyle === "session-relative"
+    ? "锁在会话记录目录（ANS_PI_SESSION_DIR，默认 ~/.ans/pi-sessions）下的 "
+      + SESSION_LEASE_DIRNAME + "/" + basename(error.leasePath) + "。"
+    : "锁在 " + error.leasePath + "。";
   const head = prefix + "这段会话正在别处运行（" + error.sessionId + "）。";
   if (error.facts?.liveness === "dead" && who) {
     // Not "running elsewhere": the probe proved that process is gone, and this
