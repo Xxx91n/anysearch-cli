@@ -174,15 +174,16 @@ test("the last --deadline wins", async () => {
   }
 });
 
-test("--deadline 8000 keeps 8000 out of the query (no-swallow)", async () => {
+test("--deadline 60000 keeps its value out of the query and off the 15s eval cap", async () => {
   const stub = await startFakeAnySearch(MARKDOWN);
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
   try {
-    const r = await spawnCli(["search", "q", "--deadline", "8000", "--json"]);
+    const r = await spawnCli(["search", "q", "--deadline", "60000", "--json"]);
     assert.equal(r.code, 0, r.err + r.out);
     const doc = JSON.parse(r.out);
     assert.equal(doc.query, "q", "the deadline value is consumed, not searched; got: " + doc.query);
-    assert.ok(!doc.query.includes("8000"), "the query never carries the deadline value");
+    assert.ok(!doc.query.includes("60000"), "the query never carries the deadline value");
+    assert.equal(doc.requestTimeoutMs, 60000, "the user ceiling wins over the eval 15s cap; got: " + doc.requestTimeoutMs);
   } finally {
     await stub.close();
   }

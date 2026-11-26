@@ -30,11 +30,12 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request, counted from fan-out. `requestTimeoutMs`
-// exists so a caller with its own budget can set it: tests shrink it, and
-// `ans search --deadline` (#649) passes the terminal's choice. The default is
-// exported so that help quotes the real number instead of copying it.
-export const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+// Design: one 4s cap per request by default, counted from fan-out. The user's
+// default is this number; who may change it and by how much is the composition
+// root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`
+// (#649). Exported so the composition root and help read the same 4s.
+const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+export { DEFAULT_REQUEST_TIMEOUT_MS };
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
@@ -225,7 +226,8 @@ export class RetroaererdEngine {
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
   // no caller could pass (#478); it lives here now. `requestTimeoutMs` is the
-  // caller's per-request cap; absent keeps the 4s default (#649).
+  // caller's per-request cap: tests shrink it, eval raises it, and
+  // `ans search --deadline` (#649) passes the terminal's choice; absent is 4s.
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 

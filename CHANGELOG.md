@@ -1,3 +1,30 @@
+## Unreleased — #657: 评测的钟和用户的钟分开
+
+一句话说清：**用户默认的 4 秒一个字节没动；评测跑专线那批语料时需要一口更长的钟，于是新增一个只有 `ans search` 会读的环境变量 `ANS_EVAL_REQUEST_TIMEOUT_MS`——不设是 4000，写错或 ≤0 也回落 4000，最多 15000。chat 和 MCP 不读它。数字自己带着钟走：引擎实际用的值挂在 `CompositionResult.requestTimeoutMs` 上，报告照着印，不另算一遍。**
+
+### Changed
+
+- **`createEngine` 接受 `requestTimeoutMs`**（`packages/kernel/src/composition.ts`）：交给 `resolveRequestTimeoutMs` 归一化——不设、非法、≤0 都是 4000，超过 15000 按 15000——再把生效值交给引擎、放进结果。chat 和 MCP 从不传，所以那条路上永远是 4000。
+- **`ans search` 读这个变量**（`apps/cli/src/commands/search.ts`）：只有这一条命令读；`ans chat` 和 MCP 工具都不读，也不转发。它不进 help，也不进产品文档，用法写在 `docs/eval/request-timeout-budget.md`。
+- **钟跟着数走**：生效的预算进了 `ans search --json` 的 `requestTimeoutMs`，评测是另起进程跑的，不这么带出来就只剩「按环境变量再猜一遍」。值没原样生效（写错、≤0、超过上限）时 stderr 会点明原值和这次实际用的毫秒数，免得一轮评测白跑还看不出来。
+- **4 秒只写一处**：引擎把 `DEFAULT_REQUEST_TIMEOUT_MS` 显式导出，组合根直接用它，不再另抄一个 4000。引擎里被 `ship-gate` 正则钉住的那三行和 `docs/limitations.md` 里那句一字未改。
+- **词表补两条**：`GLOSSARY.md` 新增「专线」和「截断（删失）」。
+
+### Known limits
+
+- **这不是一道门**：`~/.ans/config.env` 里的任何 `ANS_*` 启动时都会被灌进环境，用户自己也能把这个变量设长。名字里带 `EVAL` 只是提醒。最长也只是让他自己那一次搜索多等几秒，默认不动，可以接受。
+
+## Unreleased — #583: 装出来的包也得把配置状态说对
+
+一句话说清：**前面的装包验收只证明包能装上、能跑一轮，没验过「两份 `config.toml` 各是什么状态」在装出来的产品里说不说得对。现在 `scripts/installed-acceptance.mjs` 多跑一段 A2：对着这次刚装出来的 `ans` 和 `ans-mcp`，验 `ans llm` 的两个路径加状态标签、`ans doctor` 的两行文件行、`ans chat` 在坏文件/半配置/env 补齐时该跑还是该拦、stdio 版 `ans_chat` 缺配置时 `isError` 且不写会话和预算。模型还是那条车道原有的本地假端点，没有第二套。**
+
+### Changed
+
+- **装包验收多一段 A2**（`scripts/installed-acceptance.mjs`）：用独立的临时 home 和项目目录，每种场景只放自己要的那份 TOML；跑之前把 shell 里的 `ANS_LLM_*` 和各 provider 的 key 摘掉，要看文件的时候不让环境插手。`mcpClient` 多两个可选东西：子进程的 `cwd`（不给它一个带 `.ans/config.toml` 的目录就没法验项目级）和 `stderrText()`（操作者那份 stderr，用来断言「路径留着、key 没留」）。
+- **验的场景**：半配置（`ans llm` 是 `half`/`missing`，doctor 说「设了 provider，缺 model」，chat 退 3 说清缺 model）、空文件（`empty`，「文件在，里面是空的」）、坏 TOML（清单仍退 0、标签 `broken`；doctor 退 1，只给路径、错误类型和行列号，不回显原文）、项目级坏 + 用户级好（doctor 点名项目，chat 照常跑）、用户级坏 + 项目级好（chat 靠项目级跑，doctor 文件行失败、模型配置可用）、坏文件 + env 补齐（doctor 仍退 1 并说「值来自环境变量，能用；env 没了就会坏」，chat 继续跑）。
+- **stdio `ans_chat` 三条**：缺配置（`isError`、没有 `structuredContent`、正文点名项目级、调用前后只多一条已结束的失败任务和一条观测，会话/预算/预留一行不多）；坏用户文件 + env 补齐（成功，`structuredContent` 仍有会话句柄和用量，坏文件只进 stderr）；模型起不来（假 provider、假 key 两组 sentinel 都不进正文，失败文字仍点名配置问题和修法，stderr 不带 key）。
+- **未测写清楚**：这段跑完会打印「HTTP 版 `ans_chat`、真实模型判断、真实 dsh 宿主、浏览器验收」未测，不拿脚本整体退 0 冒充全覆盖。
+
 ## Unreleased — #582: MCP 的模型错误文字脱敏
 
 一句话说清：**`ans_chat` 的模型初始化失败和运行异常以前把上游错误原文直接塞进 `content`，里面可能带 key、这台机器的绝对路径、配置里的 provider 值和解析器 warning 原文；宿主会把这段文字抄进聊天、贴进工单、存进库。现在失败文字先过一道脱敏，并且说清是配置、鉴权还是运行问题；观测里长期留存的 `configError` 走同一道脱敏。异常原文仍进 stderr——可以带路径，不带 key。**

@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { RetroaererdEngine } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -249,6 +249,10 @@ export interface CompositionResult {
   // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
   // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
+  // This engine's per-request deadline in ms — the user's 4000 unless
+  // `--deadline` or an eval run raised it. Optional so hand-built mocks stay
+  // source-compatible; every createEngine result supplies it.
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -332,6 +336,21 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
+// A typo (150000) must not hold a measurement open for minutes; 15s is
+// already a wide window for one search.
+const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
+
+// The kernel never reads `ANS_EVAL_REQUEST_TIMEOUT_MS`, so the number can only
+// arrive as an argument. `capMs` defaults to the eval ceiling; `--deadline`
+// raises it to the flag's own ceiling so a user choice is not silently cut.
+function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
+  if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
+  const ms = Math.trunc(raw);
+  if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  const cap = Number.isFinite(capMs) && capMs > 0 ? capMs : EVAL_REQUEST_TIMEOUT_CAP_MS;
+  return Math.min(ms, cap);
+}
+
 export function createEngine(
   domain?: string,
   opts?: {
@@ -350,9 +369,16 @@ export function createEngine(
      * #649: how long one search waits before it stops fanning out, in
      * milliseconds. Omitted keeps the engine's default (4s); this is the one
      * seam every caller uses, so a command with its own budget never reaches
-     * into the engine directly.
+     * into the engine directly. `ans search` passes it from `--deadline` or
+     * `ANS_EVAL_REQUEST_TIMEOUT_MS`.
      */
     requestTimeoutMs?: number;
+    /**
+     * Upper bound applied to `requestTimeoutMs`. Defaults to the eval ceiling
+     * (15s); `--deadline` raises it to the flag's 60s ceiling so a user choice
+     * is not silently shortened.
+     */
+    requestTimeoutCapMs?: number;
     /**
      * Env handed to `searchCredentials`. NOTHING else in createEngine reads it -
      * domain dirs, the reloader and the calibration root still resolve through
@@ -556,15 +582,16 @@ export function createEngine(
       return undefined;
     }
   })();
+  // One number, resolved once — the engine runs on it and the eval report
+  // stamps it, so a measurement can never lose the clock it was taken under.
+  const requestTimeoutMs = resolveRequestTimeoutMs(opts?.requestTimeoutMs, opts?.requestTimeoutCapMs);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
+    requestTimeoutMs,
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
-    // #649: the caller's one budget for this engine; absent keeps the
-    // engine's own 4s default.
-    ...(opts?.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
     // per-call budget reserve→settle (T2 #177) — port present when the store
     // could build its ledger; session id is per search, so the gate opens only
     // on the chat/ans_chat paths.
@@ -593,5 +620,6 @@ export function createEngine(
     domainsDirs,
     ledger,
     credentialSources,
+    requestTimeoutMs,
   };
 }
