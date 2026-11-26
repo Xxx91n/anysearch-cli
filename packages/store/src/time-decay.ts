@@ -3,6 +3,9 @@
 // References: Mem0 production band 0.3/1.5 (score factor docs), Mem0 issue #5330 half-life defaults,
 // Zep bi-temporal invalidation, Google QDF (spike-driven, no year literals).
 
+import type { Database as SqliteDatabase } from "better-sqlite3";
+import { NO_PAGE_BODY_SQL } from "./retrieval-content.js";
+
 // Tiered half-life (tau) in days: news decays fast, evergreen decays slow.
 export const TAU_TIER = {
   news: 7,       // 7d half-life for time-sensitive content
@@ -105,7 +108,7 @@ export function scoreWithFreshness(bm25Score: number, input: FreshnessInput): nu
 // Register freshness_factor custom function in better-sqlite3.
 // supersedes time_decay (interpolation form retired with w).
 // Usage: freshness_factor(bm25(fts), created_at, last_accessed, access_count, title, url, query, pinned)
-export function registerFreshnessFactorFunction(db: import("better-sqlite3").Database): void {
+export function registerFreshnessFactorFunction(db: SqliteDatabase): void {
   db.function("freshness_factor", { varargs: true }, (
     bm25Score: number,
     createdAt: string,
@@ -131,14 +134,21 @@ export function registerFreshnessFactorFunction(db: import("better-sqlite3").Dat
 // Called at write time, not relying on decay to suppress staleness (: explicit
 // invalidation stays on the write path; soft decay is a ranking bias, never a filter).
 export function invalidateOldRecords(
-  db: import("better-sqlite3").Database,
+  db: SqliteDatabase,
   entityKey: string,
   newRecordId: number,
+  opts: { protectContent?: boolean } = {},
 ): void {
   // ponytail: entity matching is URL-based for MVP. Upgrade to entity extraction when needed.
-  // Close all previous records with same URL that are still valid.
+  //
+  // Design: never close archived or quarantined rows — clearing the flag later
+  // would still leave valid_until hiding them from recall.
+  // Design: protectContent keeps a snippet write from closing a page body;
+  // body writers leave it off because a new version should win.
+  const protect = opts.protectContent ? NO_PAGE_BODY_SQL : "";
   db.prepare(
     "UPDATE retrieval_results SET valid_until = datetime('now') " +
-    "WHERE url = ? AND id != ? AND valid_until IS NULL"
+    "WHERE url = ? AND id != ? AND valid_until IS NULL " +
+    "AND archived = 0 AND quarantine IS NULL" + protect
   ).run(entityKey, newRecordId);
 }

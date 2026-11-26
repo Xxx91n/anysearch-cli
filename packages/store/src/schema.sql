@@ -90,9 +90,14 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   url TEXT NOT NULL,
   title TEXT,
   snippet TEXT,
+  -- Full page body from a fetch, already passed through sanitizeText and not
+  -- truncated. NULL/empty means this row only carries a search snippet. The
+  -- main FTS table still indexes title/snippet only — the body is not a
+  -- keyword-search surface here.
+  content TEXT,
   source TEXT, -- provider id
   rrf_score REAL,
-  fetched BOOLEAN DEFAULT 0,
+  fetched BOOLEAN DEFAULT 0, -- historical marker; "has body" is decided by content, not this flag
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   -- G019: time-decay columns.
   valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
