@@ -35,9 +35,8 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // composition root caps that at 15s); the user's default stays 4000.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 // Exported instead of copied so the 4s default lives in one place. The
-// composition root turns `ans search`'s number (from
-// `ANS_EVAL_REQUEST_TIMEOUT_MS`) into the engine's deadline and exposes what it
-// used as `CompositionResult.requestTimeoutMs`.
+// composition root turns the caller's number into the engine's deadline and
+// exposes what it used as `CompositionResult.requestTimeoutMs`.
 export { DEFAULT_REQUEST_TIMEOUT_MS };
 
 // Extract domain from URL for sufficiency gate domain counting.
