@@ -14,6 +14,7 @@
 // gracefully to empty string so core CLI/Hook/MCP paths stay fail-open.
 //
 // Precedent: systemd machine-id(5), K8s Lease/leader election, OPA decision log.
+import { writeStderrSafe } from "./diagnostics.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -45,29 +46,6 @@ function generateSessionId(): string {
 // can receive different session IDs. Keyed by anchor path so different
 // ANS_SESSION_ID / HOME combinations don't collide.
 const tempIdByAnchor = new Map<string, string>();
-
-// Best-effort stderr write: a closed/broken stderr (e.g. the MCP parent closed
-// the pipe) must not crash the process. Both synchronous write throws and
-// asynchronous stream errors are absorbed. Mirrors the pattern in
-// packages/kernel/src/composition.ts writeProviderDiagnostic.
-// CodeRabbit #129 review: process.stderr.write can emit an asynchronous 'error'
-// event that try/catch cannot capture — a broken pipe would terminate the
-// process instead of continuing fail-open.
-const stderrErrorListeners = new WeakSet<NodeJS.WriteStream>();
-
-function writeStderr(message: string): void {
-  const stderr = process.stderr;
-  if (!stderrErrorListeners.has(stderr)) {
-    stderr.on("error", () => {});
-    stderrErrorListeners.add(stderr);
-  }
-  try {
-    stderr.write(message);
-  } catch {
-    // Synchronous write throws (e.g. stream destroyed) — already absorbed
-    // by the persistent error listener above.
-  }
-}
 
 // readSessionId:
 // 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
@@ -107,7 +85,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
       tempId = generateSessionId();
       tempIdByAnchor.set(absFile, tempId);
     }
-    writeStderr(
+    writeStderrSafe(
       "[warn] session anchor could not be read at " + file +
       "; using a fresh observation id for this run. Set ANS_SESSION_ID to keep the same observation id.\n",
     );
@@ -126,7 +104,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   } catch {
     // Fail-open: say that the observation id may change on the next run.
     // Chat continuation uses its own explicit handle (#299).
-    writeStderr(
+    writeStderrSafe(
       "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
       sessionIdBaseDir(env) + " writable to keep the same observation id across runs\n",
     );

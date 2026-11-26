@@ -119,6 +119,53 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
 -- correction's closed predecessor).
 CREATE INDEX IF NOT EXISTS idx_retrieval_results_url ON retrieval_results(url);
 
+-- Sections and blocks of a page body. The body stays in
+-- retrieval_results.content; this table records where a section/block sits and
+-- its heading path. Offsets are code points. level 0 = section, 1 = block;
+-- parent_id is set for level 1 only. Governance stays on the page row and is
+-- joined at read time. AUTOINCREMENT keeps deleted ids retired.
+CREATE TABLE IF NOT EXISTS retrieval_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  parent_id INTEGER REFERENCES retrieval_chunks(id) ON DELETE CASCADE,
+  level INTEGER NOT NULL CHECK (level IN (0, 1)),
+  ord INTEGER NOT NULL,
+  start_offset INTEGER NOT NULL, -- code points, not bytes or UTF-16 units
+  end_offset INTEGER NOT NULL,
+  heading_path TEXT NOT NULL,
+  CHECK ((level = 0 AND parent_id IS NULL) OR (level = 1 AND parent_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_page ON retrieval_chunks(page_id, level, ord);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_parent ON retrieval_chunks(parent_id, ord);
+
+-- Which pages have had their blocks built. `blocks = 0` records a page that
+-- yields no section (heading-only, blank), so a repair run does not retry it
+-- forever; a page whose blocks disappear still has blocks > 0 and is repaired.
+CREATE TABLE IF NOT EXISTS retrieval_page_chunks (
+  page_id INTEGER PRIMARY KEY REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  blocks INTEGER NOT NULL
+);
+
+-- Contentless FTS over blocks: "heading path + bigram-tokenized body". No
+-- readable body, no snippet(), no 'rebuild'; a re-chunk deletes and reinserts.
+-- detail stays default because a query is a bigram phrase and needs positions.
+CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
+  USING fts5(body, content='', contentless_delete=1);
+
+-- Re-chunking deletes the chunk rows; this trigger clears their FTS rows. A
+-- page delete cascades to the same chunk rows, so the same trigger fires.
+CREATE TRIGGER IF NOT EXISTS retrieval_chunks_ad AFTER DELETE ON retrieval_chunks BEGIN
+  DELETE FROM retrieval_chunks_fts WHERE rowid = old.id;
+END;
+
+-- One vector per block. `model` records which embedding model produced it; when
+-- the model changes, the row is replaced and the block owes the new vector.
+CREATE TABLE IF NOT EXISTS retrieval_chunk_vectors (
+  chunk_id INTEGER PRIMARY KEY REFERENCES retrieval_chunks(id) ON DELETE CASCADE,
+  embedding BLOB NOT NULL,
+  model TEXT NOT NULL
+);
+
 -- FTS5 for retrieval results (search within session results).
 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_results_fts USING fts5(
   session_id UNINDEXED,

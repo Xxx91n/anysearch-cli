@@ -1,7 +1,7 @@
 // (r118 impl): Fusion Governance Contract layer L1 — committed registration payload.
 // L0 = rrf.ts pure primitive (governance-free); L2 = MemoryFusion (store session-store.ts) and
 // WebFusion (kernel engine.ts) instances with zero data sharing; L3 = top-k consumption contract
-// (FusionProvenance in contract.ts). Behavior-conserving round: no algorithm swap, no weight change.
+// (FusionProvenance in contract.ts).
 //
 // Single-consumer discipline (-adjacent): every registered leaf is consumed by exactly one
 // decision point — see the per-field comments; mutation tests prove no dead registrations.
@@ -30,7 +30,11 @@ export const FUSION_REGISTRY = Object.freeze({
   // weights.web consumed by engine.ts (D4 equal weight = null model; sources.weights overlay is
   // user preference, not evidence).
   weights: Object.freeze({
-    memory: Object.freeze({ fts: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }),
+    // Design: a page-body hit carries full-text weight, same as fts. A page hit
+    // by both the title/snippet lane and the body lane adds both weights, so a
+    // page that matches in title and body ranks above one that only matches in
+    // the body.
+    memory: Object.freeze({ fts: 1.0, content: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }),
     web: Object.freeze({ exa: 1.0, tavily: 1.0, anysearch: 1.0 }),
   }),
   // Consumed by: fts5.ts + session-store.ts conditional activation — an absent arm adds no list

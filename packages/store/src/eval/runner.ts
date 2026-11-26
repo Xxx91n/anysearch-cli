@@ -61,6 +61,8 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   semantic: "critical",
 };
 export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
+  // The production content arm is not measured yet: no golden case writes a
+  // page body, so listing it would add an n=0 arm and shift the beta correction.
   "entity",
   "vector",
   "relation",
@@ -348,9 +350,11 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
           case "search": {
             const hits = await store.searchMemory(op.query, op.limit ?? 20);
             const texts = hits.map((h) => hitText(h));
-            // weak = hit without the FTS arm (vector/entity-only recall). Weak hits are
+            // weak = hit with neither the FTS nor the content arm (vector/entity-only
+            // recall). The content half is not exercised yet: no golden case writes
+            // a page body.. Weak hits are
             // answer-layer abstain evidence: they don't count toward precision budgets.
-            const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts"); };
+            const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts") && !a.includes("content"); };
             const strongHits = hits.filter((h) => !isWeak(h));
             const fails: string[] = [];
             if (op.expectIncludesTitle && !texts.some((t) => t.includes(op.expectIncludesTitle!))) fails.push(`missing "${op.expectIncludesTitle}"`);

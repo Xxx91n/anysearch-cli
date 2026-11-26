@@ -84,12 +84,23 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             rank: h.rank,
             sessionId: h.sessionId,
             // #263 (D9): the archive row this hit came from. A summary records
-            // its dependencies by id, and a recall result carries no URL, so
-            // without this the material the model actually read could never be
-            // bound to the summary that used it. Positive rowid = archive
+            // its dependencies by id, so the material the model actually read
+            // can be bound to the summary that used it. Positive rowid = archive
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
+            // What the caller can do with this hit. The four fields always
+            // appear: `url`/`fetchedAt` are null when absent, `hasContent` is
+            // false, `sections` is []. `url` is the stored identity without a
+            // scheme (`example.com/guide`), not an openable link; `fetchedAt`
+            // is the row write time (created_at), not the provider fetch time.
+            // `sections` lists level-0 sections only — id, heading path,
+            // character count, start offset — and is empty when the row has no
+            // body or its sections were never built.
+            url: h.url ?? null,
+            fetchedAt: h.fetchedAt ?? null,
+            hasContent: h.hasContent === true,
+            sections: h.sections ?? [],
           })),
           projectIndex: projectHits.map((h) => ({
             title: h.title,

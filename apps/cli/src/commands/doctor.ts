@@ -22,7 +22,10 @@ import {
   loadDomainFromString,
   preMigrationBackupPath,
   preMigrationRecordPath,
+  readChunkVectorBacklogFile,
+  embeddingModelId,
   readMigrationStatus,
+  type ChunkVectorBacklog,
   type MigrationLayoutStatus,
   resolveSearchCredentials,
 } from "@anysearch-cli/store";
@@ -92,6 +95,33 @@ export interface DoctorOptions {
    * 探针走各家的公开端点（anysearch 例外：它本来就有 ANYSEARCH_ENDPOINT）。
    */
   endpoints?: Partial<Record<SearchProviderId, string>>;
+}
+
+const BACKFILL_COMMAND = "ans memory backfill-vectors";
+
+function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): string {
+  const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
+  if (backlog.pagesWithoutChunks > 0) {
+    facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
+  }
+  // The lane scans only the active model's vectors; an old model's rows must
+  // not fake a truncation warning.
+  if (backlog.embedded > backlog.vectorScanLimit) {
+    facts.push(`当前模型的块向量 ${backlog.embedded} 条，检索只扫最近 ${backlog.vectorScanLimit} 条（更老的正文只剩关键词那条）`);
+  }
+  const needsBlocks = backlog.pagesWithoutChunks > 0;
+  const needsVectors = backlog.pending > 0;
+  let repair = "没有积压";
+  if (needsBlocks || needsVectors) {
+    const actions: string[] = [];
+    if (needsBlocks) actions.push("重建缺块");
+    if (needsVectors) actions.push("补块向量");
+    repair = "跑 " + BACKFILL_COMMAND + " " + actions.join("、");
+    if (needsVectors && chunkModel === "unavailable") {
+      repair += "；块向量要装 embedding 包后才能补";
+    }
+  }
+  return facts.join("；") + "。" + repair;
 }
 
 function errorText(error: unknown): string {
@@ -1116,6 +1146,43 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
               : "当前布局本来就不需要迁移前备份",
           });
         }
+      }
+    }
+    // 块向量补到哪了。有积压不是坏，关键词那条照常能搜；读真库时只读打开，
+    // 不用构造器，免得 doctor 顺手迁移或做备份。
+    if (dbPath !== ":memory:" && existsSync(dbPath)) {
+      try {
+        // Report against the model search will actually use. Without the
+        // embedding package the id is "unavailable", which makes every block
+        // pending — the same number a real run would face.
+        const chunkModel = await embeddingModelId();
+        const backlog = readChunkVectorBacklogFile(dbPath, chunkModel);
+        if (!backlog) {
+          report.add({
+            layer: "data",
+            name: "正文块向量",
+            state: "unconfigured",
+            mode: "offline",
+            detail: "库里还没有可读的块表或正文列（新库还没被会话库补全，或是旧库）；下次 ans 打开时建表，老正文跑 ans memory backfill-vectors 补块",
+          });
+        } else {
+          report.add({
+            layer: "data",
+            name: "正文块向量",
+            // Missing blocks is a one-command repair, not a broken install.
+            state: backlog.pagesWithoutChunks > 0 ? "unconfigured" : "ready",
+            mode: "offline",
+            detail: chunkBacklogDetail(backlog, chunkModel),
+          });
+        }
+      } catch (error) {
+        report.add({
+          layer: "data",
+          name: "正文块向量",
+          state: "failed",
+          mode: "offline",
+          detail: errorText(error).slice(0, 160),
+        });
       }
     }
   }

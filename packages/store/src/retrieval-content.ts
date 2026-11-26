@@ -1,15 +1,22 @@
-// What counts as a page body, in both forms the write path needs: a predicate
-// for loaded rows and the SQL guard for an UPDATE's WHERE clause. They live
-// together so a change to one cannot silently drift from the other.
+// What counts as a page body, in the forms the write path and the read path
+// use. The SQL form is the single source; the JS predicate mirrors it.
 
 export interface PageBodyRow {
   content: string | null;
 }
 
+/**
+ * SQL expression: the row has a page body. `length` is the code-point length
+ * SQLite already uses elsewhere, so "has body" means the same thing in SQL as
+ * `hasPageBody` does in JS. Parenthesized so it can be composed with OR, and
+ * unqualified: use it only where one joined table has a `content` column.
+ */
+export const HAS_PAGE_BODY_EXPR = "(content IS NOT NULL AND length(content) > 0)";
+
+/** SQL condition: the row has no page body (snippet-only tier). */
+export const NO_PAGE_BODY_SQL = " AND NOT " + HAS_PAGE_BODY_EXPR;
+
 /** True when the row carries a page body. The `fetched` flag is never the judge. */
 export function hasPageBody(row: Pick<PageBodyRow, "content">): boolean {
   return typeof row.content === "string" && row.content.length > 0;
 }
-
-/** SQL condition: the row has no page body (snippet-only tier). */
-export const NO_PAGE_BODY_SQL = " AND (content IS NULL OR content = '')";
