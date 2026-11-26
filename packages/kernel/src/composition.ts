@@ -340,9 +340,8 @@ export function resolveActiveAttributionCalibration(
 // already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
-// `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands the number over
-// here. The kernel never reads this variable, so it can only arrive as an
-// argument; chat and MCP pass none, which is why they keep the user's 4s.
+// The kernel never reads `ANS_EVAL_REQUEST_TIMEOUT_MS`, so the number can only
+// arrive as an argument.
 function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);
