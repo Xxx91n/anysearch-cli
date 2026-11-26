@@ -32,7 +32,8 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Design: one 4s cap per request by default, counted from fan-out. The user's
 // default is this number; who may change it and by how much is the composition
-// root's call (`resolveRequestTimeoutMs`).
+// root's call (`resolveRequestTimeoutMs`). Exported so the composition root
+// reads the same 4s instead of copying it.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 export { DEFAULT_REQUEST_TIMEOUT_MS };
 
