@@ -55,6 +55,11 @@ export function createPersistentEngine(
      * Omitted means this engine parses the file, as it always has.
      */
     credentialsFile?: CredentialFileContents;
+    /**
+     * #649: this command's own wait budget, handed through to the engine
+     * unchanged. Omitted keeps the engine's 4s default.
+     */
+    requestTimeoutMs?: number;
   },
 ): CompositionResult {
   const dbPath = resolveDbPath();
@@ -72,6 +77,7 @@ export function createPersistentEngine(
     domainsDirs: domainSearchDirs(),
     searchCredentials: searchCredentialSeam(credentialsFile),
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
+    ...(opts?.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
   });
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();

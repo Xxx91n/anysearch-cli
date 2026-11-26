@@ -30,9 +30,11 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
-// exists only so tests can shrink it.
-const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+// Design: one 4s cap per request, counted from fan-out. `requestTimeoutMs`
+// exists so a caller with its own budget can set it: tests shrink it, and
+// `ans search --deadline` (#649) passes the terminal's choice. The default is
+// exported so that help quotes the real number instead of copying it.
+export const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {

@@ -49,6 +49,7 @@ const help = [
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
+  "                     --deadline <ms> (500–60000, default 4000)",
   "  chat      新建对话；--continue 续当前项目最近会话；--session ID 续指定会话；--list 查看",
   "            -p 只输出答案和来源；-c 接着问被打断的那轮",
   "            两种模式的进度写到标准错误，失败时退出非零",

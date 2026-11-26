@@ -347,6 +347,13 @@ export function createEngine(
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
     /**
+     * #649: how long one search waits before it stops fanning out, in
+     * milliseconds. Omitted keeps the engine's default (4s); this is the one
+     * seam every caller uses, so a command with its own budget never reaches
+     * into the engine directly.
+     */
+    requestTimeoutMs?: number;
+    /**
      * Env handed to `searchCredentials`. NOTHING else in createEngine reads it -
      * domain dirs, the reloader and the calibration root still resolve through
      * process.env. Passing it therefore controls exactly one thing: where the
@@ -555,6 +562,9 @@ export function createEngine(
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
+    // #649: the caller's one budget for this engine; absent keeps the
+    // engine's own 4s default.
+    ...(opts?.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
     // per-call budget reserve→settle (T2 #177) — port present when the store
     // could build its ledger; session id is per search, so the gate opens only
     // on the chat/ans_chat paths.

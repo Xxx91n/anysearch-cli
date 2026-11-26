@@ -3,7 +3,7 @@
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -15,6 +15,12 @@ import {
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
 } from "./search-abstain";
+
+// #649: the terminal's own wait budget. Absent keeps the engine's 4s default;
+// these bounds are the flag's whole contract, and the message below repeats
+// them so a bad value never becomes a search term.
+const SEARCH_DEADLINE_MIN_MS = 500;
+const SEARCH_DEADLINE_MAX_MS = 60000;
 
 // Both render paths print "Providers failed" and the remedy beside it, or an
 // abstain hides why the arm died. One helper, so neither branch can drop half.
@@ -111,6 +117,25 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const vertical = built.vertical;
 
+  // #649: the person at the terminal decides how long this one search may
+  // wait. Absent keeps the engine's 4s default; the flag only changes this
+  // run, never the default itself.
+  let requestTimeoutMs: number | undefined;
+  if (flagSeen("--deadline")) {
+    const raw = flagVal("--deadline");
+    const wholeNumber = raw !== undefined && !raw.startsWith("--") && /^\d+$/.test(raw);
+    const parsed = wholeNumber ? Number(raw) : NaN;
+    if (!wholeNumber || parsed < SEARCH_DEADLINE_MIN_MS || parsed > SEARCH_DEADLINE_MAX_MS) {
+      process.stderr.write(
+        "ans search: --deadline needs a whole number of milliseconds from " +
+          SEARCH_DEADLINE_MIN_MS + " to " + SEARCH_DEADLINE_MAX_MS +
+          " (default: " + DEFAULT_REQUEST_TIMEOUT_MS + ")\n",
+      );
+      return 2;
+    }
+    requestTimeoutMs = parsed;
+  }
+
   // Drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.
   // flag VALUES are also dropped so --vertical-* arguments don't leak
@@ -119,7 +144,7 @@ export async function runSearch(args: string[]): Promise<number> {
   // immediately after a known value-flag is the value position. A query term
   // identical to a flag value survives (the old value-set heuristic swallowed
   // it: "--vertical-domain finance finance" collapsed to an empty query).
-  const valueFlags = new Set(["--mode", "--vertical-domain", "--vertical-sub-domain", "--vertical-params"]);
+  const valueFlags = new Set(["--mode", "--vertical-domain", "--vertical-sub-domain", "--vertical-params", "--deadline"]);
   const consumed = new Set<number>();
   args.forEach((a, i) => {
     if (valueFlags.has(a) && i + 1 < args.length) consumed.add(i + 1);
@@ -140,7 +165,10 @@ export async function runSearch(args: string[]): Promise<number> {
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch to measure that arm alone). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const engine = createPersistentEngine(active.declaredName);
+  const engine = createPersistentEngine(
+    active.declaredName,
+    requestTimeoutMs !== undefined ? { requestTimeoutMs } : undefined,
+  );
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;
   // #304: this execution is its own task. The Active Domain's [budget] caps
   // this run, not a session (a bare search has none). A declared budget that
