@@ -38,7 +38,9 @@ Thumbs.db
 apps/plugin/dist/
 apps/dsh-plugin/lib/
 *.tgz
+# 构建时从仓根 domains/ 拷过来；唯一提交的是仓根那份。
 apps/cli/domains/
+apps/mcp/domains/
 .codex-tmp/
 
 .model-cache/

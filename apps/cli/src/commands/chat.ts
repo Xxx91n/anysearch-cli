@@ -8,7 +8,7 @@
 // finished, so the paths named here are the defaults, not the only answer.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, isDomainConstraintError } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, isDomainConstraintError, fallbackAgentDomain } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
@@ -82,8 +82,10 @@ export async function runChat(argv: string[]): Promise<number> {
       return 1;
     }
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
-    // Fallback: no domain filtering, all providers — still on the durable DB so
-    // memory reads keep working across runs.
+    // Fallback: tools are still filtered (search, plus the fetch placeholder);
+    // the engine is built without a domain, so every search source stays
+    // available and no budget cap applies. Still on the durable DB so memory
+    // reads keep working.
     // Design: if the durable DB itself is unavailable, degrade to the in-memory
     // engine rather than failing the run — `ans chat` must still answer, it just
     // loses persistence (and the memory wiring is then skipped, since an
@@ -103,13 +105,7 @@ export async function runChat(argv: string[]): Promise<number> {
     }
     durableStore = persistentOk;
     sessionDomain = "default";
-    domain = {
-      sources: { enabled: [] },
-      prompts: [],
-      skills: { active: ["search"] },
-      hooks: { toolWhitelist: ["search"] },
-      rag: { adapter: "none" },
-    };
+    domain = fallbackAgentDomain();
   }
   const { retriever, store } = engine;
 

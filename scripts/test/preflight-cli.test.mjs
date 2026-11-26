@@ -403,9 +403,11 @@ test("a root file with readers runs those packages, says why, and runs no self-t
       // The package the workspace also has does not join in: it does not read
       // the file, and no closure is applied here.
       assert.equal(result.stdout.includes("dsh-plugin"), false, result.stdout);
-      // Neither does mcp, which the fixture also has: its build copies the root
-      // domains, but turbo caches that build, so the copy can stay stale and
-      // the lane would run tests that cannot see the change.
+      // Neither does mcp, which the fixture also has: tests that declare a
+      // domain set ANS_DOMAINS_DIR to their own temp dir, and clean tests
+      // declare none, so its tests cannot see the repo-root TOMLs. (The no-arg
+      // boots would follow a developer shell's ANS_DOMAIN; the gate clears
+      // ans_* env before tests, and CI sets none.)
       assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
       assert.equal(result.stdout.includes("running the gate's own tests"), false, result.stdout);
     },
@@ -445,8 +447,9 @@ test("a root file plus a package file runs both, and the readers do not bring th
         assert.ok(result.stdout.includes(`--filter=${pkg}`), pkg);
       }
       assert.match(result.stdout, /green in \d+\.\ds \(incremental\)/);
-      // mcp is in the workspace and untouched, and its build only copies the
-      // root domains when turbo runs it, so it is not a reader either.
+      // mcp is in the workspace and untouched. Its domain tests use their own
+      // ANS_DOMAINS_DIR, clean tests declare none, and the gate clears ans_*
+      // env before tests, so it only reads the root domains as build input.
       assert.equal(result.stdout.includes("--filter=@anysearch-cli/mcp"), false, result.stdout);
       // consumer depends on kernel, a reader; it still does not run, because a
       // reader's dependents cannot see the root file.

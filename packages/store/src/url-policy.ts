@@ -106,27 +106,28 @@ export function loadPolicyFromToml(tomlPath: string, env?: NodeJS.ProcessEnv): U
 }
 
 // Domain TOML path convention shared by CLI/MCP/plugin-server startup paths.
-// B1: optional extra domains dirs (e.g. the builtin dir shipped inside the
-// CLI package) are probed after the CWD convention; first existing file wins.
+// B1: optional extra domains dirs are the caller's actual loader chain. They
+// are probed before the CWD convention so a source checkout's repo-root TOML
+// wins over the generated copy in apps/*/domains; CWD is only the fallback for
+// callers that pass no chain. First existing file wins.
 export function domainTomlPath(
   cwd: string = process.cwd(),
   name: string = process.env.ANS_DOMAIN || "default",
   extraDomainsDirs: string[] = [],
 ): string {
-  // Same chain-head order as defaultDomainsDirs: ANS_DOMAINS_DIR, then CWD
-  // convention, then caller-supplied extras (e.g. builtin package domains).
+  // Same chain-head order as defaultDomainsDirs: ANS_DOMAINS_DIR first, then
+  // the caller's dirs (which already carry env + project + root/package).
   const envDir = process.env.ANS_DOMAINS_DIR?.trim();
   if (envDir) {
     const envPath = join(envDir, name + ".toml");
     if (existsSync(envPath)) return envPath;
   }
-  const primary = join(ansProjectDomainsDir(cwd), name + ".toml");
-  if (existsSync(primary)) return primary;
   for (const dir of extraDomainsDirs) {
+    if (!dir) continue;
     const candidate = join(dir, name + ".toml");
     if (existsSync(candidate)) return candidate;
   }
-  return primary;
+  return join(ansProjectDomainsDir(cwd), name + ".toml");
 }
 
 // D4/D5 structured atomic write: tmp + rename.

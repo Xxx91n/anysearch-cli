@@ -19,6 +19,7 @@ import {
   ansSessionPath,
   ansUserConfigPathFor,
   ansUserSkillsDirFor,
+  isPathInside,
   legacyHomeDirs,
   legacyProjectDirs,
 } from "../src/ans-paths";
@@ -89,6 +90,16 @@ test("the new name wins once both exist, so a finished move is not undone", () =
     writeFileSync(join(box.home, ".ans", "anysearch.db"), "new");
     writeFileSync(join(box.home, ".anysearch", "anysearch.db"), "old");
     assert.equal(ansDbPath(box.env), join(box.home, ".ans", "anysearch.db"));
+  } finally { box.done(); }
+});
+
+test("isPathInside does not mistake a ..-prefixed child name for a parent escape", () => {
+  const box = sandbox();
+  try {
+    assert.equal(isPathInside(box.cwd, box.cwd), true);
+    assert.equal(isPathInside(join(box.cwd, "..cache"), box.cwd), true);
+    assert.equal(isPathInside(join(box.cwd, "..foo", "bar"), box.cwd), true);
+    assert.equal(isPathInside(join(box.cwd, "..", "outside"), box.cwd), false);
   } finally { box.done(); }
 });
 

@@ -2,14 +2,17 @@
 // only host-side names (ctx_*), so the security filter dropped the kernel's built-in
 // `search` tool and ans_chat ran its agent loop with ZERO tools — the model answered
 // from parametric memory or printed tool calls as text, never retrieving.
-// Contract kept: hooks.toolWhitelist stays the security filter; the fix
-// is that every shipped domain whitelists the built-in search tool.
+// Contract kept: hooks.toolWhitelist stays the security filter.
+// #605: the shipped domains now name the two tools the internal agent really has —
+// search and fetch — and nothing else. The repo-root domains/ is the only committed
+// copy; apps/mcp/domains is generated at build time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadDomainFromString } from "@anysearch-cli/store";
+import { fallbackAgentDomain } from "../src/fallback-domain";
 import { BUILTIN_SEARCH_TOOL, filterAgentTools, createSearchTool } from "../src/pi-runtime";
 import type { DomainConfigPort, RetrieverPort } from "../src/ports";
 
@@ -106,12 +109,25 @@ test("empty whitelist with no toolRequires keeps every tool (unchanged)", () => 
   assert.deepEqual(names(filterAgentTools([search, extra("fetch")], domain([], { active: ["research"] }))), ["search", "fetch"]);
 });
 
-test("every shipped domain TOML keeps the built-in search tool active", () => {
-  const dir = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..", "apps", "mcp", "domains");
+test("fallbackAgentDomain gives each caller a fresh search + fetch domain", () => {
+  const a = fallbackAgentDomain();
+  const b = fallbackAgentDomain();
+  assert.deepEqual(a.hooks.toolWhitelist, ["search", "fetch"]);
+  assert.deepEqual(names(filterAgentTools([search, extra("fetch")], a)), ["search", "fetch"]);
+  assert.notEqual(a, b, "each call gets its own object");
+  assert.notEqual(a.hooks.toolWhitelist, b.hooks.toolWhitelist, "the whitelist is not shared");
+  assert.deepEqual(a.skills.active, ["search"], "skills.active stays inert without toolRequires");
+});
+
+test("every shipped domain whitelists exactly search and fetch", () => {
+  const dir = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..", "domains");
   const files = readdirSync(dir).filter((f) => f.endsWith(".toml"));
-  assert.ok(files.length >= 3, "expected shipped domains under apps/mcp/domains");
+  assert.ok(files.length >= 3, "expected shipped domains under the repo-root domains/");
+  const tools = [search, extra("fetch")];
   for (const f of files) {
     const d = loadDomainFromString(readFileSync(join(dir, f), "utf8")) as unknown as DomainConfigPort;
-    assert.ok(names(filterAgentTools([search], d)).includes(BUILTIN_SEARCH_TOOL), f + ": search tool filtered out");
+    assert.deepEqual(d.hooks.toolWhitelist, ["search", "fetch"], f + ": whitelist is search + fetch");
+    assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "fetch"], f + ": both agent tools survive the filter");
+    assert.equal(d.skills.active.includes("atomcode-research"), false, f + ": no removed skill name stays active");
   }
 });

@@ -12,9 +12,9 @@
 // bundles are esbuild-bundled and must not pull the store index's native
 // dependencies.
 
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** The directory name both scopes use. */
 export const ANS_DIR_NAME = ".ans";
@@ -290,6 +290,45 @@ export function ansPiSessionsDir(env: NodeJS.ProcessEnv = process.env): string {
  * `ANS_DOMAINS_DIR` overrides both.
  */
 export const ANS_DOMAINS_DIR_NAME = "domains";
+
+/** A package root whose manifest says it is this product. */
+export function isProductPackageRoot(dir: string): boolean {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  } catch {
+    return false;
+  }
+  if (!manifest || typeof manifest !== "object" || !("name" in manifest)) return false;
+  const name = manifest.name;
+  return typeof name === "string" && (name === "anysearch-cli" || name.startsWith("@anysearch-cli/"));
+}
+
+/** All three markers must sit in the same directory: a clone is not a pnpm
+ * checkout by itself, and a user's pnpm monorepo is not our source tree. */
+export function isRepoCheckoutRoot(dir: string): boolean {
+  return isProductPackageRoot(dir)
+    && existsSync(join(dir, ".git"))
+    && existsSync(join(dir, "pnpm-workspace.yaml"));
+}
+
+/** Walk up from a path or source directory to the product checkout root. */
+export function findRepoCheckoutRoot(start: string): string | undefined {
+  let head = resolve(start);
+  for (let depth = 0; depth < 8; depth++) {
+    if (isRepoCheckoutRoot(head)) return head;
+    const parent = dirname(head);
+    if (parent === head) break;
+    head = parent;
+  }
+  return undefined;
+}
+
+/** True when child sits inside parent; used to skip a checkout's own cwd. */
+export function isPathInside(child: string, parent: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel));
+}
 
 export function ansProjectDomainsDir(cwd: string = process.cwd()): string {
   return pathInUse(

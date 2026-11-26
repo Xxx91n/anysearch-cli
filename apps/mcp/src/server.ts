@@ -8,9 +8,9 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
+import { hostDomainsDirs, ensureOwnerOnlyDb, resolveSearchCredentials } from "@anysearch-cli/store";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
 import { TOOL_REGISTRY } from "./tools/index.js";
@@ -57,12 +57,10 @@ export function createDefaultEngine(): CompositionResult {
   // Nobody declaring at all is still the legal no-filtering default; a declared
   // name that cannot be established stops the build.
   const active = resolveActiveDomain();
-  // mirror the CLI's domains-dir chain — an installed ans-mcp must
-  // resolve the builtin TOMLs shipped inside its own package, not only
-  // <cwd>/domains (a host project's cwd never has one).
+  // Shared CLI/MCP chain: a source checkout reads the committed repo-root
+  // TOMLs; an installed ans-mcp uses the copy shipped inside its own package.
   const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-  const domainsDirs = defaultDomainsDirs();
-  domainsDirs.push(join(self, "..", "domains"));
+  const domainsDirs = hostDomainsDirs(self);
   // #301: the same user credential file the CLI reads, so a GUI host that
   // starts this server without a shell env still authenticates its search arms.
   return createEngine(active.declaredName, {

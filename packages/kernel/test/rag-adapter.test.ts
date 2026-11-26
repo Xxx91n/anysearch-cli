@@ -527,25 +527,20 @@ test("an empty-string first user turn still receives the note block (no crash on
   assert.equal((out[0] as any).content, "\n\n[RAG Context] operator note", "note still appends to an empty turn");
 });
 
-// Shipped domains are read from BOTH copies of the domain tree: repo-root
-// domains/ and apps/mcp/domains/ (the latter is synced from the former at
-// build time; this test also catches drift between them).
+// #605: the repo-root domains/ is the only committed copy. apps/mcp/domains is
+// generated at build time and must not be read here, or a stale copy could hide
+// a broken source TOML.
 function shippedDomainFiles(): string[] {
   const root = fileURLToPath(new URL(".", import.meta.url));
-  const dirs = [
-    join(root, "..", "..", "..", "domains"),
-    join(root, "..", "..", "..", "apps", "mcp", "domains"),
-  ];
-  const files: string[] = [];
-  for (const dir of dirs) for (const f of readdirSync(dir)) if (f.endsWith(".toml")) files.push(join(dir, f));
-  return files;
+  const dir = join(root, "..", "..", "..", "domains");
+  return readdirSync(dir).filter((f) => f.endsWith(".toml")).map((f) => join(dir, f));
 }
 
 test("every shipped domain declares a known adapter (no accidental fail-open)", () => {
   const warnings: string[] = [];
   const registry = new RagAdapterRegistry({ store: storeWith([]), warn: (l) => warnings.push(l) });
   const files = shippedDomainFiles();
-  assert.ok(files.length >= 6, "both shipped domain trees were read");
+  assert.ok(files.length >= 3, "the shipped domain tree was read");
   for (const f of files) registry.resolve(loadDomainFromString(readFileSync(f, "utf8")) as any);
   assert.deepEqual(warnings, [], "no shipped domain triggers the unknown-adapter warning");
 });
