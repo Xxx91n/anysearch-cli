@@ -117,9 +117,9 @@ try {
   assert.equal(captured, "", "the path without a key writes no construction failure");
   closeResult(withoutKey);
 
-  // #657：评测的钟和用户的钟分开。`ANS_EVAL_REQUEST_TIMEOUT_MS` 只由 `ans search`
-  // 读进来交给组合根，kernel 自己不读环境变量 —— 所以 chat 和 MCP 那条路上它进不来，
-  // 永远还是 4000。四条规矩：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000。
+  // 评测的钟和用户的钟分开。`ANS_EVAL_REQUEST_TIMEOUT_MS` 只由 `ans search`
+  // 读进来交给组合根；kernel 自己不读这个变量，chat 和 MCP 那两处调用也不读、不传，
+  // 所以它们永远拿 4000。四条规矩：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000。
   process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = "15000";
   const defaultClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.equal(defaultClock.requestTimeoutMs, 4000,

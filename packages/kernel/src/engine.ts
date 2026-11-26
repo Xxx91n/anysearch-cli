@@ -34,7 +34,7 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // `requestTimeoutMs` lets a test shrink it and lets an eval run raise it (the
 // composition root caps that at 15s); the user's default stays 4000.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-// #657: the composition root reads this number back — it resolves the eval-only
+// The composition root reads this number back — it resolves the eval-only
 // `ANS_EVAL_REQUEST_TIMEOUT_MS` against it and stamps the effective budget on
 // the engine result. Exported instead of copied so there is one 4000.
 export { DEFAULT_REQUEST_TIMEOUT_MS };
@@ -228,8 +228,8 @@ export class RetroaererdEngine {
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
   // no caller could pass (#478); it lives here now. `requestTimeoutMs` lets a
-  // test shrink the deadline and an eval run raise it (#657); the user's
-  // default is still 4s.
+  // test shrink the deadline and an eval run raise it; the user's default is
+  // still 4s.
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 

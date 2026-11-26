@@ -56,7 +56,7 @@ export function createPersistentEngine(
      */
     credentialsFile?: CredentialFileContents;
     /**
-     * #657: this engine's per-request deadline in ms. Only `ans search` passes
+     * This engine's per-request deadline in ms. Only `ans search` passes
      * one, and only from `ANS_EVAL_REQUEST_TIMEOUT_MS`; omitted means the
      * user's 4s.
      */

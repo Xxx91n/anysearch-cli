@@ -249,7 +249,7 @@ export interface CompositionResult {
   // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
   // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
-  // #657: this engine's per-request deadline in ms — the user's 4000 unless an
+  // This engine's per-request deadline in ms — the user's 4000 unless an
   // eval run raised it. Optional so hand-built mocks stay source-compatible;
   // every createEngine result supplies it.
   requestTimeoutMs?: number;
@@ -336,13 +336,13 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-// #657: a typo (150000) must not hold a measurement open for minutes; 15s is
+// A typo (150000) must not hold a measurement open for minutes; 15s is
 // already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
-// #657: `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands the number
-// over here. The kernel never reads this variable itself, which is why chat and
-// MCP cannot pick it up.
+// `ans search` reads `ANS_EVAL_REQUEST_TIMEOUT_MS` and hands the number over
+// here. The kernel never reads this variable, so it can only arrive as an
+// argument; chat and MCP pass none, which is why they keep the user's 4s.
 function resolveRequestTimeoutMs(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   const ms = Math.trunc(raw);
@@ -380,7 +380,7 @@ export function createEngine(
      */
     domainDeclared?: boolean;
     /**
-     * #657: this engine's per-request deadline in ms. Eval runs pass a longer
+     * This engine's per-request deadline in ms. Eval runs pass a longer
      * one so a slow vertical arm is measured instead of counted as broken;
      * omitted, unparsable or ≤0 keeps the user's 4s, and 15s is the ceiling.
      * Only `ans search` passes it (from `ANS_EVAL_REQUEST_TIMEOUT_MS`).
@@ -574,7 +574,7 @@ export function createEngine(
       return undefined;
     }
   })();
-  // #657: one number, resolved once — the engine runs on it and the eval report
+  // One number, resolved once — the engine runs on it and the eval report
   // stamps it, so a measurement can never lose the clock it was taken under.
   const requestTimeoutMs = resolveRequestTimeoutMs(opts?.requestTimeoutMs);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
