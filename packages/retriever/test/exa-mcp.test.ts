@@ -295,6 +295,32 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 6b. JSON 批量数组按 id 取那一条；id:null 的错误包带走原因。
+  {
+    const f = installFetch((call) => ({
+      ct: "application/json",
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 999, result: { content: [{ type: "text", text: "wrong" }] } },
+        { jsonrpc: "2.0", id: call.body.id, result: { content: [{ type: "text", text: RECORDS }] } },
+      ]),
+    }));
+    try {
+      const env = await new ExaMcpProvider().search(REQ, SIG);
+      assert(env.results.length > 0, "a batch JSON reply is matched by id, not position");
+    } finally { f.restore(); }
+  }
+  {
+    const f = installFetch(() => ({
+      ct: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } }),
+    }));
+    try {
+      const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
+      assert((error as Error).message.includes("invalid request"),
+        "an id:null error reply keeps the upstream reason");
+    } finally { f.restore(); }
+  }
+
   // 7. 其它非 2xx：状态码和正文都进错误串，分类器按状态码判。
   {
     const f = installFetch(() => ({ status: 500, ct: "application/json", body: "upstream boom" }));
@@ -309,8 +335,10 @@ async function main() {
 
   // 8. 200 + JSON-RPC error（比如工具名不认识）也是失败。
   {
-    const body = JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Unknown tool: agent_run" } });
-    const f = installFetch(() => ({ ct: "application/json", body }));
+    const f = installFetch((call) => ({
+      ct: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: call.body.id, error: { code: -32602, message: "Unknown tool: agent_run" } }),
+    }));
     try {
       const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
       assert((error as Error).message.includes("-32602"), "the JSON-RPC code is named, got " + (error as Error).message);

@@ -315,7 +315,9 @@ Rules behind the table:
   and the record calls it a credential fault without quoting the key. A
   missing key never shows up as a build failure — that arm runs on the free
   quota. It is the same object `ans search --json` emits, so the surfaces
-  cannot disagree.
+  cannot disagree. Page-read arms use `id:fetch` as their key; the search
+  command and MCP failure metadata filter those keys because they describe the
+  search fanout, not a page-read arm.
   An engine built without a credential seam reports `null` in both halves.
   Error results do not carry it.
 - **A credential file that exists but cannot be used says so.**

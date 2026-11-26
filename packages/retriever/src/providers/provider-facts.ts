@@ -49,6 +49,8 @@ export interface ProviderFacts {
   freeArm?: FreeArmFacts;
   /** MCP 客户端支持的协议版本。只有说 MCP 的那家有；适配器和探针发的是同一格。 */
   mcpProtocolVersion?: string;
+  /** 读页端点一次接几个 URL；没有读页适配器的源不填。 */
+  fetchMaxUrlsPerCall?: number;
 }
 
 /**
@@ -66,6 +68,8 @@ export const PROVIDER_FACTS = {
     // exa-js 的 includeDomains 是一等字段，上游按它过滤。
     domainFilterSupported: true,
     verticalDomainSupported: false,
+    // 读页端点一次最多接 5 个 URL；工具侧也按这个数分批。
+    fetchMaxUrlsPerCall: 5,
     freeProbe: {
       // exa-js 构造函数默认的 baseURL。
       endpoint: "https://api.exa.ai",

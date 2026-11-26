@@ -406,16 +406,27 @@
   keeps `fast` / `index` / `deep`, but all three send the same request —
   there is no depth parameter to turn up. Shape and limits:
   `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.
-- **Two more Exa free-quota tools are deliberately not wired (#530)** — the
-  endpoint offers `web_fetch_exa` in its default tool list and
-  `web_search_advanced_exa` behind `?tools=`, and this adapter calls neither.
-  So "ans cannot read a page" and "ans cannot push the domain allowlist
-  upstream on the keyless arm" are both true today. What to do instead:
-  `search_web` already returns a 500-character highlight per result, which is
-  enough to decide whether a URL is worth opening, and adding a key switches
-  you to the REST arm where `includeDomains` is a first-class field. If you
-  need a page's full text, fetch it yourself and hand the body to `ans_chat` —
-  there is no supported way to have `ans` fetch it for you. Neither gap is the
-  endpoint's: both tools exist. Why each one is deferred, and the probe that
-  says how they behave, are under `providers/exa/README.md`, section
-  「## 只借 search（#530 的裁决）」.
+- **The internal agent can read a page; external hosts still cannot (#608)** —
+  `ans chat` and MCP `ans_chat` expose a `fetch` tool. It reads 1–5 pages per
+  call from handles the model may actually hold: an `m:<rowId>` from this
+  conversation's search results, or a URL the user typed. Forged ids, ids
+  this conversation's search never returned, links found inside page text, and
+  model-written URLs are refused in-band. A shared archive means a search can
+  attach to a page body another session already fetched; this session's ticket,
+  not the row's owner, is what makes that handle readable here. A user-typed
+  `http://` URL keeps its scheme; a search handle has no scheme in its stored
+  identity, so it is read over https. Bodies go to the research archive in full; the model sees at
+  most 4000 characters each. This does not open the external surfaces: there is
+  still no MCP `fetch_pages`, no `ans fetch`, and no plugin/dsh page-read tool.
+  An external host can read only what is already archived.
+- **Exa's free-quota `web_fetch_exa` backs the internal fetch tool; `web_search_advanced_exa` stays unwired (#530, #608)** —
+  with a key the fetch adapter asks Exa's paid `/contents` endpoint through
+  `exa-js`; without one it posts `web_fetch_exa` to the same free-quota MCP
+  endpoint search uses, so search and page reads share that daily allowance.
+  The free arm raises Exa's 3000-character default and asks for the page; a
+  failed URL arrives as a trailing `Error fetching <url>: CODE` line. The
+  advanced-search tool remains deferred: it needs `?tools=` and returns JSON
+  where the search parser expects text blocks, and the kernel's post-filter is
+  still the authority. `web_search_advanced_exa` is not a page-read gap; the
+  page-read gap for the internal agent is closed by #608. Shape and limits:
+  `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.

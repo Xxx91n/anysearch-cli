@@ -44,6 +44,7 @@ import {
   type NormalizedResult,
   type RetrievalContent,
   type SourceTraceLabel,
+  type FetchProvider,
 } from "@anysearch-cli/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, ansProjectHitlPath, ansProjectPiAgentDir, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps, type DomainReloadResult } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
@@ -51,6 +52,8 @@ import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
+import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";
+import { extractUserUrlTickets, searchHandle } from "./fetch-admission";
 
 // HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
 // Kernel reads no env config (r94 discipline): the wiring passes
@@ -143,14 +146,28 @@ export class SearchSaturation {
 }
 
 // Wiring-gap diagnostics, deduped per missing-half combination. A stateless MCP
-// host (`ans_chat`) builds one runtime per request, so an undeduped line would
-// print on every call. Module scope, not instance scope, for the same reason
-// RagAdapterRegistry keeps its `warned` set there.
+// host builds one runtime per request, so these live at module scope.
 const warnedWiring = new Set<string>();
+
+function resolveDomainPolicy(domain: DomainConfigPort) {
+  // DomainConfigPort narrows sources on purpose; the URL arrays live on the
+  // loaded domain schema.
+  const sources = (domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } }).sources;
+  return resolveUrlPolicy({
+    tomlHosts: sources?.urlAllowlist ?? [],
+    denyHosts: sources?.urlDenylist ?? [],
+  });
+}
 
 /** Test hook: forget which wiring gaps were already announced. */
 export function resetWiringWarnings(): void {
   warnedWiring.clear();
+}
+
+function warnOnce(key: string, message: string): void {
+  if (warnedWiring.has(key)) return;
+  warnedWiring.add(key);
+  try { process.stderr.write(message); } catch { /* stderr unavailable */ }
 }
 
 /**
@@ -223,7 +240,7 @@ async function indexSearchResults(
  * sufficiency gate and to `onResults`, and adding a field to shared objects
  * would leak the annotation into surfaces that never asked for it.
  */
-function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined): any {
+function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined, withHandle = false): any {
   const results = envelope?.results;
   if (!ids || !Array.isArray(results)) return envelope;
   return {
@@ -231,7 +248,7 @@ function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined
     results: results.map((r: any, i: number) => {
       const id = ids[i];
       return typeof id === "number" && Number.isInteger(id) && id > 0
-        ? { ...(r ?? {}), archiveRowId: id }
+        ? { ...(r ?? {}), archiveRowId: id, ...(withHandle ? { handle: searchHandle(id) } : {}) }
         : r;
     }),
   };
@@ -246,6 +263,8 @@ export function createSearchTool(
   // #259: the archive writer for this session, or absent when the runtime has
   // no wired session (nothing is indexed then).
   archive?: { store: SessionStorePort; sessionId: string },
+  /** Stamp m: handles and write tickets only when the fetch tool is registered. */
+  fetchRegistered = false,
 ): AgentTool {
   return {
     name: BUILTIN_SEARCH_TOOL,
@@ -285,7 +304,27 @@ export function createSearchTool(
       // ids are stamped onto the results BELOW — the model reads that JSON, so
       // it is the only place a later summary can recover which version it saw.
       const archiveIds = await indexSearchResults(archive, rawEnvelope.results, signal);
-      const envelope = stampArchiveRowIds(rawEnvelope, archiveIds);
+      let ticketWriteOk = true;
+      if (fetchRegistered && archive && archiveIds) {
+        const ticketValues = archiveIds
+          .filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0)
+          .map(String);
+        try {
+          if (typeof archive.store.saveFetchTickets !== "function") {
+            ticketWriteOk = false;
+          } else {
+            await archive.store.saveFetchTickets(archive.sessionId, "search", ticketValues);
+          }
+        } catch (e) {
+          ticketWriteOk = false;
+          try {
+            process.stderr.write(
+              "[anysearch] fetch ticket write failed: " + (e instanceof Error ? e.message : String(e)) + "\n",
+            );
+          } catch { /* stderr unavailable */ }
+        }
+      }
+      const envelope = stampArchiveRowIds(rawEnvelope, archiveIds, fetchRegistered && ticketWriteOk);
       // every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
@@ -332,25 +371,19 @@ export const BUILTIN_SEARCH_TOOL = "search";
 // union is taken as "everything", preserving the pre-toolRequires behavior (an
 // explicitly empty map degrades the same way).
 export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
+  return tools.filter((tool) => domainAllowsTool(domain, tool.name));
+}
+
+function domainAllowsTool(domain: DomainConfigPort, name: string): boolean {
   const whitelist = new Set(domain.hooks.toolWhitelist);
   const toolRequires = domain.skills.toolRequires;
   const declared = !!toolRequires && Object.keys(toolRequires).length > 0;
-  // No declared map: whitelist alone decides; an empty whitelist means no
-  // filter at all (pre-#102 behavior).
-  if (!declared) {
-    if (whitelist.size === 0) return tools;
-    return tools.filter(t => whitelist.has(t.name));
-  }
+  if (!declared) return whitelist.size === 0 || whitelist.has(name);
   const allowed = new Set<string>([BUILTIN_SEARCH_TOOL]);
   for (const skill of domain.skills.active) {
-    // own-property check: "constructor"/"toString" are legal skill names, and
-    // the inherited prototype member must contribute nothing (not throw).
-    for (const t of (Object.hasOwn(toolRequires, skill) ? toolRequires[skill] : [])) allowed.add(t);
+    for (const tool of (Object.hasOwn(toolRequires, skill) ? toolRequires[skill] : [])) allowed.add(tool);
   }
-  // Declared map: skills.active filters even when the whitelist is empty
-  // (empty whitelist = security upper bound wide open, not a no-op).
-  if (whitelist.size === 0) return tools.filter(t => allowed.has(t.name));
-  return tools.filter(t => whitelist.has(t.name) && allowed.has(t.name));
+  return (whitelist.size === 0 || whitelist.has(name)) && allowed.has(name);
 }
 
 export interface PiAgentRuntimeOptions {
@@ -399,6 +432,13 @@ export interface PiAgentRuntimeOptions {
   /** PI auto-compaction thresholds (enabled unless explicitly disabled). */
   piCompaction?: { enabled?: boolean; reserveTokens?: number; keepRecentTokens?: number };
   tools?: AgentTool[]; // extra tools beyond search
+  /**
+   * The page-read providers this host wired, in preference order. The fetch
+   * tool is registered only when all four hold: the domain policy allows
+   * fetch, this list is non-empty, the archive has the page/ticket seams, and
+   * the host has no tool already named `fetch`.
+   */
+  fetchProviders?: FetchProvider[];
   getApiKey?: () => Promise<string | undefined>;
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
   contextWindow?: number;
@@ -778,9 +818,45 @@ export class PiAgentRuntime {
       // that field, so the re-read would come back `undefined` and the write
       // would go through — the hole this guard exists to close.
       ...(this.archive
-        ? { archive: (results: unknown[], signal?: AbortSignal) => indexSearchResults(this.archive, results, signal).then(() => undefined) }
+        ? { archive: (results: unknown[], signal?: AbortSignal) => this.archiveReround(results, signal) }
         : {}),
     });
+  }
+
+  /**
+   * Archive a sufficiency reround's fresh results, then give them the same
+   * `m:<rowId>` handles and search tickets the search tool gives its own.
+   * The model sees these results in the merged envelope; without a ticket a
+   * fetch call would reject a URL it just read.
+   */
+  private async archiveReround(results: unknown[], signal?: AbortSignal): Promise<void> {
+    const ids = await indexSearchResults(this.archive, results, signal);
+    if (!ids || signal?.aborted || !this.fetchEligible()) return;
+    const store = this.archive!.store as FetchStorePort;
+    const values = ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+    if (values.length === 0 || typeof store.saveFetchTickets !== "function") return;
+    try {
+      await store.saveFetchTickets(this.archive!.sessionId, "search", values.map(String));
+    } catch {
+      return; // no ticket means no handle: the model must not see an unusable one.
+    }
+    // The writer accepted these results; the search tool stamps the same field.
+    const items = results as Array<{ handle?: string }>;
+    ids.forEach((id, index) => {
+      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = "m:" + id;
+    });
+  }
+
+  private fetchEligible(): boolean {
+    const store = this.archive?.store;
+    return domainAllowsTool(this.opts.domain, BUILTIN_FETCH_TOOL)
+      && !!this.opts.fetchProviders?.length
+      && !!store
+      && typeof store.savePage === "function"
+      && typeof store.saveFetchTickets === "function"
+      && typeof store.hasFetchTicket === "function"
+      && typeof store.searchRowForFetch === "function"
+      && !(this.opts.tools ?? []).some((tool) => tool.name === BUILTIN_FETCH_TOOL);
   }
 
   // run returns AsyncIterable<AgentEvent>, mapping PI session events.
@@ -925,6 +1001,21 @@ export class PiAgentRuntime {
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
     const sources = new Set<string>();
+    // Decide fetch registration before search or user tickets are written, so
+    // no handle exists for a tool the model cannot call.
+    const fetchStore = this.archive?.store as FetchStorePort | undefined;
+    const fetchWiringComplete = !!fetchStore
+      && typeof fetchStore.savePage === "function"
+      && typeof fetchStore.saveFetchTickets === "function"
+      && typeof fetchStore.hasFetchTicket === "function"
+      && typeof fetchStore.searchRowForFetch === "function";
+    const extraTools = this.opts.tools || [];
+    const hostFetchCollision = extraTools.some((tool) => tool.name === BUILTIN_FETCH_TOOL);
+    const fetchAllowed = domainAllowsTool(this.opts.domain, BUILTIN_FETCH_TOOL);
+    const fetchRegistered = fetchAllowed
+      && !!this.opts.fetchProviders?.length
+      && fetchWiringComplete
+      && !hostFetchCollision;
     const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls, results) => {
       saturation.record(urls);
       if (!this.opts.includeAnswer) return;
@@ -932,8 +1023,38 @@ export class PiAgentRuntime {
         const url = displaySourceUrl(result);
         if (url) sources.add(url);
       }
-    }, this.archive);
-    const allTools = [searchTool, ...(this.opts.tools || [])];
+    }, this.archive, fetchRegistered);
+    let fetchTool: AgentTool | undefined;
+    if (fetchRegistered && this.archive && fetchStore) {
+      fetchTool = createFetchTool({
+        store: fetchStore,
+        sessionId: this.archive.sessionId,
+        providers: this.opts.fetchProviders!,
+        // Live read: a domain TOML edit applies to the next read.
+        policy: () => {
+          const resolved = resolveDomainPolicy(this.opts.domain);
+          return { allow: resolved.allow, deny: resolved.deny };
+        },
+        ...(this.billingScope ? { ledger: this.billingScope.ledger, budgetId: this.billingScope.taskId } : {}),
+        ...(this.opts.span ? { span: this.opts.span } : {}),
+      });
+    } else if (this.opts.fetchProviders?.length) {
+      if (!fetchAllowed) {
+        warnOnce("fetch:domain",
+          "[anysearch] fetch tool NOT registered: domain tool policy excludes fetch (toolWhitelist / toolRequires)\n");
+      } else if (hostFetchCollision) {
+        warnOnce("fetch:collision",
+          "[anysearch] host tool named \"fetch\" wins; the internal fetch tool is not registered\n");
+      } else {
+        warnOnce("fetch:wiring",
+          "[anysearch] fetch tool NOT registered: a page-writing store and sessionId are required " +
+          "(savePage / saveFetchTickets / hasFetchTicket / searchRowForFetch)\n");
+      }
+    }
+    if (fetchAllowed && !this.opts.fetchProviders?.length) {
+      warnOnce("fetch:source", "[anysearch] fetch tool NOT registered: no page-read provider is enabled\n");
+    }
+    const allTools = [searchTool, ...(fetchTool ? [fetchTool] : []), ...extraTools];
     const activeTools = filterAgentTools(allTools, domain);
 
     // The domain's prompt layer becomes the session system prompt.
@@ -1161,6 +1282,23 @@ export class PiAgentRuntime {
       }
       input = interruptedQuestion;
     }
+    // URLs the user typed become this session's `user` tickets before
+    // the model can call fetch. The ticket survives the turn, so a later turn
+    // can still read a link the user pasted earlier.
+    if (this.archive && fetchRegistered) {
+      try {
+        const tickets = extractUserUrlTickets(typeof input === "string" ? input : "");
+        if (tickets.length > 0) {
+          await this.archive.store.saveFetchTickets?.(this.archive.sessionId, "user", tickets);
+        }
+      } catch (e) {
+        try {
+          process.stderr.write(
+            "[anysearch] user fetch tickets not written: " + (e instanceof Error ? e.message : String(e)) + "\n",
+          );
+        } catch { /* stderr unavailable */ }
+      }
+    }
     const piCompaction = this.opts.piCompaction ?? {};
     const settingsManager = sdk.SettingsManager.inMemory({
       compaction: {
@@ -1220,10 +1358,10 @@ export class PiAgentRuntime {
           // the budget caps still refresh at that run boundary.
           this.pendingBudgetRefresh = true;
         }
-        // single parse point: the same canonicalize+merge+strict-switch
-        // resolver the server and hooks use.
-        const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
-        const policy = resolveUrlPolicy({ tomlHosts: src?.urlAllowlist ?? [], denyHosts: src?.urlDenylist ?? [] });
+        // The built-in fetch admits each handle itself, including m: handles
+        // that the generic URL scan cannot parse.
+        if (event.toolName === BUILTIN_FETCH_TOOL && fetchRegistered) return undefined;
+        const policy = resolveDomainPolicy(this.opts.domain);
         if (policy.envHostsIgnored && !this.warnedEnvIgnored) {
           this.warnedEnvIgnored = true;
           process.stderr.write("[anysearch] " + ENV_URL_ALLOWLIST + " ignored; set " + ENV_ALLOW_OVERRIDE + "=1 to opt in\n");

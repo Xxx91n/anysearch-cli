@@ -1,0 +1,260 @@
+// What the fetch tool admits, and why it refuses.
+//
+// Address -> domain -> credential, in that order. The source ticket is checked
+// in the tool because it reads the store; these three are pure.
+
+import { isIP } from "node:net";
+import { hostMatchesEntry, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
+import { containsSecret, type FetchTicketKind } from "@anysearch-cli/store";
+
+export const FETCH_LIMITS = {
+  maxPages: 10,
+  maxUrlsPerCall: 5,
+  maxEmptyBatches: 2,
+  maxRejectedBatches: 2,
+  maxCharacters: 4000,
+} as const;
+
+export interface FetchPolicy {
+  allow: readonly string[];
+  deny: readonly string[];
+}
+
+export type FetchRejectReason =
+  | "no_ticket"
+  | "stale_handle"
+  | "invalid_handle"
+  | "bad_address"
+  | "denied"
+  | "not_allowlisted"
+  | "credential";
+
+export type FetchTicketSource = FetchTicketKind;
+
+/** The sentence the model reads for a refusal. Each one names the next move. */
+export function fetchRejectMessage(reason: FetchRejectReason): string {
+  switch (reason) {
+    case "no_ticket":
+      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。先按标题或站点搜索，或者让用户把链接贴进来；不要换写法重试。";
+    case "stale_handle":
+      return "这个 m: 句柄对应的搜索结果不在本会话里，抓不了。重新搜一次，拿新的 m: 句柄。";
+    case "invalid_handle":
+      return "这个句柄既不是 m:<行号>，也不是一个网址，抓不了。只能用搜索结果里的 m: 句柄，或用户贴过的网址。";
+    case "bad_address":
+      return "这个地址不能抓：只接受公网 http/https 网页；本机、内网 IP、无点主机名和带用户名密码的链接都不行。域名不做 DNS 解析，只按字面量判断。";
+    case "denied":
+      return "这个域名在禁止列表里，抓不了。用已有材料回答，或者先做站点搜索。";
+    case "not_allowlisted":
+      return "这个域名不在当前领域白名单里，抓不了。先做 site: 搜索，或者让用户贴链接。";
+    case "credential":
+      return "这个网址里带着疑似密钥或令牌，不能发给上游。让用户确认链接，不要重试。";
+    default:
+      return assertNever(reason);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error("unhandled fetch reject reason: " + String(value));
+}
+
+function blockedIpv4(host: string): boolean {
+  const octets = host.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets as [number, number, number, number];
+  return a === 0
+    || a === 10
+    || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || a >= 224;
+}
+
+function blockedIpv6(rawHost: string): boolean {
+  const host = rawHost.toLowerCase();
+  // Every `::`-prefixed form (loopback, IPv4-mapped, IPv4-compatible) is
+  // rejected; this gate does not try to recover the embedded v4 address.
+  if (host.startsWith("::")) return true;
+  const first = Number.parseInt(host.split(":")[0] || "", 16);
+  if (!Number.isFinite(first)) return true;
+  return (first & 0xfe00) === 0xfc00       // fc00::/7 unique local
+    || (first & 0xffc0) === 0xfe80         // fe80::/10 link local
+    || (first & 0xff00) === 0xff00;        // ff00::/8 multicast
+}
+
+function blockedHost(host: string): boolean {
+  const family = isIP(host);
+  if (family === 4) return blockedIpv4(host);
+  if (family === 6) return blockedIpv6(host);
+  return !host.includes(".");
+}
+
+/** Address gate: public web only, no credentials in the authority. */
+export function checkFetchAddress(rawHandle: string, identity: string): { ok: true; host: string; port?: string } | { ok: false; reason: "bad_address" } {
+  const parsed = parseWebUrl(rawHandle) ?? parseWebUrl(identity);
+  if (!parsed) return { ok: false, reason: "bad_address" };
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "bad_address" };
+  if (parsed.username || parsed.password) return { ok: false, reason: "bad_address" };
+  let host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
+  if (!host) return { ok: false, reason: "bad_address" };
+  if (host === "localhost" || host.endsWith(".localhost")) return { ok: false, reason: "bad_address" };
+  if (blockedHost(host)) return { ok: false, reason: "bad_address" };
+  return { ok: true, host, ...(parsed.port ? { port: parsed.port } : {}) };
+}
+
+/**
+ * Domain gate: deny first and for every source; then an allowlist that is a
+ * hard cap. An empty allowlist means no domain cap (deny still applies).
+ */
+export function checkFetchDomain(host: string, policy: FetchPolicy): { ok: true } | { ok: false; reason: "denied" | "not_allowlisted" } {
+  if (policy.deny.some((entry) => hostMatchesEntry(entry, host))) return { ok: false, reason: "denied" };
+  if (policy.allow.length > 0 && !policy.allow.some((entry) => hostMatchesEntry(entry, host))) {
+    return { ok: false, reason: "not_allowlisted" };
+  }
+  return { ok: true };
+}
+
+const CREDENTIAL_PARAMS: Record<string, true> = {
+  key: true,
+  token: true,
+  secret: true,
+  password: true,
+  passwd: true,
+  api_key: true,
+  apikey: true,
+  access_token: true,
+  accesstoken: true,
+  refresh_token: true,
+  client_secret: true,
+  id_token: true,
+  private_key: true,
+  x_api_key: true,
+  x_amz_credential: true,
+  x_amz_signature: true,
+  awsaccesskeyid: true,
+  jsessionid: true,
+  sig: true,
+  signature: true,
+  auth: true,
+  authorization: true,
+};
+
+function looksHighEntropy(value: string): boolean {
+  if (value.length < 32 || value.length > 2048) return false;
+  // Commit SHAs, content hashes and UUIDs are common in public paths.
+  if (/^[0-9a-f]+$/i.test(value)) return false;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return false;
+  // A path segment with a word separator or a slug is a title, not a token.
+  if (value.includes("_") || value.includes("-")) return false;
+  if (!value.includes("=")) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(value);
+}
+
+/**
+ * Credential gate: a URL that carries a secret-shaped parameter or value is
+ * never sent upstream. The names are checked before values so a short token
+ * (`?token=abc`) is still caught.
+ */
+export function fetchCredentialHit(rawHandle: string, identity: string): boolean {
+  for (const text of [rawHandle, identity]) {
+    const parsed = parseWebUrl(text);
+    if (!parsed) continue;
+    for (const [name, value] of parsed.searchParams) {
+      const normalized = name.toLowerCase().replace(/-/g, "_").replace(/\[\]$/, "");
+      if (Object.hasOwn(CREDENTIAL_PARAMS, normalized)) return true;
+      if (looksHighEntropy(value) || containsSecret(value)) return true;
+    }
+    for (const segment of parsed.pathname.split("/")) {
+      // A `sk-...` key can be shorter than the entropy threshold. Segments
+      // with three or more `-`/`_` parts are title slugs, not keys.
+      if (containsSecret(segment) && segment.split(/[-_]/).filter(Boolean).length <= 2) return true;
+      if (looksHighEntropy(segment)) return true;
+    }
+    const inline = /(?:^|[?&;/])([A-Za-z0-9_.\-]+)=/g;
+    for (const match of text.matchAll(inline)) {
+      if (Object.hasOwn(CREDENTIAL_PARAMS, match[1]!.toLowerCase().replace(/-/g, "_"))) return true;
+    }
+    if (/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./.test(text)) return true;
+  }
+  return false;
+}
+
+const URL_STOP = `\\s<>"'\`\\]\\[{}，。；：、！？（）【】《》“”‘’`;
+const SCHEME_URL = new RegExp("https?://[^" + URL_STOP + "]+", "gi");
+// A bare URL ends at non-ASCII too: prose like `看example.com/a这个` must not
+// swallow the Chinese into the path.
+const BARE_STOP = URL_STOP + "\\u0080-\\uffff";
+const BARE_URL = new RegExp(
+  "(?<![@\\w./-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}(?::\\d{1,5})?(?:/[^" + BARE_STOP + "]*)?)",
+  "gi",
+);
+const TRAILING_PUNCTUATION = /[,.;:!?，。；：、）】》”’]+$/;
+
+/** Remove trailing sentence punctuation, keeping a balanced `)`. */
+function trimUrlCandidate(raw: string): string {
+  let value = raw.replace(TRAILING_PUNCTUATION, "");
+  while (value.endsWith(")")) {
+    const opens = (value.match(/\(/g) ?? []).length;
+    const closes = (value.match(/\)/g) ?? []).length;
+    if (closes <= opens) break;
+    value = value.slice(0, -1);
+  }
+  return value;
+}
+function bareLooksLikePage(candidate: string): boolean {
+  // A scheme-less ticket is `host/path`, not a bare hostname in prose. The last
+  // path segment is not checked for a file extension: `.md`, `.sh`, `.py` and
+  // `.zip` are also real TLDs, so `foo.md/docs` is a page, not a filename.
+  if (!candidate.includes("/") && !/^[^/]+:\d+/.test(candidate)) return false;
+  const parsed = parseWebUrl(candidate);
+  return parsed !== null && parsed.hostname.includes(".");
+}
+
+/**
+ * The user-message ticket corpus: every web URL the user typed, as normalized
+ * identities. Only http(s) is taken; a bare `host/path` is read as https.
+ * Anything shaped like `word.word/path` is treated as a URL, so a real file
+ * name such as `Node.js/Express` can become a ticket; the caller decides
+ * whether it is a page.
+ */
+export function extractUserUrlTickets(text: string): string[] {
+  const out = new Set<string>();
+  for (const match of text.matchAll(SCHEME_URL)) {
+    const candidate = trimUrlCandidate(match[0]);
+    try {
+      const parsed = new URL(candidate);
+      const identity = normalizeUrlIdentity(candidate);
+      if (fetchCredentialHit(candidate, identity)) continue;
+      out.add(identity);
+      if (parsed.protocol === "http:") out.add("http:" + identity);
+    } catch { /* not a URL after all */ }
+  }
+  for (const match of text.matchAll(BARE_URL)) {
+    const candidate = trimUrlCandidate(match[1]!);
+    if (!bareLooksLikePage(candidate)) continue;
+    const identity = normalizeUrlIdentity(candidate);
+    if (!fetchCredentialHit(candidate, identity)) out.add(identity);
+  }
+  return [...out];
+}
+
+/**
+ * The wire URL for a stored identity. The identity is scheme-less; callers pass
+ * `http` only when a matching user ticket recorded that scheme, otherwise
+ * https.
+ */
+export function makeRequestUrl(identity: string, scheme: "http" | "https" = "https"): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(identity)) return identity;
+  return scheme + "://" + identity;
+}
+
+/** The canonical search-result handle. */
+export function searchHandle(rowId: number): string {
+  return "m:" + rowId;
+}
+
+export function parseSearchHandle(raw: string): number | undefined {
+  const match = /^m:(\d+)$/.exec(raw.trim());
+  return match ? Number(match[1]) : undefined;
+}

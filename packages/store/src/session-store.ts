@@ -79,7 +79,7 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
@@ -157,6 +157,15 @@ export interface SavePageResult {
    */
   id: number | null;
   action: PageWriteAction;
+}
+
+/** The two things a session may turn into a page read. */
+export type FetchTicketKind = "search" | "user";
+
+/** One search-result row, read back through its `m:<id>` handle. */
+export interface FetchHandleRow {
+  url: string;
+  title: string | null;
 }
 
 /** One live material row, as the write path sees it. */
@@ -315,6 +324,18 @@ export interface SessionStore {
   // the port, like the id seam above, so hand-built stores stay compatible; a
   // caller without it reports "no page write" instead of inventing one.
   savePage?(sessionId: string, input: SavePageInput): Promise<SavePageResult>;
+  // Remember the handles this session may read, and answer whether one is
+  // present. `search` values are row ids (no "m:" prefix); `user` values are
+  // normalized URL identities, plus `http:<identity>` when the user pasted
+  // http. Optional like savePage: the fetch tool registers only when every half
+  // exists.
+  saveFetchTickets?(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void>;
+  hasFetchTicket?(sessionId: string, kind: FetchTicketKind, value: string): boolean;
+  // Read the row behind a search handle. The ticket, not the row's session, is
+  // the authority. Archived and quarantined rows are hidden here too. Expiry
+  // and supersession do not block a read: the ticket names the exact result,
+  // and a newer version of the URL must not make it unreadable.
+  searchRowForFetch?(sessionId: string, rowId: number): FetchHandleRow | undefined;
   // #263: a summary anchor may carry `sources` (the rows it was built from);
   // the anchor insert and its dependency rows commit together.
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
@@ -626,6 +647,10 @@ export class SqliteSessionStore implements SessionStore {
     liveResultsByUrl: Database.Statement;
     insertContentResult: Database.Statement;
     updateResultContent: Database.Statement;
+    // Session-scoped fetch handles.
+    insertFetchTicket: Database.Statement;
+    hasFetchTicket: Database.Statement;
+    searchRowForFetch: Database.Statement;
     searchResults: Database.Statement;
     saveAnchor: Database.Statement;
     getAnchors: Database.Statement;
@@ -867,6 +892,10 @@ export class SqliteSessionStore implements SessionStore {
       // In-place body fill keeps the row id and leaves title/snippet alone, so
       // the main FTS index (title/snippet only) never drifts.
       updateResultContent: this.db.prepare("UPDATE retrieval_results SET content = ?, fetched = 1 WHERE id = ?"),
+      // Tickets are session-scoped; a repeat write is a no-op.
+      insertFetchTicket: this.db.prepare("INSERT OR IGNORE INTO fetch_tickets (session_id, kind, value) VALUES (?, ?, ?)"),
+      hasFetchTicket: this.db.prepare("SELECT 1 AS present FROM fetch_tickets WHERE session_id = ? AND kind = ? AND value = ?"),
+      searchRowForFetch: this.db.prepare("SELECT r.url, r.title FROM retrieval_results r JOIN fetch_tickets t ON t.session_id = ? AND t.kind = 'search' AND t.value = CAST(r.id AS TEXT) WHERE r.id = ? AND r.archived = 0 AND r.quarantine IS NULL"),
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
@@ -1534,6 +1563,44 @@ export class SqliteSessionStore implements SessionStore {
     });
     write.immediate();
     return result;
+  }
+
+  // One session's fetch handles: search row ids, user URL identities, and an
+  // `http:` marker for a user URL that was pasted with http. The store checks
+  // the shape and drops values that could never match a lookup.
+  async saveFetchTickets(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void> {
+    const cleaned = values.map((v) => v.trim()).filter(Boolean);
+    const valid = cleaned.filter((v) => {
+      if (kind === "search") return /^[1-9]\d*$/.test(v);
+      // User values are scheme-less identities; `http:<identity>` marks the
+      // scheme the user actually pasted. A raw URL would never match a lookup.
+      const identity = v.startsWith("http:") ? v.slice(5) : v;
+      if (identity.includes("://") || identity.startsWith("m:")) return false;
+      const parsed = parseWebUrl(identity);
+      return parsed !== null && parsed.hostname.includes(".") && normalizeUrlIdentity(identity) === identity;
+    });
+    if (valid.length !== cleaned.length) {
+      try {
+        process.stderr.write(
+          "[anysearch] ignored " + (cleaned.length - valid.length) +
+          " invalid " + kind + " fetch ticket value(s)\n",
+        );
+      } catch { /* stderr unavailable */ }
+    }
+    const unique = [...new Set(valid)];
+    if (unique.length === 0) return;
+    const write = this.db.transaction((rows: string[]) => {
+      for (const value of rows) this.stmts.insertFetchTicket.run(sessionId, kind, value);
+    });
+    write.immediate(unique);
+  }
+
+  hasFetchTicket(sessionId: string, kind: FetchTicketKind, value: string): boolean {
+    return this.stmts.hasFetchTicket.get(sessionId, kind, value) !== undefined;
+  }
+
+  searchRowForFetch(sessionId: string, rowId: number): FetchHandleRow | undefined {
+    return this.stmts.searchRowForFetch.get(sessionId, rowId) as FetchHandleRow | undefined;
   }
 
   // (Q3=A): write-path adjudication (MemTX-simplified three checks).

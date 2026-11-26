@@ -1,6 +1,6 @@
-// Search presentation helpers — pure, no imports, so the contract is
-// unit-testable without pulling the kernel module graph (and its ESM-only
-// pi-agent-core dependency) into the test.
+// Search presentation helpers. The only runtime import is the retriever's
+// searchBuildErrors helper; this still avoids the kernel module graph (and its
+// ESM-only pi-agent-core dependency) in tests.
 // Abstain line + provider build-failure absence line share this module: both
 // are presentation contracts of `ans search` — stdout in the result/abstain
 // render; the absence line additionally rides stderr on the error path.
@@ -11,9 +11,9 @@ import type { CredentialSourceLabel, CredentialSources } from "@anysearch-cli/ke
 // 同样只做类型导入；provider 联合由 store 拥有，这里不复制一份。新增
 // provider 时下面的 Record 会编译失败，直到补上它没配 key 时的说法。
 import type { SearchProviderId } from "@anysearch-cli/store";
-// 判据只有一份，在 retriever 的 outcome 模块里。这里只借它的类型，
-// 运行时不留依赖 —— 退出码表读的就是引擎写进信封的那个值。
-import type { SearchOutcome } from "@anysearch-cli/retriever";
+// 判据只有一份，在 retriever 的 outcome 模块里。这里借它的类型和
+// searchBuildErrors 判定 —— 退出码表读的就是引擎写进信封的那个值。
+import { searchBuildErrors, type SearchOutcome } from "@anysearch-cli/retriever";
 
 // Exit codes: 0 = ok (including abstain), 1 = generic failure, all providers
 // failed, or zero results that are not an abstain (empty), 2 = usage error,
@@ -68,7 +68,8 @@ export function formatFailedArmLines(input: {
 // contract). One line for the whole absence list, "; "-joined per arm;
 // undefined when every enabled arm built, so the healthy path is zero-noise.
 export function formatProviderAbsentLine(buildErrors: Record<string, string>): string | undefined {
-  const entries = Object.entries(buildErrors);
+  // Page-read arms use `id:fetch`; search's absence line names only search arms.
+  const entries = Object.entries(searchBuildErrors(buildErrors));
   if (entries.length === 0) return undefined;
   return "Providers absent (build failure): " + entries.map(([id, category]) => id + " — " + category).join("; ");
 }

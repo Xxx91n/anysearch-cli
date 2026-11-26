@@ -5,8 +5,8 @@
 // decision 1A: returns RetrieverPort, not concrete RetroaererdEngine.
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
-import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
-import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
+import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
+import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
@@ -60,6 +60,11 @@ const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchP
   anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 
+/** Page-read arms: same ids as search, separate constructor table. */
+const FETCH_PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => FetchProvider> = {
+  exa: (creds) => createExaFetchProvider(creds?.exa?.apiKey),
+};
+
 /**
  * Trim every resolved key once. `searchCredentials` is a public seam, so a test
  * or an embedder can hand back a whitespace-only key; the provider constructors
@@ -100,23 +105,25 @@ function writeProviderDiagnostic(message: string): void {
 /**
  * Which of the two things a provider-construction throw means, for callers that
  * have to word it themselves. The message is never returned or reprinted: it can
- * carry the key (see buildProvider).
+ * carry the key (see buildArm).
  */
 export function classifyProviderBuildError(error: unknown): "credential" | "unexpected" {
   const raw = String(error instanceof Error ? error.message : error);
   return /api[ _-]?key|401|unauthorized|invalid header value/i.test(raw) ? "credential" : "unexpected";
 }
 
-// Builds one provider arm; a construction failure is recorded into
-// providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
-// protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
-// concern, not a construction failure).
-function buildProvider(
+// Builds one provider arm; a construction failure is surfaced on stderr —
+// stdout stays protocol-pure for MCP — and recorded in providerBuildErrors
+// under errorKey. Unknown ids are skipped, including Object.prototype names.
+function buildArm<T>(
   id: string,
+  constructors: Record<string, (creds: CredentialSource) => T>,
+  errorKey: string,
+  label: string,
   providerBuildErrors: Record<string, string>,
   creds: CredentialSource,
-): SearchProvider | undefined {
-  const construct = PROVIDER_CONSTRUCTORS[id];
+): T | undefined {
+  const construct = Object.hasOwn(constructors, id) ? constructors[id] : undefined;
   if (!construct) return undefined;
   try {
     return construct(creds);
@@ -130,8 +137,8 @@ function buildProvider(
     const message = classifyProviderBuildError(error) === "credential"
       ? "permanent: missing/invalid credential — set the provider's API key env"
       : "unexpected construction fault";
-    providerBuildErrors[id] = message;
-    writeProviderDiagnostic("[anysearch] provider " + id + " construction failed: " + message + "\n");
+    providerBuildErrors[errorKey] = message;
+    writeProviderDiagnostic("[anysearch] " + label + " " + id + " construction failed: " + message + "\n");
     return undefined;
   }
 }
@@ -142,8 +149,17 @@ function buildProviders(
   creds: CredentialSource,
 ): SearchProvider[] {
   return ids
-    .map((id) => buildProvider(id, providerBuildErrors, creds))
+    .map((id) => buildArm(id, PROVIDER_CONSTRUCTORS, id, "provider", providerBuildErrors, creds))
     .filter((p): p is SearchProvider => p !== undefined);
+}
+
+// Page-read build failures are only a stderr line. They never enter the
+// search-facing providerBuildErrors: a page-read arm does not join the search
+// fanout, and no output reads an `id:fetch` key.
+function buildFetchProviders(ids: string[], creds: CredentialSource): FetchProvider[] {
+  return ids
+    .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, id, "fetch provider", {}, creds))
+    .filter((p): p is FetchProvider => p !== undefined);
 }
 
 /**
@@ -220,13 +236,21 @@ export interface CompositionResult {
   retriever: RetrieverPort;
   config?: DomainConfigPort;
   store: SessionStorePort;
+  /**
+   * Page-read arms this engine built, in preference order. Always present on a
+   * `createEngine` result (possibly empty). Optional on the interface so
+   * hand-built CompositionResults in tests stay source-compatible; a host that
+   * omits it simply does not expose the fetch tool.
+   */
+  fetchProviders?: FetchProvider[];
   observation: SqliteObservationStore;
   // exposed so cross-round merged attribution can reuse the same
   // immutable active head instead of silently falling back to the legacy floor.
   calibration?: AttributionCalibration;
   // Fail-open named degradation (T7 ruling): provider id -> construction
-  // failure message, empty when every enabled arm built. Consumers pair this
-  // with the engine's runtime providersFailed to audit the full chain.
+  // failure message, empty when every enabled arm built. A page-read arm uses
+  // `id:fetch` so it cannot be mistaken for a search provider. Consumers pair
+  // this with the engine's runtime providersFailed to audit the full chain.
   providerBuildErrors: Record<string, string>;
   // T2 #177: the per-call budget ledger bound to `store`'s connection. Exposed so
   // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
@@ -369,6 +393,7 @@ export function createEngine(
   const domainsDirs = opts?.domainsDirs ?? defaultDomainsDirs();
   const env = opts?.env ?? process.env;
   let providers: SearchProvider[] = [];
+  let fetchProviders: FetchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
 
   // #301: resolve every search key ONCE for this engine, so all arms see the
@@ -422,7 +447,7 @@ export function createEngine(
       }
       // Classified, never forwarded: this text reaches stderr and the engine
       // result, and it comes from a module that reads a key file (CWE-532, same
-      // rule as buildProvider above).
+      // rule as buildArm above).
       const reason = classifyCredentialFault(e);
       credentialSources = { status: "failed", error: reason };
       writeProviderDiagnostic(
@@ -475,6 +500,7 @@ export function createEngine(
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
       providers = buildProviders(enabled, providerBuildErrors, creds);
+      fetchProviders = buildFetchProviders(enabled, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // reports a failed re-read instead of hiding it behind "unchanged".
@@ -520,9 +546,11 @@ export function createEngine(
       };
     } else {
       providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
+      fetchProviders = buildFetchProviders(Object.keys(FETCH_PROVIDER_CONSTRUCTORS), creds);
     }
   } else {
     providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
+    fetchProviders = buildFetchProviders(Object.keys(FETCH_PROVIDER_CONSTRUCTORS), creds);
   }
 
   // explicit override wins; otherwise resolve the active head on disk.
@@ -575,6 +603,7 @@ export function createEngine(
     retriever,
     config,
     store,
+    fetchProviders,
     observation,
     calibration: attributionCalibration,
     providerBuildErrors,

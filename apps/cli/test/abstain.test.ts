@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { providerErrorHints } from "@anysearch-cli/kernel";
+import { searchBuildErrors } from "@anysearch-cli/retriever";
 import {
   searchExitCode,
   formatAbstainLine,
@@ -56,6 +57,10 @@ async function main() {
   // absent arm on one line, undefined when the record is empty (zero-noise
   // healthy path). The category text is the kernel's safe message verbatim.
   assert(formatProviderAbsentLine({}) === undefined, "empty record renders nothing (zero noise)");
+  assert(formatProviderAbsentLine({ "exa:fetch": "unexpected construction fault" }) === undefined,
+    "a page-read arm is not a search absence");
+  assert(Object.keys(searchBuildErrors({ exa: "key", "exa:fetch": "page key" })).join(",") === "exa",
+    "the search output helper drops page-read arms");
   const absent = formatProviderAbsentLine({ exa: "permanent: missing/invalid credential — set the provider's API key env" });
   assert(absent !== undefined, "populated record renders a line");
   assert(absent!.split(String.fromCharCode(10)).length === 1, "absence message is a single line");
