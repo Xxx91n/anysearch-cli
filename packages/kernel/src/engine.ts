@@ -30,12 +30,9 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request by default, counted from fan-out. A test may
-// shrink it and an eval run may raise it (the composition root caps that at
-// 15s); the user's default stays 4000. Exported instead of copied so the 4s
-// lives in one place: the composition root turns the caller's number into the
-// engine's deadline and exposes what it used as
-// `CompositionResult.requestTimeoutMs`.
+// Design: one 4s cap per request by default, counted from fan-out. The user's
+// default is this number; who may change it and by how much is the composition
+// root's call (`resolveRequestTimeoutMs`).
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 export { DEFAULT_REQUEST_TIMEOUT_MS };
 
