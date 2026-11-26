@@ -33,6 +33,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { readQuarantine, activeIds } from "../../src/eval/quarantine-ledger";
+import { GOLDEN_FILE, readGoldenFile } from "../../src/eval/golden-file";
 
 let passed = 0, failed = 0, skipped = 0;
 function assert(cond: boolean, msg: string) {
@@ -42,7 +43,7 @@ function assert(cond: boolean, msg: string) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
-const looks = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
+const golden = readGoldenFile(join(root, GOLDEN_FILE));
 
 const keyed = ["EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY"].some((k) => !!process.env[k]);
 
@@ -139,8 +140,8 @@ function main() {
     return;
   }
 
-  const scopes: Record<string, string> = looks.golden.scopes ?? {};
-  const entries: any[] = looks.golden.entries.filter((e: any) => scopes[e.id] === "live" || scopes[e.id] === "both");
+  const scopes = golden.scopes;
+  const entries = golden.entries.filter((e) => scopes[e.id] === "live" || scopes[e.id] === "both");
   assert(entries.length > 0, "live slice non-empty (got " + entries.length + ")");
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;

@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { GOLDEN_FILE, readGoldenFile } from "../../src/eval/golden-file";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
@@ -27,7 +28,7 @@ const dist = join(root, "apps", "cli", "dist", "index.js");
 // an scratch file); CI/devs override via env for dated snapshots.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
-const LIMIT = Number(process.env.ANS_VERTICAL_DELTA_LIMIT ?? "0") || 0;
+const LIMIT = Math.max(0, Number(process.env.ANS_VERTICAL_DELTA_LIMIT ?? "0") || 0);
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {
@@ -109,13 +110,13 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 
 (async () => {
   if (!existsSync(dist)) { console.log("SKIP: dist/index.js missing — run pnpm -C apps/cli build first"); process.exit(0); }
-  const ledger = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
-  const scopes: Record<string, string> = ledger.golden?.scopes ?? {};
-  const all = (ledger.golden?.entries ?? []).filter(
-    (e: any) => (scopes[e.id] === "live" || scopes[e.id] === "both") && e.expected?.vertical !== undefined,
+  const golden = readGoldenFile(join(root, GOLDEN_FILE));
+  const scopes = golden.scopes;
+  const all = golden.entries.filter(
+    (e) => (scopes[e.id] === "live" || scopes[e.id] === "both") && e.expected?.vertical !== undefined,
   );
+  if (all.length === 0) { console.error("FAIL: no live-scoped vertical entries"); process.exit(1); }
   const entries = LIMIT > 0 ? all.slice(0, LIMIT) : all;
-  if (entries.length === 0) { console.log("SKIP: no live-scoped vertical entries"); process.exit(0); }
 
   // + (1): instrument-health ordering, no sampling-
   // protocol change — same entries, same legs per entry, only the schedule

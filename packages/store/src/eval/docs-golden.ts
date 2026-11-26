@@ -1,10 +1,14 @@
-// the docs-domain golden batch lives as a `golden` top-level
-// collection inside eval-looks.json — the same file as the OF look ledger.
-// This module owns the entry schema, the eight-dimension slice vocabulary
-// (first committed definition site), and the eval-looks.coverage.json contract.
+// The docs-domain golden corpus lives in its own repo-root file,
+// eval-golden.json. This module owns the entry schema, the eight-dimension
+// slice vocabulary (first committed definition site), and the
+// eval-looks.coverage.json contract.
 
 export const DOCS_GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
+
+// The only values `scopes` may use; readGoldenFile rejects anything else.
+export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"] as const;
+export type GoldenScope = (typeof GOLDEN_SCOPE_VALUES)[number];
 
 export const DOCS_GOLDEN_INTENTS = ["factoid", "howto", "troubleshoot", "comparison", "reference"] as const;
 export type DocsGoldenIntent = (typeof DOCS_GOLDEN_INTENTS)[number];
@@ -87,13 +91,11 @@ export interface DocsGoldenVerticalSpec {
   params?: Record<string, unknown>;
 }
 
-// four optional fixture fields + eval-looks root schema_version
-// sentinel (additive — no breaking change, hence no schema v2 migration).
+// four optional fixture fields (additive — no breaking change, hence no schema v2 migration).
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
 export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
-export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
 // controlled vocabulary for cell tombstones (the `tombstone`
 // block on a demoted entry). Demotion is an explicit declaration, never a
@@ -452,8 +454,8 @@ export function validateDocsGoldenSet(raw: unknown): string[] {
   if (!raw || typeof raw !== "object") return ["golden must be an object"];
   const g = raw as Partial<DocsGoldenSet>;
   const p: string[] = [];
-  if (g.schema !== DOCS_GOLDEN_SCHEMA) p.push("golden.schema must be " + DOCS_GOLDEN_SCHEMA);
-  if (!Array.isArray(g.entries)) return [...p, "golden.entries must be an array"];
+  if (g.schema !== DOCS_GOLDEN_SCHEMA) p.push("schema must be " + DOCS_GOLDEN_SCHEMA);
+  if (!Array.isArray(g.entries)) return [...p, "entries must be an array"];
   const ids = new Set<string>();
   for (const e of g.entries) {
     const id = (e as DocsGoldenEntry | undefined)?.id;

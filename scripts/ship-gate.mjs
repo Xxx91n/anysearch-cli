@@ -502,10 +502,10 @@ function stepStaticAssertions() {
   }
 
   // 1n.: domain filter + abstain marker must exist
-  // as source-level contracts, and the eval-looks golden ledger must carry
-  // the three anchors this block asserts (c1 must-abstain / c2 paired must-
-  // hit / c4 cold-domain zero-result); c3 stub-provider degradation lives in
-  // packages/store/test/eval-docs-golden.test.ts.
+  // as source-level contracts, and the golden corpus (eval-golden.json) must
+  // carry the three anchors this block asserts (c1 must-abstain / c2 paired
+  // must-hit / c4 cold-domain zero-result); c3 stub-provider degradation lives
+  // in packages/store/test/eval-docs-golden.test.ts.
   {
     const contractSrc = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
     for (const tok of ["includeDomains", "domainFilterSupported", "domain_filter_empty"])
@@ -518,8 +518,15 @@ function stepStaticAssertions() {
       if (!cliSrc.includes(tok)) fail("CLI abstain surface missing" + tok);
     const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/search-web.tool.ts"), "utf8");
     if (!mcpSrc.includes("abstain")) fail("MCP search_web missing abstain structuredContent");
-    const evalLooks = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-looks.json"), "utf8"));
-    const ge = evalLooks.golden?.entries ?? [];
+    let evalGolden;
+    try {
+      evalGolden = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-golden.json"), "utf8"));
+    } catch (err) {
+      fail("eval-golden.json: invalid JSON: " + err.message);
+    }
+    if (!Array.isArray(evalGolden.entries) || evalGolden.entries.length === 0) fail("eval-golden.json: entries must be a non-empty array");
+    if (!evalGolden.scopes || typeof evalGolden.scopes !== "object" || Array.isArray(evalGolden.scopes) || Object.keys(evalGolden.scopes).length === 0) fail("eval-golden.json: scopes must be a non-empty object");
+    const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
       fail("c1: no docs-domain abstain golden entry");
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "answer" && (e.expected?.mustHitHosts?.length ?? 0) > 0))
@@ -539,7 +546,7 @@ function stepStaticAssertions() {
     // (d) every migrated case keeps its migration provenance block
     // (promote physically deletes ledger entries — the golden entry is
     // the only durable carrier).
-    const liveIds = new Set(Object.entries(evalLooks.golden?.scopes ?? {}).filter(([, sc]) => sc === "live" || sc === "both").map(([id]) => id));
+    const liveIds = new Set(Object.entries(evalGolden.scopes).filter(([, sc]) => sc === "live" || sc === "both").map(([id]) => id));
     const liveEntries = ge.filter((e) => liveIds.has(e.id));
     const exactHolders = liveEntries.filter((e) => (e.expected?.mustHitUrls?.length ?? 0) > 0);
     if (exactHolders.length < 2)

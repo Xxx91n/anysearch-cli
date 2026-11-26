@@ -72,9 +72,9 @@ is live; this adapter is MCP-only」那条，由 #206 改写（现在用户能�
 已经在产出的形状（像 `type`/`symbol`/`cn_code` 这样的逐参数表；见
 `docs/vertical-domains.md` 里「What the upstream did」那串 bullet）。现在 `ip` 只出现在
 17 个顶层域名的枚举里（`docs/vertical-domains.md` 里「17 个顶层 domain 值」那段），
-`eval-looks.json` 里没有一条 `domain:"ip"`。
+`eval-golden.json` 里没有一条 `domain:"ip"`。
 探针一打出能用的参数表，就能照 `vert-f11xx`/`vert-f12xx` 的写法往
-`eval-looks.json` 写 `vert-i*` 语料。
+`eval-golden.json` 写 `vert-i*` 语料。
 
 登记状态: absent — 建议只留票，不补进 `docs/limitations.md`。理由：缺的语料是内部
 评测的缺口，没有产品界面；而且 `docs/vertical-domains.md` 已经写明快照要让位给现场
@@ -83,7 +83,7 @@ is live; this adapter is MCP-only」那条，由 #206 改写（现在用户能�
 
 状态更新 (2026-11-07): 解除信号已触发 —— 现场探针返回唯一子域 `ip.global`
 和五参数表（`type`/`keyword`/`applicant`/`ipc`/`date_start`），`vert-i*` /
-`ctrl-i*` 语料已经随 #24 写进 `eval-looks.json`（14 条 live-scoped）；原来的
+`ctrl-i*` 语料已经随 #24 写进 `eval-golden.json`（14 条 live-scoped）；原来的
 登记状态不变（内部评测缺口，不补进 `docs/limitations.md`）。
 
 ## #25 上游匿名配额边界的形态=自动签凭证的文本（200+isError:null+没有结果正文）；provider 已归类为 free-quota-exhausted；改 env/key 是用户那边的事
@@ -119,7 +119,7 @@ error class (`free-quota-exhausted`)」那条，在 #455 做完（#171 时它还
 调 `tools/call search` 不再回 `isError`——也就是上游校验器在 tag 级接受 `symbol`
 而不要求 `cn_code`，跟 `get_sub_domains` 输出里写的「按 type」规则一致
 （`docs/vertical-domains.md` 里 `finance.fundamental` 那条："requires `type` plus
-`symbol` or `cn_code` per type"；按 `vert-f1105` 在 `eval-looks.json` 里的退役标记，
+`symbol` or `cn_code` per type"；按 `vert-f1105` 在 `eval-golden.json` 里的退役标记，
 2026-10-01 现场验证仍被拒）。到那时，用退役
 标记里留着的 `prior_spec` / `prior_expected_vertical`，把 `vert-f1105` 从
 `tombstone{reason_code:"upstream-validator-vs-doc-mismatch"}`
@@ -136,7 +136,7 @@ validator over-requires `cn_code`」那条，在 #171 做完（文档说合法�
   type, but the live validator demands `cn_code` at the tag level, so
   e.g. `{type:"overview", symbol:"MSFT"}` returns `isError`. Pass `cn_code`
   where the doc implies `symbol` suffices (eval cell `vert-f1105` is
-  tombstoned on this; see `eval-looks.json`).
+  tombstoned on this; see `eval-golden.json`).
 ```
 
 ## #32 Tavily provider 没法取消：SDK 不暴露 AbortSignal
@@ -222,9 +222,9 @@ signal 当成最后的请求选项传给 `search()` 和 `answer()`；
 | #18 | `packages/embedding/src/index.ts` 的 `patchOnnxruntimeCommonResolve` + `package.json` optionalDep | transformers 新版本声明 `onnxruntime-common` | absent — 只留票（内部补丁） |
 | #22 | `packages/embedding/src/index.ts` ESM 路径 | #18 修复做完，或者出现 ESM 消费者 / 采用 `module.registerHooks` | absent — 只留票（没有发出去的 ESM 加载路径） |
 | #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` | 没有——前提不成立关票（`POST /v1/search` 还活着，只有 GET 是 404） | registered — limitations.md 里「AnySearch REST `POST /v1/search` is live; this adapter is MCP-only」那条 |
-| #24 | `eval-looks.json`（`vert-i*` 条目） | `get_sub_domains(domain="ip")` 返回结构化参数词表 | absent — 只留票（评测内部，文档已让位给现场工具） |
+| #24 | `eval-golden.json`（`vert-i*` 条目） | `get_sub_domains(domain="ip")` 返回结构化参数词表 | absent — 只留票（评测内部，文档已让位给现场工具） |
 | #25 | `anysearch.ts` 的 `mapToolsCallResult()` + `contract.ts` 的 `classifyProviderError()` | 匿名配额边界不再回自动签凭证的内容 | registered — limitations.md 里「Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`」那条 |
-| #27 | `eval-looks.json` 里 `vert-f1105` 的 `tombstone` | `{type:"overview",symbol}` 不用 `cn_code` 也能过 | registered — limitations.md 里「Upstream `finance.fundamental` validator over-requires `cn_code`」那条 |
+| #27 | `eval-golden.json` 里 `vert-f1105` 的 `tombstone` | `{type:"overview",symbol}` 不用 `cn_code` 也能过 | registered — limitations.md 里「Upstream `finance.fundamental` validator over-requires `cn_code`」那条 |
 | #32 | `tavily.ts` 的 `search()` signal 转发 | `@tavily/core` 暴露 `signal`/abort 选项 | **registered** — limitations.md 里「Tavily does not forward `AbortSignal`」那条 |
 | #33 | `tavily.ts` 的 `search()` 返回包 `usage` | Tavily 有单独的用量接口 | registered — limitations.md 里「Tavily's result package always has `usage` set to `undefined`」那条 |
 | #34 | `exa.ts` 的 `search()` 返回包 `usage` | Exa 有单独的用量接口 | registered — limitations.md 里「Exa's result package always has `usage` set to `undefined`」那条 |

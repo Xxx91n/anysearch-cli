@@ -25,7 +25,16 @@ function assert(cond: boolean, msg: string) {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const looks = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
+// The corpus lives in its own file. This executor parses it directly on
+// purpose: the assertion is about the file itself, so it must not lean on
+// readGoldenFile (the reader under test in store).
+const golden = JSON.parse(readFileSync(join(root, "eval-golden.json"), "utf8"));
+assert(golden.schema === "anysearch/docs-golden@1", "eval-golden.json schema is anysearch/docs-golden@1");
+assert(Array.isArray(golden.entries) && golden.entries.length > 0, "eval-golden.json entries is a non-empty array");
+assert(
+  golden.scopes && typeof golden.scopes === "object" && !Array.isArray(golden.scopes) && Object.keys(golden.scopes).length > 0,
+  "eval-golden.json scopes is a non-empty object"
+);
 const badcases = JSON.parse(readFileSync(join(root, "eval-badcases.json"), "utf8"));
 
 function stubProvider(id: string, urls: string[], capable: boolean): SearchProvider {
@@ -159,7 +168,7 @@ function scenarioFor(e: any): Scenario | null {
 }
 
 async function main() {
-  const entries: any[] = looks.golden.entries;
+  const entries: any[] = golden.entries;
 
   // Schema: explicit scope on every entry — no default fallback.
   // golden.scopes is a sidecar map (entry-id -> scope): explicit per-entry scope
@@ -167,7 +176,7 @@ async function main() {
   // tombstoned cell left the measurable set by design — it holds NO scope (the
   // stable "out of the measurable set" marker is scope absence + the tombstone
   // block; a stale scope would silently keep the cell selectable).
-  const scopes: Record<string, string> = looks.golden.scopes ?? {};
+  const scopes: Record<string, string> = golden.scopes;
   const SCOPES = new Set(["stub", "live", "both"]);
   for (const e of entries) {
     if (e.tombstone !== undefined) {

@@ -2,7 +2,7 @@
 
 This file is the evidence for ticket **#24** (the ip fifth-domain corpus) under spec **#203**
 (T12). The corpus entries `vert-i11xx` / `vert-i12xx` / `ctrl-i10x` in
-`eval-looks.json` point to this file as their source.
+`eval-golden.json` point to this file as their source.
 
 ## Trigger
 

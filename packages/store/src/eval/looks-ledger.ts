@@ -1,6 +1,7 @@
 // the preregistered OF look ledger is a git-committed, append-only
 // file at the repo root (`eval-looks.json`). It records one row per release-grade peek so the
 // OF alpha-spending sequence survives across runs without depending on local `.ship-gate/` state.
+// The docs golden corpus lives in eval-golden.json.
 //
 // Write policy (why ordinary runs never write it):
 // - merge-gate / CI runs set ANS_EVAL_NO_LOOK=1 -> read-only, never spend a look;
@@ -15,6 +16,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
 export const LOOKS_LEDGER_MAX_ROWS = 50;
+// The schema_version sentinel the ledger file carries; kept with the ledger,
+// not with the corpus module it used to live in.
+export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
 export interface LooksLedgerEntry {
   key: string; // datasetFingerprint + ":" + holdoutFingerprint
@@ -36,9 +40,6 @@ export interface LooksLedger {
   schema: string;
   looks: LooksLedgerEntry[];
   compaction?: LooksLedgerCompaction;
-  // the docs-domain golden batch shares this file as a top-level
-  // collection. Writers must round-trip it — dropping it is silent data loss.
-  golden?: import("./docs-golden").DocsGoldenSet;
   // Tolerant Reader — unknown root fields ride on the object
   // verbatim so a read->modify->write cycle never strips fields the writer does
   // not model (the schema_version:1 sentinel was lost exactly this way).
@@ -64,6 +65,9 @@ export function readLooksLedger(file: string): LooksLedger {
   }
   const j = parsed as Record<string, unknown>;
   if (!j || typeof j !== "object" || !Array.isArray(j.looks)) return emptyLooksLedger();
+  // A stale `golden` copy from an old checkout or merge conflict must not be
+  // resurrected by the spread below.
+  delete j.golden;
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
     if (!raw || typeof raw.key !== "string" || typeof raw.at !== "string") continue;
@@ -85,7 +89,6 @@ export function readLooksLedger(file: string): LooksLedger {
     schema: typeof j.schema === "string" ? j.schema : LOOKS_LEDGER_LEGACY_SCHEMA,
     looks,
     ...(j.compaction && typeof j.compaction === "object" ? { compaction: j.compaction as LooksLedgerCompaction } : {}),
-    ...(j.golden && typeof j.golden === "object" ? { golden: j.golden as import("./docs-golden").DocsGoldenSet } : {}),
   } as LooksLedger;
 }
 
@@ -96,9 +99,9 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
-  // +: the spread carries the golden batch AND every
-  // unknown root field through the write — rebuilding the object field-by-field
-  // is how the schema_version:1 sentinel got stripped.
+  // +: the spread carries every unknown root field through the write —
+  // rebuilding the object field-by-field is how the schema_version:1 sentinel
+  // got stripped.
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {
     return { ...ledger, schema: LOOKS_LEDGER_SCHEMA, looks: rows };
   }

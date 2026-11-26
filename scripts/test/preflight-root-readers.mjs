@@ -9,7 +9,7 @@ const ANSWERS = {
   "AGENTS.md": ["@anysearch-cli/store"],
   "eval-badcases.json": ["@anysearch-cli/kernel", "@anysearch-cli/store"],
   "eval-looks.coverage.json": ["@anysearch-cli/store"],
-  "eval-looks.json": ["@anysearch-cli/kernel", "@anysearch-cli/store"],
+  "eval-looks.json": ["@anysearch-cli/store"],
 };
 
 export const EXPECTED_ROOT_READERS = Object.fromEntries(

@@ -189,19 +189,19 @@ test("a root file change next to a package change runs both", () => {
 test("docs next to a root file run the readers, not the suite", () => {
   const plan = planPreflight(root, ["eval-looks.json", "README.md"]);
   assert.equal(plan.mode, "readers");
-  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  assert.deepEqual(plan.packages, ["@anysearch-cli/store"]);
 });
 
 test("a root file whose reader is gone stops the gate, never turns into a skip", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-missing-reader-"));
   try {
     write(dir, "pnpm-workspace.yaml", 'packages:\n  - "packages/*"\n');
-    write(dir, "packages/store/package.json", JSON.stringify({ name: "@anysearch-cli/store" }));
+    write(dir, "packages/kernel/package.json", JSON.stringify({ name: "@anysearch-cli/kernel" }));
     // A renamed package would filter turbo down to no task and still exit 0,
     // which reads as green: name the missing package and stop the push.
     const plan = planPreflight(dir, ["eval-looks.json"]);
     assert.equal(plan.mode, "broken");
-    assert.equal(plan.reason, "no workspace package named: @anysearch-cli/kernel");
+    assert.equal(plan.reason, "no workspace package named: @anysearch-cli/store");
     assert.match(plan.fix, /ROOT_READERS/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -387,9 +387,9 @@ test("the real workspace: every reader in the table exists, and domains runs onl
   assert.deepEqual(planPreflight(repo, ["AGENTS.md"]).packages, EXPECTED_ROOT_READERS["AGENTS.md"]);
   // That row rests on a golden entry anchoring on the file: without the anchor,
   // store would have no reason to run and the row should go with it.
-  const looks = JSON.parse(readFileSync(join(repo, "eval-looks.json"), "utf8"));
+  const golden = JSON.parse(readFileSync(join(repo, "eval-golden.json"), "utf8"));
   assert.ok(
-    looks.golden.entries.some((entry) => entry.provenance?.ref === "AGENTS.md"),
+    golden.entries.some((entry) => entry.provenance?.ref === "AGENTS.md"),
     "no golden entry anchors on AGENTS.md any more; drop that row from ROOT_READERS",
   );
 });
