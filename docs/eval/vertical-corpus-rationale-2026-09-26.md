@@ -22,6 +22,10 @@ the same four domains draw their word table from
 ## Method
 
 - Date: 2026-09-26.
+- The JSON word table beside this card is the raw `get_sub_domains` payload, byte-identical
+  to the blob in `0f1148ca`. `text` is the upstream `content[0].text` verbatim;
+  `structured` mirrors `structuredContent`, which upstream left empty. It covers the four
+  domains only, not the 17 top-level values.
 - No endpoint, no request body, no key: this was written before the entries as the
   construction rule, not captured from a live probe.
 - Read-only: the text is copied as found. No runtime code was changed.
