@@ -7,11 +7,13 @@
 // the fragment are removed. Path case, query order and every other byte stay
 // as given, so the result is safe to pass in again (idempotent).
 //
-// A surface that shows a URL must keep the link it already carries (for search
-// results that is `sourceUrl`); this key is not display text.
+// The archive stores this key in `retrieval_results.url`; surfaces that render
+// that column (entity review, preference review, rebuilt summaries and
+// consolidation evidence) show it without a scheme. Chat answer sources keep
+// their own display link (`sourceUrl`) when one is present.
 
-// Tracking parameters the old engine copy stripped by name. Everything with a
-// `utm_` prefix is matched by prefix, so it is not repeated here.
+// Explicit query parameters treated as tracking. Everything with a `utm_`
+// prefix is matched by the prefix and is not repeated here.
 const NAMED_TRACKING_PARAMS: Record<string, true> = {
   fbclid: true,
   gclid: true,
@@ -64,10 +66,15 @@ function parseWebUrl(raw: string): URL | null {
   }
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return null; // another scheme with an authority
   if (/^[a-z][a-z0-9+.-]*:/i.test(text)) {
-    // A bare host:port also looks like a scheme (`example.com:443`). An opaque
-    // URI (`mailto:a@b.com`) does not start its path with a digit.
-    const afterColon = text.slice(text.indexOf(":") + 1);
-    if (!/^\d/.test(afterColon)) return null;
+    // A bare host:port also looks like a scheme (`example.com:443`). Only a
+    // hostname-shaped prefix is accepted; an opaque URI such as `tel:1234`
+    // must not be rewritten by web rules just because its value starts with a
+    // digit.
+    const colon = text.indexOf(":");
+    const before = text.slice(0, colon);
+    const after = text.slice(colon + 1);
+    if (!/^\d/.test(after)) return null;
+    if (!before.includes(".") && before.toLowerCase() !== "localhost") return null;
   }
   try {
     return new URL("https://" + text);

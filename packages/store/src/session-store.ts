@@ -1335,10 +1335,9 @@ export class SqliteSessionStore implements SessionStore {
       for (const r of rs) {
        // write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) { ids.push(null); continue; }
-       // The archive stores the URL identity, not the provider's spelling. Search
-       // dedup, the archive and the future fetch path must agree on it; callers
-       // that show a link keep their own display URL (the engine carries
-       // `sourceUrl`).
+       // The archive stores the URL identity, not the provider's spelling.
+       // Search dedup and archive writes must agree on it; this column is a
+       // key, not a display link (see `url-identity.ts`).
        const url = normalizeUrlIdentity(r.url);
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;

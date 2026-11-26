@@ -1,4 +1,3 @@
-import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 // #263 (D8/D9): summary provenance and the suspension a correction causes.
 //
 // Two problems this module solves, both named in the ticket:
@@ -22,6 +21,7 @@ import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 // recorded any (10/12). A summary with no recorded dependency is left alone —
 // "no record" is not "depends on everything".
 
+import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import type Database from "better-sqlite3";
 
 /** The two anchor types that carry a derived summary (see MemoryPipeline). */

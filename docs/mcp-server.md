@@ -173,6 +173,11 @@ no vector can be computed. Materials whose facts were all replaced do not
 form a new knowledge row when consolidated again (`supersededClusterSkipped`);
 they stay readable as history.
 
+Evidence entries, conflict details and rebuilt summary text render the archive's
+URL identity (`host/path`, no scheme) because `retrieval_results.url` is the
+deduplication key, not a display link. The `search_web` / `research_web` result
+shape is unchanged.
+
 #### Cross-language objects
 
 A company written in Chinese and in Latin letters is one object even though

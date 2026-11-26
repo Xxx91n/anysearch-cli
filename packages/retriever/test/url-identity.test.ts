@@ -61,6 +61,8 @@ test("a bare host keeps the empty path", () => {
 
 test("non-web and unparseable input keep their trimmed spelling", () => {
   assert.equal(normalizeUrlIdentity("  mailto:a@b.com  "), "mailto:a@b.com");
+  assert.equal(normalizeUrlIdentity("tel:1234"), "tel:1234");
+  assert.equal(normalizeUrlIdentity("sk:42"), "sk:42");
   assert.equal(normalizeUrlIdentity("ftp://example.com/x"), "ftp://example.com/x");
   assert.equal(normalizeUrlIdentity("   "), "");
 });

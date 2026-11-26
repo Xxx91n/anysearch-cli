@@ -1,12 +1,12 @@
 ## Unreleased — #606: 网址身份只留一把尺子
 
-一句话说清：**「这两个网址是不是同一页」以前只有 engine 里一份私有实现，它只管 scheme、`www.` 和几个 tracking 参数；尾点、默认端口、fragment 都不认，`example.com.:443/x?utm_source=a#frag` 和 `https://example.com/x` 会被当成两页。现在归一化收在 `@anysearch-cli/retriever` 的 `normalizeUrlIdentity`，搜索去重、资料库写入、摘要来源比对共用它；用户看到的链接不变。**
+一句话说清：**「这两个网址是不是同一页」以前只有 engine 里一份私有实现，它只管 scheme、`www.` 和几个 tracking 参数；没有 scheme 的串直接按原样保留，主机尾点和非本 scheme 的标准端口也不认，删 tracking 参数还会把整条 query 重新编码。现在归一化收在 `@anysearch-cli/retriever` 的 `normalizeUrlIdentity`，搜索去重、资料库写入、摘要来源比对共用它。搜索输出形状没变；但从 `retrieval_results.url` 直接取网址的展示面会看到无 scheme 的身份串。**
 
 ### Changed
 
 - **`normalizeUrlIdentity`**（`packages/retriever/src/url-identity.ts`）：scheme 不敏感，去掉开头的 `www.` 和主机尾点，丢掉两个标准 web 端口（80/443），去掉 `utm_*` 等 tracking 参数和 fragment；路径大小写、查询顺序、非标准端口和其他参数原样保留，删 tracking 参数也不重排整条 query 的编码。没有 scheme 的网址按 `https` 解析；不是 http(s) 的串原样返回。函数幂等：身份再过一遍还是同一个身份。
-- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断共用 `pickUnseenUrlResults`，不再各留一套裸字符串集合。展示用的完整链接仍由 `includeSourceUrls` / `sourceUrl` 带着；`ans search` 的输出形状没动。从 `retrieval_results.url` 直接取网址的展示面（`ans entity unresolved`、`ans pref review`、重建摘要）看到的是这一列存的写法，新行没有 scheme。
-- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同时按调用方原串再关一次，改动前写进去的老行也能被顶掉。
+- **engine 私有实现退役**：`packages/kernel/src/engine.ts` 的 `normalizeUrl` 删掉，去重和充分性判断改叫共享函数。`research_web` 的多轮去重和充分性重搜的「新结果」判断共用 `pickUnseenUrlResults`，不再各留一套裸字符串集合。展示：`ans search` 的输出形状没动，chat 答案里的来源在 `includeAnswer` 时仍用带 scheme 的 `sourceUrl`；直接读 `retrieval_results.url` 的 `ans entity unresolved`、`ans pref review`（含 `--promote` 写进 `MEMORY.md` 的 key）、重建摘要、`ans consolidate` / `ans_chat` 的证据和冲突明细，看到的是这一列存的身份串。
+- **资料库写入改用同一身份**：`saveResultsWithIds` 和 `adjudicateMemory` 落库前先归一化，`entity` 缺省值也跟着用身份；顶号（`invalidateOldRecords`）按同一身份比，同时按调用方原串再关一次。老行只有在写法正好等于身份或这次传入的原串时才会被关掉；其它历史拼法不回填，同一页可能暂时两条 live。
 - **摘要来源按身份比对**：`resolveSummarySourcesFromReads` 先按身份查，查不到再按引用原串查一次；新行和改动前的旧行都能对上，摘要依赖不会丢。
 
 ### Tests

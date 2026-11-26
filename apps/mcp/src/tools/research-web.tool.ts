@@ -114,7 +114,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               anyProviderAnswered = true;
             }
 
-            // Rounds dedupe on the URL identity, the same ruler the engine uses.
+            // Rounds dedupe on the URL identity using the same rule as the engine.
             const newItems = pickUnseenUrlResults(seenUrls, envelope.results ?? []);
             allResults = allResults.concat(newItems);
 
