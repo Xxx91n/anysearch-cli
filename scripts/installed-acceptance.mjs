@@ -315,8 +315,8 @@ function findRetrievalEnvelope(raw) {
 // 不给它一个带 .ans/config.toml 的目录，就没法验「项目文件坏了它怎么说」。
 function mcpClient(bin, env, tag, opts = {}) {
   const child = spawn(process.execPath, [bin, "--transport", "stdio"], { env, cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
-  // 这个 MCP 客户端按字符串收：以行为单位读 JSON-RPC 和 stderr，chunk 边界切在
-  // 中文中间时 Buffer 的逐个 toString 会拼出乱码。
+  // 按字符串收流：设了 setEncoding，中文被 chunk 切开也不会乱码。stdout 按行切
+  // JSON-RPC，stderr 整段攒着给断言用。
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   let stderr = "";
@@ -325,7 +325,7 @@ function mcpClient(bin, env, tag, opts = {}) {
   let nextId = 1;
   let buf = "";
   child.stdout.on("data", (c) => {
-    buf += c.toString();
+    buf += c;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i);
