@@ -44,6 +44,12 @@ async function main() {
   assert(typeof envelope.elapsedMs === "number", "envelope has elapsedMs");
   assert(envelope.elapsedMs === 400, "elapsedMs converts Tavily's seconds to milliseconds");
 
+  // 3b. An upstream value that is not a finite number falls back to the local wall clock
+  // (null * 1000 would be 0, which reads as an instant arm).
+  (provider as any).client.search = async () => ({ ...mockResponse, responseTime: null });
+  const noReport = await provider.search({ query: "no report", mode: "deep", maxResults: 5 }, new AbortController().signal);
+  assert(typeof noReport.elapsedMs === "number" && Number.isFinite(noReport.elapsedMs) && noReport.elapsedMs >= 0, "null responseTime falls back to a finite local measurement");
+
   // 4. Verify NormalizedResult mapping
   const r0 = envelope.results[0];
   assert(r0.url === "https://example.com/1", "result 0 url mapped");

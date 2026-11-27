@@ -10,14 +10,15 @@
 
 ### Fixed
 
-- **tavily 的耗时单位**（`packages/retriever/src/providers/tavily.ts`）：Tavily 的 `response_time` 是秒（上游文档「Time in seconds」；`docs/research/real-baseline-2026-11-22.md` 同一次真跑里客户端 1573ms、服务商自报 0.37），适配器原来把它直接塞进 `elapsedMs`，这一家的数就比别家小 1000 倍。现在乘 1000 取整再写，`elapsedMs` 恒为毫秒；`ProviderEnvelope.elapsedMs` 补了一行单位注释，`providers/tavily/README.md` 记下这条上游事实，免得下次又按毫秒读。
+- **tavily 的耗时单位**（`packages/retriever/src/providers/tavily.ts`）：Tavily 的 `response_time` 是秒（上游文档「Time in seconds」；`docs/research/real-baseline-2026-11-22.md` 同一次真跑里客户端 1573ms、服务商自报 0.37），适配器原来把它直接塞进 `elapsedMs`，这一家的数就比别家小 1000 倍。现在乘 1000 取整再写；上游没给数字（缺失、`null`、非有限值）时回退本地墙钟，不会变成 0ms 假装瞬时返回。`providers/tavily/README.md` 记下这条上游事实，免得下次又按毫秒读。
+- **同一张表、两种量法说清楚**（`packages/retriever/src/contract.ts`、`docs/mcp-server.md`）：`elapsedMs` 不是统一口径——tavily、anysearch 用服务商自报的时间，exa、exa-mcp 是本地量的墙钟。注释和字段表现在都写明这一点，并说清只能按臂看、不能横着比名次；单位（毫秒）仍然一致。
 
 ### Tests
 
 - `packages/kernel/test/engine.test.ts`：答完的臂保留服务商自报的毫秒数；被掐、失败的臂没有键；两条臂先后到达的顺序换过来，表不变。
 - `apps/cli/test/provider-elapsed.test.ts`：假 anysearch 自报 2ms，`--json` 读到 `{ anysearch: 2 }`；慢源被 `--deadline 500` 掐掉后表是空的。
 - `apps/mcp/test/provider-elapsed.test.ts`：`search_web` 的 `structuredContent` 与文本半边都带同一张表；`research_web` 只报最后一轮，前一轮答完的臂不会留在表里。
-- `packages/retriever/test/tavily.test.ts`：假的 `responseTime: 0.4` 断言 `elapsedMs === 400`，锁住秒→毫秒的换算。
+- `packages/retriever/test/tavily.test.ts`：假的 `responseTime: 0.4` 断言 `elapsedMs === 400`，锁住秒→毫秒的换算；`responseTime: null` 时回退本地墙钟，仍然是有限数。
 
 ## Unreleased — #678: 推送门规矩和文档跟新门对齐（#671 收口）
 
