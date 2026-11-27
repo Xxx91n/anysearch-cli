@@ -354,3 +354,33 @@ test("--new rejects a missing evidence.runAt", (t) => {
     editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].evidence.runAt; });
   }, /evidence\.runAt must be the real ISO date/);
 });
+
+test("--new rejects a badcase that is not open", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].status = "promoted"; });
+  }, /is not open \(status=promoted\)/);
+});
+
+test("--new rejects a badcase with no observed block", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].observed; });
+  }, /has no observed block/);
+});
+
+test("--new rejects a badcase with no evidence.command", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].evidence.command; });
+  }, /has no evidence\.command/);
+});
+
+test("--new rejects a non-docs domain", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].domain = "vert"; });
+  }, /only creates docs-domain rows/);
+});
+
+test("an out-of-range golden scope is rejected", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.scopes["docs-g0001"] = "sometimes"; });
+  }, /scope for docs-g0001 must be stub\|live\|both/);
+});
