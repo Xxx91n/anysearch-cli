@@ -1,11 +1,12 @@
 // Which files a change set has: the refs on stdin for a push, origin/HEAD plus
-// the working tree for a plain run. An unreadable change runs the whole suite;
-// a push with no refs on stdin looks at the working tree instead. PUSH_UNKNOWN
-// marks a ref that cannot be read.
+// the working tree for a plain run. PUSH_UNKNOWN marks a ref that cannot be
+// read, and a null from localFiles marks one git cannot name; neither is an
+// empty change. A push with no refs on stdin returns null too, and the caller
+// looks at the working tree instead.
 
 import { gitIn } from "./preflight-git.mjs";
 
-/** A pre-push line that cannot be read; the caller must run everything. */
+/** A pre-push line that cannot be read; the caller must not read it as no change. */
 export const PUSH_UNKNOWN = Symbol("unreadable push");
 
 /**
@@ -13,8 +14,7 @@ export const PUSH_UNKNOWN = Symbol("unreadable push");
  * "<local ref> <local sha> <remote ref> <remote sha>".
  *
  * Returns null when the hook got no refs (the caller then looks at the working
- * tree) and PUSH_UNKNOWN when a ref cannot be read (the caller runs the whole
- * suite).
+ * tree) and PUSH_UNKNOWN when a ref cannot be read.
  */
 export function pushedFiles(root, input) {
   const lines = String(input ?? "")
@@ -39,8 +39,7 @@ export function pushedFiles(root, input) {
 
 /**
  * Everything not yet on origin/HEAD, plus the working tree and new files.
- * Returns null when git cannot name the change; the caller runs the whole
- * suite.
+ * Returns null when git cannot name the change.
  */
 export function localFiles(root) {
   const head = gitLine(root, ["rev-parse", "HEAD"]);

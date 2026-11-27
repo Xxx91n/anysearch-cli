@@ -2,28 +2,34 @@
 // which workspace packages the rest touches, and which packages have to run
 // because they use one of them.
 //
+// Design: seven modes, each printed differently by the caller — "incremental"
+// and "readers" run the packages the change can break; "full" runs everything
+// and only a forced run asks for it; "none" and "docs" have nothing to run and
+// say why. "unowned" is a change carrying a file no package can claim, so the
+// gate skips it and names CI's check-build as the coverage; "broken" is a
+// repository the gate cannot read, and the caller stops the push with exit 2.
+// Skipping and stopping are different answers, and neither is a pass.
+//
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
 // dependencies first but does not run their tests (#490). A test that reads
 // another package's files can sit upstream of the change that breaks it; only
 // an unfiltered full run covers that — the push gate's --full, CI's
-// check-build lane, and the merge gate. A change outside apps/ and packages/ that
-// is not documentation runs the whole suite, because no rule here names which
-// packages read it. A root file the reader table below names is the exception:
-// it runs those packages and nothing else (#489). The rest of the root still
-// runs everything — the lockfile, turbo.json, pnpm-workspace.yaml, .github/, and
-// .gitignore, which changes what git sees for every package.
+// check-build lane, and the merge gate. A root file the reader table below
+// names runs those packages and nothing else (#489). Everything else at the
+// root — the lockfile, package.json, turbo.json, pnpm-workspace.yaml, .github/,
+// .gitignore, scripts/ — belongs to no package and is skipped locally;
+// check-build runs the full suite for it.
 //
-// Design: documentation gets its own mode, not the unowned fallback — a
-// docs-only change runs nothing, and docs next to code are dropped before the
-// package lookup, so they belong to no package but are not the unowned path
-// that would run everything. The boundary is isDocumentation (#488).
+// Design: documentation gets its own mode, not the unowned one — a docs-only
+// change runs nothing, and docs next to code are dropped before the package
+// lookup, so they belong to no package but are not the unowned answer either.
+// The boundary is isDocumentation (#488).
 //
-// A file belongs to the package whose directory contains it. A workspace that
-// cannot be read (no pnpm-workspace.yaml, a broken manifest) hands the caller
-// an empty list or null, and the caller runs the full suite. A directory whose
-// manifest has no name is not a package, so a change under it belongs to no
-// package and runs the full suite too.
+// A file belongs to the package whose directory contains it. A workspace the
+// gate cannot read answers "broken", never "nothing to run", and so does a
+// change under a manifest with no name: the manifest is damaged, and a skip
+// would hide it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -37,37 +43,51 @@ const DEP_SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "op
  * readers. It is absent on a `readers` run (whose `packages` are the readers)
  * and on any run that carried none of those files.
  *
+ * `outside` names the files no package owns, on an `unowned` run. A `broken`
+ * run carries `reason` (what the gate could not read) and `fix` (what to
+ * repair); the caller prints both and stops the push.
+ *
  * @param {string} root repository root
  * @param {string[]} changedFiles repo-relative paths, either separator
  * @param {{ forceFull?: boolean }} [options]
- * @returns {{ mode: "none" | "docs" | "readers" | "full" | "incremental", reason?: string, files: string[],
- *            packages: string[], readers?: string[], touched?: string[], outside?: string[] }}
+ * @returns {{ mode: "none" | "docs" | "readers" | "full" | "incremental" | "unowned" | "broken",
+ *            reason?: string, fix?: string, files: string[], packages: string[],
+ *            readers?: string[], touched?: string[], outside?: string[] }}
  */
 export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const files = [...new Set((changedFiles ?? []).map(normalizePath).filter(Boolean))].sort();
   if (forceFull) return { mode: "full", reason: "forced", files, packages: [] };
   if (files.length === 0) return { mode: "none", reason: "no changes", files: [], packages: [] };
   // Design: the docs check runs before the workspace read — a docs-only change
-  // needs no package, and a broken tree must not turn "ran nothing" into "ran
-  // everything".
+  // needs no package, and a broken tree must not turn "ran nothing" into a
+  // stopped push.
   if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
-  const { packages, nameless } = readWorkspaceReport(root);
-  if (packages === null) return { mode: "full", reason: "workspace unreadable", files, packages: [] };
+  const { packages, nameless, unreadableFile } = readWorkspaceReport(root);
+  if (unreadableFile) {
+    return broken(`cannot read ${unreadableFile}`, "repair it, then push again", files);
+  }
   if (packages.length === 0) {
     // The workspace looks empty because its manifests have no name; naming the
     // directories says more than "no workspace packages found" on its own.
-    const reason =
-      nameless.length > 0
-        ? `no workspace packages found; package.json without a name in: ${nameless.join(", ")}`
-        : "no workspace packages found";
-    return { mode: "full", reason, files, packages: [] };
+    if (nameless.length > 0) {
+      return broken(
+        `no workspace packages found; package.json without a name in: ${nameless.join(", ")}`,
+        NAMELESS_FIX,
+        files,
+      );
+    }
+    return broken(
+      "no workspace packages found",
+      "pnpm-workspace.yaml names the workspace packages: fix it, or the manifests it points at, then push again",
+      files,
+    );
   }
 
   // Design: a root file the reader table names runs those packages alone, and
   // every other file goes through the package lookup — a reader the workspace no
   // longer has would filter turbo down to no task while the gate printed green,
-  // so a miss reads as the full suite instead.
+  // so a miss is a broken gate, never a quiet pass.
   const readers = new Set();
   const withoutReaders = [];
   for (const file of files) {
@@ -78,18 +98,27 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   const known = new Set(packages.map((pkg) => pkg.name));
   const missing = [...readers].filter((name) => !known.has(name));
   if (missing.length > 0) {
-    return { mode: "full", reason: `no workspace package named: ${missing.sort().join(", ")}`, files, packages: [] };
+    return broken(
+      `no workspace package named: ${missing.sort().join(", ")}`,
+      "ROOT_READERS names a package the workspace no longer has: restore the package or fix the table, then push again",
+      files,
+    );
   }
 
   const { touched, unowned: outside } = codeOwnership(withoutReaders, packages);
   if (outside.length > 0) {
-    // A path under apps/ that lost its package still has to say so: "outside
-    // the workspace packages" reads as "not in apps/", which is not the case.
-    const underNameless = outside.every((file) => nameless.some((dir) => isWithin(file, dir)));
-    const reason = underNameless
-      ? "files under a directory whose package.json has no name"
-      : "files outside the workspace packages";
-    return { mode: "full", reason, files, outside, packages: [] };
+    // A file under a manifest that lost its name is a damaged repository, not a
+    // file nobody claims: a nameless directory reads as "outside the packages"
+    // while the real fault is one package.json.
+    const namelessHits = nameless.filter((dir) => outside.some((file) => isWithin(file, dir)));
+    if (namelessHits.length > 0) {
+      return broken(
+        `files under a directory whose package.json has no name: ${namelessHits.join(", ")}`,
+        NAMELESS_FIX,
+        files,
+      );
+    }
+    return { mode: "unowned", reason: "files outside the workspace packages", files, outside, packages: [] };
   }
 
   const readerPackages = [...readers].sort();
@@ -101,6 +130,18 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     ...(readerPackages.length > 0 ? { readers: readerPackages } : {}),
     packages: [...new Set([...readerPackages, ...withDependents(touched, packages)])].sort(),
   };
+}
+
+// Design: one repair line for both places a nameless manifest can show up — no
+// package at all, or a change under one — because the damage is the same.
+const NAMELESS_FIX = "give those manifests a name, then push again";
+
+// Design: a repository the gate cannot read has nothing to run and no right to
+// guess — the reason names what it could not read, the fix names the repair, and
+// the caller prints both and stops the push with exit 2. Exported so the runner,
+// which also reports an unreadable change set, builds the same shape.
+export function broken(reason, fix, files) {
+  return { mode: "broken", reason, fix, files, packages: [] };
 }
 
 const ROOT_DOCS = new Set(["README.md", "README.zh-CN.md", "GLOSSARY.md", "CHANGELOG.md"]);
@@ -158,12 +199,13 @@ export function codeOwnership(files, packages) {
  * the file can break, because a test of theirs reads it.
  *
  * Design: the table is hand-written and deliberately short (#489) — a root file
- * that is not here keeps the full-suite fallback, the safe direction to be wrong
- * in, over guessing a reader from a directory name. `ext` narrows a row to the
- * files a loader reads (`domains/*.toml`), so a file dropped beside them keeps
- * the fallback. Readers do not bring their dependents: an app that depends on
- * store never opens the file through store's tests, so a dependent that does
- * read it is named in its own right, as cli is on the domains row.
+ * that is not here belongs to no package, so the push gate skips it and CI's
+ * check-build lane runs everything for it, which beats guessing a reader from a
+ * directory name. `ext` narrows a row to the files a loader reads
+ * (`domains/*.toml`), so a file dropped beside them is unowned too. Readers do
+ * not bring their dependents: an app that depends on store never opens the file
+ * through store's tests, so a dependent that does read it is named in its own
+ * right, as cli is on the domains row.
  *
  * mcp's build copies the root domains into its generated `apps/mcp/domains`.
  * Its domain tests point ANS_DOMAINS_DIR at their own temp dir, and clean tests
@@ -201,11 +243,13 @@ function rootReaders(file) {
 
 /**
  * Read the workspace packages and their workspace-internal dependencies.
- * Missing or unreadable pnpm-workspace.yaml reads as an empty list. A manifest
- * that cannot be read or parsed makes this return null, so the caller runs the
- * full suite instead of silently dropping a package and everything that depends
- * on it. A directory without a package.json, or a manifest without a name, is
- * not a package: it is skipped, and a change under it runs the full suite.
+ * A missing pnpm-workspace.yaml, or one that names no package, reads as an empty
+ * list. A declaration or manifest that cannot be read or parsed makes this return
+ * null, so no caller silently drops a package and everything that depends on it:
+ * the push gate answers broken, and CI runs every lane. A directory without a
+ * package.json is not a package, so a change under it belongs to no package. A
+ * manifest without a name is not a package either, and the plan reports a change
+ * under it as broken: the manifest is damaged, not merely absent.
  *
  * @param {string} root
  * @returns {{ name: string, dir: string, deps: string[] }[] | null}
@@ -214,15 +258,23 @@ export function readWorkspace(root) {
   return readWorkspaceReport(root).packages;
 }
 
-// readWorkspace plus the directories a nameless manifest left out, so the plan
-// can say why a change under one of them ran the full suite. Private: the plan
+// readWorkspace plus what the plan needs to name a fault: the directories a
+// nameless manifest left out, and the file it could not read. Private: the plan
 // is its only reader, and readWorkspace's doc owns the null contract.
 function readWorkspaceReport(root) {
   const packages = [];
   const nameless = [];
-  for (const dir of workspaceDirectories(root, workspacePatterns(root))) {
+  const patterns = workspacePatterns(root);
+  if (patterns === null) {
+    return { packages: null, nameless: [], unreadableFile: "pnpm-workspace.yaml" };
+  }
+  for (const dir of workspaceDirectories(root, patterns)) {
     const manifest = readManifest(path.join(root, dir, "package.json"));
-    if (manifest === UNREADABLE) return { packages: null, nameless: [] };
+    // The first unreadable manifest, in directory order, is the one worth
+    // naming: fixing it is what lets the next run answer.
+    if (manifest === UNREADABLE) {
+      return { packages: null, nameless: [], unreadableFile: `${dir}/package.json` };
+    }
     if (manifest === null) continue; // no package.json: not a package
     if (manifest === NAMELESS) {
       nameless.push(dir);
@@ -233,6 +285,7 @@ function readWorkspaceReport(root) {
   return {
     packages: packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
     nameless: nameless.sort(),
+    unreadableFile: null,
   };
 }
 
@@ -292,15 +345,17 @@ export function packageForFile(file, packages) {
 }
 
 // The root has no direct YAML dependency and only the `packages:` list matters,
-// so read that block here. A pattern this cannot expand leaves packages
-// undiscovered, which falls back to the full suite.
+// so read that block here. A pattern this cannot expand leaves its packages
+// undiscovered: when that leaves none, the plan answers broken, never a silent
+// pass. A missing file reads as no patterns; one that is there and cannot be read
+// is null, so the plan can name it instead of blaming an empty workspace.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
   let text;
   try {
     text = fs.readFileSync(file, "utf8");
-  } catch {
-    return [];
+  } catch (error) {
+    return error.code === "ENOENT" ? [] : null;
   }
 
   const patterns = [];
