@@ -66,6 +66,9 @@ const create = process.argv.includes("--new");
 if (!id || (!into && !create)) fail("usage: --id <docs-bcNNNN> (--into <docs-gNNNN> | --new)");
 
 const badcases = readJson(BADCASES, "eval-badcases.json");
+// JSON.parse("null") hands back null, and `.badcases` below would throw a bare
+// TypeError instead of this script's own diagnostic.
+if (!badcases || typeof badcases !== "object" || Array.isArray(badcases)) fail("eval-badcases.json root must be an object");
 const bc = (badcases.badcases ?? []).find((b) => b.id === id);
 if (!bc) fail("badcase not found: " + id);
 if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.status + ")");
@@ -88,6 +91,7 @@ for (const [gid, scope] of Object.entries(golden.scopes)) {
   if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json scope for " + gid + " must be stub|live|both");
 }
 const cov = readJson(COVERAGE, "eval-looks.coverage.json");
+if (!cov || typeof cov !== "object" || Array.isArray(cov)) fail("eval-looks.coverage.json root must be an object");
 if (!Array.isArray(cov.dimensions)) fail("eval-looks.coverage.json: dimensions must be an array");
 
 if (into) {
