@@ -97,7 +97,7 @@ if (into) {
     const sep = tag.indexOf(":");
     const dim = tag.slice(0, sep);
     const val = tag.slice(sep + 1);
-    const allowed = DIMENSION_VALUES[dim];
+    const allowed = Object.hasOwn(DIMENSION_VALUES, dim) ? DIMENSION_VALUES[dim] : undefined;
     if (!allowed || !allowed.includes(val)) fail(id + " dimension tag outside the eight-dimension vocabulary: " + tag);
     if (!coveredDims.has(dim)) fail(id + " dimension '" + dim + "' is deferred in eval-looks.coverage.json; backfill cannot carry it until coverage marks it covered");
   }
@@ -113,6 +113,10 @@ if (into) {
     .map((e) => Number(String(e.id).replace(/\D/g, "")))
     .filter((n) => Number.isFinite(n));
   const next = "docs-g" + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0");
+  const harvestedAt = bc.evidence.runAt ?? new Date().toISOString().slice(0, 10);
+  if (typeof harvestedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(harvestedAt)) {
+    fail(id + " evidence.runAt must be an ISO date (YYYY-MM-DD), got: " + harvestedAt);
+  }
   const entry = {
     id: next,
     domain,
@@ -122,7 +126,7 @@ if (into) {
     expected: bc.expected,
     dimensions: tags,
     ...(bc.stability_class ? { stability_class: bc.stability_class } : {}),
-    provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: bc.evidence.runAt ?? new Date().toISOString().slice(0, 10) },
+    provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt },
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
   const expected = entry.expected ?? {};
