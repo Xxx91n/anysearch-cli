@@ -208,8 +208,6 @@ if (into) {
     fail(id + " mustHitPaths requires mustNotHitPaths negative pins");
   }
   golden.entries.push(entry);
-  // answer+mustHit* rows must be live-capable; a stub lane without a scenario
-  // fixture would turn the kernel stub test red, so --new refuses it above.
   golden.scopes[next] = "live";
   bc.status = "promoted";
   bc.promotedTo = next;
