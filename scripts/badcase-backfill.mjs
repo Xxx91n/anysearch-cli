@@ -9,8 +9,9 @@
 // live）；abstain 等需要 stub lane 的条目要有 kernel scenario fixture，本脚本不造，会直接拒绝。
 //
 // 禁合成护栏：badcase 必须携带 observed + evidence.command（真实观测），
-// 否则拒绝回灌。完整 schema/词汇/交叉校验由 packages/store/test/
-// eval-docs-golden.test.ts 在 CI 强制执行——本脚本只做结构前置检查。
+// 否则拒绝回灌。脚本先挡一批会写出必红行的输入（schema、词表、domain、
+// expected、mustHit* 配对、runAt 形状等）；完整 schema/词汇/交叉校验仍由
+// packages/store/test/eval-docs-golden.test.ts 在 CI 兜底。
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
