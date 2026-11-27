@@ -144,6 +144,10 @@ try {
   assert.equal(userClock.requestTimeoutMs, 60000, "--deadline 的 60s 上限不被评测的 15s 截断");
   closeResult(userClock);
 
+  const tightCap = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 20000, requestTimeoutCapMs: 1500.5 });
+  assert.equal(tightCap.requestTimeoutMs, 1500, "小数 cap 向下取整，不能反手放大成 15000");
+  closeResult(tightCap);
+
   const hugeClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 3_000_000_000, requestTimeoutCapMs: 3_000_000_000 });
   assert.equal(hugeClock.requestTimeoutMs, 2_147_483_647, "超过引擎上限的值和 cap 都夹到 2^31-1，不把 RangeError 甩给调用方");
   closeResult(hugeClock);

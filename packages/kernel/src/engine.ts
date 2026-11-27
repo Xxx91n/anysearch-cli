@@ -35,7 +35,9 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`
 // (#649). Exported so the composition root and help read the same 4s.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-export { DEFAULT_REQUEST_TIMEOUT_MS };
+// setTimeout's ceiling; composition clamps to it before the engine sees a value.
+const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
+export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
@@ -243,8 +245,8 @@ export class RetroaererdEngine {
     const requestedTimeout = opts?.requestTimeoutMs;
     // setTimeout truncates fractions and clamps values above 2^31-1 ms to 1ms;
     // both would cut a search off at once, so reject them here.
-    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > 2_147_483_647)) {
-      throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than 2147483647");
+    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
+      throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than " + MAX_REQUEST_TIMEOUT_MS);
     }
     this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller

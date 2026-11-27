@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { DEFAULT_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -340,9 +340,6 @@ export function resolveActiveAttributionCalibration(
 // already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
-// setTimeout's ceiling; the engine rejects anything above it.
-const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
-
 // The kernel never reads `ANS_EVAL_REQUEST_TIMEOUT_MS`, so the number can only
 // arrive as an argument. `capMs` defaults to the eval ceiling; `--deadline`
 // raises it to the flag's own ceiling so a user choice is not silently cut.
@@ -352,8 +349,9 @@ const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
   if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
-  const cap = Number.isInteger(capMs) && capMs > 0
-    ? Math.min(capMs, MAX_REQUEST_TIMEOUT_MS)
+  // A fractional cap is rounded down, never widened to the eval ceiling.
+  const cap = Number.isFinite(capMs) && capMs > 0
+    ? Math.min(Math.max(1, Math.floor(capMs)), MAX_REQUEST_TIMEOUT_MS)
     : EVAL_REQUEST_TIMEOUT_CAP_MS;
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }

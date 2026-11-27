@@ -38,6 +38,7 @@ const ENV_KEYS = [
   "ANYSEARCH_API_KEY",
   "TAVILY_API_KEY",
   "EXA_API_KEY",
+  "ANS_EVAL_REQUEST_TIMEOUT_MS",
 ];
 const previousEnv: Record<string, string | undefined> = {};
 for (const key of ENV_KEYS) previousEnv[key] = process.env[key];
@@ -157,6 +158,23 @@ test("--deadline=500 cuts a slow arm too", async () => {
     assert.match(r.out, /Providers cancelled: anysearch/, "the equals form reached the engine; got: " + r.out.slice(-400));
     assert.ok(wallMs < 4000, "the equals form used the deadline, not the 4s default; got " + wallMs + "ms");
   } finally {
+    await stub.close();
+  }
+});
+
+test("--deadline wins over ANS_EVAL_REQUEST_TIMEOUT_MS and says so", async () => {
+  const stub = await startFakeAnySearch(MARKDOWN);
+  process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
+  process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = "20000";
+  try {
+    const r = await spawnCli(["search", "q", "--deadline", "500", "--json"]);
+    assert.equal(r.code, 0, r.err + r.out);
+    assert.match(r.err, /--deadline 500 ms 优先/, "stderr names the winner; got: " + r.err);
+    assert.match(r.err, /ANS_EVAL_REQUEST_TIMEOUT_MS="20000"/, "stderr names the ignored value; got: " + r.err);
+    const doc = JSON.parse(r.out);
+    assert.equal(doc.requestTimeoutMs, 500, "the flag's 500ms is what ran; got: " + doc.requestTimeoutMs);
+  } finally {
+    delete process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
     await stub.close();
   }
 });
