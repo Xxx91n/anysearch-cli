@@ -391,6 +391,10 @@ export interface FusedEnvelope {
     // carries the number the upstream gave instead of "a moment".
     providerErrorRetryAfterSeconds?: Record<string, number>;
     elapsedMs: number;
+    // The wait budget this search actually ran with — the engine's resolved
+    // requestTimeoutMs. The engine always writes it; optional so a hand-built
+    // envelope (tests, replay) can omit it instead of inventing a number.
+    deadlineMs?: number;
     // sufficiency signal from computeSufficiency.
     sufficiency?: SufficiencySignal;
     // per-provider answer attribution for transparency

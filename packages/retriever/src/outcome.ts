@@ -12,6 +12,15 @@ export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "emp
 export type SearchOutcome = (typeof SEARCH_OUTCOMES)[number];
 
 /**
+ * The pool was cut short: at least one arm was asked but not waited for. The
+ * engine records only which arms were cut; every surface (CLI, --json, MCP)
+ * asks this one function, so "partial" cannot mean two different things.
+ */
+export function isPartialPool(providersCancelled: readonly string[]): boolean {
+  return providersCancelled.length > 0;
+}
+
+/**
  * Everything the judgment needs. The arm lists, the result count and the answer
  * count are what the envelope will carry; `domainActive` and `gateDropped` are
  * the two facts only the engine has, because the gate runs there.

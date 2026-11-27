@@ -368,6 +368,7 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(Date.now() - t0 < 700, "deadline: all arms landed, returned without waiting out the window");
   assert(!aborted.v, "deadline: no abort when every arm lands in time");
   assert(r.metadata.providersCancelled.length === 0, "deadline: nobody cancelled");
+  assert(r.metadata.deadlineMs === 1000, "deadline: metadata reports the budget it ran with");
   assert(r.results.some((x) => x.url.includes("slow.com")), "deadline: slow arm results kept");
 
   // (b) An async arm over the deadline -> aborted, cancelled, not failed.
@@ -379,6 +380,7 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   const r2 = await eng2.search({ query: "g", mode: "fast", maxResults: 3 });
   assert(aborted2.v, "deadline: straggler AbortController fired");
   assert(r2.metadata.providersCancelled.includes("slow"), "deadline: straggler reported cancelled");
+  assert(r2.metadata.deadlineMs === 40, "deadline: metadata carries the short budget, not the default");
   assert(!r2.metadata.providersFailed.includes("slow"), "deadline: straggler is not a failure");
   assert(r2.results.length >= 3, "deadline: fast provider results kept");
 
