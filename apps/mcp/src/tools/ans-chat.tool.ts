@@ -631,6 +631,7 @@ export function registerAnsChat(
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
             domain,
+            fetchProviders: eng.fetchProviders,
             ...memory,
             domainTomlPath: domainTomlPath(undefined, eng.domainName ?? "default", eng.domainsDirs),
             // The flag and the path both come from the engine: an engine built

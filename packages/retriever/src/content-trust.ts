@@ -188,6 +188,18 @@ export function isRetrievedOrMemoryLabel(label: SourceTraceLabel | undefined): b
   return label?.source === "retrieved" || label?.source === "memory";
 }
 
+export function hostMatchesEntry(entry: string, host: string): boolean {
+  const normalized = entry.trim().toLowerCase().replace(/^\./, "").replace(/\.$/, "");
+  const bareHost = host.toLowerCase().replace(/\.$/, "");
+  return normalized.length > 0 && (bareHost === normalized || bareHost.endsWith("." + normalized));
+}
+
+/** Same host after folding case, trailing dots and a leading www. */
+export function sameHostname(a: string, b: string): boolean {
+  const norm = (host: string) => host.toLowerCase().replace(/\.$/, "").replace(/^\./, "").replace(/^www\./, "");
+  return norm(a) === norm(b);
+}
+
 export function shouldAllowUrl(
   url: string,
   label: SourceTraceLabel,
@@ -203,11 +215,11 @@ export function shouldAllowUrl(
   }
   // deny is a first-class channel evaluated LAST — it overrides any allow,
   // including a hook-returned allow or a user-source label (Cedar forbid-overrides-permit).
-  if (denylistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
+  if (denylistedHosts.some((entry) => hostMatchesEntry(entry, host))) {
     return { allowed: false, requiresHitl: false };
   }
   if (label.source === "user") return { allowed: true, requiresHitl: false };
-  if (allowlistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
+  if (allowlistedHosts.some((entry) => hostMatchesEntry(entry, host))) {
     return { allowed: true, requiresHitl: false };
   }
   return { allowed: false, requiresHitl: true };

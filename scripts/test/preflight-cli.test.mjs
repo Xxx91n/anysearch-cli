@@ -545,6 +545,18 @@ test("--full still runs the whole suite for a change no package owns", async () 
   });
 });
 
+// Design: ANS_PUSH_GATE=strict is the session-wide form of --full, and the mode
+// hooks:status prints says so — one switch, one meaning.
+test("ANS_PUSH_GATE=strict runs the whole suite without --full", async () => {
+  await withWorkspace({ changed: "scripts/release.mjs", pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { overrides: { ANS_PUSH_GATE: "strict" } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /full suite: forced/);
+    assert.match(result.stdout, /pnpm ran/);
+    assert.match(result.stdout, /green in \d+\.\ds \(full\)/);
+  });
+});
+
 // A package file next to an unowned one loses its run too: the whole change is
 // skipped, and the line has to say so — otherwise the package half looks covered.
 test("a package file next to an unowned one skips the whole change", async () => {
@@ -698,7 +710,7 @@ test("--full still runs the suite when the change set cannot be read", async () 
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
-      /full suite: could not read the pushed commits; --full runs everything anyway/,
+      /full suite: could not read the pushed commits; the whole suite runs anyway/,
     );
     assert.match(result.stdout, /pnpm ran/);
   });
@@ -732,6 +744,10 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
+  // A developer who exported the strict switch for their own pushes would turn
+  // every incremental case here into a full run; the case that wants it passes
+  // it through overrides.
+  delete env.ANS_PUSH_GATE;
   if (overrides) Object.assign(env, overrides);
   delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {

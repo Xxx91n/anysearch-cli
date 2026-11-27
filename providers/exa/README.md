@@ -1,9 +1,10 @@
 # exa 档案夹
 
 Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
-[`packages/retriever/src/providers/exa.ts`](../../packages/retriever/src/providers/exa.ts)，没配 key 时顶上的
-免费额度臂在 [`packages/retriever/src/providers/exa-mcp.ts`](../../packages/retriever/src/providers/exa-mcp.ts)；
-走哪一条由 `createExaProvider(apiKey?)` 一个工厂决定。这个夹子**暂时只有说明，没有手工探针**——理由写在
+[`packages/retriever/src/providers/exa.ts`](../../packages/retriever/src/providers/exa.ts)。没配 key 时，
+传输层在 [`exa-free-arm.ts`](../../packages/retriever/src/providers/exa-free-arm.ts)，搜索结果解析在
+[`exa-mcp.ts`](../../packages/retriever/src/providers/exa-mcp.ts)，读页解析在
+[`exa-fetch.ts`](../../packages/retriever/src/providers/exa-fetch.ts)。走哪一条由 `createExaProvider(apiKey?)` 一个工厂决定。这个夹子**暂时只有说明，没有手工探针**——理由写在
 「## 探针」。
 
 ## 端点
@@ -53,23 +54,25 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
   这个工具还认一个 `objective`，标了 required 但服务端不校验，适配器不发。
 
 免费额度臂声明的模式是 `fast` / `index` / `deep`，**没有 `answer`**：端点没有深度参数，三档打出去是同一条
-请求，`mode` 只改 REST 臂的 `type`。两个能力位也都是否；为什么不接 `web_fetch_exa` 和
-`web_search_advanced_exa`，见「## 只借 search（#530 的裁决）」。
+请求，`mode` 只改 REST 臂的 `type`。两个能力位也都是否。搜索这一面只用 `web_search_exa`；读页是另一条
+适配器（[`exa-fetch.ts`](../../packages/retriever/src/providers/exa-fetch.ts)，#608），不走
+`SearchProvider`。
 
-## 只借 search（#530 的裁决）
+## 搜索只借 search；读页单独走 fetch（#530 / #608 的裁决）
 
-免费额度臂只用 `web_search_exa`，另外两个工具都**故意不接**。这不是端点给不出来，是这一版的选择：
+搜索适配器只用 `web_search_exa`。`web_search_advanced_exa` 仍然**故意不接**：
 
-- **`web_fetch_exa`**：默认就在 `tools/list` 里，不用 `?tools=` 点名。入参 `{urls, maxCharacters}`，
-  一次能抓一批，回包是 markdown（`# 标题` 加一行 `URL:`，再是正文），跟搜索那套 `Title:` /
-  `Highlights:` 字段块不是一个形状。不接的理由是**「读一页」是一个新面，不是适配器多一个方法**：
-  要新的能力位、新的引擎入口，还有它自己的额度闸。裁决是押后，位置记在 #530。
 - **`web_search_advanced_exa`**：带 `includeDomains` / 日期区间 / `category`，但要用 `?tools=` 在
   URL 上点名才出现，而且回包是一段 JSON（`{results:[{url,text,title}]}`）而不是文本块——现有
-  `parseSearchText` 在它上面会解析出 0 条**且不报错**。裁决也是押后：换来的是「窄白名单下少浪费
+  `parseSearchText` 在它上面会解析出 0 条**且不报错**。裁决是押后：换来的是「窄白名单下少浪费
   几个结果位」，不是正确性，因为 kernel 的事后过滤本来就是权威。
 
-两条都要先知道的一件额度事实：三个工具烧同一份每日额度，见「## 已知异常」。
+`web_fetch_exa` 不再是「押后」：内部 agent 的 `fetch` 工具（`ans chat` / `ans_chat`）在没配 key 时
+就用它读整页。入参 `{urls, maxCharacters}`，一次能抓一批，回包是 markdown（`# 标题` 加一行
+`URL:`，再是正文），跟搜索那套 `Title:` / `Highlights:` 字段块不是一个形状，所以解析留在
+`exa-fetch.ts`，不塞进搜索适配器。有 key 时读页走付费 `/contents`，跟搜索共用同一个工厂分岔规则。
+
+两个工具烧同一份每日额度，见「## 已知异常」。
 
 **取证（2026-11-24，本机 IPv4，一次性探针，没留下脚本）**：
 
@@ -155,7 +158,7 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
 这三条里——`ans doctor --live` 会用空体 `POST /search` 验 Exa 的 key（没配 key 时跳过），那是免费面检查，
 只回答「这把 key 好不好」，回答不了「原文坏了还是适配器坏了」。
 
-#530 那一次是一次性探针，没留脚本，观测记录在「## 只借 search（#530 的裁决）」的取证块里。
+#530 那一次是一次性探针，没留脚本，观测记录在「## 搜索只借 search；读页单独走 fetch（#530 / #608 的裁决）」的取证块里。
 
 免费额度那条路另有一条在线测试：`packages/retriever/test/online/exa-mcp.online.ts` 用
 `createExaProvider("")` 真打一次 `mcp.exa.ai`，断言至少回 1 条结果、url / title 形状正常。它落在

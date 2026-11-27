@@ -5,6 +5,7 @@
 // docs/mcp-server.md 的「## Upstream provider transport matrix」）。每行的短注只回答
 // 「这个值为什么是这个」；成段的解释、transport 描述和用量留在文档里（#419、#415）。
 import type { Mode } from "../contract";
+import { FETCH_MAX_URLS_PER_CALL } from "../fetch-contract";
 
 /** 免费面天生验不到的错误类：这一跑过了，也不代表这类问题是好的。
  *  三家的免费面现在都认得出坏 key，所以今天的取值只有 quota；auth 留着是给以后
@@ -49,12 +50,14 @@ export interface ProviderFacts {
   freeArm?: FreeArmFacts;
   /** MCP 客户端支持的协议版本。只有说 MCP 的那家有；适配器和探针发的是同一格。 */
   mcpProtocolVersion?: string;
+  /** 本适配器一次最多发几个 URL；按工具侧上限取 5，端点真实上限未测。 */
+  fetchMaxUrlsPerCall?: number;
 }
 
 /**
  * 表的形状：一家一行，每行都要填全 `ProviderFacts`，`id` 必须和键一致——写错在类型检查就红。
  * 少填一家 = 少了键，少填一个必填字段 = 那一行不满足 `ProviderFacts`。
- * 两个可选字段：`freeArm`（只有 exa 今天有）和 `mcpProtocolVersion`——删掉它们不会让表本身红，
+ * 三个可选字段：`freeArm`（只有 exa 今天有）、`mcpProtocolVersion` 和 `fetchMaxUrlsPerCall`——删掉它们不会让表本身红，
  * 读它们的地方会红。
  */
 type ProviderFactsTable = { [K in ProviderKey]: ProviderFacts & { readonly id: K } };
@@ -66,6 +69,8 @@ export const PROVIDER_FACTS = {
     // exa-js 的 includeDomains 是一等字段，上游按它过滤。
     domainFilterSupported: true,
     verticalDomainSupported: false,
+    // 工具一次最多给 5 个句柄，读页适配器按同一个数切批；端点真实批量上限没测过。
+    fetchMaxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
     freeProbe: {
       // exa-js 构造函数默认的 baseURL。
       endpoint: "https://api.exa.ai",

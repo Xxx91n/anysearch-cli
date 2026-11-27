@@ -136,6 +136,19 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
 // package at all, or a change under one — because the damage is the same.
 const NAMELESS_FIX = "give those manifests a name, then push again";
 
+/**
+ * Whether this shell asked for the whole suite on every push: `ANS_PUSH_GATE=strict`.
+ *
+ * Design: the switch lives here, next to the modes it selects — the push gate and
+ * `hooks:status` then read one copy of the name and the value, so a status line
+ * that says which mode a push runs cannot disagree with the run.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function strictPushGate(env = process.env) {
+  return env.ANS_PUSH_GATE === "strict";
+}
+
 // Design: a repository the gate cannot read has nothing to run and no right to
 // guess — the reason names what it could not read, the fix names the repair, and
 // the caller prints both and stops the push with exit 2. Exported so the runner,

@@ -330,7 +330,8 @@ Rules behind the table:
   and the record calls it a credential fault without quoting the key. A
   missing key never shows up as a build failure — that arm runs on the free
   quota. It is the same object `ans search --json` emits, so the surfaces
-  cannot disagree.
+  cannot disagree. Page-read construction failures never enter this record;
+  they appear only as a `fetch provider … construction failed` stderr line.
   An engine built without a credential seam reports `null` in both halves.
   Error results do not carry it.
 - **A credential file that exists but cannot be used says so.**

@@ -8,6 +8,7 @@ import { ansProjectHitlPath, atomicWriteFile, canonicalVersion, defaultDomainsDi
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { domainSearchDirs } from "../db";
 import { resolveDbPath } from "@anysearch-cli/kernel";
+import { hostMatchesEntry } from "@anysearch-cli/retriever";
 
 interface HitlEntry {
   url: string;
@@ -136,7 +137,7 @@ export async function runHitl(args: string[]): Promise<number> {
       return 1;
     }
     const changed = allowHost(host);
-    const remaining = readQueue().filter((e) => e.host !== host && !e.host.endsWith("." + host));
+    const remaining = readQueue().filter((e) => !hostMatchesEntry(host, e.host));
     mkdirSync(dirname(queuePath()), { recursive: true });
     writeFileSync(queuePath(), remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : ""), "utf8");
     process.stdout.write(
