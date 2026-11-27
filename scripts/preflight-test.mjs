@@ -45,7 +45,7 @@ import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
-import { planPreflight } from "./preflight-plan.mjs";
+import { broken, planPreflight } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -202,7 +202,7 @@ if (selfTest) {
   if (!process.env.PREFLIGHT_GATE_TESTS && !resolveYaml(root)) {
     removeTestHome(testHome);
     writeStderr("[preflight] blocked: no YAML parser under node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need the workspace dependencies");
-    // The gate cannot run its own judgments: exit 2, not 1.
+    // Design: no parser means no answer, so this is exit 2, not 1.
     process.exit(2);
   }
   let result;
@@ -248,7 +248,7 @@ try {
 } catch (error) {
   reportKeptTestHome(testHome);
   writeStderr(`[preflight] could not start pnpm: ${error.message}`);
-  // No test ran, so this is the gate failing, not the code.
+  // Design: no test ran, so this is the gate failing, not the code — exit 2.
   process.exit(2);
 }
 
@@ -302,13 +302,9 @@ function planRun() {
   if (forceFull) {
     return { mode: "full", reason: `${change.unknown}; --full runs everything anyway`, files: [], packages: [] };
   }
-  return unreadableChange(change);
-}
-
-// A change set git cannot name is the gate being broken, not a reason to run
-// everything: the push stops with exit 2 and nothing starts.
-function unreadableChange({ unknown, fix }) {
-  return { mode: "broken", reason: unknown, fix, files: [], packages: [] };
+  // A change set git cannot name is the gate being broken: the push stops with
+  // exit 2 and nothing starts.
+  return broken(change.unknown, change.fix, []);
 }
 
 // turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".

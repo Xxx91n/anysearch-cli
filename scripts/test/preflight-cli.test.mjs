@@ -553,7 +553,7 @@ test("a broken manifest stops the push, names the file, and starts nothing", asy
     const result = runCliIn(root, bin, []);
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /blocked: cannot read apps\/broken\/package\.json/);
-    assert.match(result.stderr, /fix: repair that manifest, then push again/);
+    assert.match(result.stderr, /fix: repair it, then push again/);
     assert.match(result.stderr, /to push anyway: git push --no-verify/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
     assert.equal(result.stdout.includes("full suite"), false);

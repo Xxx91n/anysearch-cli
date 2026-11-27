@@ -71,9 +71,9 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   // stopped push.
   if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
-  const { packages, nameless, unreadableManifest } = readWorkspaceReport(root);
-  if (unreadableManifest) {
-    return broken(`cannot read ${unreadableManifest}`, "repair that manifest, then push again", files);
+  const { packages, nameless, unreadableFile } = readWorkspaceReport(root);
+  if (unreadableFile) {
+    return broken(`cannot read ${unreadableFile}`, "repair it, then push again", files);
   }
   if (packages.length === 0) {
     // The workspace looks empty because its manifests have no name; naming the
@@ -140,14 +140,15 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   };
 }
 
-// A manifest with no name is a damaged repository in both places it can show
-// up — no package at all, or a change under one — so the repair is one line.
+// Design: one repair line for both places a nameless manifest can show up — no
+// package at all, or a change under one — because the damage is the same.
 const NAMELESS_FIX = "give those manifests a name, then push again";
 
-// The gate cannot read the repository it is standing in, so it has nothing to
-// run and no right to guess. The reason names what it could not read and the
-// fix names the repair; the caller prints both and stops the push with exit 2.
-function broken(reason, fix, files) {
+// Design: a repository the gate cannot read has nothing to run and no right to
+// guess — the reason names what it could not read, the fix names the repair, and
+// the caller prints both and stops the push with exit 2. Exported so the runner,
+// which also reports an unreadable change set, builds the same shape.
+export function broken(reason, fix, files) {
   return { mode: "broken", reason, fix, files, packages: [] };
 }
 
@@ -250,11 +251,12 @@ function rootReaders(file) {
 
 /**
  * Read the workspace packages and their workspace-internal dependencies.
- * Missing or unreadable pnpm-workspace.yaml reads as an empty list. A manifest
- * that cannot be read or parsed makes this return null, so the caller stops
- * instead of silently dropping a package and everything that depends on it. A
- * directory without a package.json, or a manifest without a name, is not a
- * package: it is skipped, and the plan reports a change under it as broken.
+ * A missing pnpm-workspace.yaml, or one that names no package, reads as an empty
+ * list. A declaration or manifest that cannot be read or parsed makes this return
+ * null, so no caller silently drops a package and everything that depends on it:
+ * the push gate answers broken, and CI runs every lane. A directory without a
+ * package.json, or a manifest without a name, is not a package: it is skipped,
+ * and the plan reports a change under it as broken.
  *
  * @param {string} root
  * @returns {{ name: string, dir: string, deps: string[] }[] | null}
@@ -264,17 +266,21 @@ export function readWorkspace(root) {
 }
 
 // readWorkspace plus what the plan needs to name a fault: the directories a
-// nameless manifest left out, and the one manifest it could not read. Private:
-// the plan is its only reader, and readWorkspace's doc owns the null contract.
+// nameless manifest left out, and the file it could not read. Private: the plan
+// is its only reader, and readWorkspace's doc owns the null contract.
 function readWorkspaceReport(root) {
   const packages = [];
   const nameless = [];
-  for (const dir of workspaceDirectories(root, workspacePatterns(root))) {
+  const patterns = workspacePatterns(root);
+  if (patterns === null) {
+    return { packages: null, nameless: [], unreadableFile: "pnpm-workspace.yaml" };
+  }
+  for (const dir of workspaceDirectories(root, patterns)) {
     const manifest = readManifest(path.join(root, dir, "package.json"));
     // The first unreadable manifest, in directory order, is the one worth
     // naming: fixing it is what lets the next run answer.
     if (manifest === UNREADABLE) {
-      return { packages: null, nameless: [], unreadableManifest: `${dir}/package.json` };
+      return { packages: null, nameless: [], unreadableFile: `${dir}/package.json` };
     }
     if (manifest === null) continue; // no package.json: not a package
     if (manifest === NAMELESS) {
@@ -286,7 +292,7 @@ function readWorkspaceReport(root) {
   return {
     packages: packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
     nameless: nameless.sort(),
-    unreadableManifest: null,
+    unreadableFile: null,
   };
 }
 
@@ -348,14 +354,15 @@ export function packageForFile(file, packages) {
 // The root has no direct YAML dependency and only the `packages:` list matters,
 // so read that block here. A pattern this cannot expand leaves its packages
 // undiscovered: when that leaves none, the plan answers broken, never a silent
-// pass.
+// pass. A missing file reads as no patterns; one that is there and cannot be read
+// is null, so the plan can name it instead of blaming an empty workspace.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
   let text;
   try {
     text = fs.readFileSync(file, "utf8");
-  } catch {
-    return [];
+  } catch (error) {
+    return error.code === "ENOENT" ? [] : null;
   }
 
   const patterns = [];

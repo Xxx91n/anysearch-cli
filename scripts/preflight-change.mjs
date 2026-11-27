@@ -1,12 +1,13 @@
 // Which files a change set has: the refs on stdin for a push, origin/HEAD plus
-// the working tree for a plain run. A change set git cannot name is a broken
-// gate: the caller stops the push instead of guessing. A push with no
-// refs on stdin looks at the working tree instead. PUSH_UNKNOWN marks a ref
-// that cannot be read.
+// the working tree for a plain run. A push with no refs on stdin looks at the
+// working tree instead. PUSH_UNKNOWN marks a ref that cannot be read; null marks
+// a question git could not answer. Either way the caller must not read the
+// result as an empty change: the push gate stops (unless it was told to run
+// everything anyway), and CI runs every lane.
 
 import { gitIn } from "./preflight-git.mjs";
 
-/** A pre-push line that cannot be read; the caller must stop the push. */
+/** A pre-push line that cannot be read; the caller must not read it as no change. */
 export const PUSH_UNKNOWN = Symbol("unreadable push");
 
 /**
@@ -14,7 +15,7 @@ export const PUSH_UNKNOWN = Symbol("unreadable push");
  * "<local ref> <local sha> <remote ref> <remote sha>".
  *
  * Returns null when the hook got no refs (the caller then looks at the working
- * tree) and PUSH_UNKNOWN when a ref cannot be read (the caller stops the push).
+ * tree) and PUSH_UNKNOWN when a ref cannot be read.
  */
 export function pushedFiles(root, input) {
   const lines = String(input ?? "")
@@ -39,7 +40,7 @@ export function pushedFiles(root, input) {
 
 /**
  * Everything not yet on origin/HEAD, plus the working tree and new files.
- * Returns null when git cannot name the change; the caller stops the push.
+ * Returns null when git cannot name the change.
  */
 export function localFiles(root) {
   const head = gitLine(root, ["rev-parse", "HEAD"]);

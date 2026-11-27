@@ -301,7 +301,8 @@ test("docs next to a root file outside the table are skipped too, and the docs a
 });
 
 // The boundary is CI's, so the exclusions matter here too: a product asset and
-// docs/eval are read by tests and must not buy a skipped run.
+// docs/eval are not documentation, so neither takes the docs skip. The asset has
+// readers; docs/eval belongs to no package and takes the unowned skip.
 test("a product asset runs its readers, and docs/eval/ takes the unowned skip", () => {
   // The readers run, not just the owner: plugin's own tests plus every app
   // that depends on it.
@@ -426,10 +427,13 @@ test("a workspace with no pnpm-workspace.yaml is a broken gate", () => {
 test("an unreadable pnpm-workspace.yaml reads as no workspace, not a crash", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-unreadable-"));
   try {
-    // A directory where the file belongs: reading it throws, which must not escape.
+    // A directory where the file belongs: reading it throws, which must not escape,
+    // and the plan names the declaration instead of blaming an empty workspace.
     mkdirSync(join(dir, "pnpm-workspace.yaml"));
-    assert.deepEqual(readWorkspace(dir), []);
-    assert.equal(planPreflight(dir, ["apps/mcp/src/index.ts"]).mode, "broken");
+    assert.equal(readWorkspace(dir), null);
+    const plan = planPreflight(dir, ["apps/mcp/src/index.ts"]);
+    assert.equal(plan.mode, "broken");
+    assert.equal(plan.reason, "cannot read pnpm-workspace.yaml");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -468,7 +472,7 @@ test("a broken package manifest stops the gate and names the file", () => {
     const plan = planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]);
     assert.equal(plan.mode, "broken");
     assert.equal(plan.reason, "cannot read apps/dsh-plugin/package.json");
-    assert.equal(plan.fix, "repair that manifest, then push again");
+    assert.equal(plan.fix, "repair it, then push again");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
