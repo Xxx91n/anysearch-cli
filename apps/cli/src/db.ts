@@ -55,6 +55,12 @@ export function createPersistentEngine(
      * Omitted means this engine parses the file, as it always has.
      */
     credentialsFile?: CredentialFileContents;
+    /**
+     * This engine's per-request deadline in ms. Only `ans search` passes
+     * one, and only from `ANS_EVAL_REQUEST_TIMEOUT_MS`; omitted means the
+     * user's 4s.
+     */
+    requestTimeoutMs?: number;
   },
 ): CompositionResult {
   const dbPath = resolveDbPath();
@@ -72,6 +78,7 @@ export function createPersistentEngine(
     domainsDirs: domainSearchDirs(),
     searchCredentials: searchCredentialSeam(credentialsFile),
     ...(opts?.domainDeclared !== undefined ? { domainDeclared: opts.domainDeclared } : {}),
+    ...(opts?.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.requestTimeoutMs } : {}),
   });
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();
