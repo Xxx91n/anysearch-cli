@@ -93,12 +93,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled / partial / deadlineMs /
-              // credentialSources are unconditional here; structuredContent is a
-              // different shape (the two arm lists, partial, deadlineMs and the
-              // credential record always, sufficiency / attribution / abstain /
-              // interrupted / failures when present).
+              // Stable output shape; the field list lives in docs/mcp-server.md.
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,

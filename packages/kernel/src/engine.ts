@@ -225,13 +225,13 @@ export class RetroaererdEngine {
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
-  // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass; it lives here now. `requestTimeoutMs` is the caller's
-  // per-fanout cap: tests shrink it, eval raises it, and `ans search --deadline`
-  // passes the terminal's choice; absent is 4s. Readonly and public because a
-  // hand-built CompositionResult may omit its copy, and surfaces then read this
-  // one instead of guessing the default.
+  // `gate` used to ride on a per-search config object no caller could pass;
+  // it lives here now.
   private gate: SufficiencyGate;
+  // The caller's per-fanout budget: tests shrink it, eval raises it, and
+  // `ans search --deadline` passes the terminal's choice; absent is 4s.
+  // Readonly and public because a hand-built CompositionResult may omit its
+  // copy, and surfaces then report this one instead of the default.
   readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.

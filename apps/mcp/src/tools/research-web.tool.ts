@@ -8,7 +8,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, isPartialPool, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -103,7 +103,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
-            if (cancelledProviders.length > 0) partial = true;
+            partial = partial || isPartialPool(cancelledProviders);
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});

@@ -270,8 +270,11 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
+    // One read for the flag and the JSON field; a hand-built envelope may omit
+    // metadata entirely.
+    const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
     // A cut arm means the pool is shorter than the fanout that was asked.
-    const partial = isPartialPool(envelope.metadata.providersCancelled);
+    const partial = isPartialPool(cancelledProviders);
 
     // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
@@ -292,7 +295,7 @@ export async function runSearch(args: string[]): Promise<number> {
         // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
         // never joins the fanout.
         providersQueried: envelope.metadata?.providersQueried ?? [],
-        providersCancelled: envelope.metadata?.providersCancelled ?? [],
+        providersCancelled: cancelledProviders,
         // True when at least one arm was cut, so a script does not have to read
         // three fields to notice the pool was shortened. Always present.
         partial,

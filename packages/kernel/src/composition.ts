@@ -358,9 +358,9 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
 
-/** The budget to report for one fanout: the result's copy, the engine's own, then 4s. */
+/** The budget to report for one fanout: the engine's own, the result's copy, then 4s. */
 export function reportedDeadlineMs(eng: { requestTimeoutMs?: number; retriever?: RetrieverPort }): number {
-  return eng.requestTimeoutMs ?? eng.retriever?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  return eng.retriever?.requestTimeoutMs ?? eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(
