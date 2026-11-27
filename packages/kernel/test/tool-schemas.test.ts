@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Value } from "@sinclair/typebox/value";
 import {
   KernelJsonSchemas
@@ -19,6 +20,17 @@ import {
   ResearchWebInput,
   SearchWebInput,
 } from "../src/tool-schemas";
+
+// 1b. The schema leaf must not import the store barrel: dsh-plugin bundles
+// tool-json-schemas with esbuild and no runtime deps, so a barrel import would
+// drag better-sqlite3 into that bundle even though it compiles and tests fine.
+for (const name of ["tool-schemas.ts", "tool-json-schemas.ts"]) {
+  const source = readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8");
+  const storeSpecs = [...source.matchAll(/from\s+["'](@anysearch-cli\/store(?:\/[^"']*)?)["']/g)].map((m) => m[1]);
+  for (const spec of storeSpecs) {
+    assert.equal(spec, "@anysearch-cli/store/expand-limits", `${name} may only import the native-free store subpath, not ${spec}`);
+  }
+}
 
 // 1. Registry shape: exactly the 5 ans_* tool names.
 assert.deepEqual(
