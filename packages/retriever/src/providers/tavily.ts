@@ -63,7 +63,13 @@ export class TavilyProvider implements SearchProvider {
       provider: this.id,
       results,
       answers,
-      elapsedMs: res.responseTime ?? (Date.now() - start),
+      // Tavily reports response_time in seconds; the envelope carries milliseconds.
+      // A missing, null or non-finite value falls back to the local wall clock
+      // rather than becoming 0ms, which would read as an instant arm.
+      elapsedMs:
+        typeof res.responseTime === "number" && Number.isFinite(res.responseTime)
+          ? Math.round(res.responseTime * 1000)
+          : Date.now() - start,
       usage: undefined, // ponytail: no usage() — the SDK surfaces credits per call (response.usage.credits) only.
     };
   }

@@ -94,7 +94,9 @@ and, when set, the `abstain` marker, so a text-only reader gets the same verdict
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
 cut off, whether that left the pool short (`partial`) and the wait budget the
-call ran on (`deadlineMs`), and the provider-failure fields). It never carries
+call ran on (`deadlineMs`), how long each answered arm took, and the
+provider-failure fields). It never carries
+
 the result list itself. The credential record (`credentialSources`) is
 deliberately written into both halves, because hosts split on
 which half reaches the model — a fact placed in only one of them is invisible to
@@ -235,11 +237,12 @@ The server follows the MCP rule that an execution failure is an
 | Any tool call refused because an upgrade paused new tasks (`ans upgrade wait`) | `true` | `operation` (the tool name), `errorKind: "upgrade-in-progress"`, `upgrade: { admitted: false, gate }`; **no** `taskId` and **no** `closeout` — nothing ran, so nothing is left open — see [Upgrade preflight](#upgrade-preflight-309) |
 | Invalid tool arguments: empty `query`/`message`, unknown property, wrong type (schema validation) | `true` | absent — `Input validation error` text |
 | Zero results, and the failure rule below holds (`failed`) | `true` | absent — text names `providersFailed`, their error classes, and the plain-language remedy |
-| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — when merged results are in hand it is `answer` whatever the last round said; with none, the last round's verdict, except that `failed` reads `empty` when an arm answered earlier) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `credentialSources`, plus sufficiency / attribution when present; `interrupted: true` when the caller aborted |
-| Search returned zero hits, at least one provider answered, no arm was cancelled, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`, `partial` (`false`), `deadlineMs`; no `abstain` marker |
-| Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome` (null on `research_web` when the caller aborted before any round finished), `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `credentialSources`, `interrupted: true` — nothing came back, whether the caller aborted or the engine's deadline cut the arms; plus `providersFailed` and the error-class fields when another arm also failed |
-| Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `partial` (`false`), `deadlineMs`, `credentialSources` |
-| Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `credentialSources` |
+| Successful search / research with results (`answer`; on `research_web` this is the call's verdict — when merged results are in hand it is `answer` whatever the last round said; with none, the last round's verdict, except that `failed` reads `empty` when an arm answered earlier) | absent (success) | `outcome`, `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `providerElapsedMs`, `credentialSources`, plus sufficiency / attribution when present; `interrupted: true` when the caller aborted |
+| Search returned zero hits, at least one provider answered, no arm was cancelled, and the abstain rule below does not hold (`empty`) | absent (success) | `outcome`, `credentialSources`, `providersQueried`, `providersCancelled`, `partial` (`false`), `deadlineMs`, `providerElapsedMs`; no `abstain` marker |
+| Some arms were cut off, nothing came back, and not every queried arm failed (`cancelled`) | absent (success) | `outcome` (null on `research_web` when the caller aborted before any round finished), `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `providerElapsedMs`, `credentialSources`, `interrupted: true` — nothing came back, whether the caller aborted or the engine's deadline cut the arms; plus `providersFailed` and the error-class fields when another arm also failed |
+| Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `partial` (`false`), `deadlineMs`, `providerElapsedMs`, `credentialSources` |
+| Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `partial`, `deadlineMs`, `providerElapsedMs`, `credentialSources` |
+
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
@@ -307,6 +310,20 @@ Rules behind the table:
   On `search_web`, a caller cancellation that cuts every arm off leaves
   `providersCancelled === providersQueried`; the result is still a success,
   never an outage.
+- **Per-arm timing is each arm's own time, not one shared stopwatch.**
+  `providerElapsedMs` maps each provider id that answered to that arm's
+  elapsed milliseconds: the provider's own report where it gives one, the wall
+  clock measured around the call everywhere else. Same unit, but not the same
+  measurement — read it arm by arm, never as a cross-provider ranking. Within one search, a cut or failed arm has no key —
+  it has no real duration, and its state already rides `providersCancelled` /
+  `providersFailed`; absent is not the same as `0`. A successful result always
+  carries the field (an empty object when no arm answered) in both the content
+  JSON and `structuredContent`; an error result does not carry it (a provider
+  failure has no `structuredContent`, and the budget / upgrade / domain stops
+  carry their own record instead). `research_web` reports its last completed round's
+  table, never a union across rounds — the same window its `providersQueried` /
+  `providersCancelled` describe, while `providersFailed` stays the separate
+  union across rounds.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /
