@@ -453,7 +453,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
 }
 
 export function validateDocsGoldenSet(raw: unknown): string[] {
-  if (!raw || typeof raw !== "object") return ["root must be an object"];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return ["root must be an object"];
   const g = raw as Partial<DocsGoldenSet>;
   const p: string[] = [];
   if (g.schema !== DOCS_GOLDEN_SCHEMA) p.push("schema must be " + DOCS_GOLDEN_SCHEMA);
