@@ -294,10 +294,9 @@ Rules behind the table:
   never an outage.
 - **Per-arm timing is each arm's own time, not one shared stopwatch.**
   `providerElapsedMs` maps each provider id that answered to that arm's
-  elapsed milliseconds: the provider's own report where it gives one (tavily,
-  anysearch), the wall clock measured around the call everywhere else. Same
-  unit, but not the same measurement — read it arm by arm, never as a
-  cross-provider ranking. Within one search, a cut or failed arm has no key —
+  elapsed milliseconds: the provider's own report where it gives one, the wall
+  clock measured around the call everywhere else. Same unit, but not the same
+  measurement — read it arm by arm, never as a cross-provider ranking. Within one search, a cut or failed arm has no key —
   it has no real duration, and its state already rides `providersCancelled` /
   `providersFailed`; absent is not the same as `0`. A successful result always
   carries the field (an empty object when no arm answered) in both the content

@@ -11,7 +11,7 @@
 ### Fixed
 
 - **tavily 的耗时单位**（`packages/retriever/src/providers/tavily.ts`）：Tavily 的 `response_time` 是秒（上游文档「Time in seconds」；`docs/research/real-baseline-2026-11-22.md` 同一次真跑里客户端 1573ms、服务商自报 0.37），适配器原来把它直接塞进 `elapsedMs`，这一家的数就比别家小 1000 倍。现在乘 1000 取整再写；上游没给数字（缺失、`null`、非有限值）时回退本地墙钟，不会变成 0ms 假装瞬时返回。`providers/tavily/README.md` 记下这条上游事实，免得下次又按毫秒读。
-- **同一张表、两种量法说清楚**（`packages/retriever/src/contract.ts`、`docs/mcp-server.md`）：`elapsedMs` 不是统一口径——tavily、anysearch 用服务商自报的时间，exa、exa-mcp 是本地量的墙钟。注释和字段表现在都写明这一点，并说清只能按臂看、不能横着比名次；单位（毫秒）仍然一致。
+- **同一张表、两种量法说清楚**（`packages/retriever/src/contract.ts`、`docs/mcp-server.md`）：`elapsedMs` 不是统一口径——tavily 是服务商自报的秒换算，anysearch 看回包形状（文本头带耗时就用，`structuredContent` 那条路没有这个数），exa、exa-mcp 一律是本地量的墙钟。注释和字段表现在只说「服务商给了自报值就用，没给才是本地墙钟」，并写明只能按臂看、不能横着比名次；单位（毫秒）一致。
 
 ### Tests
 
