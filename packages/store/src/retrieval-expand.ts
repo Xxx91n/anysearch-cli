@@ -6,9 +6,8 @@ import { sanitizeText } from "@anysearch-cli/retriever";
 import { HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { LIVE_PAGE_SQL, sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { sqliteTimestampToIso } from "./sqlite-time.js";
+import { EXPAND_MAX_CHARS } from "./expand-limits.js";
 
-/** Hard ceiling for one expansion, in code points. */
-export const EXPAND_MAX_CHARS = 8000;
 /** How far back a cut may move to land on whitespace. */
 const WHITESPACE_LOOKBACK = 200;
 const ELLIPSIS = "…";

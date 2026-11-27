@@ -6,7 +6,7 @@
 // D6: rejected codemod kernel to zod; schema source-of-truth stays TypeBox.
 
 import { Type } from "@sinclair/typebox";
-import { EXPAND_MAX_CHARS } from "@anysearch-cli/store";
+import { EXPAND_MAX_CHARS } from "@anysearch-cli/store/expand-limits";
 
 // query-level vertical — when verticalDomain is
 // present the three args form a complete spec that REPLACES the repo-level
