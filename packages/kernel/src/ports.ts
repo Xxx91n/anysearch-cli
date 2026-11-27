@@ -46,11 +46,12 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // How long one fanout waits. A wrapper placed in CompositionResult.retriever
-  // should carry it through: a positive whole number becomes the reported
-  // budget, clamped to 2^31-1. A missing field, or any value that is not a
-  // positive whole number, makes the reported deadline fall back to the
-  // result's own copy (same rule), and then to 4s.
+  // How long one fanout waits, when the wrapper knows better than the result
+  // it was built from. Report it only if this wrapper runs its own clock: a
+  // positive whole number becomes the reported budget (clamped to 2^31-1),
+  // while a missing field or any other value falls back to the result's own
+  // copy under the same rule, and then to 4s — so leaving it out never loses
+  // the number the engine actually ran with.
   readonly requestTimeoutMs?: number;
 }
 
