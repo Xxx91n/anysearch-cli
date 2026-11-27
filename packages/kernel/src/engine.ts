@@ -30,15 +30,13 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request by default, counted from fan-out. The user's
-// default is this number; who may change it and by how much is the composition
-// root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`.
-// Exported so the composition root and help read the same 4s.
+// Design: one 4s cap per request by default, counted from fan-out. This is the
+// user's default; createEngine's `resolveRequestTimeoutMs` handles regular
+// entry points (including `ans search --deadline`), while a direct constructor
+// checks its own value. setTimeout's ceiling is 2^31-1, and the constructor
+// rejects non-integers, <=0 and anything above it, so both guards stay.
+// Exported so composition and help read the same 4s.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-// setTimeout's ceiling. The constructor rejects non-integers, <=0 and anything
-// above this; createEngine's resolveRequestTimeoutMs turns bad values into the
-// default or clamps to a cap, but it cannot cover callers that construct this
-// class directly, so both guards stay.
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
