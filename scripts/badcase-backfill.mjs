@@ -67,6 +67,20 @@ if (into) {
   for (const f of ["intent", "questionLang", "dimensions"]) {
     if (bc[f] === undefined) fail(id + " lacks '" + f + "' — record classification on the badcase before --new (no fabricated classification)");
   }
+  const domain = bc.domain ?? "docs";
+  if (domain !== "docs") fail("--new only creates docs-domain rows; " + id + " is " + domain + " (cold domains are abstain-only)");
+  const tags = bc.dimensions;
+  if (!Array.isArray(tags) || tags.some((t) => typeof t !== "string" || !t.includes(":"))) {
+    fail(id + " dimensions must be a string[] of dimension:value tags");
+  }
+  for (const tag of ["intent:" + bc.intent, "lang:" + bc.questionLang]) {
+    if (!tags.includes(tag)) fail(id + " dimensions lack '" + tag + "' — --new would write a row the validator rejects");
+  }
+  const provType = bc.provenance?.type ?? "internal-dogfood";
+  if (provType !== "internal-dogfood") fail("--new only writes internal-dogfood provenance; " + id + " is " + provType);
+  if (bc.stability_class !== undefined && !["controlled", "frozen-spec", "external"].includes(bc.stability_class)) {
+    fail(id + " stability_class must be controlled|frozen-spec|external");
+  }
   // Next docs-g number only: vert-*/ctrl-* ids carry four-digit numbers too and
   // would otherwise push a docs row into the thousands.
   const nums = golden.entries
@@ -76,19 +90,23 @@ if (into) {
   const next = "docs-g" + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0");
   const entry = {
     id: next,
-    domain: bc.domain ?? "docs",
+    domain,
     question: bc.question,
     questionLang: bc.questionLang,
     intent: bc.intent,
     expected: bc.expected,
-    dimensions: bc.dimensions,
-    provenance: { type: bc.provenance?.type ?? "internal-dogfood", ref: "eval-badcases.json#" + id, harvestedAt: bc.evidence.runAt ?? new Date().toISOString().slice(0, 10) },
+    dimensions: tags,
+    ...(bc.stability_class ? { stability_class: bc.stability_class } : {}),
+    provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: bc.evidence.runAt ?? new Date().toISOString().slice(0, 10) },
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
   const expected = entry.expected ?? {};
   const mustHit = (expected.mustHitHosts?.length ?? 0) > 0 || (expected.mustHitUrls?.length ?? 0) > 0;
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
+  }
+  if ((expected.mustHitUrls?.length ?? 0) > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
+    fail(next + " carries mustHitUrls but no controlled|frozen-spec stability_class — ship-gate would reject the row; anchor the URL or fix the badcase first");
   }
   golden.entries.push(entry);
   // answer+mustHit* rows must be live-capable; a stub lane without a scenario
