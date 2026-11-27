@@ -203,13 +203,25 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 });
 
 test("--into rejects a tombstone target", (t) => {
-  // One row, tombstoned and scopeless. The tombstone check runs before the
-  // domain and question checks, so a second row would only add noise.
+  // A tombstoned row carries no scope, the way the real corpus looks (89 live
+  // rows in scopes, one demoted row outside it). The second row stays live only
+  // so the scopes map is not empty — the file-level check would fire first.
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
       g.entries[0].expected = { verdict: "answer" };
       g.entries[0].tombstone = tombstone();
       delete g.scopes["docs-g0001"];
+      g.entries.push({
+        id: "docs-g0002",
+        domain: "docs",
+        question: "How do I uninstall the widget?",
+        questionLang: "en",
+        intent: "howto",
+        expected: expected(),
+        dimensions: ["intent:howto", "lang:en"],
+        provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
+      });
+      g.scopes["docs-g0002"] = "live";
     });
   }, /docs-g0001 is a tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
@@ -281,7 +293,7 @@ test("--new rejects a mustHitUrl host outside the allowlist", (t) => {
 test("--new rejects a bad evidence.runAt", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].evidence.runAt = "2026/11/27"; });
-  }, /evidence\.runAt must be an ISO date/);
+  }, /evidence\.runAt must be the real ISO date/);
 });
 
 test("--new rejects entry values that are not objects", (t) => {
