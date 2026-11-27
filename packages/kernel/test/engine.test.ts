@@ -344,6 +344,18 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   };
 }
 {
+  // Invalid caps fail at construction instead of becoming a 1ms setTimeout.
+  for (const bad of [0, -1, 0.5, 1.9, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648]) {
+    let threw = false;
+    try {
+      new RetroaererdEngine([], { requestTimeoutMs: bad });
+    } catch (err) {
+      threw = err instanceof RangeError;
+    }
+    assert(threw, "deadline: requestTimeoutMs " + String(bad) + " is rejected");
+  }
+}
+{
   // (a) Every arm lands before the deadline -> return with the slowest arm,
   // not after the full 1s window.
   const aborted = { v: false };

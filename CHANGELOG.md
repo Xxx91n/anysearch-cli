@@ -20,6 +20,17 @@
 - `apps/mcp/test/recall-memory-sections.test.ts`：真 handler 的 JSON 契约（节清单字段、snippet-only 的空清单、200 字预览不变）。
 - `apps/cli/test/doctor.test.ts`：真库只读读出「待补块数」，积压不抬退出码。
 - `packages/store/test/fusion-registry-memory.test.ts`、`packages/retriever/test/fusion-registry.test.ts`、`rrf.test.ts`：每臂按注册表取权重、冻结哈希重钉、平手裁决不改分数。
+## Unreleased — #649: 终端自己定这一次等多久
+
+一句话说清：**`ans search` 多一个 `--deadline <毫秒>`：范围 500–60000 的整数，不传还是 4 秒；只影响这一次，默认值和其他入口不动。它的值不会漏进查询词；填错退出 2，并说清范围和默认值。**
+
+### Changed
+
+- **`--deadline`**（`apps/cli/src/commands/search.ts`、`apps/cli/src/index.ts`）：只在 `ans search`；支持 `--deadline 8000` 和 `--deadline=8000`，重复传时最后一个生效；登记进 `valueFlags`。
+- **两把钟分清楚**（`apps/cli/src/db.ts`、`packages/kernel/src/composition.ts`）：`--deadline` 自己带 60 秒上限；`ANS_EVAL_REQUEST_TIMEOUT_MS` 仍是 15 秒上限。两个都传时 `--deadline` 赢，stderr 说明环境变量这次不生效。
+- **实际用的数能读到**：`ans search --json` 的 `requestTimeoutMs` 就是这次生效的值；引擎构造也会拒绝小数、0、负数和超过 2147483647 的值。
+- **文档**：`docs/limitations.md` 和 `GLOSSARY.md` 补一句；评测的钟写法见 `docs/eval/request-timeout-budget.md`。
+
 ## Unreleased — #657: 评测的钟和用户的钟分开
 
 一句话说清：**用户默认的 4 秒一个字节没动；评测跑专线那批语料时需要一口更长的钟，于是新增一个只有 `ans search` 会读的环境变量 `ANS_EVAL_REQUEST_TIMEOUT_MS`——不设是 4000，写错或 ≤0 也回落 4000，最多 15000。chat 和 MCP 不读它。数字自己带着钟走：引擎实际用的值挂在 `CompositionResult.requestTimeoutMs` 上，报告照着印，不另算一遍。**

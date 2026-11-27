@@ -12,6 +12,7 @@ import type { AddressInfo } from "node:net";
 
 export async function startFakeAnySearch(
   markdown: string,
+  opts?: { delayMs?: number },
 ): Promise<{ endpoint: string; close: () => Promise<void> }> {
   const server = createServer(async (req, res) => {
     let body = "";
@@ -40,7 +41,25 @@ export async function startFakeAnySearch(
       res.writeHead(202);
       return res.end();
     }
-    if (parsed.method === "tools/call") return reply({ content: [{ type: "text", text: markdown }] });
+    if (parsed.method === "tools/call") {
+      // #649: a caller can make this arm outlive the CLI's deadline, so the
+      // deadline path is exercised against a real slow endpoint, not a mock.
+      if (opts?.delayMs !== undefined && opts.delayMs > 0) {
+        // Stop waiting as soon as the client aborts, so a cancelled call does
+        // not leave a timer holding the test process open.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, opts.delayMs);
+          res.on("close", () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+      }
+      // The deadline may have aborted the request while this call slept; a
+      // reply on a destroyed response would surface as a stray socket error.
+      if (res.destroyed) return;
+      return reply({ content: [{ type: "text", text: markdown }] });
+    }
     return reply({});
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
