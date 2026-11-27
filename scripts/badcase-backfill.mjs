@@ -57,6 +57,7 @@ if (!bc.observed || typeof bc.observed.results !== "number") fail(id + " has no 
 if (!bc.evidence || typeof bc.evidence.command !== "string" || !bc.evidence.command.trim()) fail(id + " has no evidence.command — synthetic input refused");
 if (typeof bc.question !== "string" || bc.question.trim().length < 8) fail(id + " question must be a string of at least 8 characters");
 if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no domain — record it on the badcase before backfill");
+if (!bc.expected || typeof bc.expected !== "object" || Array.isArray(bc.expected)) fail(id + " has no expected block");
 
 const golden = JSON.parse(readFileSync(GOLDEN, "utf8"));
 // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
