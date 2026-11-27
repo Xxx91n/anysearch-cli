@@ -664,6 +664,24 @@ async function main() {
     }
 
     {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "WWW BODY"));
+      let asked = 0;
+      let shown: readonly string[] = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked++;
+        shown = request.urls;
+        return true;
+      });
+      const bare = "www.wwwtofu.example/guide";
+      const grant = await tool.execute("t25n", { handles: [bare], requestTrustFor: "wwwtofu.example" });
+      assert(rawText(grant).includes("已信任") && asked === 1 && shown[0] === "https://wwwtofu.example/guide",
+        "a bare www handle is trusted under the host the read will use");
+      const read = envelope(await tool.execute("t25o", { handles: [bare] }));
+      assert(read.pages.length === 1 && provider.calls.length === 1,
+        "the retry reads the same effective host");
+    }
+
+    {
       const provider = new FakeProvider((urls) => pageEnvelope(urls));
       let asked = 0;
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });

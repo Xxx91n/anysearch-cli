@@ -360,13 +360,18 @@ async function handleTrustRequest(
   for (const handle of handles) {
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
     const identity = normalizeUrlIdentity(handle);
-    const address = checkFetchAddress(handle, identity);
+    // Build the same request URL resolveTicket will read. A bare handle loses
+    // a leading "www." in the normalized identity, so checking the raw handle
+    // here would ask the user to trust one host and then read another.
+    const rawUserUrl = handle.trim();
+    const requestUrl = /^https?:\/\//i.test(rawUserUrl) ? rawUserUrl : makeRequestUrl(identity, "https");
+    const address = checkFetchAddress(requestUrl, identity);
     if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {
       return rejectTrust(options, state, fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
     }
     if (address.host !== domain) return textResult(TRUST_HANDLE_MISMATCH + handle);
-    urls.push(/^https?:\/\//i.test(handle.trim()) ? handle.trim() : makeRequestUrl(identity));
+    urls.push(requestUrl);
   }
 
   // The host itself gets the same address and domain gates a read would.
