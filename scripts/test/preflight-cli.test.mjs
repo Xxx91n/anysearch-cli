@@ -208,6 +208,16 @@ test("a budget the gate cannot read stops the push", () => {
   });
 });
 
+// setTimeout clamps past its ceiling to a millisecond, so a huge budget would
+// stop the suite at once and call it a timeout. The gate refuses it instead.
+test("a budget past the timer's ceiling stops the push", () => {
+  withFakePnpm({ code: 0, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { ANS_PUSH_GATE_TIMEOUT: "9999999999" } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: ANS_PUSH_GATE_TIMEOUT is larger than the timer can take/);
+  });
+});
+
 test("a run gives the child a throwaway home and leaves the operator's home alone", async () => {
   const operatorHome = mkdtempSync(join(tmpdir(), "ans-preflight-operator-"));
   const operatorDb = join(operatorHome, "anysearch.db");

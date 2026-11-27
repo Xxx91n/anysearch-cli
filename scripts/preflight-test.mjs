@@ -24,8 +24,8 @@
 // finished" — never "passed". While the suite runs, a heartbeat says how long it
 // has been going; without one, a silent nine-minute wait reads as a hang. The
 // whole output lands in a timestamped file in the temp directory: a failure
-// shows the last 100 lines and the file's absolute path and keeps the file; a
-// green run deletes it.
+// shows the last 100 lines and the file's absolute path; a timeout or an
+// interrupt keeps the file and names it too; a green run deletes it.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -186,6 +186,10 @@ if (args.includes("--dry-run")) {
 // minutes on a Windows machine, and store alone takes four and a quarter, so ten
 // is the two-times margin on the heaviest run a push can carry.
 const DEFAULT_SUITE_TIMEOUT_SECONDS = 600;
+
+// setTimeout's own ceiling, in seconds: past it the timer clamps to a
+// millisecond and a huge budget would stop the suite before it starts.
+const MAX_SUITE_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
 
 // The suite's budget and heartbeat, read before any temp state exists: a budget
 // the gate cannot parse ends the run without leaving a home behind. A budget the
@@ -585,8 +589,11 @@ function closeDump(handle) {
   });
 }
 
+// A stream that failed mid-run leaves a truncated file: a prefix is not the run,
+// so it is not read as one — the count would be a partial sum passed off as the
+// total, and the recap would lose the failure it was meant to show.
 function readDump(handle) {
-  if (!handle?.file) return null;
+  if (!handle?.file || handle.failed) return null;
   try {
     return fs.readFileSync(handle.file, "utf8");
   } catch {
@@ -630,14 +637,19 @@ function totalTests(output) {
 }
 
 // ANS_PUSH_GATE_TIMEOUT is the suite's budget in seconds. A value that is not a
-// positive number is a gate that cannot do its job, so it stops the push with
-// exit 2 instead of running under a budget nobody asked for.
+// positive number, or past the timer's ceiling, is a gate that cannot do its job,
+// so it stops the push with exit 2 instead of running under a budget nobody
+// asked for.
 function readSuiteTimeout() {
   const raw = process.env.ANS_PUSH_GATE_TIMEOUT;
   if (raw === undefined || raw.trim() === "") return DEFAULT_SUITE_TIMEOUT_SECONDS;
   const seconds = Number(raw);
   if (!Number.isFinite(seconds) || seconds <= 0) {
     writeStderr(`[preflight] blocked: ANS_PUSH_GATE_TIMEOUT is not a positive number of seconds: "${raw}"`);
+    process.exit(2);
+  }
+  if (seconds > MAX_SUITE_TIMEOUT_SECONDS) {
+    writeStderr(`[preflight] blocked: ANS_PUSH_GATE_TIMEOUT is larger than the timer can take (max ${MAX_SUITE_TIMEOUT_SECONDS}s): "${raw}"`);
     process.exit(2);
   }
   return seconds;
