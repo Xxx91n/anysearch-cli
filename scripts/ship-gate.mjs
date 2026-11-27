@@ -540,6 +540,10 @@ function stepStaticAssertions() {
     for (const [gid, scope] of Object.entries(evalGolden.scopes)) {
       if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json: scope for " + gid + " must be stub|live|both");
     }
+    // Anchor search covers every entry, not only the live slice: the c1 abstain
+    // anchor lives in the stub lane, so filtering by scope would drop a real
+    // anchor. Scope completeness (every live row has a scope, tombstones have
+    // none) is readGoldenFile's job, not this structural check's.
     const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
       fail("c1: no docs-domain abstain golden entry");
