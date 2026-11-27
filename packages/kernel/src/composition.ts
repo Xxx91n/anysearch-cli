@@ -385,13 +385,17 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
 
 /**
  * The budget to report for one fanout: the wrapper's own value when it is a
- * positive whole number (clamped to the engine's ceiling, so the report never
- * promises more than the engine waits), else the result's copy, else 4s.
+ * positive whole number, else the result's copy under the same rule, else 4s.
+ * Both are clamped to the engine's ceiling, so the report never promises more
+ * than the engine waits.
  */
 export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
   const retrieverMs = eng.retriever?.requestTimeoutMs;
   if (isPositiveWholeMs(retrieverMs)) return Math.min(retrieverMs, MAX_REQUEST_TIMEOUT_MS);
-  return eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  // A hand-built CompositionResult can carry 0/NaN here; report the default
+  // rather than hand the host a budget the engine would have rejected.
+  if (isPositiveWholeMs(eng.requestTimeoutMs)) return Math.min(eng.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
+  return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(

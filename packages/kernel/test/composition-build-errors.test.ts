@@ -184,6 +184,20 @@ try {
     2_147_483_647,
     "包装器报的值超过引擎上限时夹到 2^31-1"
   );
+  // The result's own copy is held to the same rule: a hand-built
+  // CompositionResult must not report a budget the engine would have rejected.
+  for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(
+      reportedDeadlineMs({ requestTimeoutMs: bad, retriever: { search: async () => { throw new Error("not run"); } } }),
+      4000,
+      "结果自己的预算非法时回落 4s（传的是 " + String(bad) + "）"
+    );
+  }
+  assert.equal(
+    reportedDeadlineMs({ requestTimeoutMs: 3_000_000_000, retriever: { search: async () => { throw new Error("not run"); } } }),
+    2_147_483_647,
+    "结果自己的预算超过引擎上限时夹到 2^31-1"
+  );
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the
