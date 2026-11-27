@@ -280,9 +280,9 @@ export async function runSearch(args: string[]): Promise<number> {
         mode,
         // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
         // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
-        requestTimeoutMs: engine.requestTimeoutMs,
-        // 同一个数，`deadlineMs` 给按票面字段读的脚本；评测报告认准上面那个。
-        deadlineMs: reportedDeadlineMs(engine.requestTimeoutMs),
+        requestTimeoutMs: reportedDeadlineMs(engine),
+        // 两个键同一个数：评测报告认准上面那个，`deadlineMs` 是给脚本新加的键。
+        deadlineMs: reportedDeadlineMs(engine),
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.

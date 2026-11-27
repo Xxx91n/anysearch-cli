@@ -358,14 +358,11 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
 
-/**
- * The number a surface reports as `deadlineMs`: the budget the engine ran
- * each fanout with. `CompositionResult.requestTimeoutMs` is optional for
- * hand-built test results, and `JSON.stringify` drops an undefined value, so
- * every export path asks this instead of assuming the field is there.
- */
-export function reportedDeadlineMs(requestTimeoutMs?: number): number {
-  return requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+/** The budget to report for one fanout: the result's copy, the engine's own, then 4s. */
+export function reportedDeadlineMs(
+  eng: { requestTimeoutMs?: number; retriever?: { requestTimeoutMs?: number } },
+): number {
+  return eng.requestTimeoutMs ?? eng.retriever?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(

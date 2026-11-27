@@ -130,6 +130,16 @@ async function main() {
     assert(doc.deadlineMs === 4000, "5: the text half keeps the key too");
   }
 
+  // 6. The CompositionResult omitted the budget, but the engine it holds ran a
+  // different one. Report the engine's number, never the default.
+  {
+    const whole = envelope({});
+    const eng = makeEngine([whole]);
+    (eng as any).retriever.requestTimeoutMs = 8000;
+    const res = await captureHandlers(eng).research_web({ question: "q", depth: "brief" });
+    assert(res?.structuredContent?.deadlineMs === 8000, "6: the engine's own budget wins over the default");
+  }
+
   console.log("--- mcp partial/deadline tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

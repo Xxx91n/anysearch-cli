@@ -227,11 +227,11 @@ export class RetroaererdEngine {
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
   // no caller could pass; it lives here now. `requestTimeoutMs` is the caller's
-  // per-request cap: tests shrink it, eval raises it, and `ans search --deadline`
-  // passes the terminal's choice; absent is 4s.
+  // per-fanout cap: tests shrink it, eval raises it, and `ans search --deadline`
+  // passes the terminal's choice; absent is 4s. Readonly and public because a
+  // hand-built CompositionResult may omit its copy, and surfaces then read this
+  // one instead of guessing the default.
   private gate: SufficiencyGate;
-  // Public and readonly so a directly built engine can report the budget it
-  // runs with; `createEngine` also copies it into CompositionResult.
   readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.

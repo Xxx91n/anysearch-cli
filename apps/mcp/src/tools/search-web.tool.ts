@@ -110,7 +110,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               providersCancelled: cancelledProviders,
               partial,
               // The budget the engine gave this fanout.
-              deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
+              deadlineMs: reportedDeadlineMs(eng),
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -167,7 +167,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // Both always present so a host never confuses "complete" with
             // "field missing".
             partial,
-            deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
+            deadlineMs: reportedDeadlineMs(eng),
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

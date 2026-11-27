@@ -187,7 +187,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
               partial,
-              deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
+              deadlineMs: reportedDeadlineMs(eng),
               // Same record as structuredContent: some hosts read only this text half.
               credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -221,7 +221,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // Both always present. deadlineMs is the per-round budget, so a
             // multi-round call can wait up to rounds times that long.
             partial,
-            deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
+            deadlineMs: reportedDeadlineMs(eng),
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };
