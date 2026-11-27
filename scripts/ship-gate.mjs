@@ -535,6 +535,7 @@ function stepStaticAssertions() {
     // packages/store/src/eval/docs-golden.ts; this gate runs as plain node.
     if (evalGolden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
     if (!Array.isArray(evalGolden.entries) || evalGolden.entries.length === 0) fail("eval-golden.json: entries must be a non-empty array");
+    if (!evalGolden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json: entries must contain objects");
     if (!evalGolden.scopes || typeof evalGolden.scopes !== "object" || Array.isArray(evalGolden.scopes) || Object.keys(evalGolden.scopes).length === 0) fail("eval-golden.json: scopes must be a non-empty object");
     const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
