@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
 import { outputLabel, reportRunOutput } from "../preflight-output.mjs";
+import { CLOSE_CAP_MS, DUMP_FLUSH_MS, FLUSH_MS } from "../preflight-timings.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
@@ -161,12 +162,11 @@ test(
         // The budget and the cleanup's clock both come from this one number.
         const budgetMs = 2000;
         const timeoutLine = `timed out after ${budgetMs / 1000}s`;
-        // What the gate's answer may cost: its budget, the 10s close cap, the 2s
-        // dump flush, the 1s output flush, and 5s of slack for node and pnpm to
-        // start. Every part is named so the sum explains itself.
-        const answerCapMs = budgetMs + 10000 + 2000 + 1000 + 5000;
-        // The test's own cap sits above it: a slow answer fails on `waited`, and
-        // only a gate that never answers fails as "never exited".
+        // Budget + the gate's close cap + dump flush + output flush, and 5s of
+        // slack for node and pnpm to start.
+        const answerCapMs = budgetMs + CLOSE_CAP_MS + DUMP_FLUSH_MS + FLUSH_MS + 5000;
+        // 5s above it, so a slow answer fails on `waited` and only no answer at
+        // all fails as "never exited".
         const exitCapMs = answerCapMs + 5000;
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
@@ -1044,6 +1044,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPa
     "preflight-command.mjs",
     "preflight-output.mjs",
     "preflight-stderr.mjs",
+    "preflight-timings.mjs",
   ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }

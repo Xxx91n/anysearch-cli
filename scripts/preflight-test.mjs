@@ -55,6 +55,7 @@ import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
 import { reportRunOutput } from "./preflight-output.mjs";
+import { CLOSE_CAP_MS, DUMP_FLUSH_MS } from "./preflight-timings.mjs";
 import { broken, planPreflight, strictPushGate } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
@@ -299,7 +300,7 @@ const deadline = setTimeout(() => {
     timedOut = true;
     stopChild(child, "SIGTERM");
   }
-  closeCap = setTimeout(() => settleClose?.(child.exitCode), 10000);
+  closeCap = setTimeout(() => settleClose?.(child.exitCode), CLOSE_CAP_MS);
 }, suiteTimeoutSeconds * 1000);
 deadline.unref();
 
@@ -609,7 +610,7 @@ function closeDump(handle) {
       if (settled) return;
       handle.failed = true;
       done();
-    }, 2000);
+    }, DUMP_FLUSH_MS);
     cap.unref();
     handle.stream.once("error", () => {
       handle.failed = true;
