@@ -190,7 +190,7 @@ test("a root file change next to a package change runs both", () => {
 test("docs next to a root file run the readers, not the suite", () => {
   const plan = planPreflight(root, ["eval-golden.json", "README.md"]);
   assert.equal(plan.mode, "readers");
-  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  assert.deepEqual(plan.packages, EXPECTED_ROOT_READERS["eval-golden.json"]);
 });
 
 test("a root file whose reader is gone stops the gate, never turns into a skip", () => {
