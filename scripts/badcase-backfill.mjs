@@ -19,6 +19,19 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BADCASES = join(ROOT, "eval-badcases.json");
 const GOLDEN = join(ROOT, "eval-golden.json");
 const COVERAGE = join(ROOT, "eval-looks.coverage.json");
+const DOCS_TOML = join(ROOT, "domains", "docs.toml");
+// Keep this vocabulary in sync with DOCS_GOLDEN_DIMENSION_VALUES in
+// packages/store/src/eval/docs-golden.ts; this script runs as plain node.
+const DIMENSION_VALUES = {
+  intent: ["factoid", "howto", "troubleshoot", "comparison", "reference"],
+  "source-tier": ["spec", "reference", "settings"],
+  freshness: ["stable", "active", "supersede-event"],
+  lang: ["zh", "en"],
+  attribution: ["claim", "domain"],
+  hops: ["single", "multi"],
+  negative: ["abstain"],
+  adversarial: ["injection"],
+};
 
 function fail(msg) {
   console.error("badcase-backfill: " + msg);
@@ -76,6 +89,13 @@ if (into) {
   for (const tag of ["intent:" + bc.intent, "lang:" + bc.questionLang]) {
     if (!tags.includes(tag)) fail(id + " dimensions lack '" + tag + "' — --new would write a row the validator rejects");
   }
+  for (const tag of tags) {
+    const sep = tag.indexOf(":");
+    const dim = tag.slice(0, sep);
+    const val = tag.slice(sep + 1);
+    const allowed = DIMENSION_VALUES[dim];
+    if (!allowed || !allowed.includes(val)) fail(id + " dimension tag outside the eight-dimension vocabulary: " + tag);
+  }
   const provType = bc.provenance?.type ?? "internal-dogfood";
   if (provType !== "internal-dogfood") fail("--new only writes internal-dogfood provenance; " + id + " is " + provType);
   if (bc.stability_class !== undefined && !["controlled", "frozen-spec", "external"].includes(bc.stability_class)) {
@@ -105,8 +125,34 @@ if (into) {
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
   }
-  if ((expected.mustHitUrls?.length ?? 0) > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
+  const mustHitUrls = expected.mustHitUrls ?? [];
+  const mustHitHosts = expected.mustHitHosts ?? [];
+  if (!Array.isArray(mustHitUrls) || !Array.isArray(mustHitHosts)) fail(id + " mustHitUrls/mustHitHosts must be arrays");
+  if (mustHitUrls.length > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
     fail(next + " carries mustHitUrls but no controlled|frozen-spec stability_class — ship-gate would reject the row; anchor the URL or fix the badcase first");
+  }
+  const docsToml = readFileSync(DOCS_TOML, "utf8");
+  const allowMatch = docsToml.match(/^urlAllowlist\s*=\s*\[([^\]]*)\]/m);
+  if (!allowMatch) fail("cannot read urlAllowlist from domains/docs.toml");
+  const allow = new Set([...allowMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  for (const host of mustHitHosts) {
+    if (!allow.has(host)) fail(id + " mustHitHost " + host + " outside domains/docs.toml urlAllowlist");
+  }
+  for (const url of mustHitUrls) {
+    let host;
+    try { host = new URL(url).hostname; } catch { fail(id + " mustHitUrl unparseable: " + url); }
+    if (!allow.has(host)) fail(id + " mustHitUrl host " + host + " outside domains/docs.toml urlAllowlist");
+  }
+  const mustHitPaths = expected.mustHitPaths ?? [];
+  if (!Array.isArray(mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
+  for (const pm of mustHitPaths) {
+    if (!pm || typeof pm.path !== "string" || !pm.path.startsWith("/")) fail(id + " mustHitPaths pattern must start with /");
+    if (!Array.isArray(pm.tolerate) || pm.tolerate.some((t) => !["locale", "version", "dated"].includes(t))) {
+      fail(id + " mustHitPaths tolerate outside locale|version|dated: " + pm.path);
+    }
+  }
+  if (mustHitPaths.length > 0 && (expected.mustNotHitPaths?.length ?? 0) === 0) {
+    fail(id + " mustHitPaths requires mustNotHitPaths negative pins");
   }
   golden.entries.push(entry);
   // answer+mustHit* rows must be live-capable; a stub lane without a scenario

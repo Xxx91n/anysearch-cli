@@ -339,7 +339,10 @@ for (const b of badcases) {
     assert(target!.question.trim() === b.question.trim(), b.id + " promoted question matches " + b.promotedTo + " verbatim");
   }
   if (b.status === "open") {
-    assert(!golden.entries.some((e) => e.provenance.ref === "eval-badcases.json#" + b.id), b.id + " open badcase must not already be backfilled");
+    assert(
+      !golden.entries.some((e) => e.provenance.ref === "eval-badcases.json" && typeof e.notes === "string" && e.notes.includes("from badcase " + b.id)),
+      b.id + " open badcase must not already be backfilled"
+    );
   }
 }
 assert(badcases.length >= 1, "at least one real badcase is captured (the loop is seeded, not synthetic)");
