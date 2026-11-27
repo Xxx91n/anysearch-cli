@@ -81,6 +81,7 @@ const golden = readJson(GOLDEN, "eval-golden.json");
 // packages/store/src/eval/docs-golden.ts; this script runs as plain node.
 if (!golden || golden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
 if (!Array.isArray(golden.entries) || golden.entries.length === 0) fail("eval-golden.json has no entries");
+if (!golden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json entries must contain objects");
 if (!golden.scopes || typeof golden.scopes !== "object" || Array.isArray(golden.scopes)) fail("eval-golden.json has no scopes object");
 if (Object.keys(golden.scopes).length === 0) fail("eval-golden.json scopes must not be empty");
 for (const [gid, scope] of Object.entries(golden.scopes)) {
