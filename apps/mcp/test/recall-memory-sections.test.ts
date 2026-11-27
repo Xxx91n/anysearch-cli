@@ -112,7 +112,7 @@ test("the section list is cut at 20 from the top, and sectionsTotal keeps the co
     // snippet window, so the term it alone contains can only be found through
     // the body index — not through the snippet FTS row.
     const body = Array.from({ length: 21 }, (_, i) =>
-      "## 第" + (i + 1) + "节\n\n" + "这一段是第" + (i + 1) + "节的说明。" + "补充材料".repeat(60) + (i === 20 ? " zzlast" : ""),
+      "## 第" + (i + 1) + "节\n\n" + (i === 20 ? "zzlast " : "") + "这一段是第" + (i + 1) + "节的说明。" + "补充材料".repeat(60),
     ).join("\n\n");
     await store.savePage(session.id, { url: "https://example.com/long", title: "长页", content: body, source: "exa" });
     const pageRowId = (await store.dbQuery<{ id: number }>(
