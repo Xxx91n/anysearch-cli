@@ -298,8 +298,9 @@ Rules behind the table:
   duration, and its state already rides `providersCancelled` /
   `providersFailed`; absent is not the same as `0`. A successful result always
   carries the field (an empty object when no arm answered) in both the content
-  JSON and `structuredContent`; an error result carries no `structuredContent`
-  at all, exactly as before. `research_web` reports its last completed round's
+  JSON and `structuredContent`; an error result does not carry it (a provider
+  failure has no `structuredContent`, and the budget / upgrade / domain stops
+  carry their own record instead). `research_web` reports its last completed round's
   table, never a union across rounds — the same window its `providersQueried` /
   `providersCancelled` describe, while `providersFailed` stays the separate
   union across rounds.

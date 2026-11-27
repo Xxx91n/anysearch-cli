@@ -57,8 +57,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
-        // Same round the arm lists describe: a leg answered in round 1 and cut
-        // in round 2 has only its round-2 state here.
+        // Same round the arm lists describe: an arm that answered in round 1
+        // and was cut in round 2 has only its round-2 state here.
         let lastRoundProviderElapsedMs: Record<string, number> = {};
         let lastEnvelope: any = null;
         let rounds = 0;

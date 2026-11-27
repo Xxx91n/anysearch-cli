@@ -1,4 +1,4 @@
-## Unreleased — #653: 记下每条腿花了多久
+## Unreleased — #653: 记下每条臂花了多久
 
 一句话说清：**引擎在每次检索的 metadata 里多写一张 `providerElapsedMs` 表：答完的臂各有自己的毫秒数，键是服务商 id；被掐断、失败的臂没有键——它们没有真实耗时，那件事已经由 `providersCancelled` / `providersFailed` 说了。`ans search --json` 和 MCP 两个搜索工具的 `structuredContent` 原样透出，评测不用直调服务商也能画到达分布。**
 
