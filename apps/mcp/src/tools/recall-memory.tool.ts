@@ -9,8 +9,18 @@ import { observeTool } from "./observation.js";
 import { withMcpTask } from "../mcp-task.js";
 import { toolError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
+import type { MemoryExpandErrorCode, MemoryExpandRequest } from "@anysearch-cli/store";
 
 const MAX_SECTIONS_PER_HIT = 20;
+
+/** What the model should do about an expansion it cannot complete. */
+const EXPAND_ERROR_HINT: Record<MemoryExpandErrorCode, string> = {
+  knowledge_row: "a negative rowid names a long-term knowledge row and has no page body; expand only a positive material rowid from a recall hit",
+  offset_out_of_range: "offset is outside this page's body; use an offset below totalChars",
+  no_content: "this row has only a snippet and no page body; search or fetch the page first",
+  section_not_found: "one of the sectionIds is not a section of this page; use the section list on the recall hit",
+  not_found: "no material row has this rowid",
+};
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -23,9 +33,64 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       // #304: every MCP tool call is one task. This tool bills no model call,
       // but the task id in its closeout is what lets the hook's post-work
       // (index writes) say which request caused it (#307).
-      return withMcpTask(eng, "recall_memory", () => observeTool(eng, "recall_memory", ctx, async () => {
+      return withMcpTask(eng, "recall_memory", () => observeTool(eng, "recall_memory", ctx, async (span) => {
       try {
-        const { query, limit, projectPaths } = args as { query: string; limit?: number; projectPaths?: string[] };
+        const { query, limit, projectPaths, expand } = args as {
+          query: string; limit?: number; projectPaths?: string[]; expand?: MemoryExpandRequest;
+        };
+        if (expand) {
+          const read = eng.store.expandMemory;
+          if (typeof read !== "function") {
+            return toolError("recall_memory", "this store cannot read page sections");
+          }
+          const result = read.call(eng.store, expand);
+          span.addEvent("memory.expand", {
+            "memory.rowid": expand.rowid,
+            "memory.sectionIds": Array.isArray(expand.sectionId)
+              ? expand.sectionId.join(",")
+              : expand.sectionId === undefined ? "" : String(expand.sectionId),
+            "memory.role": result.ok ? result.role : "",
+            "memory.offset": expand.offset ?? 0,
+            "memory.returnedChars": result.ok ? result.returnedChars : 0,
+            "memory.hasMore": result.ok ? result.hasMore : false,
+            "memory.error": result.ok ? "" : result.error,
+          });
+          if (!result.ok) {
+            // A correction the model can act on, not a protocol fault (#204).
+            return {
+              isError: true as const,
+              content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                  rowid: result.rowid,
+                  error: result.error,
+                  ...(result.totalChars === undefined ? {} : { totalChars: result.totalChars }),
+                  ...(result.sectionIds === undefined ? {} : { sectionIds: result.sectionIds }),
+                  message: EXPAND_ERROR_HINT[result.error] ?? "the section could not be read",
+                }, null, 2),
+              }],
+            };
+          }
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                rowid: result.rowid,
+                role: result.role,
+                url: result.url,
+                fetchedAt: result.fetchedAt,
+                trust: "untrusted_web",
+                totalChars: result.totalChars,
+                offset: result.offset,
+                returnedChars: result.returnedChars,
+                hasMore: result.hasMore,
+                nextOffset: result.nextOffset,
+                truncatedBy: result.truncatedBy,
+                text: result.text,
+              }, null, 2),
+            }],
+          };
+        }
         const lim = limit ?? 5;
         // FTS5 memory recall with time decay.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");

@@ -63,6 +63,8 @@ import {
   type PendingChunkVector,
   type MemorySection,
 } from "./retrieval-chunks.js";
+import { expandMemoryRow, type MemoryExpandRequest, type MemoryExpandResult } from "./retrieval-expand.js";
+import { sqliteTimestampToIso } from "./sqlite-time.js";
 import { blockSearchText } from "./chunk-text.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
@@ -196,18 +198,6 @@ interface LiveResultRow {
 // provider snippets are capped at 4000 chars; a fetched page copies the same
 // window from its body, so keyword recall still sees the page's opening.
 const PAGE_SNIPPET_CHARS = 4000;
-
-/**
- * SQLite stores `datetime('now')` as "YYYY-MM-DD HH:MM:SS" (UTC). The recall
- * JSON speaks ISO-8601; parse the SQLite shape and leave unparseable values
- * alone, so a pre-formatted value is never mangled.
- */
-function sqliteTimestampToIso(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const ms = parseSqliteUtc(value);
-  if (!Number.isFinite(ms)) return value;
-  return new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
-}
 
 // equal-conflict review channel row (flag, don't silently pick).
 export interface QuarantinedMemory {
@@ -423,6 +413,10 @@ export interface SessionStore {
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
+  // #611: read one material row's body by section (or page offset), for
+  // recall_memory's expand. Optional like the other read seams so hand-built
+  // stores stay source-compatible; the tool reports the gap instead of guessing.
+  expandMemory?(req: MemoryExpandRequest): MemoryExpandResult;
   // (Q3=A): write-path adjudication with keyMemories carrying evidence score.
   // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
   adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
@@ -1547,6 +1541,12 @@ export class SqliteSessionStore implements SessionStore {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
     return fusedHits;
+  }
+
+  // #611: read one page body back by rowid + section, for recall_memory's
+  // expand. Pure local read: no provider call, no budget row.
+  expandMemory(req: MemoryExpandRequest): MemoryExpandResult {
+    return expandMemoryRow(this.db, req);
   }
 
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
