@@ -94,6 +94,22 @@ function commandLines(text) {
 }
 
 /**
+ * What a hook's exec line runs: the gate script, repo-relative with forward
+ * slashes, and the arguments it gets. Null when the line is not a gate command
+ * status can follow, which is the only way the three readers below disagree.
+ *
+ * Design: one parse feeds the `runs:` line, the mode's `--full` test and the
+ * script status reports on — a second regex would be a second answer waiting to
+ * drift.
+ */
+function gateCommandOf(command) {
+  const match = (command ?? "").match(GATE_COMMAND);
+  if (!match) return null;
+  const args = (match[2] ?? "").trim().split(/\s+/).filter(Boolean);
+  return { script: match[1].replace(/\\/g, "/"), args };
+}
+
+/**
  * What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed
  * for ours. Anyone else's is quoted as written — an exec line, or its first
  * command — because naming it is the point even when the shape is unfamiliar.
@@ -101,17 +117,9 @@ function commandLines(text) {
 function hookTarget(text) {
   const command = hookCommand(text);
   if (!command) return commandLines(text)[0] ?? null;
-  const match = command.match(GATE_COMMAND);
-  if (!match) return command;
-  const script = match[1].replace(/\\/g, "/");
-  const flags = (match[2] ?? "").trim();
-  return flags ? `${script} ${flags}` : script;
-}
-
-/** The gate script a hook's exec line runs, or null when that line is not a gate command. */
-function gateScript(command) {
-  const match = (command ?? "").match(GATE_COMMAND);
-  return match ? match[1] : null;
+  const gate = gateCommandOf(command);
+  if (!gate) return command;
+  return [gate.script, ...gate.args].join(" ");
 }
 
 /** A file that runs nothing (a shebang alone included) is nobody's hook. */
@@ -126,9 +134,10 @@ function isOurs(text) {
   // checked here: it is part of the code, so a changed one reads as out of date.
   const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
   if (!OWN_BANNERS.some((prefix) => banner?.startsWith(prefix))) return false;
-  // A note that starts like our banner still has to run the gate to be ours, in a
-  // shape status can follow: the same match names the script it reports on.
-  return gateScript(hookCommand(text)) !== null;
+  // A note that starts like our banner still has to mention the gate to be ours.
+  // Loose on purpose: an exec line that gained something status cannot parse is
+  // still our hook, and install has to be able to put it back.
+  return GATE_SCRIPT.test(hookCommand(text) ?? "");
 }
 
 /**
@@ -208,13 +217,16 @@ function prePushStatus() {
     root: place.root,
     hookPath,
     command,
-    script: gateScript(command),
+    gate: gateCommandOf(command),
     target: hookTarget(installed.text),
   };
   if (isEmptyHook(installed.text)) return { state: "empty", ...hook };
   if (!isOurs(installed.text)) return { state: "foreign", ...hook };
   if (!runsCurrentScript(installed.text, place.source)) return { state: "stale", ...hook };
   if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", ...hook };
+  // Ours and current, yet the exec line is not a gate command: only a hook source
+  // written this way gets here, and status has no mode to report for it.
+  if (!hook.gate) return { state: "unfollowable", ...hook };
   return { state: "ok", ...hook };
 }
 
@@ -364,8 +376,9 @@ function modeReport(plan) {
  * push can carry: `git push origin other-branch` sends commits HEAD does not have,
  * and no local read can see them.
  */
-function pushPreview(root, command) {
-  if (strictPushGate() || /(^|\s)--full(\s|$)/.test(command)) return { mode: "full" };
+function pushPreview(root, gate) {
+  // The same argument list the gate itself reads with `args.includes("--full")`.
+  if (strictPushGate() || gate.args.includes("--full")) return { mode: "full" };
   const files = localFiles(root);
   if (files === null) return { mode: "unknown" };
   return planPreflight(root, files);
@@ -466,18 +479,23 @@ function reportStatus(result) {
     console.error(`[hooks] cannot tell: ${result.reason}`);
     return 2;
   }
+  if (result.state === "unfollowable") {
+    console.error(`[hooks] cannot follow the hook's exec line: ${result.command || result.hookPath}`);
+    console.error(`[hooks] a push still runs it; ${installHint(false)} puts the canonical line back`);
+    return 2;
+  }
   if (result.state === "ok") {
     console.log(`[hooks] pre-push installed: ${result.hookPath}`);
     if (result.target) console.log(`[hooks] runs: ${result.target}`);
 
-    const gate = gateScriptCheck(result.root, result.script);
-    if (gate.problem) {
-      console.error(`[hooks] blocked: ${gate.problem}: ${gate.detail ?? gate.file}`);
+    const script = gateScriptCheck(result.root, result.gate.script);
+    if (script.problem) {
+      console.error(`[hooks] blocked: ${script.problem}: ${script.detail ?? script.file}`);
       console.error("[hooks] fix: restore it in this checkout — a push aborts inside the hook without it");
       return 2;
     }
 
-    const preview = pushPreview(result.root, result.command);
+    const preview = pushPreview(result.root, result.gate);
     if (preview.mode === "broken") {
       // Design: the hook is fine and the repository is not, so the words and the
       // exit code are the gate's own — nothing was looked at, which is 2, never

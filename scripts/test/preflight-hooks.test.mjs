@@ -540,6 +540,50 @@ test("a docs-only change reads as nothing to run, not as a test run", () => {
   });
 });
 
+// A hook can carry our banner and still run the gate in a line status cannot
+// parse. It is ours: install has to put it back, not refuse it as someone else's.
+test("our hook with an exec line status cannot parse is still ours, and install fixes it", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    // The `;` sits right after the script name, where the gate command's own
+    // shape ends: status cannot parse it, but the hook is still ours.
+    writeFileSync(
+      hookPath(clone),
+      source.replace(/^(exec .*)$/m, 'exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"; echo done'),
+    );
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stderr);
+    assert.match(status.stderr, /out of date/);
+
+    const install = box.run(clone, ["install"]);
+    assert.equal(install.status, 0, `install refused our own hook: ${install.stderr}`);
+    assert.equal(readFileSync(hookPath(clone), "utf8"), source);
+  });
+});
+
+// The same shape as the source is the one way to reach it: a hook line status
+// cannot follow while the hook is already current.
+test("a canonical-looking hook whose exec line status cannot follow says so instead of guessing", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    const local = withScriptsIn(clone);
+    const hookSource = join(clone, "scripts", "hooks", "pre-push-user");
+    writeFileSync(
+      hookSource,
+      readFileSync(hookSource, "utf8").replace(/^(exec .*)$/m, 'exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"; echo done'),
+    );
+
+    const install = box.run(clone, ["install"], local);
+    assert.equal(install.status, 0, install.stderr);
+
+    const status = box.run(clone, ["status"], local);
+    assert.equal(status.status, 2, status.stdout);
+    assert.match(status.stderr, /cannot follow the hook's exec line/);
+    assert.match(status.stderr, /hooks:install/);
+  });
+});
+
 // The repo's own hook source is where a lasting "always run everything" edit
 // lands: change it, install, and the installed hook still counts as current.
 test("a hook source that runs the whole suite reads as the full mode", () => {
