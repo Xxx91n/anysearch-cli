@@ -8,7 +8,7 @@ import {
   type GoldenScope,
 } from "./docs-golden";
 
-// The scope vocabulary and its type travel with the reader, so kernel and any
+// The scope vocabulary and its type are re-exported here, so kernel and any
 // other consumer of the package root can type a scopes map without reaching
 // into ./docs-golden.
 export { GOLDEN_SCOPE_VALUES };
@@ -24,8 +24,8 @@ export function isStubScope(scope: unknown): scope is GoldenScope {
   return scope === "stub" || scope === "both";
 }
 
-// scopes is the entry-id -> stub|live|both sidecar map; it travels with the
-// corpus because the executors read both in one pass.
+// GoldenFile is DocsGoldenSet plus the entry-id -> stub|live|both sidecar map;
+// the executors read scopes and entries from the same document in one pass.
 export type GoldenFile = DocsGoldenSet & { scopes: Record<string, GoldenScope> };
 
 export function readGoldenFile(file: string): GoldenFile {

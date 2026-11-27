@@ -11,6 +11,7 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { GOLDEN_FILE } from "./golden-file";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
@@ -67,7 +68,7 @@ export function readLooksLedger(file: string): LooksLedger {
   // silent drop reads as data loss. The input object is left untouched.
   const { golden: staleGolden, ...j } = parsedRoot;
   if (staleGolden !== undefined) {
-    console.error("[eval] dropping a stale golden block from " + file + " — the corpus lives in eval-golden.json");
+    console.error("[eval] dropping a stale golden block from " + file + " — the corpus lives in " + GOLDEN_FILE);
   }
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
