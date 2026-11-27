@@ -1256,7 +1256,7 @@ export async function consolidateMemoryRun(
       plannedContent: pending.planned.content,
       candidate: pending.candidate,
       ...(pending.quotes ? { quotes: pending.quotes } : {}),
-      evidence: pending.evidence,
+      evidence: reportEvidence(pending.evidence),
       currentTargetId: o.current?.id ?? null,
       currentContent: o.current?.content ?? "(no live version left on this knowledge line)",
       currentEvidence: o.current ? materialsOf(o.current) : [],
@@ -2008,7 +2008,7 @@ export async function consolidateMemoryRun(
         oldContent: row.content,
         candidate: pending.candidate,
         ...(pending.quotes ? { quotes: pending.quotes } : {}),
-        evidence: pending.evidence,
+        evidence: reportEvidence(pending.evidence),
         stage,
         reason,
       });
@@ -2162,7 +2162,7 @@ export async function consolidateMemoryRun(
         report.incompleteDetails.push({
           oldId: head.id, oldContent: head.content, candidate: pending.candidate,
           ...(pending.quotes ? { quotes: pending.quotes } : {}),
-          evidence: pending.evidence,
+          evidence: reportEvidence(pending.evidence),
           stage: mergeFailed ? "merge-failed" : "merge-empty",
           ...(mergeFailed ? { reason: mergeError instanceof Error ? mergeError.message : String(mergeError) } : {}),
         });
@@ -2187,7 +2187,7 @@ export async function consolidateMemoryRun(
         report.incompleteDetails.push({
           oldId: head.id, oldContent: head.content, candidate: pending.candidate,
           ...(pending.quotes ? { quotes: pending.quotes } : {}),
-          evidence: pending.evidence,
+          evidence: reportEvidence(pending.evidence),
           stage: "final-check",
           reason: "no final-content checker was supplied, so fact retention could not be verified",
         });
@@ -2224,7 +2224,7 @@ export async function consolidateMemoryRun(
         report.incompleteDetails.push({
           oldId: head.id, oldContent: head.content, candidate: pending.candidate,
           ...(pending.quotes ? { quotes: pending.quotes } : {}),
-          evidence: pending.evidence,
+          evidence: reportEvidence(pending.evidence),
           stage: "final-check",
           ...(finalVerdict.reason ? { reason: finalVerdict.reason } : {}),
         });
@@ -2246,7 +2246,7 @@ export async function consolidateMemoryRun(
         report.verifiedCorrections.push({
           oldId: head.id, oldContent: head.content, candidate: pending.candidate,
           ...(pending.quotes ? { quotes: pending.quotes } : {}),
-          evidence: pending.evidence,
+          evidence: reportEvidence(pending.evidence),
           sameFact: verdict.sameFact, reliable: verdict.reliable,
           ...(verdict.relation ? { relation: verdict.relation } : {}),
           ...(verdict.reason ? { reason: verdict.reason } : {}),
