@@ -68,7 +68,7 @@ export const PROVIDER_FACTS = {
     // exa-js 的 includeDomains 是一等字段，上游按它过滤。
     domainFilterSupported: true,
     verticalDomainSupported: false,
-    // 读页和搜索一样按 5 个 URL 分批；端点真实批量上限没测过，不替它报上限。
+    // 工具一次最多给 5 个句柄，读页适配器按同一个数切批；端点真实批量上限没测过。
     fetchMaxUrlsPerCall: 5,
     freeProbe: {
       // exa-js 构造函数默认的 baseURL。

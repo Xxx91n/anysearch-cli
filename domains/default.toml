@@ -15,6 +15,6 @@ enabled = ["tavily", "exa", "anysearch"]
 adapter = "none"
 
 [hooks]
-# 宿主接了读页 provider、又有能写正文的 store，内部 chat 才注册 fetch；
+# 宿主接了读页 provider，又有能写正文、记票、查票的 store，内部 chat 才注册 fetch；
 # 域策略要放行，宿主也不能已有同名 fetch 工具；声明 skills.toolRequires 时把 fetch 列进去。
 toolWhitelist = ["search", "fetch"]

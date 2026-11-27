@@ -113,8 +113,9 @@ export function classifyProviderBuildError(error: unknown): "credential" | "unex
 }
 
 // Builds one provider arm; a construction failure is surfaced on stderr —
-// stdout stays protocol-pure for MCP — and recorded in providerBuildErrors
-// under errorKey. Unknown ids are skipped, including Object.prototype names.
+// stdout stays protocol-pure for MCP — and, when a map is passed, recorded in
+// providerBuildErrors by provider id. Page-read arms pass no map and only log
+// to stderr. Unknown ids are skipped, including Object.prototype names.
 function buildArm<T>(
   id: string,
   constructors: Record<string, (creds: CredentialSource) => T>,

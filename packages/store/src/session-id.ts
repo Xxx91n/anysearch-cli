@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { ansSessionPath } from "./ans-paths.js";
+import { writeStderr } from "./stderr.js";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 
@@ -45,29 +46,6 @@ function generateSessionId(): string {
 // can receive different session IDs. Keyed by anchor path so different
 // ANS_SESSION_ID / HOME combinations don't collide.
 const tempIdByAnchor = new Map<string, string>();
-
-// Best-effort stderr write: a closed/broken stderr (e.g. the MCP parent closed
-// the pipe) must not crash the process. Both synchronous write throws and
-// asynchronous stream errors are absorbed. Mirrors the pattern in
-// packages/kernel/src/composition.ts writeProviderDiagnostic.
-// CodeRabbit #129 review: process.stderr.write can emit an asynchronous 'error'
-// event that try/catch cannot capture — a broken pipe would terminate the
-// process instead of continuing fail-open.
-const stderrErrorListeners = new WeakSet<NodeJS.WriteStream>();
-
-export function writeStderr(message: string): void {
-  const stderr = process.stderr;
-  if (!stderrErrorListeners.has(stderr)) {
-    stderr.on("error", () => {});
-    stderrErrorListeners.add(stderr);
-  }
-  try {
-    stderr.write(message);
-  } catch {
-    // Synchronous write throws (e.g. stream destroyed) — already absorbed
-    // by the persistent error listener above.
-  }
-}
 
 // readSessionId:
 // 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.

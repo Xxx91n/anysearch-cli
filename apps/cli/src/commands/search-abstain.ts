@@ -66,7 +66,6 @@ export function formatFailedArmLines(input: {
 // contract). One line for the whole absence list, "; "-joined per arm;
 // undefined when every enabled arm built, so the healthy path is zero-noise.
 export function formatProviderAbsentLine(buildErrors: Record<string, string>): string | undefined {
-  // Page-read arms use `id:fetch`; search's absence line names only search arms.
   const entries = Object.entries(buildErrors);
   if (entries.length === 0) return undefined;
   return "Providers absent (build failure): " + entries.map(([id, category]) => id + " — " + category).join("; ");

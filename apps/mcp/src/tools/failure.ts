@@ -39,7 +39,6 @@ export function providerFailureMetadata(
   providerErrorClasses?: Record<string, ProviderErrorClass>,
   providerErrorRetryAfterSeconds?: Record<string, number>,
 ): ProviderFailureMetadata | undefined {
-  // Page-read arms use `id:fetch`; this metadata describes the search fanout.
   const buildErrors = eng.providerBuildErrors ?? {};
   if (providersFailed.length === 0 && Object.keys(buildErrors).length === 0) return undefined;
   const hints = providerErrorHints(providersFailed, providerErrorClasses, providerErrorRetryAfterSeconds);

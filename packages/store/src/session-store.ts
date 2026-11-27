@@ -18,7 +18,7 @@ import {
   withInitBusyRetry,
 } from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
-import { writeStderr } from "./session-id.js";
+import { writeStderr } from "./stderr.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -1578,11 +1578,12 @@ export class SqliteSessionStore implements SessionStore {
     const valid = cleaned.filter((v) => {
       if (kind === "search") return /^[1-9]\d*$/.test(v);
       // User values are scheme-less identities; `http:<identity>` marks the
-      // scheme the user actually pasted. A raw URL would never match a lookup.
+      // scheme the user actually pasted. Non-http(s) schemes and values without
+      // a resolvable dotted host are dropped.
       const identity = v.startsWith("http:") ? v.slice(5) : v;
-      if (identity.includes("://") || identity.startsWith("m:")) return false;
+      if (identity.startsWith("m:")) return false;
       const parsed = parseWebUrl(identity);
-      return parsed !== null && parsed.hostname.includes(".") && normalizeUrlIdentity(identity) === identity;
+      return parsed !== null && parsed.hostname.includes(".");
     });
     if (valid.length !== cleaned.length) {
       writeStderr(

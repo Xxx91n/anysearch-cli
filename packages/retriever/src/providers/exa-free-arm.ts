@@ -1,10 +1,6 @@
 // Exa free-quota transport: one stateless tools/call to mcp.exa.ai.
 // Search and page-read adapters share this; each parses the text itself.
-//
-// Not merged with anysearch.ts' MCP client: that one carries a handshake,
-// session id and 404 reconnect; this one is stateless and only compares ids.
-// probes.ts parses a different wire shape. Keep the duplication until a third
-// caller needs the same session handling.
+
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { PROVIDER_FACTS } from "./provider-facts";

@@ -169,6 +169,16 @@ async function main() {
       "parse: a non-requested document does not leak into its neighbour");
   }
 
+  // ---- a free-arm single doc does not hide the requested URL's error --------
+  {
+    const reading = parseExaFetchReply([
+      "# Other", "URL: https://example.com/other", "other body",
+      "Error fetching https://example.com/a: CRAWL_NOT_FOUND",
+    ].join("\n"), ["https://example.com/a"]);
+    assert(reading.pages.length === 0 && reading.failures[0]!.message === "CRAWL_NOT_FOUND",
+      "free: a same-host other document does not become the requested page when its error line exists");
+  }
+
   // ---- a free-arm single document on another host is not the requested page --
   {
     const reading = parseExaFetchReply([

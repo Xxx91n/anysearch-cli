@@ -73,6 +73,10 @@ assert(fetchCredentialHit("https://example.com/?api-key=abc", "example.com/?api-
   "api-key is rejected in either spelling");
 assert(fetchCredentialHit("https://example.com/?access_token=abc", "example.com/?access_token=abc"),
   "access_token is rejected");
+assert(fetchCredentialHit("https://example.com/?auth-token=abc", "example.com/?auth-token=abc"),
+  "auth-token is rejected after name normalization");
+assert(fetchCredentialHit("https://example.com/?PHPSESSID=abc", "example.com/?PHPSESSID=abc"),
+  "PHPSESSID is rejected");
 assert(fetchCredentialHit("https://example.com/callback?sig=abc", "example.com/callback?sig=abc"),
   "sig is rejected");
 assert(fetchCredentialHit("https://example.com/A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6+abc=", "example.com/A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6+abc="),
@@ -81,6 +85,9 @@ assert(fetchCredentialHit("https://example.com/?key=sk-abcdefghijklmnop", "examp
   "a key-shaped value is rejected");
 assert(fetchCredentialHit("https://example.com/sk-abcdefghijklmnop/x", "example.com/sk-abcdefghijklmnop/x"),
   "a short key-shaped path segment is rejected");
+assert(fetchCredentialHit("https://example.com/AbCdEfGhIjKlMnOpQrStUvWxYz012345+abc",
+  "example.com/AbCdEfGhIjKlMnOpQrStUvWxYz012345+abc"),
+  "an unpadded base64-shaped path with a symbol is rejected");
 assert(fetchCredentialHit("https://example.com/?x-api-key=550e8400-e29b-41d4-a716-446655440000",
   "example.com/?x-api-key=550e8400-e29b-41d4-a716-446655440000"), "x-api-key is rejected");
 assert(!fetchCredentialHit("https://example.com/posts/2026/05/hello-world", "example.com/posts/2026/05/hello-world"),

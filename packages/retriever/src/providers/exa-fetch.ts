@@ -7,6 +7,7 @@
 import Exa from "exa-js";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 import { FETCH_PAGE_MAX_CHARS, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
+import { hostMatchesEntry } from "../content-trust";
 import { normalizeUrlIdentity, parseWebUrl } from "../url-identity";
 import { callExaMcpTool } from "./exa-free-arm";
 import { PROVIDER_FACTS } from "./provider-facts";
@@ -95,9 +96,7 @@ function matchPaidReading(
     if (returned !== wanted) {
       const wantedUrl = parseWebUrl(requested[0]!);
       const returnedUrl = parseWebUrl(pages[0]!.url);
-      if (!wantedUrl || !returnedUrl ||
-          (returnedUrl.hostname.replace(/\.$/, "") !== wantedUrl.hostname.replace(/\.$/, "") &&
-           !returnedUrl.hostname.replace(/\.$/, "").endsWith("." + wantedUrl.hostname.replace(/\.$/, "")))) {
+      if (!wantedUrl || !returnedUrl || !hostMatchesEntry(wantedUrl.hostname, returnedUrl.hostname)) {
         pages.length = 0; // a cross-host or unparseable landing page is not the requested text
       } else {
         pages[0] = { ...pages[0]!, url: requested[0]! };
@@ -129,9 +128,10 @@ function failureFromMessage(url: string, message: string): FetchFailure {
  *     body...
  *
  * A failed URL is an `Error fetching <url>: CODE` line after the documents.
- * Only a `# ` heading followed by a `URL:` line in this batch starts a document.
- * A body line that looks the same is kept. Only trailing error lines for
- * requested URLs are removed.
+ * A requested URL keeps its last `#` + `URL:` occurrence; any other such
+ * heading starts a document only when the previous line is blank. A body line
+ * that looks the same is kept. Only the last document's trailing error lines
+ * are removed; errors after earlier documents stay in their body.
  */
 export function parseExaFetchReply(text: string, requested: string[]): Reading {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
@@ -192,8 +192,8 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   };
 
   const last = docs[docs.length - 1];
-  const allErrorsEnd = last ? last.end : takeTrailingErrors(0, lines.length);
   if (last) last.end = takeTrailingErrors(last.bodyFrom, last.end);
+  else takeTrailingErrors(0, lines.length);
 
   const pages: FetchPage[] = [];
   const seen = new Set<string>();
@@ -208,22 +208,19 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
 
   // A single URL may redirect to a landing page; one document is enough to
   // map it, even with a short preface before the heading.
-  if (requested.length === 1 && pages.length === 0) {
+  if (requested.length === 1 && pages.length === 0 && errorByUrl.size === 0) {
     const redirect = docs.length === 1 ? docs[0] : undefined;
     if (redirect) {
       const wanted = parseWebUrl(requested[0]!);
       const got = parseWebUrl(redirect.url);
-      const hostOk = !!wanted && !!got &&
-        (got.hostname.replace(/\.$/, "") === wanted.hostname.replace(/\.$/, "") ||
-         got.hostname.replace(/\.$/, "").endsWith("." + wanted.hostname.replace(/\.$/, "")));
-      if (hostOk) {
+      if (wanted && got && hostMatchesEntry(wanted.hostname, got.hostname)) {
         const body = lines.slice(redirect.bodyFrom, redirect.end).join("\n").trim();
         if (body) {
           pages.push({ url: requested[0]!, text: body, ...(redirect.title ? { title: redirect.title } : {}) });
         }
       }
-    } else if (docs.length === 0 && errorByUrl.size === 0) {
-      const bodyLines = lines.slice(0, allErrorsEnd);
+    } else if (docs.length === 0) {
+      const bodyLines = lines.slice(0, takeTrailingErrors(0, lines.length));
       const onlyErrors = bodyLines.every((line) => !line.trim() || /^\s*Error fetching\s/i.test(line));
       const body = bodyLines.join("\n").trim();
       if (body && !onlyErrors) pages.push({ url: requested[0]!, text: body });
@@ -237,8 +234,8 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
 }
 
 export class ExaFetchProvider implements FetchProvider {
-  readonly id = "exa";
-  readonly maxUrlsPerCall = PROVIDER_FACTS.exa.fetchMaxUrlsPerCall ?? 1;
+  readonly id = PROVIDER_FACTS.exa.id;
+  readonly maxUrlsPerCall = PROVIDER_FACTS.exa.fetchMaxUrlsPerCall;
   private readonly paid?: ExaContentsClient;
 
   constructor(paid?: ExaContentsClient) {
@@ -291,7 +288,7 @@ export class ExaFetchProvider implements FetchProvider {
 /**
  * The factory mirrors `createExaProvider`: only the value handed in decides the
  * arm. It never reads EXA_API_KEY itself — the composition root resolved that
- * once, and a second read would let diagnostics and the adapter disagree.
+ * once and passes the value in.
  */
 export function createExaFetchProvider(apiKey?: string): FetchProvider {
   const key = apiKey?.trim();

@@ -128,6 +128,12 @@ const CREDENTIAL_PARAMS: Record<string, true> = {
   apikey: true,
   access_token: true,
   accesstoken: true,
+  auth_token: true,
+  authtoken: true,
+  session_id: true,
+  sessionid: true,
+  phpsessid: true,
+  x_amz_security_token: true,
   refresh_token: true,
   client_secret: true,
   id_token: true,
@@ -148,9 +154,11 @@ function looksHighEntropy(value: string): boolean {
   // Commit SHAs, content hashes and UUIDs are common in public paths.
   if (/^[0-9a-f]+$/i.test(value)) return false;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return false;
-  // A path segment with a word separator or a slug is a title, not a token.
-  if (value.includes("_") || value.includes("-")) return false;
-  if (!value.includes("=")) return false;
+  // A value with a word separator or slug is a title, not a token. Base64
+  // symbols mark a token; an unpadded key of only letters/digits can still
+  // slip through (heuristic, not a complete detector).
+  if (value.includes("_") || value.includes("-") || value.includes("++")) return false;
+  if (!/[+/=]/.test(value)) return false;
   return /^[A-Za-z0-9+/=]+$/.test(value);
 }
 
@@ -159,13 +167,16 @@ function looksHighEntropy(value: string): boolean {
  * secret shape, or a high-entropy `=` value is never sent upstream. Other
  * shapes rely on heuristics; this is not a complete secret detector.
  */
+function normalizeParamName(name: string): string {
+  return name.toLowerCase().replace(/-/g, "_").replace(/\[\]$/, "");
+}
+
 export function fetchCredentialHit(rawHandle: string, identity: string): boolean {
   for (const text of [rawHandle, identity]) {
     const parsed = parseWebUrl(text);
     if (!parsed) continue;
     for (const [name, value] of parsed.searchParams) {
-      const normalized = name.toLowerCase().replace(/-/g, "_").replace(/\[\]$/, "");
-      if (Object.hasOwn(CREDENTIAL_PARAMS, normalized)) return true;
+      if (Object.hasOwn(CREDENTIAL_PARAMS, normalizeParamName(name))) return true;
       if (looksHighEntropy(value) || containsSecret(value)) return true;
     }
     for (const segment of parsed.pathname.split("/")) {
@@ -176,7 +187,7 @@ export function fetchCredentialHit(rawHandle: string, identity: string): boolean
     }
     const inline = /(?:^|[?&;/])([A-Za-z0-9_.\-]+)=/g;
     for (const match of text.matchAll(inline)) {
-      if (Object.hasOwn(CREDENTIAL_PARAMS, match[1]!.toLowerCase().replace(/-/g, "_"))) return true;
+      if (Object.hasOwn(CREDENTIAL_PARAMS, normalizeParamName(match[1]!))) return true;
     }
     if (/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./.test(text)) return true;
   }
