@@ -407,10 +407,11 @@ async function main() {
 
   // 14. nit: clientInfo.version drift-guard — the initialize literal
   // must track packages/retriever/package.json version (hard-pinned to package.json version).
+  // The handshake lives in anysearch-mcp.ts since #610, so the guard reads it there.
   {
     const { readFileSync } = await import("node:fs");
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    const src = readFileSync(new URL("../src/providers/anysearch.ts", import.meta.url), "utf8");
+    const src = readFileSync(new URL("../src/providers/anysearch-mcp.ts", import.meta.url), "utf8");
     const m = /clientInfo: { name: "anysearch-cli", version: "([^"]+)" }/.exec(src);
     assert(!!m, "clientInfo.version literal locatable in source");
     assert(m![1] === pkg.version, "clientInfo.version matches package.json version (" + pkg.version + ")");

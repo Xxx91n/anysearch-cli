@@ -201,8 +201,8 @@ export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
 const LEGACY_REST_SUFFIX = "/v1/search";
 
 /**
- * 适配器的 normalizeEndpoint 把 `/v1/search` 尾巴改写成 `/mcp`（env 兼容垫片）。
- * 探针问的必须是适配器真会问的那个地址，否则一个老 env 值就能让 --live 报假红。
+ * 适配器把 `/v1/search` 尾巴改写成 `/mcp`（在 anysearch-mcp.ts 里）。
+ * 探针问的必须是适配器真会问的那个地址，不然一个老 env 值就能让 --live 报假红。
  */
 function normalizeAnySearchEndpoint(raw: string): string {
   const trimmed = raw.replace(/\/+$/, "");
