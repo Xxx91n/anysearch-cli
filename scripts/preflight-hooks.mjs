@@ -2,6 +2,11 @@
 // The push gate's hook: `pnpm hooks:install` puts it in place, `pnpm hooks:status`
 // says whether it is there, executable, and current. AGENTS.md describes both.
 //
+// Design: status also answers what a push from this checkout would run and what
+// waiting for it costs — a person who knows the mode before they push does not
+// meet it as a surprise, and the answer comes from the same pure plan the gate
+// itself asks instead of a second copy of the rules.
+//
 // GitButler owns pre-commit and post-checkout, so nothing here writes either one.
 //
 // The hook content is repo-agnostic: it finds the repo root itself at run time,
@@ -11,6 +16,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { localFiles } from "./preflight-change.mjs";
+import { planPreflight, strictPushGate } from "./preflight-plan.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOOK = "pre-push";
@@ -87,6 +94,21 @@ function commandLines(text) {
 }
 
 /**
+ * What a hook's exec line runs: the gate script, repo-relative with forward
+ * slashes, and the arguments it gets. Null when the line is not a gate command
+ * status can follow.
+ *
+ * Design: this parse feeds the `runs:` line, the mode's `--full` test and the
+ * script status reports on, so those three cannot disagree about one exec line.
+ */
+function gateCommandOf(command) {
+  const match = (command ?? "").match(GATE_COMMAND);
+  if (!match) return null;
+  const args = (match[2] ?? "").trim().split(/\s+/).filter(Boolean);
+  return { script: match[1].replace(/\\/g, "/"), args };
+}
+
+/**
  * What the hook runs, as a person reads it: scripts/preflight-test.mjs --pushed
  * for ours. Anyone else's is quoted as written — an exec line, or its first
  * command — because naming it is the point even when the shape is unfamiliar.
@@ -94,11 +116,9 @@ function commandLines(text) {
 function hookTarget(text) {
   const command = hookCommand(text);
   if (!command) return commandLines(text)[0] ?? null;
-  const match = command.match(GATE_COMMAND);
-  if (!match) return command;
-  const script = match[1].replace(/\\/g, "/");
-  const flags = (match[2] ?? "").trim();
-  return flags ? `${script} ${flags}` : script;
+  const gate = gateCommandOf(command);
+  if (!gate) return command;
+  return [gate.script, ...gate.args].join(" ");
 }
 
 /** A file that runs nothing (a shebang alone included) is nobody's hook. */
@@ -113,7 +133,9 @@ function isOurs(text) {
   // checked here: it is part of the code, so a changed one reads as out of date.
   const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
   if (!OWN_BANNERS.some((prefix) => banner?.startsWith(prefix))) return false;
-  // A note that starts like our banner still has to run the gate to be ours.
+  // A note that starts like our banner still has to mention the gate to be ours.
+  // Loose on purpose: an exec line that gained something status cannot parse is
+  // still our hook, and install has to be able to put it back.
   return GATE_SCRIPT.test(hookCommand(text) ?? "");
 }
 
@@ -165,14 +187,19 @@ function locate() {
   if (source.error?.code === "ENOENT") return { dir: hooks.dir, reason: `${HOOK_SOURCE} is missing from ${sourceRoot}` };
   if (source.error) return { dir: hooks.dir, reason: `cannot read ${HOOK_SOURCE}: ${source.error.message}` };
   if (!hookCode(source.text)) return { dir: hooks.dir, reason: `${HOOK_SOURCE} runs nothing` };
-  return { dir: hooks.dir, source: source.text };
+  return { dir: hooks.dir, root: repo.root, source: source.text };
 }
 
 /**
  * What the push hook looks like right now.
  *
- * state: ok | missing | stale | not-executable | foreign | unknown.
- * unknown means the question cannot be answered (no repo, unreadable file).
+ * state: ok | missing | stale | not-executable | foreign | unknown | unfollowable.
+ * unknown means the question cannot be answered (no repo, unreadable file);
+ * unfollowable means the hook is ours and current, yet its exec line is not a gate
+ * command — only a hook source written that way gets there.
+ *
+ * `root` is the checkout the hook is installed in, which is where a push reads
+ * its gate script and its change set from — not the copy of this file that ran.
  */
 function prePushStatus() {
   const place = locate();
@@ -185,11 +212,22 @@ function prePushStatus() {
     return { state: "unknown", dir: place.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
 
-  const hook = { dir: place.dir, hookPath, target: hookTarget(installed.text) };
+  const command = hookCommand(installed.text) ?? "";
+  const hook = {
+    dir: place.dir,
+    root: place.root,
+    hookPath,
+    command,
+    gate: gateCommandOf(command),
+    target: hookTarget(installed.text),
+  };
   if (isEmptyHook(installed.text)) return { state: "empty", ...hook };
   if (!isOurs(installed.text)) return { state: "foreign", ...hook };
   if (!runsCurrentScript(installed.text, place.source)) return { state: "stale", ...hook };
   if (process.platform !== "win32" && !isExecutable(hookPath)) return { state: "not-executable", ...hook };
+  // Ours and current, yet the exec line is not a gate command: only a hook source
+  // written this way gets here, and status has no mode to report for it.
+  if (!hook.gate) return { state: "unfollowable", ...hook };
   return { state: "ok", ...hook };
 }
 
@@ -265,6 +303,154 @@ const STATUS_PROBLEM = {
   foreign: "pre-push is another script, not ours",
 };
 
+// What a push of this checkout would run: a mode line and a wait-budget line per
+// answer `pushPreview` can give.
+//
+// Design: the keys are the plan's own mode names, plus `unknown` for a change set
+// git cannot name — a key the plan answers with and this table lacks reads as
+// "cannot tell", never as a healthy line, and `broken` never reaches the table
+// because the caller prints the gate's own blocked/reason/fix for it. Each entry
+// holds both lines, so neither can be printed without the other.
+const INCREMENTAL_MODE = "mode: incremental — a change inside a package runs that package and every package that depends on it";
+const INCREMENTAL_WITH_READERS =
+  "mode: incremental — a package change runs that package and its dependents, plus the packages whose tests read a changed root file";
+
+// Design: the numbers are measured, not promised — store's tests alone take about
+// 4m15s and the whole suite takes 6 to 9 minutes on Windows, so a calling tool's
+// timeout short of them kills a run that would have passed and reads afterwards
+// like a red gate.
+const PACKAGE_SECONDS = 600;
+const FULL_SECONDS = 900;
+const STORE_RUN = "4m15s";
+const FULL_RUN = "6 to 9 minutes";
+const PACKAGE_WAIT = `wait budget: up to ${PACKAGE_SECONDS}s for the packages this push runs (store alone measures about ${STORE_RUN}); set the calling tool's timeout to 0, which means no cap, or to at least ${PACKAGE_SECONDS}`;
+const FULL_WAIT = `wait budget: ${FULL_RUN} on Windows for the whole suite; set the calling tool's timeout to 0, which means no cap, or to at least ${FULL_SECONDS}`;
+const NOTHING_RUNS = "wait budget: none — nothing runs";
+
+const MODE_REPORT = {
+  none: { mode: "mode: nothing to run — no changed files", wait: NOTHING_RUNS },
+  docs: { mode: "mode: nothing to run — every changed file is documentation", wait: NOTHING_RUNS },
+  unowned: {
+    mode: "mode: advisory — a change no package owns only warns and nothing runs; CI's check-build covers that change",
+    wait: NOTHING_RUNS,
+  },
+  readers: {
+    mode: "mode: incremental — a changed root file runs only the packages whose tests read it",
+    wait: PACKAGE_WAIT,
+  },
+  incremental: { mode: INCREMENTAL_MODE, wait: PACKAGE_WAIT },
+  full: {
+    mode: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict, or --full in the hook's source)",
+    wait: FULL_WAIT,
+  },
+  unknown: {
+    mode: "mode: unknown — git cannot name this change (no HEAD, or no origin/HEAD to compare against)",
+    wait: "wait budget: unknown — a push still runs what its refs carry",
+  },
+};
+
+/**
+ * The two lines for a plan, or null when the table has no answer for its mode.
+ *
+ * Design: a change that carries package files and root files runs both sets, so
+ * its line names the readers too — a line promising only the package and its
+ * dependents would under-report the run the person is budgeting for.
+ */
+function modeReport(plan) {
+  const report = MODE_REPORT[plan.mode];
+  if (!report) return null;
+  if (plan.mode === "incremental" && plan.readers?.length) return { ...report, mode: INCREMENTAL_WITH_READERS };
+  return report;
+}
+
+/**
+ * The plan a push of this checkout would run, or `unknown` when git cannot name
+ * the change. `broken` carries the plan's reason and fix.
+ *
+ * Design: the two switches that run everything on every push decide the mode
+ * before any change set matters — `ANS_PUSH_GATE=strict` in this shell, or `--full`
+ * in the hook's exec line, which a repo can install by putting it in
+ * `scripts/hooks/pre-push-user` and running `hooks:install`.
+ *
+ * Design: the change set is what a plain gate run reads, everything not on
+ * origin/HEAD plus the working tree — this checkout's change, not every change a
+ * push can carry: `git push origin other-branch` sends commits HEAD does not have,
+ * and no local read can see them.
+ */
+function pushPreview(root, gate) {
+  // The same argument list the gate itself reads with `args.includes("--full")`.
+  if (strictPushGate() || gate.args.includes("--full")) return { mode: "full" };
+  const files = localFiles(root);
+  if (files === null) return { mode: "unknown" };
+  return planPreflight(root, files);
+}
+
+/**
+ * The gate script the hook names, and whether this checkout can load it: the file
+ * is there, it parses, and every module it imports relatively is there too.
+ *
+ * Design: loading stops short of running — the gate would read a change set and
+ * start tests, while a tree that cannot load the module fails before its first
+ * line anyway.
+ */
+function gateScriptCheck(root, script) {
+  const file = path.join(root, script);
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return { file, problem: "the gate script is not in this checkout" };
+  }
+  if (!stat.isFile()) return { file, problem: "the gate script is not a file" };
+  const problem = loadProblem(file);
+  return problem ? { file, problem: problem.problem, detail: problem.detail } : { file };
+}
+
+/** The first reason node could not load `file` — a parse error, or a relative import that is gone. */
+function loadProblem(file, seen = new Set()) {
+  const key = path.resolve(file);
+  if (seen.has(key)) return null;
+  seen.add(key);
+
+  const check = spawnSync(process.execPath, ["--check", key], { encoding: "utf8" });
+  if (check.error) return { problem: "cannot run node on the gate script", detail: check.error.message };
+  if (check.status !== 0) return { problem: "the gate script does not parse", detail: syntaxErrorLine(check.stderr) };
+
+  const source = readText(key);
+  if (source.error) return { problem: "cannot read the gate script", detail: source.error.message };
+  for (const specifier of relativeImports(source.text)) {
+    const target = path.resolve(path.dirname(key), specifier);
+    let stat;
+    try {
+      stat = fs.statSync(target);
+    } catch {
+      return { problem: "the gate script imports a file that is not there", detail: target };
+    }
+    if (!stat.isFile()) return { problem: "the gate script imports a directory", detail: target };
+    const deeper = loadProblem(target, seen);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
+// The relative specifiers a module imports or re-exports: `from "./x.mjs"`, a
+// bare `import "./x.mjs"`, and `import("./x.mjs")`. A bare or `node:` specifier
+// is the installed workspace's own and is not this checkout's to check.
+function relativeImports(text) {
+  const found = new Set();
+  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s*\(?\s*["'](\.[^"'\n]+)["']/g)) found.add(match[1]);
+  return [...found];
+}
+
+/** The `SyntaxError: …` line node prints, not the file:line header or the source echo. */
+function syntaxErrorLine(stderr) {
+  const line = String(stderr)
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find((candidate) => /^\w*Error\b/.test(candidate));
+  return line ?? firstLine(String(stderr));
+}
+
 function reportInstall(result) {
   if (result.state === "unknown") {
     console.error(`[hooks] cannot install: ${result.reason}`);
@@ -294,9 +480,41 @@ function reportStatus(result) {
     console.error(`[hooks] cannot tell: ${result.reason}`);
     return 2;
   }
+  if (result.state === "unfollowable") {
+    // The installed copy matches the source here, so reinstalling changes nothing:
+    // the line to repair is the one in the source file.
+    console.error(`[hooks] cannot follow the hook's exec line: ${result.command || result.hookPath}`);
+    console.error(`[hooks] a push still runs it; fix ${HOOK_SOURCE}, then ${installHint(false)}`);
+    return 2;
+  }
   if (result.state === "ok") {
     console.log(`[hooks] pre-push installed: ${result.hookPath}`);
     if (result.target) console.log(`[hooks] runs: ${result.target}`);
+
+    const script = gateScriptCheck(result.root, result.gate.script);
+    if (script.problem) {
+      console.error(`[hooks] blocked: ${script.problem}: ${script.detail ?? script.file}`);
+      console.error("[hooks] fix: restore it in this checkout — a push aborts inside the hook without it");
+      return 2;
+    }
+
+    const preview = pushPreview(result.root, result.gate);
+    if (preview.mode === "broken") {
+      // Design: the hook is fine and the repository is not, so the words and the
+      // exit code are the gate's own — nothing was looked at, which is 2, never
+      // 1's "the code is bad".
+      console.error("[hooks] blocked: the gate cannot read this repository");
+      console.error(`[hooks] reason: ${preview.reason}`);
+      console.error(`[hooks] fix: ${preview.fix}`);
+      return 2;
+    }
+    const report = modeReport(preview);
+    if (!report) {
+      console.error(`[hooks] cannot tell: the gate answered a mode status has no line for ("${preview.mode}")`);
+      return 2;
+    }
+    console.log(`[hooks] ${report.mode}`);
+    console.log(`[hooks] ${report.wait}`);
     return 0;
   }
 
