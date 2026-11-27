@@ -562,6 +562,49 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
   assert(result1.metadata.providerErrorClasses === undefined, "12: field absent when nothing failed");
   assert(result1.metadata.providerErrorRetryAfterSeconds === undefined, "12: wait field absent when nothing failed");
 
+  // 13. #653: every answered arm keeps the elapsedMs its provider reported. A
+  // cut or failed arm has no key at all (not 0, not null), and the table reads
+  // the same whichever arm landed first.
+  {
+    const sameTable = (a: Record<string, number>, b: Record<string, number>) => {
+      const ka = Object.keys(a).sort();
+      const kb = Object.keys(b).sort();
+      return JSON.stringify(ka) === JSON.stringify(kb) && ka.every((k) => a[k] === b[k]);
+    };
+
+    const cutEng = new RetroaererdEngine([
+      mockProvider("fast", ["https://a.com/1"]),
+      slowProvider("slow", 400, ["https://slow.com/x"], { v: false }),
+      resolveOnAbortProvider("late", { v: false }),
+      rejectedProvider("dead"),
+    ], { requestTimeoutMs: 40 });
+    const cut = await cutEng.search({ query: "g", mode: "fast" });
+    assert(cut.metadata.providerElapsedMs?.fast === 10,
+      "13: an answered arm keeps the provider-reported ms; got " + JSON.stringify(cut.metadata.providerElapsedMs));
+    assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "slow"),
+      "13: a cut arm has no key (not 0, not null)");
+    assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "late"),
+      "13: an arm that answers only after the abort has no key either");
+    assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "dead"),
+      "13: a failed arm has no key");
+    assert(cut.metadata.providersCancelled.includes("slow") && cut.metadata.providersFailed.includes("dead"),
+      "13: the arms missing from the table are still named where they belong");
+
+    const slowFirst = await new RetroaererdEngine([
+      slowProvider("slow", 30, ["https://slow.com/x"], { v: false }),
+      mockProvider("fast", ["https://a.com/1"]),
+    ], { requestTimeoutMs: 1000 }).search({ query: "g", mode: "fast" });
+    const fastFirst = await new RetroaererdEngine([
+      mockProvider("fast", ["https://a.com/1"]),
+      slowProvider("slow", 30, ["https://slow.com/x"], { v: false }),
+    ], { requestTimeoutMs: 1000 }).search({ query: "g", mode: "fast" });
+    assert(sameTable(slowFirst.metadata.providerElapsedMs ?? {}, fastFirst.metadata.providerElapsedMs ?? {}),
+      "13: arrival order changes nothing; got " + JSON.stringify(slowFirst.metadata.providerElapsedMs) +
+      " vs " + JSON.stringify(fastFirst.metadata.providerElapsedMs));
+    assert(sameTable(slowFirst.metadata.providerElapsedMs ?? {}, { fast: 10, slow: 30 }),
+      "13: both answered arms keep their own numbers; got " + JSON.stringify(slowFirst.metadata.providerElapsedMs));
+  }
+
 console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

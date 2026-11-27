@@ -1,3 +1,25 @@
+## Unreleased — #653: 记下每条臂花了多久
+
+一句话说清：**引擎在每次检索的 metadata 里多写一张 `providerElapsedMs` 表：答完的臂各有自己的毫秒数，键是服务商 id；被掐断、失败的臂没有键——它们没有真实耗时，那件事已经由 `providersCancelled` / `providersFailed` 说了。`ans search --json` 和 MCP 两个搜索工具的 `structuredContent` 原样透出，评测不用直调服务商也能画到达分布。**
+
+### Changed
+
+- **引擎记账**（`packages/kernel/src/engine.ts`、`packages/retriever/src/contract.ts`）：`ProviderEnvelope.elapsedMs` 之前被引擎丢掉，现在按服务商 id 收进 `metadata.providerElapsedMs`；没有臂答完就是空表，键恒在。被掐的臂即便后来 resolve 也不进表（`abortedArms` 的判定没动）。
+- **两个出口**（`apps/cli/src/commands/search.ts`、`apps/mcp/src/tools/search-web.tool.ts`、`apps/mcp/src/tools/research-web.tool.ts`）：`ans search --json` 恒有 `providerElapsedMs`；MCP 的 `search_web` 和 `research_web` 在 `structuredContent` 和文本半边都带同一份。`research_web` 跟 `providersQueried` 一样只看最后一轮完成的检索，不跨轮合并。
+- **文档**（`docs/mcp-server.md`）：成功行的字段表补 `providerElapsedMs`，并说清「只有答完的臂有键，缺席不等于 0」。
+
+### Fixed
+
+- **tavily 的耗时单位**（`packages/retriever/src/providers/tavily.ts`）：Tavily 的 `response_time` 是秒（上游文档「Time in seconds」；`docs/research/real-baseline-2026-11-22.md` 同一次真跑里客户端 1573ms、服务商自报 0.37），适配器原来把它直接塞进 `elapsedMs`，这一家的数就比别家小 1000 倍。现在乘 1000 取整再写；上游没给数字（缺失、`null`、非有限值）时回退本地墙钟，不会变成 0ms 假装瞬时返回。`providers/tavily/README.md` 记下这条上游事实，免得下次又按毫秒读。
+- **同一张表、两种量法说清楚**（`packages/retriever/src/contract.ts`、`docs/mcp-server.md`）：`elapsedMs` 不是统一口径——tavily 是服务商自报的秒换算，anysearch 看回包形状（文本头带耗时就用，`structuredContent` 那条路没有这个数），exa、exa-mcp 一律是本地量的墙钟。注释和字段表现在只说「服务商给了自报值就用，没给才是本地墙钟」，并写明只能按臂看、不能横着比名次；单位（毫秒）一致。
+
+### Tests
+
+- `packages/kernel/test/engine.test.ts`：答完的臂保留服务商自报的毫秒数；被掐、失败的臂没有键；两条臂先后到达的顺序换过来，表不变。
+- `apps/cli/test/provider-elapsed.test.ts`：假 anysearch 自报 2ms，`--json` 读到 `{ anysearch: 2 }`；慢源被 `--deadline 500` 掐掉后表是空的。
+- `apps/mcp/test/provider-elapsed.test.ts`：`search_web` 的 `structuredContent` 与文本半边都带同一张表；`research_web` 只报最后一轮，前一轮答完的臂不会留在表里。
+- `packages/retriever/test/tavily.test.ts`：假的 `responseTime: 0.4` 断言 `elapsedMs === 400`，锁住秒→毫秒的换算；`responseTime: null` 时回退本地墙钟，仍然是有限数。
+
 ## Unreleased — #678: 推送门规矩和文档跟新门对齐（#671 收口）
 
 一句话说清：**本地推送门在前三票（#675、#676、#677）已经改成「无主改动只提示不跑、门坏了退 2、真跑时守 10 分钟并打心跳落盘」，`AGENTS.md` 里的规矩还停在旧写法。现在把 `### Gate rules` 和 `## How to run` 的门自测说明全部对齐过来：本地门只负责早发现，合并前必须亲眼看到 CI 的 `check-build` 绿了才算放行（同时直说 `main` 没设 required status checks，靠人守、没机器挡）；退出码 0/1/2、「跳过不等于通过」、推代码和跑整套的工具 `timeout` 规矩，以及「考虑过 required status checks 但决定不做」的理由，全白纸黑字写进去了。**

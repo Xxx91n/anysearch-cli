@@ -130,6 +130,8 @@ export interface ProviderEnvelope {
   // aligns per-index and prefers answersMeta over re-deriving provider attribution.
   // Answers remain text-only in FusedEnvelope.answers; provenance moves to metadata.providerAnswers.
   answersMeta?: ProviderAnswer[];
+  // the arm's own elapsed time in milliseconds: the provider's reported value when it
+  // gives one, else the wall clock measured around the call.
   elapsedMs: number;
   usage?: UsageInfo;
   // #214: observation-only seam — consumed by the engine's observation span,
@@ -383,6 +385,11 @@ export interface FusedEnvelope {
     providersQueried: string[];
     providersFailed: string[];
     providersCancelled: string[];
+    // per-arm elapsed time in milliseconds, keyed by provider id: the provider's
+    // own report when it gives one, else the wall clock measured around the call.
+    // Only arms that answered have a number — a cut or failed arm's state rides
+    // providersCancelled / providersFailed. Read it arm by arm, not as a ranking.
+    providerElapsedMs?: Record<string, number>;
     // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
