@@ -72,6 +72,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const outcome = outcomeOf(envelope);
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+          const providerElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
           const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
@@ -106,6 +107,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // caller went away. Paired with providersQueried, so neither case
               // reads as an arm that never ran.
               providersCancelled: cancelledProviders,
+              // What each answered arm said it took. Cut and failed arms have no
+              // key, so this map never reads as a 0ms answer.
+              providerElapsedMs,
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -159,6 +163,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
+            // 答完的腿各自花了多久；被掐、失败的腿没有键。
+            providerElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

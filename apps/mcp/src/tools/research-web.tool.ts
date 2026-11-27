@@ -57,6 +57,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
+        // Same round the arm lists describe: a leg answered in round 1 and cut
+        // in round 2 has only its round-2 state here.
+        let lastRoundProviderElapsedMs: Record<string, number> = {};
         let lastEnvelope: any = null;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
@@ -99,6 +102,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
+            lastRoundProviderElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -181,6 +185,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
+              // Same round: what each answered arm said it took.
+              providerElapsedMs: lastRoundProviderElapsedMs,
               // Same record as structuredContent: some hosts read only this text half.
               credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -207,9 +213,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // "no round finished" from "this build forgot the field".
             outcome: callOutcome,
             ...(providerFailures ?? {}),
-            // The same two fields the content JSON carries.
+            // The same arm fields the content JSON carries.
             providersQueried: lastRoundQueried,
             providersCancelled: lastRoundCancelled,
+            providerElapsedMs: lastRoundProviderElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

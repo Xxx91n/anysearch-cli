@@ -383,6 +383,11 @@ export interface FusedEnvelope {
     providersQueried: string[];
     providersFailed: string[];
     providersCancelled: string[];
+    // per-arm wall time the provider itself reported (ProviderEnvelope.elapsedMs),
+    // keyed by provider id. Only arms that answered have a real number: a cut or
+    // failed arm has none, and its state already rides providersCancelled /
+    // providersFailed. The engine writes this on every search, {} included.
+    providerElapsedMs?: Record<string, number>;
     // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
