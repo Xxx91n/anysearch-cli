@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -33,24 +33,50 @@ function withSandbox(fn) {
     GIT_CONFIG_SYSTEM: empty,
     GIT_CONFIG_NOSYSTEM: "1",
   });
+  // A developer who exported the strict switch for their own pushes would turn
+  // every case below into a full run; the case that wants it passes it in.
+  delete env.ANS_PUSH_GATE;
   const git = (cwd, args) => {
     const result = spawnSync("git", args, { cwd, env, encoding: "utf8" });
     assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr}`);
     return result.stdout.trim();
   };
-  const run = (cwd, args, command = cli) => spawnSync(process.execPath, [command, ...args], { cwd, env, encoding: "utf8" });
-  const clone = () => {
-    const origin = join(base, "origin");
-    mkdirSync(origin);
-    git(origin, ["init", "-q", "--initial-branch=main"]);
-    const dir = join(base, "clone");
+  const run = (cwd, args, command = cli, extraEnv = {}) =>
+    spawnSync(process.execPath, [command, ...args], { cwd, env: { ...env, ...extraEnv }, encoding: "utf8" });
+  const cloneInto = (origin, name) => {
+    const dir = join(base, name);
     const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
     assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
     return dir;
   };
 
+  const clone = () => {
+    const origin = join(base, "origin");
+    mkdirSync(origin);
+    git(origin, ["init", "-q", "--initial-branch=main"]);
+    const dir = cloneInto(origin, "clone");
+    placeGate(dir);
+    return dir;
+  };
+
+  // A clone whose origin already holds one commit: origin/HEAD exists, so git
+  // can name a change set, and the gate reads a one-package workspace instead of
+  // nothing. The gate stub is committed, so a fresh clone has no changes at all.
+  const seeded = () => {
+    const origin = join(base, "seed-origin");
+    mkdirSync(join(origin, "packages", "store"), { recursive: true });
+    git(origin, ["init", "-q", "--initial-branch=main"]);
+    writeFileSync(join(origin, "README.md"), "# seed\n");
+    writeFileSync(join(origin, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n');
+    writeFileSync(join(origin, "packages", "store", "package.json"), '{\n  "name": "@anysearch-cli/store"\n}\n');
+    placeGate(origin);
+    git(origin, ["add", "-A"]);
+    git(origin, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "seed"]);
+    return cloneInto(origin, "seeded");
+  };
+
   try {
-    return fn({ base, env, git, run, clone });
+    return fn({ base, env, git, run, clone, seeded });
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -62,11 +88,29 @@ function installOk(box, cwd, ...flags) {
   return result;
 }
 
+// A stand-in for scripts/preflight-test.mjs at the path the hook names: status
+// checks that the script is there and parses, and never runs it.
+const GATE_STUB = [
+  "#!/usr/bin/env node",
+  "// Stand-in for scripts/preflight-test.mjs: hooks:status only checks that this",
+  "// file is there and parses, so the fixture needs no gate of its own.",
+  "",
+].join("\n");
+
+function placeGate(dir) {
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  writeFileSync(join(dir, "scripts", "preflight-test.mjs"), GATE_STUB);
+}
+
 /** A clone that holds the script itself, the way a real checkout does. */
 function withScriptsIn(clone) {
   mkdirSync(join(clone, "scripts", "hooks"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(clone, "package.json"));
-  copyFileSync(cli, join(clone, "scripts", "preflight-hooks.mjs"));
+  // Every module the copy imports, so a new relative import in the script cannot
+  // leave this fixture short of a file.
+  for (const name of readdirSync(scripts)) {
+    if (name.endsWith(".mjs")) copyFileSync(join(scripts, name), join(clone, "scripts", name));
+  }
   copyFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"), join(clone, "scripts", "hooks", "pre-push-user"));
   return join(clone, "scripts", "preflight-hooks.mjs");
 }
@@ -419,5 +463,226 @@ test("a hook without the execute bit is reported, and install fixes it", { skip:
     assert.notEqual(statSync(hookPath(clone)).mode & 0o111, 0, "install left the hook unexecutable");
     const fixed = box.run(clone, ["status"]);
     assert.equal(fixed.status, 0, fixed.stderr);
+  });
+});
+
+test("status names the mode a push lands in and what waiting for it costs", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+
+    const clean = box.run(clone, ["status"]);
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /mode: nothing to run — no changed files/);
+    assert.match(clean.stdout, /wait budget: none — nothing runs/);
+
+    writeFileSync(join(clone, "packages", "store", "index.ts"), "export const a = 1;\n");
+    const incremental = box.run(clone, ["status"]);
+    assert.equal(incremental.status, 0, incremental.stderr);
+    assert.match(incremental.stdout, /mode: incremental/);
+    assert.match(incremental.stdout, /set the calling tool's timeout to 0, which means no cap, or to at least 600/);
+  });
+});
+
+test("a change no package owns reads as the advisory mode and runs nothing", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "tools.mjs"), "export const b = 2;\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: advisory/);
+    assert.match(status.stdout, /CI's check-build covers that change/);
+    assert.match(status.stdout, /wait budget: none — nothing runs/);
+  });
+});
+
+// A root file's readers run without their dependents, so the incremental sentence
+// about "inside a package and everything that depends on it" would overstate it.
+test("a root file runs its readers, and the line says so", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    // AGENTS.md is a row in the plan's reader table: store's tests read it.
+    writeFileSync(join(clone, "AGENTS.md"), "# notes\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: incremental — a changed root file runs only the packages whose tests read it/);
+    assert.match(status.stdout, /at least 600/);
+  });
+});
+
+test("a package change next to a root file names the readers it adds", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "packages", "store", "index.ts"), "export const a = 1;\n");
+    writeFileSync(join(clone, "AGENTS.md"), "# notes\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: incremental — a package change runs that package and its dependents, plus the packages whose tests read a changed root file/);
+  });
+});
+
+test("a docs-only change reads as nothing to run, not as a test run", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    mkdirSync(join(clone, "docs"));
+    writeFileSync(join(clone, "docs", "note.md"), "# note\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: nothing to run — every changed file is documentation/);
+  });
+});
+
+// A hook can carry our banner and still run the gate in a line status cannot
+// parse. It is ours: install has to put it back, not refuse it as someone else's.
+test("our hook with an exec line status cannot parse is still ours, and install fixes it", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    // The `;` sits right after the script name, where the gate command's own
+    // shape ends: status cannot parse it, but the hook is still ours.
+    writeFileSync(
+      hookPath(clone),
+      source.replace(/^(exec .*)$/m, 'exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"; echo done'),
+    );
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stderr);
+    assert.match(status.stderr, /out of date/);
+
+    const install = box.run(clone, ["install"]);
+    assert.equal(install.status, 0, `install refused our own hook: ${install.stderr}`);
+    assert.equal(readFileSync(hookPath(clone), "utf8"), source);
+  });
+});
+
+// Only a hook that already matches the source gets there: anything else that
+// cannot be parsed is stale, and install repairs it. So the advice has to name the
+// source, or the person reinstalls and lands in the same place.
+test("a hook source status cannot follow is reported against the source, not the install", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    const local = withScriptsIn(clone);
+    const hookSource = join(clone, "scripts", "hooks", "pre-push-user");
+    writeFileSync(
+      hookSource,
+      readFileSync(hookSource, "utf8").replace(/^(exec .*)$/m, 'exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"; echo done'),
+    );
+
+    const install = box.run(clone, ["install"], local);
+    assert.equal(install.status, 0, install.stderr);
+
+    const status = box.run(clone, ["status"], local);
+    assert.equal(status.status, 2, status.stderr);
+    assert.match(status.stderr, /cannot follow the hook's exec line/);
+    // Two keywords, not the whole sentence: the advice may be reworded, and the
+    // file's other assertions read this way.
+    assert.match(status.stderr, /pre-push-user/);
+    assert.match(status.stderr, /hooks:install/);
+  });
+});
+
+// The repo's own hook source is where a lasting "always run everything" edit
+// lands: change it, install, and the installed hook still counts as current.
+test("a hook source that runs the whole suite reads as the full mode", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    const local = withScriptsIn(clone);
+    const hookSource = join(clone, "scripts", "hooks", "pre-push-user");
+    writeFileSync(hookSource, readFileSync(hookSource, "utf8").replace(/^(exec .*)$/m, "$1 --full"));
+
+    const install = box.run(clone, ["install"], local);
+    assert.equal(install.status, 0, install.stderr);
+
+    const status = box.run(clone, ["status"], local);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: full — every push runs the whole suite/);
+    assert.match(status.stdout, /at least 900/);
+  });
+});
+
+test("ANS_PUSH_GATE=strict reads as the full mode and a longer wait", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+
+    const status = box.run(clone, ["status"], cli, { ANS_PUSH_GATE: "strict" });
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: full — every push runs the whole suite/);
+    assert.match(status.stdout, /set the calling tool's timeout to 0, which means no cap, or to at least 900/);
+  });
+});
+
+test("a change set git cannot name reads as unknown, not as a fault", () => {
+  withSandbox((box) => {
+    // An empty origin has no HEAD to compare against, which is a repository
+    // without commits, not a broken gate.
+    const clone = box.clone();
+    installOk(box, clone);
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: unknown/);
+    assert.match(status.stdout, /wait budget: unknown/);
+  });
+});
+
+test("a gate script that is not in the checkout is a problem, not a healthy status", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    rmSync(join(clone, "scripts", "preflight-test.mjs"));
+
+    const status = box.run(clone, ["status"]);
+    // 2 is the gate's own code for "could not do its job", which is what a script
+    // that is gone means; 1 would say the code under test is bad.
+    assert.equal(status.status, 2, status.stderr);
+    assert.match(status.stderr, /blocked: the gate script is not in this checkout: .*preflight-test\.mjs/);
+    assert.doesNotMatch(status.stdout, /mode:/);
+  });
+});
+
+test("a gate script that does not parse is a problem too", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "scripts", "preflight-test.mjs"), "export const = ;\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 2, status.stderr);
+    assert.match(status.stderr, /blocked: the gate script does not parse: SyntaxError/);
+  });
+});
+
+test("a gate script whose import is gone is a problem too", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    // The script parses; what it loads does not exist, which is how a half-deleted
+    // scripts/ directory fails at the first line of the hook.
+    writeFileSync(join(clone, "scripts", "preflight-test.mjs"), 'import "./preflight-gone.mjs";\n');
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 2, status.stderr);
+    assert.match(status.stderr, /blocked: the gate script imports a file that is not there: .*preflight-gone\.mjs/);
+  });
+});
+
+test("a repository the gate cannot read is blocked, not reported as fine", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "packages", "store", "package.json"), "{ broken\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 2, status.stderr);
+    assert.match(status.stderr, /blocked: the gate cannot read this repository/);
+    assert.match(status.stderr, /reason: cannot read packages\/store\/package\.json/);
   });
 });
