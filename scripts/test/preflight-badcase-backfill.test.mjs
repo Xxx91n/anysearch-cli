@@ -11,6 +11,25 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPT = join(REPO, "scripts", "badcase-backfill.mjs");
 const QUESTION = "How do I install the widget?";
 
+function expected() {
+  return {
+    verdict: "answer",
+    mustHitHosts: ["docs.example.com"],
+    mustHitPaths: [{ path: "/install", tolerate: ["locale"] }],
+    mustNotHitPaths: ["/blog"],
+  };
+}
+
+function tombstone() {
+  return {
+    reason_code: "upstream-validator-vs-doc-mismatch",
+    demoted_at: "2026-01-01",
+    round: 1,
+    decided_by: "ADR-0001",
+    prior_scope: "live",
+  };
+}
+
 function badcase() {
   return {
     id: "docs-bc0001",
@@ -19,12 +38,7 @@ function badcase() {
     domain: "docs",
     observed: { results: 3 },
     evidence: { command: "ans search --domain docs 'install widget'", runAt: "2026-11-27" },
-    expected: {
-      verdict: "answer",
-      mustHitHosts: ["docs.example.com"],
-      mustHitPaths: [{ path: "/install", tolerate: ["locale"] }],
-      mustNotHitPaths: ["/blog"],
-    },
+    expected: expected(),
     intent: "howto",
     questionLang: "en",
     dimensions: ["intent:howto", "lang:en"],
@@ -43,12 +57,7 @@ function golden(question = "How do I configure the widget?") {
       question,
       questionLang: "en",
       intent: "howto",
-      expected: {
-        verdict: "answer",
-        mustHitHosts: ["docs.example.com"],
-        mustHitPaths: [{ path: "/install", tolerate: ["locale"] }],
-        mustNotHitPaths: ["/blog"],
-      },
+      expected: expected(),
       dimensions: ["intent:howto", "lang:en"],
       provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
     }],
@@ -94,8 +103,8 @@ function run(dir, args) {
   });
 }
 
-function expectFail(t, mutate, pattern, args = ["--id", "docs-bc0001", "--new"]) {
-  const dir = tree(t);
+function expectFail(t, mutate, pattern, args = ["--id", "docs-bc0001", "--new"], options = {}) {
+  const dir = tree(t, options);
   mutate(dir);
   const r = run(dir, args);
   assert.equal(r.status, 2, r.stdout + r.stderr);
@@ -130,10 +139,28 @@ test("--into attaches to the same-question row", (t) => {
 test("--new skips a tombstoned row with the same question", (t) => {
   const dir = tree(t, { goldenQuestion: QUESTION });
   editJson(join(dir, "eval-golden.json"), (g) => {
-    g.entries[0].tombstone = { reason_code: "provider-drift", demoted_at: "2026-01-01", round: 1 };
+    g.entries[0].tombstone = tombstone();
+    g.entries.push({
+      id: "docs-g0002",
+      domain: "docs",
+      question: "How do I uninstall the widget?",
+      questionLang: "en",
+      intent: "howto",
+      expected: expected(),
+      dimensions: ["intent:howto", "lang:en"],
+      provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
+    });
+    g.scopes["docs-g0002"] = "live";
+    delete g.scopes["docs-g0001"];
   });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
+  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  assert.equal(g.entries.length, 3);
+  assert.equal(g.entries.at(-1).id, "docs-g0003");
+  assert.equal(g.scopes["docs-g0003"], "live");
+  const b = JSON.parse(readFileSync(join(dir, "eval-badcases.json"), "utf8"));
+  assert.equal(b.badcases[0].status, "promoted");
 });
 
 test("--new rejects a deferred dimension", (t) => {
@@ -166,7 +193,7 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 test("--into rejects a tombstone target", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
-      g.entries[0].tombstone = { reason_code: "provider-drift", demoted_at: "2026-01-01", round: 1 };
+      g.entries[0].tombstone = tombstone();
     });
   }, /tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
@@ -195,4 +222,65 @@ test("a missing coverage file reports cannot read", (t) => {
   expectFail(t, (dir) => {
     rmSync(join(dir, "eval-looks.coverage.json"));
   }, /cannot read eval-looks\.coverage\.json/);
+});
+
+test("--new rejects a question shorter than 8 characters", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].question = "short"; });
+  }, /at least 8 characters/);
+});
+
+test("--new rejects a dimension tag outside the vocabulary", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].dimensions.push("intents:factoid"); });
+  }, /outside the eight-dimension vocabulary/);
+});
+
+test("--new rejects missing intent and lang tags", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].dimensions = ["intent:howto"]; });
+  }, /dimensions lack 'lang:en'/);
+});
+
+test("--new rejects expected.vertical", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].expected.vertical = {}; });
+  }, /carries expected\.vertical/);
+});
+
+test("--new rejects empty mustNotHitPaths", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].expected.mustNotHitPaths = []; });
+  }, /mustNotHitPaths must be a non-empty string\[\]/);
+});
+
+test("--new rejects a mustHitUrl host outside the allowlist", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => {
+      b.badcases[0].expected.mustHitUrls = ["https://evil.example/install"];
+      b.badcases[0].stability_class = "controlled";
+    });
+  }, /mustHitUrl host evil\.example outside/);
+});
+
+test("--new rejects a bad evidence.runAt", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].evidence.runAt = "2026/11/27"; });
+  }, /evidence\.runAt must be an ISO date/);
+});
+
+test("--new rejects entry values that are not objects", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.entries.push(null); });
+  }, /entries must contain objects/);
+});
+
+test("--into rejects a domain mismatch", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.entries[0].domain = "vert"; });
+  }, /domain mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
+});
+
+test("--into rejects a question mismatch", (t) => {
+  expectFail(t, () => {}, /question mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
