@@ -1,4 +1,4 @@
-// Backfill fixture checks. Named preflight-* so the push gate and CI run them.
+// Backfill fixture checks. CI runs these every time; the push gate only when it runs the full suite.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -124,6 +124,17 @@ test("--new writes the next docs row and promotes the badcase", (t) => {
   const b = JSON.parse(readFileSync(join(dir, "eval-badcases.json"), "utf8"));
   assert.equal(b.badcases[0].status, "promoted");
   assert.equal(b.badcases[0].promotedTo, "docs-g0002");
+  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  const count = (dim) => cov.dimensions.find((d) => d.dimension === dim)?.count;
+  assert.equal(count("intent"), 2);
+  assert.equal(count("lang"), 2);
+});
+
+test("--new rejects a question already in the golden corpus", (t) => {
+  const dir = tree(t, { goldenQuestion: QUESTION });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /use --into/);
 });
 
 test("--into attaches to the same-question row", (t) => {
@@ -140,6 +151,7 @@ test("--new skips a tombstoned row with the same question", (t) => {
   const dir = tree(t, { goldenQuestion: QUESTION });
   editJson(join(dir, "eval-golden.json"), (g) => {
     g.entries[0].tombstone = tombstone();
+    g.entries[0].expected = { verdict: "answer" };
     g.entries.push({
       id: "docs-g0002",
       domain: "docs",
@@ -193,7 +205,14 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 test("--into rejects a tombstone target", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
+      const second = structuredClone(g.entries[0]);
+      second.id = "docs-g0002";
+      second.question = QUESTION + " (second)";
+      g.entries.push(second);
+      g.scopes["docs-g0002"] = "live";
+      g.entries[0].expected = { verdict: "answer" };
       g.entries[0].tombstone = tombstone();
+      delete g.scopes["docs-g0001"];
     });
   }, /tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
@@ -258,7 +277,6 @@ test("--new rejects a mustHitUrl host outside the allowlist", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-badcases.json"), (b) => {
       b.badcases[0].expected.mustHitUrls = ["https://evil.example/install"];
-      b.badcases[0].stability_class = "controlled";
     });
   }, /mustHitUrl host evil\.example outside/);
 });
@@ -283,4 +301,10 @@ test("--into rejects a domain mismatch", (t) => {
 
 test("--into rejects a question mismatch", (t) => {
   expectFail(t, () => {}, /question mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
+});
+
+test("--into rejects a target with no question", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { delete g.entries[0].question; });
+  }, /has no string question/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
