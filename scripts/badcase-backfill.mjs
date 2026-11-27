@@ -69,6 +69,7 @@ const badcases = readJson(BADCASES, "eval-badcases.json");
 // JSON.parse("null") hands back null, and `.badcases` below would throw a bare
 // TypeError instead of this script's own diagnostic.
 if (!badcases || typeof badcases !== "object" || Array.isArray(badcases)) fail("eval-badcases.json root must be an object");
+if (!Array.isArray(badcases.badcases)) fail("eval-badcases.json: badcases must be an array");
 const bc = (badcases.badcases ?? []).find((b) => b.id === id);
 if (!bc) fail("badcase not found: " + id);
 if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.status + ")");
@@ -252,7 +253,7 @@ for (const e of golden.entries) {
   }
 }
 for (const d of cov.dimensions ?? []) {
-  if (d.status === "covered") {
+  if (d?.status === "covered") {
     const n = counts.get(d.dimension) ?? 0;
     if (n > 0) {
       d.count = n;
