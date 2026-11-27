@@ -682,6 +682,29 @@ async function main() {
     }
 
     {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "HTTP BODY"));
+      let asked = 0;
+      let shown: readonly string[] = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked++;
+        shown = request.urls;
+        return true;
+      });
+      const handle = "http://www.http-tofu.example/guide";
+      const wrong = await tool.execute("t25p0", {
+        handles: [handle], requestTrustFor: "www.http-tofu.example",
+      });
+      assert(rawText(wrong).includes("只能配合同一个主机") && asked === 0,
+        "an http handle without an http ticket is trusted under the effective https host");
+      const grant = await tool.execute("t25p1", { handles: [handle], requestTrustFor: "http-tofu.example" });
+      assert(rawText(grant).includes("已信任") && asked === 1 && shown[0] === "https://http-tofu.example/guide",
+        "the prompt shows the https URL the read will use");
+      const read = envelope(await tool.execute("t25p2", { handles: [handle] }));
+      assert(read.pages.length === 1 && provider.calls.length === 1,
+        "the retry reads the effective https URL through the ticket");
+    }
+
+    {
       const provider = new FakeProvider((urls) => pageEnvelope(urls));
       let asked = 0;
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });

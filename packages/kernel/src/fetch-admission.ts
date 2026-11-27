@@ -293,6 +293,20 @@ export function makeRequestUrl(identity: string, scheme: "http" | "https" = "htt
   return scheme + "://" + identity;
 }
 
+/**
+ * The URL a fetch will actually request for a user-typed handle. An explicit
+ * https handle keeps its spelling. An http handle keeps http only when a user
+ * ticket recorded that scheme; otherwise the read rebuilds the URL from the
+ * normalized identity on https, which is exactly what the trust prompt must
+ * show and what the trust ticket must cover.
+ */
+export function requestUrlFor(raw: string, identity: string, hasHttpTicket: boolean): string {
+  const rawUserUrl = raw.trim();
+  if (/^http:\/\//i.test(rawUserUrl) && hasHttpTicket) return rawUserUrl;
+  if (/^https:\/\//i.test(rawUserUrl)) return rawUserUrl;
+  return makeRequestUrl(identity, "https");
+}
+
 /** The canonical search-result handle. */
 export function searchHandle(rowId: number): string {
   return "m:" + rowId;

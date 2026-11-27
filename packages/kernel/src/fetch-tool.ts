@@ -38,6 +38,7 @@ import {
   httpTicketValue,
   makeRequestUrl,
   parseSearchHandle,
+  requestUrlFor,
   type FetchPolicy,
   type FetchRejectReason,
   type FetchTicketSource,
@@ -261,9 +262,7 @@ function resolveTicket(
     const rawUserUrl = raw.trim();
     const httpTicket = /^http:\/\//i.test(rawUserUrl)
       && store.hasFetchTicket(sessionId, "user", httpTicketValue(identity));
-    requestUrl = httpTicket || /^https:\/\//i.test(rawUserUrl)
-      ? rawUserUrl
-      : makeRequestUrl(identity, "https");
+    requestUrl = requestUrlFor(rawUserUrl, identity, httpTicket);
     if (store.hasFetchTicket(sessionId, "user", identity)) {
       source = "user";
     } else {
@@ -361,10 +360,13 @@ async function handleTrustRequest(
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
     const identity = normalizeUrlIdentity(handle);
     // Build the same request URL resolveTicket will read. A bare handle loses
-    // a leading "www." in the normalized identity, so checking the raw handle
-    // here would ask the user to trust one host and then read another.
+    // a leading "www." and an http handle without an http ticket is rebuilt on
+    // https, so checking the raw handle here would ask the user to trust one
+    // host and then read another.
     const rawUserUrl = handle.trim();
-    const requestUrl = /^https?:\/\//i.test(rawUserUrl) ? rawUserUrl : makeRequestUrl(identity, "https");
+    const httpTicket = /^http:\/\//i.test(rawUserUrl)
+      && options.store.hasFetchTicket(options.sessionId, "user", httpTicketValue(identity));
+    const requestUrl = requestUrlFor(rawUserUrl, identity, httpTicket);
     const address = checkFetchAddress(requestUrl, identity);
     if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {

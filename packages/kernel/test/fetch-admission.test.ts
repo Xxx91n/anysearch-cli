@@ -8,6 +8,7 @@ import {
   fetchCredentialHit,
   fetchRejectMessage,
   makeRequestUrl,
+  requestUrlFor,
 } from "../src/fetch-admission";
 
 let passed = 0, failed = 0;
@@ -175,6 +176,15 @@ assert(makeRequestUrl("example.com/a", "http") === "http://example.com/a",
   "a user-typed http URL keeps its scheme");
 assert(makeRequestUrl("example.com/a") === "https://example.com/a",
   "a bare user URL still becomes https");
+
+assert(requestUrlFor("http://www.example.com/x", "example.com/x", false) === "https://example.com/x",
+  "an http URL without an http ticket is read on https from the normalized identity");
+assert(requestUrlFor("http://www.example.com/x", "example.com/x", true) === "http://www.example.com/x",
+  "an http user ticket keeps the raw http URL");
+assert(requestUrlFor("https://www.example.com/x", "example.com/x", false) === "https://www.example.com/x",
+  "an explicit https URL keeps its host spelling");
+assert(requestUrlFor("www.example.com/x", "example.com/x", false) === "https://example.com/x",
+  "a bare URL uses the normalized identity");
 
 console.log("fetch-admission.test.ts: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);
