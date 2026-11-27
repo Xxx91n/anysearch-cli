@@ -183,9 +183,7 @@ if (args.includes("--dry-run")) {
   process.exit(0);
 }
 
-// The suite's default budget: ten minutes. The whole suite takes six to nine
-// minutes on a Windows machine, and store alone takes four and a quarter, so ten
-// is the two-times margin on the heaviest run a push can carry.
+// The default budget: ten minutes, so a rerun of the heaviest push has room.
 const DEFAULT_SUITE_TIMEOUT_SECONDS = 600;
 
 // setTimeout's own ceiling, in seconds: past it the timer clamps to a
@@ -193,9 +191,7 @@ const DEFAULT_SUITE_TIMEOUT_SECONDS = 600;
 const MAX_SUITE_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
 
 // The suite's budget and heartbeat, read before any temp state exists: a budget
-// the gate cannot parse ends the run without leaving a home behind. A budget the
-// gate cannot read is a gate that cannot do its job, so a bad value stops the
-// push with exit 2 instead of quietly falling back to a default nobody asked for.
+// the gate cannot read stops the push (exit 2) and leaves no home behind.
 const suiteTimeoutSeconds = readSuiteTimeout();
 const heartbeatSeconds = Math.min(15, Math.max(1, Math.round(suiteTimeoutSeconds / 4)));
 
@@ -263,8 +259,7 @@ if (selfTest) {
 }
 
 // Design: the count comes from the file, not the 64 KiB tail — a talkative suite
-// can push the summary out of a fixed-size tail. The header says where the file
-// goes and which runs keep it.
+// can push the summary out of a fixed-size tail.
 const suiteStarted = Date.now();
 dump = openDump();
 console.log(
@@ -348,7 +343,7 @@ if (timedOut) {
   // handlers would keep this process alive past the budget the gate just spent.
   await exitAfterFlush(1);
 } else if (interrupted) {
-  process.exitCode = interrupted;
+  await exitAfterFlush(interrupted);
 } else if (status !== 0) {
   // A run whose file never finished still has its in-memory tail; show that
   // rather than nothing.
@@ -377,13 +372,17 @@ if (timedOut) {
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here
-  // would read as "the gate is broken" instead.
-  process.exitCode = 1;
+  // would read as "the gate is broken" instead. Exit rather than fall off: a
+  // process outside the killed tree can hold the pipe and keep the loop alive.
+  await exitAfterFlush(1);
 } else {
   const count = totalTests(output);
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})${count === null ? "" : `, ${count} test(s)`}`);
   removeDump(dump);
   removeTestHome(testHome);
+  // Exit rather than fall off, for the same reason as the red branch: a pipe
+  // holder must not decide when the gate ends.
+  await exitAfterFlush(0);
 }
 
 function readChange() {
@@ -428,14 +427,13 @@ function planRun() {
   return broken(change.unknown, change.fix, []);
 }
 
-// turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
-// The summary is the last line, so the last match wins: a package that prints a
-// line starting "Failed:" must not be named instead of the task that failed.
+// turbo names each failed task on its own summary line, e.g.
+// "Failed: @scope/app#test". A package that prints a line starting "Failed:" is
+// named too, which is the lesser risk than dropping one of two that failed.
 function failedTask(output) {
   const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
-  let failed = null;
-  for (const match of plain.matchAll(/^Failed:\s*(.+)$/gm)) failed = match[1].trim();
-  return failed;
+  const names = [...plain.matchAll(/^Failed:\s*(.+)$/gm)].map((match) => match[1].trim());
+  return names.length > 0 ? names.join(", ") : null;
 }
 
 function readStdin() {
@@ -586,7 +584,7 @@ function forwardKeepingTail(source, limit, dump) {
 function openDump() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const handle = { file: path.join(os.tmpdir(), `ans-preflight-${stamp}.log`), failed: false };
-  handle.stream = fs.createWriteStream(handle.file, { flags: "wx" });
+  handle.stream = fs.createWriteStream(handle.file, { flags: "wx", mode: 0o600 });
   handle.stream.on("error", (error) => {
     if (handle.failed) return;
     handle.failed = true;
@@ -595,10 +593,8 @@ function openDump() {
   return handle;
 }
 
-// Wait for the file to flush. A handle that never opened resolves at once, and a
-// stream that never finishes must not hold the gate's answer forever — but a cap
-// that wins means the file is incomplete, so it is marked as such and read as no
-// file at all.
+// Wait for the file to flush, at most two seconds: a stream that never finishes
+// must not hold the answer, and a cap that wins makes the file incomplete.
 function closeDump(handle) {
   if (!handle?.stream || handle.failed) return Promise.resolve();
   return new Promise((resolve) => {
@@ -623,9 +619,8 @@ function closeDump(handle) {
   });
 }
 
-// A stream that failed mid-run leaves a truncated file: a prefix is not the run,
-// so it is not read as one — the count would be a partial sum passed off as the
-// total, and the recap would lose the failure it was meant to show.
+// A write that failed leaves a truncated file: read as the run, it would pass a
+// partial count off as the total.
 function readDump(handle) {
   if (!handle?.file || handle.failed) return null;
   try {

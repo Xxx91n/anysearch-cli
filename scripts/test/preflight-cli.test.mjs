@@ -176,7 +176,15 @@ test(
           err += chunk;
         });
         const started = Date.now();
-        const code = await new Promise((resolve) => gate.on("exit", resolve));
+        // The cap is the test's own: without it a gate that never answers hangs
+        // the run until CI's timeout instead of failing here.
+        const code = await new Promise((resolve, reject) => {
+          const cap = setTimeout(() => reject(new Error("the gate never exited")), 20000);
+          gate.on("exit", (exitCode) => {
+            clearTimeout(cap);
+            resolve(exitCode);
+          });
+        });
         // Measure the gate's own exit first: the wait below adds up to five
         // seconds of polling that are not the gate's time.
         const waited = Date.now() - started;
@@ -265,6 +273,24 @@ test("a red run with no output at all points nowhere", () => {
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, /blocked after \d+\.\ds: a task failed, no output to show/);
     assert.doesNotMatch(result.stderr, /see the output/);
+    // A red run keeps its home and its file on purpose: a fixture is not an
+    // operator's failed run, so the test takes them back.
+    dropLeftoverHome(result);
+  });
+});
+
+// Two packages failing at once is the common shape of a red full run: naming one
+// of them would hide the other.
+test("a red run with two failed tasks names both", () => {
+  const lines = ["Failed: @anysearch-cli/kernel#test", "Failed: @anysearch-cli/cli#test"];
+  withFakePnpm({ code: 1, lines }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /blocked after \d+\.\ds: @anysearch-cli\/kernel#test, @anysearch-cli\/cli#test/,
+    );
+    dropLeftoverHome(result);
   });
 });
 
@@ -390,10 +416,7 @@ test("a red run keeps the test home and prints where it is", async () => {
 
 test("an interrupted run keeps the test home and stops the whole tree", { skip: process.platform === "win32" }, async () => {
   await withWorkspace({ pnpm: writeSleepingPnpm }, async ({ root, bin }) => {
-    const env = { ...process.env };
-    env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
-    delete env.PREFLIGHT_GATE_TESTS;
-    env.PREFLIGHT_SELF_TEST = "0";
+    const env = gateEnv(bin);
     const gate = spawn(process.execPath, [join(root, "scripts", "preflight-test.mjs"), "--full"], {
       cwd: root,
       env,
@@ -1064,14 +1087,8 @@ function rev(root, ref) {
   return result.stdout.trim();
 }
 
-function withFakePnpm({ code = 0, lines = [] }, run) {
-  const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
-  try {
-    writeFakePnpm(bin, { code, lines });
-    run(bin);
-  } finally {
-    rmSync(bin, { recursive: true, force: true });
-  }
+function withFakePnpm(options, run) {
+  return withPnpmShim((bin) => writeFakePnpm(bin, options), run);
 }
 
 function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
@@ -1132,7 +1149,12 @@ function writeCountingPnpm(bin) {
 // A pnpm that dies of a signal instead of exiting: the gate gets no exit code, so
 // the file it kept is a prefix of the run and has to be named as one.
 function writeSignalPnpm(bin) {
-  writeNodePnpm(bin, "signal.mjs", ['console.log("suite started");', 'process.kill(process.pid, "SIGTERM");', ""]);
+  // The write has to land before the signal, or the gate reads an empty file and
+  // the test fails for a reason the gate is right about.
+  writeNodePnpm(bin, "signal.mjs", [
+    'process.stdout.write("suite started\n", () => process.kill(process.pid, "SIGTERM"));',
+    "",
+  ]);
 }
 
 // A pnpm whose output is longer than the failure recap: 150 lines, then a failed
@@ -1148,26 +1170,37 @@ function writeNoisyFailingPnpm(bin) {
 // Runs a fixture's shim against a throwaway bin dir. The caller's own assertions
 // run inside, awaited, so the dir outlives them; it goes away afterwards either
 // way.
-async function withPnpmShim(writeShim, run) {
-  const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
-  try {
+function withPnpmShim(writeShim, run) {
+  return withScratchDir("ans-preflight-bin-", (bin) => {
     writeShim(bin);
-    await run(bin);
-  } finally {
-    rmSync(bin, { recursive: true, force: true });
+    return run(bin);
+  });
+}
+
+// A throwaway directory removed when `run` returns or throws. A sync callback
+// keeps its result and its throw; an async one is cleaned up when it settles.
+function withScratchDir(prefix, run) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const drop = () => rmSync(dir, { recursive: true, force: true });
+  let result;
+  try {
+    result = run(dir);
+  } catch (error) {
+    drop();
+    throw error;
   }
+  if (result && typeof result.then === "function") return result.finally(drop);
+  drop();
+  return result;
 }
 
 // A temp dir the gate's own temp files land in: the output file and the throwaway
 // home both come from os.tmpdir(), so pointing TMPDIR/TEMP/TMP here keeps each
 // test's evidence in one place the test deletes.
 async function withTempDir(run) {
-  const dir = mkdtempSync(join(tmpdir(), "ans-preflight-run-"));
-  try {
-    await run({ dir, overrides: { TMPDIR: dir, TEMP: dir, TMP: dir } });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  await withScratchDir("ans-preflight-run-", (dir) =>
+    run({ dir, overrides: { TMPDIR: dir, TEMP: dir, TMP: dir } }),
+  );
 }
 
 // A stand-in pnpm that passes and says it ran, so a test can tell whether the
