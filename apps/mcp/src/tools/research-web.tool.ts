@@ -57,8 +57,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
-        // Same round the arm lists describe: an arm that answered in round 1
-        // and was cut in round 2 has only its round-2 state here.
+        // The last COMPLETED round's table, same window as the arm lists below.
+        // A round the caller aborted is dropped whole (the break above runs
+        // before this assignment), so the table can still be an earlier round's.
         let lastRoundProviderElapsedMs: Record<string, number> = {};
         let lastEnvelope: any = null;
         let rounds = 0;

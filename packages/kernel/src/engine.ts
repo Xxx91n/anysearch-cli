@@ -517,9 +517,8 @@ export class RetroaererdEngine {
     // seconds the failing arm asked us to wait; recorded whenever it gave one.
     const providerErrorRetryAfterSeconds: Record<string, number> = {};
     const providersCancelled: string[] = [];
-    // #653: what each answered arm said it took. A cut or failed arm has no
-    // real number, so it never enters this map — providersCancelled /
-    // providersFailed already say what happened to it.
+    // What each answered arm said it took (ms). A cut or failed arm has no
+    // number; its state is in providersCancelled / providersFailed.
     const providerElapsedMs: Record<string, number> = {};
     const answers: string[] = [];
     // per-provider attribution in metadata, not in answers[].
