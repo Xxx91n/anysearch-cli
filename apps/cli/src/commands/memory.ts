@@ -21,11 +21,11 @@ function printHelp(): void {
       "",
       "Commands:",
       "  backfill-vectors [--dry-run] [--limit N]  Embed rows missing a vector and repair page-body blocks (idempotent)",
+      "    --dry-run scans the whole store without writing and ignores --limit; --limit caps a real run's pages/blocks.",
+      "    Exit 0 on full completion, 1 when a row or block failed to embed, or a page could not be rebuilt.",
       " forget [--dry-run|--apply] [--limit N] Archive stale, never-accessed episodes",
+      "    --dry-run honours --limit and reports that many candidates.",
       "  forget --undo <logId>                   Restore an archived episode (idempotent)",
-      "",
-      "--dry-run reports the whole archive without writing and ignores --limit; --limit caps a real run's pages/blocks. Exit 0 on full completion,",
-      "exit 1 when a row or block failed to embed, or a page could not be rebuilt.",
       "",
     ].join("\n") + "\n"
   );

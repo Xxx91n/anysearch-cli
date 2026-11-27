@@ -91,6 +91,15 @@ async function main() {
     // A single Han character exists inside bigrams, never as its own FTS token.
     const single = await store.searchMemory("词", 5);
     assert(single.some((h) => h.rowid === page.id), "a one-character Han query falls back to a page-level LIKE");
+    // The only hit can be on the heading line itself; that page must not vanish.
+    const hanHeadingPage = await store.savePage(session.id, {
+      url: "https://example.com/heading-only",
+      title: "词表",
+      content: "## 词表\n\n这一节只有正文，没有重复的字。",
+      source: "exa",
+    });
+    assert((await store.searchMemory("词", 5)).some((h) => h.rowid === hanHeadingPage.id),
+      "a one-character hit on a heading line still maps to its section");
 
     // ---- English prefix still matches -------------------------------------
     const prefix = await store.searchMemory("vector", 5);

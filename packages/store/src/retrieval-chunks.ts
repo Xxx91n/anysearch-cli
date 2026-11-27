@@ -304,8 +304,6 @@ export interface ChunkPageHit {
   /** The row's snippet column: usually the body's first 4000 characters, but a
    *  snippet row filled with a body later keeps its original search snippet. */
   snippet: string | null;
-  /** Position in the section fusion order (higher = better); not a confidence. */
-  order: number;
 }
 
 /** One section enters a list once; every lane dedupes through this. */
@@ -366,8 +364,11 @@ function keywordSections(db: Database.Database, query: string, limit: number): n
       const sections = sectionMap.get(page.id);
       if (!sections || sections.length === 0) continue;
       // The hit can land on a heading line or in trimmed whitespace between
-      // sections; then there is no honest section to point at, so skip it.
-      const hit = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars);
+      // sections. Point at the section that follows, or the last one when the
+      // hit is after the final section, instead of dropping the page.
+      const hit = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars)
+        ?? sections.find((s) => s.startOffset > page.at)
+        ?? sections[sections.length - 1];
       if (hit) push(hit.sectionId);
       if (out.length >= fetchLimit) break;
     }
@@ -429,15 +430,11 @@ export function searchChunkPages(
   // One page appears once, at the position of its best-ranked section.
   const pageIds: number[] = [];
   const seenPages = new Set<number>();
-  const bestRank = new Map<number, number>();
   const bestSection = new Map<number, number>();
   for (let i = 0; i < sectionOrder.length; i++) {
     const pageId = sectionToPage.get(sectionOrder[i]!);
     if (pageId === undefined) continue;
-    if (!bestRank.has(pageId)) {
-      bestRank.set(pageId, i);
-      bestSection.set(pageId, sectionOrder[i]!);
-    }
+    if (!bestSection.has(pageId)) bestSection.set(pageId, sectionOrder[i]!);
     if (seenPages.has(pageId)) continue;
     seenPages.add(pageId);
     pageIds.push(pageId);
@@ -469,7 +466,6 @@ export function searchChunkPages(
   for (const pageId of pageIds) {
     const page = byPage.get(pageId);
     if (!page) continue;
-    const rank = bestRank.get(pageId)!;
     const bestSectionId = bestSection.get(pageId)!;
     hits.push({
       pageId,
@@ -477,7 +473,6 @@ export function searchChunkPages(
       title: page.title,
       matchText: textBySection.get(bestSectionId) ?? null,
       snippet: page.snippet,
-      order: sectionOrder.length - rank,
     });
   }
   return hits;

@@ -655,6 +655,7 @@ export class SqliteSessionStore implements SessionStore {
   // durable `pending` count (chunkVectorBacklog / `ans doctor`).
   private readonly chunkVectorQueue: number[] = [];
   private chunkVectorDraining = false;
+  private chunkQueueFullLogged = false;
   private closed = false;
   private static readonly CHUNK_VECTOR_QUEUE_MAX = 64;
   // relation extraction + arm telemetry (report-only, never gated).
@@ -1722,9 +1723,11 @@ export class SqliteSessionStore implements SessionStore {
   private enqueueChunkVectors(pageId: number): void {
     if (this.chunkVectorQueue.includes(pageId)) return;
     if (this.chunkVectorQueue.length >= SqliteSessionStore.CHUNK_VECTOR_QUEUE_MAX) {
-      // The page is written; only its vectors wait for the durable backlog.
-      writeStderrSafe("[warn] chunk-vector queue full; row " + pageId +
-        " left for ans memory backfill-vectors\n");
+      if (!this.chunkQueueFullLogged) {
+        this.chunkQueueFullLogged = true;
+        // The page is written; only its vectors wait for the durable backlog.
+        writeStderrSafe("[warn] chunk-vector queue full; further rows are left for ans memory backfill-vectors\n");
+      }
       return;
     }
     this.chunkVectorQueue.push(pageId);
