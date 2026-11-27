@@ -148,9 +148,6 @@ function sourceNote(id: string, sources: Extract<CredentialSources, { status: "r
 /**
  * Providers cancelled 那一行：引擎真问了、到点没等回来的臂。不是失败，也不是
  * 没问。空表返回 undefined，所以健康路径一个字都不多。
- *
- * 以前这里写的是「结果够了」——那是假话：引擎到点就切，从没看过结果够不够，
- * 0 条结果时也照说不误（#651）。
  */
 export function formatProvidersCancelledLine(providersCancelled: readonly string[]): string | undefined {
   if (providersCancelled.length === 0) return undefined;

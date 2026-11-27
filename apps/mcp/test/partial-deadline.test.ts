@@ -1,7 +1,8 @@
 // #651 — both MCP search tools say when the pool was cut short and what
 // budget the call ran on. `partial` and `deadlineMs` ride in the text half and
-// in `structuredContent`; both values come from the engine's envelope, so the
-// tools never re-derive a default or re-judge the arm lists.
+// in `structuredContent`; `partial` comes from the engine's arm lists (any
+// completed round for research_web, the one fanout for search_web), and
+// `deadlineMs` is the same resolved budget the engine ran with.
 //
 // Test setup: real registered handlers, in-process, over a fake
 // CompositionResult (no providers, no network, no LLM).
@@ -10,7 +11,7 @@
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
 import { registerResearchWeb } from "../src/tools/research-web.tool.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
-import type { FusedEnvelope, SearchOutcome } from "@anysearch-cli/retriever";
+import type { FusedEnvelope } from "@anysearch-cli/retriever";
 import type { SessionStore } from "@anysearch-cli/store";
 
 let passed = 0, failed = 0;
@@ -28,15 +29,17 @@ const fakeSpan: any = {
   finish: () => {},
 };
 
-function makeEngine(envelope: FusedEnvelope): CompositionResult {
+function makeEngine(envelopes: FusedEnvelope[], requestTimeoutMs = 4000): CompositionResult {
+  let i = 0;
   return {
-    retriever: { search: async (_q: Query) => envelope },
+    retriever: { search: async (_q: Query) => envelopes[Math.min(i++, envelopes.length - 1)] },
     store: {
       createSession: async (d: string) => ({ id: "s", domain: d, createdAt: "" }),
       saveResults: async () => {},
     } as unknown as SessionStore,
     observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
     providerBuildErrors: {},
+    requestTimeoutMs,
   } as unknown as CompositionResult;
 }
 
@@ -50,16 +53,15 @@ function captureHandlers(eng: CompositionResult) {
   return handlers;
 }
 
-function envelope(over: { providersCancelled?: string[]; deadlineMs?: number; outcome?: SearchOutcome }): FusedEnvelope {
+function envelope(over: { providersCancelled?: string[]; outcome?: FusedEnvelope["metadata"]["outcome"]; results?: any[] }): FusedEnvelope {
   return {
-    results: [],
+    results: (over.results ?? []) as FusedEnvelope["results"],
     answers: [],
     metadata: {
       providersQueried: ["anysearch"],
       providersFailed: [],
       providersCancelled: over.providersCancelled ?? [],
       elapsedMs: 1,
-      ...(over.deadlineMs !== undefined ? { deadlineMs: over.deadlineMs } : {}),
       outcome: over.outcome ?? "empty",
     },
   };
@@ -68,8 +70,8 @@ function envelope(over: { providersCancelled?: string[]; deadlineMs?: number; ou
 async function main() {
   // 1. search_web, one arm cut: partial is true and the budget travels whole.
   {
-    const cut = envelope({ providersCancelled: ["anysearch"], deadlineMs: 500, outcome: "cancelled" });
-    const res = await captureHandlers(makeEngine(cut)).search_web({ query: "q" });
+    const cut = envelope({ providersCancelled: ["anysearch"], outcome: "cancelled" });
+    const res = await captureHandlers(makeEngine([cut], 500)).search_web({ query: "q" });
     assert(res?.isError !== true, "1: a cut search is not an error");
     assert(res?.structuredContent?.partial === true, "1: structuredContent says the pool was cut");
     assert(res?.structuredContent?.deadlineMs === 500, "1: structuredContent carries the budget the engine used");
@@ -80,22 +82,42 @@ async function main() {
 
   // 2. search_web, nothing cut: partial is still present, and false.
   {
-    const whole = envelope({ deadlineMs: 8000, outcome: "empty" });
-    const res = await captureHandlers(makeEngine(whole)).search_web({ query: "q" });
+    const whole = envelope({});
+    const res = await captureHandlers(makeEngine([whole], 8000)).search_web({ query: "q" });
     assert(res?.structuredContent?.partial === false, "2: a complete pool reads partial=false, never a missing key");
     assert(res?.structuredContent?.deadlineMs === 8000, "2: the budget is not assumed to be the default");
   }
 
   // 3. research_web: the last completed round was cut, so the call says so.
   {
-    const cut = envelope({ providersCancelled: ["anysearch"], deadlineMs: 500, outcome: "cancelled" });
-    const res = await captureHandlers(makeEngine(cut)).research_web({ question: "q", depth: "brief" });
+    const cut = envelope({ providersCancelled: ["anysearch"], outcome: "cancelled" });
+    const res = await captureHandlers(makeEngine([cut], 500)).research_web({ question: "q", depth: "brief" });
     assert(res?.isError !== true, "3: a cut research call is not an error");
     assert(res?.structuredContent?.partial === true, "3: research_web says the pool was cut");
-    assert(res?.structuredContent?.deadlineMs === 500, "3: research_web carries the round's budget");
+    assert(res?.structuredContent?.deadlineMs === 500, "3: research_web carries the call's budget");
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(doc.partial === true, "3: text half agrees on partial");
     assert(doc.deadlineMs === 500, "3: text half agrees on deadlineMs");
+  }
+
+  // 4. research_web: an early round cut, the last round whole. The merged pool
+  // is still short, so the call reports partial — even though the last round's
+  // arm list (the one on the wire) is empty.
+  {
+    const round1 = envelope({
+      providersCancelled: ["b"],
+      results: [{ title: "one", url: "https://example.com/1", source: "anysearch" }],
+    });
+    const round2 = envelope({
+      results: [{ title: "two", url: "https://example.com/2", source: "anysearch" }],
+    });
+    const res = await captureHandlers(makeEngine([round1, round2], 3000)).research_web({ question: "q", depth: "standard" });
+    assert(res?.structuredContent?.partial === true, "4: one cut round makes the whole call partial");
+    assert(res?.structuredContent?.deadlineMs === 3000, "4: the budget belongs to the call, not the round");
+    assert(
+      JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify([]),
+      "4: the arm list is still last-round only, so partial and the list answer different questions",
+    );
   }
 
   console.log("--- mcp partial/deadline tests: " + passed + " passed, " + failed + " failed ---");

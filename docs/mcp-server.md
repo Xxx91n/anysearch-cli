@@ -271,18 +271,21 @@ Rules behind the table:
   both search tools report it: the content JSON and `structuredContent` carry
   `providersCancelled` beside `providersQueried`, so an arm that was asked and
   then cut off cannot be read as an arm that never ran. The same two halves
-  carry `partial` (true exactly when that list is non-empty) and `deadlineMs`
-  (the budget the engine ran this call with), always present, so a host can
-  tell a shortened pool from a complete one without matching on text. On
-  `research_web` both follow the last completed round: no completed round means
-  `partial: false` and `deadlineMs: null`, matching `outcome: null`. Zero queried
+  carry `partial` and `deadlineMs` (the resolved budget the engine ran this call
+  with), always present, so a host can tell a shortened pool from a complete one
+  without matching on text. `search_web` reads `partial` off its one fanout;
+  `research_web` reads it off the whole call — any completed round that was cut
+  makes the merged pool short, so `partial` is true even when the last round
+  came back whole — and it is false when no round completed. `deadlineMs` is the
+  call's budget on both tools: a number, even before any round runs. Zero queried
   providers is not an outage, and a cancelled provider never counts as an
   answered one, so a search with any cancelled arm cannot abstain: when nothing
   came back the verdict is `cancelled` — or `failed` when every queried arm failed — never a
   refusal.
-  `search_web` reports the pair for the one fanout it ran;
-  `research_web` reports it for its last completed round and never unions
-  rounds. Its failure fields keep the other scale on purpose:
+  `search_web` reports `providersCancelled` for the one fanout it ran;
+  `research_web` keeps the arm list last-round only and never unions rounds,
+  while its `partial` covers the call. Its failure fields keep the other scale
+  on purpose:
   `providersFailed` and `providerErrorClasses` are a union across rounds,
   because an arm that failed in any round degraded the run. The two lists
   answer different questions, so one arm can appear in both — failed in one

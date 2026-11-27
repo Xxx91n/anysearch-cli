@@ -323,9 +323,12 @@ async function main() {
     assert(research?.structuredContent?.outcome === null, "4: no completed round, so the round verdict is null");
     assert(researchDoc.outcome === null, "4: content agrees with structuredContent");
     // #651: the shape stays stable with no completed round either — no cut is
-    // claimed and no budget is invented.
+    // claimed. The budget is the call's own clock, known before any round runs.
     assert(research?.structuredContent?.partial === false, "4: no completed round, so no cut is claimed");
-    assert(research?.structuredContent?.deadlineMs === null, "4: no completed round, no budget to report");
+    assert(
+      research?.structuredContent?.deadlineMs === DEFAULT_REQUEST_TIMEOUT_MS,
+      "4: the call's budget is reported even with no completed round",
+    );
   }
 
   // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----

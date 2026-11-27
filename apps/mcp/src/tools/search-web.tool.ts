@@ -7,8 +7,8 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec, poolCoverage } from "@anysearch-cli/retriever";
+import { DEFAULT_REQUEST_TIMEOUT_MS, KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
+import { buildVerticalSpec, isPartialPool } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -73,9 +73,6 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
-          // "The pool was cut short" and "what budget it ran on", derived once
-          // from the engine's own record and reported on both halves.
-          const coverage = poolCoverage(envelope);
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
           if (outcome === "failed") {
@@ -84,6 +81,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // Partial success: at least one arm answered, so isError stays false
           // while these fields name the degraded arms.
           const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses, providerErrorRetryAfter);
+          const partial = isPartialPool(cancelledProviders);
           const topResults = envelope.results.slice(0, 10);
 
           // provider answers pass through as first-class fields.
@@ -110,8 +108,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // went away. Paired with providersQueried, so neither case reads as
               // an arm that never ran.
               providersCancelled: cancelledProviders,
-              partial: coverage.partial,
-              deadlineMs: coverage.deadlineMs,
+              // The budget the engine ran this call with; the same number as
+              // the CLI's requestTimeoutMs, reported under the ticket's name.
+              partial,
+              deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -165,10 +165,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
-            // The boolean and the budget this call ran with, both always
-            // present so a host never confuses "complete" with "field missing".
-            partial: coverage.partial,
-            deadlineMs: coverage.deadlineMs,
+            // Both always present so a host never confuses "complete" with
+            // "field missing".
+            partial,
+            deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

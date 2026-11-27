@@ -736,10 +736,6 @@ export class RetroaererdEngine {
         ...(providersFailed.length > 0 ? { providerErrorClasses } : {}),
         ...(Object.keys(providerErrorRetryAfterSeconds).length > 0 ? { providerErrorRetryAfterSeconds } : {}),
         elapsedMs: Date.now() - start,
-        // The wait budget this run actually had (the same value the deadline
-        // timer above used). Surfaces report it instead of re-deriving the
-        // default from the environment.
-        deadlineMs: this.requestTimeoutMs,
         // MVSS four-segment sufficiency signal.
         sufficiency: suff.mvs,
         // provenance + fail-open marker.

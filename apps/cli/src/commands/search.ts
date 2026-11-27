@@ -2,7 +2,7 @@
 // decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { buildVerticalSpec, poolCoverage, verticalSpecReject } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, isPartialPool, verticalSpecReject } from "@anysearch-cli/retriever";
 import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
@@ -271,8 +271,7 @@ export async function runSearch(args: string[]): Promise<number> {
     );
 
     // A cut arm means the pool is shorter than the fanout that was asked.
-    // Derived once, from the arm list and budget the engine wrote.
-    const coverage = poolCoverage(envelope);
+    const partial = isPartialPool(envelope.metadata.providersCancelled);
 
     // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
@@ -282,11 +281,8 @@ export async function runSearch(args: string[]): Promise<number> {
         // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
         // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
         requestTimeoutMs: engine.requestTimeoutMs,
-        // Design: two names for one number — `requestTimeoutMs` is the eval
-        // clock (docs/eval/request-timeout-budget.md reads it), `deadlineMs` is
-        // the per-run budget the ticket asks for. Kept both so eval reports do
-        // not move; always present, null only when no engine wrote one.
-        deadlineMs: coverage.deadlineMs,
+        // 同一个数，票面叫 `deadlineMs`。留两个键是因为评测报告认准了上面那个。
+        deadlineMs: engine.requestTimeoutMs,
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
@@ -299,7 +295,7 @@ export async function runSearch(args: string[]): Promise<number> {
         providersCancelled: envelope.metadata?.providersCancelled ?? [],
         // True when at least one arm was cut, so a script does not have to read
         // three fields to notice the pool was shortened. Always present.
-        partial: coverage.partial,
+        partial,
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         // construction-time provider absences (id -> safe category), paired
@@ -390,7 +386,7 @@ export async function runSearch(args: string[]): Promise<number> {
     const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
-    console.log(formatResultsLine(envelope.results.length, coverage.partial));
+    console.log(formatResultsLine(envelope.results.length, partial));
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
     return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });
