@@ -93,8 +93,8 @@ export interface DocsGoldenVerticalSpec {
 // Closed vocabularies: DOCS_GOLDEN_TOLERATED_SEGMENTS gates
 // expected.mustHitPaths.tolerate; DOCS_GOLDEN_STABILITY_CLASSES gates
 // entry.stability_class. Adding a value widens what every corpus row may
-// declare, so it is a corpus-governance act: the page-family rule in
-// docs/limitations.md and the rows that use the new value move with it.
+// declare, so it is a corpus-governance act: update the page-family rule in
+// docs/limitations.md, and the rows that use the new value, in the same change.
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
