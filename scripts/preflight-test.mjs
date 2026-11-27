@@ -357,10 +357,11 @@ if (timedOut) {
     for (const line of lines) console.error(line);
   }
   // A suite killed from outside has no failed task to name: an external signal is
-  // not a test failure. And a file the gate could not finish writing is not
-  // something to send the operator to — the tail above is what is left.
+  // not a test failure.
   const failed = child.signalCode ? null : failedTask(output ?? readTail());
-  const where = dump?.failed ? "the output above" : "the output file";
+  // `output` is the recap's source, so it is also where to send the operator: a
+  // file the gate could not read leaves only the tail above.
+  const where = output === null ? "the output above" : "the output file";
   const reason = child.signalCode
     ? `killed by ${child.signalCode}, see ${where}`
     : (failed ?? "a task failed, see the output above");
