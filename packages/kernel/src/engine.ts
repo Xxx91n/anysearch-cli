@@ -231,10 +231,9 @@ export class RetroaererdEngine {
   private repoVertical?: () => SearchRequest["vertical"];
   // The sufficiency gate is fixed at construction and consulted per request.
   private gate: SufficiencyGate;
-  // The caller's per-fanout budget: tests shrink it, eval raises it, and
-  // `ans search --deadline` passes the terminal's choice; absent is 4s.
-  // Readonly and public because composition assigns the engine to
-  // RetrieverPort, which declares this field public.
+  // The per-fanout budget the caller picked: tests shrink it, eval raises it,
+  // and `ans search --deadline` passes the terminal's choice; absent is 4s.
+  // Public and readonly only because RetrieverPort declares the same field.
   readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.

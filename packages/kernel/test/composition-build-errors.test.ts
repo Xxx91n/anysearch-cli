@@ -177,6 +177,13 @@ try {
   for (const bad of [0, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: bad } }), 4000, "包装器报 0/NaN/Infinity 时回落结果自己的预算（传的是 " + String(bad) + "）");
   }
+  // A wrapper may report more than the engine's ceiling; the report is clamped
+  // to what the engine actually waits with.
+  assert.equal(
+    reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: 3_000_000_000 } }),
+    2_147_483_647,
+    "包装器报的值超过引擎上限时夹到 2^31-1"
+  );
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the

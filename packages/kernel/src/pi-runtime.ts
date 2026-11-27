@@ -51,6 +51,7 @@ import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPor
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
+import { isPositiveWholeMs } from "./engine";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
 import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";
 import { extractUserUrlTickets, searchHandle } from "./fetch-admission";
@@ -771,7 +772,7 @@ export class PiAgentRuntime {
           taskBudget: opts.taskBudget ?? q.taskBudget,
           ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
         }),
-        requestTimeoutMs: opts.retriever.requestTimeoutMs,
+        ...(isPositiveWholeMs(opts.retriever.requestTimeoutMs) ? { requestTimeoutMs: opts.retriever.requestTimeoutMs } : {}),
       }
       : opts.retriever;
     // #302: the session half of the routing keeps the old three-part gate
