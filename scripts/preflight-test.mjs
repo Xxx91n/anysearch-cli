@@ -101,10 +101,12 @@ if (args.length === 1 && args[0] === "--staged") {
   process.exit(0);
 }
 
-// The repair for a change set git cannot name: the usual cause is a base the
-// clone never fetched, so fetch first; --no-verify is the way past a gate that
-// has no answer. It sits above the call because planRun reads it.
-const FETCH_FIRST = "run `git fetch origin` first — a stale origin/HEAD is the usual cause";
+// The repair for a change set git cannot name, in the order that actually fixes
+// it: a stale base needs a fetch, and a clone that never had origin/HEAD (git
+// init + fetch writes none) needs set-head, which a fetch cannot do. It sits
+// above the call because planRun reads it.
+const FETCH_FIRST =
+  "run `git fetch origin`, then `git remote set-head origin -a` if origin/HEAD is still missing";
 
 const plan = planRun();
 
@@ -118,7 +120,7 @@ if (plan.mode === "none") {
 // contract).
 if (plan.mode === "docs") {
   console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
-  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
+  saySkippedIsNotAPass();
   process.exit(0);
 }
 
@@ -133,7 +135,7 @@ if (plan.mode === "unowned") {
     `[preflight] skipped: ${plan.outside.length} changed file(s) belong to no workspace package — no test ran for the whole change`,
   );
   console.log(`[preflight] skipped files: ${listFirst(plan.outside)}`);
-  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
+  saySkippedIsNotAPass();
   console.log("[preflight] this coverage is CI's: check-build runs the full suite when no package owns a file");
   console.log("[preflight] to run the whole suite here anyway: node scripts/preflight-test.mjs --full");
   process.exit(0);
@@ -320,6 +322,11 @@ function readStdin() {
   } catch {
     return null;
   }
+}
+
+// Both skip paths say the same thing, so both say it with the same words.
+function saySkippedIsNotAPass() {
+  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
 }
 
 function listFirst(files) {

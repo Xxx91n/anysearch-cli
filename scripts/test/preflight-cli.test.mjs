@@ -545,6 +545,43 @@ test("--full still runs the whole suite for a change no package owns", async () 
   });
 });
 
+// A package file next to an unowned one loses its run too: the whole change is
+// skipped, and the line has to say so — otherwise the package half looks covered.
+test("a package file next to an unowned one skips the whole change", async () => {
+  await withWorkspace(
+    { changed: ["apps/dsh-plugin/src/index.ts", "scripts/release.mjs"] },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        /skipped: 1 changed file\(s\) belong to no workspace package — no test ran for the whole change/,
+      );
+      assert.match(result.stdout, /skipped files: scripts\/release\.mjs/);
+      assert.equal(result.stdout.includes("pnpm ran"), false);
+      assert.equal(result.stdout.includes("green"), false);
+    },
+  );
+});
+
+// A gate that cannot start pnpm is the gate failing: exit 2, not a red run.
+// POSIX only — on Windows the gate spawns through a shell, so a missing pnpm is
+// a child that exits non-zero instead of a spawn error, and this path cannot be
+// reached there.
+test(
+  "a gate that cannot start pnpm exits 2",
+  { skip: process.platform === "win32" ? "Windows runs pnpm through a shell" : false },
+  async () => {
+    // No pnpm anywhere on PATH: the fake bin dir is empty and PATH points at it.
+    // --full needs no change set, so git being absent from PATH is fine too.
+    await withWorkspace({ pnpm: () => {} }, ({ root, bin }) => {
+      const result = runCliIn(root, bin, ["--full"], { overrides: { PATH: bin } });
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(result.stderr, /could not start pnpm/);
+    });
+  },
+);
+
 // A damaged manifest is a fault, not a skip: it stops the push and names the
 // file, because a green or skipped line here would hide a broken tree.
 test("a broken manifest stops the push, names the file, and starts nothing", async () => {
@@ -669,7 +706,7 @@ test("an unreadable push ref stops the push and names both ways out", async () =
     const result = runCliIn(root, bin, ["--pushed"], { input: "not a ref line" });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /blocked: could not read the pushed commits/);
-    assert.match(result.stderr, /fix: run `git fetch origin` first/);
+    assert.match(result.stderr, /fix: run `git fetch origin`, then `git remote set-head origin -a`/);
     assert.match(result.stderr, /to push anyway: git push --no-verify/);
     assert.equal(result.stdout.includes("pnpm ran"), false);
     assert.equal(result.stdout.includes("full suite"), false);

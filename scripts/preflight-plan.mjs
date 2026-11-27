@@ -5,13 +5,10 @@
 // Design: seven modes, each printed differently by the caller — "incremental"
 // and "readers" run the packages the change can break; "full" runs everything
 // and only a forced run asks for it; "none" and "docs" have nothing to run and
-// say why. The final two have nothing to run either, but they are not "nothing
-// to do": "unowned" is a change carrying a file no package can claim — the
-// gate says it skipped, because no rule here names what that file can break;
-// "broken" is a repository the gate cannot read at all (a damaged manifest, no
-// workspace declaration, a reader that is gone) — the caller stops the push
-// with exit 2 instead of guessing. Skipping and stopping are two different
-// answers, and only the second one is a fault. Neither is a pass.
+// say why. "unowned" is a change carrying a file no package can claim, so the
+// gate skips it and names CI's check-build as the coverage; "broken" is a
+// repository the gate cannot read, and the caller stops the push with exit 2.
+// Skipping and stopping are different answers, and neither is a pass.
 //
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
@@ -20,10 +17,9 @@
 // an unfiltered full run covers that — the push gate's --full, CI's
 // check-build lane, and the merge gate. A root file the reader table below
 // names runs those packages and nothing else (#489). Everything else at the
-// root belongs to no package: the lockfile, package.json, turbo.json,
-// pnpm-workspace.yaml, .github/, .gitignore (it changes what git sees for every
-// package), and scripts/. A local skip there is safe because the coverage moved
-// to CI, whose check-build lane runs the full suite when no package owns a file.
+// root — the lockfile, package.json, turbo.json, pnpm-workspace.yaml, .github/,
+// .gitignore, scripts/ — belongs to no package and is skipped locally;
+// check-build runs the full suite for it.
 //
 // Design: documentation gets its own mode, not the unowned one — a docs-only
 // change runs nothing, and docs next to code are dropped before the package
@@ -31,13 +27,9 @@
 // The boundary is isDocumentation (#488).
 //
 // A file belongs to the package whose directory contains it. A workspace the
-// gate cannot read (a broken manifest, no pnpm-workspace.yaml) answers
-// "broken", never "nothing to run".
-//
-// Design: a directory whose manifest has no name is not a package, and a change
-// under it answers "broken" too — the manifest is damaged, and skipping the
-// change would hide that. The old answer ran the whole suite, which this plan no
-// longer does on its own.
+// gate cannot read answers "broken", never "nothing to run", and so does a
+// change under a manifest with no name: the manifest is damaged, and a skip
+// would hide it.
 
 import fs from "node:fs";
 import path from "node:path";
