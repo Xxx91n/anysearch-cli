@@ -56,11 +56,11 @@ function withSandbox(fn) {
   // nothing. The gate stub is committed, so a fresh clone has no changes at all.
   const seeded = () => {
     const origin = join(base, "seed-origin");
-    mkdirSync(join(origin, "packages", "foo"), { recursive: true });
+    mkdirSync(join(origin, "packages", "store"), { recursive: true });
     git(origin, ["init", "-q", "--initial-branch=main"]);
     writeFileSync(join(origin, "README.md"), "# seed\n");
     writeFileSync(join(origin, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n');
-    writeFileSync(join(origin, "packages", "foo", "package.json"), '{\n  "name": "@anysearch-cli/foo"\n}\n');
+    writeFileSync(join(origin, "packages", "store", "package.json"), '{\n  "name": "@anysearch-cli/store"\n}\n');
     placeGate(origin);
     git(origin, ["add", "-A"]);
     git(origin, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "seed"]);
@@ -471,7 +471,7 @@ test("status names the mode a push lands in and what waiting for it costs", () =
     assert.match(clean.stdout, /mode: nothing to run — no changed files/);
     assert.match(clean.stdout, /wait budget: none — nothing runs/);
 
-    writeFileSync(join(clone, "packages", "foo", "index.ts"), "export const a = 1;\n");
+    writeFileSync(join(clone, "packages", "store", "index.ts"), "export const a = 1;\n");
     const incremental = box.run(clone, ["status"]);
     assert.equal(incremental.status, 0, incremental.stderr);
     assert.match(incremental.stdout, /mode: incremental/);
@@ -490,6 +490,22 @@ test("a change no package owns reads as the advisory mode and runs nothing", () 
     assert.match(status.stdout, /mode: advisory/);
     assert.match(status.stdout, /CI's check-build covers that change/);
     assert.match(status.stdout, /wait budget: none — nothing runs/);
+  });
+});
+
+// A root file's readers run without their dependents, so the incremental sentence
+// about "inside a package and everything that depends on it" would overstate it.
+test("a root file runs its readers, and the line says so", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    // AGENTS.md is a row in the plan's reader table: store's tests read it.
+    writeFileSync(join(clone, "AGENTS.md"), "# notes\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: incremental — a changed root file runs only the packages whose tests read it/);
+    assert.match(status.stdout, /at least 600/);
   });
 });
 
@@ -577,11 +593,11 @@ test("a repository the gate cannot read is blocked, not reported as fine", () =>
   withSandbox((box) => {
     const clone = box.seeded();
     installOk(box, clone);
-    writeFileSync(join(clone, "packages", "foo", "package.json"), "{ broken\n");
+    writeFileSync(join(clone, "packages", "store", "package.json"), "{ broken\n");
 
     const status = box.run(clone, ["status"]);
     assert.equal(status.status, 2, status.stdout);
     assert.match(status.stderr, /blocked: the gate cannot read this repository/);
-    assert.match(status.stderr, /reason: cannot read packages\/foo\/package\.json/);
+    assert.match(status.stderr, /reason: cannot read packages\/store\/package\.json/);
   });
 });
