@@ -176,6 +176,7 @@ test(
           err += chunk;
         });
         const started = Date.now();
+        let waited = null;
         try {
           // The test's own cap is 25s, looser than the 20s assertion below: a
           // slow answer fails on `waited`, no answer fails on "never exited".
@@ -188,7 +189,7 @@ test(
           });
           // Measure the gate's own exit first: the wait below adds up to five
           // seconds of polling that are not the gate's time.
-          const waited = Date.now() - started;
+          waited = Date.now() - started;
           // The exit and the pipe's last bytes are separate events: wait for the
           // line the assertions read, bounded, before judging the answer.
           await waitForText(() => /timed out after 2s/.test(err), 5000);
@@ -198,11 +199,12 @@ test(
           assert.match(err, /timed out after 2s/);
         } finally {
           // The holder never exits on its own and holds this test's pipe open, so
-          // it always goes. pnpm's group goes only when the gate never reached its
-          // deadline: a gate that did already killed the group, and that pid may
-          // belong to someone else by now.
+          // it always goes. pnpm's group goes only when the gate ended before its
+          // deadline, read off the clock rather than the message text: a gate that
+          // did reach it already killed the group, and that pid may belong to
+          // someone else by now. No answer at all counts as unfinished.
           killHolder(out);
-          if (!/timed out after 2s/.test(err)) killGroup(out);
+          if (waited === null || waited < 2000) killGroup(out);
           gate.kill("SIGKILL");
         }
       });
