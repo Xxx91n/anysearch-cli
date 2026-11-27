@@ -35,9 +35,10 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`.
 // Exported so the composition root and help read the same 4s.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-// setTimeout's ceiling. Whoever constructs the engine, the constructor rejects
-// values above it; createEngine also clamps first, but that only turns a bad
-// value into the default early — it is not a substitute for this check.
+// setTimeout's ceiling. The constructor rejects non-integers, <=0 and anything
+// above this; createEngine's resolveRequestTimeoutMs turns bad values into the
+// default or clamps to a cap, but it cannot cover callers that construct this
+// class directly, so both guards stay.
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
@@ -229,9 +230,9 @@ export class RetroaererdEngine {
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass (#478); it lives here now. `requestTimeoutMs` is the
-  // caller's per-request cap: tests shrink it, eval raises it, and
-  // `ans search --deadline` (#649) passes the terminal's choice; absent is 4s.
+  // no caller could pass; it lives here now. `requestTimeoutMs` is the caller's
+  // per-request cap: tests shrink it, eval raises it, and `ans search --deadline`
+  // passes the terminal's choice; absent is 4s.
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 
