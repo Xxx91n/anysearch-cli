@@ -14,6 +14,7 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseToml } from "smol-toml";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BADCASES = join(ROOT, "eval-badcases.json");
@@ -140,10 +141,12 @@ if (into) {
   if (mustHitUrls.length > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
     fail(next + " carries mustHitUrls but no controlled|frozen-spec stability_class — ship-gate would reject the row; anchor the URL or fix the badcase first");
   }
-  const docsToml = readFileSync(DOCS_TOML, "utf8");
-  const allowMatch = docsToml.match(/^urlAllowlist\s*=\s*\[([^\]]*)\]/m);
-  if (!allowMatch) fail("cannot read urlAllowlist from domains/docs.toml");
-  const allow = new Set([...allowMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+  const docsToml = parseToml(readFileSync(DOCS_TOML, "utf8"));
+  const allowlist = docsToml.sources?.urlAllowlist;
+  if (!Array.isArray(allowlist) || allowlist.some((h) => typeof h !== "string")) {
+    fail("cannot read sources.urlAllowlist from domains/docs.toml");
+  }
+  const allow = new Set(allowlist);
   for (const host of mustHitHosts) {
     if (!allow.has(host)) fail(id + " mustHitHost " + host + " outside domains/docs.toml urlAllowlist");
   }
