@@ -359,10 +359,11 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
 }
 
 /** The budget to report for one fanout: the result's copy, the engine's own, then 4s. */
-export function reportedDeadlineMs(
-  eng: { requestTimeoutMs?: number; retriever?: { requestTimeoutMs?: number } },
-): number {
-  return eng.requestTimeoutMs ?? eng.retriever?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+export function reportedDeadlineMs(eng: { requestTimeoutMs?: number; retriever?: unknown }): number {
+  // RetrieverPort does not declare the budget, but the engine behind it does;
+  // read it only when the result itself did not carry a copy.
+  const engineBudget = (eng.retriever as { requestTimeoutMs?: number } | undefined)?.requestTimeoutMs;
+  return eng.requestTimeoutMs ?? engineBudget ?? DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(
