@@ -91,6 +91,18 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
     throws(() => readGoldenFile(write("bad-entry.json", JSON.stringify({ ...base, entries: [{ ...base.entries[0], intent: "bogus" }] })))),
     "invalid entry throws (same validator as the test)"
   );
+  // A null entry must come back as a problem list, not a TypeError from reading
+  // `.id` on null.
+  let nullEntryMessage = "";
+  try {
+    readGoldenFile(write("null-entry.json", JSON.stringify({ ...base, entries: [null] })));
+  } catch (err) {
+    nullEntryMessage = (err as Error).message;
+  }
+  assert(
+    nullEntryMessage.includes("entry is not an object") && !(nullEntryMessage.startsWith("TypeError")),
+    "null entry throws the reader's own message (got: " + nullEntryMessage + ")"
+  );
   assert(throws(() => readGoldenFile(write("empty-scopes.json", JSON.stringify({ ...base, scopes: {} })))), "empty scopes throws");
   assert(
     throws(() => readGoldenFile(write("bad-scope-value.json", JSON.stringify({ ...base, scopes: { "docs-g0001": "Live" } })))),

@@ -8,6 +8,12 @@ import {
   type GoldenScope,
 } from "./docs-golden";
 
+// The scope vocabulary and its type travel with the reader, so kernel and any
+// other consumer of the package root can type a scopes map without reaching
+// into ./docs-golden.
+export { GOLDEN_SCOPE_VALUES };
+export type { GoldenScope };
+
 export const GOLDEN_FILE = "eval-golden.json";
 
 export function isLiveScope(scope: unknown): scope is GoldenScope {
@@ -34,7 +40,10 @@ export function readGoldenFile(file: string): GoldenFile {
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    throw new Error("eval-golden: invalid JSON in " + file + ": " + (err as Error).message);
+    // Only a syntax error means "invalid JSON"; anything else is a real failure
+    // and must not be relabelled as a parse problem.
+    if (!(err instanceof SyntaxError)) throw err;
+    throw new Error("eval-golden: invalid JSON in " + file + ": " + err.message);
   }
   const problems = validateDocsGoldenSet(parsed);
   if (problems.length > 0) {
@@ -42,13 +51,16 @@ export function readGoldenFile(file: string): GoldenFile {
   }
   const f = parsed as GoldenFile;
   if (f.entries.length === 0) throw new Error("eval-golden: entries must not be empty in " + file);
-  if (!f.scopes || typeof f.scopes !== "object" || Array.isArray(f.scopes)) {
+  // Read scopes as unknown: the type says GoldenScope, but the file is JSON a
+  // person can edit, so the vocabulary check has to run on a widened value.
+  const scopes: unknown = f.scopes;
+  if (!scopes || typeof scopes !== "object" || Array.isArray(scopes)) {
     throw new Error("eval-golden: scopes must be an object in " + file);
   }
-  if (Object.keys(f.scopes).length === 0) throw new Error("eval-golden: scopes must not be empty in " + file);
+  if (Object.keys(scopes).length === 0) throw new Error("eval-golden: scopes must not be empty in " + file);
   const entryIds = new Set(f.entries.map((entry) => entry.id));
-  for (const [id, scope] of Object.entries(f.scopes)) {
-    if (!GOLDEN_SCOPE_VALUES.includes(scope)) {
+  for (const [id, scope] of Object.entries(scopes)) {
+    if (!(GOLDEN_SCOPE_VALUES as readonly unknown[]).includes(scope)) {
       throw new Error("eval-golden: scope for " + id + " must be one of " + GOLDEN_SCOPE_VALUES.join("/") + " in " + file + " (got " + String(scope) + ")");
     }
   }
