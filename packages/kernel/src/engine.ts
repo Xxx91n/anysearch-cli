@@ -35,9 +35,9 @@ export const DEFAULT_GATE: SufficiencyGate = {
 // root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`
 // (#649). Exported so the composition root and help read the same 4s.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-// setTimeout's ceiling. The engine rejects values above it, and composition
-// also clamps before passing one down; but MCP, plugins and tests construct the
-// engine directly, so the constructor check stays as their only guard.
+// setTimeout's ceiling. Composition clamps before passing a value down, and the
+// constructor rejects anything above it here; the class is exported, so tests
+// and any future direct caller rely on this check too.
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 

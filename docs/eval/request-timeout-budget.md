@@ -37,6 +37,6 @@ ANS_EVAL_REQUEST_TIMEOUT_MS=15000 ans search "查一下这家公司的财报" --
 
 ## 谁钉着它
 
-- `packages/kernel/src/composition.ts` 的 `resolveRequestTimeoutMs`：代码里这些规矩只在这一个函数里。环境变量这条默认上限 15000；`--deadline` 通过 `requestTimeoutCapMs` 带自己的 60000 上限（这份文档和 CHANGELOG 只是复述，改上限时别只改一处）。
-- `packages/kernel/test/composition-build-errors.test.ts` 里那组 `#657：评测的钟和用户的钟分开` 的断言：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、默认上限 15000、显式 `requestTimeoutCapMs: 60000` 时 60000 生效；顺带钉住 kernel 自己不读这个环境变量，所以 chat / MCP 拿不到它。
+- `packages/kernel/src/composition.ts` 的 `resolveRequestTimeoutMs`：代码里这些规矩只在这一个函数里。环境变量这条默认上限 15000；`--deadline` 通过 `requestTimeoutCapMs` 带自己的 60000 上限（这份文档和 CHANGELOG 只是复述，改上限时别只改一处）。1ms 及以上的小数 cap 向下取整；小于 1ms 的 cap 按非法处理，回落 15000。
+- `packages/kernel/test/composition-build-errors.test.ts` 里那组 `#657：评测的钟和用户的钟分开` 的断言：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、默认上限 15000、显式 `requestTimeoutCapMs: 60000` 时 60000 生效、小数 cap 向下取整、小于 1ms 的 cap 回落 15000；顺带钉住 kernel 自己不读这个环境变量，所以 chat / MCP 拿不到它。
 - `scripts/ship-gate.mjs` 继续用正则钉着引擎里的 `DEFAULT_REQUEST_TIMEOUT_MS`、`deadlineTimer` 的 `setTimeout` 和构造函数里的默认赋值，还有 `docs/limitations.md` 里那句 4 秒——那句一个字节没动，只在它后面补了 `--deadline` 的说明。
