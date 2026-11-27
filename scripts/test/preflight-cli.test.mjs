@@ -161,8 +161,13 @@ test(
         // The budget and the cleanup's clock both come from this one number.
         const budgetMs = 2000;
         const timeoutLine = `timed out after ${budgetMs / 1000}s`;
-        // What the gate's answer may cost: the budget, its 10s close cap, a flush.
-        const answerCapMs = budgetMs + 15000;
+        // What the gate's answer may cost: its budget, the 10s close cap, the 2s
+        // dump flush, the 1s output flush, and 5s of slack for node and pnpm to
+        // start. Every part is named so the sum explains itself.
+        const answerCapMs = budgetMs + 10000 + 2000 + 1000 + 5000;
+        // The test's own cap sits above it: a slow answer fails on `waited`, and
+        // only a gate that never answers fails as "never exited".
+        const exitCapMs = answerCapMs + 5000;
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
         const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: String(budgetMs / 1000) });
@@ -183,10 +188,8 @@ test(
         const started = Date.now();
         let waited = null;
         try {
-          // The test's own cap is 25s, looser than the 20s assertion below: a
-          // slow answer fails on `waited`, no answer fails on "never exited".
           const code = await new Promise((resolve, reject) => {
-            const cap = setTimeout(() => reject(new Error("the gate never exited")), 25000);
+            const cap = setTimeout(() => reject(new Error("the gate never exited")), exitCapMs);
             gate.on("exit", (exitCode) => {
               clearTimeout(cap);
               resolve(exitCode);
