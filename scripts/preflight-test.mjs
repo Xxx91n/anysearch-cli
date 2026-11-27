@@ -258,10 +258,11 @@ if (selfTest) {
 
 // Design: the suite's output goes to a timestamped file in the temp directory as
 // well as to the terminal. A failure shows the last 100 lines and the file's
-// absolute path; a green run deletes the file. The file is what makes a long run
-// auditable after the terminal has scrolled past it, and it is where the test
-// count is read from — the 64 KiB in-memory tail can lose the summary of a suite
-// that prints a lot.
+// absolute path; a green run deletes the file. A timeout or an interrupt keeps
+// the file and names it too — neither is a pass, and the file is the only record
+// of what the run got through. The file is what makes a long run auditable after
+// the terminal has scrolled past it, and it is where the test count is read from
+// — the 64 KiB in-memory tail can lose the summary of a suite that prints a lot.
 const suiteStarted = Date.now();
 dump = openDump();
 console.log(
@@ -337,7 +338,10 @@ if (timedOut) {
   writeStderr(`[preflight] run the rest yourself: pnpm ${runArgs.join(" ")}`);
   reportRunOutput(dump);
   reportKeptTestHome(testHome, console.error);
-  process.exitCode = 1;
+  // Design: exit after the flush instead of setting the code and falling off —
+  // a process outside the killed tree can still hold the pipe, and its data
+  // handlers would keep this process alive past the budget the gate just spent.
+  await exitAfterFlush(1);
 } else if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
@@ -560,13 +564,7 @@ function forwardKeepingTail(source, limit, dump) {
 function openDump() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const handle = { file: path.join(os.tmpdir(), `ans-preflight-${stamp}.log`), failed: false };
-  try {
-    handle.stream = fs.createWriteStream(handle.file, { flags: "w" });
-  } catch (error) {
-    handle.failed = true;
-    writeStderr(`[preflight] could not open the run's output file ${handle.file}: ${error.message}`);
-    return handle;
-  }
+  handle.stream = fs.createWriteStream(handle.file, { flags: "w" });
   handle.stream.on("error", (error) => {
     if (handle.failed) return;
     handle.failed = true;

@@ -111,6 +111,60 @@ test("a suite that runs past its budget stops the tree and keeps the output", as
   });
 });
 
+// The cap's reason for existing: a process outside the killed group keeps the
+// pipe open, so the close event never fires. The gate must still answer — the
+// wait is capped, and the answer must leave the process. POSIX only: `detached`
+// gives the holder its own process group there; on Windows taskkill /t walks the
+// parent tree and takes the holder with it, so this shape cannot be built.
+test(
+  "a budget answers even when a process outside the tree holds the pipe",
+  { skip: process.platform === "win32" ? "Windows taskkill /t takes the holder too" : false },
+  async () => {
+    await withTempDir(async ({ overrides }) => {
+      await withPnpmShim(writePipeHoldingPnpm, async (bin) => {
+        // spawnSync would block until the holder closes the pipe, so this test
+        // measures the gate's own exit instead of waiting for the streams.
+        const env = { ...process.env };
+        delete env.ANS_PUSH_GATE_TIMEOUT;
+        env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
+        Object.assign(env, overrides, { ANS_PUSH_GATE_TIMEOUT: "2" });
+        delete env.PREFLIGHT_GATE_TESTS;
+        env.PREFLIGHT_SELF_TEST = "0";
+        const gate = spawn(process.execPath, [join(repoRoot, "scripts", "preflight-test.mjs"), "--full"], {
+          cwd: repoRoot,
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let out = "";
+        let err = "";
+        gate.stdout.on("data", (chunk) => {
+          out += chunk;
+        });
+        gate.stderr.on("data", (chunk) => {
+          err += chunk;
+        });
+        const started = Date.now();
+        const code = await new Promise((resolve) => gate.on("exit", resolve));
+        const waited = Date.now() - started;
+        const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
+        try {
+          // 2s budget + 10s cap + flush; the holder's own minute is not the gate's.
+          assert.ok(waited < 25000, `the gate waited ${waited}ms on a pipe holder`);
+          assert.equal(code, 1, err);
+          assert.match(err, /timed out after 2s/);
+        } finally {
+          if (holder) {
+            try {
+              process.kill(holder);
+            } catch {}
+          }
+          gate.kill("SIGKILL");
+        }
+      });
+    });
+  },
+);
+
 // Design: the count comes from the file on disk, not from a tail kept in memory:
 // a suite that prints a lot pushes the summary out of any fixed-size tail. The
 // default budget and its fifteen-second heartbeat show in the banner, so a run
@@ -942,6 +996,20 @@ function writeStallingPnpm(bin) {
     'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });',
     'console.log("suite started");',
     'console.log(`GRANDCHILD=${child.pid}`);',
+    "setInterval(() => {}, 1000);",
+    "",
+  ]);
+}
+
+// A pnpm whose child escapes the killed process group and keeps the pipe open.
+// The gate's close event can never fire on its own, so only the post-deadline cap
+// can end the wait — and the answer must still leave the process.
+function writePipeHoldingPnpm(bin) {
+  writeNodePnpm(bin, "hold.mjs", [
+    'import { spawn } from "node:child_process";',
+    'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "inherit", detached: true });',
+    "child.unref();",
+    'console.log(`HOLDER=${child.pid}`);',
     "setInterval(() => {}, 1000);",
     "",
   ]);
