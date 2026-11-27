@@ -530,6 +530,7 @@ function stepStaticAssertions() {
     } catch (err) {
       fail("eval-golden.json: invalid JSON: " + err.message);
     }
+    if (!evalGolden || typeof evalGolden !== "object" || Array.isArray(evalGolden)) fail("eval-golden.json: root must be an object");
     // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
     // packages/store/src/eval/docs-golden.ts; this gate runs as plain node.
     if (evalGolden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
