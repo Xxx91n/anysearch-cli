@@ -136,7 +136,7 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     [["eval-looks.json"], ["eval-looks.json"]],
     [["eval-badcases.json"], ["eval-badcases.json"]],
     [["eval-golden.json"], ["eval-golden.json"]],
-    [["eval-looks.json", "eval-looks.coverage.json"], ["eval-looks.json", "eval-looks.coverage.json"]],
+    [["eval-golden.json", "eval-looks.coverage.json"], ["eval-golden.json", "eval-looks.coverage.json"]],
     // Store's docs-golden test asserts this one resolves on disk; nothing reads
     // the prose, so store is the whole run.
     [["AGENTS.md"], ["AGENTS.md"]],
@@ -188,9 +188,9 @@ test("a root file change next to a package change runs both", () => {
 });
 
 test("docs next to a root file run the readers, not the suite", () => {
-  const plan = planPreflight(root, ["eval-looks.json", "README.md"]);
+  const plan = planPreflight(root, ["eval-golden.json", "README.md"]);
   assert.equal(plan.mode, "readers");
-  assert.deepEqual(plan.packages, ["@anysearch-cli/store"]);
+  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
 });
 
 test("a root file whose reader is gone stops the gate, never turns into a skip", () => {
