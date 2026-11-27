@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { DEFAULT_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -249,9 +249,9 @@ export interface CompositionResult {
   // failed". Never carries a secret value. UNDEFINED when no seam was passed, so
   // `if (engine.credentialSources)` keeps meaning "resolution was asked for".
   credentialSources?: CredentialSources;
-  // This engine's per-request deadline in ms — the user's 4000 unless an
-  // eval run raised it. Optional so hand-built mocks stay source-compatible;
-  // every createEngine result supplies it.
+  // This engine's per-request deadline in ms — the user's 4000 unless
+  // `--deadline` or an eval run raised it. Optional so hand-built mocks stay
+  // source-compatible; every createEngine result supplies it.
   requestTimeoutMs?: number;
 }
 
@@ -341,12 +341,21 @@ export function resolveActiveAttributionCalibration(
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
 // The kernel never reads `ANS_EVAL_REQUEST_TIMEOUT_MS`, so the number can only
-// arrive as an argument.
-function resolveRequestTimeoutMs(raw?: number): number {
-  if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
-  const ms = Math.trunc(raw);
-  if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
-  return Math.min(ms, EVAL_REQUEST_TIMEOUT_CAP_MS);
+// arrive as an argument. `capMs` defaults to the eval ceiling; `--deadline`
+// raises it to the flag's own ceiling so a user choice is not silently cut.
+// The result is always something the engine accepts: whole milliseconds in
+// [1, MAX_REQUEST_TIMEOUT_MS]. Fractions fall back to the default instead of
+// being truncated into a 1ms budget nobody asked for, and a cap above the
+// engine's ceiling is clamped rather than thrown from the constructor.
+function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
+  if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  // A cap at or above 1ms is rounded down. Anything smaller is invalid and
+  // falls back to the eval ceiling; it must not become a 1ms budget that
+  // cancels every arm.
+  const cap = Number.isFinite(capMs) && capMs >= 1
+    ? Math.min(Math.floor(capMs), MAX_REQUEST_TIMEOUT_MS)
+    : EVAL_REQUEST_TIMEOUT_CAP_MS;
+  return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
 
 export function createEngine(
@@ -364,6 +373,20 @@ export function createEngine(
      */
     searchCredentials?: (env?: NodeJS.ProcessEnv) => ResolvedSearchCredentials;
     /**
+     * #649: how long one search waits before it stops fanning out, in
+     * milliseconds. Omitted keeps the engine's default (4s); this is the one
+     * seam every caller uses, so a command with its own budget never reaches
+     * into the engine directly. `ans search` passes it from `--deadline` or
+     * `ANS_EVAL_REQUEST_TIMEOUT_MS`.
+     */
+    requestTimeoutMs?: number;
+    /**
+     * Upper bound applied to `requestTimeoutMs`. Defaults to the eval ceiling
+     * (15s); `--deadline` raises it to the flag's 60s ceiling so a user choice
+     * is not silently shortened.
+     */
+    requestTimeoutCapMs?: number;
+    /**
      * Env handed to `searchCredentials`. NOTHING else in createEngine reads it -
      * domain dirs, the reloader and the calibration root still resolve through
      * process.env. Passing it therefore controls exactly one thing: where the
@@ -378,13 +401,6 @@ export function createEngine(
      * Omitted means declared — passing a name is a request for that domain.
      */
     domainDeclared?: boolean;
-    /**
-     * This engine's per-request deadline in ms. Eval runs pass a longer
-     * one so a slow vertical arm is measured instead of counted as broken;
-     * omitted, unparsable or ≤0 keeps the user's 4s, and 15s is the ceiling.
-     * Only `ans search` passes it (from `ANS_EVAL_REQUEST_TIMEOUT_MS`).
-     */
-    requestTimeoutMs?: number;
   },
 ): CompositionResult {
   // #188 (CodeRabbit): keep the exact dirs the loader used (including the
@@ -575,7 +591,7 @@ export function createEngine(
   })();
   // One number, resolved once — the engine runs on it and the eval report
   // stamps it, so a measurement can never lose the clock it was taken under.
-  const requestTimeoutMs = resolveRequestTimeoutMs(opts?.requestTimeoutMs);
+  const requestTimeoutMs = resolveRequestTimeoutMs(opts?.requestTimeoutMs, opts?.requestTimeoutCapMs);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     requestTimeoutMs,
     ...(sourceWeights ? { sourceWeights } : {}),

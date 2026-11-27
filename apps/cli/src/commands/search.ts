@@ -3,7 +3,7 @@
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -15,6 +15,12 @@ import {
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
 } from "./search-abstain";
+
+// #649: the terminal's own wait budget. Absent keeps the engine's 4s default;
+// these bounds are the flag's whole contract. The error message and the
+// top-level help both build from them instead of copying the numbers.
+export const SEARCH_DEADLINE_MIN_MS = 500;
+export const SEARCH_DEADLINE_MAX_MS = 60000;
 
 // Both render paths print "Providers failed" and the remedy beside it, or an
 // abstain hides why the arm died. One helper, so neither branch can drop half.
@@ -111,6 +117,33 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const vertical = built.vertical;
 
+  // #649: the person at the terminal decides how long this one search may
+  // wait; the flag only changes this run, never the default itself.
+  let requestTimeoutMs: number | undefined;
+  // Accept "--deadline 8000" and "--deadline=8000". Validate every occurrence;
+  // when repeated the last one wins, so a script can set a default and append
+  // an override.
+  const deadlineValues: string[] = [];
+  args.forEach((a, i) => {
+    if (a === "--deadline") deadlineValues.push(args[i + 1] ?? "");
+    else if (a.startsWith("--deadline=")) deadlineValues.push(a.slice("--deadline=".length));
+  });
+  if (deadlineValues.length > 0) {
+    for (const raw of deadlineValues) {
+      const wholeNumber = raw !== "" && !raw.startsWith("--") && /^\d+$/.test(raw);
+      const parsed = wholeNumber ? Number(raw) : NaN;
+      if (!wholeNumber || parsed < SEARCH_DEADLINE_MIN_MS || parsed > SEARCH_DEADLINE_MAX_MS) {
+        process.stderr.write(
+          "ans search: --deadline needs a whole number of milliseconds from " +
+            SEARCH_DEADLINE_MIN_MS + " to " + SEARCH_DEADLINE_MAX_MS +
+            " (default: " + DEFAULT_REQUEST_TIMEOUT_MS + ")\n",
+        );
+        return 2;
+      }
+    }
+    requestTimeoutMs = Number(deadlineValues[deadlineValues.length - 1]);
+  }
+
   // Drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.
   // flag VALUES are also dropped so --vertical-* arguments don't leak
@@ -119,7 +152,7 @@ export async function runSearch(args: string[]): Promise<number> {
   // immediately after a known value-flag is the value position. A query term
   // identical to a flag value survives (the old value-set heuristic swallowed
   // it: "--vertical-domain finance finance" collapsed to an empty query).
-  const valueFlags = new Set(["--mode", "--vertical-domain", "--vertical-sub-domain", "--vertical-params"]);
+  const valueFlags = new Set(["--mode", "--vertical-domain", "--vertical-sub-domain", "--vertical-params", "--deadline"]);
   const consumed = new Set<number>();
   args.forEach((a, i) => {
     if (valueFlags.has(a) && i + 1 < args.length) consumed.add(i + 1);
@@ -141,13 +174,28 @@ export async function runSearch(args: string[]): Promise<number> {
   // ANS_PROVIDERS=anysearch to measure that arm alone). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
   // 评测专用：只有这条命令读它，chat 和 MCP 都不读 —— 评测要一口更长的钟，
-  // 用户口径的 4 秒不能跟着变。
+  // 用户口径的 4 秒不能跟着变。显式 --deadline 是用户自己的选择，优先。
   const evalTimeoutRaw = process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
-  const engine = createPersistentEngine(active.declaredName, {
-    ...(evalTimeoutRaw === undefined ? {} : { requestTimeoutMs: Number(evalTimeoutRaw) }),
-  });
+  let timeoutOpts: { requestTimeoutMs: number; requestTimeoutCapMs?: number } | undefined;
+  if (requestTimeoutMs !== undefined) {
+    // The flag carries its own 60s ceiling; the eval default is 15s.
+    timeoutOpts = { requestTimeoutMs, requestTimeoutCapMs: SEARCH_DEADLINE_MAX_MS };
+  } else if (evalTimeoutRaw !== undefined) {
+    timeoutOpts = { requestTimeoutMs: Number(evalTimeoutRaw) };
+  }
+  const engine = createPersistentEngine(active.declaredName, timeoutOpts);
+  if (requestTimeoutMs !== undefined && evalTimeoutRaw !== undefined) {
+    process.stderr.write(
+      "[ans search] --deadline " + requestTimeoutMs + " ms 优先，这次忽略 ANS_EVAL_REQUEST_TIMEOUT_MS=" +
+        JSON.stringify(evalTimeoutRaw) + "\n",
+    );
+  }
   // 写错的值会静默回落成 4 秒，这一轮评测就白跑了；说清原值和这次实际用的。
-  if (evalTimeoutRaw !== undefined && Number(evalTimeoutRaw) !== engine.requestTimeoutMs) {
+  if (
+    requestTimeoutMs === undefined &&
+    evalTimeoutRaw !== undefined &&
+    Number(evalTimeoutRaw) !== engine.requestTimeoutMs
+  ) {
     process.stderr.write(
       "[ans search] ANS_EVAL_REQUEST_TIMEOUT_MS=" + JSON.stringify(evalTimeoutRaw) +
         " 没有原样生效，这次按 " + engine.requestTimeoutMs + " ms 跑\n",
