@@ -185,9 +185,9 @@ export function fetchCredentialHit(rawHandle: string, identity: string): boolean
       if (looksHighEntropy(value) || containsSecret(value)) return true;
     }
     for (const segment of parsed.pathname.split("/")) {
-      // Known token shapes only; a generic base64url string with `-`/`_` is
-      // not detected here (it matches long slugs), an accepted heuristic risk.
+      // Secret-shape segments with <=2 `-`/`_` parts; 3+ parts is a title slug.
       if (containsSecret(segment) && segment.split(/[-_]/).filter(Boolean).length <= 2) return true;
+      // High-entropy values need a `+` or `=` symbol; `-`/`_` are not judged.
       if (/^(?:sk-(?:proj|ant)-|ghp_|gho_|xox[baprs]-|glpat-)/i.test(segment)) return true;
       if (looksHighEntropy(segment)) return true;
     }

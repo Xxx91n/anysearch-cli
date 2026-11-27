@@ -231,9 +231,14 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
         }
       }
     } else if (docs.length === 0) {
-      const bodyLines = lines.filter((line) => line.trim() && !upstreamError.test(line));
+      const nonEmpty = lines.filter((line) => line.trim());
+      const allErrors = nonEmpty.every((line) => upstreamError.test(line));
+      const bodyLines = nonEmpty.filter((line) => {
+        const match = upstreamError.exec(line);
+        return !match || !requestedSet.has(normalizeUrlIdentity(match[1]!));
+      });
       const body = bodyLines.join("\n").trim();
-      if (body && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
+      if (body && !allErrors && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
     }
   }
 

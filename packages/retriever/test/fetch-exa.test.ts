@@ -194,9 +194,9 @@ async function main() {
     assert(plain.pages.length === 1 && plain.pages[0]!.text.includes("line three"),
       "free: a three-line plain-text reply can be the requested page");
     const unrelated = parseExaFetchReply([
-      "preface",
       "Error fetching https://other.example/x: CRAWL_TIMEOUT",
       "Error fetching https://another.example/y: CRAWL_NOT_FOUND",
+      "Error fetching https://third.example/z: CRAWL_FORBIDDEN",
     ].join("\n"), ["https://example.com/a"]);
     assert(unrelated.pages.length === 0,
       "free: unrelated error lines alone do not fabricate a page");
