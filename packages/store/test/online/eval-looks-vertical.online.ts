@@ -12,6 +12,7 @@
 // Control entries (role:"control") record existence facts — their failures
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
+// If set, it must be a positive integer; an invalid value fails the run.
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -31,7 +32,7 @@ const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
 const limitNum = rawLimit === undefined ? 0 : Number(rawLimit);
 if (rawLimit !== undefined && (!Number.isInteger(limitNum) || limitNum <= 0)) {
-  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (unset means full run)");
+  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset means full run)");
   process.exit(1);
 }
 const CONCURRENCY = 4;
