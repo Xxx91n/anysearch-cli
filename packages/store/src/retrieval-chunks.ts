@@ -322,11 +322,18 @@ function sectionIds(rows: Array<{ id: number; parent_id: number | null }>): numb
 }
 
 /** Keyword lane: block MATCH results plus the page-level LIKE fallback for lone Han characters. */
-function keywordSections(db: Database.Database, query: string, limit: number): number[] {
+function keywordSections(
+  db: Database.Database,
+  query: string,
+  limit: number,
+): { ids: number[]; outside: Set<number> } {
   const terms = chunkQueryTerms(query);
   const fetchLimit = limit * CANDIDATE_SLACK;
   const out: number[] = [];
   const seen = new Set<number>();
+  // Section ids chosen for a hit that fell on a heading line or gap: their
+  // preview cannot cover the query, so the caller falls back to the snippet.
+  const outside = new Set<number>();
   const push = (sectionId: number): void => pushUnique(out, seen, sectionId);
 
   if (terms.fts) {
@@ -365,15 +372,18 @@ function keywordSections(db: Database.Database, query: string, limit: number): n
       if (!sections || sections.length === 0) continue;
       // The hit can land on a heading line or in trimmed whitespace between
       // sections. Point at the section that follows, or the last one when the
-      // hit is after the final section, instead of dropping the page.
-      const hit = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars)
-        ?? sections.find((s) => s.startOffset > page.at)
-        ?? sections[sections.length - 1];
-      if (hit) push(hit.sectionId);
+      // hit is after the final section, instead of dropping the page; mark it
+      // so the preview uses the page snippet (which contains the heading).
+      const inside = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars);
+      const hit = inside ?? sections.find((s) => s.startOffset > page.at) ?? sections[sections.length - 1];
+      if (hit) {
+        if (!inside) outside.add(hit.sectionId);
+        push(hit.sectionId);
+      }
       if (out.length >= fetchLimit) break;
     }
   }
-  return out;
+  return { ids: out, outside };
 }
 
 /** Vector lane: cosine over block vectors of live pages, then up to their sections. */
@@ -409,7 +419,7 @@ export function searchChunkPages(
 ): ChunkPageHit[] {
   const keyword = keywordSections(db, query, limit);
   const vector = queryVector && model ? vectorSections(db, queryVector, limit, model) : [];
-  const lists = [keyword, vector].filter((l) => l.length > 0).map((l) => l.map(String));
+  const lists = [keyword.ids, vector].filter((l) => l.length > 0).map((l) => l.map(String));
   if (lists.length === 0) return [];
   // Same registry weights as the page-level arms: keyword fts 1.0, block
   // vector 0.5 (a semantic match is weaker than a lexical one).
@@ -471,7 +481,7 @@ export function searchChunkPages(
       pageId,
       sessionId: page.sessionId,
       title: page.title,
-      matchText: textBySection.get(bestSectionId) ?? null,
+      matchText: keyword.outside.has(bestSectionId) ? page.snippet : (textBySection.get(bestSectionId) ?? null),
       snippet: page.snippet,
     });
   }

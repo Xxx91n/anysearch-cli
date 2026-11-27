@@ -98,8 +98,9 @@ async function main() {
       content: "## 词表\n\n这一节只有正文，没有重复的字。",
       source: "exa",
     });
-    assert((await store.searchMemory("词", 5)).some((h) => h.rowid === hanHeadingPage.id),
-      "a one-character hit on a heading line still maps to its section");
+    const headingHit = (await store.searchMemory("词", 5)).find((h) => h.rowid === hanHeadingPage.id)!;
+    assert(Boolean(headingHit), "a one-character hit on a heading line still maps to its section");
+    assert((headingHit.content ?? "").includes("词"), "the preview contains the character the user searched");
 
     // ---- English prefix still matches -------------------------------------
     const prefix = await store.searchMemory("vector", 5);

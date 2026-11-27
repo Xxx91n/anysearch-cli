@@ -1751,6 +1751,8 @@ export class SqliteSessionStore implements SessionStore {
           await this.embedChunksForPage(pageId);
         } catch { /* fail-open: stays pending */ }
       }
+      // Let the next full queue warn again instead of staying silent forever.
+      if (this.chunkVectorQueue.length === 0) this.chunkQueueFullLogged = false;
     } finally {
       this.chunkVectorDraining = false;
     }
