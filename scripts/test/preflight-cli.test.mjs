@@ -579,7 +579,7 @@ test(
       assert.equal(result.status, 2, result.stderr);
       assert.match(result.stderr, /could not start pnpm/);
       // This path keeps the throwaway home as well; clearKeptHome pins that and
-      // takes it back (it drops before asserting, so a red assertion leaves nothing).
+      // takes it back.
       clearKeptHome(result);
     });
   },
