@@ -5,9 +5,9 @@
 ### Changed
 
 - **本地门和 CI 的分工翻过来了**（`AGENTS.md` 的 `### Gate rules`）：不再把本地推送门说成「唯一的机械强制点」，删掉冲突的「CI 红了只是参考、不拦合并」；改成明说「本地门管早发现，合并前看到 `check-build` 绿了才是放行依据」，并且老实写清这一条没有机器强制，完全靠合并的人自己守。
-- **分道和退出码跟代码对上号**（`AGENTS.md` 的 `### Gate rules` 和 `## How to run`）：按 `scripts/preflight-plan.mjs` 的 `planPreflight` 写清包内改动（`incremental`）、有读者的根文件（`ROOT_READERS`）、纯文档（`isDocumentation`）和无主改动（`unowned` 只打印 `skipped` 不跑测试、交给 CI 的 `check-build`）以及坏仓库/读不出改动集（`broken` 停下退 2）；写清退出码三档语义（`0` = 跳过或通过，`1` = 测试红了或超时没跑完，`2` = 门自己坏了，和 `pnpm hooks:status` 一致），并重申「跳过不等于通过」这条老契约一字没松。`## How to run` 的门自测说明同步去掉「无主文件回退跑整套」的旧话，补上无主改动在本地也不跑自测（只跟着 `--full` / `ANS_PUSH_GATE=strict` 和 CI 的 `check-build` 走）。
+- **分道和退出码跟代码对上号**（`AGENTS.md` 的 `### Gate rules` 和 `## How to run`）：按 `scripts/preflight-plan.mjs` 的 `planPreflight` 写清包内改动（`incremental`）、有读者的根文件（`ROOT_READERS`）、纯文档（`isDocumentation`）和无主改动（`unowned` 只打印 `skipped` 不跑测试、交给 CI 的 `check-build`）以及坏仓库/读不出改动集（`broken` 停下退 2）；写清退出码三档语义（`0` = 跳过或通过，`1` = 测试红了或超时没跑完，`2` = 门自己坏了，和 `pnpm hooks:status` 一致），并重申「跳过不等于通过」这条老契约一字没松。`## How to run` 的门自测说明同步去掉「无主文件回退跑整套」的旧话，改成直说只有全量模式（`--full` / `ANS_PUSH_GATE=strict`）才在本地跑门自测，其余推送（增量、读者根文件、纯文档、无主改动）都跳过，交给 CI 的 `check-build`。
 - **工具 `timeout` 规矩写进文档**：推代码时把工具 `timeout` 设成 `0` 或 `≥600` 秒，跑整套（`--full` 或 `ANS_PUSH_GATE=strict`）设成 `0` 或 `≥900` 秒；写明理由——光 `store` 一个包实测就要 4 分 15 秒（Windows 整套 6–9 分钟），默认 300 秒一定会把本来能绿的运行半路掐死。
-- **记下 D9 决策，免得半年后重提**：明确记录考虑过把 `check-build`（ubuntu 和 windows）设成 `main` 的 required status checks（#671、#674）但决定不做——`scripts/ci-changes.mjs` 的 `LANES` 里 `check-build` 已经列全八个包，非纯文档改动本来就在跑整套，设必过不补漏洞，只防手快点合并，代价却是 CI 一抖就合不了；同时更新早年私有库阶段 #58/#59 的旧记述，说明仓库如今已公开、这项本来免费，依然主动不设。
+- **记下不设 required status checks 的决定，免得半年后重提**：明确记录考虑过把 `check-build`（ubuntu 和 windows）设成 `main` 的 required status checks（#671、#674）但决定不做——`scripts/ci-changes.mjs` 的 `LANES` 里 `check-build` 已经列全八个包，非纯文档改动本来就在跑整套，设必过不补漏洞，只防手快点合并，代价却是 CI 一抖就合不了；同时更新早年私有库阶段 #58/#59 的旧记述，说明仓库如今已公开、这项本来免费，依然主动不设。
 
 ## Unreleased — #608: 内部 agent 能读一页，正文进库
 
