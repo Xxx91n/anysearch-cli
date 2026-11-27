@@ -61,12 +61,8 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   relation: "critical",
   semantic: "critical",
 };
-/**
- * The arms that are actually measured. The name keeps the historical
- * NON_ANCHOR_* token the ship gate checks; the narrowed type says content is
- * known but not measured yet.
- */
-export const NON_ANCHOR_MEMORY_ARMS: readonly ("entity" | "vector" | "relation" | "semantic")[] = [
+/** content is known to the type but not measured yet, so it is not in this list. */
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "content">[] = [
   "entity",
   "vector",
   "relation",

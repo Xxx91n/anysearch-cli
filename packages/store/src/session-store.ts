@@ -1801,9 +1801,12 @@ export class SqliteSessionStore implements SessionStore {
       return { scanned: 0, embedded: 0, failed: 0, ...this.rebuildMissingChunks(batch, limit) };
     }
     if (dryRun) {
-      // Same model the run will use; otherwise a model change shows 0 pending
-      // here and re-embeds the whole archive in the real run.
-      const backlog = chunkVectorBacklog(this.db, model);
+      // Same model the run will use; without the package, count every model so
+      // the number reflects real vectors instead of 0.
+      const backlog = chunkVectorBacklog(
+        this.db,
+        model === EMBEDDING_MODEL_UNAVAILABLE ? undefined : model,
+      );
       return { scanned: backlog.pending, embedded: 0, failed: 0, rebuiltPages: backlog.pagesWithoutChunks, rebuildFailed: 0 };
     }
     const { rebuiltPages, rebuildFailed } = this.rebuildMissingChunks(batch, limit);
@@ -1811,12 +1814,13 @@ export class SqliteSessionStore implements SessionStore {
     let embedded = 0;
     let failed = 0;
     const failedIds = new Set<number>();
+    let afterChunkId = 0;
     for (;;) {
-      // Fetch past the known failures, otherwise a batch full of them starves
-      // the normal blocks behind them and the loop exits early.
-      const rows = pendingChunkVectors(this.db, batch + failedIds.size, model)
-        .filter((row) => !failedIds.has(row.chunkId));
+      // Walk by chunk id, so a batch of failures does not re-read the same
+      // bodies and the normal blocks behind them are still reached.
+      const rows = pendingChunkVectors(this.db, batch, model, afterChunkId);
       if (rows.length === 0) break;
+      afterChunkId = rows[rows.length - 1]!.chunkId;
       scanned += rows.length;
       const result = await this.embedChunkRows(rows, model);
       embedded += result.embedded;

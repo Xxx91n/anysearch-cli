@@ -51,7 +51,7 @@ function owedBlocksFrom(model?: string, pageId?: number): { from: string; params
   return {
     from: "FROM retrieval_chunks c JOIN retrieval_results r ON r.id = c.page_id " +
       "WHERE c.level = " + LEVEL_BLOCK + " AND " + HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
-      " AND " + owes.sql + (pageId === undefined ? "" : " AND c.page_id = ?") + " ORDER BY c.id",
+      " AND " + owes.sql + (pageId === undefined ? "" : " AND c.page_id = ?"),
     params: [...owes.params, ...(pageId === undefined ? [] : [pageId])],
   };
 }
@@ -221,18 +221,19 @@ export interface PendingChunkVector {
 
 function chunksOwingVectors(
   db: Database.Database,
-  opts: { pageId?: number; limit?: number; model?: string },
+  opts: { pageId?: number; limit?: number; model?: string; afterChunkId?: number },
 ): PendingChunkVector[] {
   // Same builder as the backlog count: a model-aware reader also re-claims
   // blocks whose vector belongs to a previous model.
   const owed = owedBlocksFrom(opts.model, opts.pageId);
+  const cursor = opts.afterChunkId === undefined ? "" : " AND c.id > ?";
   // `0` asks for nothing; only `undefined` means "no limit".
   const limit = opts.limit === undefined ? "" : " LIMIT " + Math.max(0, Math.floor(opts.limit));
   return db.prepare(
     "SELECT c.id AS chunkId, c.heading_path AS headingPath, " +
       "substr(r.content, c.start_offset + 1, c.end_offset - c.start_offset) AS text " +
-      owed.from + limit,
-  ).all(...owed.params) as PendingChunkVector[];
+      owed.from + cursor + " ORDER BY c.id" + limit,
+  ).all(...owed.params, ...(opts.afterChunkId === undefined ? [] : [Math.floor(opts.afterChunkId)])) as PendingChunkVector[];
 }
 
 /** Blocks of one page that still have no vector for this model. */
@@ -241,8 +242,8 @@ export function chunksMissingVectors(db: Database.Database, pageId: number, mode
 }
 
 /** Blocks anywhere in the archive that still owe a vector, in batches. */
-export function pendingChunkVectors(db: Database.Database, limit = PENDING_BATCH_DEFAULT, model?: string): PendingChunkVector[] {
-  return chunksOwingVectors(db, { limit, model });
+export function pendingChunkVectors(db: Database.Database, limit = PENDING_BATCH_DEFAULT, model?: string, afterChunkId = 0): PendingChunkVector[] {
+  return chunksOwingVectors(db, { limit, model, afterChunkId });
 }
 
 
