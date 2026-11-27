@@ -358,7 +358,9 @@ if (timedOut) {
   }
   const failed = failedTask(output ?? readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  reportRunOutput(dump, { write: console.error });
+  // A signal leaves no exit code, and the file it left is a prefix: a run nobody
+  // let finish is not named as the whole run.
+  reportRunOutput(dump, { write: console.error, finished: status !== null && child.signalCode === null });
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here

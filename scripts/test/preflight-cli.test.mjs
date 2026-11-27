@@ -115,6 +115,24 @@ test("a suite that runs past its budget stops the tree and keeps the output", as
   });
 });
 
+// A suite killed by something other than its budget — OOM, an operator's SIGTERM —
+// leaves a prefix too. The gate sees no exit code, so the red branch is where the
+// label can lie.
+test(
+  "a suite killed by a signal is not named as a full run",
+  { skip: process.platform === "win32" ? "Windows has no signals to die from" : false },
+  async () => {
+    await withTempDir(async ({ overrides }) => {
+      await withPnpmShim(writeSignalPnpm, async (bin) => {
+        const result = runCliIn(repoRoot, bin, ["--full"], { overrides });
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /partial output \(the run did not finish\): /);
+        assert.doesNotMatch(result.stderr, /full output: /);
+      });
+    });
+  },
+);
+
 // A bounded wait for text a child writes after it exits: the exit event and the
 // pipe's last bytes are separate events. The cap keeps a broken pipe from hanging
 // the test.
@@ -224,11 +242,14 @@ test("the output file's label names which of the three states it is in", () => {
   assert.equal(outputLabel({ failed: false, finished: false }), "partial output (the run did not finish)");
   assert.equal(outputLabel({ failed: true, finished: true }), "incomplete output file");
   assert.equal(outputLabel({ failed: true, finished: false }), "incomplete output file");
+  // A caller that forgets to say the run finished must not be handed the label of
+  // a whole run.
+  assert.equal(outputLabel({ failed: false }), "partial output (the run did not finish)");
   // A run that never opened a file gets no line at all, and the line carries the
   // label the state asked for.
   const lines = [];
   reportRunOutput(null, { write: (line) => lines.push(line) });
-  reportRunOutput({ file: "/tmp/run.log", failed: true }, { write: (line) => lines.push(line) });
+  reportRunOutput({ file: "/tmp/run.log", failed: true }, { write: (line) => lines.push(line), finished: true });
   assert.deepEqual(lines, ["[preflight] incomplete output file: /tmp/run.log"]);
 });
 
@@ -1075,6 +1096,12 @@ function writeCountingPnpm(bin) {
   for (let i = 0; i < 2000; i += 1) lines.push(`console.log("padding ${"x".repeat(60)} ${i}");`);
   lines.push("");
   writeNodePnpm(bin, "count.mjs", lines);
+}
+
+// A pnpm that dies of a signal instead of exiting: the gate gets no exit code, so
+// the file it kept is a prefix of the run and has to be named as one.
+function writeSignalPnpm(bin) {
+  writeNodePnpm(bin, "signal.mjs", ['console.log("suite started");', 'process.kill(process.pid, "SIGTERM");', ""]);
 }
 
 // A pnpm whose output is longer than the failure recap: 150 lines, then a failed
