@@ -157,7 +157,7 @@ export interface DocsGoldenMigration {
 // cell tombstone — a cell demoted in place (same id, per the
 // data-version governance rule: a semantic rewrite needs a NEW id plus old-cell
 // deprecation, never an in-place re-chip). A tombstoned entry carries no live
-// route: no scope in golden.scopes, no expected.vertical, no injected spec.
+// route: no scope in the root scopes map, no expected.vertical, no injected spec.
 // The prior payload is preserved here verbatim for the historical record.
 export interface DocsGoldenTombstone {
   reason_code: TombstoneReasonCode; // controlled vocabulary (TOMBSTONE_REASON_CODES)
