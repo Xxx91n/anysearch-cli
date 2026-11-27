@@ -32,12 +32,12 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Design: one 4s cap per request by default, counted from fan-out. The user's
 // default is this number; who may change it and by how much is the composition
-// root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`
-// (#649). Exported so the composition root and help read the same 4s.
+// root's call (`resolveRequestTimeoutMs`), including `ans search --deadline`.
+// Exported so the composition root and help read the same 4s.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
-// setTimeout's ceiling. createEngine clamps before passing a value down, and the
-// constructor rejects anything above it here; both guards stay because tests
-// construct this class directly.
+// setTimeout's ceiling. Whoever constructs the engine, the constructor rejects
+// values above it; createEngine also clamps first, but that only turns a bad
+// value into the default early — it is not a substitute for this check.
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
