@@ -82,11 +82,12 @@ export const RecallMemoryInput = Type.Object({
       description: "Explicit project roots whose local index should be read instead of the current project (a cross-project read the caller asked for). Omit to search only the current project.",
     })
   ),
-  // #611: read a stored page back by section instead of searching. Positive
-  // rowid only: a negative id names a long-term knowledge row, which has no body.
+  // #611: read a stored page back by section instead of searching. Only a
+  // positive rowid names a page; a negative id names a knowledge row and the
+  // handler refuses it with knowledge_row instead of a wire-level validation error.
   expand: Type.Optional(
     Type.Object({
-      rowid: Type.Integer({ minimum: 1, description: "Material row id from an internal recall hit (a positive rowid)." }),
+      rowid: Type.Integer({ description: "Material row id from an internal recall hit. A positive id reads the page; a negative id names a knowledge row and is refused with knowledge_row." }),
       sectionId: Type.Optional(
         Type.Union([
           Type.Integer({ minimum: 1, description: "One section id from the hit's sections list." }),

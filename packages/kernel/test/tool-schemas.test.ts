@@ -114,6 +114,19 @@ assert.equal(qk.query, "q");
 assert.equal(ac.message, "m");
 assert.equal(acThreaded.sessionId, "abc-123");
 
+// 8b. #611: a negative rowid is a domain answer (knowledge_row), not a wire
+// validation error, so the handler — not AJV — draws the material-row line.
+assert.equal(
+  Value.Check(RecallMemoryInput, { query: "q", expand: { rowid: -1 } }),
+  true,
+  "expand passes a negative rowid through to the handler",
+);
+assert.equal(
+  Value.Check(RecallMemoryInput, { query: "q", expand: { rowid: 3, sectionId: [1, 2], offset: 10, limitChars: 500 } }),
+  true,
+  "expand accepts a positive rowid with sections and paging args",
+);
+
 // 9.: maxResults contract rejection — the key is not
 // in the schema and additionalProperties:false makes the check hard-fail.
 // Exposing it is a feature decision; this assert is the CI counterpart so a
