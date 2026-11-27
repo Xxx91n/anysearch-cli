@@ -84,6 +84,9 @@ if (into) {
   }
   const domain = bc.domain ?? "docs";
   if (domain !== "docs") fail("--new only creates docs-domain rows; " + id + " is " + domain + " (cold domains are abstain-only)");
+  if (golden.entries.some((e) => typeof e.question === "string" && e.question.trim() === bc.question.trim())) {
+    fail(id + " question already exists in eval-golden.json; use --into to attach the regression evidence");
+  }
   const tags = bc.dimensions;
   if (!Array.isArray(tags) || tags.some((t) => typeof t !== "string" || !t.includes(":"))) {
     fail(id + " dimensions must be a string[] of dimension:value tags");
