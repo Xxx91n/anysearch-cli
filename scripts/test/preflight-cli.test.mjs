@@ -576,8 +576,14 @@ test(
     // --full needs no change set, so git being absent from PATH is fine too.
     await withWorkspace({ pnpm: () => {} }, ({ root, bin }) => {
       const result = runCliIn(root, bin, ["--full"], { overrides: { PATH: bin } });
-      assert.equal(result.status, 2, result.stderr);
-      assert.match(result.stderr, /could not start pnpm/);
+      try {
+        assert.equal(result.status, 2, result.stderr);
+        assert.match(result.stderr, /could not start pnpm/);
+        // The gate keeps its throwaway home on this path; this fixture takes it back.
+        assert.ok(keptHome(result.stderr), `no kept test home in: ${result.stderr}`);
+      } finally {
+        dropLeftoverHome(result);
+      }
     });
   },
 );
