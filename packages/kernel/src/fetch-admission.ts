@@ -185,11 +185,8 @@ export function fetchCredentialHit(rawHandle: string, identity: string): boolean
       if (looksHighEntropy(value) || containsSecret(value)) return true;
     }
     for (const segment of parsed.pathname.split("/")) {
-      // A `sk-...` key can be shorter than the entropy threshold. Segments
-      // with three or more `-`/`_` parts are title slugs, not keys. A generic
-      // base64url shape with `-`/`_` is deliberately not detected here: it
-      // matches long Wikipedia/blog slugs; known token prefixes and
-      // `containsSecret` are the guard for this class.
+      // Known token shapes only; a generic base64url string with `-`/`_` is
+      // not detected here (it matches long slugs), an accepted heuristic risk.
       if (containsSecret(segment) && segment.split(/[-_]/).filter(Boolean).length <= 2) return true;
       if (/^(?:sk-(?:proj|ant)-|ghp_|gho_|xox[baprs]-|glpat-)/i.test(segment)) return true;
       if (looksHighEntropy(segment)) return true;

@@ -231,7 +231,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
         }
       }
     } else if (docs.length === 0) {
-      const bodyLines = lines.filter((line) => line.trim());
+      const bodyLines = lines.filter((line) => line.trim() && !upstreamError.test(line));
       const body = bodyLines.join("\n").trim();
       if (body && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
     }

@@ -188,6 +188,20 @@ async function main() {
       "free: a single cross-host document is not mapped to the requested URL");
   }
 
+  // ---- a plain-text single-URL reply becomes a page only with enough body --
+  {
+    const plain = parseExaFetchReply(["line one", "line two", "line three"].join("\n"), ["https://example.com/a"]);
+    assert(plain.pages.length === 1 && plain.pages[0]!.text.includes("line three"),
+      "free: a three-line plain-text reply can be the requested page");
+    const unrelated = parseExaFetchReply([
+      "preface",
+      "Error fetching https://other.example/x: CRAWL_TIMEOUT",
+      "Error fetching https://another.example/y: CRAWL_NOT_FOUND",
+    ].join("\n"), ["https://example.com/a"]);
+    assert(unrelated.pages.length === 0,
+      "free: unrelated error lines alone do not fabricate a page");
+  }
+
   // ---- an all-failure reply keeps every upstream reason ------------------
   {
     const text = [
