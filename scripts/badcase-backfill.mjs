@@ -72,6 +72,8 @@ for (const [gid, scope] of Object.entries(golden.scopes)) {
 if (into) {
   const target = golden.entries.find((e) => e.id === into);
   if (!target) fail("golden target not found: " + into);
+  if (target.tombstone) fail("golden target " + into + " is a tombstone — pick a live row");
+  if (target.domain !== bc.domain) fail("domain mismatch — badcase " + id + " is " + bc.domain + ", target " + into + " is " + target.domain);
   if (target.question.trim() !== bc.question.trim()) fail("question mismatch — attach requires the same verbatim question");
   target.notes = (target.notes ? target.notes + " | " : "") + "badcase " + id + " observed " + bc.observed.results + " results (expected " + bc.expected.verdict + ")";
   bc.status = "promoted";
