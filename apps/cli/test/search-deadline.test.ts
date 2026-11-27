@@ -4,7 +4,10 @@
 //   - --deadline reaches the engine (a source slower than the deadline is cut
 //     at the deadline, not at the 4s default);
 //   - every malformed form exits 2 and names the range and the default;
-//   - --deadline's value never leaks into the query text (the #635 trap).
+//   - --deadline's value never leaks into the query text (the #635 trap);
+//   - #651: --json always carries `partial` and `deadlineMs`, and a cut arm sets
+//     partial=true with the budget that cut it (the human chestnut is covered in
+//     the first test and in abstain.test.ts).
 //
 // The "results that already arrived survive the cut" half lives in the engine
 // deadline tests (packages/kernel/test/engine.test.ts): a CLI run against one
@@ -124,8 +127,9 @@ test("a slow arm is cut at --deadline, not at the 4s default", async () => {
     const r = await run(["q", "--deadline", "500"]);
     const wallMs = Date.now() - started;
     assert.equal(r.code, 1, "a cancelled search with no results exits 1; got: " + r.err + r.out);
-    assert.match(r.out, /Providers cancelled: anysearch/, "the cut arm is named; got: " + r.out.slice(-400));
-    assert.match(r.out, /Results: 0/, "nothing arrived before the deadline; got: " + r.out.slice(-400));
+    assert.match(r.out, /Providers cancelled: anysearch（到时限了，没等它回来）/, "the cut arm is named with the real reason; got: " + r.out.slice(-400));
+    assert.ok(!r.out.includes("结果够了"), "the old false reason is gone; got: " + r.out.slice(-400));
+    assert.match(r.out, /Results: 0 \(partial\)/, "zero results still say the pool was cut; got: " + r.out.slice(-400));
     const elapsed = /Elapsed: (\d+)ms/.exec(r.out);
     assert.ok(elapsed, "the run prints its elapsed time; got: " + r.out.slice(-400));
     const engineMs = Number(elapsed![1]);
@@ -173,8 +177,40 @@ test("--deadline wins over ANS_EVAL_REQUEST_TIMEOUT_MS and says so", async () =>
     assert.match(r.err, /ANS_EVAL_REQUEST_TIMEOUT_MS="20000"/, "stderr names the ignored value; got: " + r.err);
     const doc = JSON.parse(r.out);
     assert.equal(doc.requestTimeoutMs, 5000, "the flag's 5000ms is what ran; got: " + doc.requestTimeoutMs);
+    assert.equal(doc.deadlineMs, 5000, "--json reports the same budget under deadlineMs; got: " + doc.deadlineMs);
+    assert.equal(doc.partial, false, "nothing was cut, so partial is false and still present");
   } finally {
     delete process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
+    await stub.close();
+  }
+});
+
+test("--json says partial when an arm is cut, with the budget that cut it", async () => {
+  const stub = await startFakeAnySearch(MARKDOWN, { delayMs: 3000 });
+  process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
+  try {
+    const r = await spawnCli(["search", "q", "--deadline", "500", "--json"]);
+    assert.equal(r.code, 1, "a cancelled search exits 1; got: " + r.err + r.out);
+    const doc = JSON.parse(r.out);
+    assert.equal(doc.partial, true, "a cut arm flips partial on; got: " + doc.partial);
+    assert.equal(doc.deadlineMs, 500, "deadlineMs is the budget this run used; got: " + doc.deadlineMs);
+    assert.equal(doc.requestTimeoutMs, 500, "the eval clock agrees; got: " + doc.requestTimeoutMs);
+    assert.deepEqual(doc.providersCancelled, ["anysearch"], "the cut arm is still named");
+  } finally {
+    await stub.close();
+  }
+});
+
+test("without --deadline, --json reports the 4s default and partial=false", async () => {
+  const stub = await startFakeAnySearch(MARKDOWN);
+  process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
+  try {
+    const r = await spawnCli(["search", "q", "--json"]);
+    assert.equal(r.code, 0, r.err + r.out);
+    const doc = JSON.parse(r.out);
+    assert.equal(doc.deadlineMs, 4000, "the default budget is what ran; got: " + doc.deadlineMs);
+    assert.equal(doc.partial, false, "partial is always present, false when nothing was cut");
+  } finally {
     await stub.close();
   }
 });

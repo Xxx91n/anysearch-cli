@@ -7,8 +7,8 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec } from "@anysearch-cli/retriever";
+import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
+import { buildVerticalSpec, isPartialPool } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -81,6 +81,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // Partial success: at least one arm answered, so isError stays false
           // while these fields name the degraded arms.
           const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses, providerErrorRetryAfter);
+          const partial = isPartialPool(cancelledProviders);
           const topResults = envelope.results.slice(0, 10);
 
           // provider answers pass through as first-class fields.
@@ -92,20 +93,19 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled / credentialSources are
-              // unconditional here; structuredContent is a different shape (the two
-              // arm lists and the credential record always, sufficiency /
-              // attribution / abstain / interrupted / failures when present).
+              // Stable output shape; the field list lives in docs/mcp-server.md.
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
               providerAnswers: envelope.metadata?.providerAnswers ?? [],
               providersQueried: queriedProviders,
-              // Arms we cut off ourselves: enough results were already in, or the
-              // caller went away. Paired with providersQueried, so neither case
-              // reads as an arm that never ran.
+              // Arms we cut off ourselves: the deadline ran out, or the caller
+              // went away. Paired with providersQueried, so neither case reads as
+              // an arm that never ran.
               providersCancelled: cancelledProviders,
+              partial,
+              // The budget the engine gave this fanout.
+              deadlineMs: reportedDeadlineMs(eng),
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -145,8 +145,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const abstain = envelope.metadata?.abstain;
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
-          // providersQueried、providersCancelled 恒有值；sufficiency /
-          // attribution / provider failures 有值时才加。
+          // providersQueried、providersCancelled、partial、deadlineMs 恒有值；
+          // sufficiency / attribution / provider failures 有值时才加。
           const structuredContent = {
             ...(isInterrupted(outcome, signal) ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
@@ -159,6 +159,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
+            // Both always present so a host never confuses "complete" with
+            // "field missing".
+            partial,
+            deadlineMs: reportedDeadlineMs(eng),
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

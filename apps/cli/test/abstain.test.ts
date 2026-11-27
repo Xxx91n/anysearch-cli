@@ -20,6 +20,7 @@ import {
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
   formatProvidersFailedLine,
+  formatResultsLine,
   formatProviderHintLines,
   describeCredentialSource,
   describeUnconfiguredSource,
@@ -201,21 +202,29 @@ async function main() {
     "an env key is still used when the file is broken, and the line says so",
   );
 
-  // 4b. Cancelled line (#454 / #475): an arm the grace window cut off is named
-  //     on its own line — it was asked, just not waited for. An empty list
+  // 4b. Cancelled line (#454 / #475, wording fixed in #651): an arm the deadline
+  //     cut off is named on its own line — it was asked, just not waited for.
+  //     The reason says the clock ran out, never "enough results", because the
+  //     engine never looks at the result count before cutting. An empty list
   //     prints nothing, so the healthy path stays as quiet as before.
   assert(formatProvidersCancelledLine([]) === undefined, "no cancelled arms, no line");
   const cancelled = formatProvidersCancelledLine(["anysearch"]);
   assert(cancelled !== undefined, "a cancelled arm renders a line");
   assert(cancelled!.split(String.fromCharCode(10)).length === 1, "cancelled line is a single line");
   assert(
-    cancelled === "Providers cancelled: anysearch（结果够了，没等它回来）",
+    cancelled === "Providers cancelled: anysearch（到时限了，没等它回来）",
     "golden cancelled line shape; got: " + cancelled,
   );
   assert(
-    formatProvidersCancelledLine(["exa", "anysearch"]) === "Providers cancelled: exa, anysearch（结果够了，没等它回来）",
+    formatProvidersCancelledLine(["exa", "anysearch"]) === "Providers cancelled: exa, anysearch（到时限了，没等它回来）",
     "several cut-off arms share the one reason",
   );
+
+  // 4c. Results line (#651): the count stays a count; a cut arm adds ` (partial)`
+  //     on the same line, including when the count is 0.
+  assert(formatResultsLine(3, false) === "Results: 3", "a complete pool prints a plain count");
+  assert(formatResultsLine(3, true) === "Results: 3 (partial)", "a cut arm marks the count partial");
+  assert(formatResultsLine(0, true) === "Results: 0 (partial)", "zero results still carry the marker");
 
   // 5. Built-CLI arm: a narrow-allowlist domain plus a local stub endpoint, so
   //    the run is a real abstain (one arm answered with nothing, gate "pre")

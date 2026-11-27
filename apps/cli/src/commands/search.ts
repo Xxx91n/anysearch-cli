@@ -2,8 +2,8 @@
 // decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { buildVerticalSpec, isPartialPool, verticalSpecReject } from "@anysearch-cli/retriever";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, reportedDeadlineMs, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -14,6 +14,7 @@ import {
   formatFailedArmLines,
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
+  formatResultsLine,
 } from "./search-abstain";
 
 // #649: the terminal's own wait budget. Absent keeps the engine's 4s default;
@@ -269,6 +270,12 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
+    // One read for the flag and the JSON field; a hand-built envelope may omit
+    // metadata entirely.
+    const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+    // A cut arm means the pool is shorter than the fanout that was asked.
+    const partial = isPartialPool(cancelledProviders);
+
     // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
       const out = {
@@ -276,7 +283,9 @@ export async function runSearch(args: string[]): Promise<number> {
         mode,
         // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
         // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
-        requestTimeoutMs: engine.requestTimeoutMs,
+        requestTimeoutMs: reportedDeadlineMs(engine),
+        // 两个键同一个数：评测报告认准上面那个，`deadlineMs` 是给脚本新加的键。
+        deadlineMs: reportedDeadlineMs(engine),
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
@@ -286,7 +295,10 @@ export async function runSearch(args: string[]): Promise<number> {
         // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
         // never joins the fanout.
         providersQueried: envelope.metadata?.providersQueried ?? [],
-        providersCancelled: envelope.metadata?.providersCancelled ?? [],
+        providersCancelled: cancelledProviders,
+        // True when at least one arm was cut, so a script does not have to read
+        // three fields to notice the pool was shortened. Always present.
+        partial,
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         // construction-time provider absences (id -> safe category), paired
@@ -377,7 +389,7 @@ export async function runSearch(args: string[]): Promise<number> {
     const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
-    console.log("Results: " + envelope.results.length);
+    console.log(formatResultsLine(envelope.results.length, partial));
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
     return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });
