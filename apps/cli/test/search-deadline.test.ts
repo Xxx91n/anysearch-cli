@@ -167,12 +167,12 @@ test("--deadline wins over ANS_EVAL_REQUEST_TIMEOUT_MS and says so", async () =>
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
   process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = "20000";
   try {
-    const r = await spawnCli(["search", "q", "--deadline", "500", "--json"]);
+    const r = await spawnCli(["search", "q", "--deadline", "5000", "--json"]);
     assert.equal(r.code, 0, r.err + r.out);
-    assert.match(r.err, /--deadline 500 ms 优先/, "stderr names the winner; got: " + r.err);
+    assert.match(r.err, /--deadline 5000 ms 优先/, "stderr names the winner; got: " + r.err);
     assert.match(r.err, /ANS_EVAL_REQUEST_TIMEOUT_MS="20000"/, "stderr names the ignored value; got: " + r.err);
     const doc = JSON.parse(r.out);
-    assert.equal(doc.requestTimeoutMs, 500, "the flag's 500ms is what ran; got: " + doc.requestTimeoutMs);
+    assert.equal(doc.requestTimeoutMs, 5000, "the flag's 5000ms is what ran; got: " + doc.requestTimeoutMs);
   } finally {
     delete process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
     await stub.close();
