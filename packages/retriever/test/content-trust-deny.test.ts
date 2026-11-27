@@ -15,6 +15,8 @@ assert("deny overrides allow match", shouldAllowUrl("https://a.com/x", retrieved
 assert("deny overrides allow on subdomain suffix match", shouldAllowUrl("https://deep.a.com/", retrieved, ["a.com"], ["deep.a.com"]).allowed === false);
 assert("deny overrides even a user-source label", shouldAllowUrl("https://evil.com/", user, ["evil.com"], ["evil.com"]).allowed === false);
 assert("deny verdict is terminal (no HITL escalation)", shouldAllowUrl("https://evil.com/", retrieved, [], ["evil.com"]).requiresHitl === false);
+assert("deny also matches a URL host with a trailing dot",
+  shouldAllowUrl("https://evil.com./x", user, [], ["evil.com"]).allowed === false);
 assert("unrelated deny entry does not leak: allow still wins", shouldAllowUrl("https://good.com/", retrieved, ["good.com"], ["evil.com"]).allowed === true);
 assert("no allow match still requiresHitl", shouldAllowUrl("https://unknown.com/", retrieved, ["good.com"], ["evil.com"]).requiresHitl === true);
 assert("unparseable URL denied without deny match", shouldAllowUrl("not-a-url", retrieved, ["x.com"], ["x.com"]).allowed === false);

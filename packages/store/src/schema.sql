@@ -167,6 +167,17 @@ CREATE TABLE IF NOT EXISTS retrieval_chunk_vectors (
   model TEXT NOT NULL
 );
 
+-- Handles a model may turn into a page read in one session.
+-- search stores archive row ids; user stores URL identities plus an http: marker.
+-- Tickets cascade with their session.
+CREATE TABLE IF NOT EXISTS fetch_tickets (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('search', 'user')),
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (session_id, kind, value)
+);
+
 -- FTS5 for retrieval results (search within session results).
 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_results_fts USING fts5(
   session_id UNINDEXED,

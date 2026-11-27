@@ -401,6 +401,10 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 13b. an SSE stream with no matching reply is a protocol fault, not unknown.
+  assert(classifyProviderError("AnySearch MCP tools/call SSE stream carried no reply for id 1") === "permanent-protocol",
+    "a stream without a matching reply is permanent-protocol");
+
   // 14. nit: clientInfo.version drift-guard — the initialize literal
   // must track packages/retriever/package.json version (hard-pinned to package.json version).
   {

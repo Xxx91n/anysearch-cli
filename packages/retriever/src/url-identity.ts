@@ -44,10 +44,11 @@ function stripTrackingParams(search: string): string {
 
 /**
  * Parse an http(s) URL, adding `https://` when the caller left the scheme off.
- * Returns null for anything that is not a web URL: an unparseable string or an
- * opaque scheme such as `mailto:`.
+ * A scheme-less `word.word` is treated as a host even if it is really a file
+ * name (`README.md`); deciding page-versus-file stays with the caller. Returns
+ * null for an unparseable string or an opaque scheme such as `mailto:`.
  */
-function parseWebUrl(raw: string): URL | null {
+export function parseWebUrl(raw: string): URL | null {
   const text = raw.trim();
   if (!text) return null;
   if (/^https?:\/\//i.test(text)) {

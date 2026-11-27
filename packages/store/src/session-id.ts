@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { ansSessionPath } from "./ans-paths.js";
+import { writeStderr } from "./stderr.js";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 

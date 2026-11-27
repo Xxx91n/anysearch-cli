@@ -26,6 +26,28 @@
 ### Known limits
 
 - 这版只把索引和召回接好；仓库里还没有生产代码调用 `savePage` 的抓取入口，所以真实安装里的 `content` 列暂时是空的，正文臂要等抓取工具注册后才对现有档案生效。
+## Unreleased — #608: 内部 agent 能读一页，正文进库
+
+一句话说清：**`ans chat` / `ans_chat` 多了一个内部 `fetch` 工具。模型只能拿本会话的句柄换页：搜索结果的 `m:<行号>` 或用户自己贴的网址；伪造、本会话没搜到过的句柄、正文里的链接和模型自拼网址都在工具里当场拒掉，不拦整轮、不进 HITL；搜索挂到别的会话已有的正文行时，本会话的票照样能读。Exa 有 key 走付费 `/contents`，没 key 走免费 `web_fetch_exa`；正文全文入库，模型只看截到 4000 字的副本。一次提问最多 10 页、单次最多 5 个网址，连续两批没有新页或两批全被拒就停。对外三扇门仍然没开。**
+
+### Changed
+
+- **内部 `fetch` 工具**（`packages/kernel/src/fetch-tool.ts`）：`executionMode: "sequential"`；1–5 个 `handles`，`maxCharacters` 默认和上限都是 4000；返回 `pages` / `failures` / `skipped` / `rejected` / `providers` / `pagesRead` / `pagesRemaining`，整批被拒或全失败用 `isError: true`，部分成功照常出页。
+- **票据**（`packages/store/src/schema.sql`、`session-store.ts`）：新增 `fetch_tickets`，按会话隔离、随会话级联删除；`search` 存行号，`user` 存归一化网址。搜索工具给每条真正返回的结果加 `handle: "m:<rowId>"` 并写票；每轮开始从用户消息里抽网址写用户票。
+- **四道门**（`packages/kernel/src/fetch-admission.ts`）：来源票 → 地址（只收公网 http/https，拒 localhost / 内网 / 无点主机 / 带用户名密码）→ 域名（deny 永远先判，allowlist 非空时所有来源都得命中，用户票不 bypass）→ 凭据（参数名、密钥形状、高熵值都不发给上游）。
+- **Exa 抓取适配器**（`packages/retriever/src/providers/exa-fetch.ts`）：付费臂 `getContents` 请求全文；免费臂 `web_fetch_exa` 一次一批、保留 `Error fetching …` 失败行；适配器只给 `pages` / `failures`，工具给模型的每页固定 `finalUrlKnown: false`。工厂和搜索一样只看传进来的 key。
+- **记账与闸**：每次真正发上游请求前预留 1 次 `calls`、请求后按 1 次结算；预算拒绝回「这轮抓页额度用完了，先用已有结果作答」，已经读到的页照常返回，没发出去的网址标 `skipped{reason:"call_budget"}`。账本自己抛错时按未计费继续，只有预留明确返回 false 才算额度用完。同一 URL 本次 run 复用，重读缓存不算空批；页数按成功读到的新页算，和搜索闸各算各的。用户明确贴的 `http://` 链接保留原协议出网；搜索句柄没有协议，按 https 读。用户贴的网址带密钥时不写票据，免得密钥长期留在库里。用户贴的 `http://` 票额外记一个 `http:` 前缀，模型把 https 改写成 http 不会降级。空正文和写库失败不缓存，下一次还能重试；`retryable` 没填也按可重试算，只有明确 false 才结案。正文被净化掉隐形字符时信封标 `stripped`。`searchRowForFetch` 在 store 内按会话票据取行，调用方漏查也拿不到别人的行。
+- **通用钩子**：`pi.on("tool_call")` 不再对名为 `fetch` 的工具做 URL 正则扫描/HITL；其它工具保持原状。
+- **接线**：`createEngine` 暴露 `fetchProviders`；CLI `ans chat` 和 MCP `ans_chat` 把它交给运行时。能写正文的库（`savePage` 等）和会话缺一就不注册，并在 stderr 说一行；没有启用任何抓取源时仍注册，调用回「没有可用的抓取信息源」，不发请求。
+- **文档**：`docs/limitations.md` 改成「内部能读页，外部仍然不能」；`GLOSSARY.md` 补「读页」「票据」；Exa 档案里 `web_fetch_exa` 从「押后」改成读页适配器。
+
+### Tests
+
+- `packages/store/test/fetch-tickets.test.ts`：票按会话隔离、重复写幂等、随会话级联删除；共享正文行凭本会话的票可读，没票的跨会话句柄仍拒。
+- `packages/retriever/test/fetch-exa.test.ts`：免费臂一批一次、请求全文、文档与失败行解析；付费臂全文、空正文/缺失项、整臂抛错；工厂分岔。
+- `packages/kernel/test/fetch-admission.test.ts`：地址/域名/凭据三道纯门，用户消息抽网址（排除文件名和邮箱）。
+- `packages/kernel/test/fetch-tool.test.ts`：搜索发 `m:` 句柄和票 → fetch 用票读页；伪造/没票的跨会话句柄/自拼网址在 in-band 拒绝；四道门；部分成功；10 页/5 网址；空手与整批被拒软停；预算预留/结算；全文入库、模型副本截断、`fetched=1`；同 URL 复用。
+- `packages/kernel/test/fetch-runtime.test.ts`：模型能看到 `fetch`；通用钩子不再拦名为 `fetch` 的 URL 调用。
 
 ## Unreleased — #649: 终端自己定这一次等多久
 

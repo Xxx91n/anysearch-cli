@@ -7,6 +7,8 @@ export * from "./config-llm";
 export * from "./credentials";
 export * from "./domain-schema";
 export * from "./session-store";
+// Secret/token heuristic; the fetch URL credential gate uses the same guard.
+export { containsSecret } from "./secret";
 // #570: one pid-liveness reading for every lock, ledger and registry record
 // in the product — only ESRCH proves a process is gone.
 export * from "./process-liveness";
