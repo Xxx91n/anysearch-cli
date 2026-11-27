@@ -8,14 +8,18 @@
 // The engine half (answered / cut / failed / arrival order) lives in
 // packages/kernel/test/engine.test.ts; this file only proves the --json exit.
 //
+// The CLI is spawned, not called in-process: the package's pretest builds
+// dist, and a child's stdout carries nothing but what the command wrote.
+//
 // Run: pnpm --filter @anysearch-cli/cli test
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSearch } from "../src/commands/search.js";
+import { fileURLToPath } from "node:url";
 import { startFakeAnySearch } from "./helpers/fake-anysearch";
 
 const dir = mkdtempSync(join(tmpdir(), "ans-653-elapsed-"));
@@ -70,20 +74,30 @@ const MARKDOWN = [
   "",
 ].join("\n");
 
-async function run(argv: string[]): Promise<{ code: number; out: string; err: string }> {
-  const realOut = process.stdout.write.bind(process.stdout);
-  const realErr = process.stderr.write.bind(process.stderr);
-  let out = "";
-  let err = "";
-  (process.stdout as any).write = (chunk: any) => { out += String(chunk); return true; };
-  (process.stderr as any).write = (chunk: any) => { err += String(chunk); return true; };
-  try {
-    const code = await runSearch(argv);
-    return { code, out, err };
-  } finally {
-    (process.stdout as any).write = realOut;
-    (process.stderr as any).write = realErr;
-  }
+function spawnCli(args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+  // The package's pretest build produces dist; this is the same entrypoint a
+  // user runs. Spawning also keeps the test runner's own writes out of the
+  // captured output: a stdout patched in-process can pick up other writers.
+  const cli = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [cli, ...args], {
+      env: { ...process.env, HOME: dir, USERPROFILE: dir },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    let err = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { out += chunk; });
+    child.stderr.on("data", (chunk: string) => { err += chunk; });
+    child.on("close", (code) => resolve({ code, out, err }));
+  });
+}
+
+function jsonOf(out: string): any {
+  const head = out.trimStart();
+  assert.ok(head.startsWith("{"), "stdout carries a JSON document; got " + JSON.stringify(head.slice(0, 80)));
+  return JSON.parse(head);
 }
 
 test.after(() => {
@@ -98,9 +112,9 @@ test("an answered arm's own elapsedMs reaches --json", async () => {
   const stub = await startFakeAnySearch(MARKDOWN);
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
   try {
-    const r = await run(["q", "--json"]);
+    const r = await spawnCli(["search", "q", "--json"]);
     assert.equal(r.code, 0, r.err + r.out);
-    const doc = JSON.parse(r.out);
+    const doc = jsonOf(r.out);
     assert.deepEqual(doc.providerElapsedMs, { anysearch: 2 },
       "the arm's own 2ms is what the JSON carries; got " + JSON.stringify(doc.providerElapsedMs));
   } finally {
@@ -112,9 +126,9 @@ test("a cut arm has no key in providerElapsedMs", async () => {
   const stub = await startFakeAnySearch(MARKDOWN, { delayMs: 5000 });
   process.env.ANYSEARCH_ENDPOINT = stub.endpoint;
   try {
-    const r = await run(["q", "--json", "--deadline", "500"]);
+    const r = await spawnCli(["search", "q", "--json", "--deadline", "500"]);
     assert.equal(r.code, 1, r.err + r.out);
-    const doc = JSON.parse(r.out);
+    const doc = jsonOf(r.out);
     assert.deepEqual(doc.providersCancelled, ["anysearch"],
       "the cut arm is named; got " + JSON.stringify(doc.providersCancelled));
     assert.deepEqual(doc.providerElapsedMs, {},
