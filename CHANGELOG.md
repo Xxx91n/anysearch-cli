@@ -39,7 +39,7 @@
 
 - **被切的原因改成真的**（`apps/cli/src/commands/search-abstain.ts`）：`Providers cancelled: <源>（到时限了，没等它回来）`。旧话「结果够了」是宽限窗口年代留下的，引擎到点就切，0 条结果时也照说不误。
 - **结果行会说自己被截短**（同上）：`formatResultsLine` 输出 `Results: N (partial)`；没有臂被切时还是原来的 `Results: N`。
-- **`deadlineMs` 只有一个来源**（`CompositionResult.requestTimeoutMs`）：票面要的「这次实际用的预算」就是它，CLI 和两个 MCP 工具都直接读，不再往信封里另存一份，也就没有两个数漂移的可能。
+- **`deadlineMs` 只走 `reportedDeadlineMs` 一处**：包装器自己报了预算（正整数毫秒，夹到引擎上限）就用它，否则用 `CompositionResult.requestTimeoutMs`，再不行回落 4s；CLI 和两个 MCP 工具都调它，不再往信封里另存一份。今天 CLI 的 retriever 就是引擎本身，两个来源同值；将来中间加一层包装器，报的就是实际执行那一层的钟。
 - **`partial` 只有一处判据**（`packages/retriever/src/outcome.ts` 的 `isPartialPool`）：单次并发查找由它判，CLI 和 `search_web` 直接调；`research_web` 的结果跨轮合并，自己累计，任何一轮被截短都为 true，`providersCancelled` 仍只报最后一轮。
 - **`ans search --json`**（`apps/cli/src/commands/search.ts`）：恒有 `partial` 和 `deadlineMs`，脚本不用拼三个字段才看得出池子被截短。`requestTimeoutMs` 原样保留，和 `deadlineMs` 同一个数：前者是评测读的钟，后者是这次新增的字段，两个数同源，不会打架。
 - **MCP 两个搜索工具**（`apps/mcp/src/tools/search-web.tool.ts`、`research-web.tool.ts`）：正文 JSON 和 `structuredContent` 都带这两个字段；没有完赛轮时 `partial=false`，`deadlineMs` 仍是每轮检索的预算（`research_web` 整次最多等到轮数倍）。
