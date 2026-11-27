@@ -25,8 +25,8 @@ import { GOLDEN_FILE, readGoldenFile } from "../../src/eval/golden-file";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
-// Round-neutral default path (the artifact is a durable evidence channel, not
-// a scratch file); CI/devs override via env for dated snapshots.
+// Defaults under .scratch, which Git ignores; point ANS_VERTICAL_DELTA_OUT
+// somewhere else when the artifact needs to outlive the workspace.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
