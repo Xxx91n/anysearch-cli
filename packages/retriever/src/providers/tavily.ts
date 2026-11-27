@@ -63,7 +63,8 @@ export class TavilyProvider implements SearchProvider {
       provider: this.id,
       results,
       answers,
-      elapsedMs: res.responseTime ?? (Date.now() - start),
+      // Tavily reports response_time in seconds; the envelope carries milliseconds.
+      elapsedMs: res.responseTime === undefined ? Date.now() - start : Math.round(res.responseTime * 1000),
       usage: undefined, // ponytail: no usage() — the SDK surfaces credits per call (response.usage.credits) only.
     };
   }

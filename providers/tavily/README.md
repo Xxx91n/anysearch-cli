@@ -34,6 +34,9 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 
 - 成功：`results[]`，每条 `title` / `url` / `content` / `publishedDate` / `score`；`answer` 模式下多
   一个 `answer` 字段。
+- `response_time` 的单位是**秒**（上游文档原话「Time in seconds」；真跑里同一次请求客户端 1573ms、
+  自报 0.37）。适配器乘 1000 取整后写进 `ProviderEnvelope.elapsedMs`，那一层恒为毫秒。不换算的话
+  `metadata.providerElapsedMs`（#653）里就会出现一张表两种单位，而且 0.37 看着像一条极快的臂。
 - `include_domains` 两档：`restrict`（硬过滤，也是上游默认）和 `prefer`（也搜全网），就这两个值。
   适配器只要有 `includeDomains` 就显式发 `include_domains_mode:"restrict"`，不靠默认值；探针的 restrict
   臂也这么发，A 臂故意不发，专门用来抽默认值。这个值不能单独发——不带 `include_domains` 上游回 400，

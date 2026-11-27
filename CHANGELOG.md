@@ -8,11 +8,16 @@
 - **两个出口**（`apps/cli/src/commands/search.ts`、`apps/mcp/src/tools/search-web.tool.ts`、`apps/mcp/src/tools/research-web.tool.ts`）：`ans search --json` 恒有 `providerElapsedMs`；MCP 的 `search_web` 和 `research_web` 在 `structuredContent` 和文本半边都带同一份。`research_web` 跟 `providersQueried` 一样只看最后一轮完成的检索，不跨轮合并。
 - **文档**（`docs/mcp-server.md`）：成功行的字段表补 `providerElapsedMs`，并说清「只有答完的臂有键，缺席不等于 0」。
 
+### Fixed
+
+- **tavily 的耗时单位**（`packages/retriever/src/providers/tavily.ts`）：Tavily 的 `response_time` 是秒（上游文档「Time in seconds」；`docs/research/real-baseline-2026-11-22.md` 同一次真跑里客户端 1573ms、服务商自报 0.37），适配器原来把它直接塞进 `elapsedMs`，这一家的数就比别家小 1000 倍。现在乘 1000 取整再写，`elapsedMs` 恒为毫秒；`ProviderEnvelope.elapsedMs` 补了一行单位注释，`providers/tavily/README.md` 记下这条上游事实，免得下次又按毫秒读。
+
 ### Tests
 
 - `packages/kernel/test/engine.test.ts`：答完的臂保留服务商自报的毫秒数；被掐、失败的臂没有键；两条臂先后到达的顺序换过来，表不变。
 - `apps/cli/test/provider-elapsed.test.ts`：假 anysearch 自报 2ms，`--json` 读到 `{ anysearch: 2 }`；慢源被 `--deadline 500` 掐掉后表是空的。
 - `apps/mcp/test/provider-elapsed.test.ts`：`search_web` 的 `structuredContent` 与文本半边都带同一张表；`research_web` 只报最后一轮，前一轮答完的臂不会留在表里。
+- `packages/retriever/test/tavily.test.ts`：假的 `responseTime: 0.4` 断言 `elapsedMs === 400`，锁住秒→毫秒的换算。
 
 ## Unreleased — #678: 推送门规矩和文档跟新门对齐（#671 收口）
 
