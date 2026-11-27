@@ -140,6 +140,7 @@ test("ans --help names --deadline <ms>, its bounds, and the default", async () =
   const r = await spawnCli(["--help"]);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /--deadline <ms>/, "the search options list the flag; got: " + r.out.slice(0, 1200));
+  assert.match(r.out, /how long this one search waits/, "the help says what the flag does; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /--deadline=<ms>/, "the help also names the equals form; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /500\D+60000/, "the help names the range; got: " + r.out.slice(0, 1200));
   assert.match(r.out, /default 4000/, "the help names the default");

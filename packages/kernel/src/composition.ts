@@ -340,15 +340,22 @@ export function resolveActiveAttributionCalibration(
 // already a wide window for one search.
 const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 
+// setTimeout's ceiling; the engine rejects anything above it.
+const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
+
 // The kernel never reads `ANS_EVAL_REQUEST_TIMEOUT_MS`, so the number can only
 // arrive as an argument. `capMs` defaults to the eval ceiling; `--deadline`
 // raises it to the flag's own ceiling so a user choice is not silently cut.
+// The result is always something the engine accepts: whole milliseconds in
+// [1, MAX_REQUEST_TIMEOUT_MS]. Fractions fall back to the default instead of
+// being truncated into a 1ms budget nobody asked for, and a cap above the
+// engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
-  if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
-  const ms = Math.trunc(raw);
-  if (ms <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
-  const cap = Number.isFinite(capMs) && capMs > 0 ? capMs : EVAL_REQUEST_TIMEOUT_CAP_MS;
-  return Math.min(ms, cap);
+  if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  const cap = Number.isInteger(capMs) && capMs > 0
+    ? Math.min(capMs, MAX_REQUEST_TIMEOUT_MS)
+    : EVAL_REQUEST_TIMEOUT_CAP_MS;
+  return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
 
 export function createEngine(

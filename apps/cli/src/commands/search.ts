@@ -118,8 +118,7 @@ export async function runSearch(args: string[]): Promise<number> {
   const vertical = built.vertical;
 
   // #649: the person at the terminal decides how long this one search may
-  // wait. Absent keeps the engine's 4s default; the flag only changes this
-  // run, never the default itself.
+  // wait; the flag only changes this run, never the default itself.
   let requestTimeoutMs: number | undefined;
   // Accept "--deadline 8000" and "--deadline=8000". Validate every occurrence;
   // when repeated the last one wins, so a script can set a default and append
@@ -177,12 +176,20 @@ export async function runSearch(args: string[]): Promise<number> {
   // 评测专用：只有这条命令读它，chat 和 MCP 都不读 —— 评测要一口更长的钟，
   // 用户口径的 4 秒不能跟着变。显式 --deadline 是用户自己的选择，优先。
   const evalTimeoutRaw = process.env.ANS_EVAL_REQUEST_TIMEOUT_MS;
-  const timeoutOpts = requestTimeoutMs !== undefined
-    ? { requestTimeoutMs, requestTimeoutCapMs: SEARCH_DEADLINE_MAX_MS }
-    : evalTimeoutRaw === undefined
-      ? undefined
-      : { requestTimeoutMs: Number(evalTimeoutRaw) };
+  let timeoutOpts: { requestTimeoutMs: number; requestTimeoutCapMs?: number } | undefined;
+  if (requestTimeoutMs !== undefined) {
+    // The flag carries its own 60s ceiling; the eval default is 15s.
+    timeoutOpts = { requestTimeoutMs, requestTimeoutCapMs: SEARCH_DEADLINE_MAX_MS };
+  } else if (evalTimeoutRaw !== undefined) {
+    timeoutOpts = { requestTimeoutMs: Number(evalTimeoutRaw) };
+  }
   const engine = createPersistentEngine(active.declaredName, timeoutOpts);
+  if (requestTimeoutMs !== undefined && evalTimeoutRaw !== undefined) {
+    process.stderr.write(
+      "[ans search] --deadline " + requestTimeoutMs + " ms 优先，这次忽略 ANS_EVAL_REQUEST_TIMEOUT_MS=" +
+        JSON.stringify(evalTimeoutRaw) + "\n",
+    );
+  }
   // 写错的值会静默回落成 4 秒，这一轮评测就白跑了；说清原值和这次实际用的。
   if (
     requestTimeoutMs === undefined &&

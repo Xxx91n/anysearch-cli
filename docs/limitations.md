@@ -70,7 +70,9 @@
   from the moment the request fans out) and marks unfinished arms as
   `providersCancelled` in its metadata, but it cannot stop a Tavily call that
   ignores the signal; that call can keep running upstream after the search has
-  returned.
+  returned. The default is still 4s; `ans search --deadline` can let this one
+  search wait longer (500–60000 ms), without changing that default or any other
+  entry.
 - **A cancelled arm is spare capacity, not a lost result** — the request-level
   deadline can return a short pool, so `providersCancelled` stays separate from
   `providersFailed` and is not an error class. All arms cancelled with zero

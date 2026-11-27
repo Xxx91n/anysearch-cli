@@ -119,7 +119,7 @@ try {
 
   // 评测的钟和用户的钟分开。`ANS_EVAL_REQUEST_TIMEOUT_MS` 只由 `ans search`
   // 读进来交给组合根；kernel 自己不读这个变量，chat 和 MCP 那两处调用也不读、不传，
-  // 所以它们永远拿 4000。四条规矩：不设 = 4000、传 15000 生效、非法或 ≤0 回落 4000、上限 15000。
+  // 所以它们永远拿 4000。四条规矩：不设 = 4000、传 15000 生效、非法或 ≤0（含小数）回落 4000、上限 15000。
   process.env.ANS_EVAL_REQUEST_TIMEOUT_MS = "15000";
   const defaultClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials });
   assert.equal(defaultClock.requestTimeoutMs, 4000,
@@ -130,7 +130,7 @@ try {
   assert.equal(raisedClock.requestTimeoutMs, 15000, "传 15000 生效");
   closeResult(raisedClock);
 
-  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5]) {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5, 0.5, 1.9]) {
     const r = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: bad });
     assert.equal(r.requestTimeoutMs, 4000, "非法或 ≤0 回落 4000（传的是 " + String(bad) + "）");
     closeResult(r);
@@ -143,6 +143,10 @@ try {
   const userClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 60000, requestTimeoutCapMs: 60000 });
   assert.equal(userClock.requestTimeoutMs, 60000, "--deadline 的 60s 上限不被评测的 15s 截断");
   closeResult(userClock);
+
+  const hugeClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 3_000_000_000, requestTimeoutCapMs: 3_000_000_000 });
+  assert.equal(hugeClock.requestTimeoutMs, 2_147_483_647, "超过引擎上限的值和 cap 都夹到 2^31-1，不把 RangeError 甩给调用方");
+  closeResult(hugeClock);
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the

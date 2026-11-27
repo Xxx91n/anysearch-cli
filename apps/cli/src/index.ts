@@ -50,7 +50,7 @@ const help = [
   "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
-  "                     --deadline <ms> (" + SEARCH_DEADLINE_MIN_MS + "–" + SEARCH_DEADLINE_MAX_MS + ", default " + DEFAULT_REQUEST_TIMEOUT_MS + ")",
+  "                     --deadline <ms> (how long this one search waits; " + SEARCH_DEADLINE_MIN_MS + "–" + SEARCH_DEADLINE_MAX_MS + ", default " + DEFAULT_REQUEST_TIMEOUT_MS + ")",
   "                     --deadline=<ms> also accepted",
   "  chat      新建对话；--continue 续当前项目最近会话；--session ID 续指定会话；--list 查看",
   "            -p 只输出答案和来源；-c 接着问被打断的那轮",
