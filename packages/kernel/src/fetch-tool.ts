@@ -222,6 +222,25 @@ function hasTofuTrust(store: FetchStorePort, sessionId: string, host: string): b
   return store.hasFetchTicket(sessionId, "tofu", host.toLowerCase().replace(/\.$/, ""));
 }
 
+/**
+ * The normalized identity and the URL a user handle will actually request.
+ * The read and the trust prompt both use this so a bare `www.` handle or an
+ * http handle without an http ticket cannot mean one host to the prompt and
+ * another to the read. The http-ticket lookup lives here too, because it is
+ * what decides whether the raw http URL survives.
+ */
+function effectiveRequestUrl(
+  store: FetchStorePort,
+  sessionId: string,
+  handle: string,
+): { identity: string; requestUrl: string } {
+  const identity = normalizeUrlIdentity(handle);
+  const rawUserUrl = handle.trim();
+  const httpTicket = /^http:\/\//i.test(rawUserUrl)
+    && store.hasFetchTicket(sessionId, "user", httpTicketValue(identity));
+  return { identity, requestUrl: requestUrlFor(rawUserUrl, identity, httpTicket) };
+}
+
 function resolveTicket(
   handle: string,
   store: FetchStorePort,
@@ -258,11 +277,9 @@ function resolveTicket(
     reportDenial(span, { handle: raw, reason: "invalid_handle" });
     return { ok: false, rejection: { handle, reason: "invalid_handle", message: fetchRejectMessage("invalid_handle") } };
   } else {
-    identity = normalizeUrlIdentity(raw);
-    const rawUserUrl = raw.trim();
-    const httpTicket = /^http:\/\//i.test(rawUserUrl)
-      && store.hasFetchTicket(sessionId, "user", httpTicketValue(identity));
-    requestUrl = requestUrlFor(rawUserUrl, identity, httpTicket);
+    const effective = effectiveRequestUrl(store, sessionId, raw);
+    identity = effective.identity;
+    requestUrl = effective.requestUrl;
     if (store.hasFetchTicket(sessionId, "user", identity)) {
       source = "user";
     } else {
@@ -358,15 +375,9 @@ async function handleTrustRequest(
   const urls: string[] = [];
   for (const handle of handles) {
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
-    const identity = normalizeUrlIdentity(handle);
-    // Build the same request URL resolveTicket will read. A bare handle loses
-    // a leading "www." and an http handle without an http ticket is rebuilt on
-    // https, so checking the raw handle here would ask the user to trust one
-    // host and then read another.
-    const rawUserUrl = handle.trim();
-    const httpTicket = /^http:\/\//i.test(rawUserUrl)
-      && options.store.hasFetchTicket(options.sessionId, "user", httpTicketValue(identity));
-    const requestUrl = requestUrlFor(rawUserUrl, identity, httpTicket);
+    // Build the same identity and request URL resolveTicket will read, so the
+    // prompt and the ticket cannot point at a host the read never visits.
+    const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
     if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {
