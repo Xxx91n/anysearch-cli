@@ -34,6 +34,7 @@ export const BLOCK_TARGET_CHARS = 400;
 /** Blocks shorter than this merge into a predecessor when the total stays under the 1200 hard cap. */
 export const BLOCK_MIN_CHARS = 200;
 /** A block is closed before it grows past this. */
+/** Packing target, not a hard cap: whole units may push a block past it (prose hard cap 1200). */
 export const BLOCK_MAX_CHARS = 800;
 /**
  * Ceiling for a prose block. A code fence or table is exempt from it and is
@@ -118,9 +119,10 @@ export interface ChunkQueryTerms {
  * quotes); a separated word run becomes a prefix (`vector` finds `vectors`),
  * while a word inside one unbroken stretch is matched whole. A one-character
  * Han run cannot be matched by a bigram index. It is returned in
- * `singleHan`; callers scan page bodies for it with `instr`. In a mixed
- * query this is an OR branch, so recall is deliberately wider (and the
- * caller fuses it at a lower weight).
+ * `singleHan`; callers scan page bodies for it with `instr`. In a mixed query
+ * a lone Han character is dropped: as an AND term it misses pages where the
+ * character sits inside a longer run, and as an OR branch it widens recall
+ * without evidence, so precision wins.
  */
 export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   maxTerms = Math.max(1, Math.floor(maxTerms));
@@ -169,7 +171,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       budget -= 1;
     }
   }
-  const singleHan = [...new Set(loneHan)].slice(0, maxTerms);
+  const singleHan = groups.length === 0 ? [...new Set(loneHan)].slice(0, maxTerms) : [];
   return { fts: groups.length > 0 ? groups.join(" AND ") : null, singleHan };
 }
 
@@ -402,6 +404,8 @@ function splitLongSection(chars: string[], section: RawSection): RawSection[] {
 // ---------------------------------------------------------------------------
 
 interface Atom extends Range {
+  /** A split piece of a fence/table that must stay in its own block. */
+  whole?: boolean;
   kind: "fence" | "table" | "text";
 }
 
@@ -543,7 +547,7 @@ function splitAtom(chars: string[], atom: Atom): Atom[] {
       : splitProse(chars, atom).map((piece) => ({ ...piece, kind: "text" as const }));
   }
   if (len <= WHOLE_UNIT_SPLIT_CHARS) return [atom];
-  return splitByLines(chars, atom, WHOLE_UNIT_SPLIT_CHARS).map((piece) => ({ ...piece, kind: atom.kind }));
+  return splitByLines(chars, atom, WHOLE_UNIT_SPLIT_CHARS).map((piece) => ({ ...piece, kind: atom.kind, whole: true }));
 }
 
 interface PackedBlock extends MarkdownBlock {
@@ -563,7 +567,7 @@ function packAtoms(atomsList: Atom[]): PackedBlock[] {
     // A whole unit over 800 characters gets its own block: mixing text into
     // it would either move the cap back onto the fence or glue prose onto a
     // code listing.
-    if (atom.kind !== "text" && rangeLength(atom) > BLOCK_MAX_CHARS) {
+    if (atom.whole || (atom.kind !== "text" && rangeLength(atom) > BLOCK_MAX_CHARS)) {
       flush();
       blocks.push({ start: atom.start, end: atom.end, whole: true });
       continue;

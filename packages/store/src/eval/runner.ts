@@ -62,9 +62,9 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   semantic: "critical",
 };
 /**
- * The measured non-anchor arms. content is known to the type but has no golden
- * case (nothing writes a page body), so it stays out: an n=0 arm would trip the
- * weakest-link warning and change the beta correction for the other five.
+ * The measured non-anchor arms. content is known to the type but the evaluation
+ * cases never write a page body, so it stays out: an n=0 arm would trip the
+ * weakest-link warning and change the beta correction for the other four.
  */
 export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "content">[] = [
   "entity",

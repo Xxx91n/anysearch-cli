@@ -33,10 +33,10 @@ const CANDIDATE_SLACK = 4;
  * `ans doctor` reports the truncation.
  */
 const VECTOR_SCAN_MAX = 2_000;
-/** Preview cap for a matched section in recall JSON. */
-const MATCH_PREVIEW_MAX_CHARS = 1000;
 /** Blocks the keyword lane may read before it has enough distinct sections. */
 const KEYWORD_BLOCK_SCAN_MAX = 2_000;
+/** Preview cap for a matched section in recall JSON. */
+const MATCH_PREVIEW_MAX_CHARS = 1000;
 /** Default batch for a repair/backfill pass. */
 export const PENDING_BATCH_DEFAULT = 200;
 
@@ -340,9 +340,10 @@ function keywordSections(
   const push = (sectionId: number): void => pushUnique(out, seen, sectionId);
 
   if (terms.fts) {
-    // A long page can own dozens of matching blocks in one section; page
-    // through the block ranking until enough DISTINCT sections are found, so
-    // the section budget is not consumed by one page's blocks.
+    // Block ranking keeps bm25 relevance (SQLite forbids bm25 in GROUP BY).
+    // A page with thousands of matching blocks can still dominate the scan
+    // window; KEYWORD_BLOCK_SCAN_MAX bounds it and the section dedupe below
+    // keeps repeated blocks from consuming the output budget.
     const pageSize = Math.max(64, Math.min(256, fetchLimit));
     for (let offset = 0; offset < KEYWORD_BLOCK_SCAN_MAX && out.length < fetchLimit; offset += pageSize) {
       const rows = db.prepare(

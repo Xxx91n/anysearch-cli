@@ -6,10 +6,10 @@ export interface PageBodyRow {
 }
 
 /**
- * SQL expression: the row has a page body. `length` is the code-point length
- * SQLite already uses elsewhere, so "has body" means the same thing in SQL as
- * `hasPageBody` does in JS. Qualified with `r.content`, so it is safe in joins;
- * every query using it must alias `retrieval_results` as `r`.
+ * SQL expression: the row has a page body. Only emptiness is judged; SQL
+ * `length` counts code points and JS `content.length` counts UTF-16 units, so
+ * do not turn either form into a length comparison. Qualified with `r.content`,
+ * so every query using it must alias `retrieval_results` as `r`.
  */
 export const HAS_PAGE_BODY_EXPR = "(r.content IS NOT NULL AND length(r.content) > 0)";
 

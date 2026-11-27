@@ -141,7 +141,7 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
   return m.embedText(text, role);
 }
 
-/** Returned when the optional embedding package is not installed. */
+/** Returned when the embedding package cannot be loaded (missing or broken). */
 export const EMBEDDING_MODEL_UNAVAILABLE = "unavailable";
 
 /**

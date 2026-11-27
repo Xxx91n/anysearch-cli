@@ -259,7 +259,7 @@ export interface MemoryHit {
   role: string;
   /** Preview. A content-arm hit carries the matched section (length follows the section); without one it carries the page opening, 4000 characters at most. */
   content: string;
-  rank: number;
+  rank?: number;
   // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
   /** Internal: which lane selected this content-arm hit (not serialized). */
@@ -1276,8 +1276,6 @@ export class SqliteSessionStore implements SessionStore {
       sessionId: h.sessionId,
       role: h.title ?? "",
       content: h.matchText ?? h.snippet ?? "",
-      // The content arm has no score; rank 0 says so instead of faking an order.
-      rank: 0,
       contentVia: h.via,
     }));
   }
@@ -1425,7 +1423,8 @@ export class SqliteSessionStore implements SessionStore {
    for (const h of vecHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
    for (const h of relHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
    for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
-   // RRF arms = FTS (1.0) + content (1.0) + entity (0.5) + vector (0.5) + relation (0.5) + semantic (0.5); an absent arm adds no list (conditional activation).
+   // RRF arms, in push order: FTS (1.0), content (1.0), vector (0.5), entity
+   // (0.5), relation (0.5), semantic (0.5); an absent arm adds no list.
    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory.
    // The content arm carries the same weight as FTS: a body hit is a full-text
    // hit on the page, not a side signal like an entity edge.
@@ -1726,9 +1725,8 @@ export class SqliteSessionStore implements SessionStore {
       result = { id: insertPageRow(), action: "inserted" };
     });
     write.immediate();
-    // Blocks follow the body. A failed chunk write must not make a committed
-    // page look unsaved: the body is the primary write, the index is derived and
-    // repairable (`backfillChunkVectors` rebuilds pages that lost their chunks).
+    // Blocks follow the body. A failed chunk write only logs a warning; the page
+    // is still saved and the missing work stays for `backfillChunkVectors`.
     // An unchanged body still needs blocks when this page was written before
     // the block index existed; the marker makes the check cheap and idempotent.
     if (result.id !== null && (result.action !== "unchanged" || !pageChunksBuilt(this.db, result.id))) {
@@ -1763,8 +1761,7 @@ export class SqliteSessionStore implements SessionStore {
   /**
    * Drain the page queue. Work the bounded queue cannot hold — or a killed
    * process loses — stays in the durable pending count and is repaired by
-   * `backfillChunkVectors`. A drain that resumes after close stops at the
-   * closed handle instead of throwing into an unawaited promise.
+   * `backfillChunkVectors`.
    */
   private async drainChunkVectors(): Promise<void> {
     if (this.chunkVectorDraining) return;
