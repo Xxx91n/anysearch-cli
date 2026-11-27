@@ -97,7 +97,7 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
+import { rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeTrustDomain, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
@@ -177,8 +177,8 @@ export interface SavePageResult {
   action: PageWriteAction;
 }
 
-/** The two things a session may turn into a page read. */
-export type FetchTicketKind = "search" | "user";
+/** The three things a session may turn into a page read. */
+export type FetchTicketKind = "search" | "user" | "tofu";
 export const HTTP_TICKET_PREFIX = "http:";
 
 /** One search-result row, read back through its `m:<id>` handle. */
@@ -639,6 +639,36 @@ function migrateSwitchEventSchema(db: Database.Database): void {
   });
 }
 
+// #612: fetch tickets gained a third kind (`tofu`). A CHECK constraint cannot
+// be altered in place, so an older database is rebuilt once with the same rows
+// and the same primary key. New databases already carry the widened CHECK from
+// schema.sql and skip this. The shape is probed inside the transaction for the
+// same reason as the switch-event rebuild: a second process may have finished
+// the work between the outer check and the lock.
+function migrateFetchTicketKinds(db: Database.Database): void {
+  return withForeignKeysOff(db, () => {
+    db.transaction((): void => {
+      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'").get() as
+        | { sql?: string }
+        | undefined;
+      if (!row?.sql || row.sql.includes("'tofu'")) return;
+      db.exec(`
+        CREATE TABLE fetch_tickets_kind_migrate (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('search', 'user', 'tofu')),
+          value TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (session_id, kind, value)
+        );
+        INSERT INTO fetch_tickets_kind_migrate (session_id, kind, value, created_at)
+          SELECT session_id, kind, value, created_at FROM fetch_tickets;
+        DROP TABLE fetch_tickets;
+        ALTER TABLE fetch_tickets_kind_migrate RENAME TO fetch_tickets;
+      `);
+    }).immediate();
+  });
+}
+
 /**
  * Split content-arm hits by the lane that selected them. A block-vector hit is
  * semantic evidence (0.5); a keyword or both hit is full-text evidence (1.0).
@@ -821,6 +851,7 @@ export class SqliteSessionStore implements SessionStore {
       this.warnOrRefuseWhenContended(e, "[warn] budget_ledger unique-session index not created: ");
     }
     withInitBusyRetry("access_events switch rebuild", () => migrateSwitchEventSchema(this.db), initDeadline);
+    withInitBusyRetry("fetch_tickets kind rebuild", () => migrateFetchTicketKinds(this.db), initDeadline);
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
     const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");
@@ -1933,17 +1964,20 @@ export class SqliteSessionStore implements SessionStore {
     return { scanned, embedded, failed, rebuiltPages, rebuildFailed };
   }
 
-  // One session's fetch handles: search row ids, user URL identities, and an
-  // `http:` marker for a user URL that was pasted with http. The store checks
-  // the shape and drops values that could never match a lookup.
+  // One session's fetch handles: search row ids, user URL identities, an
+  // `http:` marker for a user URL that was pasted with http, and a bare domain
+  // the user trusted for this session. The store checks the shape and drops
+  // values that could never match a lookup.
   async saveFetchTickets(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void> {
     const cleaned = values.map((v) => v.trim()).filter(Boolean).map((v) => {
+      if (kind === "tofu") return normalizeTrustDomain(v) ?? v;
       if (kind !== "user") return v;
       const marker = v.startsWith(HTTP_TICKET_PREFIX) ? HTTP_TICKET_PREFIX : "";
       return marker + normalizeUrlIdentity(marker ? v.slice(5) : v);
     });
     const valid = cleaned.filter((v) => {
       if (kind === "search") return /^[1-9]\d*$/.test(v);
+      if (kind === "tofu") return normalizeTrustDomain(v) === v && v === v.toLowerCase();
       // User values are scheme-less identities; `http:<identity>` marks the
       // scheme the user actually pasted. Non-http(s) schemes and values without
       // a resolvable dotted host are dropped.

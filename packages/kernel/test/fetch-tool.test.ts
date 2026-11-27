@@ -85,13 +85,20 @@ async function main() {
     // that fact for the tool's narrower port.
     const fetchStore = store as unknown as FetchStorePort;
 
-    const makeTool = (provider: FetchProvider, allow: string[] = [], deny: string[] = [], ledger?: BudgetLedgerPort) =>
+    const makeTool = (
+      provider: FetchProvider,
+      allow: string[] = [],
+      deny: string[] = [],
+      ledger?: BudgetLedgerPort,
+      confirmTrust?: (request: { domain: string; urls: readonly string[] }) => Promise<boolean>,
+    ) =>
       createFetchTool({
         store: fetchStore,
         sessionId: session.id,
         providers: [provider],
         policy: () => ({ allow, deny }),
         ...(ledger ? { ledger, budgetId: session.id } : {}),
+        ...(confirmTrust ? { confirmTrust } : {}),
       });
 
     const tickets = async (kind: "search" | "user", values: string[]) =>
@@ -598,6 +605,116 @@ async function main() {
       });
       assert(rawText(tooMany).includes("1–5 个"), "more than five handles is rejected");
       assert(provider.calls.length === 0, "invalid parameters never reach upstream");
+    }
+
+    // ---- 9. site-limited guidance + session TOFU ---------------------------
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "DOC BODY"));
+      const plain = makeTool(provider);
+      const missing = await plain.execute("t25a", { handles: ["https://docs.headless.example/guide"] });
+      assert(rawText(missing).includes("site:docs.headless.example"),
+        "a no-ticket refusal teaches a site: query with the host");
+      assert(rawText(missing).includes("非交互模式"),
+        "a no-ticket refusal without a prompt says it cannot ask");
+      assert(provider.calls.length === 0, "a no-ticket refusal never reaches a provider");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "DOC BODY"));
+      const asked: Array<{ domain: string; urls: readonly string[] }> = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked.push(request);
+        return true;
+      });
+      const url = "https://docs.tofu.example/guide";
+      const grant = await tool.execute("t25b", { handles: [url], requestTrustFor: "tofu.example" });
+      assert(rawText(grant).includes("已信任"), "the interactive prompt grants the domain");
+      assert(asked.length === 1 && asked[0]!.domain === "tofu.example",
+        "the user sees the normalized domain");
+      assert(asked[0]!.urls[0] === url, "the user sees the full URL before consenting");
+      assert(provider.calls.length === 0, "the trust grant reads no page");
+      assert(store.hasFetchTicket(session.id, "tofu", "tofu.example"),
+        "the grant writes one session tofu ticket");
+
+      const read = envelope(await tool.execute("t25c", { handles: [url] }));
+      assert(provider.calls.length === 1 && read.pages.length === 1,
+        "the retry reads the same URL through the session ticket");
+      assert(asked.length === 1, "the retry does not ask again");
+
+      const sibling = envelope(await tool.execute("t25d", {
+        handles: ["https://api.tofu.example/other"],
+      }));
+      assert(sibling.pages.length === 1 && asked.length === 1,
+        "another subdomain of the trusted site is readable without a second prompt");
+
+      const repeat = envelope(await tool.execute("t25e", {
+        handles: [url], requestTrustFor: "tofu.example",
+      }));
+      assert(repeat.pages.length === 1 && asked.length === 1,
+        "a trust parameter on an already-trusted domain falls through to reading");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });
+      const outside = await tool.execute("t25f", {
+        handles: ["https://other.example/page"], requestTrustFor: "tofu2.example",
+      });
+      assert(rawText(outside).includes("只能配合同一个域名"),
+        "a handle outside the requested domain is refused");
+      const bad = await tool.execute("t25g", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "https://tofu2.example",
+      });
+      assert(rawText(bad).includes("只收一个域名"), "requestTrustFor rejects a URL");
+      const mHandle = await tool.execute("t25h", {
+        handles: ["m:1"], requestTrustFor: "tofu2.example",
+      });
+      assert(rawText(mHandle).includes("不能有 m: 句柄"), "requestTrustFor rejects an m: handle");
+      assert(asked === 0 && provider.calls.length === 0, "parameter mistakes neither prompt nor read");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const confirm = async () => { asked++; return true; };
+      const denyTool = makeTool(provider, [], ["docs.deny.example"], undefined, confirm);
+      const denied = await denyTool.execute("t25i", {
+        handles: ["https://docs.deny.example/page"], requestTrustFor: "docs.deny.example",
+      });
+      assert(rawText(denied).includes("禁止列表"), "a deny-listed domain cannot be trusted");
+      const allowTool = makeTool(provider, ["allowed.example"], [], undefined, confirm);
+      const notAllowed = await allowTool.execute("t25j", {
+        handles: ["https://docs.gated.example/page"], requestTrustFor: "gated.example",
+      });
+      assert(rawText(notAllowed).includes("不在当前领域白名单"), "an allowlist is a hard cap for TOFU too");
+      const privateTool = makeTool(provider, [], [], undefined, confirm);
+      const privateUrl = await privateTool.execute("t25k", {
+        handles: ["http://127.0.0.1/private"], requestTrustFor: "127.0.0.1",
+      });
+      assert(rawText(privateUrl).includes("只收一个域名") || rawText(privateUrl).includes("这个地址不能抓"),
+        "a private host never becomes a trust question");
+      assert(asked === 0 && provider.calls.length === 0, "policy refusals never prompt or read");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.deny.example"),
+        "a refused domain writes no ticket");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      const first = await tool.execute("t25l", {
+        handles: ["https://docs.no.example/page"], requestTrustFor: "no.example",
+      });
+      assert(rawText(first).includes("没有同意"), "a declined prompt refuses in-band");
+      const second = await tool.execute("t25m", {
+        handles: ["https://docs.no.example/other"], requestTrustFor: "no.example",
+      });
+      assert(rawText(second).includes("没有同意") && asked === 1,
+        "a declined domain is not asked twice in the same run");
+      assert(rawText(second).includes("连续 2 次整批网址都没被放行"),
+        "a trust refusal counts toward the rejected-batch stop");
+      assert(!store.hasFetchTicket(session.id, "tofu", "no.example"), "a decline writes no ticket");
     }
 
     store.close();

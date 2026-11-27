@@ -408,7 +408,7 @@
   keeps `fast` / `index` / `deep`, but all three send the same request —
   there is no depth parameter to turn up. Shape and limits:
   `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.
-- **The internal agent can read a page; external hosts still cannot (#608)** —
+- **The internal agent can read a page; external hosts still cannot (#608, #612)** —
   `ans chat` and MCP `ans_chat` expose a `fetch` tool. It reads 1–5 pages per
   call from handles the model may actually hold: an `m:<rowId>` from this
   conversation's search results, or a URL the user typed. Forged ids, ids
@@ -418,9 +418,17 @@
   not the row's owner, is what makes that handle readable here. A user-typed
   `http://` URL keeps its scheme; a search handle has no scheme in its stored
   identity, so it is read over https. Bodies go to the research archive in full; the model sees at
-  most 4000 characters each. This does not open the external surfaces: there is
-  still no MCP `fetch_pages`, no `ans fetch`, and no plugin/dsh page-read tool.
-  An external host can read only what is already archived.
+  most 4000 characters each. #612 adds one narrow way in for official docs: when
+  a URL has no session ticket, an interactive CLI may ask the user to trust that
+  bare domain for the rest of the session (`requestTrustFor`). The
+  grant call reads no page; it writes one session ticket, and later pages on
+  that domain (and its subdomains) still pass the address, deny and allowlist
+  gates, so it cannot override a deny rule. Headless/MCP never prompts — it
+  refuses and tells the model to ask the user to paste the link. No TOML is
+  written and nothing crosses sessions. This does not open the external
+  surfaces: there is still no MCP `fetch_pages`, no `ans fetch`, and no
+  plugin/dsh page-read tool. An external host can read only what is already
+  archived.
 - **Exa's free-quota `web_fetch_exa` backs the internal fetch tool; `web_search_advanced_exa` stays unwired (#530, #608)** —
   with a key the fetch adapter asks Exa's paid `/contents` endpoint through
   `exa-js`; without one it posts `web_fetch_exa` to the same free-quota MCP

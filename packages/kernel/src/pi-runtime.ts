@@ -52,7 +52,7 @@ import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
-import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";
+import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort, type FetchTrustRequest } from "./fetch-tool";
 import { extractUserUrlTickets, searchHandle } from "./fetch-admission";
 
 // HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
@@ -70,6 +70,34 @@ export async function askAllowUrl(url: string): Promise<boolean> {
   try {
     const answer: string = await new Promise((resolve) => {
       rl.question("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ", resolve);
+    });
+    return /^y(es)?$/i.test(answer.trim());
+  } catch {
+    return false;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Session TOFU prompt for #612. Shown only from an interactive CLI: it names
+ * every URL the model wants to read and the domain the trust ticket would
+ * cover, then defaults to no on EOF or error. Control characters are stripped
+ * so a crafted URL cannot rewrite the terminal line.
+ */
+export async function askFetchTrust(request: FetchTrustRequest): Promise<boolean> {
+  if (!isInteractive()) return false;
+  const clean = (text: string): string => text.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "");
+  const lines = request.urls.map((url) => "  - " + clean(url)).join("\n");
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer: string = await new Promise((resolve) => {
+      rl.question(
+        "[anysearch] 模型想读这些网址，但本会话还没有读它们的凭据：\n" + lines + "\n" +
+        "[anysearch] 信任 " + clean(request.domain) + " 这个网站吗？只在本会话有效，不写域名配置。[y/N] ",
+        resolve,
+      );
     });
     return /^y(es)?$/i.test(answer.trim());
   } catch {
@@ -451,6 +479,12 @@ export interface PiAgentRuntimeOptions {
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
   contextWindow?: number;
   interactive?: boolean; // wiring grants TTY-ask eligibility (headless/MCP omit -> deny-first)
+  /**
+   * #612: the session TOFU prompt. The fetch tool calls it only when
+   * `interactive` is also true; leaving it out keeps headless/MCP from ever
+   * asking and turns a trust request into an in-band refusal.
+   */
+  confirmFetchTrust?: (request: FetchTrustRequest) => Promise<boolean>;
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
@@ -1050,6 +1084,9 @@ export class PiAgentRuntime {
         },
         ...(this.billingScope ? { ledger: this.billingScope.ledger, budgetId: this.billingScope.taskId } : {}),
         ...(this.opts.span ? { span: this.opts.span } : {}),
+        ...(this.opts.interactive && isInteractive() && this.opts.confirmFetchTrust
+          ? { confirmTrust: this.opts.confirmFetchTrust }
+          : {}),
       });
     } else if (this.opts.fetchProviders?.length) {
       if (!fetchAllowed) {
