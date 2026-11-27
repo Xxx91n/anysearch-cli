@@ -147,10 +147,12 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
   }
 });
 
-// Everything the table does not name keeps the unowned fallback: the lockfile,
-// the build config, CI's own files, scripts/, .gitignore (it changes what git
-// sees for every package) and a domains file that is not a TOML the loader reads.
-test("a root file outside the reader table still runs the full suite", () => {
+// Everything the table does not name belongs to no package: the lockfile, the
+// build config, CI's own files, scripts/, .gitignore (it changes what git sees
+// for every package) and a domains file that is not a TOML the loader reads.
+// The gate skips these and says so; CI's check-build lane is where the
+// coverage lives.
+test("a root file outside the reader table belongs to no package", () => {
   for (const file of [
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -163,12 +165,13 @@ test("a root file outside the reader table still runs the full suite", () => {
     "scripts/preflight-test.mjs",
     ".github/workflows/ci.yml",
     // hypothetical: domains/ holds only TOML today, so a non-TOML file dropped
-    // there is outside the row's ext and keeps the fallback.
+    // there is outside the row's ext, and no package owns it.
     "domains/schema.json",
   ]) {
     const plan = planPreflight(root, [file]);
-    assert.equal(plan.mode, "full", file);
+    assert.equal(plan.mode, "unowned", file);
     assert.deepEqual(plan.outside, [file], file);
+    assert.deepEqual(plan.packages, [], file);
   }
 });
 
@@ -189,29 +192,35 @@ test("docs next to a root file run the readers, not the suite", () => {
   assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
 });
 
-test("a root file whose reader is gone runs the full suite, never nothing", () => {
+test("a root file whose reader is gone stops the gate, never turns into a skip", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-missing-reader-"));
   try {
     write(dir, "pnpm-workspace.yaml", 'packages:\n  - "packages/*"\n');
     write(dir, "packages/store/package.json", JSON.stringify({ name: "@anysearch-cli/store" }));
     // A renamed package would filter turbo down to no task and still exit 0,
-    // which reads as green: say which name is missing and run everything.
+    // which reads as green: name the missing package and stop the push.
     const plan = planPreflight(dir, ["eval-looks.json"]);
-    assert.equal(plan.mode, "full");
+    assert.equal(plan.mode, "broken");
     assert.equal(plan.reason, "no workspace package named: @anysearch-cli/kernel");
+    assert.match(plan.fix, /ROOT_READERS/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("a package change next to a root change still runs everything", () => {
+test("one file no package owns makes the whole change a skip", () => {
+  // Running the mcp half alone would print a green line over a change nobody
+  // covered end to end, so the skip wins.
   const plan = planPreflight(root, ["apps/mcp/src/index.ts", "scripts/hooks/pre-push-user"]);
-  assert.equal(plan.mode, "full");
+  assert.equal(plan.mode, "unowned");
   assert.deepEqual(plan.outside, ["scripts/hooks/pre-push-user"]);
 });
 
-test("a file outside the packages falls back to the full suite", () => {
-  assert.equal(planPreflight(root, ["providers/exa/probe.mjs"]).mode, "full");
+test("a file outside the packages is skipped, not run", () => {
+  const plan = planPreflight(root, ["providers/exa/probe.mjs"]);
+  assert.equal(plan.mode, "unowned");
+  assert.equal(plan.reason, "files outside the workspace packages");
+  assert.deepEqual(plan.packages, []);
 });
 
 test("the doc boundary is docs/ except docs/eval/, plus the four root markdown files", () => {
@@ -254,8 +263,8 @@ test("separators and ./- prefixes do not escape the boundary", () => {
 });
 
 test("codeOwnership keeps docs out of the unowned list", () => {
-  // If a docs file counted as unowned, a doc next to a package change would
-  // run the whole suite.
+  // If a docs file counted as unowned, a doc next to a package change would skip
+  // the whole change instead of running that package.
   const { touched, unowned } = codeOwnership(
     ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "turbo.json"],
     readWorkspace(root),
@@ -285,15 +294,16 @@ test("docs next to a package change run that package, not the whole suite", () =
   assert.deepEqual(plan.touched, ["@anysearch-cli/dsh-plugin"]);
 });
 
-test("docs next to a root file outside the table still run the whole suite, and the docs are not the reason", () => {
+test("docs next to a root file outside the table are skipped too, and the docs are not the reason", () => {
   const plan = planPreflight(root, ["README.md", "turbo.json"]);
-  assert.equal(plan.mode, "full");
+  assert.equal(plan.mode, "unowned");
   assert.deepEqual(plan.outside, ["turbo.json"]);
 });
 
 // The boundary is CI's, so the exclusions matter here too: a product asset and
-// docs/eval are read by tests and must not buy a skipped run.
-test("a product asset runs its readers, and docs/eval/ still runs the suite", () => {
+// docs/eval are not documentation, so neither takes the docs skip. The asset has
+// readers; docs/eval belongs to no package and takes the unowned skip.
+test("a product asset runs its readers, and docs/eval/ takes the unowned skip", () => {
   // The readers run, not just the owner: plugin's own tests plus every app
   // that depends on it.
   const asset = planPreflight(root, ["apps/plugin/AGENTS.md"]);
@@ -306,11 +316,19 @@ test("a product asset runs its readers, and docs/eval/ still runs the suite", ()
   ]);
   // domains/ is not documentation either: it is the reader table's file (#489).
   assert.equal(planPreflight(root, ["domains/docs.toml"]).mode, "readers");
-  assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "full");
+  // docs/eval/ is not documentation, but no package owns it either: it takes
+  // the unowned skip, not the docs one.
+  assert.equal(planPreflight(root, ["docs/eval/ip-corpus-probe.md"]).mode, "unowned");
 });
 
 test("--full still runs everything on a docs-only change", () => {
   assert.equal(planPreflight(root, ["docs/limitations.md"], { forceFull: true }).mode, "full");
+});
+
+test("--full still runs everything on a change no package owns", () => {
+  // The skip is the default, not a lock: a person asking for the strict run
+  // still gets the whole suite.
+  assert.equal(planPreflight(root, ["scripts/preflight-test.mjs"], { forceFull: true }).mode, "full");
 });
 
 test("no change runs nothing", () => {
@@ -393,25 +411,29 @@ test("the workspace reader picks up both directions of the dependency graph", ()
   assert.deepEqual(packages.find((pkg) => pkg.name === "@anysearch-cli/embedding").deps, []);
 });
 
-test("a workspace with no pnpm-workspace.yaml falls back to the full suite", () => {
+test("a workspace with no pnpm-workspace.yaml is a broken gate", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-empty-"));
   try {
     assert.deepEqual(readWorkspace(dir), []);
     const plan = planPreflight(dir, ["apps/mcp/src/index.ts"]);
-    assert.equal(plan.mode, "full");
+    assert.equal(plan.mode, "broken");
     assert.equal(plan.reason, "no workspace packages found");
+    assert.match(plan.fix, /pnpm-workspace\.yaml/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("an unreadable pnpm-workspace.yaml reads as no workspace, not a crash", () => {
+test("an unreadable pnpm-workspace.yaml answers broken instead of crashing", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-unreadable-"));
   try {
-    // A directory where the file belongs: reading it throws, which must not escape.
+    // A directory where the file belongs: reading it throws, which must not escape,
+    // and the plan names the declaration instead of blaming an empty workspace.
     mkdirSync(join(dir, "pnpm-workspace.yaml"));
-    assert.deepEqual(readWorkspace(dir), []);
-    assert.equal(planPreflight(dir, ["apps/mcp/src/index.ts"]).mode, "full");
+    assert.equal(readWorkspace(dir), null);
+    const plan = planPreflight(dir, ["apps/mcp/src/index.ts"]);
+    assert.equal(plan.mode, "broken");
+    assert.equal(plan.reason, "cannot read pnpm-workspace.yaml");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -441,27 +463,30 @@ test("a workspace: alias dependency names the package it points at", () => {
   }
 });
 
-test("a broken package manifest sends the gate to the full suite", () => {
+test("a broken package manifest stops the gate and names the file", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-broken-"));
   try {
     write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
     write(dir, "apps/dsh-plugin/package.json", "{ not json");
     assert.equal(readWorkspace(dir), null);
     const plan = planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]);
-    assert.equal(plan.mode, "full");
-    assert.equal(plan.reason, "workspace unreadable");
+    assert.equal(plan.mode, "broken");
+    assert.equal(plan.reason, "cannot read apps/dsh-plugin/package.json");
+    assert.equal(plan.fix, "repair it, then push again");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("a package.json that is a directory sends the gate to the full suite", () => {
+test("a package.json that is a directory stops the gate the same way", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-eisdir-"));
   try {
     write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
     mkdirSync(join(dir, "apps", "dsh-plugin", "package.json"), { recursive: true });
     assert.equal(readWorkspace(dir), null);
-    assert.equal(planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]).reason, "workspace unreadable");
+    const plan = planPreflight(dir, ["apps/dsh-plugin/src/index.ts"]);
+    assert.equal(plan.mode, "broken");
+    assert.equal(plan.reason, "cannot read apps/dsh-plugin/package.json");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -480,7 +505,7 @@ test("a directory with no package.json is not a package", () => {
     // The workspace is readable and has a package, so this lands on the
     // "file belongs to no package" branch rather than "no packages found".
     const plan = planPreflight(dir, ["tools/cli/src/index.ts"]);
-    assert.equal(plan.mode, "full");
+    assert.equal(plan.mode, "unowned");
     assert.equal(plan.reason, "files outside the workspace packages");
     assert.deepEqual(plan.outside, ["tools/cli/src/index.ts"]);
   } finally {
@@ -488,7 +513,7 @@ test("a directory with no package.json is not a package", () => {
   }
 });
 
-test("a manifest without a name is not a package, and a change under it runs everything", () => {
+test("a manifest without a name is a broken gate, not an unowned file", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nameless-"));
   try {
     write(dir, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
@@ -499,18 +524,19 @@ test("a manifest without a name is not a package, and a change under it runs eve
       ["@anysearch-cli/real"],
     );
     const plan = planPreflight(dir, ["apps/nameless/src/index.ts"]);
-    assert.equal(plan.mode, "full");
+    assert.equal(plan.mode, "broken");
     // The path is inside apps/, so the reason has to name the nameless manifest
     // rather than say the file is outside the workspace.
-    assert.equal(plan.reason, "files under a directory whose package.json has no name");
+    assert.equal(plan.reason, "files under a directory whose package.json has no name: apps/nameless");
     // The named package next to it still runs incrementally.
     const named = planPreflight(dir, ["apps/real/src/index.ts"]);
     assert.equal(named.mode, "incremental");
     assert.deepEqual(named.packages, ["@anysearch-cli/real"]);
-    // A root file mixed in is not explained by the nameless directory, so the
-    // reason stays the general one.
+    // A root file mixed in does not change the answer: the manifest is the
+    // fault, and skipping the change would hide it.
     const mixed = planPreflight(dir, ["apps/nameless/src/index.ts", "turbo.json"]);
-    assert.equal(mixed.reason, "files outside the workspace packages");
+    assert.equal(mixed.mode, "broken");
+    assert.equal(mixed.reason, "files under a directory whose package.json has no name: apps/nameless");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -524,7 +550,7 @@ test("a workspace whose every manifest has no name says so", () => {
     write(dir, "apps/two/package.json", JSON.stringify({ private: true }));
     assert.deepEqual(readWorkspace(dir), []);
     const plan = planPreflight(dir, ["apps/one/src/index.ts"]);
-    assert.equal(plan.mode, "full");
+    assert.equal(plan.mode, "broken");
     // "no workspace packages found" alone would hide the nameless manifests;
     // the reason names the directories so nobody has to grep for them.
     assert.equal(plan.reason, "no workspace packages found; package.json without a name in: apps/one, apps/two");

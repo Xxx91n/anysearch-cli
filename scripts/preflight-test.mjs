@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 // Preflight gate: before a push, run the tests the change can break.
 // scripts/preflight-change.mjs names the change set; preflight-plan.mjs turns
-// it into a package list. A change outside apps/ and packages/ has no clear
-// owner, so it falls back to the full suite — except documentation, which runs
-// nothing and says so, and the root files whose readers the plan's table names,
-// which run those readers — alone when the change is only root files, joined to
-// the incremental set when it also touches packages.
+// it into a package list. A change no package owns runs nothing and says it
+// skipped; a repository the gate cannot read stops the push and says what to
+// repair. Documentation runs nothing and says so too, and the root files whose
+// readers the plan's table names run those readers — alone when the change is
+// only root files, joined to the incremental set when it also touches packages.
 //
 // Design: no commit gate — a commit runs no tests, so fixing a message or
 // splitting a commit costs no test run. A push runs this gate and a merge waits
 // for one full run. See AGENTS.md.
+//
+// Design: the exit code is the answer — 0 = skipped or green, 1 = the run did
+// not pass, 2 = the gate itself could not do its job. An interrupt keeps its
+// signal's code (130/143) instead of borrowing one of the three, because a
+// person pressing Ctrl-C did not fail a test. Nothing out of the gate's own
+// control borrows 1 either: that would read as "the code is bad" when the
+// truth is "nobody looked".
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -38,7 +45,7 @@ import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
-import { planPreflight } from "./preflight-plan.mjs";
+import { broken, planPreflight } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -94,11 +101,14 @@ if (args.length === 1 && args[0] === "--staged") {
   process.exit(0);
 }
 
-const change = readChange();
-if (change.note) console.log(`[preflight] ${change.note}`);
-const plan = change.unknown
-  ? { mode: "full", reason: change.unknown, files: [], packages: [] }
-  : planPreflight(root, change.files, { forceFull: args.includes("--full") });
+// The repair for a change set git cannot name, in the order that actually fixes
+// it: a stale base needs a fetch, and a clone that never had origin/HEAD (git
+// init + fetch writes none) needs set-head, which a fetch cannot do. It sits
+// above the call because planRun reads it.
+const FETCH_FIRST =
+  "run `git fetch origin`, then `git remote set-head origin -a` if origin/HEAD is still missing";
+
+const plan = planRun();
 
 if (plan.mode === "none") {
   console.log("[preflight] nothing to run: no changed files");
@@ -110,13 +120,41 @@ if (plan.mode === "none") {
 // contract).
 if (plan.mode === "docs") {
   console.log(`[preflight] skipped: all ${plan.files.length} changed file(s) are documentation — no test ran`);
-  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
+  saySkippedIsNotAPass();
   process.exit(0);
+}
+
+// Design: a file no package owns is skipped, not run at full width — the old
+// fallback spent the whole suite on a file nobody could name a reader for, then
+// got killed or bypassed, so "nothing ran" read the same as "it failed". Like
+// the docs skip it says skipped and never green. It also has to say that the
+// whole change ran nothing: a package change next to an unowned file loses its
+// run too, and a line counting only the unowned files would hide that.
+if (plan.mode === "unowned") {
+  console.log(
+    `[preflight] skipped: ${plan.outside.length} changed file(s) belong to no workspace package — no test ran for the whole change`,
+  );
+  console.log(`[preflight] skipped files: ${listFirst(plan.outside)}`);
+  saySkippedIsNotAPass();
+  console.log("[preflight] this coverage is CI's: check-build runs the full suite when no package owns a file");
+  console.log("[preflight] to run the whole suite here anyway: node scripts/preflight-test.mjs --full");
+  process.exit(0);
+}
+
+// Design: a repository the gate cannot read stops the push with exit 2 — its
+// own code, so 1 keeps meaning "a test went red". The reason names what it could
+// not read, the fix names the repair, and --no-verify is the way past a gate
+// that has no answer. CI still runs, so the escape hatch does not hide the
+// change from anyone but the operator.
+if (plan.mode === "broken") {
+  writeStderr(`[preflight] blocked: ${plan.reason}`);
+  writeStderr(`[preflight] fix: ${plan.fix}`);
+  writeStderr("[preflight] to push anyway: git push --no-verify");
+  process.exit(2);
 }
 
 if (plan.mode === "full") {
   console.log(`[preflight] full suite: ${plan.reason}`);
-  if (plan.outside?.length) console.log(`[preflight] outside the packages: ${listFirst(plan.outside)}`);
 } else {
   console.log(`[preflight] changed ${plan.files.length} file(s), running ${plan.packages.length} package(s)`);
   console.log(`[preflight] run: ${plan.packages.join(", ")} (${runReason(plan)})`);
@@ -151,11 +189,13 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   });
 }
 
-// A scripts/ change falls back to pnpm test, which only knows the workspace
-// packages — the gate's own tests have to run here or a broken gate ships.
-// PREFLIGHT_SELF_TEST=0 skips this for the test that drives the script with a
-// fake pnpm; PREFLIGHT_GATE_TESTS replaces the group list so that test does not
-// re-enter the whole suite.
+// Design: the gate's own tests follow `full`, not `scripts/` — a change under
+// scripts/ is now unowned, so it never gets here. The self-test measures 1m46s
+// and does not fit a pre-push budget, and CI's check-build runs the same files
+// on every push. --full still runs them, because a person asking for the strict
+// run asked for the evidence too. PREFLIGHT_SELF_TEST=0 skips this for the test
+// that drives the script with a fake pnpm; PREFLIGHT_GATE_TESTS replaces the
+// group list so that test does not re-enter the whole suite.
 if (selfTest) {
   // Design: the shared judgment that needs a YAML parser is asked for here, by
   // resolving the parser the same way check-workflows does — an uninstalled or
@@ -164,7 +204,8 @@ if (selfTest) {
   if (!process.env.PREFLIGHT_GATE_TESTS && !resolveYaml(root)) {
     removeTestHome(testHome);
     writeStderr("[preflight] blocked: no YAML parser under node_modules — run `pnpm install --ignore-scripts` first; the shared judgments and the suite both need the workspace dependencies");
-    process.exit(1);
+    // Design: no parser means no answer, so this is exit 2, not 1.
+    process.exit(2);
   }
   let result;
   try {
@@ -173,9 +214,16 @@ if (selfTest) {
     result = { failed: [], tests: null, failure: `could not start the gate's own tests: ${error.message}` };
   }
   if (interrupted) await exitAfterFlush(interrupted);
-  if (result.failure || result.failed.length > 0) {
-    const reason = result.failure ?? `gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`;
-    writeStderr(`[preflight] ${reason}`);
+  // Design: the two answers stay apart — a group that could not even start is the
+  // gate failing (2), a group that ran and went red is a red test (1).
+  if (result.failure) {
+    writeStderr(`[preflight] ${result.failure}`);
+    reportKeptTestHome(testHome);
+    writeStderr("[preflight] blocked: the gate could not run its own tests");
+    await exitAfterFlush(2);
+  }
+  if (result.failed.length > 0) {
+    writeStderr(`[preflight] gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`);
     reportKeptTestHome(testHome);
     writeStderr("[preflight] blocked: the gate's own tests failed");
     await exitAfterFlush(1);
@@ -202,7 +250,8 @@ try {
 } catch (error) {
   reportKeptTestHome(testHome);
   writeStderr(`[preflight] could not start pnpm: ${error.message}`);
-  process.exit(1);
+  // Design: no test ran, so this is the gate failing, not the code — exit 2.
+  process.exit(2);
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
@@ -212,7 +261,10 @@ if (interrupted) {
   const failed = failedTask(readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
   reportKeptTestHome(testHome, console.error);
-  process.exitCode = status ?? 1;
+  // Design: a run that did not pass is 1 whatever pnpm exited with — its own
+  // code is not the answer to "were the tests green", and forwarding a 2 here
+  // would read as "the gate is broken" instead.
+  process.exitCode = 1;
 } else {
   console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
   removeTestHome(testHome);
@@ -221,16 +273,40 @@ if (interrupted) {
 function readChange() {
   if (args.includes("--pushed")) {
     const input = readStdin();
-    if (input === null) return { unknown: "could not read the pushed refs" };
+    if (input === null) {
+      return {
+        unknown: "could not read the pushed refs",
+        fix: "git handed the hook nothing on stdin — run this script by hand to name the change",
+      };
+    }
     const pushed = pushedFiles(root, input);
-    if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits" };
+    if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits", fix: FETCH_FIRST };
     if (pushed !== null) return { files: pushed };
     const files = localFiles(root);
-    if (files === null) return { unknown: "git could not name the change" };
+    if (files === null) return { unknown: "git could not name the change", fix: FETCH_FIRST };
     return { files, note: "no refs on stdin, looked at the working tree instead" };
   }
   const files = localFiles(root);
-  return files === null ? { unknown: "git could not name the change" } : { files };
+  return files === null ? { unknown: "git could not name the change", fix: FETCH_FIRST } : { files };
+}
+
+// The plan for a run.
+//
+// Design: `--full` never needs the change set — "run everything anyway" is exactly
+// what it is for — so an unreadable change set does not stop it. Without `--full`,
+// a change set git cannot name is a broken gate: nothing starts, and the reason
+// and its repair go to the caller.
+function planRun() {
+  const change = readChange();
+  if (change.note) console.log(`[preflight] ${change.note}`);
+  const forceFull = args.includes("--full");
+  if (!change.unknown) return planPreflight(root, change.files, { forceFull });
+  if (forceFull) {
+    return { mode: "full", reason: `${change.unknown}; --full runs everything anyway`, files: [], packages: [] };
+  }
+  // A change set git cannot name is the gate being broken: the push stops with
+  // exit 2 and nothing starts.
+  return broken(change.unknown, change.fix, []);
 }
 
 // turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
@@ -246,6 +322,11 @@ function readStdin() {
   } catch {
     return null;
   }
+}
+
+// Both skip paths say the same thing, so both say it with the same words.
+function saySkippedIsNotAPass() {
+  console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
 }
 
 function listFirst(files) {
