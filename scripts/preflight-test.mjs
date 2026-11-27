@@ -40,6 +40,7 @@
 //   node scripts/preflight-test.mjs            # everything not on origin/HEAD, plus the tree
 //   node scripts/preflight-test.mjs --pushed   # pre-push: the refs on stdin
 //   node scripts/preflight-test.mjs --full     # always run the whole suite
+//   ANS_PUSH_GATE=strict node scripts/preflight-test.mjs   # same, set for the session
 //   node scripts/preflight-test.mjs --dry-run  # print the plan, run nothing
 
 import { spawn, spawnSync } from "node:child_process";
@@ -54,7 +55,7 @@ import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
 import { reportRunOutput } from "./preflight-output.mjs";
-import { broken, planPreflight } from "./preflight-plan.mjs";
+import { broken, planPreflight, strictPushGate } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -406,17 +407,20 @@ function readChange() {
 
 // The plan for a run.
 //
-// Design: `--full` never needs the change set — "run everything anyway" is exactly
-// what it is for — so an unreadable change set does not stop it. Without `--full`,
-// a change set git cannot name is a broken gate: nothing starts, and the reason
-// and its repair go to the caller.
+// Design: a forced full run never needs the change set — "run everything anyway" is
+// exactly what it is for — so an unreadable change set does not stop it. Without
+// one, a change set git cannot name is a broken gate: nothing starts, and the
+// reason and its repair go to the caller.
 function planRun() {
   const change = readChange();
   if (change.note) console.log(`[preflight] ${change.note}`);
-  const forceFull = args.includes("--full");
+  // Design: ANS_PUSH_GATE=strict is the session-wide form of --full — a person who
+  // wants the whole suite before every push sets it once, and hooks:status reads
+  // the same switch, so the mode it reports is the mode this runs.
+  const forceFull = args.includes("--full") || strictPushGate();
   if (!change.unknown) return planPreflight(root, change.files, { forceFull });
   if (forceFull) {
-    return { mode: "full", reason: `${change.unknown}; --full runs everything anyway`, files: [], packages: [] };
+    return { mode: "full", reason: `${change.unknown}; the whole suite runs anyway`, files: [], packages: [] };
   }
   // A change set git cannot name is the gate being broken: the push stops with
   // exit 2 and nothing starts.
