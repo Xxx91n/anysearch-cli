@@ -8,12 +8,6 @@ import {
   type GoldenScope,
 } from "./docs-golden";
 
-// The scope vocabulary and its type are re-exported here, so kernel and any
-// other consumer of the package root can type a scopes map without reaching
-// into ./docs-golden.
-export { GOLDEN_SCOPE_VALUES };
-export type { GoldenScope };
-
 export const GOLDEN_FILE = "eval-golden.json";
 
 export function isLiveScope(scope: unknown): scope is GoldenScope {
