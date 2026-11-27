@@ -8,6 +8,7 @@ const ANSWERS = {
   domains: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
   "AGENTS.md": ["@anysearch-cli/store"],
   "eval-badcases.json": ["@anysearch-cli/kernel", "@anysearch-cli/store"],
+  "eval-golden.json": ["@anysearch-cli/kernel", "@anysearch-cli/store"],
   "eval-looks.coverage.json": ["@anysearch-cli/store"],
   "eval-looks.json": ["@anysearch-cli/store"],
 };
