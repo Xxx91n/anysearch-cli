@@ -56,6 +56,7 @@ if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.st
 if (!bc.observed || typeof bc.observed.results !== "number") fail(id + " has no observed block — synthetic input refused");
 if (!bc.evidence || typeof bc.evidence.command !== "string" || !bc.evidence.command.trim()) fail(id + " has no evidence.command — synthetic input refused");
 if (typeof bc.question !== "string" || bc.question.trim().length < 8) fail(id + " question must be a string of at least 8 characters");
+if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no domain — record it on the badcase before backfill");
 
 const golden = JSON.parse(readFileSync(GOLDEN, "utf8"));
 // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
@@ -82,7 +83,7 @@ if (into) {
   for (const f of ["intent", "questionLang", "dimensions"]) {
     if (bc[f] === undefined) fail(id + " lacks '" + f + "' — record classification on the badcase before --new (no fabricated classification)");
   }
-  const domain = bc.domain ?? "docs";
+  const domain = bc.domain;
   if (domain !== "docs") fail("--new only creates docs-domain rows; " + id + " is " + domain + " (cold domains are abstain-only)");
   if (golden.entries.some((e) => typeof e.question === "string" && e.question.trim() === bc.question.trim())) {
     fail(id + " question already exists in eval-golden.json; use --into to attach the regression evidence");
