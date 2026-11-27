@@ -279,13 +279,13 @@ async function main() {
   {
     const client: ExaContentsClient = {
       async getContents() {
-        return { results: [{ url: "https://example.com/landing", title: "Landing", text: "redirect body" }] };
+        return { results: [{ url: "https://example.com/start?utm=1", title: "Landing", text: "redirect body" }] };
       },
     };
     const provider = new ExaFetchProvider(client);
     const envelope = await provider.fetch({ urls: ["https://example.com/start"], maxCharacters: 4000 }, new AbortController().signal);
     assert(envelope.pages.length === 1 && envelope.pages[0]!.url === "https://example.com/start",
-      "paid: one requested URL maps one redirect result");
+      "paid: a same-path redirect maps to the requested URL");
     assert(envelope.pages[0]!.text === "redirect body", "paid: the redirect body is kept");
   }
 
@@ -300,6 +300,19 @@ async function main() {
     const envelope = await provider.fetch({ urls: ["https://example.com/start"], maxCharacters: 4000 }, new AbortController().signal);
     assert(envelope.pages.length === 0 && envelope.failures.length === 1,
       "paid: a cross-host redirect does not become the requested page");
+  }
+
+  // ---- paid arm: a same-host landing on another path is a soft 404 ---------
+  {
+    const client: ExaContentsClient = {
+      async getContents() {
+        return { results: [{ url: "https://example.com/home", title: "Home", text: "soft 404" }] };
+      },
+    };
+    const provider = new ExaFetchProvider(client);
+    const envelope = await provider.fetch({ urls: ["https://example.com/start"], maxCharacters: 4000 }, new AbortController().signal);
+    assert(envelope.pages.length === 0 && envelope.failures.length === 1,
+      "paid: a same-host different-path landing is not the requested page");
   }
 
   // ---- paid arm: a malformed reply is a protocol failure, not an empty page --

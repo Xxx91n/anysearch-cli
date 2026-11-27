@@ -49,7 +49,7 @@ export interface ProviderFacts {
   freeArm?: FreeArmFacts;
   /** MCP 客户端支持的协议版本。只有说 MCP 的那家有；适配器和探针发的是同一格。 */
   mcpProtocolVersion?: string;
-  /** 读页端点一次接几个 URL；没有读页适配器的源不填。 */
+  /** 本适配器一次最多发几个 URL；按工具侧上限取 5，端点真实上限未测。 */
   fetchMaxUrlsPerCall?: number;
 }
 

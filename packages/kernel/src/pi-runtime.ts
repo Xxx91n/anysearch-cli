@@ -375,7 +375,11 @@ export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): 
 }
 
 function domainAllowsTool(domain: DomainConfigPort, name: string): boolean {
-  const whitelist = new Set(domain.hooks?.toolWhitelist ?? []);
+  if (!domain.hooks || !domain.skills) {
+    warnOnce("domain:shape", "[anysearch] domain policy is missing hooks/skills; all tools are denied\n");
+    return false;
+  }
+  const whitelist = new Set(domain.hooks.toolWhitelist);
   const toolRequires = domain.skills?.toolRequires;
   const declared = !!toolRequires && Object.keys(toolRequires).length > 0;
   if (!declared) return whitelist.size === 0 || whitelist.has(name);
@@ -840,10 +844,13 @@ export class PiAgentRuntime {
     } catch {
       return; // no ticket means no handle: the model must not see an unusable one.
     }
-    // The writer accepted these results; the search tool stamps the same field.
-    const items = results as Array<{ handle?: string }>;
+    // The writer accepted these results; the search tool stamps the same fields.
+    const items = results as Array<{ handle?: string; archiveRowId?: number }>;
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = searchHandle(id);
+      if (typeof id === "number" && id > 0 && items[index]) {
+        items[index].handle = searchHandle(id);
+        items[index].archiveRowId = id;
+      }
     });
   }
 
@@ -851,8 +858,6 @@ export class PiAgentRuntime {
     registered: boolean;
     allowed: boolean;
     collision: boolean;
-    wiring: boolean;
-    hasProviders: boolean;
     store?: FetchStorePort;
   } {
     const store = this.archive?.store as FetchStorePort | undefined;
@@ -866,7 +871,7 @@ export class PiAgentRuntime {
     const hasProviders = !!this.opts.fetchProviders?.length;
     return {
       registered: allowed && hasProviders && wiring && !collision,
-      allowed, collision, wiring, hasProviders,
+      allowed, collision,
       ...(store ? { store } : {}),
     };
   }

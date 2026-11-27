@@ -194,6 +194,11 @@ export function hostMatchesEntry(entry: string, host: string): boolean {
   return normalized.length > 0 && (bareHost === normalized || bareHost.endsWith("." + normalized));
 }
 
+/** True when either host is the other or a subdomain of it (same site). */
+export function hostsSameSite(a: string, b: string): boolean {
+  return hostMatchesEntry(a, b) || hostMatchesEntry(b, a);
+}
+
 export function shouldAllowUrl(
   url: string,
   label: SourceTraceLabel,

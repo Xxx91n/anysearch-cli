@@ -7,7 +7,7 @@
 import Exa from "exa-js";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 import { FETCH_PAGE_MAX_CHARS, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
-import { hostMatchesEntry } from "../content-trust";
+import { hostsSameSite } from "../content-trust";
 import { normalizeUrlIdentity, parseWebUrl } from "../url-identity";
 import { callExaMcpTool } from "./exa-free-arm";
 import { PROVIDER_FACTS } from "./provider-facts";
@@ -60,6 +60,14 @@ function mapReading(
   return { pages: outPages, failures };
 }
 
+function readingEnvelope(provider: string, reading: Reading): FetchEnvelope {
+  return { provider, pages: reading.pages, failures: reading.failures };
+}
+
+function samePath(a: URL, b: URL): boolean {
+  return a.pathname.replace(/\/+$/, "") === b.pathname.replace(/\/+$/, "");
+}
+
 function pageFailure(url: string, message: string): FetchFailure {
   return { url, errorClass: "unknown", message, retryable: true };
 }
@@ -96,7 +104,9 @@ function matchPaidReading(
     if (returned !== wanted) {
       const wantedUrl = parseWebUrl(requested[0]!);
       const returnedUrl = parseWebUrl(pages[0]!.url);
-      if (!wantedUrl || !returnedUrl || !hostMatchesEntry(wantedUrl.hostname, returnedUrl.hostname)) {
+      if (!wantedUrl || !returnedUrl
+          || !hostsSameSite(wantedUrl.hostname, returnedUrl.hostname)
+          || !samePath(wantedUrl, returnedUrl)) {
         pages.length = 0; // a cross-host or unparseable landing page is not the requested text
       } else {
         pages[0] = { ...pages[0]!, url: requested[0]! };
@@ -213,7 +223,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
     if (redirect) {
       const wanted = parseWebUrl(requested[0]!);
       const got = parseWebUrl(redirect.url);
-      if (wanted && got && hostMatchesEntry(wanted.hostname, got.hostname)) {
+      if (wanted && got && hostsSameSite(wanted.hostname, got.hostname) && samePath(wanted, got)) {
         const body = lines.slice(redirect.bodyFrom, redirect.end).join("\n").trim();
         if (body) {
           pages.push({ url: requested[0]!, text: body, ...(redirect.title ? { title: redirect.title } : {}) });
@@ -263,11 +273,7 @@ export class ExaFetchProvider implements FetchProvider {
       throw new Error("Exa contents: malformed response.results is not an array");
     }
     const reading = matchPaidReading(req.urls, response.results);
-    return {
-      provider: this.id,
-      pages: reading.pages,
-      failures: reading.failures,
-    };
+    return readingEnvelope(this.id, reading);
   }
 
   private async fetchFree(req: FetchRequest, maxCharacters: number, signal: AbortSignal): Promise<FetchEnvelope> {
@@ -277,11 +283,7 @@ export class ExaFetchProvider implements FetchProvider {
       signal,
     );
     const reading = parseExaFetchReply(text, req.urls);
-    return {
-      provider: this.id,
-      pages: reading.pages,
-      failures: reading.failures,
-    };
+    return readingEnvelope(this.id, reading);
   }
 }
 

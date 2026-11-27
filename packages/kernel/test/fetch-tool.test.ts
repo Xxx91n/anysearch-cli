@@ -271,6 +271,15 @@ async function main() {
         "the user's explicit http scheme is preserved");
     }
 
+    // ---- 2d2. a user URL is sent as the user spelled it, not as the identity --
+    {
+      await tickets("user", ["example.com/raw-user-name"]);
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "body"));
+      await makeTool(provider).execute("t5d2", { handles: ["https://www.example.com/raw-user-name"] });
+      assert(provider.calls[0]?.[0] === "https://www.example.com/raw-user-name",
+        "the request keeps the user's original host spelling");
+    }
+
     // ---- 2e. an https ticket cannot be downgraded to http by the model ------
     {
       await tickets("user", ["example.com/https-only"]);

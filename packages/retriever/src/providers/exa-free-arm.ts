@@ -1,7 +1,6 @@
 // Exa free-quota transport: one stateless tools/call to mcp.exa.ai.
 // Search and page-read adapters share this; each parses the text itself.
 
-
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -33,7 +32,7 @@ function waitSeconds(resp: Response): number | undefined {
   return delta > 0 ? delta : undefined;
 }
 
-// 非 2xx：状态码写进错误串（分类器认得「HTTP 429」），正文截一段带上，绝不静默变成 0 条。
+// 非 2xx：状态码和正文前 300 字进错误串。
 function httpFailure(resp: Response, body: string): Error {
   const detail = body.trim().slice(0, 300);
   const error = new Error(
@@ -57,6 +56,10 @@ function jsonRpcError(message: JsonRpcMessage): Error {
   );
 }
 
+function isIdlessError(message: JsonRpcMessage): boolean {
+  return !!message.error && (message.id === null || message.id === undefined);
+}
+
 async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessage> {
   const events: EventSourceMessage[] = [];
   const parser = createParser({ onEvent: (e) => events.push(e) });
@@ -72,7 +75,7 @@ async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessag
       continue;
     }
     if (isReplyFor(message, id)) match = message;
-    else if (message.error && (message.id === null || message.id === undefined)) failed = message;
+    else if (isIdlessError(message)) failed = message;
   }
   if (match) return match;
   if (failed) throw jsonRpcError(failed);
@@ -91,9 +94,7 @@ function readJsonReply(body: string, id: number): JsonRpcMessage {
     !!item && typeof item === "object" && isReplyFor(item as JsonRpcMessage, id));
   if (message) return message;
   const failed = messages.find((item): item is JsonRpcMessage =>
-    !!item && typeof item === "object" &&
-    ((item as JsonRpcMessage).id === null || (item as JsonRpcMessage).id === undefined) &&
-    !!(item as JsonRpcMessage).error);
+    !!item && typeof item === "object" && isIdlessError(item as JsonRpcMessage));
   if (failed) throw jsonRpcError(failed);
   const seen = messages.map((item) => (item as JsonRpcMessage | null)?.id).join(", ");
   throw new Error("Exa MCP tools/call reply id mismatch (expected " + id + ", got " + seen + ")");
@@ -128,7 +129,6 @@ export async function callExaMcpTool(tool: string, args: Record<string, unknown>
     signal,
   });
 
-  // 非 2xx 一律失败：读正文给用户看原因，429 不重试，只把等待秒数带回引擎。
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
     throw httpFailure(resp, body);
@@ -150,7 +150,6 @@ export async function callExaMcpTool(tool: string, args: Record<string, unknown>
 
   const result = message.result as McpToolResult;
   const text = textOf(result);
-  // 工具自己的失败也是失败：正文读出来，绝不静默变成 0 条。
   if (result.isError) throw new Error("Exa MCP tools/call isError: " + (text.trim() || "(no text)"));
   if (!text.trim()) throw new Error("Exa MCP tools/call returned no text content");
   return text;

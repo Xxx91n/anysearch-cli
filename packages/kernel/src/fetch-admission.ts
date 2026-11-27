@@ -156,21 +156,21 @@ function looksHighEntropy(value: string): boolean {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return false;
   // A value with a word separator or slug is a title, not a token. Base64
   // symbols mark a token; an unpadded key of only letters/digits can still
-  // slip through (heuristic, not a complete detector).
+  // slip through.
   if (value.includes("_") || value.includes("-") || value.includes("++")) return false;
-  if (!/[+/=]/.test(value)) return false;
+  if (!/[+=]/.test(value)) return false;
   return /^[A-Za-z0-9+/=]+$/.test(value);
 }
 
-/**
- * Credential gate: a URL with a known credential parameter name, a known
- * secret shape, or a high-entropy `=` value is never sent upstream. Other
- * shapes rely on heuristics; this is not a complete secret detector.
- */
 function normalizeParamName(name: string): string {
   return name.toLowerCase().replace(/-/g, "_").replace(/\[\]$/, "");
 }
 
+/**
+ * Credential gate: a URL with a known credential parameter name, a known
+ * secret shape, or a high-entropy `+`/`=` value is never sent upstream. Other
+ * shapes rely on heuristics; this is not a complete secret detector.
+ */
 export function fetchCredentialHit(rawHandle: string, identity: string): boolean {
   for (const text of [rawHandle, identity]) {
     const parsed = parseWebUrl(text);
@@ -227,10 +227,18 @@ function bareLooksLikePage(candidate: string): boolean {
 
 /**
  * The user-message ticket corpus: every web URL the user typed, as normalized
- * identities. Only http(s) is taken; a bare `host/path` is read as https.
- * A real file/module name shaped like `word.word/path` can become a ticket;
- * the caller decides whether it is a page.
+ * identities. A scheme URL is taken as typed; a bare `host/path` is read as
+ * https when it has a path or port and a dotted host. A file/module name
+ * shaped like `word.word/path` can therefore become a ticket too.
  */
+export function httpTicketValue(identity: string): string {
+  return "http:" + identity;
+}
+
+export function isHttpTicketValue(value: string): boolean {
+  return value.startsWith("http:");
+}
+
 export function extractUserUrlTickets(text: string): string[] {
   const out = new Set<string>();
   for (const match of text.matchAll(SCHEME_URL)) {
@@ -240,7 +248,7 @@ export function extractUserUrlTickets(text: string): string[] {
       const identity = normalizeUrlIdentity(candidate);
       if (fetchCredentialHit(candidate, identity)) continue;
       out.add(identity);
-      if (parsed.protocol === "http:") out.add("http:" + identity);
+      if (parsed.protocol === "http:") out.add(httpTicketValue(identity));
     } catch { /* not a URL after all */ }
   }
   for (const match of text.matchAll(BARE_URL)) {
