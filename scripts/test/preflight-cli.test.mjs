@@ -6,6 +6,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -75,6 +77,85 @@ test("a green run reports the mode and how long it took", () => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /green in \d+\.\ds \(full\)/);
+  });
+});
+
+// The budget's three promises at once: the run stops, the tree goes with it, and
+// the output stays on disk for the operator to read. The fake pnpm starts a child
+// of its own, so "the whole tree" means more than the first process.
+test("a suite that runs past its budget stops the tree and keeps the output", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "ans-preflight-run-"));
+  try {
+    await withPnpmShim(writeStallingPnpm, async (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], {
+        overrides: { ANS_PUSH_GATE_TIMEOUT: "4", TMPDIR: tmp, TEMP: tmp, TMP: tmp },
+      });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stdout, /suite budget: 4s/);
+      // It says the run did not finish, and never calls it a failure.
+      assert.match(result.stderr, /timed out after 4s: the suite did not finish/);
+      assert.doesNotMatch(result.stderr, /blocked after/);
+      // The heartbeat is the sign of life a long run needs.
+      assert.match(result.stdout, /still running: \d+s elapsed/);
+      const file = runOutputFile(result.stderr);
+      assert.ok(file, `no output file named in: ${result.stderr}`);
+      assert.ok(file.startsWith(tmp), `the output file is not in the temp dir: ${file}`);
+      assert.match(readFileSync(file, "utf8"), /suite started/);
+      // The child the fake pnpm started went with the rest of the tree.
+      const grandchild = Number(/GRANDCHILD=(\d+)/.exec(result.stdout)?.[1]);
+      assert.ok(grandchild, `the fake pnpm never named its child: ${result.stdout}`);
+      await waitGone(grandchild);
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Design: the count comes from the file on disk, not from a tail kept in memory:
+// a suite that prints a lot pushes the summary out of any fixed-size tail. The
+// default budget shows in the banner, so a run without the variable says 600s.
+test("a green run counts the tests from the file and deletes it", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "ans-preflight-run-"));
+  try {
+    withPnpmShim(writeCountingPnpm, (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { TMPDIR: tmp, TEMP: tmp, TMP: tmp } });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /suite budget: 600s/);
+      assert.match(result.stdout, /green in \d+\.\ds \(full\), 7 test\(s\)/);
+      const leftovers = readdirSync(tmp).filter((name) => name.endsWith(".log"));
+      assert.deepEqual(leftovers, [], `the run left its output file behind: ${leftovers.join(", ")}`);
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a red run shows the last 100 lines and names the output file", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "ans-preflight-run-"));
+  try {
+    withPnpmShim(writeNoisyFailingPnpm, (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { TMPDIR: tmp, TEMP: tmp, TMP: tmp } });
+      assert.equal(result.status, 1, result.stderr);
+      // The tail is a slice, not the whole run: the first line stays in the file.
+      assert.match(result.stderr, /line 150/);
+      assert.doesNotMatch(result.stderr, /line 001/);
+      assert.match(result.stderr, /blocked after \d+\.\ds: @anysearch-cli\/kernel#test/);
+      const file = runOutputFile(result.stderr);
+      assert.ok(file, `no output file named in: ${result.stderr}`);
+      const whole = readFileSync(file, "utf8");
+      assert.match(whole, /line 001/);
+      assert.match(whole, /Failed: @anysearch-cli\/kernel#test/);
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a budget the gate cannot read stops the push", () => {
+  withFakePnpm({ code: 0, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { ANS_PUSH_GATE_TIMEOUT: "soon" } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: ANS_PUSH_GATE_TIMEOUT is not a positive number of seconds: "soon"/);
   });
 });
 
@@ -172,7 +253,12 @@ test("a red run keeps the test home and prints where it is", async () => {
     assert.ok(home, `no kept test home in: ${result.stderr}`);
     assert.equal(existsSync(home), true, "the kept home is gone");
     assert.equal(existsSync(join(home, ".ans", "leak")), true, "the test's write did not land in the kept home");
+    // The output file is kept too; the fixture takes it back.
+    const file = runOutputFile(result.stderr);
+    assert.ok(file, `no kept output file in: ${result.stderr}`);
+    assert.equal(existsSync(file), true, "the kept output file is gone");
     rmSync(home, { recursive: true, force: true });
+    rmSync(file, { force: true });
   });
 });
 
@@ -223,6 +309,8 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       }
       const home = keptHome(err);
       if (home) rmSync(home, { recursive: true, force: true });
+      const file = runOutputFile(err);
+      if (file) rmSync(file, { force: true });
     }
   });
 });
@@ -841,6 +929,58 @@ function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   writePnpmShim(bin, { sh, cmd });
 }
 
+// A stand-in pnpm written as a Node script, so a fixture can print text a .cmd
+// cannot carry safely (the ℹ in a test summary) or keep a child of its own alive.
+function writeNodePnpm(bin, name, body) {
+  const script = join(bin, name);
+  writeFileSync(script, body.join("\n"));
+  writePnpmShim(bin, {
+    sh: `#!/bin/sh\nexec "${process.execPath}" "${script}"\n`,
+    cmd: `@echo off\r\n"${process.execPath}" "${script}"\r\n`,
+  });
+}
+
+// A pnpm that never finishes and starts a child of its own, so the test can prove
+// the budget killed the whole tree rather than the first process.
+function writeStallingPnpm(bin) {
+  writeNodePnpm(bin, "stall.mjs", [
+    'import { spawn } from "node:child_process";',
+    'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });',
+    'console.log("suite started");',
+    'console.log(`GRANDCHILD=${child.pid}`);',
+    "setInterval(() => {}, 1000);",
+    "",
+  ]);
+}
+
+// A pnpm that prints two test summaries and passes: the green line's count is the
+// sum of both, read from the file rather than from a tail in memory.
+function writeCountingPnpm(bin) {
+  writeNodePnpm(bin, "count.mjs", ['console.log("pnpm ran");', 'console.log("ℹ tests 3");', 'console.log("ℹ tests 4");', ""]);
+}
+
+// A pnpm whose output is longer than the failure recap: 150 lines, then a failed
+// task. The first lines prove the recap is a slice, not the whole run.
+function writeNoisyFailingPnpm(bin) {
+  const lines = [];
+  for (let i = 1; i <= 150; i += 1) lines.push(`console.log("line ${String(i).padStart(3, "0")}");`);
+  lines.push('console.log("Failed: @anysearch-cli/kernel#test");');
+  lines.push("process.exitCode = 1;");
+  writeNodePnpm(bin, "noisy.mjs", lines);
+}
+
+// Runs a fixture's shim against a throwaway bin dir. The caller's own assertions
+// run inside; the dir goes away afterwards either way.
+function withPnpmShim(writeShim, run) {
+  const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
+  try {
+    writeShim(bin);
+    run(bin);
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
 // A stand-in pnpm that passes and says it ran, so a test can tell whether the
 // suite started at all.
 function passingPnpm(bin) {
@@ -920,6 +1060,8 @@ function writeRealTurboPnpm(bin) {
 
 // A gate run can leave its home behind two ways: a red run says it kept it for
 // inspection, and a green run that could not delete it says where it left it.
+// A red or timed-out run also keeps its output file. A fixture is not an
+// operator's failed push, so the test takes back what the gate printed.
 //
 // Design: retry, then swallow a cleanup failure — a Windows file lock keeping the
 // dir is not news this test reports, and throwing in the finally hides the
@@ -929,10 +1071,24 @@ function dropLeftoverHome(result) {
   const home =
     keptHome(output) ??
     /\[preflight\] could not delete the test home, left it at (.+?): /m.exec(output)?.[1];
-  if (!home) return;
-  try {
-    rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-  } catch {}
+  if (home) {
+    try {
+      rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {}
+  }
+  const file = runOutputFile(output);
+  if (file) {
+    try {
+      rmSync(file, { force: true });
+    } catch {}
+  }
+}
+
+// The path the gate prints for a run's output file. A red or timed-out run keeps
+// the file and names it; a green run deletes it and names nothing.
+function runOutputFile(output) {
+  const match = /\[preflight\] full output: (.+)$/m.exec(output);
+  return match ? match[1].trim() : null;
 }
 
 function turboEntry() {

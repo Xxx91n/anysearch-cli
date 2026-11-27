@@ -12,11 +12,20 @@
 // for one full run. See AGENTS.md.
 //
 // Design: the exit code is the answer — 0 = skipped or green, 1 = the run did
-// not pass, 2 = the gate itself could not do its job. An interrupt keeps its
-// signal's code (130/143) instead of borrowing one of the three, because a
-// person pressing Ctrl-C did not fail a test. Nothing out of the gate's own
-// control borrows 1 either: that would read as "the code is bad" when the
-// truth is "nobody looked".
+// not pass or did not finish, 2 = the gate itself could not do its job. An
+// interrupt keeps its signal's code (130/143) instead of borrowing one of the
+// three, because a person pressing Ctrl-C did not fail a test. Nothing out of
+// the gate's own control borrows 1 either: that would read as "the code is bad"
+// when the truth is "nobody looked".
+//
+// Design: the suite runs under a budget (ANS_PUSH_GATE_TIMEOUT, 600 seconds by
+// default). A gate that waits forever cannot be told apart from a gate that is
+// stuck, so at the budget it stops the whole process tree and answers "not
+// finished" — never "passed". While the suite runs, a heartbeat says how long it
+// has been going; without one, a silent nine-minute wait reads as a hang. The
+// whole output lands in a timestamped file in the temp directory: a failure
+// shows the last 100 lines and the file's absolute path and keeps the file; a
+// green run deletes it.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -173,18 +182,34 @@ if (args.includes("--dry-run")) {
   process.exit(0);
 }
 
+// The suite's default budget: ten minutes. The whole suite takes six to nine
+// minutes on a Windows machine, and store alone takes four and a quarter, so ten
+// is the two-times margin on the heaviest run a push can carry.
+const DEFAULT_SUITE_TIMEOUT_SECONDS = 600;
+
+// The suite's budget and heartbeat, read before any temp state exists: a budget
+// the gate cannot parse ends the run without leaving a home behind. A budget the
+// gate cannot read is a gate that cannot do its job, so a bad value stops the
+// push with exit 2 instead of quietly falling back to a default nobody asked for.
+const suiteTimeoutSeconds = readSuiteTimeout();
+const heartbeatSeconds = Math.min(15, Math.max(1, Math.round(suiteTimeoutSeconds / 4)));
+
 const started = Date.now();
 const testHome = makeTestHome();
 let child;
 let interrupted = 0;
+// The suite's output file, opened when the suite starts. Declared here so the
+// signal handler can name it even when the run is interrupted.
+let dump = null;
 
-// An interrupt is not a green run. Keep the home, forward the signal so pnpm
-// and turbo stop too, and let the child close before exiting — a hard exit
-// here would leave them writing into the directory this run is keeping.
+// An interrupt is not a green run. Keep the home and the run's output, forward
+// the signal so pnpm and turbo stop too, and let the child close before exiting —
+// a hard exit here would leave them writing into the directory this run keeps.
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     interrupted = code;
     reportKeptTestHome(testHome);
+    if (dump?.file) writeStderr(`[preflight] full output: ${dump.file}`);
     stopChild(child, signal);
   });
 }
@@ -231,6 +256,16 @@ if (selfTest) {
   console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
 
+// Design: the suite's output goes to a timestamped file in the temp directory as
+// well as to the terminal. A failure shows the last 100 lines and the file's
+// absolute path; a green run deletes the file. The file is what makes a long run
+// auditable after the terminal has scrolled past it, and it is where the test
+// count is read from — the 64 KiB in-memory tail can lose the summary of a suite
+// that prints a lot.
+const suiteStarted = Date.now();
+dump = openDump();
+console.log(`[preflight] suite budget: ${suiteTimeoutSeconds}s (ANS_PUSH_GATE_TIMEOUT changes it)`);
+
 child = spawn("pnpm", runArgs, {
   cwd: root,
   env: testHome.env,
@@ -239,34 +274,81 @@ child = spawn("pnpm", runArgs, {
   detached: process.platform !== "win32",
 });
 
-const readTail = forwardKeepingTail(child, 64 * 1024);
+const readTail = forwardKeepingTail(child, 64 * 1024, dump);
+
+// Design: the heartbeat is the sign of life. A silent suite reads as a hang, and
+// a person who thinks the gate is stuck presses Ctrl-C. The interval follows the
+// budget — fifteen seconds on the default ten minutes, shorter on a short budget
+// so even a one-minute run shows a beat.
+const heartbeat = setInterval(() => {
+  console.log(`[preflight] still running: ${Math.round((Date.now() - suiteStarted) / 1000)}s elapsed`);
+}, heartbeatSeconds * 1000);
+heartbeat.unref();
+
+// Design: the budget stops the whole tree, not pnpm alone — a child pnpm leaves
+// behind would keep writing to the home this run keeps. A run that hit its
+// budget did not finish, so it is not a pass.
+let timedOut = false;
+const deadline = setTimeout(() => {
+  timedOut = true;
+  stopChild(child, "SIGTERM");
+}, suiteTimeoutSeconds * 1000);
+deadline.unref();
 
 let status;
+let spawnError = null;
 try {
   status = await new Promise((resolve, reject) => {
     child.on("error", reject);
     child.on("close", resolve);
   });
 } catch (error) {
+  spawnError = error;
+} finally {
+  clearInterval(heartbeat);
+  clearTimeout(deadline);
+}
+
+// Read the run's output once the child is gone and the file is flushed.
+await closeDump(dump);
+const output = readDump(dump);
+
+if (spawnError) {
   reportKeptTestHome(testHome);
-  writeStderr(`[preflight] could not start pnpm: ${error.message}`);
+  writeStderr(`[preflight] could not start pnpm: ${spawnError.message}`);
+  // The file holds nothing when pnpm never started, so it is litter, not evidence.
+  removeDump(dump);
   // Design: no test ran, so this is the gate failing, not the code — exit 2.
-  process.exit(2);
+  await exitAfterFlush(2);
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
-if (interrupted) {
+if (timedOut) {
+  writeStderr(`[preflight] timed out after ${suiteTimeoutSeconds}s: the suite did not finish — this is not a pass`);
+  writeStderr(`[preflight] run the rest yourself: pnpm ${runArgs.join(" ")}`);
+  if (dump?.file) writeStderr(`[preflight] full output: ${dump.file}`);
+  reportKeptTestHome(testHome, console.error);
+  process.exitCode = 1;
+} else if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
-  const failed = failedTask(readTail());
+  const lines = lastLines(output, 100);
+  if (lines.length > 0) {
+    console.error(`\n[preflight] last ${lines.length} line(s) of the run:`);
+    for (const line of lines) console.error(line);
+  }
+  const failed = failedTask(output ?? readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
+  if (dump?.file) console.error(`[preflight] full output: ${dump.file}`);
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here
   // would read as "the gate is broken" instead.
   process.exitCode = 1;
 } else {
-  console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
+  const count = totalTests(output);
+  console.log(`\n[preflight] green in ${seconds}s (${plan.mode})${count === null ? "" : `, ${count} test(s)`}`);
+  removeDump(dump);
   removeTestHome(testHome);
 }
 
@@ -438,8 +520,9 @@ async function runGateTests() {
 
 // Forward both streams and keep the last bytes, so a caller can read a line out
 // of output the operator has already seen. Design: decode through StringDecoder —
-// a `ℹ` split across two chunks would otherwise fail the count's regex.
-function forwardKeepingTail(source, limit) {
+// a `ℹ` split across two chunks would otherwise fail the count's regex. The dump
+// gets the same bytes, so the file holds the whole run, not just the tail.
+function forwardKeepingTail(source, limit, dump) {
   let tail = "";
   for (const [stream, out] of [
     [source.stdout, process.stdout],
@@ -448,10 +531,102 @@ function forwardKeepingTail(source, limit) {
     const decoder = new StringDecoder("utf8");
     stream.on("data", (chunk) => {
       out.write(chunk);
+      if (dump && !dump.failed) dump.stream.write(chunk);
       tail = (tail + decoder.write(chunk)).slice(-limit);
     });
   }
   return () => tail;
+}
+
+// The suite's output file: a timestamped file in the system temp directory. A
+// write that fails turns the dump off rather than the run: the suite's answer is
+// its exit code, and a full disk should not hide a failing test.
+function openDump() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const handle = { file: path.join(os.tmpdir(), `ans-preflight-${stamp}.log`), failed: false };
+  try {
+    handle.stream = fs.createWriteStream(handle.file, { flags: "w" });
+  } catch (error) {
+    handle.failed = true;
+    writeStderr(`[preflight] could not open the run's output file ${handle.file}: ${error.message}`);
+    return handle;
+  }
+  handle.stream.on("error", (error) => {
+    if (handle.failed) return;
+    handle.failed = true;
+    writeStderr(`[preflight] could not write the run's output to ${handle.file}: ${error.message}`);
+  });
+  return handle;
+}
+
+// Wait for the file to flush. A handle that never opened resolves at once, and a
+// stream that never finishes must not hold the gate's answer forever.
+function closeDump(handle) {
+  if (!handle?.stream || handle.failed) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => resolve();
+    handle.stream.once("error", done);
+    handle.stream.end(done);
+    setTimeout(done, 2000).unref();
+  });
+}
+
+function readDump(handle) {
+  if (!handle?.file) return null;
+  try {
+    return fs.readFileSync(handle.file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function removeDump(handle) {
+  if (!handle?.file) return;
+  try {
+    fs.rmSync(handle.file, { force: true });
+  } catch (error) {
+    // A green run that cannot delete its own output file is not a failed run.
+    console.error(`[preflight] could not delete the run's output file ${handle.file}: ${error.message}`);
+  }
+}
+
+// The last N lines of a run, for the failure report. A run that printed nothing
+// gives an empty list, and the report leaves the slice out.
+function lastLines(output, count) {
+  if (!output) return [];
+  const lines = output.replace(/\r\n/g, "\n").split("\n");
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines.slice(-count);
+}
+
+// The suite runs one test command per package, so the total is the sum of every
+// summary line in the file. A run with no summary line reports no count rather
+// than a wrong one. The summary is matched anywhere in the line, because turbo
+// prefixes a task's output with the task's name in some output modes.
+function totalTests(output) {
+  if (!output) return null;
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
+  let total = 0;
+  let seen = false;
+  for (const match of plain.matchAll(/ℹ tests (\d+)/g)) {
+    total += Number(match[1]);
+    seen = true;
+  }
+  return seen ? total : null;
+}
+
+// ANS_PUSH_GATE_TIMEOUT is the suite's budget in seconds. A value that is not a
+// positive number is a gate that cannot do its job, so it stops the push with
+// exit 2 instead of running under a budget nobody asked for.
+function readSuiteTimeout() {
+  const raw = process.env.ANS_PUSH_GATE_TIMEOUT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_SUITE_TIMEOUT_SECONDS;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    writeStderr(`[preflight] blocked: ANS_PUSH_GATE_TIMEOUT is not a positive number of seconds: "${raw}"`);
+    process.exit(2);
+  }
+  return seconds;
 }
 
 // Design: the flush lives in preflight-flush.mjs so a test can give it a fake
