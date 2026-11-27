@@ -184,13 +184,14 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   });
 
   const errorByUrl = new Map<string, string>();
+  const upstreamError = /^\s*Error fetching\s+(\S+):\s*(.*)$/i;
   const takeTrailingErrors = (from: number, end: number): number => {
     let cut = end;
     let i = end - 1;
     while (i >= from) {
       const line = lines[i]!;
       if (!line.trim()) { i--; continue; }
-      const match = /^\s*Error fetching\s+(\S+):\s*(.*)$/i.exec(line);
+      const match = upstreamError.exec(line);
       if (!match) break;
       const identity = normalizeUrlIdentity(match[1]!);
       if (!requestedSet.has(identity)) break;
@@ -230,7 +231,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
         }
       }
     } else if (docs.length === 0) {
-      const bodyLines = lines.filter((line) => line.trim() && !/^\s*Error fetching\s/i.test(line));
+      const bodyLines = lines.filter((line) => line.trim());
       const body = bodyLines.join("\n").trim();
       if (body && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
     }
