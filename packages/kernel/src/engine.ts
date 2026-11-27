@@ -229,8 +229,7 @@ export class RetroaererdEngine {
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
-  // `gate` used to ride on a per-search config object no caller could pass;
-  // it lives here now.
+  // The sufficiency gate is fixed at construction and consulted per request.
   private gate: SufficiencyGate;
   // The caller's per-fanout budget: tests shrink it, eval raises it, and
   // `ans search --deadline` passes the terminal's choice; absent is 4s.
