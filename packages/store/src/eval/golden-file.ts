@@ -10,6 +10,14 @@ import {
 
 export const GOLDEN_FILE = "eval-golden.json";
 
+export function isLiveScope(scope: unknown): scope is GoldenScope {
+  return scope === "live" || scope === "both";
+}
+
+export function isStubScope(scope: unknown): scope is GoldenScope {
+  return scope === "stub" || scope === "both";
+}
+
 // scopes is the entry-id -> stub|live|both sidecar map; it travels with the
 // corpus because the executors read both in one pass.
 export type GoldenFile = DocsGoldenSet & { scopes: Record<string, GoldenScope> };

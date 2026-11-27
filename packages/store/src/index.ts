@@ -78,6 +78,9 @@ export * from "./db-perms";
 // instead of letting libuv reap them at exit (macOS F-16 libc++abi abort).
 export * from "./teardown";
 export * from "./db";
+// Golden corpus reader and its scope predicates: the eval executors and the
+// gate's tests ask the same live/stub question.
+export * from "./eval/golden-file";
 
 // consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
