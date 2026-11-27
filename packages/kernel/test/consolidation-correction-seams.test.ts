@@ -148,7 +148,7 @@ const EVIDENCE: ConsolidateEvidence[] = [
   assert(!prompt.includes("SHORT-SNIPPET"), "summarize: the snippet is not used when a body exists");
   assert(prompt.indexOf("FULL-PAGE-BODY") < prompt.indexOf("The materials are above"),
     "summarize: the materials precede the instructions");
-  assert(typeof out === "object" && out !== null && out.materials.length === 1,
+  assert(typeof out === "object" && out !== null && out.materials?.length === 1,
     "summarize: the feed report comes back with the text");
 }
 

@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "7a8c7014f7c88f3d",
+  "fingerprint": "133ef0f17f47ffbc",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
