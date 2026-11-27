@@ -98,7 +98,7 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
-  // +: the spread carries every unknown root field through the write —
+  // The spread carries every unknown root field through the write —
   // rebuilding the object field-by-field is how the schema_version:1 sentinel
   // got stripped.
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {
