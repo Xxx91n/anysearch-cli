@@ -351,7 +351,7 @@ const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 // being truncated into a 1ms budget nobody asked for, and a cap above the
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
-  if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
   const cap = Number.isInteger(capMs) && capMs > 0
     ? Math.min(capMs, MAX_REQUEST_TIMEOUT_MS)
     : EVAL_REQUEST_TIMEOUT_CAP_MS;
