@@ -518,9 +518,15 @@ function stepStaticAssertions() {
       if (!cliSrc.includes(tok)) fail("CLI abstain surface missing" + tok);
     const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/search-web.tool.ts"), "utf8");
     if (!mcpSrc.includes("abstain")) fail("MCP search_web missing abstain structuredContent");
+    let evalGoldenText;
+    try {
+      evalGoldenText = fs.readFileSync(path.join(ROOT, "eval-golden.json"), "utf8");
+    } catch (err) {
+      fail("eval-golden.json: cannot read: " + (err.code ?? err.message));
+    }
     let evalGolden;
     try {
-      evalGolden = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-golden.json"), "utf8"));
+      evalGolden = JSON.parse(evalGoldenText);
     } catch (err) {
       fail("eval-golden.json: invalid JSON: " + err.message);
     }
