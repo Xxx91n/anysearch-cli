@@ -209,7 +209,7 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     interrupted = code;
     reportKeptTestHome(testHome);
-    if (dump?.file) writeStderr(`[preflight] full output: ${dump.file}`);
+    reportRunOutput(dump);
     stopChild(child, signal);
   });
 }
@@ -264,7 +264,9 @@ if (selfTest) {
 // that prints a lot.
 const suiteStarted = Date.now();
 dump = openDump();
-console.log(`[preflight] suite budget: ${suiteTimeoutSeconds}s (ANS_PUSH_GATE_TIMEOUT changes it)`);
+console.log(
+  `[preflight] suite budget: ${suiteTimeoutSeconds}s, heartbeat every ${heartbeatSeconds}s (ANS_PUSH_GATE_TIMEOUT changes the budget)`,
+);
 
 child = spawn("pnpm", runArgs, {
   cwd: root,
@@ -287,11 +289,16 @@ heartbeat.unref();
 
 // Design: the budget stops the whole tree, not pnpm alone — a child pnpm leaves
 // behind would keep writing to the home this run keeps. A run that hit its
-// budget did not finish, so it is not a pass.
+// budget did not finish, so it is not a pass. The close wait gets its own cap:
+// a process outside the killed group can hold the pipe open, and the gate's
+// answer must not wait on a tree that refuses to die.
 let timedOut = false;
+let settleClose = null;
+let closeCap = null;
 const deadline = setTimeout(() => {
   timedOut = true;
   stopChild(child, "SIGTERM");
+  closeCap = setTimeout(() => settleClose?.(null), 10000);
 }, suiteTimeoutSeconds * 1000);
 deadline.unref();
 
@@ -299,6 +306,7 @@ let status;
 let spawnError = null;
 try {
   status = await new Promise((resolve, reject) => {
+    settleClose = resolve;
     child.on("error", reject);
     child.on("close", resolve);
   });
@@ -307,6 +315,7 @@ try {
 } finally {
   clearInterval(heartbeat);
   clearTimeout(deadline);
+  clearTimeout(closeCap);
 }
 
 // Read the run's output once the child is gone and the file is flushed.
@@ -326,7 +335,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (timedOut) {
   writeStderr(`[preflight] timed out after ${suiteTimeoutSeconds}s: the suite did not finish — this is not a pass`);
   writeStderr(`[preflight] run the rest yourself: pnpm ${runArgs.join(" ")}`);
-  if (dump?.file) writeStderr(`[preflight] full output: ${dump.file}`);
+  reportRunOutput(dump);
   reportKeptTestHome(testHome, console.error);
   process.exitCode = 1;
 } else if (interrupted) {
@@ -339,7 +348,7 @@ if (timedOut) {
   }
   const failed = failedTask(output ?? readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  if (dump?.file) console.error(`[preflight] full output: ${dump.file}`);
+  reportRunOutput(dump, console.error);
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here
@@ -480,6 +489,13 @@ function corepackHome(env, home) {
 // passes console.error so the line stays behind pnpm's own stderr.
 function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
+}
+
+// Where the whole run's output went. The default is the sync writer, because the
+// gate may exit right after the line; a caller that lets the event loop drain
+// passes console.error, the same rule as the kept-home line.
+function reportRunOutput(handle, write = writeStderr) {
+  if (handle?.file) write(`[preflight] full output: ${handle.file}`);
 }
 
 // Design: pin the reporter to spec — the total is read from the summary line it
