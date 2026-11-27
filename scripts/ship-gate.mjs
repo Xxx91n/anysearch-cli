@@ -524,6 +524,9 @@ function stepStaticAssertions() {
     } catch (err) {
       fail("eval-golden.json: invalid JSON: " + err.message);
     }
+    // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
+    // packages/store/src/eval/docs-golden.ts; this gate runs as plain node.
+    if (evalGolden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
     if (!Array.isArray(evalGolden.entries) || evalGolden.entries.length === 0) fail("eval-golden.json: entries must be a non-empty array");
     if (!evalGolden.scopes || typeof evalGolden.scopes !== "object" || Array.isArray(evalGolden.scopes) || Object.keys(evalGolden.scopes).length === 0) fail("eval-golden.json: scopes must be a non-empty object");
     const ge = evalGolden.entries;
