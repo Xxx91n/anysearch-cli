@@ -64,8 +64,10 @@ function readingEnvelope(provider: string, reading: Reading): FetchEnvelope {
   return { provider, pages: reading.pages, failures: reading.failures };
 }
 
-function samePath(a: URL, b: URL): boolean {
-  return a.pathname.replace(/\/+$/, "") === b.pathname.replace(/\/+$/, "");
+function isRedirectTo(wanted: URL, got: URL): boolean {
+  return hostsSameSite(wanted.hostname, got.hostname)
+    && wanted.pathname.replace(/\/+$/, "") === got.pathname.replace(/\/+$/, "")
+    && wanted.search === got.search;
 }
 
 function pageFailure(url: string, message: string): FetchFailure {
@@ -104,9 +106,7 @@ function matchPaidReading(
     if (returned !== wanted) {
       const wantedUrl = parseWebUrl(requested[0]!);
       const returnedUrl = parseWebUrl(pages[0]!.url);
-      if (!wantedUrl || !returnedUrl
-          || !hostsSameSite(wantedUrl.hostname, returnedUrl.hostname)
-          || !samePath(wantedUrl, returnedUrl)) {
+      if (!wantedUrl || !returnedUrl || !isRedirectTo(wantedUrl, returnedUrl)) {
         pages.length = 0; // a cross-host or unparseable landing page is not the requested text
       } else {
         pages[0] = { ...pages[0]!, url: requested[0]! };
@@ -223,7 +223,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
     if (redirect) {
       const wanted = parseWebUrl(requested[0]!);
       const got = parseWebUrl(redirect.url);
-      if (wanted && got && hostsSameSite(wanted.hostname, got.hostname) && samePath(wanted, got)) {
+      if (wanted && got && isRedirectTo(wanted, got)) {
         const body = lines.slice(redirect.bodyFrom, redirect.end).join("\n").trim();
         if (body) {
           pages.push({ url: requested[0]!, text: body, ...(redirect.title ? { title: redirect.title } : {}) });
@@ -283,7 +283,8 @@ export class ExaFetchProvider implements FetchProvider {
       signal,
     );
     const reading = parseExaFetchReply(text, req.urls);
-    return readingEnvelope(this.id, reading);
+    const pages = reading.pages.map((page) => ({ ...page, text: page.text.slice(0, maxCharacters) }));
+    return readingEnvelope(this.id, { ...reading, pages });
   }
 }
 

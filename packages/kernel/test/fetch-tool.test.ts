@@ -411,7 +411,7 @@ async function main() {
       assert(firstBody.failures.length === 1 && first.isError === true, "a failed page is a tool error");
       await tool.execute("t15", { handles: ["https://allowed.example/e2"] });
       const stopped = await tool.execute("t16", { handles: ["https://allowed.example/e3"] });
-      assert(rawText(stopped).includes("连续两次没拿到新内容"), "the third call is soft-stopped");
+      assert(rawText(stopped).includes("连续 2 次没拿到新内容"), "the third call is soft-stopped");
       assert(provider.calls.length === 2, "a soft-stopped call does not reach upstream");
     }
 
@@ -423,9 +423,9 @@ async function main() {
       await tool.execute("t17", { handles: ["https://blocked.example/1"] });
       const second = await tool.execute("t18", { handles: ["https://blocked.example/2"] });
       assert(rawText(second).includes("禁止列表"), "the stopped batch still names why each URL was refused");
-      assert(rawText(second).includes("连续两次整批网址都没被放行"), "the second fully rejected batch stops reads");
+      assert(rawText(second).includes("连续 2 次整批网址都没被放行"), "the second fully rejected batch stops reads");
       const third = await tool.execute("t19", { handles: ["https://blocked.example/3"] });
-      assert(rawText(third).includes("连续两次整批网址都没被放行"), "later calls stay stopped");
+      assert(rawText(third).includes("连续 2 次整批网址都没被放行"), "later calls stay stopped");
       assert(provider.calls.length === 0, "no rejected batch reaches upstream");
     }
 
@@ -552,7 +552,7 @@ async function main() {
       const third = await tool.execute("t24f", { handles: ["https://allowed.example/cached"] });
       assert(envelope(again).pages.length === 1 && envelope(third).pages.length === 1,
         "a cached page is returned on every call");
-      assert(!rawText(third).includes("连续两次没拿到新内容"),
+      assert(!rawText(third).includes("连续 2 次没拿到新内容"),
         "cache-only reads do not advance the empty streak");
     }
 
@@ -569,7 +569,7 @@ async function main() {
         handles: ["https://allowed.example/cache-plus", "https://allowed.example/invented"],
       });
       const stopped = await tool.execute("t24j", { handles: ["https://allowed.example/cache-plus"] });
-      assert(rawText(stopped).includes("连续两次没拿到新内容"),
+      assert(rawText(stopped).includes("连续 2 次没拿到新内容"),
         "cache plus a rejected URL still trips the empty-batch stop");
     }
 
@@ -583,7 +583,7 @@ async function main() {
       const third = await tool.execute("t24m", { handles: ["https://allowed.example/down"] });
       const text = rawText(third);
       assert(text.includes("没有回包"), "an upstream outage names the provider, not empty content");
-      assert(!text.includes("连续两次没拿到新内容"),
+      assert(!text.includes("连续 2 次没拿到新内容"),
         "an upstream outage does not trip the empty-batch stop");
     }
 

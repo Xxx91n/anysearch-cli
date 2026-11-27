@@ -9,6 +9,9 @@ import type { ProviderErrorClass } from "./contract";
 /** Upstream page-text cap. A longer page is stored truncated. */
 export const FETCH_PAGE_MAX_CHARS = 100_000;
 
+/** Tool-side batch cap: one fetch call carries at most this many URLs. */
+export const FETCH_MAX_URLS_PER_CALL = 5;
+
 /** What one adapter may receive in one upstream request. */
 export interface FetchRequest {
   /** Full URLs (scheme included), already admitted by the tool. */

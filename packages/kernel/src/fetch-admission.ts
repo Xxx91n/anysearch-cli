@@ -4,12 +4,12 @@
 // in the tool because it reads the store; these three are pure.
 
 import { isIP } from "node:net";
-import { hostMatchesEntry, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
+import { FETCH_MAX_URLS_PER_CALL, hostMatchesEntry, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
 import { containsSecret, type FetchTicketKind } from "@anysearch-cli/store";
 
 export const FETCH_LIMITS = {
   maxPages: 10,
-  maxUrlsPerCall: 5,
+  maxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
   maxEmptyBatches: 2,
   maxRejectedBatches: 2,
   maxCharacters: 4000,
@@ -134,6 +134,11 @@ const CREDENTIAL_PARAMS: Record<string, true> = {
   sessionid: true,
   phpsessid: true,
   x_amz_security_token: true,
+  clientsecret: true,
+  idtoken: true,
+  privatekey: true,
+  xamzsignature: true,
+  refreshtoken: true,
   refresh_token: true,
   client_secret: true,
   id_token: true,
@@ -225,20 +230,17 @@ function bareLooksLikePage(candidate: string): boolean {
   return parsed !== null && parsed.hostname.includes(".");
 }
 
+/** Mark a user ticket as "the user explicitly pasted http", not https. */
+export function httpTicketValue(identity: string): string {
+  return "http:" + identity;
+}
+
 /**
  * The user-message ticket corpus: every web URL the user typed, as normalized
  * identities. A scheme URL is taken as typed; a bare `host/path` is read as
  * https when it has a path or port and a dotted host. A file/module name
  * shaped like `word.word/path` can therefore become a ticket too.
  */
-export function httpTicketValue(identity: string): string {
-  return "http:" + identity;
-}
-
-export function isHttpTicketValue(value: string): boolean {
-  return value.startsWith("http:");
-}
-
 export function extractUserUrlTickets(text: string): string[] {
   const out = new Set<string>();
   for (const match of text.matchAll(SCHEME_URL)) {

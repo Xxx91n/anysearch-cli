@@ -77,6 +77,8 @@ assert(fetchCredentialHit("https://example.com/?auth-token=abc", "example.com/?a
   "auth-token is rejected after name normalization");
 assert(fetchCredentialHit("https://example.com/?PHPSESSID=abc", "example.com/?PHPSESSID=abc"),
   "PHPSESSID is rejected");
+assert(fetchCredentialHit("https://example.com/?clientSecret=abc123", "example.com/?clientSecret=abc123"),
+  "camelCase clientSecret is rejected");
 assert(fetchCredentialHit("https://example.com/callback?sig=abc", "example.com/callback?sig=abc"),
   "sig is rejected");
 assert(fetchCredentialHit("https://example.com/A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6+abc=", "example.com/A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6+abc="),

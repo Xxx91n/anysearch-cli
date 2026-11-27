@@ -96,7 +96,10 @@ function readJsonReply(body: string, id: number): JsonRpcMessage {
   const failed = messages.find((item): item is JsonRpcMessage =>
     !!item && typeof item === "object" && isIdlessError(item as JsonRpcMessage));
   if (failed) throw jsonRpcError(failed);
-  const seen = messages.map((item) => (item as JsonRpcMessage | null)?.id).join(", ");
+  const seen = messages.map((item) => {
+    const id = (item as JsonRpcMessage | null)?.id;
+    return id === undefined || id === null ? "(no id)" : String(id);
+  }).join(", ");
   throw new Error("Exa MCP tools/call reply id mismatch (expected " + id + ", got " + seen + ")");
 }
 

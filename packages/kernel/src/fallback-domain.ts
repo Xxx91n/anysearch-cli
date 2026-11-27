@@ -1,8 +1,7 @@
 // The domain both hosts use when no domain TOML loaded. Its URL allow/deny
 // lists are empty, so fetch relies on the session ticket, public-address gate
-// and credential gate. The tool still appears only when toolWhitelist /
-// toolRequires allows it, the host wired page-read providers and a
-// page-writing store, and no host tool is named "fetch".
+// and credential gate. `fetch` in toolWhitelist is only a cap; the registration
+// conditions live in pi-runtime's fetchRegistration().
 import type { DomainConfigPort } from "./ports";
 
 export function fallbackAgentDomain(): DomainConfigPort {

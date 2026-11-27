@@ -5,6 +5,7 @@
 // docs/mcp-server.md 的「## Upstream provider transport matrix」）。每行的短注只回答
 // 「这个值为什么是这个」；成段的解释、transport 描述和用量留在文档里（#419、#415）。
 import type { Mode } from "../contract";
+import { FETCH_MAX_URLS_PER_CALL } from "../fetch-contract";
 
 /** 免费面天生验不到的错误类：这一跑过了，也不代表这类问题是好的。
  *  三家的免费面现在都认得出坏 key，所以今天的取值只有 quota；auth 留着是给以后
@@ -69,7 +70,7 @@ export const PROVIDER_FACTS = {
     domainFilterSupported: true,
     verticalDomainSupported: false,
     // 工具一次最多给 5 个句柄，读页适配器按同一个数切批；端点真实批量上限没测过。
-    fetchMaxUrlsPerCall: 5,
+    fetchMaxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
     freeProbe: {
       // exa-js 构造函数默认的 baseURL。
       endpoint: "https://api.exa.ai",

@@ -47,8 +47,8 @@ import { reportBudgetFault } from "./usage";
 export const BUILTIN_FETCH_TOOL = "fetch";
 
 const BUDGET_STOP_MESSAGE = "这轮抓页额度用完了，先用已有结果作答。";
-const SOFT_STOP_MESSAGE = "这轮抓页已经停了：连续两次没拿到新内容。先用已有结果回答，或者让用户把链接贴进来。";
-const REJECTED_STOP_MESSAGE = "这轮抓页已经停了：连续两次整批网址都没被放行。先用已有材料回答；如果确实要读，让用户确认域名规则，不要换写法重试。";
+const SOFT_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxEmptyBatches} 次没拿到新内容。先用已有结果回答，或者让用户把链接贴进来。`;
+const REJECTED_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxRejectedBatches} 次整批网址都没被放行。先用已有材料回答；如果确实要读，让用户确认域名规则，不要换写法重试。`;
 const PAGE_BUDGET_MESSAGE = `这轮读页到上限了（一次提问最多 ${FETCH_LIMITS.maxPages} 页），先用已有结果作答。`;
 const PROVIDER_NO_REPLY_MESSAGE = "抓页信息源这次没有回包；先别断定页面没内容，稍后再试。";
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
@@ -236,7 +236,7 @@ function resolveTicket(
     const rawUserUrl = raw.trim();
     const httpTicket = /^http:\/\//i.test(rawUserUrl)
       && store.hasFetchTicket(sessionId, "user", httpTicketValue(identity));
-    requestUrl = /^https:\/\//i.test(rawUserUrl) || (httpTicket && /^http:\/\//i.test(rawUserUrl))
+    requestUrl = httpTicket || /^https:\/\//i.test(rawUserUrl)
       ? rawUserUrl
       : makeRequestUrl(identity, "https");
     source = "user";

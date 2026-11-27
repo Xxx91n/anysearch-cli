@@ -201,6 +201,27 @@ function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
 // archived once the caller's signal has aborted. Design: a failed write never
 // fails the turn — the archive is an enhancement, not a precondition for
 // answering.
+async function writeSearchTickets(
+  store: FetchStorePort,
+  sessionId: string,
+  ids: ReadonlyArray<number | null>,
+): Promise<boolean> {
+  const values = ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  if (values.length === 0) return true;
+  if (typeof store.saveFetchTickets !== "function") return false;
+  try {
+    await store.saveFetchTickets(sessionId, "search", values.map(String));
+    return true;
+  } catch (e) {
+    try {
+      process.stderr.write(
+        "[anysearch] fetch ticket write failed: " + (e instanceof Error ? e.message : String(e)) + "\n",
+      );
+    } catch { /* stderr unavailable */ }
+    return false;
+  }
+}
+
 async function indexSearchResults(
   writer: { store: SessionStorePort; sessionId: string } | undefined,
   results: unknown[] | null | undefined,
@@ -306,23 +327,7 @@ export function createSearchTool(
       const archiveIds = await indexSearchResults(archive, rawEnvelope.results, signal);
       let ticketWriteOk = true;
       if (fetchRegistered && archive && archiveIds) {
-        const ticketValues = archiveIds
-          .filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0)
-          .map(String);
-        try {
-          if (typeof archive.store.saveFetchTickets !== "function") {
-            ticketWriteOk = false;
-          } else {
-            await archive.store.saveFetchTickets(archive.sessionId, "search", ticketValues);
-          }
-        } catch (e) {
-          ticketWriteOk = false;
-          try {
-            process.stderr.write(
-              "[anysearch] fetch ticket write failed: " + (e instanceof Error ? e.message : String(e)) + "\n",
-            );
-          } catch { /* stderr unavailable */ }
-        }
+        ticketWriteOk = await writeSearchTickets(archive.store as FetchStorePort, archive.sessionId, archiveIds);
       }
       const envelope = stampArchiveRowIds(rawEnvelope, archiveIds, fetchRegistered && ticketWriteOk);
       // every retrieved payload crosses the LLM boundary through wrapRetrieved
@@ -376,15 +381,14 @@ export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): 
 
 function domainAllowsTool(domain: DomainConfigPort, name: string): boolean {
   if (!domain.hooks || !domain.skills) {
-    warnOnce("domain:shape", "[anysearch] domain policy is missing hooks/skills; all tools are denied\n");
-    return false;
+    throw new Error("domain policy is missing hooks/skills");
   }
   const whitelist = new Set(domain.hooks.toolWhitelist);
-  const toolRequires = domain.skills?.toolRequires;
+  const toolRequires = domain.skills.toolRequires;
   const declared = !!toolRequires && Object.keys(toolRequires).length > 0;
   if (!declared) return whitelist.size === 0 || whitelist.has(name);
   const allowed = new Set<string>([BUILTIN_SEARCH_TOOL]);
-  for (const skill of domain.skills?.active ?? []) {
+  for (const skill of domain.skills.active) {
     for (const tool of (Object.hasOwn(toolRequires, skill) ? toolRequires[skill] : [])) allowed.add(tool);
   }
   return (whitelist.size === 0 || whitelist.has(name)) && allowed.has(name);
@@ -837,11 +841,7 @@ export class PiAgentRuntime {
     const ids = await indexSearchResults(this.archive, results, signal);
     if (!ids || signal?.aborted || !this.fetchEligible()) return;
     const store = this.archive!.store as FetchStorePort;
-    const values = ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
-    if (values.length === 0 || typeof store.saveFetchTickets !== "function") return;
-    try {
-      await store.saveFetchTickets(this.archive!.sessionId, "search", values.map(String));
-    } catch {
+    if (!await writeSearchTickets(store, this.archive!.sessionId, ids)) {
       return; // no ticket means no handle: the model must not see an unusable one.
     }
     // The writer accepted these results; the search tool stamps the same fields.
