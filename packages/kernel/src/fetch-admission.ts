@@ -76,7 +76,10 @@ function blockedIpv6(rawHost: string): boolean {
   // Every `::`-prefixed form (loopback, IPv4-mapped, IPv4-compatible) is
   // rejected; this gate does not try to recover the embedded v4 address.
   if (host.startsWith("::")) return true;
-  const first = Number.parseInt(host.split(":")[0] || "", 16);
+  const groups = host.split(":");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(groups[groups.length - 1] ?? "")) return true;
+  if (groups.slice(0, -1).every((part) => part === "" || part === "0")) return true;
+  const first = Number.parseInt(groups[0] || "", 16);
   if (!Number.isFinite(first)) return true;
   return (first & 0xfe00) === 0xfc00       // fc00::/7 unique local
     || (first & 0xffc0) === 0xfe80         // fe80::/10 link local

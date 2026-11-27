@@ -95,8 +95,15 @@ function matchPaidReading(
   // and one non-empty result the mapping is unambiguous.
   if (requested.length === 1 && results.length === 1 && pages.length === 1) {
     const wanted = normalizeUrlIdentity(requested[0]!);
-    if (normalizeUrlIdentity(pages[0]!.url) !== wanted) {
-      pages[0] = { ...pages[0]!, url: requested[0]! };
+    const returned = normalizeUrlIdentity(pages[0]!.url);
+    if (returned !== wanted) {
+      const wantedHost = new URL(requested[0]!).hostname.replace(/\.$/, "");
+      const returnedHost = new URL(pages[0]!.url).hostname.replace(/\.$/, "");
+      if (returnedHost !== wantedHost && !returnedHost.endsWith("." + wantedHost)) {
+        pages.length = 0; // a cross-host landing page is not the requested text
+      } else {
+        pages[0] = { ...pages[0]!, url: requested[0]! };
+      }
     }
   }
   return mapReading(requested, pages, (url) =>

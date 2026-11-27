@@ -120,7 +120,7 @@ function buildArm<T>(
   constructors: Record<string, (creds: CredentialSource) => T>,
   errorKey: string,
   label: string,
-  providerBuildErrors: Record<string, string>,
+  providerBuildErrors: Record<string, string> | undefined,
   creds: CredentialSource,
 ): T | undefined {
   const construct = Object.hasOwn(constructors, id) ? constructors[id] : undefined;
@@ -137,7 +137,7 @@ function buildArm<T>(
     const message = classifyProviderBuildError(error) === "credential"
       ? "permanent: missing/invalid credential — set the provider's API key env"
       : "unexpected construction fault";
-    providerBuildErrors[errorKey] = message;
+    if (providerBuildErrors) providerBuildErrors[errorKey] = message;
     writeProviderDiagnostic("[anysearch] " + label + " " + id + " construction failed: " + message + "\n");
     return undefined;
   }
@@ -155,10 +155,10 @@ function buildProviders(
 
 // Page-read build failures are only a stderr line. They never enter the
 // search-facing providerBuildErrors: a page-read arm does not join the search
-// fanout, and no output reads an `id:fetch` key.
+// fanout. `buildArm` accepts no map here, so there is no dead error key.
 function buildFetchProviders(ids: string[], creds: CredentialSource): FetchProvider[] {
   return ids
-    .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, id, "fetch provider", {}, creds))
+    .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, id, "fetch provider", undefined, creds))
     .filter((p): p is FetchProvider => p !== undefined);
 }
 
@@ -247,10 +247,11 @@ export interface CompositionResult {
   // exposed so cross-round merged attribution can reuse the same
   // immutable active head instead of silently falling back to the legacy floor.
   calibration?: AttributionCalibration;
-  // Fail-open named degradation (T7 ruling): provider id -> construction
-  // failure message, empty when every enabled arm built. A page-read arm uses
-  // `id:fetch` so it cannot be mistaken for a search provider. Consumers pair
-  // this with the engine's runtime providersFailed to audit the full chain.
+  // Fail-open named degradation (T7 ruling): search provider id -> construction
+  // failure message, empty when every enabled arm built. Page-read construction
+  // failures are a stderr line only; they never enter this search-facing record.
+  // Consumers pair this with the engine's runtime providersFailed to audit the
+  // full chain.
   providerBuildErrors: Record<string, string>;
   // T2 #177: the per-call budget ledger bound to `store`'s connection. Exposed so
   // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
@@ -434,6 +435,8 @@ export function createEngine(
   const env = opts?.env ?? process.env;
   let providers: SearchProvider[] = [];
   let fetchProviders: FetchProvider[] = [];
+  // Page-read arms follow the same enabled-else-all rule as search arms.
+  let providerIds: string[] = Object.keys(PROVIDER_CONSTRUCTORS);
   const providerBuildErrors: Record<string, string> = {};
 
   // #301: resolve every search key ONCE for this engine, so all arms see the
@@ -539,8 +542,8 @@ export function createEngine(
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
+      providerIds = enabled;
       providers = buildProviders(enabled, providerBuildErrors, creds);
-      fetchProviders = buildFetchProviders(enabled, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // reports a failed re-read instead of hiding it behind "unchanged".
@@ -586,12 +589,11 @@ export function createEngine(
       };
     } else {
       providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
-      fetchProviders = buildFetchProviders(Object.keys(FETCH_PROVIDER_CONSTRUCTORS), creds);
     }
   } else {
     providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
-    fetchProviders = buildFetchProviders(Object.keys(FETCH_PROVIDER_CONSTRUCTORS), creds);
   }
+  fetchProviders = buildFetchProviders(providerIds, creds);
 
   // explicit override wins; otherwise resolve the active head on disk.
   const attributionCalibration = opts?.attributionCalibration ?? resolveActiveAttributionCalibration();

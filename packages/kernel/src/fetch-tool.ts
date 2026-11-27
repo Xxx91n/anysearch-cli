@@ -628,11 +628,12 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
           continue;
         }
         if (saved.id === null) {
+          const empty = saved.action === "empty";
           recordReadFailure(identity, target, tagged.provider, {
             url: target.requestUrl,
-            errorClass: "permanent-protocol",
-            message: saved.action === "secret" ? "页面正文命中密钥守卫，未入库" : "页面正文未入库",
-            retryable: false,
+            errorClass: empty ? "unknown" : "permanent-protocol",
+            message: empty ? "页面正文是空的" : "页面正文命中密钥守卫，未入库",
+            retryable: empty,
           });
           continue;
         }
@@ -671,7 +672,7 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
 
       const payload = {
         pages,
-        failures,
+        failures: failures.map((failure) => ({ ...failure, message: failure.message ? sanitizeText(failure.message) : undefined })),
         skipped,
         rejected: rejectedForOutput.map((rejection) => ({
           handle: rejection.handle,

@@ -146,6 +146,16 @@ async function main() {
     assert(JSON.stringify(fromSse) === JSON.stringify(fromJson), "both reply formats normalize to the same results");
   }
 
+  // 2a. 200 但不是 JSON：带 malformed 字样，分类器归 permanent-protocol。
+  {
+    const f = installFetch(() => ({ ct: "application/json", body: "gateway error page" }));
+    try {
+      const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
+      const message = error instanceof Error ? error.message : String(error);
+      assert(message.includes("malformed"), "a non-JSON 200 reply is labelled malformed");
+    } finally { f.restore(); }
+  }
+
   // 2b. 上游把结果拆成两个文本块：块和块之间要断开，不能粘成一行（粘起来会串记录）。
   {
     const first = "Title: First\nURL: https://example.com/first\nHighlights:\nalpha";

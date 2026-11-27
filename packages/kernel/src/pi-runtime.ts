@@ -375,12 +375,12 @@ export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): 
 }
 
 function domainAllowsTool(domain: DomainConfigPort, name: string): boolean {
-  const whitelist = new Set(domain.hooks.toolWhitelist);
-  const toolRequires = domain.skills.toolRequires;
+  const whitelist = new Set(domain.hooks?.toolWhitelist ?? []);
+  const toolRequires = domain.skills?.toolRequires;
   const declared = !!toolRequires && Object.keys(toolRequires).length > 0;
   if (!declared) return whitelist.size === 0 || whitelist.has(name);
   const allowed = new Set<string>([BUILTIN_SEARCH_TOOL]);
-  for (const skill of domain.skills.active) {
+  for (const skill of domain.skills?.active ?? []) {
     for (const tool of (Object.hasOwn(toolRequires, skill) ? toolRequires[skill] : [])) allowed.add(tool);
   }
   return (whitelist.size === 0 || whitelist.has(name)) && allowed.has(name);
@@ -847,16 +847,32 @@ export class PiAgentRuntime {
     });
   }
 
-  private fetchEligible(): boolean {
-    const store = this.archive?.store;
-    return domainAllowsTool(this.opts.domain, BUILTIN_FETCH_TOOL)
-      && !!this.opts.fetchProviders?.length
-      && !!store
+  private fetchRegistration(): {
+    registered: boolean;
+    allowed: boolean;
+    collision: boolean;
+    wiring: boolean;
+    hasProviders: boolean;
+    store?: FetchStorePort;
+  } {
+    const store = this.archive?.store as FetchStorePort | undefined;
+    const allowed = domainAllowsTool(this.opts.domain, BUILTIN_FETCH_TOOL);
+    const collision = (this.opts.tools ?? []).some((tool) => tool.name === BUILTIN_FETCH_TOOL);
+    const wiring = !!store
       && typeof store.savePage === "function"
       && typeof store.saveFetchTickets === "function"
       && typeof store.hasFetchTicket === "function"
-      && typeof store.searchRowForFetch === "function"
-      && !(this.opts.tools ?? []).some((tool) => tool.name === BUILTIN_FETCH_TOOL);
+      && typeof store.searchRowForFetch === "function";
+    const hasProviders = !!this.opts.fetchProviders?.length;
+    return {
+      registered: allowed && hasProviders && wiring && !collision,
+      allowed, collision, wiring, hasProviders,
+      ...(store ? { store } : {}),
+    };
+  }
+
+  private fetchEligible(): boolean {
+    return this.fetchRegistration().registered;
   }
 
   // run returns AsyncIterable<AgentEvent>, mapping PI session events.
@@ -1003,19 +1019,12 @@ export class PiAgentRuntime {
     const sources = new Set<string>();
     // Decide fetch registration before search or user tickets are written, so
     // no handle exists for a tool the model cannot call.
-    const fetchStore = this.archive?.store as FetchStorePort | undefined;
-    const fetchWiringComplete = !!fetchStore
-      && typeof fetchStore.savePage === "function"
-      && typeof fetchStore.saveFetchTickets === "function"
-      && typeof fetchStore.hasFetchTicket === "function"
-      && typeof fetchStore.searchRowForFetch === "function";
+    const fetchState = this.fetchRegistration();
+    const fetchStore = fetchState.store;
     const extraTools = this.opts.tools || [];
-    const hostFetchCollision = extraTools.some((tool) => tool.name === BUILTIN_FETCH_TOOL);
-    const fetchAllowed = domainAllowsTool(this.opts.domain, BUILTIN_FETCH_TOOL);
-    const fetchRegistered = fetchAllowed
-      && !!this.opts.fetchProviders?.length
-      && fetchWiringComplete
-      && !hostFetchCollision;
+    const hostFetchCollision = fetchState.collision;
+    const fetchAllowed = fetchState.allowed;
+    const fetchRegistered = fetchState.registered;
     const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls, results) => {
       saturation.record(urls);
       if (!this.opts.includeAnswer) return;
@@ -1052,7 +1061,7 @@ export class PiAgentRuntime {
       }
     }
     if (fetchAllowed && !this.opts.fetchProviders?.length) {
-      warnOnce("fetch:source", "[anysearch] fetch tool NOT registered: no page-read provider is enabled\n");
+      warnOnce("fetch:source", "[anysearch] fetch tool NOT registered: no usable page-read provider (none enabled, or construction failed — see the fetch provider line on stderr)\n");
     }
     const allTools = [searchTool, ...(fetchTool ? [fetchTool] : []), ...extraTools];
     const activeTools = filterAgentTools(allTools, domain);

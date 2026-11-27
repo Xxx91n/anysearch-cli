@@ -893,7 +893,7 @@ export class SqliteSessionStore implements SessionStore {
       // the main FTS index (title/snippet only) never drifts.
       updateResultContent: this.db.prepare("UPDATE retrieval_results SET content = ?, fetched = 1 WHERE id = ?"),
       // Tickets are session-scoped; a repeat write is a no-op.
-      insertFetchTicket: this.db.prepare("INSERT OR IGNORE INTO fetch_tickets (session_id, kind, value) VALUES (?, ?, ?)"),
+      insertFetchTicket: this.db.prepare("INSERT INTO fetch_tickets (session_id, kind, value) VALUES (?, ?, ?) ON CONFLICT(session_id, kind, value) DO NOTHING"),
       hasFetchTicket: this.db.prepare("SELECT 1 AS present FROM fetch_tickets WHERE session_id = ? AND kind = ? AND value = ?"),
       searchRowForFetch: this.db.prepare("SELECT r.url, r.title FROM retrieval_results r JOIN fetch_tickets t ON t.session_id = ? AND t.kind = 'search' AND t.value = CAST(r.id AS TEXT) WHERE r.id = ? AND r.archived = 0 AND r.quarantine IS NULL"),
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),

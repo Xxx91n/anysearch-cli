@@ -69,3 +69,7 @@ apps/cli/.build-stamp.json
 # Complete product outputs (#298), built from the existing module sources.
 /apps/cli/mcp/
 /apps/cli/plugin/
+
+# review-bot drafts
+.r*.txt
+.r*.json

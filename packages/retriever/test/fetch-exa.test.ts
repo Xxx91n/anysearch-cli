@@ -270,6 +270,19 @@ async function main() {
     assert(envelope.pages[0]!.text === "redirect body", "paid: the redirect body is kept");
   }
 
+  // ---- paid arm: a cross-host landing page is not stored as the requested URL --
+  {
+    const client: ExaContentsClient = {
+      async getContents() {
+        return { results: [{ url: "https://evil.example/landing", title: "Other", text: "wrong body" }] };
+      },
+    };
+    const provider = new ExaFetchProvider(client);
+    const envelope = await provider.fetch({ urls: ["https://example.com/start"], maxCharacters: 4000 }, new AbortController().signal);
+    assert(envelope.pages.length === 0 && envelope.failures.length === 1,
+      "paid: a cross-host redirect does not become the requested page");
+  }
+
   // ---- paid arm: a malformed reply is a protocol failure, not an empty page --
   {
     const client: ExaContentsClient = {

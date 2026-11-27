@@ -76,7 +76,7 @@ async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessag
       continue;
     }
     if (isReplyFor(message, id)) match = message;
-    else if (message.error) failed = message;
+    else if (message.error && (message.id === null || message.id === undefined)) failed = message;
   }
   if (match) return match;
   if (failed) throw jsonRpcError(failed);
@@ -84,13 +84,19 @@ async function readSseJsonRpc(resp: Response, id: number): Promise<JsonRpcMessag
 }
 
 function readJsonReply(body: string, id: number): JsonRpcMessage {
-  const parsed = JSON.parse(body) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    throw new Error("Exa MCP tools/call malformed reply (body is not JSON)");
+  }
   const messages = Array.isArray(parsed) ? parsed : [parsed];
   const message = messages.find((item): item is JsonRpcMessage =>
     !!item && typeof item === "object" && isReplyFor(item as JsonRpcMessage, id));
   if (message) return message;
   const failed = messages.find((item): item is JsonRpcMessage =>
-    !!item && typeof item === "object" && !!(item as JsonRpcMessage).error);
+    !!item && typeof item === "object" && (item as JsonRpcMessage).id === null &&
+    !!(item as JsonRpcMessage).error);
   if (failed) throw jsonRpcError(failed);
   const seen = messages.map((item) => (item as JsonRpcMessage | null)?.id).join(", ");
   throw new Error("Exa MCP tools/call reply id mismatch (expected " + id + ", got " + seen + ")");

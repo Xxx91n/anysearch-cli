@@ -43,6 +43,8 @@ assert(addressRejects("http://[::1]/"), "IPv6 loopback is rejected");
 assert(addressRejects("http://[fe80::1]/"), "IPv6 link-local is rejected");
 assert(addressRejects("http://[fd00::1]/"), "IPv6 unique-local is rejected");
 assert(addressRejects("http://[ff02::1]/"), "IPv6 multicast is rejected");
+assert(addressRejects("http://[0:0:0:0:0:ffff:127.0.0.1]/"), "IPv4-mapped IPv6 is rejected");
+assert(addressRejects("http://[0:0:0:0:0:0:7f00:1]/"), "zero-prefixed IPv6 is rejected");
 assert(addressRejects("ftp://example.com/file"), "a non-http scheme is rejected");
 assert(addressRejects("https://user:pass@example.com/"), "credentials in the authority are rejected");
 {
