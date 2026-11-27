@@ -8,19 +8,17 @@
 // Skip policy: the bundled bin must exist and at least one provider key must be
 // set — a silent zero-provider run would fake a pass, so we skip loudly instead.
 //
-// Quarantine classification consumes the ledger's single implementation
-// (readQuarantine + activeIds) — the previous inline copy ignored the
-// longterm flag (second-predicate drift).
-// Evidence mode (ANS_EVAL_EVIDENCE=1): quarantined entries actually execute
-// (quarantined-but-runnable — a skipped case can never emit a gone-green
-// signal), each executed entry appends an EVIDENCE quadruple
-// (id / verdict / ISO timestamp / run ref) to ANS_EVAL_EVIDENCE_LOG
-// (default .scratch/eval-evidence.log), a run whose only failures are
-// quarantined exits 0, and an entry all-red in consecutive evidence runs
-// prints RETIRE_CANDIDATE for reviewDue().
-// mustHitPaths/mustNotHitPaths page-family layer — pathname
-// substring match, host-scoped to the entry's mustHitHosts when declared.
-// watch:true entries announce their post-promote observation mark.
+// Behavior notes:
+// - Quarantine classification uses the ledger's single implementation
+//   (readQuarantine + activeIds).
+// - Evidence mode (ANS_EVAL_EVIDENCE=1) executes quarantined entries instead of
+//   skipping them. Each executed entry appends id / verdict / ISO timestamp /
+//   run ref to ANS_EVAL_EVIDENCE_LOG (default .scratch/eval-evidence.log).
+//   A run whose only failures are quarantined exits 0. An entry that is red in
+//   consecutive evidence runs prints RETIRE_CANDIDATE for reviewDue().
+// - mustHitPaths/mustNotHitPaths add a page-family check: pathname substring
+//   match, limited to the entry's mustHitHosts when declared.
+// - watch:true entries print their post-promote observation mark.
 //
 // NOTE for evidence runs: invoke this file directly
 // (`node --import tsx test/online/eval-looks-live.online.ts`) — under
