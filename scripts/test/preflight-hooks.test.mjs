@@ -562,9 +562,10 @@ test("our hook with an exec line status cannot parse is still ours, and install 
   });
 });
 
-// The same shape as the source is the one way to reach it: a hook line status
-// cannot follow while the hook is already current.
-test("a canonical-looking hook whose exec line status cannot follow says so instead of guessing", () => {
+// Only a hook that already matches the source gets there: anything else that
+// cannot be parsed is stale, and install repairs it. So the advice has to name the
+// source, or the person reinstalls and lands in the same place.
+test("a hook source status cannot follow is reported against the source, not the install", () => {
   withSandbox((box) => {
     const clone = box.clone();
     const local = withScriptsIn(clone);
@@ -578,9 +579,10 @@ test("a canonical-looking hook whose exec line status cannot follow says so inst
     assert.equal(install.status, 0, install.stderr);
 
     const status = box.run(clone, ["status"], local);
-    assert.equal(status.status, 2, status.stdout);
+    assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /cannot follow the hook's exec line/);
-    assert.match(status.stderr, /hooks:install/);
+    // The path separator is the platform's, so match the tail the advice names.
+    assert.equal(status.stderr.includes("pre-push-user, then pnpm hooks:install"), true, status.stderr);
   });
 });
 

@@ -98,9 +98,10 @@ function commandLines(text) {
  * slashes, and the arguments it gets. Null when the line is not a gate command
  * status can follow, which is the only way the three readers below disagree.
  *
- * Design: one parse feeds the `runs:` line, the mode's `--full` test and the
- * script status reports on — a second regex would be a second answer waiting to
- * drift.
+ * Design: this parse feeds the `runs:` line, the mode's `--full` test and the
+ * script status reports on. `isOurs` stays looser on purpose (see below), so the
+ * two are not the same question: an exec line we cannot parse still belongs to a
+ * hook we wrote.
  */
 function gateCommandOf(command) {
   const match = (command ?? "").match(GATE_COMMAND);
@@ -194,8 +195,10 @@ function locate() {
 /**
  * What the push hook looks like right now.
  *
- * state: ok | missing | stale | not-executable | foreign | unknown.
- * unknown means the question cannot be answered (no repo, unreadable file).
+ * state: ok | missing | stale | not-executable | foreign | unknown | unfollowable.
+ * unknown means the question cannot be answered (no repo, unreadable file);
+ * unfollowable means the hook is ours and current, yet its exec line is not a gate
+ * command — only a hook source written that way gets there.
  *
  * `root` is the checkout the hook is installed in, which is where a push reads
  * its gate script and its change set from — not the copy of this file that ran.
@@ -480,8 +483,10 @@ function reportStatus(result) {
     return 2;
   }
   if (result.state === "unfollowable") {
+    // The installed copy matches the source here, so reinstalling changes nothing:
+    // the line to repair is the one in the source file.
     console.error(`[hooks] cannot follow the hook's exec line: ${result.command || result.hookPath}`);
-    console.error(`[hooks] a push still runs it; ${installHint(false)} puts the canonical line back`);
+    console.error(`[hooks] a push still runs it; fix ${HOOK_SOURCE}, then ${installHint(false)}`);
     return 2;
   }
   if (result.state === "ok") {
