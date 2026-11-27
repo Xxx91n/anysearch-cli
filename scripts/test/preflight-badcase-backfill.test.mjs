@@ -82,8 +82,8 @@ function coverage() {
     schema: "anysearch/eval-looks-coverage@1",
     recordedAt: "2026-11-27",
     dimensions: [
-      { dimension: "intent", status: "covered", count: 1 },
-      { dimension: "lang", status: "covered", count: 1 },
+      { dimension: "intent", status: "covered", count: 1, classes: { howto: 1 } },
+      { dimension: "lang", status: "covered", count: 1, classes: { en: 1 } },
     ],
   };
 }
@@ -142,6 +142,32 @@ test("--new writes the next docs row and promotes the badcase", (t) => {
   const count = (dim) => cov.dimensions.find((d) => d.dimension === dim)?.count;
   assert.equal(count("intent"), 2);
   assert.equal(count("lang"), 2);
+  const classes = (dim) => cov.dimensions.find((d) => d.dimension === dim)?.classes;
+  assert.deepEqual(classes("intent"), { howto: 2 });
+  assert.deepEqual(classes("lang"), { en: 2 });
+});
+
+test("--new persists a URL anchor with its stability_class", (t) => {
+  const dir = tree(t);
+  editJson(join(dir, "eval-badcases.json"), (b) => {
+    b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"];
+    b.badcases[0].stability_class = "controlled";
+  });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 0, r.stderr);
+  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  const entry = g.entries.at(-1);
+  assert.deepEqual(entry.expected.mustHitUrls, ["https://docs.example.com/install"]);
+  assert.equal(entry.stability_class, "controlled");
+  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  assert.equal(cov.dimensions.find((d) => d.dimension === "intent")?.classes?.howto, 2);
+});
+
+test("a null coverage dimension row does not crash the recount", (t) => {
+  const dir = tree(t);
+  editJson(join(dir, "eval-looks.coverage.json"), (c) => { c.dimensions.push(null); });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 0, r.stderr);
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
@@ -208,10 +234,8 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 });
 
 test("--into rejects a tombstone target", (t) => {
-  // A tombstoned row carries no scope, the way the real corpus looks (89 scope
-  // keys — 81 live, 7 stub, 1 both — and one demoted row outside the map). The
-  // second row stays live only so the scopes map is not empty — the file-level
-  // check would fire first.
+  // A tombstoned row carries no scope. The second row stays live only so the
+  // scopes map is not empty — the file-level check would fire first.
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
       g.entries[0].expected = { verdict: "answer" };
@@ -479,4 +503,10 @@ test("a null eval-looks.coverage.json root is reported, not a TypeError", (t) =>
   expectFail(t, (dir) => {
     writeJson(join(dir, "eval-looks.coverage.json"), null);
   }, /eval-looks\.coverage\.json root must be an object/);
+});
+
+test("a non-array badcases field is reported, not a TypeError", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases = {}; });
+  }, /badcases must be an array/);
 });
