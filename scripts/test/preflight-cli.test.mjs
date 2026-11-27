@@ -257,6 +257,17 @@ test("the output file's label names which of the three states it is in", () => {
   assert.deepEqual(lines, ["[preflight] incomplete output file: /tmp/run.log"]);
 });
 
+// A run that printed nothing and left nothing in the file has neither a file's
+// content nor a tail: the reason must say so instead of pointing at either.
+test("a red run with no output at all points nowhere", () => {
+  withFakePnpm({ code: 1, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /blocked after \d+\.\ds: a task failed, no output to show/);
+    assert.doesNotMatch(result.stderr, /see the output/);
+  });
+});
+
 test("a budget the gate cannot read stops the push", () => {
   withFakePnpm({ code: 0, lines: [] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { ANS_PUSH_GATE_TIMEOUT: "soon" } });

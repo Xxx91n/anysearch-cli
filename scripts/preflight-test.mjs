@@ -360,15 +360,16 @@ if (timedOut) {
   // A suite killed from outside has no failed task to name: an external signal is
   // not a test failure.
   const failed = child.signalCode ? null : failedTask(output ?? readTail());
-  // A read that throws leaves dump.failed false, so readability comes from
-  // `output`; with neither a file nor a tail there is nothing to point at.
-  const where =
-    output !== null ? "see the output file" : lines.length > 0 ? "see the output above" : "no output to show";
-  const reason = child.signalCode
-    ? `killed by ${child.signalCode}, ${where}`
-    : failed
-      ? `${failed}, ${where}`
-      : `a task failed, ${where}`;
+  // A read that throws leaves dump.failed false, so whether the file holds
+  // anything comes from `output`.
+  let where;
+  if (output) where = "see the output file";
+  else if (lines.length > 0) where = "see the output above";
+  else where = "no output to show";
+  let reason;
+  if (child.signalCode) reason = `killed by ${child.signalCode}, ${where}`;
+  else if (failed) reason = `${failed}, ${where}`;
+  else reason = `a task failed, ${where}`;
   console.error(`\n[preflight] blocked after ${seconds}s: ${reason}`);
   // A signal leaves no exit code, and the file it left is a prefix: a run nobody
   // let finish is not named as the whole run.
