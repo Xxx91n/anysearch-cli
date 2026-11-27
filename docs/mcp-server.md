@@ -237,6 +237,7 @@ The server follows the MCP rule that an execution failure is an
 | Abstain (`abstain`): the domain policy is active, zero results survive, at least one provider answered, no arm was cancelled, and either the gate dropped arrivals or every queried arm answered with nothing and none failed | absent (success) | `outcome`, `abstain: {abstain: true, reason: "domain_filter_empty", domain?, preFiltered, postFiltered, gate: "pre"\|"post"}`, plus `providersQueried`, `providersCancelled`, `providerElapsedMs`, `credentialSources` |
 | Partial provider failure with ≥ 1 provider answering | absent (success) | `outcome`, `providersFailed`, `providerErrorClasses`, `providerErrorHints`, `providerBuildErrors`, `providersQueried`, `providersCancelled`, `providerElapsedMs`, `credentialSources` |
 | `recall_memory` finds nothing; `query_knowledge` has `adapter = "none"`/`"note"` | absent (success) | absent — explicit empty result |
+| `recall_memory`'s `expand` fails (`no_content`, `offset_out_of_range`, `knowledge_row`, `section_not_found`, `not_found`) | `true` | absent — text is a bare JSON object (`rowid`, `error`, optional `totalChars`/`sectionIds`, `message`), with no `<tool> error: ` prefix |
 | Protocol fault: unknown tool, malformed JSON-RPC frame | JSON-RPC error | n/a |
 
 Every `credentialSources` in the success rows above may itself carry
@@ -247,9 +248,9 @@ Rules behind the table:
 
 - **Error results carry no `structuredContent`.** The error channel and the
   output schema stay separate. Error text names the tool and says what to
-  do: search/recall paths prefix `<tool> error: `, while `ans_chat`'s
-  missing-configuration branch starts `ans_chat: `. Two documented exceptions
-  exist, and they are different kinds of block:
+  do: search paths and recall's search branch prefix `<tool> error: `, while
+  `ans_chat`'s missing-configuration branch starts `ans_chat: `. The documented
+  exceptions are different kinds of block:
   - a budget stop carries `errorKind`/`budget` (and its task `closeout`),
     because it has to be distinguishable from an upstream failure without
     matching on text (#303). `errorKind` is a classification, not an output
@@ -258,7 +259,10 @@ Rules behind the table:
     reason: it is a pause, not a failure, so a host must not retry it blindly;
   - `ans_chat`'s summary-rebuild report (#264) is an error that carries
     `summaryRebuilds`. It is left exactly as it is — no task `closeout` is mixed
-    into it, so a client parsing that error sees the same shape as before.
+    into it, so a client parsing that error sees the same shape as before;
+  - `recall_memory`'s `expand` branch sends a bare JSON object, because the
+    caller parses `rowid`/`error` to correct the next read; the expand paragraph
+    above lists its fields.
 - **Empty is not error; an outage is.** For a search that actually queried
   providers, `search_web` returns an error when every queried provider is in
   `providersFailed`. `research_web` returns an error when the last completed

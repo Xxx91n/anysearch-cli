@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import { openDatabase } from "../db";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
+import { parseSqliteUtc } from "../sqlite-time";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch-cli/retriever";
 import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage, type EvalGroup } from "./golden-cases";
@@ -612,8 +613,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
       let firstAt: number | null = null;
       let lastAt: number | null = null;
       for (const e of ev) {
-        const a = Date.parse(String(e.accessed_at).replace(" ", "T") + "Z");
-        const c = Date.parse(String(e.created_at).replace(" ", "T") + "Z");
+        const a = parseSqliteUtc(String(e.accessed_at));
+        const c = parseSqliteUtc(String(e.created_at));
         ages.push(Number.isFinite(a) && Number.isFinite(c) ? (a - c) / 86_400_000 : NaN);
         perUnit.set(String(e.mid), (perUnit.get(String(e.mid)) ?? 0) + 1);
         if (Number.isFinite(a)) {

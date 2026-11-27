@@ -8,7 +8,7 @@ import { LIVE_PAGE_SQL, sectionsForPages, type MemorySection } from "./retrieval
 import { sqliteTimestampToIso } from "./sqlite-time.js";
 
 /** Hard ceiling for one expansion, in code points. */
-const EXPAND_MAX_CHARS = 8000;
+export const EXPAND_MAX_CHARS = 8000;
 /** How far back a cut may move to land on whitespace. */
 const WHITESPACE_LOOKBACK = 200;
 const ELLIPSIS = "…";

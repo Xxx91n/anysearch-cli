@@ -13,10 +13,6 @@ import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js"
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
 import { parseSqliteUtc } from "./sqlite-time.js";
 
-// Kept on this module's surface for callers that already import it here; the
-// parser itself lives with the ISO formatter so the read path stays leaf-only.
-export { parseSqliteUtc };
-
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
 // Calibrated on the golden dataset 2026-09-15: distinct stub summaries jac=0.000, identical

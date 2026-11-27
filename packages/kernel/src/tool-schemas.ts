@@ -6,6 +6,7 @@
 // D6: rejected codemod kernel to zod; schema source-of-truth stays TypeBox.
 
 import { Type } from "@sinclair/typebox";
+import { EXPAND_MAX_CHARS } from "@anysearch-cli/store";
 
 // query-level vertical — when verticalDomain is
 // present the three args form a complete spec that REPLACES the repo-level
@@ -98,7 +99,7 @@ export const RecallMemoryInput = Type.Object({
         Type.Integer({ minimum: 0, description: "Page-level character offset to continue from; when set, sectionId is ignored. Use nextOffset from a previous expansion." }),
       ),
       limitChars: Type.Optional(
-        Type.Integer({ minimum: 1, description: "Smaller character cap for this read (clamped to 8000)." }),
+        Type.Integer({ minimum: 1, description: "Smaller character cap for this read (clamped to " + EXPAND_MAX_CHARS + ")." }),
       ),
     }, { additionalProperties: false, description: "Read one stored page back by section instead of searching." }),
   ),
