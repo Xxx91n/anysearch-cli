@@ -10,6 +10,8 @@ import { withMcpTask } from "../mcp-task.js";
 import { toolError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
 
+const MAX_SECTIONS_PER_HIT = 20;
+
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
     "recall_memory",
@@ -95,7 +97,8 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,
             hasContent: h.hasContent === true,
-            sections: (h.sections ?? []).slice(0, 20),
+            sections: (h.sections ?? []).slice(0, MAX_SECTIONS_PER_HIT),
+            sectionsTotal: h.sections?.length ?? 0,
           })),
           projectIndex: projectHits.map((h) => ({
             title: h.title,

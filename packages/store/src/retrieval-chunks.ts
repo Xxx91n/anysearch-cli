@@ -404,7 +404,7 @@ function vectorSections(db: Database.Database, queryVector: Float32Array, limit:
     "SELECT c.id, c.parent_id, v.embedding FROM retrieval_chunk_vectors v " +
       "JOIN retrieval_chunks c ON c.id = v.chunk_id " +
       "JOIN retrieval_results r ON r.id = c.page_id " +
-      "WHERE c.level = " + LEVEL_BLOCK + " AND v.embedding IS NOT NULL AND v.model = ? AND" + LIVE_PAGE_SQL +
+      "WHERE c.level = " + LEVEL_BLOCK + " AND v.embedding IS NOT NULL AND v.model = ? AND " + HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
       " ORDER BY c.page_id DESC LIMIT ?",
   ).all(model, VECTOR_SCAN_MAX) as Array<{ id: number; parent_id: number; embedding: Buffer }>;
   const scored: Array<{ row: (typeof rows)[number]; s: number }> = [];
@@ -423,10 +423,11 @@ function vectorSections(db: Database.Database, queryVector: Float32Array, limit:
 function sliceCodePoints(text: string, start: number, length: number): string {
   let out = "";
   let at = 0;
+  let taken = 0;
   for (const ch of text) {
-    if (at >= start) out += ch;
+    if (at >= start) { out += ch; taken += 1; }
     at += 1;
-    if (out.length >= length) break;
+    if (taken >= length) break;
   }
   return out;
 }

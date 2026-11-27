@@ -100,6 +100,10 @@ export interface DoctorOptions {
 
 const BACKFILL_COMMAND = "ans memory backfill-vectors";
 
+function chunkWorkNeeded(backlog: ChunkVectorBacklog): boolean {
+  return backlog.pagesWithoutChunks > 0 || backlog.pending > 0;
+}
+
 function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): string {
   const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
   if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
@@ -119,7 +123,7 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
     repair = needsBlocks
       ? "跑 " + BACKFILL_COMMAND + " 可重建缺块；块向量要等 embedding 包可用后才能补"
       : "块向量现在补不了（embedding 包用不了）";
-  } else if (needsBlocks || needsVectors) {
+  } else if (chunkWorkNeeded(backlog)) {
     const actions: string[] = [];
     if (needsBlocks) actions.push("重建缺块");
     if (needsVectors) actions.push("补块向量");
@@ -1177,7 +1181,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
             layer: "data",
             name: "正文块向量",
             // 缺块或缺 embedding 包都是待补能力，不是坏掉。
-            state: backlog.pagesWithoutChunks > 0 || backlog.pending > 0 || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready",
+            state: chunkWorkNeeded(backlog) || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready",
             mode: "offline",
             detail: chunkBacklogDetail(backlog, chunkModel),
           });

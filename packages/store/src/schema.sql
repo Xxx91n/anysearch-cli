@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS retrieval_chunks (
   heading_path TEXT NOT NULL,
   CHECK (start_offset >= 0 AND end_offset >= start_offset),
   CHECK ((level = 0 AND parent_id IS NULL) OR (level = 1 AND parent_id IS NOT NULL)),
+  -- Parent key for the composite FK below; not a redundant index on the PK.
   UNIQUE (id, page_id),
   FOREIGN KEY (parent_id, page_id) REFERENCES retrieval_chunks(id, page_id) ON DELETE CASCADE
 );

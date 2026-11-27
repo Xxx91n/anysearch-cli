@@ -18,7 +18,7 @@ import {
   withInitBusyRetry,
 } from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
-import { writeStderrSafe } from "./diagnostics.js";
+import { writeStderr } from "./stderr.js";
 import { writeStderr } from "./stderr.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -1765,7 +1765,7 @@ export class SqliteSessionStore implements SessionStore {
         ensureChunksForPage(this.db, result.id);
         this.enqueueChunkVectors(result.id);
       } catch (e) {
-        writeStderrSafe("[warn] chunk index write failed for row " + result.id + ": " +
+        writeStderr("[warn] chunk index write failed for row " + result.id + ": " +
           (e instanceof Error ? e.message : String(e)) + "\n");
       }
     }
@@ -1781,7 +1781,7 @@ export class SqliteSessionStore implements SessionStore {
       if (!this.chunkQueueFullLogged) {
         this.chunkQueueFullLogged = true;
         // The page is written; only its vectors wait for the durable backlog.
-        writeStderrSafe("[warn] chunk-vector queue full; further rows are left for ans memory backfill-vectors\n");
+        writeStderr("[warn] chunk-vector queue full; further rows are left for ans memory backfill-vectors\n");
       }
       return;
     }
@@ -1850,8 +1850,10 @@ export class SqliteSessionStore implements SessionStore {
         try {
           ensureChunksForPage(this.db, pageId);
           rebuiltPages += 1;
-        } catch {
+        } catch (e) {
           rebuildFailed += 1;
+          writeStderr("[warn] chunk rebuild failed for row " + pageId + ": " +
+            (e instanceof Error ? e.message : String(e)) + "\n");
         }
       }
       if (limit !== undefined) break;

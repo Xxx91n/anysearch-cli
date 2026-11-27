@@ -159,7 +159,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       // A lone Han character inside a longer query cannot be matched by the
       // bigram index. It is not an AND term (that would miss pages where the
       // character is buried inside a longer run), so it is collected and the
-      // caller's page-level LIKE lane searches for it separately.
+      // caller's page-level instr lane searches for it separately.
       if (tokens.length === 1 && [...run.text].length === 1) {
         loneHan.push(tokens[0]!);
         continue;

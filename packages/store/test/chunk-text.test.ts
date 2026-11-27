@@ -177,6 +177,14 @@ function main() {
   const fenceBlock = fenced[0]!.blocks[0]!;
   assert(fenceBody.slice(fenceBlock.start, fenceBlock.end) === fenceBody, "the fence is not cut");
 
+  // Up to three leading spaces still form a heading; four are a code block.
+  const indentedHeading = markdownSections([..."   ## 缩进标题\n\n正文"], "页");
+  assert(indentedHeading.some((s) => s.headingPath === "页 > 缩进标题"),
+    "a heading indented by three spaces is recognized");
+  const indentedCode = markdownSections([..."    ## 仍是正文\n\n正文"], "页");
+  assert(indentedCode.length === 1 && indentedCode[0]!.headingPath === "页",
+    "four spaces is an indented code block, not a heading");
+
   // An ATX heading made only of closing hashes is an empty title.
   const emptyHash = markdownSections([..."## ###\n\n正文"], "页");
   assert(emptyHash[0]!.headingPath === "页", "a heading of only hashes contributes no path segment");

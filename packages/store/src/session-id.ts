@@ -14,7 +14,7 @@
 // gracefully to empty string so core CLI/Hook/MCP paths stay fail-open.
 //
 // Precedent: systemd machine-id(5), K8s Lease/leader election, OPA decision log.
-import { writeStderrSafe } from "./diagnostics.js";
+import { writeStderr } from "./stderr.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -85,7 +85,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
       tempId = generateSessionId();
       tempIdByAnchor.set(absFile, tempId);
     }
-    writeStderrSafe(
+    writeStderr(
       "[warn] session anchor could not be read at " + file +
       "; using a fresh observation id for this run. Set ANS_SESSION_ID to keep the same observation id.\n",
     );
@@ -104,7 +104,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   } catch {
     // Fail-open: say that the observation id may change on the next run.
     // Chat continuation uses its own explicit handle (#299).
-    writeStderrSafe(
+    writeStderr(
       "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
       sessionIdBaseDir(env) + " writable to keep the same observation id across runs\n",
     );
