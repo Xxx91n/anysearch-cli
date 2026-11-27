@@ -15,8 +15,6 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
 export const LOOKS_LEDGER_MAX_ROWS = 50;
-// The eval-looks.json root carries this schema_version sentinel.
-export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
 export interface LooksLedgerEntry {
   key: string; // datasetFingerprint + ":" + holdoutFingerprint

@@ -17,7 +17,6 @@ import {
   type QuarantineEntry,
   type QuarantineLedger,
 } from "../src/eval/quarantine-ledger";
-import { EVAL_LOOKS_SCHEMA_VERSION } from "../src/eval/looks-ledger";
 import { GOLDEN_FILE, readGoldenFile } from "../src/eval/golden-file";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -89,7 +88,7 @@ assert(runnerSrc.includes("WATCH "), "runner surfaces the post-promote watch mar
 // eval-golden.json and keeps its own sub-schema (no v2 migration).
 const looks = JSON.parse(fs.readFileSync(path.join(root, "eval-looks.json"), "utf8"));
 assert(looks.schema === "anysearch/eval-looks@2", "eval-looks.json keeps schema anysearch/eval-looks@2");
-assert(looks.schema_version === EVAL_LOOKS_SCHEMA_VERSION, "eval-looks.json root carries the schema_version sentinel matching EVAL_LOOKS_SCHEMA_VERSION");
+assert(looks.schema_version === 1, "eval-looks.json root carries the schema_version:1 sentinel");
 assert(!Object.hasOwn(looks, "golden"), "eval-looks.json carries no golden key (the corpus lives in eval-golden.json)");
 const golden = readGoldenFile(path.join(root, GOLDEN_FILE));
 assert(golden.schema === "anysearch/docs-golden@1", "eval-golden.json sub-schema unchanged");
