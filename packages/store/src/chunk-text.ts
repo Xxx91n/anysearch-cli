@@ -159,7 +159,6 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       // level LIKE lane takes them instead of returning nothing.
       if (tokens.length === 1 && [...run.text].length === 1) {
         loneHan.push(tokens[0]!);
-        budget -= 1;
         continue;
       }
       groups.push('"' + tokens.slice(0, budget).join(" ") + '"');
@@ -169,7 +168,9 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       budget -= 1;
     }
   }
-  if (groups.length === 0 && loneHan.length > 0) return { fts: null, singleHan: loneHan };
+  if (groups.length === 0 && loneHan.length > 0) {
+    return { fts: null, singleHan: loneHan.slice(0, maxTerms) };
+  }
   return { fts: groups.length > 0 ? groups.join(" AND ") : null, singleHan };
 }
 

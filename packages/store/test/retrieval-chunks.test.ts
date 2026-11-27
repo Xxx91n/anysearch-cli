@@ -305,6 +305,27 @@ async function main() {
       rawCheck.close();
     }
 
+    // ---- one block failing does not starve the rest -----------------------
+    const failDirPage = await store.savePage(session.id, {
+      url: "https://example.com/partial-embed",
+      title: "部分嵌入",
+      content: "## 一\n\nzzfailblock 这一段嵌不出来。\n\n## 二\n\n这一段可以嵌出来，normalblock words。",
+      source: "exa",
+    });
+    __setEmbeddingModuleForTest({
+      embedText: async (text: string) => {
+        if (text.includes("zzfailblock")) return null;
+        const v = new Float32Array(384);
+        v[0] = 1;
+        return v;
+      },
+      embeddingTelemetry: () => ({ loads: 1, embeds: 1, failures: 0, circuitOpen: false }),
+      EMBEDDING_MODEL_ID: "test-model",
+    } as never);
+    const partialEmbed = await store.backfillChunkVectors();
+    assert(partialEmbed.failed >= 1, "the failing block is counted once");
+    assert(partialEmbed.embedded >= 1, "blocks behind the failing one are still embedded");
+
     // ---- ensureChunksForPage is re-entrant --------------------------------
     // Law: an old row that got its body later is rebuilt, and rebuilding twice
     // does not double the index.

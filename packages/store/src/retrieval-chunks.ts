@@ -51,7 +51,7 @@ function owedBlocksFrom(model?: string, pageId?: number): { from: string; params
   return {
     from: "FROM retrieval_chunks c JOIN retrieval_results r ON r.id = c.page_id " +
       "WHERE c.level = " + LEVEL_BLOCK + " AND " + HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
-      " AND " + owes.sql + (pageId === undefined ? "" : " AND c.page_id = ?"),
+      " AND " + owes.sql + (pageId === undefined ? "" : " AND c.page_id = ?") + " ORDER BY c.id",
     params: [...owes.params, ...(pageId === undefined ? [] : [pageId])],
   };
 }

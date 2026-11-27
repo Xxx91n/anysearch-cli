@@ -106,7 +106,7 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
     facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
   }
   // 只按当前模型的向量数判断截断，别的模型留下的旧行不算。
-  if (backlog.embedded > backlog.vectorScanLimit) {
+  if (chunkModel !== EMBEDDING_MODEL_UNAVAILABLE && backlog.embedded > backlog.vectorScanLimit) {
     facts.push(`当前模型的块向量 ${backlog.embedded} 条，检索只扫最近 ${backlog.vectorScanLimit} 条（更老的正文只剩关键词那条）`);
   }
   const needsBlocks = backlog.pagesWithoutChunks > 0;
@@ -1155,9 +1155,12 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     // 不用构造器，免得 doctor 顺手迁移或做备份。
     if (dbPath !== ":memory:" && existsSync(dbPath)) {
       try {
-        // 口径固定为当前模型；没装包时用哨兵，此时一条向量都匹配不到。
+        // 按当前模型统计；没装包时按任意模型统计，保留真实已补数。
         const chunkModel = await embeddingModelId();
-        const backlog = readChunkVectorBacklogFile(dbPath, chunkModel);
+        const backlog = readChunkVectorBacklogFile(
+          dbPath,
+          chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? undefined : chunkModel,
+        );
         if (!backlog) {
           report.add({
             layer: "data",

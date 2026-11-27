@@ -61,9 +61,8 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   relation: "critical",
   semantic: "critical",
 };
-export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
-  // The production content arm is not measured yet: no golden case writes a
-  // page body, so listing it would add an n=0 arm and shift the beta correction.
+/** The arms that are actually measured; content is known to the type but not yet measured. */
+export const MEASURED_MEMORY_ARMS: readonly ("entity" | "vector" | "relation" | "semantic")[] = [
   "entity",
   "vector",
   "relation",
@@ -270,7 +269,7 @@ export function computeArmDeltas(
   const onIdx = prov.fusedIds.indexOf(String(targetId));
   const rankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
   const out: Record<string, ArmDeltaRecord> = {};
-  for (const label of NON_ANCHOR_MEMORY_ARMS) {
+  for (const label of MEASURED_MEMORY_ARMS) {
     const drop = prov.labels.indexOf(label);
     const role = MEMORY_ARM_ROLES[label];
     if (role !== "critical" && role !== "observational") continue;

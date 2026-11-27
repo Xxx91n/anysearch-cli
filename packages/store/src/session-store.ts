@@ -122,7 +122,7 @@ import { migrateTaskRegistryColumns, TaskRegistry } from "./task-registry.js";
 import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
-import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
+import { embedText, embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
 import { sanitizeText, type NormalizedResult } from "@anysearch-cli/retriever";
 
 // MemTX-simplified writer adjudication.
@@ -1764,23 +1764,8 @@ export class SqliteSessionStore implements SessionStore {
     await this.embedChunkRows(chunksMissingVectors(this.db, pageId, model), model);
   }
 
-  /**
-   * Repair the block index: rebuild pages that have a body but no chunks (a
-   * failed write), then fill vectors in batches. Without the rebuild, work the
-   * queue dropped or a killed process lost would stay unreachable forever.
-   * `ans memory backfill-vectors` is the CLI entry point.
-   */
-  async backfillChunkVectors(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; rebuiltPages: number; rebuildFailed: number }> {
-    const batch = limit ?? PENDING_BATCH_DEFAULT;
-    const model = await embeddingModelId();
-    if (dryRun) {
-      // Same model the run will use; otherwise a model change shows 0 pending
-      // here and re-embeds the whole archive in the real run.
-      const backlog = chunkVectorBacklog(this.db, model);
-      return { scanned: backlog.pending, embedded: 0, failed: 0, rebuiltPages: backlog.pagesWithoutChunks, rebuildFailed: 0 };
-    }
-    // Repair pages with a body but no blocks, in id order. `limit` caps this
-    // run (a page attempted at most once), so the CLI's --limit is honest.
+  /** Rebuild pages whose sections or blocks are missing, in id order. */
+  private rebuildMissingChunks(batch: number, limit?: number): { rebuiltPages: number; rebuildFailed: number } {
     let rebuiltPages = 0;
     let rebuildFailed = 0;
     let afterId = 0;
@@ -1799,6 +1784,29 @@ export class SqliteSessionStore implements SessionStore {
       }
       if (limit !== undefined) break;
     }
+    return { rebuiltPages, rebuildFailed };
+  }
+
+  /**
+   * Repair the block index: rebuild pages that have a body but no chunks (a
+   * failed write), then fill vectors in batches. Without the rebuild, work the
+   * queue dropped or a killed process lost would stay unreachable forever.
+   * `ans memory backfill-vectors` is the CLI entry point.
+   */
+  async backfillChunkVectors(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; rebuiltPages: number; rebuildFailed: number }> {
+    const batch = limit ?? PENDING_BATCH_DEFAULT;
+    const model = await embeddingModelId();
+    if (!dryRun && model === EMBEDDING_MODEL_UNAVAILABLE) {
+      // Nothing can embed without the package; the pages are still rebuilt.
+      return { scanned: 0, embedded: 0, failed: 0, ...this.rebuildMissingChunks(batch, limit) };
+    }
+    if (dryRun) {
+      // Same model the run will use; otherwise a model change shows 0 pending
+      // here and re-embeds the whole archive in the real run.
+      const backlog = chunkVectorBacklog(this.db, model);
+      return { scanned: backlog.pending, embedded: 0, failed: 0, rebuiltPages: backlog.pagesWithoutChunks, rebuildFailed: 0 };
+    }
+    const { rebuiltPages, rebuildFailed } = this.rebuildMissingChunks(batch, limit);
     let scanned = 0;
     let embedded = 0;
     let failed = 0;
@@ -1814,8 +1822,9 @@ export class SqliteSessionStore implements SessionStore {
       embedded += result.embedded;
       failed += result.failed.length;
       for (const id of result.failed) failedIds.add(id);
-      // An absent model must not turn this into a spin on the same batch.
-      if (result.embedded === 0 || limit !== undefined) break;
+      // The window grows by the known failures, so a batch with none embedded
+      // still advances; only --limit stops it early.
+      if (limit !== undefined) break;
     }
     return { scanned, embedded, failed, rebuiltPages, rebuildFailed };
   }
