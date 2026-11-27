@@ -147,7 +147,7 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     assert.deepEqual(plan.packages, readers, files.join(","));
   }
 
-  // Literal pins for the corpus rows a table edit could silently lose: when
+  // Literal pins for two root-file rows a table edit could silently lose: when
   // the table and the mirror in preflight-root-readers.mjs drop the same
   // package together, only a literal catches it.
   for (const [file, readers] of [
