@@ -34,7 +34,6 @@ if (rawLimit !== undefined && (!Number.isInteger(limitNum) || limitNum <= 0)) {
   console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (unset means full run)");
   process.exit(1);
 }
-const LIMIT = limitNum;
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {
@@ -122,7 +121,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     (e) => (scopes[e.id] === "live" || scopes[e.id] === "both") && e.expected?.vertical !== undefined,
   );
   if (all.length === 0) { console.error("FAIL: no live-scoped vertical entries"); process.exit(1); }
-  const entries = LIMIT > 0 ? all.slice(0, LIMIT) : all;
+  const entries = limitNum > 0 ? all.slice(0, limitNum) : all;
 
   // + (1): instrument-health ordering, no sampling-
   // protocol change — same entries, same legs per entry, only the schedule
@@ -363,7 +362,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   assert(rows.every((r) => r.arm === "anysearch"), "every row carries arm identity");
   assert(rows.every((r) => Object.hasOwn(r.delta, "verdict")), "every row carries a verdict field");
   assert(controlDegraded <= rows.filter((r) => r.role === "control").length, "control degraded count consistent");
-  if (LIMIT === 0) assert(byStratum.control !== undefined, "control stratum aggregated (full-corpus run)");
+  if (limitNum === 0) assert(byStratum.control !== undefined, "control stratum aggregated (full-corpus run)");
   console.log("PASS: vertical-delta artifact emitted -> " + DELTA_OUT);
   function fmt(v: number | null): string { return v === null ? "null" : String(Math.round(v * 100) / 100); }
 })().catch((e) => { console.error(e); process.exit(1); });
